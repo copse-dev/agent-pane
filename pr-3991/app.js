@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-R6JXXASK.js";
+} from "./chunks/chunk-6F55QCCP.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -2998,6 +2998,90 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        // #1433 Fix 0: an explore result is the summary plus harness-copied
+        // verbatim excerpts. The card shows the summary once (in the timeline) and
+        // only the excerpts below it.
+        id: "explore-excerpts",
+        label: "Explore result with verbatim excerpts",
+        project: project("demo-explore-excerpts-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-explore-excerpts-thread",
+            title: "Explore excerpts",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-explore-excerpts-assistant",
+                role: "assistant",
+                content: "The Enter handler is in wireToolbar.",
+                toolCalls: [
+                  {
+                    id: "demo-explore-excerpts-call",
+                    name: "explore",
+                    args: { query: "How does wireToolbar submit the URL?" },
+                    status: "done",
+                    result: [
+                      "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      "",
+                      "---",
+                      "",
+                      "Verbatim excerpts \u2014 copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.",
+                      "",
+                      "`src/renderer/browser-pane.ts` lines 291\u2013295:",
+                      "```",
+                      "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                      "```"
+                    ].join("\n"),
+                    subagent: {
+                      id: "demo-explore-excerpts-session",
+                      kind: "explore",
+                      status: "done",
+                      prompt: "How does wireToolbar submit the URL?",
+                      summary: "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      messages: [
+                        {
+                          id: "demo-explore-excerpts-message-1",
+                          role: "assistant",
+                          content: "Reading **browser-pane.ts** around wireToolbar.",
+                          toolCalls: [
+                            {
+                              id: "demo-explore-excerpts-read",
+                              name: "read_file",
+                              args: {
+                                path: "src/renderer/browser-pane.ts",
+                                start_line: 291,
+                                end_line: 295
+                              },
+                              status: "done",
+                              result: "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })"
+                            }
+                          ]
+                        },
+                        {
+                          id: "demo-explore-excerpts-message-2",
+                          role: "assistant",
+                          content: "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                          toolCalls: []
+                        }
+                      ]
+                    }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // #728: a subagent-backed explore must stay its own card when a sibling
         // read_file would otherwise fold both into a "Read files" group.
         id: "subagent-ungrouped",
@@ -5599,8 +5683,26 @@ function createDemoApi(scenario2, options = {}) {
         running: scenario2.mobileCompanion !== void 0,
         url: scenario2.mobileCompanion?.url ?? null,
         qrSvg: scenario2.mobileCompanion?.qrSvg ?? null,
+        localUrl: null,
+        localQrSvg: null,
+        publicName: {
+          serviceUrl: "https://api.copse.dev",
+          state: "unregistered",
+          hostname: null,
+          certificate: null,
+          dns: "unknown",
+          busy: null,
+          lastError: null
+        },
         rootCertificatePath: null,
-        addresses: scenario2.mobileCompanion ? [{ address: new URL(scenario2.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        address: scenario2.mobileCompanion ? new URL(scenario2.mobileCompanion.url).hostname : null,
+        addresses: scenario2.mobileCompanion ? [
+          {
+            address: new URL(scenario2.mobileCompanion.url).hostname,
+            interfaceName: "Wi-Fi",
+            virtual: false
+          }
+        ] : [],
         devices: [],
         pairing: null,
         lastError: null
@@ -5613,6 +5715,9 @@ function createDemoApi(scenario2, options = {}) {
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -5947,6 +6052,9 @@ function createDemoApi(scenario2, options = {}) {
         );
         return resolved(structuredClone([...mcpStatuses]));
       },
+      listUserServers: () => resolved({ path: "/demo/mcp.json", servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe
     },
     toolPermissions: {
@@ -6033,6 +6141,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -7202,7 +7319,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-D4UOPHHU.js").then(async (main) => {
+    void import("./chunks/main-5LAUK234.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

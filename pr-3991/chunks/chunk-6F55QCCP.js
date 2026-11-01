@@ -23108,7 +23108,6 @@ function createThread(store, draftPrompt) {
     stagedDiffs: []
   });
   store.emit("threads_changed");
-  store.emit("panel_changed");
   store.emit("new_thread_opened");
   return id;
 }
@@ -23136,7 +23135,6 @@ function openNewThread(store) {
       activeDiff: null,
       stagedDiffs: []
     });
-    store.emit("panel_changed");
     store.emit("new_thread_opened");
     return existing.id;
   }
@@ -23156,7 +23154,6 @@ function switchThread(store, id) {
     const { unreadAt: _read, ...readThread } = thread;
     return readThread;
   });
-  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
   store.setState({
     activeThreadId: id,
     threads,
@@ -23164,7 +23161,6 @@ function switchThread(store, id) {
     activeDiff: null,
     stagedDiffs: []
   });
-  if (panelWasPopulated) store.emit("panel_changed");
   store.emit("threads_changed");
 }
 function nextThreadId(store) {
@@ -23219,7 +23215,6 @@ function deleteThread(store, id) {
     ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeDoomed) store.emit("panel_changed");
 }
 function archiveThread(store, id, persisted) {
   const { threads, activeThreadId } = store.getState();
@@ -23255,7 +23250,6 @@ function archiveThread(store, id, persisted) {
     ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeArchived) store.emit("panel_changed");
 }
 function restoreThread(store, id) {
   const { threads } = store.getState();
@@ -23410,6 +23404,22 @@ function appendAcpContentBlock(store, messageId, channel, block) {
       message.contentBlocks = [...message.contentBlocks ?? [], block];
     }
   });
+  store.emit("message_acp_content", messageId);
+}
+function replaceAcpContentBlocks(store, messageId, channel, blocks) {
+  const text = blocks.filter((block) => block.type === "text").map((block) => block.text).join("");
+  const richBlocks = blocks.filter((block) => block.type !== "text");
+  updateMessage(store, messageId, (message) => {
+    if (channel === "thought") {
+      message.reasoning = text;
+      message.reasoningBlocks = richBlocks;
+    } else {
+      message.content = text;
+      message.contentBlocks = richBlocks;
+    }
+  });
+  if (channel === "thought") store.emit("message_reasoning", messageId, text);
+  else store.emit("message_token", messageId, text);
   store.emit("message_acp_content", messageId);
 }
 function setMessageContent(store, messageId, content) {
@@ -23942,7 +23952,7 @@ function serializedWrite(key, write) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
 }
 function setNavigationOwnership(owns) {
@@ -23999,48 +24009,162 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
-function acceptRuntimeThreadMeta(projectId, thread, before) {
-  const previous = persistedMeta.get(projectId)?.get(thread.id);
-  if (!previous) return;
-  const next = { ...previous };
-  for (const key of TRANSCRIPT_META_KEYS) {
-    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
-    Object.assign(next, { [key]: thread[key] });
-  }
-  persistedMeta.get(projectId)?.set(thread.id, next);
+function markMetadataChanged(projectId, threadId, ownLoad) {
+  if (ownLoad) return;
+  for (const load of activeMetadataLoads.get(projectId) ?? []) load.changed.add(threadId);
 }
-function recordPersistedThread(projectId, thread) {
+function metadataBaseline(projectId) {
   let metas = persistedMeta.get(projectId);
   if (!metas) {
     metas = /* @__PURE__ */ new Map();
     persistedMeta.set(projectId, metas);
   }
-  metas.set(thread.id, metaOf(thread));
+  return metas;
+}
+function acknowledgeMetadata(projectId, threadId, meta3, ownLoad) {
+  const metas = metadataBaseline(projectId);
+  if (meta3) metas.set(threadId, meta3);
+  else metas.delete(threadId);
+  markMetadataChanged(projectId, threadId, ownLoad);
+}
+function retryMetaPatch(previous, next, uncertain) {
+  const patch = metaPatch(previous, next);
+  const values = { ...next };
+  for (const key of uncertain?.fields ?? []) Object.assign(patch, { [key]: values[key] });
+  return patch;
+}
+function runtimeMeta(previous, thread, before) {
+  const next = { ...previous };
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
+    Object.assign(next, { [key]: thread[key] });
+  }
+  return next;
+}
+function acceptRuntimeThreadMeta(projectId, thread, before) {
+  const previous = persistedMeta.get(projectId)?.get(thread.id);
+  if (previous) acknowledgeMetadata(projectId, thread.id, runtimeMeta(previous, thread, before));
+  for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+    if (pending.kind === "save") pending.meta = runtimeMeta(pending.meta, thread, before);
+  }
+  const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+  if (creation) creation.meta = runtimeMeta(creation.meta, thread, before);
+  const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+  if (uncertain?.target) uncertain.target = runtimeMeta(uncertain.target, thread, before);
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (!before || JSON.stringify(before[key]) !== JSON.stringify(thread[key])) {
+      uncertain?.fields.delete(key);
+    }
+  }
+}
+function queueThreadWrite(api, projectId, threadId, target) {
+  let projectPending = pendingThreadWrites.get(projectId);
+  if (!projectPending) {
+    projectPending = /* @__PURE__ */ new Map();
+    pendingThreadWrites.set(projectId, projectPending);
+  }
+  const queue = projectPending.get(threadId) ?? [];
+  projectPending.set(threadId, queue);
+  queue.push(target);
+  markMetadataChanged(projectId, threadId);
+  return serializedWrite(threadWriteKey(projectId, threadId), async () => {
+    const previous = metadataBaseline(projectId).get(threadId);
+    const uncertain = uncertainThreadWrites.get(projectId)?.get(threadId);
+    let submittedPatch;
+    let attemptedDelete = false;
+    try {
+      if (target.kind === "delete") {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId) || uncertain?.deleted) {
+          attemptedDelete = true;
+          await api.threads.delete(projectId, threadId);
+        }
+        acknowledgeMetadata(projectId, threadId, null);
+      } else {
+        if (!previous || uncertain?.deleted || unconfirmedCreates.get(projectId)?.has(threadId)) {
+          let creations2 = unconfirmedCreates.get(projectId);
+          if (!creations2) {
+            creations2 = /* @__PURE__ */ new Map();
+            unconfirmedCreates.set(projectId, creations2);
+          }
+          const creation = creations2.get(threadId) ?? { meta: previous ?? target.meta };
+          creations2.set(threadId, creation);
+          await api.threads.create(projectId, { ...target.thread, ...target.meta });
+          submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain);
+        } else {
+          submittedPatch = retryMetaPatch(previous, target.meta, uncertain);
+        }
+        if (Object.keys(submittedPatch).length > 0) {
+          await api.threads.updateMeta(projectId, threadId, submittedPatch);
+        }
+        acknowledgeMetadata(projectId, threadId, target.meta);
+      }
+      const creations = unconfirmedCreates.get(projectId);
+      creations?.delete(threadId);
+      if (creations?.size === 0) unconfirmedCreates.delete(projectId);
+      const uncertainties = uncertainThreadWrites.get(projectId);
+      uncertainties?.delete(threadId);
+      if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId);
+    } catch (error62) {
+      const fields = Object.keys(submittedPatch ?? {});
+      if (fields.length > 0 || attemptedDelete || target.kind === "save") {
+        let uncertainties = uncertainThreadWrites.get(projectId);
+        if (!uncertainties) {
+          uncertainties = /* @__PURE__ */ new Map();
+          uncertainThreadWrites.set(projectId, uncertainties);
+        }
+        const failed = uncertainties.get(threadId) ?? {
+          fields: /* @__PURE__ */ new Set(),
+          deleted: false,
+          target: null
+        };
+        for (const field of fields) failed.fields.add(field);
+        failed.deleted ||= attemptedDelete;
+        failed.target = target.kind === "save" ? target.meta : null;
+        uncertainties.set(threadId, failed);
+        markMetadataChanged(projectId, threadId);
+      }
+      throw error62;
+    } finally {
+      queue.splice(queue.indexOf(target), 1);
+      if (queue.length === 0) projectPending.delete(threadId);
+      if (projectPending.size === 0 && pendingThreadWrites.get(projectId) === projectPending) {
+        pendingThreadWrites.delete(projectId);
+      }
+    }
+  });
 }
 function reconcileThreads(api, projectId, threads) {
-  const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
-  const next = /* @__PURE__ */ new Map();
+  const previous = new Map(persistedMeta.get(projectId));
+  for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
+    const target = queue.at(-1);
+    if (target?.kind === "save") previous.set(id, target.meta);
+    else previous.delete(id);
+  }
+  const next = new Map(threads.map((thread) => [thread.id, { thread, meta: metaOf(thread) }]));
   const writes = [];
-  for (const t2 of threads) {
-    const meta3 = metaOf(t2);
-    next.set(t2.id, meta3);
-    const key = threadWriteKey(projectId, t2.id);
-    const prevMeta = prev.get(t2.id);
-    if (prevMeta === void 0) {
-      writes.push(serializedWrite(key, () => api.threads.create(projectId, t2)));
-    } else if (metaSig(prevMeta) !== metaSig(meta3)) {
-      const patch = metaPatch(prevMeta, meta3);
-      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t2.id, patch)));
+  for (const [id, target] of next) {
+    const before = previous.get(id);
+    const uncertain = uncertainThreadWrites.get(projectId)?.has(id);
+    const pending = pendingThreadWrites.get(projectId)?.has(id);
+    if (!before || metaSig(before) !== metaSig(target.meta) || uncertain && !pending) {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "save", ...target }));
     }
   }
-  for (const id of prev.keys()) {
-    if (!next.has(id)) {
-      writes.push(
-        serializedWrite(threadWriteKey(projectId, id), () => api.threads.delete(projectId, id))
-      );
+  const potentiallyCreated = /* @__PURE__ */ new Set([
+    ...previous.keys(),
+    ...unconfirmedCreates.get(projectId)?.keys() ?? [],
+    ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+  ]);
+  for (const id of potentiallyCreated) {
+    const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+    if (!next.has(id) && pending?.kind !== "delete") {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "delete" }));
     }
   }
-  persistedMeta.set(projectId, next);
+  for (const id of pendingThreadWrites.get(projectId)?.keys() ?? []) {
+    const pending = writeChains.get(threadWriteKey(projectId, id));
+    if (pending) writes.push(pending.then(() => void 0));
+  }
   return Promise.all(writes).then(() => void 0);
 }
 function flushProjectThreads(api, projectId, threads) {
@@ -24097,20 +24221,163 @@ function invalidateProjectThreadLoads(api, projectId) {
   }
   revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
 }
-async function loadThreads(api, projectId) {
-  let loaded;
-  let revision;
-  do {
-    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
-    loaded = await api.threads.loadProject(projectId);
-  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
-  const threads = sortThreadsNewestFirst(loaded).map(
-    (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
-  );
-  const metas = /* @__PURE__ */ new Map();
-  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
-  persistedMeta.set(projectId, metas);
-  return threads;
+function threadWithMeta(thread, meta3, projection) {
+  const messagesLoaded = projection ? projection.messagesLoaded : thread.messagesLoaded;
+  const hasSavedPlan = projection ? projection.hasSavedPlan : thread.hasSavedPlan;
+  return {
+    ...meta3,
+    messages: thread.messages,
+    ...messagesLoaded !== void 0 ? { messagesLoaded } : {},
+    ...hasSavedPlan !== void 0 ? { hasSavedPlan } : {}
+  };
+}
+async function readThreadMetadata(api, projectId, onlyThreadId) {
+  const load = {
+    changed: /* @__PURE__ */ new Set(),
+    generation: 0,
+    fullProjectionGeneration: 0,
+    projections: /* @__PURE__ */ new Map()
+  };
+  let loads = activeMetadataLoads.get(projectId);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Set();
+    activeMetadataLoads.set(projectId, loads);
+  }
+  loads.add(load);
+  try {
+    let loaded;
+    let revision;
+    do {
+      revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
+      load.generation = ++metadataLoadGeneration;
+      loaded = await api.threads.loadProject(projectId);
+    } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
+    const threads = sortThreadsNewestFirst(loaded).filter((thread) => onlyThreadId === void 0 || thread.id === onlyThreadId).map(
+      (thread) => onlyThreadId === void 0 && thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
+    );
+    const baseline = metadataBaseline(projectId);
+    const beforeSeed = new Map(baseline);
+    const returned = new Map(threads.map((thread) => [thread.id, thread]));
+    if (load.generation < (appliedProjectLoads.get(projectId) ?? 0)) {
+      for (const id of /* @__PURE__ */ new Set([...baseline.keys(), ...returned.keys()])) load.changed.add(id);
+    }
+    for (const [id, generation] of appliedThreadLoads.get(projectId) ?? []) {
+      if (load.generation < generation) load.changed.add(id);
+    }
+    for (const id of baseline.keys()) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      if (!returned.has(id) && !load.changed.has(id)) {
+        acknowledgeMetadata(projectId, id, null, load);
+      }
+    }
+    for (const thread of threads) {
+      if (!load.changed.has(thread.id)) {
+        const meta3 = metaOf(thread);
+        const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+        const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+        const before = beforeSeed.get(thread.id) ?? creation?.meta ?? meta3;
+        for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+          if (pending.kind === "save") {
+            pending.meta = { ...meta3, ...retryMetaPatch(before, pending.meta, uncertain) };
+          }
+        }
+        if (uncertain?.target) {
+          uncertain.target = { ...meta3, ...retryMetaPatch(before, uncertain.target, uncertain) };
+        }
+        if (creation) creation.meta = meta3;
+        acknowledgeMetadata(projectId, thread.id, meta3, load);
+      }
+    }
+    for (const id of load.changed) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const current = baseline.get(id);
+      if (current) {
+        const old = returned.get(id) ?? { ...current, messages: [], messagesLoaded: false };
+        returned.set(id, threadWithMeta(old, current));
+      } else {
+        returned.delete(id);
+      }
+    }
+    for (const id of /* @__PURE__ */ new Set([
+      ...returned.keys(),
+      ...pendingThreadWrites.get(projectId)?.keys() ?? [],
+      ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+    ])) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+      const uncertain = uncertainThreadWrites.get(projectId)?.get(id);
+      if (pending?.kind === "delete" || !pending && uncertain?.target === null) {
+        returned.delete(id);
+        continue;
+      }
+      const target = pending?.kind === "save" ? pending.meta : uncertain?.target;
+      if (!target) continue;
+      const current = returned.get(id) ?? { ...target, messages: [], messagesLoaded: false };
+      const before = beforeSeed.get(id) ?? unconfirmedCreates.get(projectId)?.get(id)?.meta ?? target;
+      const patch = retryMetaPatch(before, target, uncertain);
+      returned.set(id, threadWithMeta(current, { ...metaOf(current), ...patch }));
+    }
+    for (const [id, thread] of returned) {
+      const known = load.projections.get(id);
+      const projection = known && known.generation >= load.fullProjectionGeneration ? known : {
+        generation: load.fullProjectionGeneration,
+        messagesLoaded: void 0,
+        hasSavedPlan: void 0
+      };
+      if (projection.generation > load.generation) {
+        returned.set(id, threadWithMeta(thread, metaOf(thread), projection));
+      }
+    }
+    for (const older of loads) {
+      if (older === load || older.generation >= load.generation) continue;
+      if (onlyThreadId === void 0) {
+        older.fullProjectionGeneration = Math.max(older.fullProjectionGeneration, load.generation);
+        for (const [id, projection] of older.projections) {
+          if (projection.generation <= load.generation) older.projections.delete(id);
+        }
+      }
+      for (const [id, thread] of returned) {
+        const previous = older.projections.get(id);
+        if (!previous || previous.generation < load.generation) {
+          older.projections.set(id, {
+            generation: load.generation,
+            messagesLoaded: thread.messagesLoaded,
+            hasSavedPlan: thread.hasSavedPlan
+          });
+        }
+      }
+    }
+    if (onlyThreadId === void 0) {
+      appliedProjectLoads.set(
+        projectId,
+        Math.max(appliedProjectLoads.get(projectId) ?? 0, load.generation)
+      );
+      const scoped = appliedThreadLoads.get(projectId);
+      for (const [id, generation] of scoped ?? []) {
+        if (generation <= load.generation) scoped?.delete(id);
+      }
+      if (scoped?.size === 0) appliedThreadLoads.delete(projectId);
+    } else {
+      let scoped = appliedThreadLoads.get(projectId);
+      if (!scoped) {
+        scoped = /* @__PURE__ */ new Map();
+        appliedThreadLoads.set(projectId, scoped);
+      }
+      scoped.set(onlyThreadId, Math.max(scoped.get(onlyThreadId) ?? 0, load.generation));
+    }
+    return sortThreadsNewestFirst([...returned.values()]);
+  } finally {
+    loads.delete(load);
+    if (loads.size === 0 && activeMetadataLoads.get(projectId) === loads) {
+      activeMetadataLoads.delete(projectId);
+    }
+  }
+}
+function loadThreads(api, projectId) {
+  return readThreadMetadata(api, projectId);
+}
+async function loadPersistedThread(api, projectId, threadId) {
+  return (await readThreadMetadata(api, projectId, threadId))[0];
 }
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
@@ -24319,7 +24586,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -24337,6 +24604,13 @@ var init_persistence = __esm({
     navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
+    pendingThreadWrites = /* @__PURE__ */ new Map();
+    unconfirmedCreates = /* @__PURE__ */ new Map();
+    uncertainThreadWrites = /* @__PURE__ */ new Map();
+    activeMetadataLoads = /* @__PURE__ */ new Map();
+    metadataLoadGeneration = 0;
+    appliedProjectLoads = /* @__PURE__ */ new Map();
+    appliedThreadLoads = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
@@ -26450,7 +26724,6 @@ var init_tool_display = __esm({
       semantic_search: { running: "Searching codebase", done: "Searched codebase" },
       find_files: { running: "Finding files", done: "Found files" },
       web_search: { running: "Searching the web", done: "Searched the web" },
-      parallel_search: { running: "Searching with Parallel", done: "Searched with Parallel" },
       fetch_url: { running: "Fetching page", done: "Fetched page" },
       browser_preview: { running: "Opening preview", done: "Opened preview" },
       browser_navigate: { running: "Opening browser", done: "Opened browser" },
@@ -26520,7 +26793,7 @@ var init_tool_display = __esm({
         label: { running: "Searching", done: "Searched" }
       },
       web: {
-        tools: ["web_search", "parallel_search", "fetch_url"],
+        tools: ["web_search", "fetch_url"],
         label: { running: "Fetching from web", done: "Fetched from web" }
       },
       browser: {
@@ -26680,11 +26953,20 @@ function findRunningActivity(thread) {
       const tc = toolCalls[j3];
       if (!tc) continue;
       if (tc.status === "running") {
-        return { kind: "tool", name: tc.name === "explore" ? "explore" : tc.name };
+        return {
+          kind: "tool",
+          name: tc.name === "explore" ? "explore" : tc.name,
+          ...tc.commandPhase ? { commandPhase: tc.commandPhase.state } : {}
+        };
       }
       if (tc.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
+  return null;
+}
+function commandWaitLabel(phase) {
+  if (phase === "awaiting_approval") return "Waiting for approval";
+  if (phase === "starting") return "Starting command";
   return null;
 }
 function delegateActivityLabel(count, soleKind) {
@@ -26696,7 +26978,7 @@ function agentActivityLabel(thread, writing) {
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
   const activity = findRunningActivity(thread);
   if (activity) {
-    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
+    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${commandWaitLabel(activity.commandPhase) ?? getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base} (${todoLabel})` : base;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -27396,6 +27678,9 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function isAutomationPendingStart(thread) {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+}
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
   if (thread.everRan !== void 0) return thread.everRan;
@@ -27681,8 +27966,6 @@ async function removeProject(store, api, id) {
     store.emit("projects_changed");
     store.emit("workspace_changed");
     store.emit("threads_changed");
-    store.emit("panel_changed");
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ projects });
@@ -27805,8 +28088,6 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
   store.emit("projects_changed");
   store.emit("workspace_changed");
   store.emit("threads_changed");
-  store.emit("panel_changed");
-  store.emit("files_pane_changed");
   endApply({ threads: merged.length });
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
@@ -27893,7 +28174,6 @@ function openNewProjectThread(store, api, projectId = store.getState().sidebarPr
 }
 function setSidebarProjectFilter(store, api, projectId) {
   store.setState({ sidebarProjectFilterId: projectId });
-  store.emit("sidebar_project_filter_changed");
   const thread = getActiveThread(store);
   const activeProjectId = store.getState().activeProjectId;
   if (thread && !isBlankThread(thread)) {
@@ -41312,6 +41592,16 @@ var init_model_intellect_generated = __esm({
         anchorMin: 1,
         anchorMax: 54.1,
         fittedAsOf: "2026-09-09"
+      },
+      {
+        from: "v5",
+        to: "v4.3",
+        a: 0.7255437490590686,
+        b: 16.648713456654036,
+        anchorCount: 77,
+        anchorMin: 1.8,
+        anchorMax: 58.4,
+        fittedAsOf: "2026-11-01"
       }
     ];
   }
@@ -42812,8 +43102,8 @@ function resolveAgentModelIdentity(...forms) {
     if (id !== null && getIntellectScore(id)) return id;
   }
   for (const form of named) {
-    const labelled = claudeModelIdFromLabel(form);
-    const id = labelled === null ? null : resolveIntellectModelId(labelled);
+    const labelled2 = claudeModelIdFromLabel(form);
+    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
     if (id !== null && getIntellectScore(id)) return id;
   }
   return null;
@@ -47623,10 +47913,65 @@ function createMobileCompanionSection(api) {
       qrUrl
     )
   );
+  const localQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const localQrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const localQrHost = el(
+    "div",
+    { id: "mobile-companion-local-qr", class: "mobile-companion-qr", hidden: true },
+    localQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "The local address works without DNS."),
+      localQrUrl
+    )
+  );
   const pairingHost = el("div", { class: "mobile-companion-pairing" });
   const deviceList = el("div", { class: "mobile-companion-device-list" });
+  const inviteInput = el("input", {
+    type: "text",
+    name: "mobileCompanionInvite",
+    autocomplete: "off",
+    spellcheck: "false",
+    maxlength: "64",
+    placeholder: "Invite code",
+    "aria-label": "Invite code"
+  });
+  const registerBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Get a name");
+  const inviteRow = el("div", { class: "mobile-companion-invite" }, inviteInput, registerBtn);
+  const nameIntro = el(
+    "p",
+    { class: "field-hint" },
+    "Get a name like lan.\u2026u.copse.me with a publicly trusted certificate, so a phone connects with nothing to install. The Copse names service only sees certificate requests and this Mac\u2019s private network address; the key that controls the name stays in this Mac\u2019s keychain."
+  );
+  const nameSummary = el("div", { class: "mobile-companion-name-summary" });
+  const dnsNote = el("div", { class: "mobile-companion-name-dns" });
+  const recheckBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Check again"
+  );
+  const removeNameBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Remove name"
+  );
+  const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const nameCard = el(
+    "fieldset",
+    { class: "mobile-companion-name" },
+    el("legend", {}, "Trusted address"),
+    nameIntro,
+    inviteRow,
+    nameSummary,
+    dnsNote,
+    el("div", { class: "settings-action-row" }, removeNameBtn),
+    nameStatus
+  );
   let lastPairingKey = null;
   let lastDevicesKey = null;
+  let lastState = null;
+  let qrChoice = null;
   function renderAddresses(state) {
     const previous = addressSelect.value;
     clear(addressSelect);
@@ -47635,16 +47980,19 @@ function createMobileCompanionSection(api) {
         el(
           "option",
           { value: candidate.address },
-          `${candidate.interfaceName} \u2014 ${candidate.address}`
+          `${candidate.interfaceName} \u2014 ${candidate.address}${candidate.virtual ? " (virtual or VPN)" : ""}`
         )
       );
     }
-    if (state.addresses.some((candidate) => candidate.address === previous))
-      addressSelect.value = previous;
+    const shown = state.address ?? previous;
+    if (state.addresses.some((candidate) => candidate.address === shown))
+      addressSelect.value = shown;
     const disabled = state.addresses.length === 0 || state.enabled;
     if (disabled) addressSelect.setAttribute("disabled", "");
     else addressSelect.removeAttribute("disabled");
-    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value);
+    addressHint.classList.toggle("mobile-companion-name-warning", selected?.virtual === true);
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : selected?.virtual ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? " Turn Mobile Companion off to pick another." : ""}` : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
   }
   function renderConnection(state) {
     clear(connectionInfo);
@@ -47663,9 +48011,16 @@ function createMobileCompanionSection(api) {
       );
       return;
     }
+    const trustedName = state.localUrl !== null;
+    connectionInfo.append(el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."));
     connectionInfo.append(
-      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
-      el(
+      trustedName && state.localUrl ? el(
+        "p",
+        { class: "field-hint" },
+        "Its certificate is publicly trusted, so there is nothing to install. If this network\u2019s DNS cannot answer for the name, open ",
+        el("strong", {}, state.localUrl),
+        " instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website."
+      ) : el(
         "p",
         { class: "field-hint" },
         "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
@@ -47682,14 +48037,102 @@ function createMobileCompanionSection(api) {
       });
       connectionInfo.append(revealBtn);
     }
-    connectionInfo.append(qrHost);
-    if (state.qrSvg) {
+    connectionInfo.append(qrHost, localQrHost);
+    const dnsBlocked = state.publicName.dns === "unresolved" || state.publicName.dns === "mismatch";
+    const showLocal = state.localUrl !== null && (qrChoice === "local" || qrChoice === null && dnsBlocked);
+    if (state.qrSvg && !showLocal) {
       qrImage.innerHTML = state.qrSvg;
       qrUrl.textContent = state.url;
       qrHost.hidden = false;
     } else {
       qrHost.hidden = true;
     }
+    if (state.localQrSvg && state.localUrl && showLocal) {
+      localQrImage.innerHTML = state.localQrSvg;
+      localQrUrl.textContent = state.localUrl;
+      localQrHost.hidden = false;
+    } else {
+      localQrHost.hidden = true;
+    }
+    if (state.localUrl) {
+      const swapBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+        showLocal ? "Show the trusted-name QR" : "Show the local-address QR"
+      );
+      swapBtn.addEventListener("click", () => {
+        qrChoice = showLocal ? "name" : "local";
+        if (lastState) renderConnection(lastState);
+      });
+      connectionInfo.append(el("div", { class: "settings-action-row" }, swapBtn));
+    }
+  }
+  function renderPublicName(state) {
+    const name = state.publicName;
+    const registered2 = name.state !== "unregistered";
+    inviteRow.hidden = registered2;
+    nameIntro.hidden = registered2;
+    registerBtn.toggleAttribute("disabled", name.busy !== null);
+    registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
+    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
+    removeNameBtn.toggleAttribute("disabled", name.busy !== null);
+    removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
+    clear(nameSummary);
+    clear(dnsNote);
+    if (registered2 && name.hostname) {
+      nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
+      const certificate = name.certificate;
+      nameSummary.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          certificate && certificate.notAfter > Date.now() ? `Certificate valid until ${formatTime(certificate.notAfter)}${certificate.renewAt ? ` \xB7 renews from ${formatTime(certificate.renewAt)}` : ""}. Copse renews it while open.` : "Waiting for a certificate. Copse keeps trying while it is open."
+        )
+      );
+      if (name.state === "dormant")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "This name went dormant after 30 days without a renewal and does not resolve. Copse renews it again while open."
+          )
+        );
+      if (name.state === "retired")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "The names service retired this name. Remove it, then register again with a new invite."
+          )
+        );
+      const bound = state.addresses.find((candidate) => candidate.address === state.address);
+      if (state.running && bound?.virtual)
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`
+          )
+        );
+      if (state.running) renderDns(name.hostname, name.dns);
+    }
+    if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
+    else nameStatus.replaceChildren();
+  }
+  function renderDns(hostname3, dns) {
+    if (dns === "ok" || dns === "unknown") return;
+    if (dns === "checking") {
+      dnsNote.append(el("p", { class: "field-hint" }, `Checking that ${hostname3} resolves here\u2026`));
+      return;
+    }
+    dnsNote.append(
+      el(
+        "p",
+        { class: "field-hint mobile-companion-name-warning" },
+        dns === "unresolved" ? `This network\u2019s DNS does not answer for ${hostname3}. Many routers drop public names that point at private addresses (DNS-rebind protection in dnsmasq, Pi-hole or OpenWrt), and a phone here will not reach the name either. Allow u.copse.me in the router\u2019s rebind settings, or use the local address.` : `This network\u2019s DNS answers ${hostname3} with a different address. Right after a network change that clears within a minute; if it stays, use the local address.`
+      ),
+      el("div", { class: "settings-action-row" }, recheckBtn)
+    );
   }
   function pairingKey(state) {
     return state.pairing?.id ?? null;
@@ -47704,7 +48147,7 @@ function createMobileCompanionSection(api) {
     const trustInput = el("input", { type: "checkbox" });
     const controlBtn = el(
       "button",
-      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: !pairing.trustedName },
       "Allow control"
     );
     const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
@@ -47716,7 +48159,8 @@ function createMobileCompanionSection(api) {
       void api.mobile.respondPairing("read", pairing.code, pairing.id);
     });
     controlBtn.addEventListener("click", () => {
-      if (trustInput.checked)
+      if (pairing.trustedName) void api.mobile.respondPairing("control", pairing.code, pairing.id);
+      else if (trustInput.checked)
         void api.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
     });
     denyBtn.addEventListener("click", () => {
@@ -47731,14 +48175,17 @@ function createMobileCompanionSection(api) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
+          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
-        el(
-          "label",
-          { class: "checkbox-label" },
-          trustInput,
-          " The Copse Local Root is installed and trusted on this phone"
-        ),
+        ...pairing.trustedName ? [] : [
+          el(
+            "label",
+            { class: "checkbox-label" },
+            trustInput,
+            " The Copse Local Root is installed and trusted on this phone"
+          )
+        ],
         el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
       )
     );
@@ -47809,14 +48256,19 @@ function createMobileCompanionSection(api) {
     for (const device of state.devices) deviceList.append(deviceRow(device));
   }
   function applyState(state) {
+    lastState = state;
     enabledInput.checked = state.enabled;
     renderAddresses(state);
     renderConnection(state);
+    renderPublicName(state);
     renderPairing(state);
     renderDevices(state);
     if (state.lastError) setInlineStatus(status, "error", state.lastError);
     else status.replaceChildren();
   }
+  addressSelect.addEventListener("change", () => {
+    if (lastState) renderAddresses(lastState);
+  });
   enabledInput.addEventListener("change", () => {
     void (async () => {
       if (enabledInput.checked) {
@@ -47832,6 +48284,31 @@ function createMobileCompanionSection(api) {
       await refresh();
     })();
   });
+  registerBtn.addEventListener("click", () => {
+    const invite = inviteInput.value.trim();
+    if (!invite) {
+      inviteInput.setAttribute("aria-invalid", "true");
+      inviteInput.focus();
+      return;
+    }
+    inviteInput.removeAttribute("aria-invalid");
+    void api.mobile.registerName(invite).then(() => {
+      if (lastState?.publicName.state !== "unregistered") inviteInput.value = "";
+    }).catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not get a name."));
+    });
+  });
+  inviteInput.addEventListener("input", () => {
+    inviteInput.removeAttribute("aria-invalid");
+  });
+  removeNameBtn.addEventListener("click", () => {
+    void api.mobile.removeName().catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not remove the name."));
+    });
+  });
+  recheckBtn.addEventListener("click", () => {
+    void api.mobile.recheckNameDns();
+  });
   async function refresh() {
     const state = await api.mobile.getState();
     applyState(state);
@@ -47841,7 +48318,7 @@ function createMobileCompanionSection(api) {
   });
   const root = el(
     "fieldset",
-    {},
+    { class: "mobile-companion" },
     el("legend", {}, "Mobile Companion"),
     el(
       "p",
@@ -47852,16 +48329,26 @@ function createMobileCompanionSection(api) {
     el("label", {}, "Network ", addressSelect),
     addressHint,
     connectionInfo,
+    nameCard,
     pairingHost,
     deviceList,
     status
   );
   return { root, refresh };
 }
+function formatTime(ms) {
+  return new Date(ms).toLocaleString(void 0, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 var init_mobile_companion_section = __esm({
   "src/renderer/views/setup/mobile-companion-section.ts"() {
     init_helpers();
     init_inline_status();
+    init_ipc_error_message();
   }
 });
 
@@ -55568,6 +56055,8 @@ function createStorageMaintenancePanel(api) {
       <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
     </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const savedData = qsRequired(element, "#storage-saved-data");
+  const containers = qsRequired(element, "#storage-containers");
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
   const days = qsRequired(element, "#storage-expiry-days");
@@ -55579,19 +56068,19 @@ function createStorageMaintenancePanel(api) {
     days.disabled = working || !state;
     for (const area of ["runs", "builds"]) {
       const summary = state?.areas.find((entry) => entry.area === area);
-      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+      qsRequired(savedData, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
     for (const action of CONTAINER_STORAGE_ACTIONS) {
       const container = state?.containers;
-      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+      qsRequired(containers, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
     }
   }
   function renderContainers() {
     const container = state?.containers;
     if (!container) return;
-    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
-    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
-    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    containers.hidden = !container.available && !container.error;
+    qsRequired(containers, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(containers, "#storage-container-breakdown");
     breakdown.replaceChildren();
     const rows = [
       ["Total allocated", container.totalBytes],
@@ -55618,7 +56107,7 @@ function createStorageMaintenancePanel(api) {
         el("dt", {}, label),
         el("dd", {}, bytes === null ? "Not reported" : formatByteSize(bytes))
       );
-    const images = qsRequired(element, "#storage-container-images");
+    const images = qsRequired(containers, "#storage-container-images");
     images.replaceChildren();
     for (const image of container.images)
       images.append(
@@ -55643,7 +56132,7 @@ function createStorageMaintenancePanel(api) {
       }
       days.value = String(next.retention.days);
       for (const summary of next.areas)
-        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+        qsRequired(savedData, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
     } catch (error62) {
       if (token === generation) status.textContent = errorMessage(error62);
     } finally {
@@ -56347,9 +56836,344 @@ var init_storage_section = __esm({
   }
 });
 
+// src/renderer/views/settings/mcp-server-editor.ts
+function secretRows(kind) {
+  const noun = kind === "env" ? "variable" : "header";
+  const list = el("div", { class: "mcp-editor-secret-list" });
+  const addButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    kind === "env" ? "Add variable" : "Add header"
+  );
+  const rows = [];
+  function addRow(key = "", stored = false) {
+    const keyInput = el("input", {
+      type: "text",
+      class: "mcp-editor-secret-key",
+      placeholder: kind === "env" ? "NAME" : "Header-Name",
+      "aria-label": kind === "env" ? "Variable name" : "Header name",
+      spellcheck: "false",
+      autocomplete: "off"
+    });
+    keyInput.value = key;
+    const valueInput = el("input", {
+      type: "password",
+      class: "mcp-editor-secret-value",
+      placeholder: stored ? "Saved value (unchanged)" : "Value",
+      "aria-label": kind === "env" ? `Value of ${key || "variable"}` : `Value of ${key || "header"}`,
+      autocomplete: "new-password"
+    });
+    const row = { key: keyInput, value: valueInput, stored };
+    const removeButton = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary ui-btn-compact mcp-editor-secret-remove",
+        "aria-label": `Remove ${noun}`,
+        title: `Remove ${noun}`
+      },
+      "\xD7"
+    );
+    const line = el("div", { class: "mcp-editor-secret-row" }, keyInput, valueInput, removeButton);
+    removeButton.addEventListener("click", () => {
+      rows.splice(rows.indexOf(row), 1);
+      line.remove();
+    });
+    keyInput.addEventListener("input", () => {
+      if (!row.stored) return;
+      row.stored = false;
+      valueInput.placeholder = "Value";
+    });
+    rows.push(row);
+    list.append(line);
+  }
+  addButton.addEventListener("click", () => {
+    addRow();
+    rows.at(-1)?.key.focus();
+  });
+  return {
+    root: el("div", { class: "mcp-editor-secrets" }, list, addButton),
+    entries: () => rows.map(
+      ({ key, value, stored }) => value.value === "" && stored ? { key: key.value } : { key: key.value, value: value.value }
+    ),
+    reset: (stored) => {
+      rows.splice(0);
+      list.replaceChildren();
+      for (const entry of stored) addRow(entry.key, true);
+    }
+  };
+}
+function labelled(text, control, hint) {
+  const label = el("label", {}, text, control);
+  if (hint !== void 0) label.append(el("span", { class: "field-hint" }, hint));
+  return label;
+}
+function createMcpServerEditor(host, api, onSaved) {
+  let editing;
+  const heading = el("h4", { class: "mcp-editor-heading" });
+  const nameInput = el("input", {
+    type: "text",
+    id: "mcp-editor-name",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "my-server"
+  });
+  const transportSelect = el(
+    "select",
+    { id: "mcp-editor-transport" },
+    el("option", { value: "stdio" }, "Local command"),
+    el("option", { value: "http" }, "Remote URL")
+  );
+  const commandInput = el("input", {
+    type: "text",
+    id: "mcp-editor-command",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "npx"
+  });
+  const argsInput = el("textarea", {
+    id: "mcp-editor-args",
+    rows: "3",
+    spellcheck: "false",
+    placeholder: "-y\n@modelcontextprotocol/server-everything"
+  });
+  const cwdInput = el("input", {
+    type: "text",
+    id: "mcp-editor-cwd",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const urlInput = el("input", {
+    type: "url",
+    id: "mcp-editor-url",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "https://example.com/mcp"
+  });
+  const env = secretRows("env");
+  const headers = secretRows("headers");
+  const envGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Environment variables"),
+    env.root
+  );
+  const headersGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Headers"),
+    headers.root
+  );
+  const stdioFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "stdio" },
+    labelled(
+      "Command",
+      commandInput,
+      "The program that starts the server, such as npx, uvx or a path."
+    ),
+    labelled("Arguments", argsInput, "One argument per line."),
+    labelled("Working directory (optional)", cwdInput),
+    envGroup
+  );
+  const httpFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "http" },
+    labelled(
+      "URL",
+      urlInput,
+      "Servers that use OAuth need no header: save, then choose Sign in on the server."
+    ),
+    headersGroup
+  );
+  const secretsHint = el(
+    "p",
+    { class: "field-hint mcp-editor-secrets-hint" },
+    "Values are saved as plain text in Copse\u2019s MCP config, readable only by your user account. To keep a key out of the file, enter ",
+    el("code", {}, "${env:NAME}"),
+    " and Copse reads it from its environment."
+  );
+  const status = el("span", { class: "lmstudio-test-status", id: "mcp-editor-status" });
+  const saveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary", id: "mcp-editor-save" },
+    "Save server"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary", id: "mcp-editor-cancel" },
+    "Cancel"
+  );
+  const fieldControls = {
+    name: nameInput,
+    command: commandInput,
+    cwd: cwdInput,
+    url: urlInput,
+    env: envGroup,
+    headers: headersGroup
+  };
+  host.replaceChildren(
+    heading,
+    labelled("Name", nameInput, "Tools appear to the agent as mcp__<name>__<tool>."),
+    labelled("Type", transportSelect),
+    stdioFields,
+    httpFields,
+    secretsHint,
+    el("div", { class: "settings-action-row" }, saveButton, cancelButton, status)
+  );
+  function clearInvalid() {
+    for (const control of Object.values(fieldControls)) control.removeAttribute("aria-invalid");
+    status.replaceChildren();
+  }
+  function syncTransport() {
+    const http = transportSelect.value === "http";
+    stdioFields.hidden = http;
+    httpFields.hidden = !http;
+  }
+  function input2() {
+    if (transportSelect.value === "http") {
+      return {
+        transport: "http",
+        name: nameInput.value,
+        url: urlInput.value,
+        headers: headers.entries()
+      };
+    }
+    const cwd = cwdInput.value.trim();
+    return {
+      transport: "stdio",
+      name: nameInput.value,
+      command: commandInput.value,
+      args: argsInput.value.split("\n").map((arg) => arg.trim()),
+      ...cwd ? { cwd } : {},
+      env: env.entries()
+    };
+  }
+  function open2(server) {
+    editing = server?.name;
+    heading.textContent = server ? `Edit ${server.name}` : "Add an MCP server";
+    nameInput.value = server?.name ?? "";
+    transportSelect.value = server?.transport ?? "stdio";
+    commandInput.value = server?.transport === "stdio" ? server.command : "";
+    argsInput.value = server?.transport === "stdio" ? server.args.join("\n") : "";
+    cwdInput.value = server?.transport === "stdio" ? server.cwd ?? "" : "";
+    urlInput.value = server?.transport === "http" ? server.url : "";
+    env.reset(server?.transport === "stdio" ? server.env : []);
+    headers.reset(server?.transport === "http" ? server.headers : []);
+    clearInvalid();
+    syncTransport();
+    host.hidden = false;
+    nameInput.focus();
+  }
+  function close() {
+    editing = void 0;
+    host.hidden = true;
+    clearInvalid();
+  }
+  async function save() {
+    clearInvalid();
+    saveButton.disabled = true;
+    status.textContent = "Saving\u2026";
+    try {
+      const result = await api.mcp.saveUserServer(input2(), editing);
+      if (!result.ok) {
+        const control = fieldControls[result.field];
+        control?.setAttribute("aria-invalid", "true");
+        setInlineStatus(status, "error", result.message);
+        const focusTarget = control instanceof HTMLInputElement ? control : control?.querySelector("input");
+        focusTarget?.focus();
+        return;
+      }
+      close();
+      onSaved(result.list);
+    } catch (error62) {
+      setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not save the server."));
+    } finally {
+      saveButton.disabled = false;
+    }
+  }
+  transportSelect.addEventListener("change", syncTransport);
+  saveButton.addEventListener("click", () => {
+    void save();
+  });
+  cancelButton.addEventListener("click", close);
+  host.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      target.removeAttribute("aria-invalid");
+      target.closest("[aria-invalid]")?.removeAttribute("aria-invalid");
+    }
+  });
+  host.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.target instanceof HTMLTextAreaElement) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
+    event.preventDefault();
+    void save();
+  });
+  host.hidden = true;
+  return { open: open2, close };
+}
+var init_mcp_server_editor = __esm({
+  "src/renderer/views/settings/mcp-server-editor.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+  }
+});
+
 // src/renderer/views/settings/mcp-section.ts
 function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadingsChanged) {
   let generation = 0;
+  let userServers;
+  const editor = createMcpServerEditor(qsRequired(overlay, "#mcp-server-editor"), api, (list) => {
+    userServers = list;
+    void refreshMcpServers();
+  });
+  function userServerFor(s2) {
+    if (userServers === void 0 || s2.source !== userServers.path) return void 0;
+    return userServers.servers.find((server) => server.name === s2.name);
+  }
+  function userServerButtons(server) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-edit-btn";
+    edit.textContent = "Edit";
+    edit.setAttribute("aria-label", `Edit ${server.name}`);
+    edit.addEventListener("click", () => {
+      editor.open(server);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-remove-btn";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${server.name}`);
+    remove.addEventListener("click", () => {
+      void removeUserServer(server.name);
+    });
+    return [edit, remove];
+  }
+  async function removeUserServer(name) {
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${name}?`,
+      detail: "Copse deletes it from its MCP config and stops it. Its tools stop being available.",
+      confirmLabel: "Remove",
+      danger: true
+    });
+    if (!confirmed) return;
+    const statusEl = qsRequired(overlay, "#mcp-reload-status");
+    try {
+      const result = await api.mcp.removeUserServer(name);
+      if (!result.ok) {
+        setInlineStatus(statusEl, "error", result.message);
+        return;
+      }
+      userServers = result.list;
+      editor.close();
+      await refreshMcpServers();
+    } catch (error62) {
+      setInlineStatus(statusEl, "error", ipcErrorMessage(error62, "Could not remove the server."));
+    }
+  }
   function mcpOriginChip(s2) {
     const labels = {
       user: "Your config",
@@ -56473,6 +57297,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const badge = s2.state === "connected" ? inlineStatus("filled", "connected") : s2.auth === "required" ? inlineStatus("warn", "sign-in required") : s2.state === "error" ? inlineStatus("error", "error") : s2.state === "disabled" ? inlineStatus("idle", "disabled") : s2.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row = document.createElement("div");
       row.className = `mcp-server-row mcp-state-${s2.state}`;
+      row.dataset["mcpServer"] = s2.name;
       const header = document.createElement("div");
       header.className = "mcp-server-header";
       const toggleLabel = document.createElement("label");
@@ -56512,6 +57337,8 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const authButton = mcpSignInButton(s2);
       if (authButton) header.append(authButton);
       header.append(permissionsButton);
+      const userServer = userServerFor(s2);
+      if (userServer) header.append(...userServerButtons(userServer));
       row.append(header);
       const statusDetail = s2.state === "connected" ? `${String(s2.toolCount)} tool(s)${s2.tools.length ? `: ${s2.tools.join(", ")}` : ""}` : s2.auth === "required" ? "Sign in to use this server's tools." : s2.error ?? "";
       let detailText = mcpSignInPending.has(s2.name) ? "Continue in your browser to finish signing in." : mcpSignInErrors.get(s2.name) ?? statusDetail;
@@ -56537,13 +57364,21 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
   async function refreshMcpServers() {
     const request = generation;
     try {
-      const statuses = await api.mcp.list();
-      if (request === generation) renderMcpServers(statuses);
+      const [statuses, list] = await Promise.all([
+        api.mcp.list(),
+        api.mcp.listUserServers().catch(() => void 0)
+      ]);
+      if (request !== generation) return;
+      userServers = list;
+      renderMcpServers(statuses);
     } catch {
       if (request !== generation) return;
       renderMcpServers([]);
     }
   }
+  qsRequired(overlay, "#mcp-add-btn").addEventListener("click", () => {
+    editor.open();
+  });
   function renderDeclaredMcpServers(declared) {
     const fieldset = qsRequired(overlay, "#mcp-declared-fieldset");
     const listEl = qsRequired(overlay, "#mcp-declared-list");
@@ -56673,6 +57508,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
     void api.mcp.reload().then((statuses) => {
       if (request !== generation) return;
       renderMcpServers(statuses);
+      void refreshMcpServers();
       void refreshCuratedServers();
       void refreshDeclaredMcpServers();
       const visible = statuses.filter((s2) => !s2.curated);
@@ -56706,6 +57542,8 @@ var init_mcp_section = __esm({
     init_helpers();
     init_icons();
     init_inline_status();
+    init_confirm_dialog();
+    init_mcp_server_editor();
   }
 });
 
@@ -64499,60 +65337,6 @@ var init_canvas_settings = __esm({
   }
 });
 
-// packages/agent/src/plugins/parallel-search-plugin.ts
-var PARALLEL_SEARCH_PLUGIN_ID, PARALLEL_SEARCH_TOOL_NAME, PARALLEL_SEARCH_MODE_SETTING_ID, PARALLEL_SEARCH_MODES, DEFAULT_PARALLEL_SEARCH_MODE, parallelSearchPlugin;
-var init_parallel_search_plugin = __esm({
-  "packages/agent/src/plugins/parallel-search-plugin.ts"() {
-    init_plugin_manifest();
-    PARALLEL_SEARCH_PLUGIN_ID = "copse.parallel-search";
-    PARALLEL_SEARCH_TOOL_NAME = "parallel_search";
-    PARALLEL_SEARCH_MODE_SETTING_ID = "mode";
-    PARALLEL_SEARCH_MODES = ["turbo", "basic", "advanced"];
-    DEFAULT_PARALLEL_SEARCH_MODE = "basic";
-    parallelSearchPlugin = definePlugin(
-      {
-        name: PARALLEL_SEARCH_PLUGIN_ID,
-        description: "Sends an objective and focused queries to Parallel\u2019s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this plugin.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: {
-          native: [PARALLEL_SEARCH_TOOL_NAME],
-          acpTools: [PARALLEL_SEARCH_TOOL_NAME]
-        },
-        ui: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ],
-        settings: {
-          [PARALLEL_SEARCH_MODE_SETTING_ID]: {
-            kind: "enum",
-            title: "Default search mode",
-            description: "Basic balances quality and latency. Turbo is fastest; Advanced spends more time on harder research.",
-            default: DEFAULT_PARALLEL_SEARCH_MODE,
-            options: PARALLEL_SEARCH_MODES
-          }
-        },
-        storage: { namespace: PARALLEL_SEARCH_PLUGIN_ID }
-      },
-      {
-        toolNames: [PARALLEL_SEARCH_TOOL_NAME],
-        uiContributions: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ]
-      }
-    );
-  }
-});
-
 // packages/agent/src/plugins/apple-development-plugin.ts
 var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
@@ -64997,7 +65781,11 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-ci-worktrees" },
     el("option", { value: "1" }, "1 \u2014 wait for prior work"),
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
-    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts"),
+    el("option", { value: "5" }, "5 live worktrees"),
+    el("option", { value: "10" }, "10 live worktrees"),
+    el("option", { value: "25" }, "25 live worktrees"),
+    el("option", { value: "unlimited" }, "Unlimited")
   );
   const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
   const matches = el("ul", { class: "automation-ci-matches", hidden: true });
@@ -65132,7 +65920,11 @@ function mountBranchCiEditor(options) {
     transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
     label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
-    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    const savedLimit = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    if (!Array.from(worktrees.options).some((option) => option.value === savedLimit)) {
+      worktrees.append(el("option", { value: savedLimit }, `${savedLimit} live worktrees`));
+    }
+    worktrees.value = savedLimit;
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
     matches.hidden = true;
     updateSummary();
@@ -65350,7 +66142,7 @@ function mountBranchCiEditor(options) {
         prompt: prompt.value,
         model: model.value || BEST_VALUE_CHAT_MODEL,
         enabled: enabled.checked,
-        maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+        maxLiveWorktrees: worktrees.value === "unlimited" ? "unlimited" : Number(worktrees.value)
       });
       return;
     }
@@ -65391,7 +66183,7 @@ function mountBranchCiEditor(options) {
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+      maxLiveWorktrees: worktrees.value === "unlimited" ? "unlimited" : Number(worktrees.value)
     };
     void api.automations.upsertBranchCi(projectId, input2).then(
       async () => {
@@ -65472,9 +66264,9 @@ function lastRunLabel(timestamp) {
   return `Last started ${new Date(timestamp).toLocaleString()}`;
 }
 function liveWorktreeLimit(value) {
-  if (value === "2") return 2;
-  if (value === "3") return 3;
-  return 1;
+  if (value === "unlimited") return "unlimited";
+  const limit = Number(value);
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 1;
 }
 function parseCronNumber(value, min, max) {
   if (!/^\d+$/.test(value)) return null;
@@ -65485,6 +66277,11 @@ function parseSimpleSchedule(cron) {
   const [minuteRaw, hourRaw, dayOfMonth, month, dayOfWeek, ...extra] = cron.trim().split(/\s+/);
   if (minuteRaw === void 0 || hourRaw === void 0 || dayOfMonth === void 0 || month === void 0 || dayOfWeek === void 0 || extra.length > 0 || month !== "*") {
     return null;
+  }
+  if (hourRaw === "*" && dayOfMonth === "*" && dayOfWeek === "*") {
+    if (minuteRaw === "*") return { repeat: "minute", hour: 0, minute: 0 };
+    const minute2 = parseCronNumber(minuteRaw, 0, 59);
+    if (minute2 !== null) return { repeat: "hourly", hour: 0, minute: minute2 };
   }
   const minute = parseCronNumber(minuteRaw, 0, 59);
   const hour = parseCronNumber(hourRaw, 0, 23);
@@ -65527,6 +66324,8 @@ function weekdayName(value) {
   return "Saturday";
 }
 function simpleScheduleDescription(schedule) {
+  if (schedule.repeat === "minute") return "Every minute";
+  if (schedule.repeat === "hourly") return `Every hour at minute ${twoDigits(schedule.minute)}`;
   const time3 = scheduleTime(schedule);
   if (schedule.repeat === "daily") return `Every day at ${time3}`;
   if (schedule.repeat === "weekdays") return `Every weekday at ${time3}`;
@@ -65597,6 +66396,8 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   const repeatSelect = el(
     "select",
     { class: "automation-input automation-repeat-select", required: true },
+    el("option", { value: "minute" }, "Every minute"),
+    el("option", { value: "hourly" }, "Every hour"),
     el("option", { value: "daily" }, "Every day"),
     el("option", { value: "weekdays" }, "Weekdays"),
     el("option", { value: "weekly" }, "Every week"),
@@ -65608,6 +66409,20 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     value: "09:00",
     required: true
   });
+  const hourlyMinuteInput = el("input", {
+    type: "number",
+    min: "0",
+    max: "59",
+    step: "1",
+    value: "0",
+    class: "automation-input automation-hourly-minute-input"
+  });
+  const hourlyMinuteLabel = el(
+    "label",
+    { class: "automation-label" },
+    "At minute",
+    hourlyMinuteInput
+  );
   const weeklyDaySelect = el("select", {
     class: "automation-input automation-weekly-day-select"
   });
@@ -65646,6 +66461,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       "div",
       { class: "automation-schedule-controls" },
       repeatLabel,
+      hourlyMinuteLabel,
       weeklyDayLabel,
       monthlyDayLabel,
       timeLabel
@@ -65668,7 +66484,11 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     { class: "automation-input automation-worktree-limit-select" },
     el("option", { value: "1" }, "1 \u2014 wait for prior work"),
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
-    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts"),
+    el("option", { value: "5" }, "5 live worktrees"),
+    el("option", { value: "10" }, "10 live worktrees"),
+    el("option", { value: "25" }, "25 live worktrees"),
+    el("option", { value: "unlimited" }, "Unlimited")
   );
   const permissionsFieldset = el("fieldset", { class: "automation-permissions" });
   const permissionFilterInput = el("input", {
@@ -65774,6 +66594,11 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     heading.hidden = false;
   }
   function selectedSimpleSchedule() {
+    if (repeatSelect.value === "minute") return { repeat: "minute", hour: 0, minute: 0 };
+    if (repeatSelect.value === "hourly") {
+      const minute2 = parseCronNumber(hourlyMinuteInput.value, 0, 59);
+      return minute2 === null ? null : { repeat: "hourly", hour: 0, minute: minute2 };
+    }
     const [hourRaw, minuteRaw] = timeInput.value.split(":");
     if (hourRaw === void 0 || minuteRaw === void 0) return null;
     const hour = parseCronNumber(hourRaw, 0, 23);
@@ -65797,6 +66622,8 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       if (repeatSelect.value === "custom" && customCron) return customCron;
       return null;
     }
+    if (schedule.repeat === "minute") return "* * * * *";
+    if (schedule.repeat === "hourly") return `${String(schedule.minute)} * * * *`;
     const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`;
     if (schedule.repeat === "daily") return `${prefix} * * *`;
     if (schedule.repeat === "weekdays") return `${prefix} * * 1-5`;
@@ -65807,9 +66634,14 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     const custom2 = repeatSelect.value === "custom";
     const weekly = repeatSelect.value === "weekly";
     const monthly = repeatSelect.value === "monthly";
-    timeLabel.hidden = custom2;
-    timeInput.disabled = custom2;
-    timeInput.required = !custom2;
+    const hourly = repeatSelect.value === "hourly";
+    const hideTime = custom2 || hourly || repeatSelect.value === "minute";
+    timeLabel.hidden = hideTime;
+    timeInput.disabled = hideTime;
+    timeInput.required = !hideTime;
+    hourlyMinuteLabel.hidden = !hourly;
+    hourlyMinuteInput.disabled = !hourly;
+    hourlyMinuteInput.required = hourly;
     weeklyDayLabel.hidden = !weekly;
     weeklyDaySelect.disabled = !weekly;
     weeklyDaySelect.required = weekly;
@@ -65831,6 +66663,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     repeatSelect.value = schedule.repeat;
     timeInput.value = scheduleTime(schedule);
+    hourlyMinuteInput.value = String(schedule.minute);
     if (schedule.repeat === "weekly") weeklyDaySelect.value = String(schedule.on);
     if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
     updateScheduleControls();
@@ -65960,7 +66793,13 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
     promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    const savedLimit = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    if (!Array.from(worktreeLimitSelect.options).some((option) => option.value === savedLimit)) {
+      worktreeLimitSelect.append(
+        el("option", { value: savedLimit }, `${savedLimit} live worktrees`)
+      );
+    }
+    worktreeLimitSelect.value = savedLimit;
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
@@ -66086,7 +66925,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
           el(
             "span",
             {},
-            `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
+            schedule.maxLiveWorktrees === "unlimited" ? "Unlimited live worktrees" : `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
           ),
           el(
             "span",
@@ -66222,6 +67061,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     updateScheduleControls();
   });
+  hourlyMinuteInput.addEventListener("input", updateScheduleControls);
   timeInput.addEventListener("input", updateScheduleControls);
   weeklyDaySelect.addEventListener("change", updateScheduleControls);
   monthlyDaySelect.addEventListener("change", updateScheduleControls);
@@ -66322,60 +67162,6 @@ var init_automation_plugin_settings = __esm({
       "Friday",
       "Saturday"
     ];
-  }
-});
-
-// src/renderer/views/parallel-search-plugin-settings.ts
-function createParallelSearchPluginSettings(api, options) {
-  const root = document.createElement("div");
-  root.className = "parallel-search-plugin-settings";
-  const reportKeyPresence = async () => {
-    const onKeyPresence = options?.onKeyPresence;
-    if (!onKeyPresence) return;
-    onKeyPresence(await api.settings.getKey("parallel"));
-  };
-  const heading = document.createElement("div");
-  heading.className = "plugin-settings-heading";
-  heading.textContent = "Credentials";
-  const keys = createApiKeysSection(api, {
-    legend: "Parallel account",
-    providers: ["parallel"],
-    validateOnInput: false
-  });
-  keys.root.classList.add("parallel-search-key-fieldset");
-  const note = document.createElement("p");
-  note.className = "parallel-search-notice";
-  note.textContent = "Copse calls api.parallel.ai directly\u2014no MCP server. Search objectives and queries leave this device. Zero Data Retention is not implied by this switch; it must be enabled in your Parallel account or contract.";
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "parallel-search-save-btn";
-  saveButton.textContent = "Save API key";
-  saveButton.addEventListener("click", () => {
-    saveButton.disabled = true;
-    void keys.saveKeys().then(reportKeyPresence).finally(() => {
-      saveButton.disabled = false;
-    });
-  });
-  const clearButton = document.createElement("button");
-  clearButton.type = "button";
-  clearButton.className = "parallel-search-clear-btn";
-  clearButton.textContent = "Clear saved key";
-  clearButton.addEventListener("click", () => {
-    clearButton.disabled = true;
-    void api.settings.setKey("parallel", "").then(() => keys.refreshKeyStatus()).then(reportKeyPresence).finally(() => {
-      clearButton.disabled = false;
-    });
-  });
-  const actions = document.createElement("div");
-  actions.className = "parallel-search-actions";
-  actions.append(saveButton, clearButton);
-  root.append(heading, keys.root, note, actions);
-  void keys.refreshKeyStatus().then(reportKeyPresence);
-  return root;
-}
-var init_parallel_search_plugin_settings = __esm({
-  "src/renderer/views/parallel-search-plugin-settings.ts"() {
-    init_api_keys_section();
   }
 });
 
@@ -67279,7 +68065,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     const track = document.createElement("span");
     track.className = "toggle-switch-track";
     track.setAttribute("aria-hidden", "true");
-    let credentialLocked = false;
     toggle.addEventListener("change", () => {
       const settingsOpen = row.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
@@ -67291,7 +68076,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       }).catch(() => {
         toggle.checked = !toggle.checked;
       }).finally(() => {
-        toggle.disabled = credentialLocked && !toggle.checked;
+        toggle.disabled = false;
       });
     });
     toggleLabel.append(toggle, track);
@@ -67578,25 +68363,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
         createAppleDevelopmentPanel(store, api, {
           allowEnrollment: true,
           pluginEnabled: plugin.enabled
-        })
-      );
-    }
-    if (plugin.id === PARALLEL_SEARCH_PLUGIN_ID && plugin.contributions.ui.some(
-      (contribution) => contribution.level === 3 && contribution.slot === "settings-plugin-detail"
-    )) {
-      const gate = document.createElement("p");
-      gate.className = "field-hint plugin-credential-gate";
-      gate.hidden = true;
-      row.append(gate);
-      settingsFold.append(
-        createParallelSearchPluginSettings(api, {
-          onKeyPresence: (hasKey) => {
-            credentialLocked = !hasKey;
-            toggle.disabled = credentialLocked && !toggle.checked;
-            gate.hidden = hasKey;
-            gate.textContent = toggle.checked ? "Add a Parallel API key to let the agent use Parallel search." : "Add a Parallel API key to turn this plugin on.";
-            if (toggle.disabled) toggleLabel.title = "Add a Parallel API key to turn this plugin on";
-          }
         })
       );
     }
@@ -68113,10 +68879,8 @@ var init_packs_section = __esm({
     init_advisor_strategy_plugin();
     init_automations_plugin();
     init_canvas_settings();
-    init_parallel_search_plugin();
     init_apple_development_plugin();
     init_automation_plugin_settings();
-    init_parallel_search_plugin_settings();
     init_apple_development_panel();
     init_model_picker();
     init_model_options();
@@ -68794,9 +69558,10 @@ var init_mcp_markup = __esm({
               Model Context Protocol servers expose external tools to the agent. This section is
               the whole picture of what Copse talks to over MCP, servers you configured, servers
               the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Configure your own in <code>.cursor/mcp.json</code> (project),
-              <code>.mcp.json</code> (project), or <code>~/.cursor/mcp.json</code> (global), then
-              reload. Plugins are installed and turned on under Customise.
+              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
+              its own config. It also reads <code>.cursor/mcp.json</code> and
+              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
+              you edit yourself. Plugins are installed and turned on under Customise.
             </p>
 
             <fieldset>
@@ -68807,11 +69572,15 @@ var init_mcp_markup = __esm({
                 Off servers are not started on reload.
               </p>
               <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-primary" id="mcp-add-btn">
+                  Add server
+                </button>
                 <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
                   Reload servers
                 </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
+              <div id="mcp-server-editor" class="mcp-server-editor" hidden></div>
             </fieldset>
 
             <fieldset id="mcp-declared-fieldset" hidden>
@@ -69336,7 +70105,7 @@ var init_experimental_markup = __esm({
                 creation can take a few minutes.
               </p>
               <p class="field-hint">
-                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+                Enable Animated explainers in Canvas and explainers' plugin settings below.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
@@ -69401,6 +70170,20 @@ var init_experimental_markup = __esm({
                 Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
                 External coding agents run in the container with their selected API key, or, if you opt in
                 per run, your Codex or Gemini sign-in copied into the container.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="planModeEnabled" />
+                Show "Start planning" in the message box
+              </label>
+              <p class="field-hint">
+                Breaks a task into a living plan with explicit steps and acceptance criteria before
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
               </p>
             </fieldset>
 
@@ -69471,6 +70254,7 @@ var init_experimental_markup = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "planModeEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true }
     ];
@@ -69761,7 +70545,7 @@ function mountSettingsDialog(store, api) {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -69799,6 +70583,7 @@ function mountSettingsDialog(store, api) {
       </div>
     </div>
   `;
+  overlay.setAttribute("aria-labelledby", "settings-dialog-title");
   bindSettingsDialog(overlay);
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields);
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
@@ -70228,11 +71013,156 @@ var init_announcement_catalog = __esm({
   }
 });
 
+// src/shared/store/store.ts
+function sameItems(a4, b2) {
+  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
+}
+function createStore(initial) {
+  let state = {
+    workspaceRoot: null,
+    projects: [],
+    projectGroups: [],
+    activeProjectId: null,
+    expandedProjectId: null,
+    threads: [],
+    backgroundThreads: [],
+    activeThreadId: null,
+    panelTab: "file",
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+    filesPaneOpen: false,
+    rightPanelMode: "explorer",
+    rightPanelMaximized: false,
+    projectsPaneOpen: true,
+    layout: { ...DEFAULT_LAYOUT },
+    theme: "dark",
+    themePreference: DEFAULT_THEME_PREFERENCE,
+    fontSize: 14,
+    uiScale: 1,
+    animateAgentAvatars: true,
+    conciseThreadsEnabled: true,
+    autoPortraitRightPanel: true,
+    rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
+    openLinksInBuiltInBrowser: true,
+    developerMode: false,
+    ...initial
+  };
+  const listeners = {
+    message_added: /* @__PURE__ */ new Set(),
+    message_queued: /* @__PURE__ */ new Set(),
+    message_token: /* @__PURE__ */ new Set(),
+    message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
+    message_done: /* @__PURE__ */ new Set(),
+    tool_call_started: /* @__PURE__ */ new Set(),
+    tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
+    thread_status_changed: /* @__PURE__ */ new Set(),
+    agent_activity: /* @__PURE__ */ new Set(),
+    threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
+    thread_draft_changed: /* @__PURE__ */ new Set(),
+    new_thread_opened: /* @__PURE__ */ new Set(),
+    explorer_reveal: /* @__PURE__ */ new Set(),
+    workspace_changed: /* @__PURE__ */ new Set(),
+    projects_changed: /* @__PURE__ */ new Set(),
+    git_change_navigate: /* @__PURE__ */ new Set(),
+    roadmap_reveal: /* @__PURE__ */ new Set(),
+    thread_plan_open: /* @__PURE__ */ new Set(),
+    thread_plan_changed: /* @__PURE__ */ new Set(),
+    browser_url_requested: /* @__PURE__ */ new Set(),
+    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
+    pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
+    settings_changed: /* @__PURE__ */ new Set(),
+    theme_changed: /* @__PURE__ */ new Set(),
+    staged_diffs_changed: /* @__PURE__ */ new Set(),
+    usage_updated: /* @__PURE__ */ new Set(),
+    context_updated: /* @__PURE__ */ new Set(),
+    todos_changed: /* @__PURE__ */ new Set(),
+    review_changed: /* @__PURE__ */ new Set(),
+    hook_card_added: /* @__PURE__ */ new Set(),
+    comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
+    git_branch_changed: /* @__PURE__ */ new Set(),
+    thread_checkout_changed: /* @__PURE__ */ new Set(),
+    composer_draft_flush: /* @__PURE__ */ new Set(),
+    agent_task_selected: /* @__PURE__ */ new Set(),
+    shell_tab_activated: /* @__PURE__ */ new Set(),
+    request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
+  };
+  function on2(event, handler) {
+    listeners[event].add(handler);
+    return () => {
+      listeners[event].delete(handler);
+    };
+  }
+  function emit(event, ...args) {
+    listeners[event].forEach((handler) => {
+      handler(...args);
+    });
+  }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check2 = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check2);
+    return () => {
+      selections.delete(check2);
+    };
+  }
+  function setState(partial2) {
+    state = { ...state, ...partial2 };
+    for (const check2 of [...selections]) {
+      if (selections.has(check2)) check2();
+    }
+  }
+  return { getState: () => state, setState, on: on2, emit, select };
+}
+var init_store = __esm({
+  "src/shared/store/store.ts"() {
+    init_types2();
+    init_layout();
+  }
+});
+
 // src/renderer/controller/panels.ts
 function syncFilesPaneDom(store) {
   if (typeof document === "undefined") return;
   const pane = document.getElementById("pane-files");
   if (pane) pane.hidden = !store.getState().filesPaneOpen;
+}
+function rightPanelShows(state, mode) {
+  return state.filesPaneOpen && state.rightPanelMode === mode;
+}
+function selectRightPanelMode(store, mode, listener) {
+  return store.select((state) => rightPanelShows(state, mode), listener);
+}
+function selectRightPanel(store, listener) {
+  return store.select((state) => state.filesPaneOpen ? state.rightPanelMode : null, listener);
 }
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
@@ -70260,8 +71190,6 @@ function toggleFilesPane(store) {
   });
   if (!open2) clearMaximizedOnClose(store);
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  if (open2) store.emit("right_panel_mode_changed");
 }
 function openRightPanel(store, mode) {
   const { filesPaneOpen, rightPanelMode } = store.getState();
@@ -70271,8 +71199,6 @@ function openRightPanel(store, mode) {
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function navigateToChange(store, path) {
   store.emit("git_change_navigate", path);
@@ -70302,13 +71228,10 @@ function toggleRightPanel(store, mode) {
     store.setState({ filesPaneOpen: false });
     clearMaximizedOnClose(store);
     syncFilesPaneDom(store);
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function ensureWorkspaceForPanel(api, store) {
   if (store.getState().workspaceRoot) return true;
@@ -72590,7 +73513,7 @@ async function openWorkspaceFile(store, api, path, reveal) {
       if (!isOwner()) preview.close();
     };
     unsubs.push(
-      store.on("panel_changed", checkOwner),
+      store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
       store.on("threads_changed", checkOwner),
       store.on("workspace_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
@@ -72624,9 +73547,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     rightPanelMode: "explorer",
     filesPaneOpen: true
   });
-  store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
@@ -72650,9 +73570,6 @@ function revealWorkspaceDirectory(store, path) {
     filesPaneOpen: true
   });
   store.emit("explorer_reveal", path);
-  store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function activateWorkspaceReference(store, api, path, kind, reveal) {
   if (kind === "directory") {
@@ -72664,6 +73581,7 @@ async function activateWorkspaceReference(store, api, path, kind, reveal) {
 var LANG;
 var init_files = __esm({
   "src/renderer/controller/files.ts"() {
+    init_store();
     init_active_thread_owner();
     init_panels();
     init_image_path();
@@ -72936,6 +73854,7 @@ export {
   appendToken,
   appendReasoning,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   setMessageContent,
   addMessageCanvasArtefact,
   addMessageVisualEvidence,
@@ -72983,13 +73902,13 @@ export {
   suspendNavigationWrites,
   markNavigationRestored,
   acceptRuntimeThreadMeta,
-  recordPersistedThread,
   flushProjectThreads,
   loadProjects,
   saveProjects,
   saveProjectGroups,
   invalidateProjectThreadLoads,
   loadThreads,
+  loadPersistedThread,
   awaitPendingThreadPersistence,
   attachAutosave,
   init_persistence,
@@ -73069,6 +73988,7 @@ export {
   init_automation_run_state,
   sidebarPrRefs,
   sidebarLastPromptAt,
+  isAutomationPendingStart,
   sidebarHasRun,
   init_sidebar_thread,
   projectDisplayName,
@@ -73154,10 +74074,15 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sameItems,
+  createStore,
+  init_store,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   init_active_thread_owner,
   syncFilesPaneDom,
+  selectRightPanelMode,
+  selectRightPanel,
   toggleRightPanelMaximized,
   isRightPanelMaximized,
   toggleProjectsPane,
