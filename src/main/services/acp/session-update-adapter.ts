@@ -236,9 +236,8 @@ export function sessionUpdateToStreamChunks(update: SessionUpdate): StreamChunk[
 function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
-      if (update.content.type === 'text' && !update.messageId) {
-        return { type: 'text', text: update.content.text }
-      }
+      // Preserve ACP provenance even without message ids: tool events are not
+      // assistant-message boundaries, and must not split streamed Markdown.
       return {
         type: 'acp_content',
         channel: 'message',

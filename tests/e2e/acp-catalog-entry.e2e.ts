@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildSync } from 'esbuild'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
@@ -32,9 +32,18 @@ agent({ name: 'catalog-entry-fixture' })
       sessionId: ctx.params.sessionId,
       update: {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'Catalog fixture turn completed.' },
+        messageId: 'answer',
+        content: { type: 'text', text: 'Catalog fixture turn completed.\\n\\n[Review](https://' },
       },
     })
+    for (const update of [
+      { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'Read fixture', kind: 'read', status: 'pending' },
+      { sessionUpdate: 'tool_call_update', toolCallId: 'read', status: 'completed' },
+      { sessionUpdate: 'agent_message_chunk', messageId: 'answer', content: { type: 'text', text: 'example.com) completed.' } },
+      { sessionUpdate: 'agent_message_chunk', messageId: 'next', content: { type: 'text', text: 'Separate ACP message.' } },
+    ]) {
+      await ctx.client.notify(methods.client.session.update, { sessionId: ctx.params.sessionId, update })
+    }
     return { stopReason: 'end_turn' }
   })
   .onNotification('session/cancel', () => {})
@@ -139,6 +148,13 @@ describe('manual ACP catalog entry', function () {
     const transcript = await $('.messages-list').getText()
     assert.ok(transcript.includes('Catalog fixture turn completed.'))
     // The completed response owns this assertion; workspace diff discovery is asynchronous.
-    await saveElementScreenshot('.msg-assistant', 'acp-copilot-fixture-turn.png')
+    const answers = await $$('.msg-assistant')
+    assert.equal(answers.length, 2, 'only the explicit new ACP id creates another message')
+    const first = answers[0]
+    const second = answers[1]
+    assert.ok(first && second)
+    await expect(first.$('a[href="https://example.com"]')).toHaveText('Review')
+    await expect(second).toHaveText(expect.stringContaining('Separate ACP message.'))
+    await saveElementScreenshot('.messages-list', 'acp-message-link-continuation.png')
   })
 })
