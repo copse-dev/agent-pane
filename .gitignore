@@ -17,6 +17,8 @@ assets/icons/**/app.iconset/
 assets/icons/app.icns
 assets/icons/*/app.icns
 vendor/gortex/
+vendor/remote-watcher/
+native/remote-watcher/target/
 .tmp/
 .DS_Store
 *.log
