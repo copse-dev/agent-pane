@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-PX45IM5S.js";
+} from "./chunks/chunk-6F55QCCP.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -7319,7 +7319,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-LLPS4C62.js").then(async (main) => {
+    void import("./chunks/main-5LAUK234.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
