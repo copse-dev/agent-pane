@@ -99,6 +99,22 @@ Repeated samples from one model must not be described as cross-model review.
 
 ### Techniques within a workflow
 
+Before broad test suites, run a bounded diagnostic spike: trace the relevant code
+path and use the smallest reproduction, probe, or focused test that can resolve the
+current uncertainty. Use that evidence to make the next useful change. Broaden
+validation when focused results or the affected scope justify it, and still run
+required project gates before marking the work ready.
+
+When a broad suite would take too long locally, agents may create a draft PR after
+focused investigation and checks, using available cloud CI resources for suitable
+suites. Cover platform, native-device, visual, and other gaps with focused on-device
+testing wherever CI is insufficient or additional evidence is needed. The PR's
+Validation section must explicitly cite this draft/cloud-validation route, explain
+why it was chosen, list local results and deferred commands, link cloud runs, and
+record on-device evidence or remaining work. Inspect cloud results and resolve
+failures; keep the PR draft until required checks and device evidence pass. Existing
+publication permissions and spend approvals still apply.
+
 Profiling, test-first fixes, competing prototypes, parallel exploration, isolated
 implementation workers, decision logs and session handoffs are techniques rather
 than separate mandatory playbooks. Select one to resolve an identified uncertainty,

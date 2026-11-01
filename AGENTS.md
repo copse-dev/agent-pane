@@ -60,6 +60,16 @@ runs type-unaware ESLint; re-read any file it rewrites.
 
 ### Before committing
 
+**Draft/cloud-validation exception:** When a broad suite would take too long locally, agents may
+commit and open a draft PR after focused investigation and checks, deferring suitable suites to
+available cloud CI resources. The PR's Validation section must explicitly cite this route, explain
+why it was chosen, list local results and deferred commands, link cloud runs, and record on-device
+evidence or remaining work. Run focused on-device checks wherever CI is insufficient or additional
+evidence is needed, including platform, native-device and visual behavior. Inspect cloud results
+and resolve failures; keep the PR draft until required gates and device evidence pass. This changes
+where and when validation runs, not which gates must pass. Publication permissions and spend
+approvals still apply.
+
 Rebase onto the PR's base (normally `origin/main`). Run the full **`pnpm run check`** when:
 
 - the oracle reports `LOW` confidence or `broad` coverage;
