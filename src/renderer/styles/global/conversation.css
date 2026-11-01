@@ -81,7 +81,10 @@
      column from narrowing mid-stream (a visible horizontal reflow per message). */
   scrollbar-gutter: stable;
   padding: var(--spacing-lg) var(--spacing-xl);
-  padding-bottom: calc(var(--spacing-lg) + var(--selection-reply-space, 0px));
+  /* The breathing room under the last message is the scroll-to-bottom dock in
+     .conversation-scroll, outside this scrollport. Padding here would be space
+     scrolled text passes through, which is where the button used to sit. */
+  padding-bottom: var(--selection-reply-space, 0px);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -250,8 +253,14 @@
   overflow-wrap: anywhere;
 }
 .conversation-scroll {
+  /* Scroll-to-bottom docks in a band below the transcript's scrollport, on the
+     composer's (or the queued panel's) top edge. The band never scrolls, so the
+     button cannot cover a word of the transcript at any width or scroll offset;
+     floating it over the scrollport hid the answer it was offering to reveal. */
+  --scroll-to-bottom-size: 28px;
   position: relative;
   flex: 1;
+  padding-bottom: calc(var(--scroll-to-bottom-size) + 2 * var(--spacing-xs));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -271,13 +280,26 @@
     transparent 100%
   );
 }
+/* While the reader is scrolled up, the transcript runs on past the scrollport's
+   bottom edge. Feather that edge (mirroring the top one) so a cut-off line or
+   bubble reads as "more below" instead of a hard slice above the docked button.
+   Only then: pinned to the bottom, the last line sits on that edge in full. */
+.conversation-scroll:has(> .scroll-to-bottom:not([hidden]))::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 calc(var(--scroll-to-bottom-size) + 2 * var(--spacing-xs));
+  height: var(--spacing-lg);
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(0deg, var(--chat-gradient-bottom) 0%, transparent 100%);
+}
 .scroll-to-bottom {
   position: absolute;
   left: 50%;
-  bottom: var(--spacing-md);
+  bottom: var(--spacing-xs);
   transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+  width: var(--scroll-to-bottom-size);
+  height: var(--scroll-to-bottom-size);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -291,7 +313,10 @@
   color: var(--text-on-accent);
   line-height: 1;
   cursor: pointer;
-  box-shadow: var(--shadow-md);
+  /* Docked in its band rather than floating over text: a small shadow that
+     fits the band (.conversation-scroll clips it, and a --shadow-md blur
+     would be cut off in a hard line above the queued panel). */
+  box-shadow: var(--shadow-sm);
   z-index: 4;
   transition: background 0.15s;
 }

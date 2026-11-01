@@ -10,6 +10,10 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
+import {
+  scrollToBottomTextOverlaps,
+  waitForTranscriptScrollSettled,
+} from './helpers/scroll-to-bottom.ts'
 
 const SCROLL_PIN_THRESHOLD_PX = 48
 const STREAMING_PROMPT = 'Please write a detailed follow-up about the implementation plan.'
@@ -73,9 +77,62 @@ describe('scroll to bottom', () => {
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
 
+    await waitForTranscriptScrollSettled(true)
     expect(await isScrollToBottomVisible()).toBe(true)
     expect(await isNearBottom()).toBe(false)
+    expect(await scrollToBottomTextOverlaps()).toEqual([])
     await saveAppScreenshot('scroll-to-bottom-scrolled-up.png')
+  })
+
+  it('docks scroll-to-bottom on the composer clear of transcript text at narrow widths', async () => {
+    resetUserData()
+    seedScrollToBottomFixture(process.cwd())
+    await browser.reloadSession()
+
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
+    for (const width of [1280, 900, 640]) {
+      await browser.execute((w) => {
+        const app = document.getElementById('app')
+        if (!app) throw new Error('app not found')
+        app.style.width = `${String(w)}px`
+      }, width)
+      // The top, the middle and the last offset that still shows the button.
+      const { clientHeight, scrollHeight } = await getScrollMetrics()
+      const last = scrollHeight - clientHeight - SCROLL_PIN_THRESHOLD_PX - 1
+      expect(last).toBeGreaterThan(0)
+      for (const top of [0, Math.round(last / 2), last]) {
+        await browser.execute((t) => {
+          const list = document.querySelector('.messages-list')
+          if (!(list instanceof HTMLElement)) throw new Error('messages-list not found')
+          list.scrollTop = t
+        }, top)
+        await waitForTranscriptScrollSettled(true)
+        const overlaps = await scrollToBottomTextOverlaps()
+        expect({ width, top, overlaps }).toEqual({ width, top, overlaps: [] })
+      }
+      const geometry = await browser.execute(() => {
+        const btn = document.querySelector('.scroll-to-bottom')
+        const list = document.querySelector('.messages-list')
+        const composer = document.getElementById('input-bar')
+        if (!btn || !list || !composer) return null
+        const b = btn.getBoundingClientRect()
+        return {
+          belowScrollport: b.top - list.getBoundingClientRect().bottom,
+          aboveComposer: composer.getBoundingClientRect().top - b.bottom,
+          centred: Math.abs(
+            b.left +
+              b.width / 2 -
+              (composer.getBoundingClientRect().left + composer.getBoundingClientRect().width / 2),
+          ),
+        }
+      })
+      if (!geometry) throw new Error('scroll-to-bottom geometry not found')
+      // Below the scrollport, resting just above the composer's top edge.
+      expect(geometry.belowScrollport).toBeGreaterThanOrEqual(0)
+      expect(geometry.aboveComposer).toBeGreaterThanOrEqual(0)
+      expect(geometry.aboveComposer).toBeLessThanOrEqual(8)
+      expect(geometry.centred).toBeLessThanOrEqual(1)
+    }
   })
 
   it('paints scroll-to-bottom as an accent fill with a readable glyph in both themes', async () => {
@@ -88,17 +145,19 @@ describe('scroll to bottom', () => {
       const current = await browser.execute(() => document.documentElement.dataset['theme'])
       if (current !== theme) await switchTheme(theme)
       await scrollMessagesListToTop()
+      await waitForTranscriptScrollSettled(true)
       expect(await isScrollToBottomVisible()).toBe(true)
+      expect(await scrollToBottomTextOverlaps()).toEqual([])
 
       // White on an 80% --accent measured 2.91:1 in dark. The button is a fill
       // carrying the label tier now: --accent-fill + --text-on-accent, opaque,
-      // floated on the shared --shadow-md rather than a one-off shadow.
+      // docked on the shared --shadow-sm rather than a one-off shadow.
       const paint = await browser.execute(() => {
         const btn = document.querySelector('.scroll-to-bottom')
         if (!(btn instanceof HTMLElement)) return null
         const probe = document.createElement('div')
         probe.style.cssText =
-          'position:absolute;visibility:hidden;background:var(--accent-fill);color:var(--text-on-accent);box-shadow:var(--shadow-md)'
+          'position:absolute;visibility:hidden;background:var(--accent-fill);color:var(--text-on-accent);box-shadow:var(--shadow-sm)'
         document.body.append(probe)
         const expected = getComputedStyle(probe)
         const actual = getComputedStyle(btn)
@@ -111,7 +170,12 @@ describe('scroll to bottom', () => {
         probe.remove()
         return result
       })
-      expect(paint).toEqual({ fill: true, label: true, shadow: true, opacity: '1' })
+      expect(paint).toEqual({
+        fill: true,
+        label: true,
+        shadow: true,
+        opacity: '1',
+      })
       const rest = await fillContrast('.scroll-to-bottom')
       if (!rest) throw new Error('scroll-to-bottom not found')
       expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
@@ -238,6 +302,8 @@ describe('scroll to bottom', () => {
     await browser.pause(400)
 
     expect(await isScrollToBottomVisible()).toBe(true)
+    // Streamed text keeps landing below; the docked button still covers none of it.
+    expect(await scrollToBottomTextOverlaps()).toEqual([])
     const firstQuestionVisible = await browser.execute(() => {
       const firstUser = document.querySelector('.messages-list .msg-user')
       if (!(firstUser instanceof HTMLElement)) return false

@@ -4,6 +4,10 @@ import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  scrollToBottomTextOverlaps,
+  waitForTranscriptScrollSettled,
+} from './helpers/scroll-to-bottom.ts'
 
 const FIRST_PROMPT = 'Suggest how to make this module’s error handling clearer.'
 const QUEUED_PROMPTS = [
@@ -82,7 +86,10 @@ describe('queued chats stay pinned to the bottom', function () {
       const list = document.querySelector('.messages-list')
       if (list) list.scrollTop = 0
     })
-    await browser.pause(300)
+    // Settled, not paused: the scroll handler shows the jump button, and the
+    // capture waits for position, size and button to stop moving.
+    await waitForTranscriptScrollSettled(true)
+    expect(await browser.execute(() => document.querySelector('.messages-list')?.scrollTop)).toBe(0)
 
     const panelVisibleAfterScroll = await browser.execute(() => {
       const panel = document.querySelector('.conversation-queued')
@@ -91,6 +98,9 @@ describe('queued chats stay pinned to the bottom', function () {
       return rect.height > 0 && rect.bottom <= window.innerHeight + 1
     })
     expect(panelVisibleAfterScroll).toBe(true)
+    // The jump button docks between the transcript and the queued panel; it
+    // must not cover a word of either.
+    expect(await scrollToBottomTextOverlaps()).toEqual([])
 
     await saveAppScreenshot('queued-pinned-scrolled-top.png')
     await scenario.release('module-refactor')
