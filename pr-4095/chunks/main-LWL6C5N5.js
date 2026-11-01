@@ -20289,12 +20289,13 @@ function hydrationFailureEl() {
     el("span", { class: "conversation-hydrating-label" }, "Couldn\u2019t load the conversation.")
   );
 }
-function mountConversation(root, store2, api2) {
+function mountConversation(root, store2, api2, options = {}) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
   const todoHost = el("div", { class: "conversation-todos-host" });
-  const archiveReview = createThreadArchiveReview(store2, api2);
-  const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
+  const desktop = options.host !== "remote";
+  const archiveReview = desktop ? createThreadArchiveReview(store2, api2) : null;
+  const appleDevelopmentHost = desktop ? createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false }) : null;
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
   let agentNames = /* @__PURE__ */ new Map();
   let agentNamesRequested = false;
@@ -20313,19 +20314,19 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  const appleSuggestions = mountAppleProjectSuggestions(
+  const appleSuggestions = desktop ? mountAppleProjectSuggestions(
     store2,
     api2,
-    () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
-  );
-  const environmentSetupOffer = mountEnvironmentSetupOffer(store2, api2);
+    () => appleDevelopmentHost?.dispatchEvent(new Event("apple-development-refresh"))
+  ) : null;
+  const environmentSetupOffer = desktop ? mountEnvironmentSetupOffer(store2, api2) : null;
+  if (appleSuggestions) scrollArea.append(appleSuggestions.element);
+  if (environmentSetupOffer) scrollArea.append(environmentSetupOffer.element);
+  if (appleDevelopmentHost) scrollArea.append(appleDevelopmentHost);
   scrollArea.append(
-    appleSuggestions.element,
-    environmentSetupOffer.element,
-    appleDevelopmentHost,
     todoHost,
     list,
-    archiveReview.element,
+    ...archiveReview ? [archiveReview.element] : [],
     scrollToBottomBtn
   );
   const expandedConciseTurns = /* @__PURE__ */ new Set();
@@ -21518,7 +21519,7 @@ function mountConversation(root, store2, api2) {
   }
   function finishThreadChrome(thread) {
     syncTodoPanel();
-    appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"));
+    appleDevelopmentHost?.dispatchEvent(new Event("apple-development-refresh"));
     syncReviewReportCard();
     syncComparisonPanel();
     if (thread) {
@@ -21887,7 +21888,7 @@ function mountConversation(root, store2, api2) {
   syncFromStore();
   return () => {
     disposed = true;
-    archiveReview.dispose();
+    archiveReview?.dispose();
     selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
@@ -21900,8 +21901,8 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
-    appleSuggestions.destroy();
-    environmentSetupOffer.destroy();
+    appleSuggestions?.destroy();
+    environmentSetupOffer?.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u3) => {
       u3();
@@ -58916,7 +58917,9 @@ var init_input_bar = __esm({
 // src/renderer/views/chat-surface.ts
 function mountChatSurface(conversation, input, store2, api2, options = {}) {
   const composer = mountInputBar(input, store2, api2, options);
-  const unmountConversation = mountConversation(conversation, store2, api2);
+  const unmountConversation = mountConversation(conversation, store2, api2, {
+    host: options.transport ? "remote" : "desktop"
+  });
   return {
     ...composer,
     unmount() {
