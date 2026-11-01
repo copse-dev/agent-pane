@@ -68,6 +68,7 @@ import {
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { AutomationPermission } from '@shared/types'
@@ -3328,12 +3329,26 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root, readDir) => {
-      const granted = await runWithActiveRunIdentity('thread-audit', () =>
+      // A turn of the logged project: the covered read is recorded on the
+      // turn's own project.
+      const inTurn = <T>(fn: () => Promise<T>): Promise<T> =>
+        threadExecutionContextStorage.run(
+          {
+            projectId: 'proj-read-outside',
+            threadId: 'thread-audit',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => runWithActiveRunIdentity('thread-audit', fn),
+        )
+      const granted = await inTurn(() =>
         runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
       assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
-      await runWithActiveRunIdentity('thread-audit', () =>
+      await inTurn(() =>
         runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
       )
 
