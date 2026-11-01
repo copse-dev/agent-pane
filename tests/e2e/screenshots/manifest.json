@@ -2397,6 +2397,14 @@
       "sha256": "d95fe93a6dc31112cc299ab825a03de5bc45cdd2a05ea9992409c82fdb3ac7cc",
       "bytes": 159533
     },
+    "mention-picker-scrolled.png": {
+      "sha256": "f191b47baeb9b3a6207c0c911ed1613c6643e7c7c543a3ebc76e571c6b991b17",
+      "bytes": 356809
+    },
+    "mention-picker-top.png": {
+      "sha256": "a40c75f723cfa52b900d740ac7873795df5960b44450a676d708404e600af2dd",
+      "bytes": 357618
+    },
     "mermaid-diagram-agent-loop.png": {
       "sha256": "9ce03bdbd179a754dc7c11acf3d253d953193167f0054f8f23df3e98b79e28d1",
       "bytes": 104155
