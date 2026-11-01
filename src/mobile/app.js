@@ -1,6 +1,8 @@
 import { renderMessageContent } from './message-content.js'
 import { installHighlighterBackend } from '../renderer/markdown/highlighter-backend.ts'
 import { installComposerFocus } from './composer-focus.js'
+import { RemoteChatClient } from '../renderer/remote/client.ts'
+import { mobileTranscriptMessages } from '../main/services/mobile/mobile-transcript.ts'
 
 const pair = document.getElementById('pair')
 const activity = document.getElementById('activity')
@@ -43,10 +45,134 @@ const composer = document.getElementById('composer')
 const messageInput = document.getElementById('message')
 const actionStatus = document.getElementById('action-status')
 const { focusComposer, revealComposer } = installComposerFocus()
+const remote = new RemoteChatClient(api)
+const nextPrompt = document.getElementById('next-prompt')
+let remoteRefresh = false
+let remoteGeneration = 0
+let liveMessages = null
+const connection = document.getElementById('remote-connection')
+
+function selectChatPanel(name) {
+  for (const panel of ['chat', 'plan', 'mac']) {
+    document.getElementById(`${panel}-panel`).hidden = panel !== name
+    document.getElementById(`${panel}-tab`).setAttribute('aria-pressed', String(panel === name))
+  }
+}
+for (const panel of ['chat', 'plan', 'mac']) {
+  document.getElementById(`${panel}-tab`).addEventListener('click', () => selectChatPanel(panel))
+}
+
+function renderRemoteDetails(live) {
+  document.getElementById('remote-model').textContent = live.model || 'Desktop model'
+  const todos = document.getElementById('remote-todos')
+  const items = (live.todos || []).map((todo) => {
+    const item = element('div', 'remote-todo')
+    item.dataset.complete = String(todo.status === 'completed')
+    item.append(
+      element(
+        'span',
+        '',
+        todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '◉' : '○',
+      ),
+      element('span', '', todo.content),
+    )
+    return item
+  })
+  todos.replaceChildren(
+    ...(items.length ? items : [element('p', 'hint', 'No plan for this chat yet.')]),
+  )
+  const tools = document.getElementById('remote-tools')
+  const calls = live.messages.flatMap((message) => message.toolCalls).slice(-30)
+  const cards = calls.map((tool) => {
+    const card = element('details', 'remote-tool')
+    card.append(element('summary', '', tool.name))
+    const output = tool.result
+    card.append(
+      element(
+        'pre',
+        '',
+        typeof output === 'string' ? output : 'Tool activity is running on your Mac.',
+      ),
+    )
+    return card
+  })
+  tools.replaceChildren(
+    ...(cards.length ? cards : [element('p', 'hint', 'No tool activity in this chat yet.')]),
+  )
+}
+
+messageInput.addEventListener('input', () => {
+  nextPrompt.disabled = Boolean(messageInput.value.trim())
+})
+
+nextPrompt.addEventListener('click', () => {
+  if (!selected || !nextPrompt.textContent || messageInput.value.trim()) return
+  messageInput.value = nextPrompt.textContent
+  remote.spend(selected.threadId)
+  nextPrompt.hidden = true
+  focusComposer(messageInput)
+})
+messageInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab' && !event.shiftKey && !nextPrompt.hidden && !messageInput.value) {
+    event.preventDefault()
+    nextPrompt.click()
+  }
+})
+
+async function refreshRemoteThread() {
+  const row = selected
+  if (!token || !row || access !== 'control' || remoteRefresh) return
+  remoteRefresh = true
+  const generation = ++remoteGeneration
+  try {
+    const live = await remote.thread(row.projectId, row.threadId)
+    if (selected !== row) return
+    if (!live) {
+      liveMessages = null
+      connection.textContent = 'Saved view'
+      connection.dataset.connected = 'false'
+      nextPrompt.hidden = true
+      return
+    }
+    connection.textContent = '● Connected'
+    connection.dataset.connected = 'true'
+    renderRemoteDetails(live)
+    const list = mobileTranscriptMessages(live.messages)
+    liveMessages = { row, list }
+    const signature = JSON.stringify([runId, list])
+    if (signature !== messageSignature) {
+      messageSignature = signature
+      await highlighterReady
+      if (selected !== row) return
+      renderMessages(list)
+    }
+    document.getElementById('thread-status').textContent =
+      live.status === 'running'
+        ? 'Connected · Live output from your Mac.'
+        : 'Connected to your Mac.'
+    remoteRefresh = false
+    const hint = await remote.hint(live)
+    if (selected !== row || generation !== remoteGeneration) return
+    nextPrompt.textContent = hint || ''
+    nextPrompt.hidden = !hint
+    nextPrompt.disabled = Boolean(messageInput.value.trim())
+  } catch {
+    if (selected === row) {
+      liveMessages = null
+      connection.textContent = 'Reconnecting…'
+      connection.dataset.connected = 'false'
+      nextPrompt.hidden = true
+      document.getElementById('thread-status').textContent =
+        'Live connection unavailable · Retrying. Your draft is kept.'
+    }
+  } finally {
+    if (generation === remoteGeneration) remoteRefresh = false
+  }
+}
 
 function readDataUrl(file) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+    const reader = new window.FileReader()
     reader.onload = () =>
       typeof reader.result === 'string'
         ? resolve(reader.result)
@@ -518,7 +644,7 @@ async function loadMessageImage(image) {
   }
 }
 
-const messageImageObserver = new IntersectionObserver(
+const messageImageObserver = new window.IntersectionObserver(
   (entries) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue
@@ -624,6 +750,10 @@ async function refreshThread() {
     if (selected !== row) return
     access = data.access
     sessionId = data.sessionId
+    const sharedLink = document.getElementById('shared-chat-link')
+    sharedLink.hidden = access !== 'control'
+    sharedLink.href =
+      '/remote/?' + new URLSearchParams({ project: row.projectId, thread: row.threadId })
     runId = data.runId
     const composerWasHidden = composer.hidden
     composer.hidden = access !== 'control'
@@ -647,6 +777,7 @@ async function refreshThread() {
       if (promptArrived)
         document.getElementById('attention').scrollIntoView({ block: 'end', behavior: 'smooth' })
     }
+    if (liveMessages?.row === row) data.messages = liveMessages.list
     // A run ending changes how the last reply renders even when no text changed.
     const signature = JSON.stringify([runId, data.messages])
     if (signature === messageSignature) return revealPrompt()
@@ -674,6 +805,15 @@ async function openThread(row, addHistory = true) {
   inlineDecision.hidden = true
   inlineDecision.replaceChildren()
   selected = row
+  selectChatPanel('chat')
+  connection.textContent = 'Connecting…'
+  connection.dataset.connected = 'false'
+  document
+    .getElementById('remote-todos')
+    .replaceChildren(element('p', 'hint', 'Connect to see this chat’s plan.'))
+  document.getElementById('remote-tools').replaceChildren()
+  liveMessages = null
+  nextPrompt.hidden = true
   threadImage.clear()
   runId = null
   decisionSignature = ''
@@ -689,6 +829,7 @@ async function openThread(row, addHistory = true) {
   messages.replaceChildren(element('p', 'empty', 'Loading saved output…'))
   fail('')
   await refreshThread()
+  void refreshRemoteThread()
 }
 
 composer.addEventListener('submit', async (event) => {
@@ -712,6 +853,8 @@ composer.addEventListener('submit', async (event) => {
       text,
       ...(image ? { image } : {}),
     })
+    remote.spend(row.threadId)
+    nextPrompt.hidden = true
     drafts.delete(row.threadId)
     if (selected === row && messageInput.value.trim() === text) messageInput.value = ''
     if (selected === row) threadImage.clear()
@@ -865,8 +1008,10 @@ if (token && history.state?.mobileView === 'thread' && history.state.row)
 else if (token) void refresh()
 setInterval(() => {
   if (!token || document.hidden) return
-  if (selected) void refreshThread()
-  else {
+  if (selected) {
+    void refreshThread()
+    void refreshRemoteThread()
+  } else {
     void refresh()
     if (selectedDecisionRow) void refreshInlineDecision()
   }

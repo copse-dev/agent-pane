@@ -1,0 +1,178 @@
+/* Remote chat chrome shares the desktop tokens and message renderer. */
+body .shell,
+body .topbar {
+  max-width: 880px;
+}
+.remote-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  color: var(--text-secondary);
+}
+.remote-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 24px;
+}
+#thread .remote-heading h1 {
+  font-size: clamp(22px, 5vw, 30px);
+  line-height: 1.2;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.remote-connection {
+  flex: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.remote-connection[data-connected='true'] {
+  color: var(--success);
+  background: var(--bg-elevated);
+}
+.remote-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  margin: 20px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+.remote-tabs button {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.remote-tabs button[aria-pressed='true'] {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px #0001;
+  font-weight: 600;
+}
+#thread #messages {
+  padding: 8px 0 20px;
+}
+#thread .message {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 20px 0;
+  background: transparent;
+}
+#thread .message-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-transform: capitalize;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+#thread .message-role::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff9fc5;
+}
+#thread #composer {
+  margin-top: 12px;
+  border-top: 0;
+  padding-top: 0;
+}
+#thread #composer > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+#thread .message-compose {
+  border-radius: 16px;
+  box-shadow: 0 5px 24px #00008;
+}
+#thread #send {
+  min-height: 44px;
+  border-radius: 10px;
+  background: #ff9fc5;
+  border-color: #ff9fc5;
+  color: #35202a;
+}
+#thread .next-prompt {
+  display: block;
+  width: 100%;
+  margin: 6px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  text-align: left;
+  font-size: 13px;
+}
+#thread .next-prompt::before {
+  content: 'Suggested next prompt';
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.remote-composer-note {
+  margin: 8px 0 16px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+.remote-detail {
+  min-height: 300px;
+  padding: 20px 0;
+}
+.remote-detail h2 {
+  margin: 6px 0 16px;
+  font-size: 22px;
+}
+.remote-todo,
+.remote-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.remote-todo[data-complete='true'] {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.remote-tool {
+  display: block;
+}
+.remote-tool summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 10px 0;
+  font-size: 13px;
+}
+.remote-tool pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  font-size: 12px;
+}

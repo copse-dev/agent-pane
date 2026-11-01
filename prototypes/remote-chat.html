@@ -1,0 +1,1166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Copse · Remote chat prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f4ee;
+        --panel: #fffdf7;
+        --soft: #efefe7;
+        --ink: #20382f;
+        --muted: #69746a;
+        --line: #dbdfd4;
+        --accent: #ff9fc5;
+        --accent-ink: #672840;
+        --green: #30734d;
+        --warn: #895d1c;
+        --code: #e9f2e8;
+        --shadow: 0 18px 70px #17362412;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #131b17;
+          --panel: #1c2720;
+          --soft: #253128;
+          --ink: #e3e9dc;
+          --muted: #a3af9f;
+          --line: #354337;
+          --accent-ink: #ffc2dc;
+          --green: #8ed7a6;
+          --warn: #e8c081;
+          --code: #233b2b;
+          --shadow: 0 18px 70px #0003;
+        }
+      }
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #131b17;
+        --panel: #1c2720;
+        --soft: #253128;
+        --ink: #e3e9dc;
+        --muted: #a3af9f;
+        --line: #354337;
+        --accent-ink: #ffc2dc;
+        --green: #8ed7a6;
+        --warn: #e8c081;
+        --code: #233b2b;
+        --shadow: 0 18px 70px #0003;
+      }
+      [data-theme='light'] {
+        color-scheme: light;
+        --bg: #f4f4ee;
+        --panel: #fffdf7;
+        --soft: #efefe7;
+        --ink: #20382f;
+        --muted: #69746a;
+        --line: #dbdfd4;
+        --accent-ink: #672840;
+        --green: #30734d;
+        --warn: #895d1c;
+        --code: #e9f2e8;
+        --shadow: 0 18px 70px #17362412;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+      }
+      button,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button,
+      select {
+        cursor: pointer;
+      }
+      button {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        min-height: 40px;
+        padding: 7px 11px;
+      }
+      button:hover {
+        background: var(--soft);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent-ink);
+        outline-offset: 3px;
+      }
+      button[aria-pressed='true'] {
+        background: var(--panel);
+        box-shadow: 0 1px 5px #0001;
+      }
+      select {
+        border: 0;
+        background: transparent;
+        max-width: 100%;
+        min-height: 40px;
+      }
+      textarea {
+        resize: none;
+        width: 100%;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        line-height: 1.5;
+        padding: 12px 14px;
+        min-height: 80px;
+      }
+      textarea:focus-visible {
+        outline-offset: -3px;
+        border-radius: 10px;
+      }
+      .primary {
+        background: var(--accent);
+        color: #35202a;
+        font-weight: 600;
+      }
+      .primary:hover {
+        background: #ffb7d4;
+      }
+      .outline {
+        border-color: var(--line);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .mono,
+      code,
+      pre {
+        font:
+          12px/1.65 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+      }
+      .prototype-bar {
+        padding: 14px 24px;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .prototype-bar strong {
+        font-weight: 600;
+      }
+      .prototype-bar small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .spacer {
+        flex: 1;
+      }
+      .segmented {
+        background: var(--soft);
+        padding: 3px;
+        display: flex;
+        border-radius: 10px;
+      }
+      .segmented button {
+        min-height: 32px;
+        font-size: 12px;
+        padding: 4px 12px;
+      }
+      .theme {
+        font-size: 12px;
+      }
+      .stage {
+        max-width: 1500px;
+        margin: auto;
+        padding: 26px 28px 12px;
+      }
+      .intro {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .intro span:first-child {
+        font:
+          27px Georgia,
+          serif;
+        letter-spacing: -0.6px;
+      }
+      .intro p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .stage.phone {
+        max-width: 470px;
+        padding-top: 18px;
+      }
+      .stage.phone .intro {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .app {
+        height: 690px;
+        max-height: calc(100dvh - 215px);
+        min-height: 480px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) 280px;
+      }
+      .sidebar {
+        background: var(--soft);
+        padding: 18px 12px;
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .brand {
+        font:
+          25px Georgia,
+          serif;
+        padding: 0 9px 20px;
+      }
+      .project {
+        padding: 9px;
+        font-weight: 600;
+      }
+      .sidebar .label {
+        font-size: 10px;
+        letter-spacing: 1.2px;
+        padding: 14px 9px 5px;
+        color: var(--muted);
+      }
+      .thread-button {
+        text-align: left;
+        line-height: 1.4;
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .thread-button.active {
+        background: var(--panel);
+      }
+      .thread-button small {
+        display: block;
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 11px;
+      }
+      .device {
+        border-top: 1px solid var(--line);
+        margin-top: auto;
+        padding: 16px 8px 0;
+        font-size: 12px;
+      }
+      .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        margin-right: 7px;
+      }
+      .chat {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+        position: relative;
+      }
+      .chat-header {
+        display: flex;
+        gap: 9px;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        min-height: 70px;
+      }
+      .chat-header h4 {
+        font-size: 14px;
+        margin: 0;
+        font-weight: 600;
+      }
+      .chat-header small {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .phone-menu {
+        display: none;
+      }
+      .connection {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 7px 18px;
+        background: var(--code);
+        color: var(--green);
+        font-size: 11px;
+      }
+      .connection.offline {
+        background: var(--soft);
+        color: var(--warn);
+      }
+      .connection button {
+        font-size: 11px;
+        min-height: 28px;
+        padding: 3px 8px;
+        margin-left: auto;
+        border: 1px solid currentColor;
+      }
+      .transcript {
+        overflow: auto;
+        padding: 22px 26px;
+        flex: 1;
+        scroll-behavior: smooth;
+        overscroll-behavior: contain;
+      }
+      .message {
+        max-width: 740px;
+        margin: 0 auto 22px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .message .author {
+        font-size: 11px;
+        font-weight: 600;
+        margin-bottom: 7px;
+        color: var(--muted);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .message.user .body {
+        background: var(--soft);
+        border-radius: 10px;
+        padding: 12px 15px;
+      }
+      .message.assistant .body {
+        padding: 0 1px;
+        line-height: 1.7;
+      }
+      .tool {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px 12px;
+        margin: 16px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .tool summary {
+        cursor: pointer;
+      }
+      .tool pre {
+        overflow: auto;
+        margin-bottom: 0;
+        white-space: pre-wrap;
+      }
+      .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        padding: 0 18px 12px;
+      }
+      .suggestions button {
+        border: 1px solid var(--line);
+        font-size: 12px;
+        min-height: 40px;
+      }
+      .composer-area {
+        padding: 0 16px 13px;
+      }
+      .composer {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 3px 12px #00000004;
+      }
+      .composer:focus-within {
+        border-color: var(--accent-ink);
+      }
+      .composer-footer {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 0 8px 8px;
+      }
+      .composer-footer select {
+        font-size: 11px;
+        min-width: 0;
+      }
+      .send {
+        min-width: 42px;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .hint {
+        font-size: 10px;
+        text-align: center;
+        color: var(--muted);
+        padding-top: 8px;
+      }
+      .right {
+        border-left: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 12px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabs button {
+        font-size: 12px;
+      }
+      .tabs button.active {
+        background: var(--soft);
+      }
+      .panel-content {
+        padding: 16px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      .file {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 7px;
+      }
+      .add {
+        color: var(--green);
+      }
+      .minus {
+        color: var(--warn);
+      }
+      .diff {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .diff header {
+        background: var(--soft);
+        padding: 9px;
+      }
+      .diff pre {
+        padding: 12px;
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--code);
+        color: var(--green);
+      }
+      .panel-content h4 {
+        margin: 0 0 10px;
+        font-size: 12px;
+      }
+      .panel-content p {
+        color: var(--muted);
+      }
+      .bottom-nav {
+        display: none;
+      }
+      .lab {
+        max-width: 1444px;
+        margin: 0 auto;
+        padding: 8px 28px 24px;
+      }
+      .lab > details {
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .lab summary {
+        cursor: pointer;
+        padding: 12px 0;
+      }
+      .lab-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .lab h4 {
+        margin: 0 0 8px;
+        color: var(--ink);
+      }
+      .lab pre {
+        margin: 0;
+        max-height: 150px;
+        overflow: auto;
+        background: var(--soft);
+        padding: 12px;
+        border-radius: 8px;
+        white-space: pre-wrap;
+      }
+      .phone .app {
+        grid-template-columns: 1fr;
+        height: min(760px, calc(100dvh - 185px));
+        min-height: 530px;
+        max-height: none;
+      }
+      .phone .sidebar,
+      .phone .right {
+        display: none;
+      }
+      .phone .phone-menu {
+        display: block;
+        padding: 7px;
+        min-width: 40px;
+      }
+      .phone .chat-header {
+        padding: 10px 12px;
+      }
+      .phone .transcript {
+        padding: 20px 17px;
+      }
+      .phone .bottom-nav {
+        display: flex;
+        justify-content: space-around;
+        border-top: 1px solid var(--line);
+        padding: 5px 8px;
+      }
+      .bottom-nav button {
+        font-size: 11px;
+        min-height: 44px;
+        flex: 1;
+      }
+      .phone .app.show-panel .right {
+        display: flex;
+        position: absolute;
+        inset: 0;
+        background: var(--panel);
+        z-index: 3;
+      }
+      .phone .app {
+        position: relative;
+      }
+      .phone .right .tabs {
+        padding-top: 16px;
+      }
+      .close-panel {
+        margin-left: auto;
+      }
+      .phone .app.show-sidebar .sidebar {
+        display: flex;
+        position: absolute;
+        inset: 0 30px 0 0;
+        z-index: 4;
+        box-shadow: 10px 0 40px #0004;
+      }
+      .phone .composer-footer select {
+        font-size: 10px;
+        max-width: 145px;
+      }
+      .phone .suggestions {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .phone .hint {
+        font-size: 9px;
+      }
+      .notification {
+        min-height: 23px;
+        color: var(--green);
+        font-size: 11px;
+        text-align: center;
+        padding: 2px 10px;
+      }
+      .phone .intro p {
+        font-size: 11px;
+      }
+      @media (max-width: 1050px) {
+        .app {
+          grid-template-columns: 180px minmax(0, 1fr);
+        }
+        .right {
+          display: none;
+        }
+        .app.show-panel .right {
+          display: flex;
+          position: absolute;
+          inset: 0 0 0 auto;
+          width: min(90%, 380px);
+          background: var(--panel);
+          z-index: 3;
+        }
+        .app {
+          position: relative;
+        }
+        .inspect-button {
+          display: block !important;
+        }
+      }
+      @media (max-width: 620px) {
+        .prototype-bar {
+          padding: 10px 14px;
+          gap: 7px;
+        }
+        .prototype-bar small {
+          display: none;
+        }
+        .stage {
+          padding: 16px 12px 8px;
+        }
+        .stage:not(.phone) .app {
+          grid-template-columns: 1fr;
+        }
+        .stage:not(.phone) .sidebar {
+          display: none;
+        }
+        .stage:not(.phone) .phone-menu {
+          display: block;
+        }
+        .stage:not(.phone) .app.show-sidebar .sidebar {
+          display: flex;
+          position: absolute;
+          inset: 0 30px 0 0;
+          z-index: 4;
+        }
+        .app {
+          min-height: 570px;
+          max-height: none;
+        }
+        .intro {
+          margin-bottom: 12px;
+        }
+        .intro span:first-child {
+          font-size: 23px;
+        }
+        .intro {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+        }
+        .transcript {
+          padding: 18px 16px;
+        }
+        .lab {
+          padding: 8px 14px;
+        }
+        .lab-grid {
+          grid-template-columns: 1fr;
+        }
+        .theme {
+          padding: 4px 7px;
+        }
+        .stage.phone {
+          padding: 16px 12px 8px;
+        }
+        .phone .app {
+          height: calc(100dvh - 185px);
+        }
+        .hint {
+          font-size: 9px;
+        }
+        .prototype-bar strong {
+          font-size: 12px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="prototype-bar">
+      <strong>Remote Copse</strong
+      ><small>Interactive concept · simulated host and connection</small>
+      <span class="spacer"></span>
+      <div class="segmented" aria-label="Preview size">
+        <button id="desktop" aria-pressed="true">Desktop</button
+        ><button id="phone" aria-pressed="false">Phone</button>
+      </div>
+      <button id="theme" class="theme outline" aria-label="Change colour theme">◐ Theme</button>
+    </header>
+    <main id="stage" class="stage">
+      <div class="intro">
+        <span>Your workspace, wherever you are.</span><span class="spacer"></span>
+        <p>Same conversation. Your own view.</p>
+      </div>
+      <div id="app" class="app">
+        <aside class="sidebar">
+          <div class="brand">Copse</div>
+          <div class="project">▾ &nbsp; copse-panel</div>
+          <button id="new-chat" class="outline">＋ New chat</button>
+          <div class="label">TODAY</div>
+          <button class="thread-button active" data-thread="remote">
+            Remote chat protocol<small>3 files changed · just now</small>
+          </button>
+          <button class="thread-button" data-thread="keyboard">
+            Composer keyboard shortcuts<small>Completed · 24 minutes ago</small>
+          </button>
+          <div class="device">
+            <span class="dot"></span>Jonathan’s MacBook Pro<br /><span class="muted"
+              >Paired device · chat control</span
+            >
+          </div>
+        </aside>
+        <section class="chat" aria-label="Conversation">
+          <header class="chat-header">
+            <button id="menu" class="phone-menu" aria-label="Open threads">☰</button>
+            <div>
+              <h4 id="thread-title">Remote chat protocol</h4>
+              <small>copse-panel &nbsp; / &nbsp; remote-chat</small>
+            </div>
+            <span class="spacer"></span
+            ><button id="inspect" class="outline" aria-label="Open changes">
+              Changes <span class="add">3</span>
+            </button>
+          </header>
+          <div id="connection" class="connection" role="status">
+            <span id="connection-text">● Connected to your Mac · up to date</span
+            ><button id="network">Disconnect</button>
+          </div>
+          <div
+            id="transcript"
+            class="transcript"
+            role="log"
+            aria-label="Chat messages"
+            aria-live="off"
+          ></div>
+          <div id="notice" class="notification" role="status"></div>
+          <div id="suggestions" class="suggestions" aria-label="Suggested prompts"></div>
+          <div class="composer-area">
+            <form id="composer" class="composer">
+              <textarea
+                id="prompt"
+                rows="2"
+                aria-label="Message"
+                placeholder="Ask a follow-up, @mention a file, or /use a skill…"
+              ></textarea>
+              <div class="composer-footer">
+                <button type="button" id="mention" aria-label="Mention a file">@</button
+                ><button type="button" id="skill" aria-label="Use a skill">/</button
+                ><select id="model" aria-label="Model">
+                  <option>GPT-6.1</option>
+                  <option>Claude Sonnet</option>
+                  <option>Local model</option></select
+                ><select id="reasoning" aria-label="Reasoning effort">
+                  <option>High</option>
+                  <option>Medium</option>
+                  <option>Low</option></select
+                ><span class="spacer"></span
+                ><button type="button" id="stop" hidden class="outline">Stop</button
+                ><button id="send" class="primary send" aria-label="Send message">↑</button>
+              </div>
+            </form>
+            <div class="hint" id="composer-hint">
+              Runs on your Mac · suggestions are editable before sending
+            </div>
+          </div>
+          <nav class="bottom-nav" aria-label="Workspace">
+            <button id="nav-chat">Chat</button
+            ><button id="nav-changes">Changes <span class="add">3</span></button
+            ><button id="nav-plan">Plan</button><button id="nav-activity">Mac activity</button>
+          </nav>
+        </section>
+        <aside class="right" aria-label="Thread details">
+          <div class="tabs">
+            <button data-panel="changes" class="active">Changes</button
+            ><button data-panel="plan">Plan</button
+            ><button data-panel="activity">Mac activity</button
+            ><button id="close-panel" class="close-panel" aria-label="Close details">×</button>
+          </div>
+          <div id="panel-content" class="panel-content"></div>
+        </aside>
+      </div>
+    </main>
+    <section class="lab">
+      <details id="protocol">
+        <summary>
+          Prototype controls &amp; protocol inspector <span id="sequence" class="mono"></span>
+        </summary>
+        <p>
+          This is an isolated simulation. No model calls, file edits, or network connections occur.
+          Disconnect during a response, watch Mac activity, then reconnect. Switching threads keeps
+          separate local drafts.
+        </p>
+        <div class="lab-grid">
+          <div>
+            <h4>Transport events</h4>
+            <pre id="events"></pre>
+          </div>
+          <div>
+            <h4>Host state</h4>
+            <pre id="host-state"></pre>
+          </div>
+        </div>
+      </details>
+    </section>
+    <script>
+      ;(function () {
+        'use strict'
+        const $ = (id) => document.getElementById(id)
+        const clone = (value) => JSON.parse(JSON.stringify(value))
+        const host = {
+          revision: 0,
+          threads: {
+            remote: {
+              title: 'Remote chat protocol',
+              messages: [
+                {
+                  id: 'r1',
+                  role: 'user',
+                  text: 'Make chat work from my phone without losing the desktop features.',
+                },
+                {
+                  id: 'r2',
+                  role: 'assistant',
+                  text: 'The browser can use the same chat interface while your Mac owns the conversation and runs the agent.\n\nI’ve sketched a typed remote client, live transcript delivery, and recovery after a connection drops. Suggestions, model selection and tool results stay in the shared interface.',
+                  tool: 'Read 3 files · prepared remote client draft',
+                  output:
+                    'remote-client.ts     +42 −0\nremote-session.ts    +28 −0\nchat-submission.ts   +16 −4',
+                },
+              ],
+              running: false,
+              suggestions: ['Run the focused tests', 'Review the reconnect behaviour'],
+            },
+            keyboard: {
+              title: 'Composer keyboard shortcuts',
+              messages: [
+                {
+                  id: 'k1',
+                  role: 'user',
+                  text: 'Make the composer work well with a hardware keyboard.',
+                },
+                {
+                  id: 'k2',
+                  role: 'assistant',
+                  text: 'Enter sends a message. Shift+Enter inserts a new line, and Tab accepts the suggested next prompt. Touch users can tap the same suggestion.\n\nThe keyboard behaviour is ready for review.',
+                },
+              ],
+              running: false,
+              suggestions: ['Review the keyboard changes', 'Check touch targets'],
+            },
+          },
+        }
+        let replica = clone(host),
+          connected = true,
+          active = 'remote',
+          panel = 'changes',
+          counter = 10,
+          runTimers = new Map(),
+          drafts = {},
+          logs = [],
+          noticeTimer
+        function log(type, detail) {
+          logs.unshift(type + '  ' + detail)
+          logs = logs.slice(0, 24)
+          $('events').textContent = logs.join('\n')
+          $('sequence').textContent = ' · revision ' + replica.revision
+        }
+        function inspectHost() {
+          const t = host.threads[active]
+          $('host-state').textContent = JSON.stringify(
+            {
+              revision: host.revision,
+              thread: active,
+              messages: t.messages.length,
+              running: t.running,
+              submissions: counter - 10,
+              connected,
+            },
+            null,
+            2,
+          )
+        }
+        function publish(type, threadId) {
+          host.revision++
+          log(
+            'host → ' + type,
+            threadId +
+              ' · seq ' +
+              host.revision +
+              (connected ? ' · delivered' : ' · client offline'),
+          )
+          if (connected) {
+            replica = clone(host)
+            render()
+          } else if (panel === 'activity') {
+            renderPanel()
+          }
+          inspectHost()
+        }
+        function notify(text) {
+          $('notice').textContent = text
+          clearTimeout(noticeTimer)
+          noticeTimer = setTimeout(() => {
+            $('notice').textContent = ''
+          }, 4000)
+        }
+        function render() {
+          const t = replica.threads[active]
+          $('sequence').textContent = ' · revision ' + replica.revision
+          $('thread-title').textContent = t.title
+          $('transcript').replaceChildren()
+          for (const m of t.messages) {
+            const article = document.createElement('article')
+            article.className = 'message ' + m.role
+            article.dataset.messageId = m.id
+            const author = document.createElement('div')
+            author.className = 'author'
+            author.textContent = m.role === 'user' ? 'You' : 'Copse'
+            const body = document.createElement('div')
+            body.className = 'body'
+            body.textContent = m.text
+            article.append(author, body)
+            if (m.tool) {
+              const tool = document.createElement('details')
+              tool.className = 'tool'
+              const summary = document.createElement('summary')
+              summary.textContent = m.tool
+              const output = document.createElement('pre')
+              output.textContent = m.output || 'Waiting for output…'
+              tool.append(summary, output)
+              article.append(tool)
+            }
+            $('transcript').append(article)
+          }
+          $('suggestions').replaceChildren()
+          if (!t.running)
+            for (const text of t.suggestions) {
+              const button = document.createElement('button')
+              button.type = 'button'
+              button.textContent = text
+              button.disabled = !connected
+              button.onclick = () => insert(text)
+              $('suggestions').append(button)
+            }
+          $('send').disabled = !connected || t.running
+          $('new-chat').disabled = !connected
+          $('stop').hidden = !t.running
+          $('stop').disabled = !connected
+          $('connection').classList.toggle('offline', !connected)
+          $('connection-text').textContent = connected
+            ? t.running
+              ? '● Connected · agent working on your Mac'
+              : '● Connected to your Mac · up to date'
+            : '○ Connection paused · your draft stays here'
+          $('network').textContent = connected ? 'Disconnect' : 'Reconnect'
+          $('composer-hint').textContent = connected
+            ? 'Runs on your Mac · suggestions are editable before sending'
+            : 'Reconnect to send · a running task continues on your Mac'
+          document
+            .querySelectorAll('[data-thread]')
+            .forEach((b) => b.classList.toggle('active', b.dataset.thread === active))
+          $('transcript').scrollTop = $('transcript').scrollHeight
+          renderPanel()
+          inspectHost()
+        }
+        function insert(text) {
+          $('prompt').value = text
+          drafts[active] = text
+          $('prompt').focus()
+        }
+        function selectThread(id) {
+          drafts[active] = $('prompt').value
+          active = id
+          $('prompt').value = drafts[id] || ''
+          $('app').classList.remove('show-sidebar')
+          render()
+        }
+        function setPanel(next) {
+          panel = next
+          renderPanel()
+          $('app').classList.add('show-panel')
+        }
+        function renderPanel() {
+          const root = $('panel-content')
+          root.replaceChildren()
+          document
+            .querySelectorAll('[data-panel]')
+            .forEach((b) => b.classList.toggle('active', b.dataset.panel === panel))
+          if (panel === 'changes') {
+            root.innerHTML =
+              '<h4>Working changes <span class="muted">· 3 files</span></h4><p>remote-chat → main</p><div class="file"><span class="mono">remote-client.ts</span><span class="spacer"></span><span class="add">+42</span></div><div class="file"><span class="mono">remote-session.ts</span><span class="spacer"></span><span class="add">+28</span></div><div class="file"><span class="mono">chat-submission.ts</span><span class="spacer"></span><span class="add">+16</span><span class="minus">−4</span></div><div class="diff"><header class="mono">remote-client.ts</header><pre>+ async reconnect(cursor) {\n+   const state = await snapshot();\n+   applySnapshot(state);\n+   subscribe(state.revision);\n+ }</pre></div><p>Illustrative changes in this prototype.</p>'
+          } else if (panel === 'plan') {
+            root.innerHTML =
+              '<h4>Remote chat</h4><p>One conversation across your devices.</p><p class="add">✓ Shared chat and composer</p><p class="add">✓ Host owns submissions</p><p class="add">✓ Restore after disconnect</p><p>○ Validate on a physical phone</p><p>○ Connect to the real Copse runtime</p>'
+          } else {
+            const t = host.threads[active]
+            const title = document.createElement('h4')
+            title.textContent = 'Mac activity · simulated'
+            root.append(title)
+            const p = document.createElement('p')
+            p.textContent = t.running
+              ? 'Agent is working. The task continues even while this client is disconnected.'
+              : 'Agent is idle. Latest output on your Mac:'
+            root.append(p)
+            const text = document.createElement('pre')
+            text.style.whiteSpace = 'pre-wrap'
+            text.textContent = t.messages.at(-1).text
+            root.append(text)
+          }
+        }
+        function finish(threadId, text) {
+          const t = host.threads[threadId]
+          clearInterval(runTimers.get(threadId))
+          runTimers.delete(threadId)
+          t.running = false
+          if (text) t.messages.at(-1).text = text
+          t.suggestions = ['Review the changes', 'Check reconnect recovery']
+          publish('turn.finished', threadId)
+          if (connected && active === threadId) notify('Response complete · synced with your Mac')
+        }
+        function send() {
+          const text = $('prompt').value.trim()
+          if (!text || !connected || host.threads[active].running) return
+          const threadId = active,
+            t = host.threads[threadId],
+            id = ++counter,
+            model = $('model').value
+          // A single host applies the submission; remote views receive a snapshot.
+          t.messages.push({ id: 'u' + id, role: 'user', text, model })
+          const msg = {
+            id: 'a' + id,
+            role: 'assistant',
+            text: '',
+            tool: 'Running on your Mac · ' + model,
+            output: 'Preparing focused checks…',
+          }
+          t.messages.push(msg)
+          t.running = true
+          t.suggestions = []
+          $('prompt').value = ''
+          drafts[active] = ''
+          log('client → chat.submit', 'request ' + id + ' · ' + threadId)
+          publish('turn.started', threadId)
+          const result = /test/i.test(text)
+            ? 'The focused checks passed: 12 tests across submission, event ordering and reconnect recovery.\n\nI also simulated a dropped connection during a response. The host kept running, and the client recovered the latest conversation without submitting the prompt again.\n\nThese are simulated results for the interaction prototype; no repository tests were run by this chat.'
+            : /review|reconnect/i.test(text)
+              ? 'The reconnect flow restores the latest host snapshot and continues from its revision. Your unsent draft stays on this device.\n\nA request has one identity, so retrying delivery can return the same result without starting a second run. Both views show the same conversation while keeping their own navigation.\n\nThis prototype demonstrates that flow using an in-memory host.'
+              : 'I’ll use that as the next instruction on your Mac.\n\nThis preview shares one host conversation between the desktop and phone layouts. Prompt suggestions remain editable, model selection travels with the submission, and output can be recovered after disconnecting.\n\nThe real remote transport and agent runtime still need to be connected.'
+          let offset = 0
+          const timer = setInterval(() => {
+            offset = Math.min(offset + 5, result.length)
+            msg.text = result.slice(0, offset)
+            publish('transcript.delta', threadId)
+            if (offset === result.length) {
+              msg.tool = 'Completed on your Mac · ' + model
+              msg.output = 'Simulated run finished. No real commands executed.'
+              finish(threadId)
+            }
+          }, 120)
+          runTimers.set(threadId, timer)
+        }
+        $('composer').onsubmit = (e) => {
+          e.preventDefault()
+          send()
+        }
+        $('prompt').addEventListener('input', () => {
+          drafts[active] = $('prompt').value
+        })
+        $('prompt').addEventListener('keydown', (e) => {
+          if (e.isComposing) return
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            send()
+          }
+          if (e.key === 'Tab' && !e.shiftKey && !$('prompt').value.trim() && connected) {
+            const suggestion = replica.threads[active].suggestions[0]
+            if (suggestion) {
+              e.preventDefault()
+              insert(suggestion)
+            }
+          }
+        })
+        $('network').onclick = () => {
+          connected = !connected
+          if (connected) {
+            replica = clone(host)
+            log('client ← snapshot', 'recovered at seq ' + host.revision + ' · no resend')
+            notify('Reconnected · caught up with your Mac')
+          } else {
+            log('transport.closed', 'last received seq ' + replica.revision)
+            notify('Connection paused. Try Mac activity while a task runs.')
+          }
+          render()
+        }
+        $('stop').onclick = () => {
+          if (connected && host.threads[active].running) {
+            finish(active, host.threads[active].messages.at(-1).text + '\n\nStopped by you.')
+          }
+        }
+        $('desktop').onclick = () => {
+          $('stage').classList.remove('phone')
+          $('desktop').setAttribute('aria-pressed', 'true')
+          $('phone').setAttribute('aria-pressed', 'false')
+        }
+        $('phone').onclick = () => {
+          $('stage').classList.add('phone')
+          $('desktop').setAttribute('aria-pressed', 'false')
+          $('phone').setAttribute('aria-pressed', 'true')
+        }
+        $('theme').onclick = () => {
+          const dark = document.documentElement.dataset.theme
+            ? document.documentElement.dataset.theme === 'dark'
+            : matchMedia('(prefers-color-scheme:dark)').matches
+          document.documentElement.dataset.theme = dark ? 'light' : 'dark'
+        }
+        $('menu').onclick = () => $('app').classList.toggle('show-sidebar')
+        document
+          .querySelectorAll('[data-thread]')
+          .forEach((b) => (b.onclick = () => selectThread(b.dataset.thread)))
+        document
+          .querySelectorAll('[data-panel]')
+          .forEach((b) => (b.onclick = () => setPanel(b.dataset.panel)))
+        $('close-panel').onclick = () => $('app').classList.remove('show-panel')
+        $('inspect').onclick = () => setPanel('changes')
+        $('nav-chat').onclick = () => $('app').classList.remove('show-panel')
+        $('nav-changes').onclick = () => setPanel('changes')
+        $('nav-plan').onclick = () => setPanel('plan')
+        $('nav-activity').onclick = () => setPanel('activity')
+        $('mention').onclick = () =>
+          insert(($('prompt').value + ' @src/remote-client.ts ').trimStart())
+        $('skill').onclick = () => insert('/review ' + $('prompt').value)
+        $('new-chat').onclick = () => {
+          if (!connected) return
+          const id = 'new' + ++counter
+          host.threads[id] = {
+            title: 'New conversation',
+            messages: [],
+            running: false,
+            suggestions: ['Explain the remote chat architecture'],
+          }
+          const button = document.createElement('button')
+          button.className = 'thread-button'
+          button.dataset.thread = id
+          button.textContent = 'New conversation'
+          button.onclick = () => selectThread(id)
+          $('new-chat').after(button)
+          publish('thread.created', id)
+          selectThread(id)
+          notify('New conversation · choose a prompt or write your own')
+        }
+        log('client ← snapshot', 'initial state · seq 0')
+        render()
+      })()
+    </script>
+  </body>
+</html>

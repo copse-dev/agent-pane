@@ -13,6 +13,8 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     await buildMobileAssets(output)
     const frameHtml = await readFile(join(output, 'mermaid-frame.html'), 'utf8')
     assert.match(frameHtml, /http-equiv="Content-Security-Policy"[^>]*script-src 'sha256-/)
+    assert.equal(await readFile(join(output, 'remote/mermaid-frame.html'), 'utf8'), frameHtml)
+    assert.match(await readFile(join(output, 'remote/assets.json'), 'utf8'), /mermaid-frame\.html/)
     await assert.rejects(readFile(join(output, 'mermaid-frame.js')), 'the frame script is inlined')
     const css = await readFile(join(output, 'app.css'), 'utf8')
     // The desktop's shared message styles ride along (copy controls, diagrams).

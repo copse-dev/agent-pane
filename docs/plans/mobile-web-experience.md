@@ -2,6 +2,50 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## Remote shared-renderer integration (2026-10-31, in progress)
+
+The requested outcome is the real shared chat interface in a browser connected to the
+desktop owner. Acceptance: load a real project/thread; submit once through the desktop
+queue; observe live output; disconnect/reconnect without duplicate submission; preserve
+the browser's draft and navigation; build an isolated app for manual testing.
+
+The desktop remains the only queue/transcript writer. The new transport must not expose
+generic IPC or synthesize Electron sender events. Read calls use an explicit, validated
+allowlist and real preload invokes; credentials, permission changes, filesystem APIs,
+diffs, branch data and container controls are excluded. Live thread views project only
+chat fields, with branch/execution metadata removed. Existing paired HTTPS control grants
+are the intended authority, with revocation rechecked before returning any data.
+
+**Chat-only activation authorized on 2026-10-31.** The user explicitly approved chat data
+access over the existing paired HTTPS connection. Control grants protect live snapshots
+and the reviewed read relay, with revocation checked again after asynchronous replies.
+The existing mobile client consumes this protocol for live output and editable next-prompt
+suggestions; submission keeps the desktop's existing deduplication and queue path.
+**Shared chat extraction authorized on 2026-10-31.** The user requested that both clients
+mount the desktop chat components. The desktop and paired browser now use
+`mountChatSurface`: the same conversation renderer, rich composer editor and next-step
+controller. The browser supplies a remote submission adapter; the desktop retains checkout,
+queue and persistence ownership. This supersedes the purpose-built-chat decision below
+for the chat surface, while the mobile activity/pairing shell remains. The shared surface
+is available from “Open shared desktop chat” in a control-enabled thread.
+Acceptance still requires focused browser screenshots and physical-phone validation.
+Native project/file/terminal controls and full desktop-shell parity remain outside scope.
+
+Draft validation status (2026-11-01): the demo build and 62 focused protocol, relay,
+asset, publisher and mobile tests pass. The full static gate passes. The full unit
+suite timed out after 30 minutes with failures recorded in provider HTTP fixtures,
+review preparation, sandbox worker startup, workflow invariants and terminal benchmarks;
+these have not been baseline-triaged and are not a green full check. The shared-renderer
+browser spec now passes in Chrome for Testing 152 through a host-launched browser,
+with reviewed light/dark screenshots at 390px. It verifies editable suggestions,
+draft retention across a simulated disconnect/reconnect, and single submission.
+Review found a desktop-only Apple panel attempting an unsupported startup read; the
+remote host now omits native panels, and the browser asserts that error is absent.
+The 25 focused composer/chat-layout/disclosure/scroll regression tests and all four
+typecheck projects pass. These are network-fixture results, not real-phone delivery
+or real-agent evidence. Physical-phone verification remains outstanding. The standalone
+HTML prototype remains simulated and is separate from the shipped remote renderer.
+
 **Status: Experimental, opt-in LAN companion with desktop-authorized chat and run control.** Activity,
 saved transcripts, pairing, persistent HTTPS, per-device revocation, phone message
 submission, new chats, stop, questions, and one-shot approvals are implemented.
@@ -783,6 +827,20 @@ by hand, on a device the app cannot reach.
   "browser-served mode" entry are where this attaches; it is not a fifth independent
   surface.
 - [`../threat-model.md`](../threat-model.md) — amended in the same PR (see Security).
+
+### Shared browser chat validation — 1 November 2026
+
+- The focused browser run passes at a 390 × 844 phone viewport in light and dark themes.
+  Inspected screenshots show a full-width draft and controls below it; DOM assertions
+  require at least 280px of editable width, an on-screen composer and no control overlap.
+  The test edits a suggestion, preserves the draft across disconnect/reconnect, and sends once.
+- Twelve focused client, publisher and bundle tests pass, along with all four typecheck projects.
+  Review fixes cover background project output, unloaded history, unchanged polling revisions,
+  Mermaid frame packaging and rejected versus uncertain action retries.
+- This remains draft evidence. The previous full check timed out in unit tests with failures
+  that have not been baseline-triaged. A fresh full check, production build, Markdown runtime
+  checks, repository CI and actual paired-device validation remain outstanding. Local macOS
+  captures are evidence only and are not committed as Linux screenshot baselines.
 
 ### September 2026 control implementation
 

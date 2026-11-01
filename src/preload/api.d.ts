@@ -204,6 +204,10 @@ export interface ApiClient {
       result: import('@shared/thread-prompt.ts').ThreadPromptResult,
     ) => Promise<void>
   }
+  remote: {
+    /** Publish the desktop-owned live view to authenticated remote clients. */
+    publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>

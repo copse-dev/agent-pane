@@ -49,7 +49,8 @@ import {
   type ThreadRefAttachment,
   type VideoRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
-import { mountComposerEditor } from './composer-editor.ts'
+import { createChatComposer } from './chat-composer.ts'
+import { mountRemoteComposer, type ChatTransport } from './remote-composer.ts'
 import {
   registerPromptAttachments,
   type PromptArchiveAttachment,
@@ -133,7 +134,9 @@ import type { GitPromptState } from '@shared/types/git.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 
-interface MountInputBarOptions {
+export interface MountInputBarOptions {
+  /** A replica submits to its owning desktop instead of running a local queue. */
+  transport?: ChatTransport
   /**
    * Dock the portrait panel tabs to the chat/panel seam instead of making them
    * part of the floating composer card. Tests that mount the input in isolation
@@ -189,26 +192,9 @@ export function mountInputBar(
   openModelPicker: () => void
   unmount: () => void
 } {
+  if (opts.transport) return mountRemoteComposer(root, store, api, opts.transport)
   const chips = el('div', { class: 'attachment-chips' })
-  const composer = mountComposerEditor()
-  composer.setPlaceholder('Message…')
-  const submitBtn = el(
-    'button',
-    { class: 'submit-btn', type: 'button', 'data-tooltip-placement': 'top' },
-    'Send',
-  )
-  const stopBtn = el(
-    'button',
-    {
-      class: 'stop-btn',
-      type: 'button',
-      hidden: '',
-      'aria-label': 'Stop agent',
-      'data-tooltip': 'Stop the running agent',
-      'data-tooltip-placement': 'top',
-    },
-    'Stop',
-  )
+  const { composer, submitBtn, stopBtn } = createChatComposer()
   // Hidden native file picker driven by the paperclip button — gives an
   // explicit "browse" affordance alongside drag-and-drop and @-mentions.
   const fileInput = el('input', {
