@@ -121,6 +121,23 @@ describe('memories pane', () => {
     }
   })
 
+  it('lists memories when the panel opens on them from the store alone, with no event emitted', async () => {
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const { api, calls } = makeApi([makeNote('a', 'Build command', 'Run npm build')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(calls.list, 0, 'no fetch while off screen')
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'memories' })
+      await flush()
+      assert.equal(calls.list, 1)
+      assert.equal(list.querySelector('.memories-row-title')?.textContent, 'Build command')
+    } finally {
+      unmount()
+    }
+  })
+
   // "No memories yet. The agent saves these with the remember tool…" is
   // onboarding copy for an empty store — shown before the store has been read,
   // it tells a user with a full knowledge base that they have none.
@@ -271,8 +288,9 @@ describe('memories pane', () => {
       assert.ok(body)
       // User is mid-edit...
       body.value = 'Half-typed new body'
-      // ...when a background store event fires (e.g. the staged-diff queue drains).
-      store.emit('files_pane_changed')
+      // ...when the panel is closed and reopened, which refreshes the list.
+      store.setState({ filesPaneOpen: false })
+      store.setState({ filesPaneOpen: true })
       await flush()
       // The draft must survive rather than being overwritten with the stored note.
       assert.equal(

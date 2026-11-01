@@ -68,6 +68,25 @@ describe('bench-agent headless conformance', () => {
     assert.equal(last.stopReason, 'timeout')
   })
 
+  it('preserves text replacement as a lossless item upsert', () => {
+    const events = buildHeadlessTurnEvents({
+      threadId: 't',
+      turnId: 't-t1',
+      chunks: [
+        { type: 'text', text: 'visible <internal>draft</internal>' },
+        { type: 'text_replace', text: 'visible final' },
+      ],
+      outcome: 'completed',
+      stopReason: 'end_turn',
+    })
+    const messages = events.filter((event) => event.type === 'message')
+    const folded = new Map(messages.map((event) => [event.itemId, event.text]))
+
+    assert.equal(messages.length, 2)
+    assert.equal(folded.size, 1)
+    assert.deepEqual([...folded.values()], ['visible final'])
+  })
+
   it('throws on a malformed projected event (the conformance guard)', () => {
     // A chunk that would project to an event missing a required field must be
     // rejected by the in-builder validation. `tool_call` with a non-string name

@@ -27,7 +27,6 @@ export function createFollowUpThread(
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
   store.emit('new_thread_opened')
   void attachSourceReference(store, api, projectId, source, thread.id)
   return thread.id

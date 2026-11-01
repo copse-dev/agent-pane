@@ -156,7 +156,8 @@ Read the **confidence line** before trusting the subset:
 - **LOW** — some changed source has no importing test and no selector match.
   The subset can't cover it; the listed unmapped files are your blind spot.
 - **broad** — a cross-cutting file changed (build scripts, store, preload,
-  `index.html`). The oracle recommends everything, and means it.
+  `index.html`, the dependency manifest or lockfile). The oracle recommends
+  everything, and means it.
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
@@ -215,6 +216,9 @@ list rather than adding e2e specs for DOM-only behavior.
 > changes require evals"). That eval is usually a small browser or Electron spec that seeds a state
 > and saves a screenshot — exactly the sizing/rendering job those tiers are for. Pushing
 > _logic_ down doesn't waive the visual check.
+
+Accessibility has its own lane in this tier: axe-core scans of representative surfaces against a
+shrink-only baseline plus keyboard-only journeys. See [accessibility acceptance](accessibility.md).
 
 ## CI cost is a design input
 

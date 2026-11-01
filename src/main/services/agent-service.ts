@@ -45,6 +45,7 @@ import {
   type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
@@ -178,6 +179,11 @@ import {
 } from './agents/agents-registry.ts'
 import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import {
+  isPhasedCommandCall,
+  queuedCommandPhase,
+  runWithCommandPhaseReporter,
+} from './exec/command-phase.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
 import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
@@ -2309,6 +2315,19 @@ async function runAgentWithInlineCanvas(
         // continuation turns (pre-review todo gate, review remediation) so both route
         // subagents, advisor, review, and shell tagging identically.
         const readonlyWorkerTurn = createReadonlyWorkerTurn(getTaskSupervisor())
+        // Each command call's last reported stage (#3956), so execution picks up
+        // from the `queued` stage the card already shows.
+        const commandPhases = new Map<string, CommandPhase>()
+        const sendCommandPhase = (toolCallId: string, phase: CommandPhase): void => {
+          commandPhases.set(toolCallId, phase)
+          sendChunk({ type: 'tool_call_update', toolCallId, commandPhase: phase })
+        }
+        const sendLoopChunk = (chunk: StreamChunk): void => {
+          sendChunk(chunk)
+          if (chunk.type !== 'tool_call') return
+          const queued = queuedCommandPhase(chunk.toolCall)
+          if (queued) sendCommandPhase(chunk.toolCall.id, queued)
+        }
         const runParentTool = async (
           name: string,
           args: unknown,
@@ -2574,15 +2593,32 @@ async function runAgentWithInlineCanvas(
               () => registry.executeNormalized(name, args, signal),
             )
           }
-          if (name === 'run_shell') {
-            // Tag the command's streamed output with this tool-call id so the
-            // terminal pane can route it into the matching "Agent tasks" card.
-            setCurrentShellTaskId(toolCallId)
-            try {
-              return await registry.executeNormalized(name, args, signal)
-            } finally {
-              setCurrentShellTaskId(null)
-            }
+          if (isPhasedCommandCall(name, args)) {
+            return runWithCommandPhaseReporter(
+              (phase) => {
+                sendCommandPhase(toolCallId, phase)
+              },
+              commandPhases.get(toolCallId) ?? {
+                state: 'queued',
+                since: Date.now(),
+                launched: false,
+              },
+              async () => {
+                if (name !== 'run_shell') return registry.executeNormalized(name, args, signal)
+                // Tag the command's streamed output with this tool-call id so the
+                // terminal pane can route it into the matching "Agent tasks" card.
+                setCurrentShellTaskId(toolCallId)
+                try {
+                  return await registry.executeNormalized(name, args, signal)
+                } finally {
+                  setCurrentShellTaskId(null)
+                }
+              },
+              (outcome) =>
+                'value' in outcome
+                  ? normalizeToolExecuteResult(outcome.value).result
+                  : errorMessage(outcome.error),
+            )
           }
           return registry.executeNormalized(name, args, signal)
         }
@@ -2704,7 +2740,7 @@ async function runAgentWithInlineCanvas(
                       loopStopReason = chunk.stopReason
                       return
                     }
-                    sendChunk(chunk)
+                    sendLoopChunk(chunk)
                     if (chunk.type === 'context_compacted' && runContext) {
                       // The boundary is canonical; the opaque item stays in the
                       // provider-history projection. Best effort like the other
@@ -2764,7 +2800,7 @@ async function runAgentWithInlineCanvas(
           executeTool: executeParentTool,
           onChunk: (chunk: StreamChunk): void => {
             if (chunk.type === 'done') return
-            sendChunk(chunk)
+            sendLoopChunk(chunk)
             if (chunk.type === 'usage') {
               inputTokens += chunk.inputTokens
               outputTokens += chunk.outputTokens

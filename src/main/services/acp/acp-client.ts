@@ -6,6 +6,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ClientCapabilities,
   type ContentBlock,
   type LoadSessionResponse,
   type AvailableCommand,
@@ -24,7 +25,7 @@ import {
   type Usage,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -68,6 +69,22 @@ import {
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+
+/**
+ * Copse intentionally advertises no notice or compaction session capability.
+ * SDK 2.2 stabilizes those updates, but both remain opt-in until Copse has a
+ * durable host-owned persistence and presentation model for them.
+ *
+ * `terminal` is advertised only when this connection can back `terminal/*`
+ * with Copse's own run_shell path (#623).
+ */
+export function acpClientCapabilities(
+  readTextFile: boolean,
+  writeTextFile: boolean,
+  terminal = false,
+): ClientCapabilities {
+  return { fs: { readTextFile, writeTextFile }, terminal }
+}
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   detachForGroupKill,
@@ -82,6 +99,7 @@ import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
+import type { AcpTerminalHost } from './acp-terminals.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -719,6 +737,14 @@ export function toAcpMcpServers(
  */
 export interface MutableAcpHandlers {
   current: AcpClientHandlers | null
+  /**
+   * Connection-lifetime backing for ACP client terminals (#623). Present only
+   * when Copse can run the agent's commands itself (the session pool supplies
+   * it alongside the native bridge); `clientCapabilities.terminal` is
+   * advertised exactly when it is. Terminals outlive a turn, so this is not
+   * part of the per-turn handlers above.
+   */
+  terminals?: AcpTerminalHost
 }
 
 /** How a settled prompt turn reports back: ACP's `PromptResponse` essentials. */
@@ -1236,6 +1262,14 @@ export async function openAcpSession(
     pendingUpdates.set(sessionId, pending)
   }
 
+  // Client terminals run on this machine (#623): never offered to an agent on
+  // an SSH host, whose cwd names a remote tree, nor on Windows, where Copse has
+  // no project sandbox and run_shell uses cmd quoting.
+  const terminals =
+    handlers.terminals && spawnConfigSshTarget(config) === null && process.platform !== 'win32'
+      ? handlers.terminals
+      : undefined
+
   const app = client({ name: 'copse' })
     .onNotification(methods.client.session.update, (ctx) => {
       enqueueUpdate(ctx.params.sessionId, ctx.params.update)
@@ -1291,6 +1325,21 @@ export async function openAcpSession(
       const writeTextFile = handlers.current?.writeTextFile
       return writeTextFile ? writeTextFile(ctx.params) : UNSUPPORTED('fs/write_text_file')()
     })
+    .onRequest(methods.client.terminal.create, (ctx) =>
+      terminals ? terminals.create(ctx.params) : UNSUPPORTED('terminal/create')(),
+    )
+    .onRequest(methods.client.terminal.output, (ctx) =>
+      terminals ? terminals.output(ctx.params) : UNSUPPORTED('terminal/output')(),
+    )
+    .onRequest(methods.client.terminal.waitForExit, (ctx) =>
+      terminals ? terminals.waitForExit(ctx.params) : UNSUPPORTED('terminal/wait_for_exit')(),
+    )
+    .onRequest(methods.client.terminal.kill, (ctx) =>
+      terminals ? terminals.kill(ctx.params) : UNSUPPORTED('terminal/kill')(),
+    )
+    .onRequest(methods.client.terminal.release, (ctx) =>
+      terminals ? terminals.release(ctx.params) : UNSUPPORTED('terminal/release')(),
+    )
 
   const connection = app.connect(stream)
   let disposed = false
@@ -1298,6 +1347,7 @@ export async function openAcpSession(
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
     disposed = true
+    terminals?.dispose()
     connection.close()
     disposal = Promise.resolve(transport.dispose())
     return disposal
@@ -1334,7 +1384,7 @@ export async function openAcpSession(
     const initResponse = await perfSpan('ttft:acp-initialize', () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+        clientCapabilities: acpClientCapabilities(true, true, terminals !== undefined),
       }),
     )
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
@@ -1715,7 +1765,7 @@ export async function probeAcpAgent(
     return await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        clientCapabilities: acpClientCapabilities(false, false),
       })
       return ctx.buildSession(config.cwd).withSession((session) => {
         const configOptions = configOptionsFrom(session.newSessionResponse)

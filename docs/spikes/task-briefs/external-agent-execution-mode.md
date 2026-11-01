@@ -1,6 +1,10 @@
 # External agent execution mode
 
-Status: implementation ready for PR review; native visual validation remains open.
+> **Archived task brief.** Moved from `docs/plans/` on 2026-10-30. Delivered in
+> [#3775](https://github.com/copse-dev/agent-pane/pull/3775), with screenshots from
+> `agent-execution-mode.e2e.ts`.
+
+Status (at hand-off): implementation ready for PR review; native visual validation remained open.
 
 ## Task brief
 

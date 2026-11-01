@@ -1,7 +1,8 @@
 # Plugin capability API
 
-Status: stage 1 implemented; a first-party session-only interactive-client approval preview now
-provides part of stages 2–3. General provider registration and the rest of stages 2–5 remain open.
+Status: **Active** — stage 1 implemented; first-party session-only interactive-client previews for
+approvals ([#3847](https://github.com/copse-dev/agent-pane/pull/3847)) and activity and navigation
+([#3888](https://github.com/copse-dev/agent-pane/pull/3888)) provide part of stages 2–3. General provider registration and the rest of stages 2–5 remain open.
 
 ## Task brief
 

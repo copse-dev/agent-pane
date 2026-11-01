@@ -1,13 +1,20 @@
 # Handoff: set up the Tauri+Servo prototype and perf-test it against Electron
 
+> **Archived handoff.** Moved from `docs/plans/` on 2026-10-30. The measurement it set up was
+> delivered in [#1904](https://github.com/copse-dev/agent-pane/pull/1904) and
+> [#1907](https://github.com/copse-dev/agent-pane/pull/1907); results live in
+> `docs/plans/perf-data*/`. The in-repo `tauri-shell/` tree moved to
+> [copse-dev/tauri-shell](https://github.com/copse-dev/tauri-shell) in
+> [#1942](https://github.com/copse-dev/agent-pane/pull/1942).
+
 Audience: an agent (or human) starting from a fresh machine who has never seen
 this project. The setup commands below are written for Linux (apt, Xvfb); the
 JS build, the sidecar smoke test and the measurement harness all run unmodified
 on macOS, and §2.1–2.2 have been reproduced there. Goal: reproduce the working Copse-on-Servo
 prototype, then produce an apples-to-apples performance comparison against the
 Electron build of the same app. Architecture background:
-[`tauri-servo-migration.md`](./tauri-servo-migration.md); build/run reference:
-[`../../tauri-shell/README.md`](../../tauri-shell/README.md).
+[`tauri-servo-migration.md`](../../plans/tauri-servo-migration.md); build/run reference:
+[`copse-dev/tauri-shell`](https://github.com/copse-dev/tauri-shell).
 
 ## 1. What you are comparing
 

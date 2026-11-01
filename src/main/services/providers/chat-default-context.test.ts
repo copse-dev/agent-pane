@@ -2,8 +2,11 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { evaluateChatDefaultContext } from './chat-default-context.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
-import { setApiKey, deleteApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { setApiKey, deleteApiKey, setSetting } from '../storage/settings.ts'
 import { jsonResponse } from './test-response.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const AMBIENT_PROVIDER_ENV_VARS = [
   'ANTHROPIC_API_KEY',

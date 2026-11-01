@@ -5,7 +5,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type NewSessionRequest,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'

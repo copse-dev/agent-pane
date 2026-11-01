@@ -1,5 +1,8 @@
 # Product announcements
 
+Status: **Resolved** — implemented in `src/renderer/product-announcements.ts` and
+`announcement-catalog.ts`. This file doubles as the how-to for adding an announcement.
+
 Task brief: reusable, once-per-profile announcements for shipped product changes,
 for existing users after upgrades, with optional navigation to a Settings section.
 Base revision: 81215fcf7. No Compact graduation, default changes, remote content,
