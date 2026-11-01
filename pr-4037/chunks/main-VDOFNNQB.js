@@ -14496,7 +14496,7 @@ function createBackgroundTaskLogsSection(tc) {
     { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact tool-task-logs-button" },
     "Show logs"
   );
-  const output = el("div", { class: "tool-result tool-task-logs-output", hidden: true });
+  const output = el("div", { class: "tool-task-logs-output", hidden: true });
   const section2 = el(
     "div",
     { class: "tool-task-logs", "data-background-task-id": taskId },

@@ -7106,7 +7106,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-rollup-body > .tool-interruption-note {
   margin: var(--spacing-xs) 0;
 }
-.tool-result {
+.tool-result,
+.tool-task-logs-output {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   white-space: pre-wrap;
@@ -7114,7 +7115,8 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   overflow-y: auto;
   color: var(--text-secondary);
 }
-.tool-result pre {
+.tool-result pre,
+.tool-task-logs-output pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
