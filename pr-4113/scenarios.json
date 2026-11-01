@@ -40,6 +40,10 @@
     "label": "Explore result with verbatim excerpts"
   },
   {
+    "id": "read-explored",
+    "label": "Quote explored lines"
+  },
+  {
     "id": "subagent-ungrouped",
     "label": "Subagent stays ungrouped beside reading tools"
   },
