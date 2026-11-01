@@ -60,6 +60,7 @@ import {
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -151,6 +152,9 @@ const ENGINEERING_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.engineeringEnablem
 
 /** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
 const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
+
+/** One-time default-off seed for computer use on upgraded profiles. */
+const COMPUTER_USE_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.computerUseEnablement'
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -362,6 +366,20 @@ function migrateDarkFactoryEnablement(): void {
   disabled.add(DARK_FACTORY_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * `copse.computer-use` drives other Mac apps, so it must never start enabled.
+ * Manifest stability only reaches fresh profiles; an existing profile owns a
+ * disable list that predates the plugin. Seed it off exactly once, and leave a
+ * later opt-in to the user.
+ */
+function migrateComputerUseEnablement(): void {
+  if (storageGet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(COMPUTER_USE_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -929,6 +947,7 @@ export function getPluginService(): PluginService {
   migrateReviewerInputEnablement()
   migrateEngineeringEnablement()
   migrateDarkFactoryEnablement()
+  migrateComputerUseEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()

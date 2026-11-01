@@ -129,6 +129,7 @@ import { stopLocalClassifierServers } from './services/classifiers/local-classif
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
+import { disposeDesktopControlService } from './services/desktop-control/desktop-control-service.ts'
 import { initAppRun } from './ipc/app-run.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
@@ -1434,6 +1435,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeVnc = undefined
   await disposeSimulatorDesktop?.()
   disposeSimulatorDesktop = undefined
+  disposeDesktopControlService()
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   await clearSshWorkspaceFsCache()
