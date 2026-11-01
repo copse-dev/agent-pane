@@ -12671,6 +12671,23 @@ var init_frame_loop = __esm({
 });
 
 // src/renderer/views/transcript-scroll.ts
+function scrollIntoTranscriptView(target, options) {
+  const list = target.closest(".messages-list");
+  const band = list?.style.getPropertyValue("--sticky-prompt-band") ?? "";
+  if (!list || !band) {
+    target.scrollIntoView(options);
+    return;
+  }
+  const previous = list.style.scrollPaddingTop;
+  list.style.scrollPaddingTop = band;
+  list.style.setProperty("--sticky-prompt-scroll-band", band);
+  try {
+    target.scrollIntoView(options);
+  } finally {
+    list.style.scrollPaddingTop = previous;
+    list.style.removeProperty("--sticky-prompt-scroll-band");
+  }
+}
 function naturalRowTop(list, row2) {
   const listStyle = window.getComputedStyle(list);
   const previous = row2.previousElementSibling;
@@ -18263,7 +18280,7 @@ function mountConversationSearch(root) {
   function scrollCurrentIntoView() {
     const current = ranges[currentIdx];
     const target = current?.startContainer.parentElement;
-    target?.scrollIntoView({ block: "center", behavior: "auto" });
+    if (target) scrollIntoTranscriptView(target, { block: "center", behavior: "auto" });
   }
   function runSearch(preserveIndex = false) {
     const query = input.value;
@@ -18353,6 +18370,7 @@ var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEA
 var init_conversation_search = __esm({
   "src/renderer/views/conversation-search.ts"() {
     init_helpers();
+    init_transcript_scroll();
     init_icons();
     BASE_HIGHLIGHT = "chat-search";
     CURRENT_HIGHLIGHT = "chat-search-current";
@@ -20364,7 +20382,7 @@ function mountConversation(root, store2, api2) {
     const key = details.dataset["disclosureKey"];
     const threadId = store2.getState().activeThreadId;
     if (key && threadId) disclosures.choose(threadId, key, true);
-    details.scrollIntoView({ block: "nearest" });
+    scrollIntoTranscriptView(details, { block: "nearest" });
   });
   activityBar.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -20819,8 +20837,7 @@ function mountConversation(root, store2, api2) {
     }
     stickyPromptBand = stuck ? band : 0;
     const value = stuck && band > 0 ? `${String(band)}px` : "";
-    if (list.style.scrollPaddingTop !== value) {
-      list.style.scrollPaddingTop = value;
+    if (list.style.getPropertyValue("--sticky-prompt-band") !== value) {
       if (value) list.style.setProperty("--sticky-prompt-band", value);
       else list.style.removeProperty("--sticky-prompt-band");
     }
@@ -21595,7 +21612,7 @@ function mountConversation(root, store2, api2) {
       if (card instanceof HTMLDetailsElement) card.open = true;
       const target = card ?? message2;
       transcriptScroll.unpin();
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrollIntoTranscriptView(target, { behavior: "smooth", block: "center" });
       target.classList.add("reviewer-input-highlight");
       setTimeout(() => {
         target.classList.remove("reviewer-input-highlight");
