@@ -13,9 +13,10 @@ import {
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
-import { emitShellOutput } from './shell-output-context.ts'
+import { currentShellRunObserver, mirrorShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import { captureCommandPhaseReport } from './command-phase.ts'
 
 /** Tells the model how to reach output dropped from the middle of an over-cap run. */
 const RUN_SHELL_TRUNCATION_HINT =
@@ -80,6 +81,9 @@ export async function runShellOnce(
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   const owner = getThreadExecutionContext()
+  const reportPhase = captureCommandPhaseReport()
+  // Captured once: child stream callbacks need not run in the caller's context.
+  const observer = currentShellRunObserver()
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
       const spawnController = new AbortController()
@@ -87,6 +91,7 @@ export async function runShellOnce(
         if (signal.reason !== 'send_now') spawnController.abort(signal.reason)
       }
       signal.addEventListener('abort', cancelSpawn, { once: true })
+      reportPhase('starting')
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -105,6 +110,7 @@ export async function runShellOnce(
         // Wrapping the command in the sandbox failed (runner-side, not command
         // output). For a sandboxed run, surface it as spawnFailed so an unsandboxed
         // retry can be offered (issue #104); for an unsandboxed run it's a real error.
+        reportPhase('not_started', { reason: errorMessage(err) })
         if (!unsandboxed) {
           const message = errorMessage(err)
           resolve({ output: message, exitCode: -1, spawnFailed: true })
@@ -122,6 +128,18 @@ export async function runShellOnce(
           : null
       if (live) liveForegroundShells.add(live)
 
+      // A pid means the OS created the process; without one, wait for `spawn`
+      // so a binary that fails to exec reports `not_started`, never `running`.
+      let launched = false
+      const markLaunched = (): void => {
+        if (launched) return
+        launched = true
+        reportPhase('running')
+      }
+      if (proc.pid !== undefined) markLaunched()
+      else proc.once('spawn', markLaunched)
+      let stopped = false
+
       const startedAt = Date.now()
       const ranUnsandboxed = unsandboxed || !isProjectSandboxEnabled()
       const outputAcc = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, {
@@ -133,8 +151,10 @@ export async function runShellOnce(
       let releaseDetached: (() => Promise<void>) | undefined
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer): void => {
-        const toStream = outputAcc.append(data.toString())
-        if (toStream) emitShellOutput(toStream)
+        const text = data.toString()
+        observer?.output(text)
+        const toStream = outputAcc.append(text)
+        if (toStream) mirrorShellOutput(toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -159,9 +179,11 @@ export async function runShellOnce(
             timeoutMs: Math.max(1, timeout_ms - (Date.now() - startedAt)),
           }).then(
             (info) => {
+              reportPhase('running', { backgroundTaskId: info.id })
               resolve({ output: outputAcc.toString(), exitCode: 0, backgroundId: info.id })
             },
             (error: unknown) => {
+              reportPhase('cancelled')
               cancelKill = terminateProcessTree(proc)
               reject(error instanceof Error ? error : new Error(String(error)))
             },
@@ -169,6 +191,7 @@ export async function runShellOnce(
           return
         }
         clearTimeout(timer)
+        stopped = true
         cancelKill = terminateProcessTree(proc)
       })
 
@@ -184,6 +207,7 @@ export async function runShellOnce(
         if (!settled) {
           settled = true
           signal.removeEventListener('abort', onAbort)
+          reportPhase('timed_out')
           reject(timeoutError(timeout_ms, outputAcc.toString()))
         }
       }, timeout_ms)
@@ -208,6 +232,7 @@ export async function runShellOnce(
         finish()
         if (settled) return
         settled = true
+        if (!launched) reportPhase('not_started', { reason: errorMessage(err) })
         // A child 'error' (e.g. the sandbox wrapper binary failed to launch) is a
         // runner-side failure, not command-controlled output. Surface it as a result
         // with spawnFailed so an unsandboxed retry can be offered (issue #104), but
@@ -226,14 +251,20 @@ export async function runShellOnce(
       })
 
       proc.on('close', (code, closeSignal) => {
+        // Reported even after a timeout settled the promise: the observer's
+        // terminal is still waiting for the process to actually exit.
+        if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
         cleanup()
         const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
         settled = true
+        const exitCode = exitCodeFor(code, closeSignal)
+        if (stopped) reportPhase('cancelled')
+        else reportPhase('exited', { exitCode })
         resolve({
           output: outputAcc.toString(),
-          exitCode: exitCodeFor(code, closeSignal),
+          exitCode,
           sandboxViolationCount: violationCount,
         })
       })

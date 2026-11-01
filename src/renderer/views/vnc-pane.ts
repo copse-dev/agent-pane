@@ -1,3 +1,4 @@
+import { SIMULATOR_REMOVED_DETAIL } from '@shared/types/simulator-desktop.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
@@ -23,7 +24,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 
@@ -1799,6 +1800,7 @@ function mountVncSession(
     simulatorView?.frame(frame)
   })
   const stopSimulatorStatus = api.simulatorDesktop.onStatus((event) => {
+    if (event.status === 'closed' && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines()
     if (event.id !== simulatorSessionId) return
     if (event.status === 'error') {
       clearViewer(
@@ -1819,8 +1821,8 @@ function mountVncSession(
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value,
     )
   })
-  const stopMode = store.on('right_panel_mode_changed', () => {
-    if (!vncModeActive(store)) return
+  const stopMode = selectRightPanelMode(store, 'vnc', (active) => {
+    if (!active) return
     void loadMachines()
     if (options.isActive()) {
       if (rfb) rfb.focus()

@@ -19,6 +19,9 @@ import { threadDirectoryPath } from '../thread-store.ts'
 import { runRemoteAgentFromSettings } from './remote-agent-client.ts'
 import { runHostedGitTransfer } from './openai-git-worker.ts'
 import { clearOpenAiAgentSession, readOpenAiArtifact } from './openai-agents-client.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const page = (data: unknown[]): Response => Response.json({ data, has_more: false, last_id: null })
 

@@ -11,7 +11,7 @@ import {
   restoreThread,
 } from '@shared/store/thread-helpers.ts'
 import { excerptText, sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from '../controller/side-chat.ts'
 import {
   ensureThreadMessages,
@@ -499,8 +499,7 @@ export function mountSideChatPane(
       openRightPanel(store, 'side-chat')
       render()
     }),
-    store.on('right_panel_mode_changed', schedule),
-    store.on('files_pane_changed', schedule),
+    selectRightPanelMode(store, 'side-chat', schedule),
     store.on('threads_changed', schedule),
     store.on('message_added', schedule),
     store.on('message_token', schedule),

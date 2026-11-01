@@ -217,6 +217,21 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     assert.equal(requireQuery(at(items, 0), '.file-search-name').textContent, 'file-tree.ts')
   })
 
+  it('does not run a previous open’s debounced query after reopening', async () => {
+    openFileSearchDialog()
+    await tick(0)
+    const input = qsRequired<HTMLInputElement>(dialog, '.file-search-input')
+    input.value = 'tree'
+    input.dispatchEvent(new Event('input'))
+    closeFileSearchDialog()
+    openFileSearchDialog()
+    await tick(150)
+
+    assert.equal(input.value, '')
+    assert.deepEqual(calls.queries, ['', ''])
+    assert.equal(dialog.querySelectorAll('.file-search-item').length, 2)
+  })
+
   it('shows an empty state when nothing matches', async () => {
     result = []
     openFileSearchDialog()

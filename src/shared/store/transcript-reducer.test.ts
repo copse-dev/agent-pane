@@ -110,6 +110,66 @@ test('remote agent setup stages are status for the window, never transcript', ()
   )
 })
 
+test('ACP whole-message upserts replace only their external message id', () => {
+  const { main, window } = reduceBoth([
+    {
+      type: 'acp_content',
+      channel: 'message',
+      messageId: 'm-1',
+      content: { type: 'text', text: 'first draft' },
+    },
+    {
+      type: 'acp_content',
+      channel: 'message',
+      messageId: 'm-2',
+      content: { type: 'text', text: 'second stays' },
+    },
+    {
+      type: 'acp_content_replace',
+      channel: 'message',
+      messageId: 'm-1',
+      content: [
+        { type: 'text', text: 'first final' },
+        {
+          type: 'image',
+          dataUrl: 'data:image/png;base64,cGl4ZWxz',
+          mimeType: 'image/png',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  const [, first, second] = messagesOf(main)
+  assert.ok(first)
+  assert.ok(second)
+  assert.equal(first.content, 'first final')
+  assert.deepEqual(first.contentBlocks, [
+    { type: 'image', dataUrl: 'data:image/png;base64,cGl4ZWxz', mimeType: 'image/png' },
+  ])
+  assert.equal(second.content, 'second stays')
+})
+
+test('ACP whole-thought upserts replace reasoning by external id', () => {
+  const { main, window } = reduceBoth([
+    {
+      type: 'acp_content',
+      channel: 'thought',
+      messageId: 'thought-1',
+      content: { type: 'text', text: 'draft reasoning' },
+    },
+    {
+      type: 'acp_content_replace',
+      channel: 'thought',
+      messageId: 'thought-1',
+      content: [{ type: 'text', text: 'final reasoning' }],
+    },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.equal(messagesOf(main).at(1)?.reasoning, 'final reasoning')
+})
+
 test('a machine turn prompt takes the id main stamped', () => {
   const { main, window } = reduceBoth([
     {
@@ -185,4 +245,26 @@ test('a user Stop is labelled by the hook, and an already-labelled outcome is ke
   reducer.apply('t1', { type: 'turn_outcome', outcome: { ...cancelled, userAbort: 'stop' } })
   reducer.apply('t1', { type: 'done' })
   assert.equal(messagesOf(store).at(-1)?.turnOutcome?.userAbort, 'stop')
+})
+
+test('a command phase update lands on its card in main and the window alike', () => {
+  const { main, window } = reduceBoth([
+    { type: 'tool_call', toolCall: { id: 'sh1', name: 'run_shell', args: { command: 'ls' } } },
+    {
+      type: 'tool_call_update',
+      toolCallId: 'sh1',
+      commandPhase: { state: 'awaiting_approval', since: 2, launched: false },
+    },
+    {
+      type: 'tool_call_update',
+      toolCallId: 'sh1',
+      commandPhase: { state: 'exited', since: 3, launched: true, exitCode: 2 },
+    },
+    { type: 'tool_result', toolCallId: 'sh1', result: 'Exited with code 2', isError: true },
+  ])
+  for (const store of [main, window]) {
+    const call = messagesOf(store).at(-1)?.toolCalls.at(0)
+    assert.equal(call?.status, 'error')
+    assert.deepEqual(call.commandPhase, { state: 'exited', since: 3, launched: true, exitCode: 2 })
+  }
 })

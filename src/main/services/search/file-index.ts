@@ -2,9 +2,14 @@ import { resolve } from 'node:path'
 import { runCommand } from '../exec/command-runner.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { isRgAvailableForTarget } from '../tool-availability.ts'
-import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { toRelativePathWithinRoot } from '../workspace.ts'
-import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+  threadProjectExecutionTarget,
+  type ExecutionTarget,
+} from '../ssh-workspace/execution-target.ts'
+import { normalizeRemoteWorkspacePath, toRelativePathWithinRoot } from '../workspace.ts'
+import { indexBuildStarted, indexBuildFinished, indexBuildDiscarded } from './index-status.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import {
   FILE_INDEX_LIST_MAX_BYTES,
@@ -31,13 +36,28 @@ interface Listing {
 }
 
 /**
- * One file index per execution root. A worktree thread runs against a
+ * One file index per execution target and root. A worktree thread runs against a
  * checkout under `~/.copse/worktrees/<project>/<thread>/` — outside the
  * primary workspace root — so a single global index would serve it the
  * shared checkout's file list instead of its own (#1400).
  */
 const indexes = new Map<string, FileIndex>()
 const buildsInFlight = new Map<string, Promise<void>>()
+// Invalidation revokes publication independently of the readonly subprocess.
+// A newer build for a reused root must not inherit or be removed by old work.
+const publicationTokens = new Map<string, symbol>()
+
+export function resolveFileIndexTarget(): ExecutionTarget {
+  return threadProjectExecutionTarget() ?? getActiveExecutionTarget()
+}
+
+export function fileIndexKey(root: string, target = resolveFileIndexTarget()): string {
+  // Identical paths on two SSH hosts (or on this machine and a host) name
+  // different trees. Neither snapshots nor single-flight builds may cross them.
+  return isSshExecutionTarget(target)
+    ? `ssh:${target.hostId}\0${normalizeRemoteWorkspacePath(root)}`
+    : `local\0${resolve(root)}`
+}
 
 const LIST_CMD_OPTS = {
   timeout_ms: FILE_INDEX_LIST_TIMEOUT_MS,
@@ -61,13 +81,17 @@ function isIndexableRelativePath(rel: string): boolean {
   return !parts.some((part) => part === 'node_modules' || part.startsWith('.'))
 }
 
-async function listFilesViaFind(workspaceRoot: string): Promise<Listing> {
+async function listFilesViaFind(
+  workspaceRoot: string,
+  executionTarget: ExecutionTarget,
+): Promise<Listing> {
   const { stdout, code, stdoutTruncated } = await runCommand(
     'find',
     [workspaceRoot, '-type', 'f'],
     {
       ...LIST_CMD_OPTS,
       cwd: workspaceRoot,
+      executionTarget,
     },
   )
   if (code !== 0) return { paths: [], truncated: false }
@@ -79,12 +103,16 @@ async function listFilesViaFind(workspaceRoot: string): Promise<Listing> {
   return { paths, truncated: stdoutTruncated }
 }
 
-async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
+async function listFilesViaRg(
+  workspaceRoot: string,
+  executionTarget: ExecutionTarget,
+): Promise<Listing> {
   // No `--sort path`: sorting waits for the full walk and slows SSH listings.
   // Sort relative paths in-process after the listing completes.
   const { stdout, stdoutTruncated } = await runCommand('rg', ['--files', workspaceRoot], {
     ...LIST_CMD_OPTS,
     cwd: workspaceRoot,
+    executionTarget,
     // A listing only reads. The writable workspace overlay would make Linux
     // bubblewrap create empty placeholders for every missing mandatory
     // write-deny path (.bashrc, .gitconfig, .vscode, ...) in the checkout, and
@@ -101,14 +129,20 @@ async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
   return { paths, truncated: stdoutTruncated }
 }
 
-async function runBuild(key: string, workspaceRoot: string): Promise<void> {
+async function runBuild(
+  key: string,
+  workspaceRoot: string,
+  target: ExecutionTarget,
+  token: symbol,
+): Promise<void> {
   indexBuildStarted('fileIndex')
+  let succeeded = false
   try {
     let listing: Listing
-    if (await isRgAvailableForTarget()) {
-      listing = await listFilesViaRg(workspaceRoot)
-    } else if (isActiveSshWorkspace()) {
-      listing = await listFilesViaFind(workspaceRoot)
+    if (await isRgAvailableForTarget(target)) {
+      listing = await listFilesViaRg(workspaceRoot, target)
+    } else if (isSshExecutionTarget(target)) {
+      listing = await listFilesViaFind(workspaceRoot, target)
     } else {
       // The in-process walk streams into an array — no subprocess pipe, so
       // nothing to overflow.
@@ -121,28 +155,38 @@ async function runBuild(key: string, workspaceRoot: string): Promise<void> {
         `[copse-panel] file listing for ${workspaceRoot} exceeded its output cap; the index holds only ${String(listing.paths.length)} of its paths`,
       )
     }
-    indexes.set(key, {
-      paths: listing.paths,
-      lastBuilt: Date.now(),
-      memoryBytes: estimateIndexMemoryBytes(listing.paths),
-      truncated: listing.truncated,
-    })
-    indexBuildFinished('fileIndex', true)
-  } catch (err) {
-    indexBuildFinished('fileIndex', false)
-    throw err
+    if (publicationTokens.get(key) === token) {
+      indexes.set(key, {
+        paths: listing.paths,
+        lastBuilt: Date.now(),
+        memoryBytes: estimateIndexMemoryBytes(listing.paths),
+        truncated: listing.truncated,
+      })
+    }
+    succeeded = true
   } finally {
-    buildsInFlight.delete(key)
+    if (publicationTokens.get(key) === token) {
+      publicationTokens.delete(key)
+      buildsInFlight.delete(key)
+      indexBuildFinished('fileIndex', succeeded)
+    } else {
+      indexBuildDiscarded('fileIndex')
+    }
   }
 }
 
-export function buildIndex(workspaceRoot: string): Promise<void> {
-  const key = resolve(workspaceRoot)
-  // Single-flight per root: concurrent open/watcher/diff-queue callers for the
+export function buildIndex(
+  workspaceRoot: string,
+  target = resolveFileIndexTarget(),
+): Promise<void> {
+  const key = fileIndexKey(workspaceRoot, target)
+  // Single-flight per target/root: concurrent open/watcher/diff-queue callers for the
   // same root share one listing; other roots build independently.
   let inFlight = buildsInFlight.get(key)
   if (!inFlight) {
-    inFlight = runBuild(key, workspaceRoot)
+    const token = Symbol()
+    publicationTokens.set(key, token)
+    inFlight = runBuild(key, workspaceRoot, target, token)
     buildsInFlight.set(key, inFlight)
   }
   return inFlight
@@ -163,14 +207,26 @@ export function buildIndex(workspaceRoot: string): Promise<void> {
  * starved consumers indefinitely — observed as the `@` mention picker hanging
  * past its timeout on CI, where the no-rg walk makes each rebuild slow.
  */
-export async function whenFileIndexReady(root: string): Promise<void> {
-  const key = resolve(root)
+export async function whenFileIndexReady(
+  root: string,
+  target = resolveFileIndexTarget(),
+): Promise<void> {
+  const key = fileIndexKey(root, target)
   if (indexes.has(key)) return
   await buildsInFlight.get(key)?.catch(() => undefined)
 }
 
-export function getIndex(root: string): FileIndex | null {
-  return indexes.get(resolve(root)) ?? null
+/** Wait for and read one owner's listing without re-resolving the UI selection. */
+export async function getReadyFileIndex(
+  root: string,
+  target = resolveFileIndexTarget(),
+): Promise<FileIndex | null> {
+  await whenFileIndexReady(root, target)
+  return getIndex(root, target)
+}
+
+export function getIndex(root: string, target = resolveFileIndexTarget()): FileIndex | null {
+  return indexes.get(fileIndexKey(root, target)) ?? null
 }
 
 /**
@@ -181,23 +237,31 @@ export function getIndex(root: string): FileIndex | null {
  * execution root through several IPCs, #1694) consult this to skip a listing
  * that would only reproduce the snapshot already in hand.
  */
-export function getIndexAgeMs(root: string): number | null {
-  const entry = indexes.get(resolve(root))
+export function getIndexAgeMs(root: string, target = resolveFileIndexTarget()): number | null {
+  const entry = indexes.get(fileIndexKey(root, target))
   return entry ? Date.now() - entry.lastBuilt : null
 }
 
 /** Conservative retained-heap size for one coherent file-list snapshot. */
-export function getIndexMemoryBytes(root: string): number | null {
-  return indexes.get(resolve(root))?.memoryBytes ?? null
+export function getIndexMemoryBytes(
+  root: string,
+  target = resolveFileIndexTarget(),
+): number | null {
+  return indexes.get(fileIndexKey(root, target))?.memoryBytes ?? null
 }
 
 /** Drop the cached index for one root, or every root when called with none. */
-export function invalidateIndex(root?: string): void {
+export function invalidateIndex(root?: string, target?: ExecutionTarget): void {
   if (root === undefined) {
     indexes.clear()
+    publicationTokens.clear()
+    buildsInFlight.clear()
     return
   }
-  indexes.delete(resolve(root))
+  const key = fileIndexKey(root, target)
+  indexes.delete(key)
+  publicationTokens.delete(key)
+  buildsInFlight.delete(key)
 }
 
 /**
@@ -209,15 +273,16 @@ export function invalidateIndex(root?: string): void {
  */
 export function getIndexStats(
   root: string,
+  target = resolveFileIndexTarget(),
 ): { pathCount: number; byteEstimate: number | null; listingTruncated: boolean } | null {
-  const entry = indexes.get(resolve(root))
+  const entry = indexes.get(fileIndexKey(root, target))
   if (!entry) return null
   return { pathCount: entry.paths.length, byteEstimate: null, listingTruncated: entry.truncated }
 }
 
 /** Test hook — install a fixed file index for a root without scanning it. */
 export function setIndexForTest(paths: string[] | null, root: string): void {
-  const key = resolve(root)
+  const key = fileIndexKey(root)
   if (paths === null) indexes.delete(key)
   else
     indexes.set(key, {

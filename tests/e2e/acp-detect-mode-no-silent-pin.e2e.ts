@@ -20,7 +20,7 @@ import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts
 const ACP_FIXTURE = `
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 
 assert.deepEqual(process.argv.slice(2), ['--acp', '--stdio'])
 agent({ name: 'mode-default-fixture' })

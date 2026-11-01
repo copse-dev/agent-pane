@@ -24,7 +24,7 @@ import {
 import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
-  EXPLORE_TOOL_NAMES,
+  DUPLICATE_GUARDED_TOOL_NAMES,
   isDuplicateExploreCall,
   nextConsecutiveExploreWithoutRead,
   normalizeExploreArgs,
@@ -1065,7 +1065,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         // what an earlier read returned, so re-reading after it is fresh work,
         // not a repeat: without this, `read_file` of a range just edited with
         // `str_replace` was refused as a duplicate for the whole window.
-        if (!EXPLORE_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
+        if (!DUPLICATE_GUARDED_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()
@@ -1244,6 +1244,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // Explore-without-read streak (#1433) driving the `loop-nudge` hook's
   // read-specific condition; see `nextConsecutiveExploreWithoutRead`.
   const consecutiveExploreWithoutRead = { value: 0 }
+  // In explore mode the parent has no read_file; the explore-without-read
+  // nudge then points at explore's verbatim excerpts instead (#1433, Fix 0).
+  const readFileOffered = tools.some((t) => t.name === 'read_file')
   // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
   const recentReasoningTexts: string[] = []
 
@@ -1361,6 +1364,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
           streamCappedAsRunaway: false,
           consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+          readFileOffered,
         })
 
         if (preNudges.stuckFinalize !== undefined) {
@@ -1473,6 +1477,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
         streamCappedAsRunaway: false,
         consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+        readFileOffered,
       })
       if (preNudges.loop !== undefined) {
         messages.push({ role: 'user', content: preNudges.loop })
