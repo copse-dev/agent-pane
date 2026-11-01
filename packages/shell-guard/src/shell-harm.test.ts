@@ -746,8 +746,10 @@ describe('Guarded YOLO shell harm gate', () => {
     // segment, so each of these was read as a relative executable and cost the
     // prompt a line of its own — in shell, before any script was ever read.
     const command = [
-      'npx \\',
+      'echo \\',
       '  @scope/tool --check',
+      'npx \\',
+      '  tool --check',
       'prettier --write \\',
       "  'src/**/*.ts'",
       'ls \\',
@@ -1095,6 +1097,24 @@ describe('Guarded YOLO shell harm gate — package binaries', () => {
       [`${WS}/node_modules/evil/index.js`]: RM_ROOT,
     })
     assert.equal(action('./node_modules/.bin/evil.png', context), 'deny')
+  })
+
+  it('asks before a runner runs a scoped name, whose file the gate cannot tell', () => {
+    // npm runs `.bin/@scope/pkg` if present, else the binary the installed
+    // manifest names (`custom` here), not `.bin/pkg`; `pnpm exec` runs the
+    // relative path `./@scope/pkg`. A harmless `.bin/pkg` must not stand in.
+    const context = disk({
+      [`${BIN}/pkg`]: '#!/usr/bin/env node\nconsole.log(1)\n',
+      [`${BIN}/custom`]: `#!/usr/bin/env node\n${RM_ROOT}`,
+      [`${WS}/node_modules/@scope/pkg/package.json`]:
+        '{"name":"@scope/pkg","bin":{"custom":"bin.js"}}',
+      [`${WS}/@scope/pkg`]: '#!/bin/sh\nrm -rf "$HOME"\n',
+    })
+    for (const command of ['npm exec @scope/pkg', 'npx @scope/pkg', 'pnpm exec @scope/pkg']) {
+      assert.equal(action(command, context), 'prompt', command)
+    }
+    // The file the runner does run is read when it is named directly.
+    assert.equal(action('npx custom', context), 'deny')
   })
 
   it('asks when runner options choose which package binary runs', () => {

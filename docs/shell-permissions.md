@@ -924,7 +924,9 @@ While active:
     `pnpm exec` runs any other command from PATH, so that command is assessed as if typed, and
     `pnpm exec -c` assesses its shell string. An option the gate does not model, which can choose another directory or
     workspace package (`--prefix`, `-C`, `--filter`, `-r`), prompts, and so does `npx ./dir`, which
-    runs the package in a local directory.
+    runs the package in a local directory. A scoped name (`npx @scope/pkg`) asks too: npm runs the
+    binary the installed package's manifest names, which need not be `.bin/pkg`, and `pnpm exec`
+    runs it as the relative path `./@scope/pkg`.
   - Registry packages are read the same way, with no exemption. Their bins are ordinarily small
     launchers that read clean; one that recursively deletes a computed path (`c8` clears its
     temporary directory) asks.
