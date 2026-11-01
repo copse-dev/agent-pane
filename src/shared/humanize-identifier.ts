@@ -20,6 +20,7 @@ const CANONICAL_WORDS: ReadonlyMap<string, string> = new Map([
   ['llm', 'LLM'],
   ['macos', 'macOS'],
   ['mcp', 'MCP'],
+  ['mdn', 'MDN'],
   ['okf', 'OKF'],
   ['pdf', 'PDF'],
   ['pii', 'PII'],

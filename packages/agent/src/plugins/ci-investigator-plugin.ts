@@ -55,7 +55,7 @@ export const ciInvestigatorPlugin: RegisteredPlugin = definePlugin(
   {
     name: CI_INVESTIGATOR_PLUGIN_ID,
     description:
-      'Delegates to a read-only subagent that reads failing CI run logs in depth and reports the root cause via the `investigate_ci` tool (with the `gh_run_list` / `gh_run_view` log helpers), and points the "Investigate CI failure" follow-up at it.',
+      'Investigates failing CI runs with a read-only agent that examines the logs and reports the root cause. Start it with the "Investigate CI failure" follow-up.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [...CI_INVESTIGATOR_PLUGIN_TOOL_NAMES] },
