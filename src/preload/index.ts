@@ -921,6 +921,9 @@ const api: ApiClient = {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
+    searchRequests: (projectId: string, query: string) =>
+      ipcRenderer.invoke('threads:search-requests', projectId, query),
+    cancelRequestSearch: () => ipcRenderer.invoke('threads:cancel-request-search'),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (
