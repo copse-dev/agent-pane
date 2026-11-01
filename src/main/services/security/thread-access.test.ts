@@ -5,6 +5,7 @@ import { threadExecutionContextStorage } from '../thread-execution-context-store
 import { runWithApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 import {
+  chatReadRootsForThread,
   ensureChatStoreRead,
   ensureThreadAccess,
   hasThreadAccess,
@@ -210,6 +211,33 @@ describe('conversation access', () => {
           assert.deepEqual(threadChatReadRoots('/store'), ['/store'])
         }),
     )
+  })
+
+  it("resolves a named thread's roots outside its run only from its own execution context", async () => {
+    // A spawner outside the turn's context has nothing vouching for the thread.
+    assert.deepEqual(chatReadRootsForThread('source', '/store'), [])
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'project',
+        threadId: 'source',
+        projectRoot: '/repo',
+        root: '/repo',
+        checkoutMode: 'shared',
+        branch: null,
+        followUpParentThreadId: 'parent',
+      },
+      () => {
+        // No active run identity is needed: the thread is named explicitly.
+        assert.deepEqual(chatReadRootsForThread('source', '/store'), [
+          '/store/project/source',
+          '/store/project/parent',
+        ])
+        assert.deepEqual(chatReadRootsForThread('other', '/store'), [])
+      },
+    )
+    await setSetting('threadReadAccess', ['source'])
+    assert.deepEqual(chatReadRootsForThread('source', '/store'), ['/store'])
+    assert.deepEqual(chatReadRootsForThread('other', '/store'), [])
   })
 
   it('lets a follow-up read only its declared parent without consent', () => {

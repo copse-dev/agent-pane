@@ -66,6 +66,13 @@ follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
+A sandboxed coding agent (ACP) gets the same read mount. Its isolated session host has no run of
+its own, so the main process resolves the thread's readable directories when the turn starts and
+hands them to the host; a host given none mounts no conversations, rather than the whole store an
+app-owned operation without a thread would see. Granting or revoking access reaches the agent at
+its next turn, which restarts it and reattaches its session. Agent processes started without a
+thread, such as model probes and advisor consultations, read no conversations.
+
 Local shell reads also check each named target's symlink destination before reusing an
 outside-project path grant. A file or directory alias into another thread still requires
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.

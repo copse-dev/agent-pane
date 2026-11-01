@@ -189,6 +189,15 @@ export interface AcpAgentSpawnConfig {
    */
   sandbox?: AcpAgentSandboxConfig
   /**
+   * Chat-store directories the sandboxed agent may read: its own transcript, a
+   * declared follow-up parent, or the whole store once its thread holds "read
+   * other threads" consent (`chatReadRootsForThread`). Resolved by the turn in
+   * the main process and carried to the session host, which has no run context
+   * of its own. Absent means none. Part of the pool fingerprint, so granting or
+   * revoking consent respawns the agent (reattaching its session) next turn.
+   */
+  chatReadRoots?: string[]
+  /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
    * `mcpCapabilities.http`; ignored otherwise.
@@ -558,6 +567,9 @@ export async function spawnAcpAgentProcess(
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+      // Explicit even in-process (the host-fallback path and probes): the
+      // ambient run may be missing or belong to another chain.
+      chatReadRoots: config.chatReadRoots ?? [],
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for

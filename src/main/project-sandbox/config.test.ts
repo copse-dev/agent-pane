@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import {
   acpAgentSandboxOverlay,
   baseSandboxConfig,
@@ -1140,7 +1140,72 @@ describe('gitBackupSandboxOverlay', () => {
   })
 })
 
+/** Whether an ASRT `allowRead` list grants `path`, literally or through a `/**` entry. */
+function grantsRead(overlay: ReturnType<typeof workspaceSandboxOverlay>, path: string): boolean {
+  return (overlay.filesystem?.allowRead ?? []).some((entry) => {
+    if (entry === path) return true
+    if (!entry.endsWith('/**')) return false
+    const dir = entry.slice(0, -'/**'.length)
+    return path === dir || path.startsWith(`${dir}${sep}`)
+  })
+}
+
 describe('chat-store sandbox reads', () => {
+  it("mounts only an ACP agent's resolved chat roots, never the no-run whole store", () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-chat-overlay-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const own = join(store, 'project', 'own')
+      const sibling = join(store, 'project', 'sibling')
+      const otherProject = join(store, 'other-project', 'thread')
+      const transcripts = [own, sibling, otherProject].map((thread) => {
+        mkdirSync(thread, { recursive: true })
+        writeFileSync(join(thread, 'meta.json'), '{}')
+        return join(thread, 'meta.json')
+      })
+      const [ownMeta = '', siblingMeta = '', otherProjectMeta = ''] = transcripts
+      const outside = join(profile, 'outside')
+      mkdirSync(outside)
+      writeFileSync(join(outside, 'secret'), 'x')
+      const workspace = join(profile, 'checkout')
+      mkdirSync(workspace)
+      const sandbox = { allowedDomains: ['api.example'] }
+
+      // The session-host worker builds the agent's overlay with no active run,
+      // where the ambient answer is the whole store (an app-owned operation).
+      assert.ok(grantsRead(workspaceSandboxOverlay(workspace), siblingMeta))
+
+      // Nothing resolved (a probe, the advisor, a malformed host request): no transcripts.
+      const unresolved = acpAgentSandboxOverlay(workspace, sandbox)
+      for (const transcript of transcripts) {
+        assert.equal(grantsRead(unresolved, transcript), false, transcript)
+      }
+
+      // Without consent: its own thread only, not a sibling or another project's.
+      const confined = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [own] })
+      assert.ok(grantsRead(confined, ownMeta))
+      assert.equal(grantsRead(confined, siblingMeta), false)
+      assert.equal(grantsRead(confined, otherProjectMeta), false)
+
+      // After "Read your other threads?" is approved: the whole store, read-only.
+      const consented = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [store] })
+      for (const transcript of transcripts) assert.ok(grantsRead(consented, transcript), transcript)
+      assert.equal(consented.filesystem?.allowWrite.includes(own), false)
+
+      // The roots narrow the chat-store mount; they can never name another path.
+      const widened = acpAgentSandboxOverlay(workspace, sandbox, {
+        chatReadRoots: [outside, `${store}${sep}..${sep}outside`, 'workspace'],
+      })
+      assert.equal(grantsRead(widened, join(outside, 'secret')), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
   it('keeps chat data read-only without shadowing nested scratch or checkout write mounts', () => {
     const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-chat-overlay-')))
     const previous = process.env['COPSE_DIR']

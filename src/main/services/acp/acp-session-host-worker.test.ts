@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { describe, it } from 'node:test'
 import * as esbuild from 'esbuild'
+import { expectStringArray, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { activeSandboxNetworkScopeLabels } from '../../project-sandbox/network-scope.ts'
 import {
   ACP_SESSION_HOST_REQUEST_ENV,
@@ -56,6 +57,7 @@ function bundleWorker(outDir: string, sandboxRuntimeAlias?: string): string {
 }
 
 const SANDBOX_RUNTIME_STUB = `
+import { writeFileSync } from 'node:fs'
 let config = null
 export const SandboxManager = {
   async initialize(next, ask) {
@@ -65,7 +67,11 @@ export const SandboxManager = {
   getConfig() { return config },
   updateConfig(next) { config = next },
   isSandboxingEnabled() { return config !== null },
-  async wrapWithSandboxArgv(command, shell) { return { argv: [shell, '-c', command] } },
+  async wrapWithSandboxArgv(command, shell, overlay) {
+    const capture = process.env.COPSE_TEST_OVERLAY_CAPTURE
+    if (capture) writeFileSync(capture, JSON.stringify(overlay?.filesystem?.allowRead ?? []))
+    return { argv: [shell, '-c', command] }
+  },
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
@@ -74,11 +80,17 @@ export function getApplySeccompBinaryPath() { return null }
 const RELAY_AGENT =
   "process.stdout.write(`env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
 
-function spawnWorker(workerPath: string, cwd: string, agentScript = RELAY_AGENT): ChildProcess {
+function spawnWorker(
+  workerPath: string,
+  cwd: string,
+  agentScript = RELAY_AGENT,
+  extra: { env?: Record<string, string>; config?: Record<string, unknown> } = {},
+): ChildProcess {
   return spawn(process.execPath, [workerPath], {
     cwd,
     env: {
       ...process.env,
+      ...extra.env,
       ELECTRON_RUN_AS_NODE: '1',
       [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify({
         config: {
@@ -87,11 +99,22 @@ function spawnWorker(workerPath: string, cwd: string, agentScript = RELAY_AGENT)
           env: { AGENT_SETTING: 'kept' },
           cwd,
           sandbox: { allowedDomains: ['api.example'] },
+          ...extra.config,
         },
         allowLocalhost: true,
       }),
     },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+  })
+}
+
+/** Whether an ASRT `allowRead` list grants `path`, literally or through a `/**` entry. */
+function grantsRead(allowRead: readonly string[], path: string): boolean {
+  return allowRead.some((entry) => {
+    if (entry === path) return true
+    if (!entry.endsWith('/**')) return false
+    const dir = entry.slice(0, -'/**'.length)
+    return path === dir || path.startsWith(`${dir}${sep}`)
   })
 }
 
@@ -166,6 +189,52 @@ describe('ACP session host worker', () => {
     }
   })
 
+  it("mounts only the chat-store roots the main process resolved for the agent's thread", async () => {
+    const dir = realpathSync.native(makeBundleDir('chat-roots-'))
+    const stub = join(dir, 'sandbox-runtime-stub.mjs')
+    writeFileSync(stub, SANDBOX_RUNTIME_STUB)
+    const worker = bundleWorker(dir, stub)
+    // A real chat store under an isolated COPSE_DIR: this thread, a sibling
+    // thread in the same project, and a thread in another project.
+    const profile = join(dir, 'profile')
+    const store = join(profile, 'workspace')
+    const own = join(store, 'project', 'own')
+    const [ownMeta = '', siblingMeta = '', otherProjectMeta = ''] = [
+      own,
+      join(store, 'project', 'sibling'),
+      join(store, 'other-project', 'thread'),
+    ].map((thread) => {
+      mkdirSync(thread, { recursive: true })
+      writeFileSync(join(thread, 'meta.json'), '{}')
+      return join(thread, 'meta.json')
+    })
+    const cwd = join(dir, 'checkout')
+    mkdirSync(cwd)
+    // The host has no active run. Before the roots were carried, it resolved
+    // that as the whole store and every hosted agent could read every thread.
+    const cases = [
+      { label: 'unresolved', config: {}, own: false },
+      { label: 'own-thread', config: { chatReadRoots: [own] }, own: true },
+      { label: 'malformed', config: { chatReadRoots: [store, 3] }, own: false },
+    ]
+    for (const testCase of cases) {
+      const capture = join(dir, `${testCase.label}-allow-read.json`)
+      const child = spawnWorker(worker, cwd, RELAY_AGENT, {
+        env: { COPSE_DIR: profile, COPSE_TEST_OVERLAY_CAPTURE: capture },
+        config: testCase.config,
+      })
+      try {
+        await waitForReady(child)
+        const allowRead = expectStringArray(parseJsonUnknown(readFileSync(capture, 'utf8')))
+        assert.equal(grantsRead(allowRead, ownMeta), testCase.own, testCase.label)
+        assert.equal(grantsRead(allowRead, siblingMeta), false, testCase.label)
+        assert.equal(grantsRead(allowRead, otherProjectMeta), false, testCase.label)
+      } finally {
+        child.kill('SIGTERM')
+      }
+    }
+  })
+
   it('forwards stdin EOF and lets the agent exit on its own before any signal', async () => {
     const dir = makeBundleDir('eof-')
     const stub = join(dir, 'sandbox-runtime-stub.mjs')
@@ -217,6 +286,28 @@ describe('parseSessionHostRequest', () => {
         }),
       )
       assert.equal(request?.config.readonlyCheckout, value === true ? true : undefined)
+    }
+  })
+
+  it("carries the thread's chat read roots, dropping a malformed list", () => {
+    const parse = (chatReadRoots: unknown): string[] | undefined =>
+      parseSessionHostRequest(
+        JSON.stringify({
+          config: {
+            command: 'codex-acp',
+            cwd: '/workspace',
+            sandbox: { allowedDomains: ['chatgpt.com'] },
+            chatReadRoots,
+          },
+        }),
+      )?.config.chatReadRoots
+    assert.deepEqual(parse(['/store/project/own', '/store/project/parent']), [
+      '/store/project/own',
+      '/store/project/parent',
+    ])
+    assert.deepEqual(parse([]), [])
+    for (const malformed of [undefined, null, '/store', ['/store', 3], { 0: '/store' }]) {
+      assert.equal(parse(malformed), undefined)
     }
   })
 
