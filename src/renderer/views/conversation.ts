@@ -9,7 +9,8 @@ import {
 } from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
-  arrowDownIcon,
+  chevronUpIcon,
+  cornerDownLeftIcon,
   checkIcon,
   closeIcon,
   gitBranchIcon,
@@ -64,7 +65,11 @@ import {
   STREAM_SETTLED_EVENT,
 } from '../markdown/message-markdown.ts'
 import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
-import { createTranscriptScroll } from './transcript-scroll.ts'
+import {
+  createTranscriptScroll,
+  naturalRowTop,
+  scrollIntoTranscriptView,
+} from './transcript-scroll.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -2569,17 +2574,28 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let agentNamesRevision = 0
   let disposed = false
   const avatarMotion = createAgentAvatarMotion()
+  const scrollToBottomLabel = el('span', {}, 'Back to latest')
   const scrollToBottomBtn = el(
     'button',
     {
       class: 'scroll-to-bottom',
       type: 'button',
-      'aria-label': 'Scroll to bottom',
-      'data-tooltip': 'Scroll to bottom',
-      'data-tooltip-placement': 'top',
+      'aria-label': 'Back to latest',
       hidden: true,
     },
-    arrowDownIcon('ui-icon'),
+    cornerDownLeftIcon('ui-icon'),
+    scrollToBottomLabel,
+  )
+  const firstPromptBtn = el(
+    'button',
+    {
+      class: 'conversation-first-prompt',
+      type: 'button',
+      'aria-label': 'Jump to first prompt',
+      hidden: true,
+    },
+    chevronUpIcon('ui-icon'),
+    el('span', { class: 'conversation-first-prompt-label' }, 'First prompt'),
   )
   const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
@@ -2592,7 +2608,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     todoHost,
     list,
     archiveReview.element,
-    scrollToBottomBtn,
   )
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
@@ -2647,7 +2662,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const key = details.dataset['disclosureKey']
     const threadId = store.getState().activeThreadId
     if (key && threadId) disclosures.choose(threadId, key, true)
-    details.scrollIntoView({ block: 'nearest' })
+    scrollIntoTranscriptView(details, { block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -2660,7 +2675,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  // Both navigation controls live in the reserved row between the transcript
+  // and the composer, so neither can cover a prompt line, a TODO counter or any
+  // other transcript content, at any pane width or UI scale.
+  const navigationRow = el(
+    'div',
+    { class: 'conversation-navigation' },
+    firstPromptBtn,
+    scrollToBottomBtn,
+  )
+  root.append(roadmapOrigin.element, scrollArea, navigationRow, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -3066,6 +3090,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // What the last full rebuild drew the transcript from (see TranscriptInputs).
   let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
+  // The latest human prompt, which sticks while its response is read, and the
+  // height of the band it covers at the top of the transcript while stuck.
+  let stickyPrompt: HTMLElement | null = null
+  let stickyPromptBand = 0
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
@@ -3076,7 +3104,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const transcriptScroll = createTranscriptScroll({
     list,
     scrollToBottomBtn,
-    syncStickyImagePreview,
+    scrollToBottomLabel,
+    firstPromptBtn,
+    firstPromptId: () =>
+      getActiveThread(store)?.messages.find((message) => message.role === 'user' && !message.origin)
+        ?.id ?? null,
+    syncStickyImagePreview: (releaseOnScrollUp) => {
+      syncStickyImagePreview(releaseOnScrollUp)
+      // Whether the prompt is stuck changes with every scroll.
+      syncStickyPromptClearance()
+    },
+    stickyPromptBand: () => stickyPromptBand,
     onReturnToLiveEnd: () => {
       const threadId = store.getState().activeThreadId
       if (threadId) disclosures.resumeDeferredCompaction(threadId)
@@ -3137,12 +3175,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     const listRect = list.getBoundingClientRect()
     const listStyle = window.getComputedStyle(list)
-    const previous = prompt.previousElementSibling
-    // The previous row stays in normal flow while this prompt sticks. Its
-    // bottom tells us where the prompt would be without the sticky offset.
-    const naturalTop = previous
-      ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
-      : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
+    const naturalTop = naturalRowTop(list, prompt)
     const stickyTop =
       listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
     const compact = prompt.classList.contains('is-preview-compact')
@@ -3159,11 +3192,56 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     prompt.classList.toggle('is-preview-compact', shouldCompact)
   }
 
+  /**
+   * While the latest prompt is stuck, publish the band it covers as
+   * --sticky-prompt-band, so scrollIntoTranscriptView (conversation search,
+   * opened disclosures, the reviewer-input jump) lands reply content below the
+   * prompt instead of underneath it, and the reading anchor skips that band.
+   */
+  function syncStickyPromptClearance(): void {
+    const prompt = stickyPrompt
+    let band = 0
+    let stuck = false
+    if (prompt?.isConnected) {
+      const promptStyle = window.getComputedStyle(prompt)
+      if (promptStyle.position === 'sticky') {
+        const listStyle = window.getComputedStyle(list)
+        const stickyOffset =
+          Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
+        band = Math.max(
+          0,
+          Math.ceil(
+            stickyOffset +
+              prompt.getBoundingClientRect().height +
+              Number.parseFloat(listStyle.rowGap),
+          ),
+        )
+        // Stuck: its place in the flow has scrolled to or past where it sticks.
+        stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5
+      }
+    }
+    // The reading anchor skips the band only while the prompt covers it.
+    stickyPromptBand = stuck ? band : 0
+    // Only the band, not the padding: scrollIntoTranscriptView applies it for
+    // each scroll call, and the prompt and the rows before it cancel it.
+    const value = stuck && band > 0 ? `${String(band)}px` : ''
+    if (list.style.getPropertyValue('--sticky-prompt-band') !== value) {
+      if (value) list.style.setProperty('--sticky-prompt-band', value)
+      else list.style.removeProperty('--sticky-prompt-band')
+    }
+  }
+
   function refreshStickyImagePrompt(): void {
     const prompts = list.querySelectorAll<HTMLElement>(
       ':scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)',
     )
     const latest = prompts[prompts.length - 1]
+    if (stickyPrompt !== (latest ?? null)) {
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt)
+      stickyPrompt = latest ?? null
+      if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt)
+    }
+    syncStickyPromptClearance()
     const next = latest?.querySelector('.message-images') ? latest : null
     if (stickyImagePrompt !== next) {
       stickyImagePrompt?.classList.remove('is-preview-compact')
@@ -3178,8 +3256,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ? null
       : new ResizeObserver(() => {
           syncStickyImagePreview()
+          // A narrow pane un-sticks the prompt, so its clearance follows width.
+          syncStickyPromptClearance()
         })
   listResizeObserver?.observe(list)
+  const stickyPromptResizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          syncStickyPromptClearance()
+        })
   // Messages arrive one at a time and in older-history batches; every one may
   // end a turn, so the footers follow the list's own children.
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync)
@@ -4261,7 +4347,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (card instanceof HTMLDetailsElement) card.open = true
       const target = card ?? message
       transcriptScroll.unpin()
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrollIntoTranscriptView(target, { behavior: 'smooth', block: 'center' })
       target.classList.add('reviewer-input-highlight')
       setTimeout(() => {
         target.classList.remove('reviewer-input-highlight')
@@ -4517,6 +4603,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
     listResizeObserver?.disconnect()
+    stickyPromptResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
     disclosures.dispose()

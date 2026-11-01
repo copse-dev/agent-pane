@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { scrollIntoTranscriptView } from './transcript-scroll.ts'
 import { searchIcon, chevronUpIcon, chevronDownIcon, closeIcon } from '../dom/icons.ts'
 
 // In-conversation find bar (Cmd/Ctrl+F) — "find in page" for the chat transcript.
@@ -291,7 +292,7 @@ export function mountConversationSearch(root: HTMLElement): void {
   function scrollCurrentIntoView(): void {
     const current = ranges[currentIdx]
     const target = current?.startContainer.parentElement
-    target?.scrollIntoView({ block: 'center', behavior: 'auto' })
+    if (target) scrollIntoTranscriptView(target, { block: 'center', behavior: 'auto' })
   }
 
   function runSearch(preserveIndex = false): void {
