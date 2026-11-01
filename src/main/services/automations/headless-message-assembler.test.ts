@@ -204,7 +204,7 @@ describe('createHeadlessAutomationRun', () => {
         persisted?.messages.map((message) => message.content),
         ['[Review](https://example.com) completed.'],
       )
-      assert.equal(persisted?.messages[0]?.toolCalls[0]?.status, 'done')
+      assert.equal(persisted.messages[0]?.toolCalls[0]?.status, 'done')
     })
   }
 
