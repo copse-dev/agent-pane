@@ -5180,10 +5180,8 @@ label {
       transparent 100%);
 }
 .scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
+  flex-shrink: 0;
+  margin: var(--spacing-xs) auto var(--spacing-sm);
   width: 36px;
   height: 36px;
   display: flex;
