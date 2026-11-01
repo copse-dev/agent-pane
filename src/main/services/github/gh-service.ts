@@ -5,6 +5,8 @@ import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-
 import { z } from 'zod'
 import { optionalAuthorSchema, optionalNumber, optionalString } from './gh-json-schemas.ts'
 import { toolProbePath } from '../../launch-path.ts'
+import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
+import { isDefined, isNonNull } from '@shared/nullish.ts'
 
 const ghPrListEntrySchema = z.object({
   number: z.number(),
@@ -90,6 +92,255 @@ export const FAILING_CI_CONCLUSIONS = new Set(['FAILURE', 'ERROR', 'TIMED_OUT'])
 
 export function isFailingConclusion(value: string | undefined | null): boolean {
   return FAILING_CI_CONCLUSIONS.has((value ?? '').toUpperCase())
+}
+
+/**
+ * `gh pr list`/`gh pr view` always query GitHub's GraphQL API, which has its own,
+ * much smaller budget than REST and can run dry while REST still has headroom
+ * (observed live: GraphQL exhausted for an account while `gh api rate_limit`
+ * reported its REST quota untouched). Detect that specific failure so the read
+ * tools can retry over REST instead of surfacing a hard error the caller can't
+ * act on.
+ */
+export function isGhGraphQlRateLimited(stderr: string): boolean {
+  return /rate limit/i.test(stderr)
+}
+
+/** `owner/repo` for `cwd`'s `origin` remote, or null off GitHub. */
+async function githubRepoSlug(cwd: string | null): Promise<{ owner: string; repo: string } | null> {
+  if (!cwd) return null
+  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
+  const { stdout, code } = await runCommand('git', ['remote', 'get-url', 'origin'], {
+    cwd,
+    env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
+  })
+  if (code !== 0) return null
+  const slug = parseGithubRepoSlug(stdout.trim())
+  if (!slug) return null
+  const [owner, repo] = slug.split('/')
+  return owner && repo ? { owner, repo } : null
+}
+
+const restPrListEntrySchema = z.object({
+  number: z.number(),
+  title: optionalString,
+  html_url: optionalString,
+  state: optionalString,
+  merged_at: optionalString,
+  head: z.object({ ref: optionalString }).optional(),
+  user: optionalAuthorSchema,
+  created_at: optionalString,
+  updated_at: optionalString,
+})
+const restPrListSchema = z.array(restPrListEntrySchema)
+
+const restPrDetailSchema = z.object({
+  number: z.number(),
+  title: optionalString,
+  html_url: optionalString,
+  body: optionalString,
+  state: optionalString,
+  merged_at: optionalString,
+  mergeable: z.boolean().nullable().optional(),
+  mergeable_state: optionalString,
+  additions: optionalNumber,
+  deletions: optionalNumber,
+  changed_files: optionalNumber,
+  head: z.object({ ref: optionalString }).optional(),
+  base: z.object({ ref: optionalString }).optional(),
+  user: optionalAuthorSchema,
+})
+
+const restPrFileSchema = z.object({
+  filename: optionalString,
+  status: optionalString,
+  additions: optionalNumber,
+  deletions: optionalNumber,
+})
+const restPrFileListSchema = z.array(restPrFileSchema)
+
+const restPrCommitSchema = z.object({ sha: optionalString })
+const restPrCommitListSchema = z.array(restPrCommitSchema)
+
+/** REST `state`/`merged_at` -> the GraphQL-shaped `OPEN`/`CLOSED`/`MERGED` enum text. */
+export function restPrState(state: string | undefined, mergedAt: string | undefined): string {
+  if (mergedAt) return 'MERGED'
+  return (state ?? '').toUpperCase() || 'UNKNOWN'
+}
+
+/** REST's tri-state `mergeable` boolean -> the GraphQL-shaped mergeable enum text. */
+export function restPrMergeable(mergeable: boolean | null | undefined): string {
+  if (mergeable === true) return 'MERGEABLE'
+  if (mergeable === false) return 'CONFLICTING'
+  return 'UNKNOWN'
+}
+
+function mapRestPrListEntry(pr: z.infer<typeof restPrListEntrySchema>): GhPrListEntry {
+  const entry: GhPrListEntry = {
+    number: pr.number,
+    title: pr.title ?? `PR #${String(pr.number)}`,
+    url: pr.html_url ?? '',
+    state: restPrState(pr.state, pr.merged_at),
+  }
+  if (pr.head?.ref) entry.headRefName = pr.head.ref
+  if (pr.user?.login) entry.author = { login: pr.user.login }
+  if (pr.created_at) entry.createdAt = pr.created_at
+  if (pr.updated_at) entry.updatedAt = pr.updated_at
+  return entry
+}
+
+function mapRestPrDetail(pr: z.infer<typeof restPrDetailSchema>): GhPrViewDetails {
+  const details: GhPrViewDetails = {
+    number: pr.number,
+    state: restPrState(pr.state, pr.merged_at),
+    mergeable: restPrMergeable(pr.mergeable),
+  }
+  if (pr.title) details.title = pr.title
+  if (pr.html_url) details.url = pr.html_url
+  if (pr.body) details.body = pr.body
+  if (pr.head?.ref) details.headRefName = pr.head.ref
+  if (pr.base?.ref) details.baseRefName = pr.base.ref
+  if (pr.user?.login) details.author = { login: pr.user.login }
+  if (pr.mergeable_state) details.mergeStateStatus = pr.mergeable_state.toUpperCase()
+  if (typeof pr.additions === 'number') details.additions = pr.additions
+  if (typeof pr.deletions === 'number') details.deletions = pr.deletions
+  if (typeof pr.changed_files === 'number') details.changedFiles = pr.changed_files
+  return details
+}
+
+function mapRestPrFiles(
+  files: z.infer<typeof restPrFileListSchema>,
+): NonNullable<GhPrViewDetails['files']> {
+  return files
+    .map((file) => {
+      if (!file.filename) return null
+      const mapped: NonNullable<GhPrViewDetails['files']>[number] = { path: file.filename }
+      if (typeof file.additions === 'number') mapped.additions = file.additions
+      if (typeof file.deletions === 'number') mapped.deletions = file.deletions
+      if (file.status) mapped.changeType = file.status.toUpperCase()
+      return mapped
+    })
+    .filter(isNonNull)
+}
+
+/** REST equivalent of `gh pr list --json ...`, used only when GraphQL is rate-limited. */
+async function restListPrs(opts: {
+  cwd: string | null
+  state: 'open' | 'closed' | 'merged' | 'all'
+  limit: number
+  head?: string | undefined
+}): Promise<GhPrListEntry[] | null> {
+  const repo = await githubRepoSlug(opts.cwd)
+  if (!repo) return null
+  const query = new URLSearchParams({
+    state: opts.state === 'merged' ? 'closed' : opts.state,
+    per_page: String(Math.min(Math.max(opts.limit, 1), 100)),
+  })
+  if (opts.head) query.set('head', `${repo.owner}:${opts.head}`)
+  const { stdout, code } = await runGh([
+    'api',
+    `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`,
+  ])
+  if (code !== 0) return null
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
+  if (!Array.isArray(list)) return null
+  const mapped = list.map(mapRestPrListEntry)
+  return opts.state === 'merged' ? mapped.filter((pr) => pr.state === 'MERGED') : mapped
+}
+
+/** The PR number for `branch` in `repo`, via the REST `pulls?head=` filter. */
+async function restFindPrNumberForBranch(
+  repo: { owner: string; repo: string },
+  branch: string,
+): Promise<number | null> {
+  const query = new URLSearchParams({ head: `${repo.owner}:${branch}`, state: 'all' })
+  const { stdout, code } = await runGh([
+    'api',
+    `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`,
+  ])
+  if (code !== 0) return null
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
+  if (!Array.isArray(list) || list.length === 0) return null
+  return list[0]?.number ?? null
+}
+
+async function restListCommitOids(
+  repo: { owner: string; repo: string },
+  number: number,
+): Promise<string[]> {
+  const { stdout, code } = await runGh([
+    'api',
+    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/commits`,
+    '--paginate',
+  ])
+  if (code !== 0) return []
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrCommitListSchema))
+  if (!Array.isArray(list)) return []
+  return list.map((commit) => commit.sha).filter(isDefined)
+}
+
+async function restListFiles(
+  repo: { owner: string; repo: string },
+  number: number,
+): Promise<NonNullable<GhPrViewDetails['files']> | null> {
+  const { stdout, code } = await runGh([
+    'api',
+    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/files`,
+    '--paginate',
+  ])
+  if (code !== 0) return null
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrFileListSchema))
+  if (!Array.isArray(list)) return null
+  return mapRestPrFiles(list)
+}
+
+/**
+ * REST equivalent of `gh pr view --json ...`, used only when GraphQL is
+ * rate-limited. Status checks (`statusCheckRollup`) have no cheap REST
+ * equivalent (it takes a separate Checks API call keyed on the head commit) and
+ * are deliberately left out here; callers note the gap to the user rather than
+ * silently omitting it.
+ */
+async function restViewPr(opts: {
+  cwd: string | null
+  number?: number | undefined
+  includeCommits?: boolean
+  includeFiles?: boolean
+}): Promise<GhPrViewDetails | null> {
+  const repo = await githubRepoSlug(opts.cwd)
+  if (!repo) return null
+  let number = opts.number
+  if (number === undefined) {
+    const branch = await currentGitBranch(opts.cwd)
+    if (!branch) return null
+    const found = await restFindPrNumberForBranch(repo, branch)
+    if (found === null) return null
+    number = found
+  }
+  const { stdout, code } = await runGh([
+    'api',
+    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}`,
+  ])
+  if (code !== 0) return null
+  const parsed = safeJsonParse(stdout.trim(), decodeWithSchema(restPrDetailSchema))
+  if (!parsed) return null
+  const details = mapRestPrDetail(parsed)
+  if (opts.includeCommits) {
+    const oids = await restListCommitOids(repo, number)
+    if (oids.length > 0) details.commits = oids.map((oid) => ({ oid }))
+  }
+  if (opts.includeFiles) {
+    const files = await restListFiles(repo, number)
+    if (files) details.files = files
+  }
+  return details
+}
+
+/** Note appended to REST-fallback output so the degraded mode is never silent. */
+function graphQlFallbackNote(includeChecks: boolean): string {
+  return includeChecks
+    ? "\n\n(GitHub's GraphQL API is rate-limited for this account; showing REST data instead. Status checks are unavailable in this mode.)"
+    : "\n\n(GitHub's GraphQL API is rate-limited for this account; showing REST data instead.)"
 }
 
 /**
@@ -340,7 +591,20 @@ export async function getGhPrListText(
   if (opts.head) args.push('--head', opts.head)
   if (opts.repo) args.push('--repo', opts.repo)
   const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
-  if (code !== 0) return formatGhError(stderr, code)
+  if (code !== 0) {
+    if (isGhGraphQlRateLimited(stderr) && !opts.repo && !opts.details) {
+      const fallback = await restListPrs({
+        cwd: context.root,
+        state: opts.state,
+        limit: opts.limit,
+        head: opts.head,
+      })
+      if (fallback) {
+        return `${formatGhPrList(fallback.slice(0, opts.limit))}${graphQlFallbackNote(false)}`
+      }
+    }
+    return formatGhError(stderr, code)
+  }
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   return formatGhPrList(list, opts.details)
@@ -463,9 +727,17 @@ export async function getGhPrViewText(
   const args = ['pr', 'view', '--json', jsonFields.join(',')]
   if (opts.number !== undefined) args.push(String(opts.number))
   const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
-  if (code !== 0) return formatGhError(stderr, code)
-  const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
-  if (!pr) return stdout.trim() || '(no output)'
+  let pr: GhPrViewDetails | null
+  let fallbackNote = ''
+  if (code !== 0) {
+    if (!isGhGraphQlRateLimited(stderr)) return formatGhError(stderr, code)
+    pr = await restViewPr({ cwd: context.root, number: opts.number, includeCommits: true })
+    if (!pr) return formatGhError(stderr, code)
+    fallbackNote = graphQlFallbackNote(opts.includeChecks)
+  } else {
+    pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
+    if (!pr) return stdout.trim() || '(no output)'
+  }
   const provenance = pr.url
     ? await getPrThreadProvenanceText(
         context.projectId,
@@ -473,7 +745,7 @@ export async function getGhPrViewText(
         pr.commits?.map((commit) => commit.oid),
       )
     : 'Thread provenance unavailable: missing PR URL.'
-  return `${formatGhPrView(pr)}\n\n${provenance}`
+  return `${formatGhPrView(pr)}${fallbackNote}\n\n${provenance}`
 }
 
 export function formatGhPrFiles(pr: GhPrViewDetails): string {
@@ -509,7 +781,17 @@ export async function getGhPrFilesText(
   ]
   if (opts.number !== undefined) args.push(String(opts.number))
   const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
-  if (code !== 0) return formatGhError(stderr, code)
+  if (code !== 0) {
+    if (isGhGraphQlRateLimited(stderr)) {
+      const fallback = await restViewPr({
+        cwd: context.root,
+        number: opts.number,
+        includeFiles: true,
+      })
+      if (fallback) return `${formatGhPrFiles(fallback)}${graphQlFallbackNote(false)}`
+    }
+    return formatGhError(stderr, code)
+  }
   const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'
   return formatGhPrFiles(pr)

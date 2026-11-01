@@ -6,6 +6,9 @@ import {
   formatGhPrList,
   formatGhPrView,
   ghEnv,
+  isGhGraphQlRateLimited,
+  restPrMergeable,
+  restPrState,
 } from './gh-service.ts'
 
 describe('formatGhPrList', () => {
@@ -143,6 +146,43 @@ describe('formatGhPrView', () => {
     assert.match(text, /Diff: \+10 -2/)
     assert.match(text, /CI: SUCCESS/)
     assert.match(text, /Fixes the crash\./)
+  })
+})
+
+describe('isGhGraphQlRateLimited', () => {
+  it('matches the real gh error for an exhausted GraphQL quota', () => {
+    assert.equal(
+      isGhGraphQlRateLimited('GraphQL: API rate limit already exceeded for user ID 338988.'),
+      true,
+    )
+  })
+
+  it('does not match an unrelated gh failure', () => {
+    assert.equal(isGhGraphQlRateLimited('could not resolve to a PullRequest'), false)
+  })
+})
+
+describe('restPrState', () => {
+  it('reports MERGED when merged_at is set, regardless of state', () => {
+    assert.equal(restPrState('closed', '2026-01-01T00:00:00Z'), 'MERGED')
+  })
+
+  it('uppercases a plain REST state', () => {
+    assert.equal(restPrState('open', undefined), 'OPEN')
+    assert.equal(restPrState('closed', undefined), 'CLOSED')
+  })
+
+  it('falls back to UNKNOWN when state is missing', () => {
+    assert.equal(restPrState(undefined, undefined), 'UNKNOWN')
+  })
+})
+
+describe('restPrMergeable', () => {
+  it('maps the REST tri-state boolean to the GraphQL-shaped enum text', () => {
+    assert.equal(restPrMergeable(true), 'MERGEABLE')
+    assert.equal(restPrMergeable(false), 'CONFLICTING')
+    assert.equal(restPrMergeable(null), 'UNKNOWN')
+    assert.equal(restPrMergeable(undefined), 'UNKNOWN')
   })
 })
 
