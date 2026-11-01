@@ -964,7 +964,8 @@ While active:
     binary installed in the workspace's `node_modules/.bin`, which is read as above instead,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
-    which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`);
+    which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`) or
+    under Yarn's other name, `yarnpkg`;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or

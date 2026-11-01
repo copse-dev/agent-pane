@@ -311,6 +311,11 @@ describe('hostReachReasons — code fetched at run time', () => {
       'corepack pnpm dlx create-vite',
       'corepack pnpm@10.0.0 dlx create-vite',
       'corepack yarn@4.5.0 dlx create-vite',
+      // `yarnpkg` is Yarn's other executable name.
+      'yarnpkg dlx create-vite',
+      'yarnpkg create vite',
+      'corepack yarnpkg dlx create-vite',
+      'corepack yarnpkg@4.5.0 dlx create-vite',
       'pnpm dlx create-vite',
       'yarn dlx create-vite',
       'npm create vite@latest',

@@ -17,6 +17,8 @@ describe('packageManagerArgv', () => {
       ['corepack pnpm@10.34.5 exec evil', 'pnpm exec evil'],
       ['corepack npm@11.0.0 exec evil', 'npm exec evil'],
       ['corepack yarn@4.5.0 dlx x', 'yarn dlx x'],
+      ['corepack yarnpkg dlx x', 'yarn dlx x'],
+      ['yarnpkg dlx x', 'yarn dlx x'],
       ['corepack enable', 'corepack enable'],
       ['pnpm exec tsc', 'pnpm exec tsc'],
     ]) {
