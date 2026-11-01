@@ -1739,7 +1739,11 @@ function runStoreWrite<T>(projectId: string, op: () => T | Promise<T>): Promise<
       return await op()
     } finally {
       invalidateProjectMetaCache(projectId)
-      await flushThreadIndex(projectId)
+      try {
+        await flushThreadIndex(projectId)
+      } finally {
+        threadStoreEnvironment().onProjectWrite?.(projectId)
+      }
     }
   })
 }
