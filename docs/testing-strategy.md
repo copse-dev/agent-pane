@@ -486,6 +486,14 @@ Rules for anything that lands in a captured frame:
   a demo trace holds the trace at a checkpoint instead of racing its pacing:
   bundle an entry that injects the trace player's `sleep` with
   `buildDemoFixturePage` (`tests/demo/helpers/demo-fixture-page.ts`).
+- **Index builds.** The workspace watcher rebuilds the file index after every
+  write, including the PNGs e2e saves into the checkout, and the footer shows
+  `Indexing… <elapsed>` for a build that outlives its show delay. The capture
+  helpers hold each screenshot until `index.status()` reports nothing building
+  (`withSettledIndex` in `tests/e2e/helpers/screenshot.ts`); a build that
+  outlasts the bounded wait stays in frame with its seconds pinned. A spec that
+  calls WebDriver's `saveScreenshot` directly on a frame holding the footer gets
+  neither, so go through a helper.
 - **Synced data.** Scheduled bot PRs rewrite data the app prints, such as the
   intellect scores `sync-intellect.yml` writes into `packages/llm`. A capture
   that shows one of those numbers changes every time the sync lands, so assert

@@ -121,12 +121,18 @@ export async function saveThreePaneScreenshot(
           height: Math.round(rect.height * devicePixelRatio),
         }
       })
-      const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+      let shot = ''
+      await withSettledIndex(async () => {
+        shot = await browser.takeScreenshot()
+      })
+      const viewport = PNG.sync.read(Buffer.from(shot, 'base64'))
       const cropped = new PNG({ width: bounds.width, height: bounds.height })
       PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
       writeFileSync(path, PNG.sync.write(cropped))
     } else {
-      await body.saveScreenshot(path)
+      await withSettledIndex(async () => {
+        await body.saveScreenshot(path)
+      })
     }
   })
 }
@@ -228,7 +234,9 @@ export async function savePreparedAppScreenshot(filename: string): Promise<void>
   const app = await browser.$('#app').getElement()
   await app.waitForDisplayed({ timeout: 15_000 })
   await waitForSettledLayout('#app')
-  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await withSettledIndex(async () => {
+    await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  })
 }
 
 /** Capture native webviews without ChromeDriver's element-capture rescaling. */
@@ -250,7 +258,11 @@ export async function saveAppViewportScreenshot(
         height: Math.round(rect.height * devicePixelRatio),
       }
     })
-    const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+    let shot = ''
+    await withSettledIndex(async () => {
+      shot = await browser.takeScreenshot()
+    })
+    const viewport = PNG.sync.read(Buffer.from(shot, 'base64'))
     if (
       bounds.x < 0 ||
       bounds.y < 0 ||
@@ -298,7 +310,9 @@ export async function saveChatPaneScreenshot(filename: string): Promise<void> {
   await browser.pause(100)
   const app = await browser.$('#app').getElement()
   await app.waitForDisplayed({ timeout: 15_000 })
-  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await withSettledIndex(async () => {
+    await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  })
 }
 
 /** Capture a message sub-tree once {@link prepareChatMessageScreenshot} has run. */
@@ -481,8 +495,10 @@ export async function saveElementScreenshot(
     // page settled (a tool card whose transcript updated once more) is a fresh
     // node by now, and the handle taken above would be stale.
     await waitForSettledLayout(selector)
-    const subject = await browser.$(selector).getElement()
-    await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    await withSettledIndex(async () => {
+      const subject = await browser.$(selector).getElement()
+      await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    })
     // Hand the page back exactly as the caller left it — the scroll was for the
     // capture, and specs keep interacting with the page afterwards.
     if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
@@ -542,4 +558,73 @@ export async function pinTextForCapture(
  */
 export function pinProfilePathForCapture(selector: string): Promise<() => Promise<void>> {
   return pinTextForCapture(selector, /\.wdio-profile-[^/\s]+/g, '.wdio-profile-XXXXXX')
+}
+
+/**
+ * How long a capture waits for a workspace index build to finish. A file-index
+ * rebuild of an e2e workspace takes well under this even on CI's no-rg walk; a
+ * cold semantic build of a real checkout (a dev host with gortex installed)
+ * can take minutes, and that case falls back to pinning the elapsed label.
+ */
+const INDEX_SETTLE_TIMEOUT_MS = 15_000
+
+/** Builds that already outlasted the wait once, keyed by their `startedAt`. */
+const outlastedBuilds = new Set<number>()
+
+/** The footer chip's live elapsed label, e.g. "Indexing… 12s" or "Building file index… 1m 4s". */
+const ELAPSED_LABEL = /(Indexing…|Building file index…) \d+(m \d+)?s/
+
+async function readIndexState(): Promise<{ building: number[]; chipBuilding: boolean }> {
+  return browser.execute(async () => {
+    // Fixture documents and web pages a spec captures have no preload bridge.
+    if (!('api' in window)) return { building: [], chipBuilding: false }
+    const status = await window.api.index.status()
+    const building = [status.fileIndex, status.semantic]
+      .filter((component) => component.phase === 'building')
+      .map((component) => component.startedAt ?? 0)
+    const chip = document.querySelector<HTMLElement>('.footer-indexing')
+    return { building, chipBuilding: chip?.dataset['state'] === 'building' }
+  })
+}
+
+/**
+ * Hold a capture until no workspace index build is running, so the footer's
+ * "Indexing… <elapsed>" chip is either absent or the same on every run.
+ *
+ * The workspace watcher rebuilds the file index after every write, and e2e
+ * writes PNGs into the checkout it is indexing. On a loaded runner the rebuild
+ * outlives the chip's show delay, so without this wait the same frame came back
+ * with no chip, "Indexing… 2s" or "Indexing… 4s" depending on scheduling
+ * (`footer-branch-bisect-in-progress.png` rendered two hashes on one day).
+ *
+ * It reads the status through the same `index.status()` call the chip seeds
+ * from, so it also covers a build still inside the chip's show delay, which
+ * would otherwise appear mid-capture. When a build outlasts the wait, the chip
+ * is genuinely part of the frame: pin only its seconds and keep the real copy.
+ */
+async function withSettledIndex(capture: () => Promise<void>): Promise<void> {
+  let state = await readIndexState()
+  const deadline = Date.now() + INDEX_SETTLE_TIMEOUT_MS
+  while (
+    (state.building.length > 0 || state.chipBuilding) &&
+    !state.building.some((startedAt) => outlastedBuilds.has(startedAt)) &&
+    Date.now() < deadline
+  ) {
+    await browser.pause(100)
+    state = await readIndexState()
+  }
+  if (state.building.length === 0 && !state.chipBuilding) {
+    await capture()
+    return
+  }
+  for (const startedAt of state.building) outlastedBuilds.add(startedAt)
+  // A build that started inside the show delay has no chip text to pin yet.
+  const restore = state.chipBuilding
+    ? await pinTextForCapture('.footer-indexing', ELAPSED_LABEL, '$1 0s')
+    : null
+  try {
+    await capture()
+  } finally {
+    await restore?.()
+  }
 }
