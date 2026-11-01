@@ -392,6 +392,28 @@ approval by default because they access host devices outside the project sandbox
 permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
 simulator does not enable renderer control; discrete agent input is a separate approved call.
 
+## Child Copse development sessions (parked prototype)
+
+**Draft only; this host-child design does not provide host isolation and is not intended to merge.**
+The replacement work targets the existing Apple-container VM runtime.
+
+The experimental computer-use plugin offers `desktop_child` on local macOS threads.
+Starting a session always requires a fresh launch-and-control approval, including when the
+tool is set to Always allow. The approval explicitly authorizes operating the child's approval
+dialogs, which can grant host file/network access; a fresh profile is not an execution sandbox.
+The current checkout must already be built. A new instance starts with a fresh `COPSE_DIR`
+and a disposable project directory is returned for normal project setup.
+
+Only the owning thread can use the opaque child target in desktop tools. Ordinary Copse
+bundle ids, including the parent and development instances, remain hard-blocked. The native
+helper binds the target to the newly launched application's lifetime, validates window
+ownership per request, and does not rediscover a target by bundle id or raw PID.
+
+A parent-owned Stop window remains visible. Stop, closing that window, expiry after 30 minutes,
+child exit, or disabling the plugin revokes authority. No session grant persists or carries to
+another thread. Native termination is best effort after helper failure; revocation still holds.
+See [child Copse control](plans/child-copse-control.md).
+
 ## ACP permission requests
 
 `respondToPermission` in `src/main/services/acp/acp-agent-service.ts` answers an external

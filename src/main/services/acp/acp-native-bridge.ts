@@ -192,6 +192,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Computer use (`copse.computer-use`). Registered only while the plugin is
   // enabled; every call re-enters the per-app permission gate.
   'desktop_apps',
+  'desktop_child',
   'desktop_snapshot',
   'desktop_screenshot',
   'desktop_click',

@@ -43,6 +43,42 @@ function recordApprovals(remember = false): ApprovalRequest[] {
 }
 
 describe('Computer use permission boundary', () => {
+  it('always asks for child launch with the authority warning, even under an allow override', async () => {
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('desktop_child')]: 'allow',
+    })
+    const requests = recordApprovals(true)
+    await inThread('thread-a', () =>
+      ensureToolPermitted({ toolName: 'desktop_child', args: { action: 'start' } }),
+    )
+    assert.equal(requests.length, 1)
+    const request = requests[0]
+    assert.ok(request)
+    assert.equal(request.allowRemember, false)
+    assert.match(request.bodyAdvice ?? '', /approve requests inside the child/)
+    assert.match(request.bodyAdvice ?? '', /does not sandbox/)
+  })
+
+  it('rejects forged child targets and cannot attach the parent by bundle id', async () => {
+    recordApprovals()
+    await inThread('thread-a', async () => {
+      await assert.rejects(
+        ensureToolPermitted({
+          toolName: 'desktop_snapshot',
+          args: { app: 'child:00000000-0000-0000-0000-000000000000' },
+        }),
+        /No active child/,
+      )
+      await assert.rejects(
+        ensureToolPermitted({
+          toolName: 'desktop_snapshot',
+          args: { app: 'dev.copse.app' },
+        }),
+        /Copse itself/,
+      )
+    })
+  })
+
   it('lists apps without asking', async () => {
     setApprovalHandler(() => {
       throw new Error('desktop_apps must not prompt')

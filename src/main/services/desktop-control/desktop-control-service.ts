@@ -35,6 +35,7 @@ const appSchema = z.object({
   bundleId: z.string().optional(),
   active: z.boolean(),
   hidden: z.boolean(),
+  childSession: z.string().optional(),
 })
 export type DesktopApp = z.infer<typeof appSchema>
 
@@ -105,6 +106,31 @@ export class DesktopControlService {
     this.launch = launch
   }
 
+  private readonly childTargets = new Map<number, string>()
+
+  async startChild(
+    id: string,
+    bundle: string,
+    entry: string,
+    profile: string,
+  ): Promise<DesktopApp> {
+    const app = await this.call('startChild', { session: id, bundle, entry, profile }, appSchema)
+    this.childTargets.set(app.pid, id)
+    return { ...app, childSession: id }
+  }
+
+  async validateChild(id: string): Promise<DesktopApp> {
+    const app = await this.call('validateChild', { session: id }, appSchema)
+    return { ...app, childSession: id }
+  }
+
+  async stopChild(id: string): Promise<void> {
+    if (!this.helper) return
+    // Keep the PID's session tag as a tombstone: in-flight/stale calls must
+    // still fail validation after stop or helper restart, never become bare PID calls.
+    await this.call('stopChild', { session: id }, anyResultSchema)
+  }
+
   async permissions(signal?: AbortSignal): Promise<DesktopPermissions> {
     return this.call('permissions', {}, permissionsSchema, signal)
   }
@@ -117,7 +143,10 @@ export class DesktopControlService {
     return this.call('apps', {}, z.array(appSchema), signal)
   }
 
-  async windows(pid: number | undefined, signal?: AbortSignal): Promise<DesktopWindow[]> {
+  async windows(
+    pid: number | DesktopApp | undefined,
+    signal?: AbortSignal,
+  ): Promise<DesktopWindow[]> {
     return this.call('windows', pid === undefined ? {} : { pid }, z.array(windowSchema), signal)
   }
 
@@ -129,7 +158,7 @@ export class DesktopControlService {
   }
 
   async snapshot(
-    pid: number,
+    pid: number | DesktopApp,
     options: { windowId?: number | undefined; maxNodes?: number | undefined },
     signal?: AbortSignal,
   ): Promise<DesktopSnapshot> {
@@ -149,14 +178,15 @@ export class DesktopControlService {
     windowId: number,
     path: string,
     signal?: AbortSignal,
+    pid?: number | DesktopApp,
   ): Promise<DesktopScreenshot> {
-    const result = await this.call('screenshot', { windowId, path }, screenshotSchema, signal)
+    const result = await this.call('screenshot', { windowId, path, pid }, screenshotSchema, signal)
     this.captures.set(windowId, { frame: result.frame, width: result.width, height: result.height })
     return result
   }
 
   async press(
-    pid: number,
+    pid: number | DesktopApp,
     ref: string,
     action: string | undefined,
     signal?: AbortSignal,
@@ -164,16 +194,21 @@ export class DesktopControlService {
     await this.call('press', action ? { pid, ref, action } : { pid, ref }, anyResultSchema, signal)
   }
 
-  async setValue(pid: number, ref: string, value: string, signal?: AbortSignal): Promise<void> {
+  async setValue(
+    pid: number | DesktopApp,
+    ref: string,
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     await this.call('setValue', { pid, ref, value }, anyResultSchema, signal)
   }
 
-  async type(pid: number, text: string, signal?: AbortSignal): Promise<void> {
+  async type(pid: number | DesktopApp, text: string, signal?: AbortSignal): Promise<void> {
     await this.call('type', { pid, text }, anyResultSchema, signal)
   }
 
   async key(
-    pid: number,
+    pid: number | DesktopApp,
     keyCode: number,
     modifiers: readonly string[],
     signal?: AbortSignal,
@@ -181,7 +216,11 @@ export class DesktopControlService {
     await this.call('key', { pid, keyCode, modifiers }, anyResultSchema, signal)
   }
 
-  async menu(pid: number, path: readonly string[], signal?: AbortSignal): Promise<void> {
+  async menu(
+    pid: number | DesktopApp,
+    path: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<void> {
     await this.call('menu', { pid, path }, anyResultSchema, signal)
   }
 
@@ -191,7 +230,7 @@ export class DesktopControlService {
    * clicking coordinates it has never seen.
    */
   async clickInCapture(
-    pid: number,
+    pid: number | DesktopApp,
     windowId: number,
     x: number,
     y: number,
@@ -224,6 +263,16 @@ export class DesktopControlService {
     signal?: AbortSignal,
   ): Promise<T> {
     signal?.throwIfAborted()
+    // Capture identity from the resolved target, not the latest occupant of a PID.
+    const target = params['pid']
+    const parsedTarget = appSchema.safeParse(target)
+    if (parsedTarget.success) {
+      params = {
+        ...params,
+        pid: parsedTarget.data.pid,
+        childSession: parsedTarget.data.childSession,
+      }
+    }
     const helper = await this.ensureHelper()
     await helper.ready
     signal?.throwIfAborted()
@@ -255,7 +304,13 @@ export class DesktopControlService {
         timer,
       })
       signal?.addEventListener('abort', onAbort, { once: true })
-      helper.child.stdin.write(`${JSON.stringify({ id, method, params })}\n`)
+      const childSession =
+        typeof params['pid'] === 'number' ? this.childTargets.get(params['pid']) : undefined
+      const scopedParams =
+        childSession && typeof params['childSession'] !== 'string'
+          ? { ...params, childSession }
+          : params
+      helper.child.stdin.write(`${JSON.stringify({ id, method, params: scopedParams })}\n`)
     })
     const parsed = schema.safeParse(raw)
     if (!parsed.success) throw new Error(`Desktop helper returned an unexpected ${method} result`)
@@ -633,6 +688,10 @@ let service: DesktopControlService | null = null
 
 export function getDesktopControlService(): DesktopControlService {
   service ??= new DesktopControlService()
+  return service
+}
+
+export function peekDesktopControlService(): DesktopControlService | null {
   return service
 }
 

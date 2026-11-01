@@ -1,5 +1,5 @@
 import { COMPUTER_USE_TOOL_NAMES } from '@copse/agent/plugins/computer-use-plugin.ts'
-import { desktopAppApproval } from '@shared/approval-copy.ts'
+import { childCopseApproval, desktopAppApproval } from '@shared/approval-copy.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
@@ -19,6 +19,12 @@ import {
  * Blocked apps throw before any prompt. A tool-level allow policy does not
  * skip this gate: it would otherwise grant every app at once.
  */
+
+import {
+  childCopseOwner,
+  childCopseSessions,
+  isChildCopseTarget,
+} from '../desktop-control/child-copse-sessions.ts'
 
 const DESKTOP_CONTROL_TOOLS: ReadonlySet<string> = new Set(COMPUTER_USE_TOOL_NAMES)
 const UNGATED_DESKTOP_TOOLS = new Set(['desktop_apps'])
@@ -61,7 +67,50 @@ export async function checkDesktopAppPermission(
 ): Promise<boolean> {
   if (UNGATED_DESKTOP_TOOLS.has(toolName)) return true
   const record = isRecord(args) ? args : {}
+  if (toolName === 'desktop_child') {
+    const owner = childCopseOwner()
+    if (record['action'] === 'list') return true
+    if (record['action'] === 'stop') {
+      const target = typeof record['app'] === 'string' ? record['app'] : ''
+      await childCopseSessions.resolve(target, owner.threadId)
+      return true
+    }
+    if (record['action'] !== 'start') throw new Error('Expected start, list, or stop.')
+    const { approved } = await requestApproval(
+      {
+        ...childCopseApproval(owner.root),
+        type: 'mcp',
+        cause: 'desktop-app-control',
+        subject: owner.root,
+        scope: 'external',
+      },
+      signal,
+    )
+    if (approved) childCopseSessions.approveStart(owner.threadId)
+    return approved
+  }
   const bundleId = typeof record['app'] === 'string' ? record['app'] : ''
+  if (isChildCopseTarget(bundleId)) {
+    await childCopseSessions.resolve(bundleId, childCopseOwner().threadId)
+    // Always ask still applies to an individual tool, even within a session.
+    if (explicitPolicy !== 'ask') return true
+    return (
+      await requestApproval(
+        {
+          ...desktopAppApproval({
+            bundleId,
+            action: describeAction(toolName, record),
+            allowRemember: false,
+            threadScoped: false,
+          }),
+          type: 'mcp',
+          cause: 'desktop-app-control',
+          scope: 'external',
+        },
+        signal,
+      )
+    ).approved
+  }
   const threadId = getThreadExecutionContext()?.threadId
   const decision = decideDesktopAppAccess({
     bundleId,

@@ -3,6 +3,7 @@ import { definePlugin, type RegisteredPlugin } from './plugin-manifest.ts'
 export const COMPUTER_USE_PLUGIN_ID = 'copse.computer-use'
 export const COMPUTER_USE_TOOL_NAMES = [
   'desktop_apps',
+  'desktop_child',
   'desktop_snapshot',
   'desktop_screenshot',
   'desktop_click',
@@ -22,7 +23,7 @@ export const computerUsePlugin: RegisteredPlugin = definePlugin(
   {
     name: COMPUTER_USE_PLUGIN_ID,
     description:
-      'Let agents see and operate the Mac apps you approve, in the background, through Accessibility. Terminals, password managers, and Copse itself are never available.',
+      'Let agents see and operate the Mac apps you approve, in the background, through Accessibility. Terminals, password managers, and your main Copse are blocked. An explicitly approved child Copse session can be controlled for development.',
     trust: 'first-party',
     stability: 'experimental',
     tools: {

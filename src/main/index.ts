@@ -129,6 +129,11 @@ import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
 import { disposeDesktopControlService } from './services/desktop-control/desktop-control-service.ts'
+import {
+  childCopseSessions,
+  setChildCopseControl,
+} from './services/desktop-control/child-copse-sessions.ts'
+import { showChildCopseControl } from './windows/child-copse-control-window.ts'
 import { initAppRun } from './ipc/app-run.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
@@ -333,6 +338,8 @@ setSimulatorDesktopPanelPresenter((udid, options) => {
   if (!win || win.isDestroyed()) return
   win.webContents.send(SIMULATOR_DESKTOP_SHOW_CHANNEL, udid, options)
 })
+
+setChildCopseControl(showChildCopseControl)
 
 setVideoDecoderPlatform({
   createWindow: (options) => new BrowserWindow(options),
@@ -1420,6 +1427,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeVnc = undefined
   await disposeSimulatorDesktop?.()
   disposeSimulatorDesktop = undefined
+  await childCopseSessions.revokeAll()
   disposeDesktopControlService()
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
