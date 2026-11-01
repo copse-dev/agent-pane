@@ -155,6 +155,21 @@ export interface StepBoundaryPayload {
    * track it, e.g. `postStream` and the no-context-window branch.
    */
   consecutiveExploreWithoutRead?: number
+  /**
+   * Whether this run offers the model `read_file`. False in explore mode, where
+   * reads are delegated to the explore subagent and the exact bytes arrive as
+   * the verbatim excerpts of an explore result, so `loop-nudge` names those
+   * instead. Omitted (treated as true) wherever the caller does not track it.
+   */
+  readFileOffered?: boolean
+  /**
+   * `preStream`, at the boundary right after a step whose todo update closed
+   * the plan with every newly completed item carrying an acceptance check the
+   * host executed (#1433, Fix 4; see `planClosedByVerifiedChecks`). Read by
+   * `plan-verified-finalize`. True at most once per closing step; omitted or
+   * false otherwise.
+   */
+  planClosedByVerifiedChecks?: boolean
 }
 
 /**

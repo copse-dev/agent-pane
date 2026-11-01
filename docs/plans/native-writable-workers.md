@@ -1,5 +1,9 @@
 # Isolated writable workers
 
+Status: **Resolved** — shipped in [#3897](https://github.com/copse-dev/agent-pane/pull/3897)
+(`src/main/tools/isolated-workers-tool.ts`). Related plan:
+[custom-subagents.md](custom-subagents.md).
+
 Brief recorded before editing at `9920c32a9c69b645e21071720cbaa12418cfebc0`, based on `f507a7e56d151bd0ccb2680783ed5c3ffd13bad3`.
 
 ## Acceptance criteria

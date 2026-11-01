@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -25,6 +25,7 @@ import {
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { killRemoteProcessGroup } from '../exec/remote-process-kill.ts'
 import { approveRemoteAcpInstall } from './acp-remote-install-approval.ts'
+import { reportRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
 import type { AcpTransport } from './acp-client.ts'
 import { watchAgentStderr, REMOTE_OPEN_FILE_LIMIT_LABEL } from './acp-resource-fault.ts'
@@ -291,6 +292,8 @@ export function formatRemoteAcpInstallApproval(input: {
       : "It installs with the `npm` on your remote login shell's PATH.",
     '',
     'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, its downloads are not checked against known-malware lists, because it runs on the remote host.',
+    '',
+    `This is one-time setup for ${input.hostLabel}: once installed, later turns reuse it without asking.`,
   ]
   return {
     title: `Install software to connect your coding agent on ${input.hostLabel}?`,
@@ -346,6 +349,10 @@ async function installRemoteAcpAgent(
   if (!(await approveRemoteAcpInstall({ title, body }, signal))) return false
 
   const script = remoteNpmInstallScript(spec, npmBinDir)
+  reportRemoteAcpSetupProgress({
+    phase: 'setup',
+    label: `Installing ${spec} on ${hostLabel} (one-time setup)…`,
+  })
   emitShellOutput(`[acp-ssh] installing ${spec} on ${hostLabel}…\n`)
   // With a resolved Node prefix a clean non-interactive shell suffices; without
   // one, only an interactive login shell has a version manager's npm on PATH.
@@ -446,7 +453,7 @@ async function resolveRemoteAgentPath(
   // npm on a server — which is exactly the step auto-setup performs for them on
   // a local agent — offer to install it here, then re-detect once.
   if (allowInstall) {
-    const hostLabel = findConfiguredSshHost(hostId)?.label ?? hostId
+    const hostLabel = remoteHostLabel(hostId)
     if (await installRemoteAcpAgent(conn, command, hostLabel, loginShell, signal)) {
       return await resolveRemoteAgentPath(command, hostId, loginShell, false, signal)
     }
@@ -457,6 +464,11 @@ async function resolveRemoteAgentPath(
     ? ` Install it on the remote host, e.g. \`${known.install}\`.`
     : ' Install the agent binary on the remote host and ensure it is on your login PATH.'
   throw new Error(`The coding agent "${command}" was not found on the remote host's PATH.${hint}`)
+}
+
+/** The name the user gave a configured host, for prompts and progress. */
+export function remoteHostLabel(hostId: string): string {
+  return findConfiguredSshHost(hostId)?.label ?? hostId
 }
 
 /**
@@ -631,12 +643,20 @@ export async function spawnRemoteAcpTransport(
   const host = findConfiguredSshHost(target.hostId)
   if (!host) throw new Error(`SSH host "${target.hostId}" is not configured.`)
 
+  const hostLabel = remoteHostLabel(target.hostId)
   const manager = getSshConnectionManager()
-  if (!manager.getConnection(target.hostId)) await manager.connect(target.hostId)
+  if (!manager.getConnection(target.hostId)) {
+    reportRemoteAcpSetupProgress({ phase: 'start', label: `Connecting to ${hostLabel}…` })
+    await manager.connect(target.hostId)
+  }
 
   const loginShell = resolveRemoteLoginShell(
     manager.getConnection(target.hostId)?.capabilities?.shell,
   )
+  reportRemoteAcpSetupProgress({
+    phase: 'start',
+    label: `Finding ${input.command} on ${hostLabel}…`,
+  })
   const remotePath = await resolveRemoteAgentPath(
     input.command,
     target.hostId,
@@ -645,6 +665,10 @@ export async function spawnRemoteAcpTransport(
     signal,
   )
 
+  reportRemoteAcpSetupProgress({
+    phase: 'start',
+    label: `Starting ${input.command} on ${hostLabel}…`,
+  })
   const wrapped = buildRemoteAcpCommand(input, target.remoteRoot, loginShell, remotePath)
   const askpass = leaseSshAskpassEnv(process.env, target.hostId)
   const child = spawn('ssh', sshExecArgs(host, wrapped), {

@@ -1,4 +1,5 @@
 import { runGh } from '../gh-service.ts'
+import { getWorkspaceRoot } from '../../workspace.ts'
 
 /**
  * Bearer-token env vars the GitHub REST/GraphQL backend can authenticate with,
@@ -48,7 +49,11 @@ export async function resolveGitHubApiToken(): Promise<string | null> {
   if (envToken) return envToken
   if (cachedGhAuthToken) return cachedGhAuthToken
   try {
-    const { stdout, code } = await runGh(['auth', 'token'], { timeout_ms: 10_000 })
+    const { stdout, code } = await runGh(['auth', 'token'], {
+      timeout_ms: 10_000,
+      // Token lookup has no project context yet (#3958); it keeps the window's workspace.
+      cwd: getWorkspaceRoot(),
+    })
     if (code === 0 && stdout.trim()) cachedGhAuthToken = stdout.trim()
   } catch {
     // Leave the cache empty so the next call retries.

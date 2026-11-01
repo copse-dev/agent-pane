@@ -1,4 +1,4 @@
-import { runSubagent, EXPLORE_TOOL_NAMES } from '@copse/agent/run-subagent.ts'
+import { runSubagent, SUBAGENT_ALLOWED_TOOL_NAMES } from '@copse/agent/run-subagent.ts'
 import {
   GATHER_SPECIALIST_EVIDENCE_TOOL_NAME,
   RUN_SPECIALIST_CHECK_TOOL_NAME,
@@ -21,7 +21,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
 
 export const SPECIALIST_DIRECT_TOOL_NAMES = [
-  ...EXPLORE_TOOL_NAMES,
+  ...SUBAGENT_ALLOWED_TOOL_NAMES,
   'git_diff',
   'git_status',
   'git_log',

@@ -329,6 +329,16 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
 
   function render(snapshot: ProcessManagerSnapshot): void {
     if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt)
+    else if (snapshot.memoryMetric === 'footprint') {
+      const missing = snapshot.processes.filter((row) => row.memoryMiB === null).length
+      footerHint.textContent =
+        'CPU is approximate; memory is macOS footprint in MiB (includes compressed/swap).' +
+        (missing > 0
+          ? ` Totals exclude ${String(missing)} unavailable ${missing === 1 ? 'process' : 'processes'}.`
+          : '')
+    } else {
+      footerHint.textContent = 'CPU is approximate; memory is physical RAM in MiB.'
+    }
     const focusedGroup =
       document.activeElement instanceof HTMLElement &&
       body.contains(document.activeElement) &&

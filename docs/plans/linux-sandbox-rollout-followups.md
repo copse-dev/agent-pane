@@ -1,6 +1,6 @@
 # Linux sandbox rollout — follow-ups
 
-**Status: Active.** The rollout itself is done and on `develop`:
+**Status: Active (items 4–6 open).** The rollout itself is done and on `main`:
 [#1440](https://github.com/copse-dev/agent-pane/pull/1440) (lift the macOS-only gate,
 install `bubblewrap`), [#1441](https://github.com/copse-dev/agent-pane/pull/1441)
 (`seccomp=unconfined` so bwrap can create a user namespace), and
@@ -156,7 +156,9 @@ wanted. "Too few" was downstream of "too many".
 Scoring this entry honestly: the hypothesis that bwrap's need to realise rules as mounts is
 where the asymmetry comes from was right. Every consequence drawn from it was wrong.
 
-## 2. Bound the `[sandbox-fs]` denial logging
+## 2. Bound the `[sandbox-fs]` denial logging — RESOLVED
+
+> Resolved: the denial log is now bounded by `GATEWAY_DENIAL_LOG_LIMIT` in `sandbox-fs-client.ts`.
 
 Added on the parent branch to make item 1 diagnosable. It logs on **every** refused
 gateway op, which is unbounded: a file-tree walk against a confined worker could emit

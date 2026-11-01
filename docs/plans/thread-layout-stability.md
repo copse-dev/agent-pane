@@ -1,7 +1,8 @@
 # Thread layout stability
 
-Status: **Active** — the renderer-side disclosure policy, stable reconciliation, reading-anchor
-preservation, and focused visual validation are implemented on this branch. Frame-level scroll
+Status: **Resolved core** — the renderer-side disclosure policy, stable reconciliation, reading-anchor
+preservation, and focused visual validation are on `main` (f9989cb26; the disclosure model moved to
+`src/renderer/views/disclosure-model.ts` in [#3967](https://github.com/copse-dev/agent-pane/pull/3967)). Frame-level scroll
 coalescing and comparison against an always-compact variant remain product follow-ups.
 
 ## Goal
@@ -76,8 +77,9 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    screenshots alone cannot demonstrate temporal jitter.
 
 2. **Own disclosure state explicitly.** Keep renderer-side policy state in
-   `src/renderer/views/disclosure-model.ts`, which `conversation.ts` reads and
-   writes instead of the previous DOM. Track `auto`, `user-open`, and `user-closed` separately
+   `src/renderer/views/disclosure-model.ts`, which the tool-card refresh
+   (`src/renderer/views/tool-card-refresh.ts`, extracted from `conversation.ts`
+   in #3962) reads and writes instead of the previous DOM. Track `auto`, `user-open`, and `user-closed` separately
    from tool status, keyed by thread/message/disclosure identity. Track reveal and
    settle deadlines with renderer timers. Use existing run lifecycle signals;
    confirm native and ACP completion semantics before wiring compaction. Clear stale
@@ -108,6 +110,8 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    bookkeeping. Do not force scroll after a user disclosure click. Re-evaluate
    deferred compaction when the reader returns to the live end. Frame-level
    coalescing remains a follow-up if traces still show redundant scroll writes.
+   This bookkeeping lives in `src/renderer/views/transcript-scroll.ts`, extracted
+   from `conversation.ts` in #3962.
 
 6. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height

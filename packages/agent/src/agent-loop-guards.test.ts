@@ -1,14 +1,19 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  EXPLORE_TOOL_NAMES,
+  DUPLICATE_GUARDED_TOOL_NAMES,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
   hasOpenTodos,
   isDuplicateExploreCall,
   nextConsecutiveExploreWithoutRead,
   toolCallFingerprint,
   normalizeExploreArgs,
+  planClosedByVerifiedChecks,
+  RepeatVerificationTracker,
+  verificationCommandKey,
 } from './agent-loop-guards.ts'
+import type { TodoItem } from './wire-types.ts'
+import { SUBAGENT_ALLOWED_TOOL_NAMES } from './run-subagent.ts'
 
 describe('toolCallFingerprint', () => {
   it('treats equivalent list_dir args as the same key', () => {
@@ -18,9 +23,36 @@ describe('toolCallFingerprint', () => {
   })
 })
 
-describe('EXPLORE_TOOL_NAMES', () => {
+describe('DUPLICATE_GUARDED_TOOL_NAMES', () => {
   it('includes explore (#1433: it was missing, so the guard never fired for it)', () => {
-    assert.equal(EXPLORE_TOOL_NAMES.has('explore'), true)
+    assert.equal(DUPLICATE_GUARDED_TOOL_NAMES.has('explore'), true)
+  })
+
+  it('includes semantic_search, so a repeated semantic query is caught like search_codebase', () => {
+    assert.equal(DUPLICATE_GUARDED_TOOL_NAMES.has('semantic_search'), true)
+    const args = { query: 'where is the url bar focused' }
+    const fp = toolCallFingerprint('semantic_search', normalizeExploreArgs('semantic_search', args))
+    assert.equal(isDuplicateExploreCall('semantic_search', args, [fp]), true)
+  })
+})
+
+describe('SUBAGENT_ALLOWED_TOOL_NAMES', () => {
+  // The two sets were both named EXPLORE_TOOL_NAMES (#1433). "Add explore to
+  // EXPLORE_TOOL_NAMES" applied to the allow-list would have granted the
+  // explore subagent the explore tool — recursive subagent spawning.
+  it('never lets the explore subagent spawn subagents or write', () => {
+    const allowed = new Set<string>(SUBAGENT_ALLOWED_TOOL_NAMES)
+    for (const forbidden of [
+      'explore',
+      'investigate_ci',
+      'delegate_step',
+      'run_shell',
+      'write_file',
+      'str_replace',
+      'apply_patch',
+    ]) {
+      assert.equal(allowed.has(forbidden), false, `${forbidden} must not be subagent-allowed`)
+    }
   })
 })
 
@@ -166,5 +198,160 @@ describe('hasOpenTodos', () => {
     assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'completed' }]), false)
     assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'pending' }]), true)
     assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'in_progress' }]), true)
+  })
+})
+
+describe('capped read_file pages', () => {
+  it('does not reread page one merely because end_line grows past the cap', () => {
+    const first = normalizeExploreArgs('read_file', { path: 'project.pbxproj', end_line: 300 })
+    assert.deepEqual(first, { path: 'project.pbxproj', start_line: 1, end_line: 150 })
+    assert.equal(
+      isDuplicateExploreCall('read_file', { path: 'project.pbxproj', end_line: 388 }, [
+        toolCallFingerprint('read_file', first),
+      ]),
+      true,
+    )
+    assert.equal(
+      isDuplicateExploreCall(
+        'read_file',
+        { path: 'project.pbxproj', start_line: 151, end_line: 388 },
+        [toolCallFingerprint('read_file', first)],
+      ),
+      false,
+    )
+  })
+})
+
+describe('planClosedByVerifiedChecks (#1433 Fix 4)', () => {
+  const check = { kind: 'shell', command: 'gh pr view --json url', expectExit: 0 } as const
+
+  it('fires when the step completed the last open item and it carried a check', () => {
+    const before: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'in_progress', check },
+    ]
+    const after: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'completed', check },
+    ]
+    assert.equal(planClosedByVerifiedChecks(before, after), true)
+  })
+
+  it('does not fire when the closing item had no check, or todos remain open', () => {
+    const before: TodoItem[] = [{ id: 'a', content: 'Edit', status: 'in_progress' }]
+    assert.equal(
+      planClosedByVerifiedChecks(before, [{ id: 'a', content: 'Edit', status: 'completed' }]),
+      false,
+    )
+    const twoOpen: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'in_progress', check },
+      { id: 'b', content: 'Test', status: 'pending' },
+    ]
+    assert.equal(
+      planClosedByVerifiedChecks(twoOpen, [
+        { id: 'a', content: 'Edit', status: 'completed', check },
+        { id: 'b', content: 'Test', status: 'pending' },
+      ]),
+      false,
+    )
+  })
+
+  it('does not fire when one of several items closed in the step had no check', () => {
+    const before: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'in_progress' },
+      { id: 'b', content: 'Open PR', status: 'in_progress', check },
+    ]
+    const after: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'completed', check },
+    ]
+    assert.equal(planClosedByVerifiedChecks(before, after), false)
+  })
+
+  it('does not fire for a plan that was already closed, or closed by cancelling', () => {
+    const done: TodoItem[] = [{ id: 'a', content: 'Edit', status: 'completed', check }]
+    assert.equal(planClosedByVerifiedChecks(done, done), false)
+    assert.equal(
+      planClosedByVerifiedChecks(
+        [{ id: 'a', content: 'Edit', status: 'pending', check }],
+        [{ id: 'a', content: 'Edit', status: 'cancelled', check }],
+      ),
+      false,
+    )
+  })
+})
+
+describe('verificationCommandKey (#1433 Fix 4)', () => {
+  it('keys whole-suite runs, ignoring output filters and stderr merges', () => {
+    assert.equal(verificationCommandKey('npm run check'), 'npm run check')
+    assert.equal(verificationCommandKey('npm run check 2>&1 | tail -50'), 'npm run check')
+    assert.equal(verificationCommandKey('  npm   run check | grep -i fail'), 'npm run check')
+    assert.equal(verificationCommandKey('pnpm test -- thread-store'), 'pnpm test -- thread-store')
+    assert.equal(
+      verificationCommandKey('cd packages/agent && pnpm test'),
+      'cd packages/agent && pnpm test',
+    )
+    assert.equal(verificationCommandKey('cargo test'), 'cargo test')
+    assert.equal(verificationCommandKey('python -m pytest tests'), 'python -m pytest tests')
+  })
+
+  it('refuses commands that are not verification, or that may write', () => {
+    for (const command of [
+      'git status',
+      'cd packages/agent',
+      'npm install',
+      'npm run lint -- --fix',
+      'pnpm exec eslint --fix src',
+      'npm test -- -u',
+      'npm run check > check.log',
+      'npm run check | tee check.log',
+      'npm run check && git push',
+      'npm run format',
+    ]) {
+      assert.equal(verificationCommandKey(command), null, command)
+    }
+  })
+})
+
+describe('RepeatVerificationTracker (#1433 Fix 4)', () => {
+  const check = { command: 'npm run check 2>&1 | tail -40' }
+  const sameSuite = { command: 'npm run check | grep fail' }
+
+  it('flags the #1433 shape: check, read-only inspection, check again', () => {
+    const tracker = new RepeatVerificationTracker()
+    assert.equal(tracker.isRepeat('run_shell', check), false)
+    tracker.observe('run_shell', check)
+    tracker.observe('run_shell', { command: 'git status' })
+    tracker.observe('run_shell', { command: 'git diff origin/main --stat' })
+    tracker.observe('run_shell', { command: 'git show --stat HEAD' })
+    tracker.observe('update_todos', { todos: [] })
+    assert.equal(tracker.isRepeat('run_shell', sameSuite), true)
+  })
+
+  it('re-arms after an edit, a writing shell command, an unknown tool, or a reset', () => {
+    for (const [name, args] of [
+      ['str_replace', { path: 'a.ts', old_string: 'a', new_string: 'b' }],
+      ['write_file', { path: 'a.ts', content: '' }],
+      ['run_shell', { command: 'git stash' }],
+      ['run_shell', { command: 'echo x > a.ts' }],
+      ['some_mcp_tool', {}],
+    ] as const) {
+      const tracker = new RepeatVerificationTracker()
+      tracker.observe('run_shell', check)
+      tracker.observe(name, args)
+      assert.equal(tracker.isRepeat('run_shell', check), false, name)
+    }
+    const tracker = new RepeatVerificationTracker()
+    tracker.observe('run_shell', check)
+    tracker.reset()
+    assert.equal(tracker.isRepeat('run_shell', check), false)
+  })
+
+  it('never flags a different suite, or a non-verification command', () => {
+    const tracker = new RepeatVerificationTracker()
+    tracker.observe('run_shell', check)
+    assert.equal(tracker.isRepeat('run_shell', { command: 'npm run typecheck' }), false)
+    tracker.observe('run_shell', { command: 'git status' })
+    assert.equal(tracker.isRepeat('run_shell', { command: 'git status' }), false)
   })
 })

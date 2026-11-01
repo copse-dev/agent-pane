@@ -6,6 +6,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { StagedDiffEntry } from '@shared/types/state.ts'
 import { attachDiffState } from './diff-state.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { selectRightPanel } from './panels.ts'
 
 type QueuedHandler = (projectId: string, threadId: string, entries: StagedDiffEntry[]) => void
 type ShowDiffHandler = (
@@ -140,7 +141,7 @@ describe('diff state', () => {
     await settle()
 
     let reveals = 0
-    store.on('right_panel_mode_changed', () => {
+    selectRightPanel(store, () => {
       reveals++
     })
 

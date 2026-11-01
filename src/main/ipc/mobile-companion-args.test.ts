@@ -1,25 +1,43 @@
 import assert from 'node:assert/strict'
 import { it } from 'node:test'
-import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
+import {
+  mobileDeviceAccessArgsSchema,
+  mobileInviteSchema,
+  mobilePairingArgsSchema,
+} from './mobile-companion-args.ts'
 
 const deviceId = '8abde2d0-8c97-4a99-9ea8-a7518309ee52'
 
-it('requires explicit desktop trust acknowledgement for pairing and device control', () => {
+it('requires explicit desktop trust acknowledgement for device control', () => {
   for (const acknowledgement of [undefined, false, 'true', 1, null]) {
-    assert.equal(
-      mobilePairingArgsSchema.safeParse(['control', '123456', deviceId, acknowledgement]).success,
-      false,
-    )
     assert.equal(
       mobileDeviceAccessArgsSchema.safeParse([deviceId, 'control', acknowledgement]).success,
       false,
     )
   }
-  assert.equal(
-    mobilePairingArgsSchema.safeParse(['control', '123456', deviceId, true]).success,
-    true,
-  )
   assert.equal(mobileDeviceAccessArgsSchema.safeParse([deviceId, 'control', true]).success, true)
+})
+
+it('carries the pairing acknowledgement as a strict boolean for the main process to enforce', () => {
+  for (const acknowledgement of [undefined, false, true]) {
+    assert.equal(
+      mobilePairingArgsSchema.safeParse(['control', '123456', deviceId, acknowledgement]).success,
+      true,
+    )
+  }
+  for (const acknowledgement of ['true', 1, null]) {
+    assert.equal(
+      mobilePairingArgsSchema.safeParse(['control', '123456', deviceId, acknowledgement]).success,
+      false,
+    )
+  }
+})
+
+it('accepts a pasted invite and nothing oversized or empty', () => {
+  assert.equal(mobileInviteSchema.parse('  inv-abc  '), 'inv-abc')
+  for (const invite of ['', '   ', 'x'.repeat(65), 7]) {
+    assert.equal(mobileInviteSchema.safeParse(invite).success, false)
+  }
 })
 
 it('allows read-only, denial, and downgrade without certificate acknowledgement', () => {

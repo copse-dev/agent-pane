@@ -109,6 +109,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       const label = promptProgressLabel(fraction)
       if (label !== get(threadId).lastActivityLabel) emitActivity(threadId, label)
     },
+    setupProgress: (threadId, label) => {
+      // A repeated stage is not re-announced to the aria-live region.
+      if (label !== get(threadId).lastActivityLabel) emitActivity(threadId, label)
+    },
     visibleOutput: (threadId) => {
       maybeNameThread(store, api, threadId)
     },
@@ -281,6 +285,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
       chunk.type === 'acp_content' ||
+      chunk.type === 'acp_content_replace' ||
       (chunk.type === 'text' && chunk.text.trim() !== '') ||
       (chunk.type === 'reasoning' && chunk.text.trim() !== '')
     if (firstVisibleActivity && !st.firstActivityTraced) {

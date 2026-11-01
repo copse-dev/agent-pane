@@ -18,8 +18,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > authenticated with its own command (e.g. `claude auth login`). The Settings
 > panel shows the exact install and sign-in commands per agent.
 
-> Status: client role, second slice (issues #264, #605). Terminals are not
-> here yet — see [Limitations](#limitations).
+> Status: client role, second slice (issues #264, #605), with client terminals
+> (#623) — see [Client terminals](#client-terminals) and [Limitations](#limitations).
 
 ## How it works
 
@@ -33,7 +33,10 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
     open folder).
   - **`fs/write_text_file`** → the **diff-approval queue**. The agent's write is
     shown to you as a diff and is **blocked until you approve or reject it**.
-  - **`session/request_permission`** → the normal approval dialog.
+  - **`session/request_permission`** → Copse's shell gate when the request
+    runs a command (an `execute` request, or one with no kind or `other` that
+    carries `rawInput.command`), otherwise the normal approval dialog. See
+    [ACP permission requests](shell-permissions.md#acp-permission-requests).
 - Your configured **MCP servers** (stdio, plus http when the agent supports it)
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
@@ -98,6 +101,11 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   `run_shell`: that reuses Copse's native permission decision and can run
   approved external commands outside the agent sandbox. Direct agent-shell
   `git push`/`npm install` still fail inside the sandbox.
+- **Client terminals** (issue #623): Copse advertises
+  `clientCapabilities.terminal: true`, so a spec-following agent asks Copse to
+  run each shell command (`terminal/create`) instead of using its own shell.
+  Each command goes through Copse's `run_shell` — see
+  [Client terminals](#client-terminals).
 - **Sessions persist per thread** (issue #605): follow-up turns reuse the same
   agent process and ACP session, so the agent keeps its own context (no
   transcript replay) and background helpers it spawned keep running between
@@ -110,9 +118,51 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > adapters, Gemini CLI) use it for file _edits_ when Copse advertises the
 > capability, but every agent keeps its own shell tool — a `sed -i` or
 > `echo >` from the agent's shell lands on disk directly, gated only by
-> `session/request_permission` (and not even that once you grant an
-> "Always allow … execute" remember). Containment and detection of such
-> writes are tracked in #590 and #591.
+> `session/request_permission`, which Copse routes through its shell gate.
+> A request that runs a command, whether marked `execute` or sent with no kind
+> but a `rawInput.command`, is never remembered: no "Always allow" grant
+> answers it, and execute grants stored by earlier versions are ignored. A
+> one-shot approval never selects the agent's own `allow_always` either.
+> Containment and detection of such writes are tracked in #590 and #591.
+
+## Client terminals
+
+ACP lets an agent delegate shell commands to its client through `terminal/*`
+([spec](https://agentclientprotocol.com/protocol/terminals)). Copse backs those
+methods with its own shell path (issue #623), so a delegated command is gated and
+contained exactly like a native `run_shell` call:
+
+- **One `terminal/create` = one `run_shell` call.** The command re-enters
+  `run_shell` through the native bridge's turn binding: the permission gate and
+  platform matrix ([shell permissions](shell-permissions.md#acp-client-terminals)),
+  the per-command project sandbox (ASRT seatbelt on macOS, bubblewrap on Linux),
+  the package firewall, environment scrubbing, worktree change adoption and the
+  unsandboxed-retry prompt after a verified sandbox block. Copse runs the command
+  in its main process, not inside the agent's spawn-time seatbelt (#590), so an
+  approved retry or an external command can actually leave the project sandbox.
+- **Command text.** With `args`, the request is treated as an argv and every word
+  is shell-quoted; without `args`, `command` is a shell command line. `env`
+  entries become `export NAME='value'` lines ahead of the command and `cwd` (the
+  workspace root or a directory inside it) becomes a `cd` line, so the approval
+  prompt shows, and the classifier judges, everything that will run. A `cwd`
+  outside the workspace or an invalid variable name is refused without running.
+- **Results.** `terminal/output` returns the raw output (the last
+  `outputByteLimit` bytes, which defaults to and is capped at 1 MiB, trimmed at a character boundary) and
+  the exit status once the command finishes; `terminal/wait_for_exit` resolves
+  with it. After an approved unsandboxed retry the output holds both attempts,
+  separated by a `[Copse] Retrying outside the project sandbox (approved).` line,
+  and the status is the retry's. A declined retry appends run_shell's decline
+  message. A command Copse never ran (a rejected prompt, a refused `cwd`, a call
+  with no turn bound) reports exit code 126 with the reason as its output.
+- **Lifetime.** Commands share run_shell's 30-minute foreground cap.
+  `terminal/kill` stops the process tree and keeps the terminal readable;
+  `terminal/release` kills it if still running and invalidates the id. Stopping
+  the turn kills its commands, and closing the agent session kills every
+  terminal it still holds. One session may hold 16 unreleased terminals.
+- **When terminals are offered.** Only together with the native bridge (local
+  agents with `acpNativeBridgeEnabled` on), never to an agent on an SSH host and
+  never on Windows. Otherwise the capability is `false` and agents keep their own
+  shell, as before.
 
 ## Configure an agent
 
@@ -158,7 +208,9 @@ The catalog launches `copilot --acp --stdio`; ACP is in public preview. GitHub-h
 models use your Copilot plan and usage limits, while BYOK uses the selected
 provider's billing and requires a custom sandbox endpoint. See the
 [candidate review](acp-catalog-review.md) for evidence, confinement limits and
-verification status, including why OpenCode and Qwen Code remain deferred.
+verification status, including why OpenCode remains deferred. Qwen Code is now in the catalog
+(`qwen --acp`, added in [#3745](https://github.com/copse-dev/agent-pane/pull/3745)); the review
+records its auth and billing caveats.
 
 To discover agents beyond that reviewed list, choose **Add provider → An agent
 installed on this machine → Browse agent registry**. Search the public stable
@@ -325,20 +377,84 @@ The agent must bring its own credentials: pass them explicitly through `env`
 (as in the example above), or rely on the agent's own login/config. Non-LLM tool
 tokens such as `GITHUB_TOKEN` are passed through.
 
+### The agent's own config/home directory
+
+An agent `resolveAcpConfigDirEnvVar` (`acp-agent-registry.ts`) recognises as
+wrapping Claude (today, any Claude ACP adapter — see `isClaudeAcpAgent`) is
+**thread-scoped by default** when it runs locally: Copse points
+`CLAUDE_CONFIG_DIR` at
+`<chat store>/<projectId>/<threadId>/acp-agent-config/<agentId>/`
+(`acp-agent-config-dir.ts`) rather than letting the agent fall back to the real
+`$HOME`. Without this, every ACP-backed Copse thread shares — and is shaped
+by — whatever the signed-in device's Claude Code account has globally:
+personal synced skills, plugins, and MCP servers from a completely unrelated
+context, with no relation to the project the thread is actually working in.
+
+**The login is not scoped.** `CLAUDE_CONFIG_DIR` alone would sign every new
+thread out: Claude Code derives its secure storage from that directory too. On
+macOS the Keychain item becomes `Claude Code-credentials-<first 8 hex of
+sha256(dir)>`, and on Linux/Windows `.credentials.json` moves into the
+directory. Copse's Settings auth check stays unscoped, so it would still say
+"signed in" while the agent failed. Copse therefore also sets an **empty**
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, which the CLI reads as "the default
+Keychain item and `~/.claude/.credentials.json`". Every thread uses the account's
+one real login, its token refreshes and their lock included, and nothing
+credential-shaped is linked or copied into the thread.
+
+Scoping happens only when Copse can see that the CLI the adapter will run
+honours that variable. That means **Claude Code 2.1.144 or newer**, read from the
+`claudeCodeVersion` of the `@anthropic-ai/claude-agent-sdk` installed with the
+adapter (`@agentclientprotocol/claude-agent-acp` 0.37.0+). Copse finds the
+adapter on the agent's own spawn `PATH`, so a `PATH` set in Settings is
+respected. An older adapter
+already hashes the Keychain item name but ignores the override, so it is left
+**unscoped** rather than signed out. So is any agent whose CLI Copse cannot
+identify:
+
+- a runner such as `npx`;
+- a `CLAUDE_CODE_EXECUTABLE` override;
+- an install with no SDK version to read.
+
+Run `npm install -g @agentclientprotocol/claude-agent-acp@latest` to get the
+scoping on an older install.
+
+**SSH-hosted agents are never scoped.** The directory is a path on this
+machine, so it means nothing on the remote host. Putting it in the agent's
+`env` would also make the forwarding consent prompt (`acp-remote-env-gate.ts`,
+see [`acp-over-ssh.md`](plans/acp-over-ssh.md)) ask to send it there. A remote agent
+keeps the host's own `~/.claude`. Copse asks to forward only the env configured
+in Settings.
+
+An explicit `CLAUDE_CONFIG_DIR` in the agent's own `env` (Settings → Coding
+agents) always overrides the default, for example to point every thread at one
+shared config on purpose. Copse then adds no secure-storage override, so that
+directory behaves exactly as it does for the CLI on its own, login included.
+
+> **Known gap — sandboxed writes.** The seatbelt mounts the chat store
+> read-only and grants the agent writes only to its declared `homeDirs`
+> (`~/.claude`, …). A sandboxed agent can therefore read and refresh its login
+> but cannot write into its scoped directory (`.claude.json`, session
+> transcripts under `projects/`). Granting that directory is a separate
+> sandbox-policy change, not made here.
+
+This directory is a root-level sibling of `events.jsonl`, like the ACP wire
+trace: untouched by thread save/load, and carried along by "Export thread
+folder (ZIP)".
+
 ## Tool parity with native Copse
 
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
 Fable or Sonnet) do **not** expose the same tool surface today:
 
-| Capability                       | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Read/search files                | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent tools, plus equivalent bridged Copse tools                           |
-| Edit files                       | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` or bridged edit tools → same queue                             |
-| Shell / CLI                      | `run_shell` (structured; prefer dedicated tools for reads)                                  | Bridged `run_shell` / `run_background` (preferred); private shell remains sandboxed |
-| Git / GitHub                     | `git_*`, `gh_*`, CI tools                                                                   | Equivalent bridged Copse tools                                                      |
-| MCP servers                      | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)                              |
-| Shared context-free native tools | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)                                  |
-| Skills, todo/plan tools          | Copse `ToolRegistry`                                                                        | **Not forwarded**                                                                   |
+| Capability                       | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Read/search files                | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent tools, plus equivalent bridged Copse tools                            |
+| Edit files                       | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` or bridged edit tools → same queue                              |
+| Shell / CLI                      | `run_shell` (structured; prefer dedicated tools for reads)                                  | Client terminals and bridged `run_shell` / `run_background`; private shell sandboxed |
+| Git / GitHub                     | `git_*`, `gh_*`, CI tools                                                                   | Equivalent bridged Copse tools                                                       |
+| MCP servers                      | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)                               |
+| Shared context-free native tools | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)                                   |
+| Skills, todo/plan tools          | Copse `ToolRegistry`                                                                        | **Not forwarded**                                                                    |
 
 **Default native behavior** (Settings → Local models → _Route reads and searches
 through exploration subagents_ **off**) exposes direct read/search tools so native
@@ -352,7 +468,17 @@ native loop to an external ACP _client_.
 
 This first slice intentionally leaves the following for follow-ups (issue #264):
 
-- **No terminals.** `terminal/*` requests are not backed yet.
+- **Terminals are opt-in for the agent.** Copse advertises `terminal: true`, but
+  an adapter may still run commands with its own shell (inside the spawn-time
+  seatbelt, where approval cannot override the sandbox). Copse does not
+  prompt-steer adapters toward terminals. An agent that asks
+  `session/request_permission` for an `execute` call before delegating it can
+  still show two questions for an external command: its own, then Copse's gate.
+- **No live terminal embed yet.** A tool card that references a client terminal
+  (`ToolCallContent` of type `terminal`) still shows the terminal reference, not
+  its streaming output; the agent's own `tool_call_update` carries the result.
+  Terminals run piped, not in a PTY, so TTY-only tools behave as they do under
+  `run_shell`.
 - **Sessions are per-thread and idle-bounded.** The agent process and its ACP
   session persist across turns in a thread (issue #605), so the agent keeps its
   own memory and background helpers survive between turns. A session idle for

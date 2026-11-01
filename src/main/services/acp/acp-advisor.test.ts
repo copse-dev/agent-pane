@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import type { AcpTransportFactory } from './acp-client.ts'

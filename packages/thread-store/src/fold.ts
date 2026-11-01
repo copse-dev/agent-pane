@@ -1,5 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
-import type { AcpContentBlock, AcpToolCallContent } from '@copse/agent/wire-types.ts'
+import type { AcpContentBlock, AcpToolCallContent, CommandPhase } from '@copse/agent/wire-types.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
 import type { CanvasArtefactReference } from './canvas-types.ts'
@@ -254,6 +254,24 @@ function parseToolArgsJson(raw: string): unknown {
 
 const appendedReminderLengthsSchema = z.array(z.number().int().nonnegative()).min(1)
 
+const commandPhaseSchema: z.ZodType<CommandPhase> = z.object({
+  state: z.enum([
+    'queued',
+    'awaiting_approval',
+    'starting',
+    'running',
+    'exited',
+    'timed_out',
+    'cancelled',
+    'not_started',
+  ]),
+  since: z.number(),
+  launched: z.boolean(),
+  exitCode: z.number().int().exactOptional(),
+  backgroundTaskId: z.string().exactOptional(),
+  reason: z.string().exactOptional(),
+})
+
 const acpContentBlockSchema: z.ZodType<AcpContentBlock> = z.union([
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({
@@ -373,6 +391,7 @@ function explodeToolCall(
       ? { appendedReminderLengths: tc.appendedReminderLengths }
       : {}),
     ...(images !== undefined ? { images } : {}),
+    ...(tc.commandPhase !== undefined ? { commandPhase: tc.commandPhase } : {}),
   }
 
   if (tc.subagent) {
@@ -699,6 +718,12 @@ function foldToolCall(
     ? undefined
     : appendedReminderLengthsSchema.safeParse(spine.appendedReminderLengths).data
 
+  // Display-only status: a malformed stage is dropped rather than shown.
+  const commandPhase =
+    spine.commandPhase === undefined
+      ? undefined
+      : commandPhaseSchema.safeParse(spine.commandPhase).data
+
   let content: AcpToolCallContent[] | undefined
   if (spine.content !== undefined) {
     const serialized = resolveToolBlob(spine.content, resolve, ctx)
@@ -720,6 +745,7 @@ function foldToolCall(
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
     ...(appendedReminderLengths !== undefined ? { appendedReminderLengths } : {}),
     ...(images !== undefined && images.length > 0 ? { images } : {}),
+    ...(commandPhase !== undefined ? { commandPhase } : {}),
   }
 
   if (spine.subagent) {

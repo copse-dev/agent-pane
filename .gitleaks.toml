@@ -102,3 +102,30 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''API_TOKEN=abcdef123456''']
 paths = ['''^src/main/services/security/environment-suggestions\.test\.ts$''']
+
+[[allowlists]]
+# The remote-protocol label-grant test first passed a made-up names-service
+# label (`abcdefgh2345`, the shape `[a-z2-7]{12}`) as a literal beside
+# `keys.privateKey` (commit dad470de4fd9 on PR #3992), which the
+# generic-api-key heuristic reads as a key assignment. Labels are public DNS
+# names, not credentials. The test now passes a named constant; this entry
+# clears only that exact literal in the one file's history.
+description = "Remote-protocol test label (history only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''abcdefgh2345''']
+paths = ['''^packages/remote-protocol/src/protocol\.test\.ts$''']
+
+[[allowlists]]
+# The boundary-contract redaction test first carried an inert classic-PAT-shaped
+# literal (commit 315dac3fa381 on PR #4008) to prove the report redactor strips
+# GitHub tokens. The test now assembles its fake token at run time; this entry
+# clears only that exact literal in the one file's history, so any other
+# credential-shaped value there is still reported.
+description = "Boundary-contract redaction fixture (history only)"
+targetRules = ["github-pat"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''ghp_0123456789abcdefghijABCDEFGHIJ012345''']
+paths = ['''^scripts/lib/boundary-contracts\.test\.ts$''']

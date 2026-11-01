@@ -50,4 +50,10 @@ describe('foldAutomationRuns', () => {
     )
     assert.deepEqual(describeEntries(entries), ['f1', 'f2'])
   })
+
+  it('keeps a run pending its first start as its own row, like a running one', () => {
+    const starting: SidebarThread = { ...run('starting'), automationPendingStart: true }
+    const entries = foldAutomationRuns([run('done'), starting], () => false)
+    assert.deepEqual(describeEntries(entries), ['starting'])
+  })
 })

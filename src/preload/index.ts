@@ -81,6 +81,9 @@ const api: ApiClient = {
       rootTrusted?: boolean,
     ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
+    registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
+    removeName: () => ipcRenderer.invoke('mobile:remove-name'),
+    recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -802,6 +805,12 @@ const api: ApiClient = {
     signIn: (name: string) => ipcRenderer.invoke('mcp:sign-in', name),
     cancelSignIn: (name: string) => ipcRenderer.invoke('mcp:cancel-sign-in', name),
     signOut: (name: string) => ipcRenderer.invoke('mcp:sign-out', name),
+    listUserServers: () => ipcRenderer.invoke('mcp:list-user-servers'),
+    saveUserServer: (
+      input: import('@shared/types/mcp-user-servers.ts').McpUserServerInput,
+      previousName?: string,
+    ) => ipcRenderer.invoke('mcp:save-user-server', input, previousName),
+    removeUserServer: (name: string) => ipcRenderer.invoke('mcp:remove-user-server', name),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {
@@ -911,6 +920,9 @@ const api: ApiClient = {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
+    searchRequests: (projectId: string, query: string) =>
+      ipcRenderer.invoke('threads:search-requests', projectId, query),
+    cancelRequestSearch: () => ipcRenderer.invoke('threads:cancel-request-search'),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (

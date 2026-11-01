@@ -593,9 +593,27 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           running: scenario.mobileCompanion !== undefined,
           url: scenario.mobileCompanion?.url ?? null,
           qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+          localUrl: null,
+          localQrSvg: null,
+          publicName: {
+            serviceUrl: 'https://api.copse.dev',
+            state: 'unregistered',
+            hostname: null,
+            certificate: null,
+            dns: 'unknown',
+            busy: null,
+            lastError: null,
+          },
           rootCertificatePath: null,
+          address: scenario.mobileCompanion ? new URL(scenario.mobileCompanion.url).hostname : null,
           addresses: scenario.mobileCompanion
-            ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
+            ? [
+                {
+                  address: new URL(scenario.mobileCompanion.url).hostname,
+                  interfaceName: 'Wi-Fi',
+                  virtual: false,
+                },
+              ]
             : [],
           devices: [],
           pairing: null,
@@ -608,6 +626,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },
@@ -963,6 +984,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         )
         return resolved(structuredClone([...mcpStatuses]))
       },
+      listUserServers: () => resolved({ path: '/demo/mcp.json', servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe,
     },
     toolPermissions: {
@@ -1057,6 +1081,26 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) =>
+        resolved({
+          matches: threads
+            .filter(
+              (thread) =>
+                thread.archivedAt == null &&
+                thread.messages.some(
+                  (message) =>
+                    message.role === 'user' &&
+                    (message.origin === undefined || message.editedByUser === true) &&
+                    message.content
+                      .normalize('NFC')
+                      .toLowerCase()
+                      .includes(query.normalize('NFC').toLowerCase()),
+                ),
+            )
+            .map((thread) => thread.id),
+          incomplete: false,
+        }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)
