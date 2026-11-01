@@ -162,6 +162,30 @@ describe('settings → Customise / MCP / Storage', function () {
     await expect($('#settings-dialog .settings-nav-subheadings')).toHaveText(
       expect.stringContaining('Declared by plugins, not running'),
     )
+    // Plugin discovery can finish before bundled MCP servers connect. Capture the
+    // same ready state each time, including the rows actually shown in Settings.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(async () => {
+          const bundled = (await window.api.mcp.list()).filter(
+            (server) => server.origin === 'built-in',
+          )
+          return (
+            bundled.length > 0 &&
+            bundled.every(
+              (server) =>
+                server.state === 'connected' &&
+                [...document.querySelectorAll('#mcp-server-list .mcp-server-row')].some(
+                  (row) =>
+                    row instanceof HTMLElement &&
+                    row.dataset['mcpServer'] === server.name &&
+                    row.classList.contains('mcp-state-connected'),
+                ),
+            )
+          )
+        }),
+      { timeout: 30_000, timeoutMsg: 'Bundled MCP servers did not reach the ready Settings state' },
+    )
     await saveElementScreenshot('#settings-dialog', 'settings-mcp-lens.png')
   })
 })
