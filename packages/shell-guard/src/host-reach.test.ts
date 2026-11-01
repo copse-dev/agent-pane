@@ -334,12 +334,52 @@ describe('hostReachReasons — code fetched at run time', () => {
     ]) {
       assert.ok(reaches(command, { pathExists }), command)
     }
+    // A global option before the subcommand does not hide it.
+    for (const command of [
+      'pnpm --silent dlx create-vite',
+      'pnpm -s dlx create-vite',
+      'corepack pnpm --silent dlx create-vite',
+      'pnpm -C sub dlx create-vite',
+      'pnpm --config.registry=x dlx create-vite',
+      'yarn --cwd sub dlx create-vite',
+      'pnpm --silent create vite',
+      'npm -s init vite',
+      'npm --silent create vite',
+      'bun --silent x cowsay',
+      'bun --bun create vite',
+      'pipx --verbose run black .',
+    ]) {
+      assert.ok(reaches(command, { pathExists }), command)
+    }
+    // npm resolves `cr` and `innit` to `init`, and an option before the
+    // initializer does not stop it running `create-<initializer>`.
+    for (const command of [
+      'npm cr vite',
+      'npm innit vite',
+      'npm init -y vite',
+      'npm init --force vite',
+    ]) {
+      assert.ok(reaches(command, { pathExists }), command)
+    }
     // Without a workspace there is no project dependency to run.
     assert.ok(reaches('npx tsc', { pathExists, workspaceRoot: null }))
   })
 
   it('leaves the local npm package-initialization forms alone', () => {
-    for (const command of ['npm init', 'npm init -y', 'npm init --yes']) {
+    for (const command of [
+      'npm init',
+      'npm init -y',
+      'npm init --yes',
+      'npm -s init -y',
+      'npm init --scope=@me',
+      // A subcommand that does not download, even with a download word after it.
+      'npm run create',
+      'pnpm run dlx',
+      'pnpm --silent install',
+      'yarn --cwd sub install',
+      'bun run x',
+      'pipx install black',
+    ]) {
       assert.deepEqual(reasons(command), [], command)
     }
   })

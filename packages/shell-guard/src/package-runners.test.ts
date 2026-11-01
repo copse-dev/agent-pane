@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  downloadingRunner,
   isPlainPackageName,
   packageBinName,
   packageManagerArgv,
@@ -31,6 +32,40 @@ describe('packageManagerArgv', () => {
 
   it('drops the empty word shell-quote leaves for a backslash-newline', () => {
     assert.deepEqual(packageManagerArgv(['npx', '', 'evil']), ['npx', 'evil'])
+  })
+})
+
+describe('downloadingRunner', () => {
+  it('finds a downloading subcommand past global options', () => {
+    for (const [command, expected] of new Map([
+      ['pnpm dlx evil', 'pnpm dlx'],
+      ['pnpm --silent dlx evil', 'pnpm dlx'],
+      ['corepack pnpm --silent dlx evil', 'pnpm dlx'],
+      ['pnpm -C sub dlx evil', 'pnpm dlx'],
+      ['pnpx evil', 'pnpm dlx'],
+      ['yarnpkg --cwd sub dlx evil', 'yarn dlx'],
+      ['npm -s create vite', 'npm create'],
+      ['npm cr vite', 'npm cr'],
+      ['npm init --force vite', 'npm init'],
+      ['bun --bun x cowsay', 'bun x'],
+      ['bunx cowsay', 'bunx'],
+    ])) {
+      assert.equal(downloadingRunner(command.split(' ')), expected, command)
+    }
+  })
+
+  it('leaves a subcommand that writes or runs local code alone', () => {
+    for (const command of [
+      'npm init -y',
+      'npm -s init --yes',
+      'npm run create',
+      'pnpm run dlx',
+      'pnpm --silent install',
+      'pnpm exec evil',
+      'npx evil',
+    ]) {
+      assert.equal(downloadingRunner(command.split(' ')), null, command)
+    }
   })
 })
 

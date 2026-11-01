@@ -52,6 +52,53 @@ const COREPACK_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'yarnpk
 const NPM_EXEC_SPELLINGS = new Set(['exec', 'exe', 'x'])
 
 /**
+ * Every spelling npm resolves to `init`: its aliases `create` and `innit`, and
+ * their unique abbreviations (`npm cr vite` is `npm create vite`). Checked
+ * against the command lists of npm 10.9.9 and 11.19.1.
+ */
+const NPM_INIT_SPELLINGS = new Set([
+  'init',
+  'ini',
+  'innit',
+  'inn',
+  'inni',
+  'create',
+  'creat',
+  'crea',
+  'cre',
+  'cr',
+])
+
+const NO_OPTIONS: ReadonlySet<string> = new Set()
+
+/** Global options a manager takes that need no value: the word after one is the subcommand. */
+function plainGlobalOptions(manager: string): ReadonlySet<string> {
+  if (manager === 'npm') return NPM_PLAIN_OPTIONS
+  if (manager === 'pnpm') return PNPM_GLOBAL_PLAIN_OPTIONS
+  return NO_OPTIONS
+}
+
+/**
+ * Subcommands that download the package they run, by manager: `always`
+ * whatever follows, and `withInitializer` once any word follows the
+ * subcommand. `npm init <initializer>` runs `create-<initializer>`; a bare
+ * `npm init -y` only writes a package.json.
+ */
+const DOWNLOADING_SUBCOMMANDS: ReadonlyMap<
+  string,
+  { always: ReadonlySet<string>; withInitializer: ReadonlySet<string> }
+> = new Map([
+  ['npm', { always: NO_OPTIONS, withInitializer: NPM_INIT_SPELLINGS }],
+  ['pnpm', { always: new Set(['dlx']), withInitializer: new Set(['create']) }],
+  ['yarn', { always: new Set(['dlx']), withInitializer: new Set(['create']) }],
+  ['bun', { always: new Set(['x']), withInitializer: new Set(['create']) }],
+  ['pipx', { always: new Set(['run']), withInitializer: NO_OPTIONS }],
+])
+
+/** Runners that are nothing but a download-and-run. */
+const DOWNLOADING_COMMANDS = new Set(['bunx', 'uvx'])
+
+/**
  * A manager's other executable names, as the command each one runs. `yarnpkg`
  * is Yarn under the name Debian kept free. `pnpx` is `pnpm dlx` (pnpm 10.34.5's
  * `pnpx --help` prints `Usage: pnpm dlx`): it runs the named package in a
@@ -103,7 +150,7 @@ function subcommandIndex(
   argv: readonly string[],
   subcommands: ReadonlySet<string>,
   plain: ReadonlySet<string>,
-  unmodelled: { option: string | null },
+  unmodelled: { option: string | null } = { option: null },
 ): number {
   let valueMayFollow = false
   for (let i = 1; i < argv.length; i++) {
@@ -201,6 +248,33 @@ export function packageRunnerCall(argv: readonly string[]): PackageRunnerCall | 
     return pnpmExecCall(words.slice(at + 1), unmodelled.option)
   }
   return null
+}
+
+/**
+ * The runner `argv` downloads a package with (`pnpm dlx`, `npm create`, `bunx`),
+ * or null. The subcommand is found past global options as `packageRunnerCall`
+ * finds `exec`: `pnpm --silent dlx` and `corepack pnpm -C sub dlx` download as
+ * `pnpm dlx` does. Asking that it be the second word let any global option
+ * hide it.
+ *
+ * An initializer is any word after the subcommand, even one after an option. It
+ * may be that option's value (`npm init -w packages/a` asks), but npm runs
+ * `npm init --force vite` as `create-vite`, and the gate cannot tell which
+ * options take a value.
+ */
+export function downloadingRunner(argv: readonly string[]): string | null {
+  const words = packageManagerArgv(argv)
+  const head = commandName(words[0])
+  if (DOWNLOADING_COMMANDS.has(head)) return head
+  const forms = DOWNLOADING_SUBCOMMANDS.get(head)
+  if (forms === undefined) return null
+  const subcommands = new Set([...forms.always, ...forms.withInitializer])
+  const at = subcommandIndex(words, subcommands, plainGlobalOptions(head))
+  if (at < 0) return null
+  const sub = words[at] ?? ''
+  if (forms.always.has(sub)) return `${head} ${sub}`
+  const named = words.slice(at + 1).some((word) => !word.startsWith('-'))
+  return named ? `${head} ${sub}` : null
 }
 
 /** A package or binary name (`tsc`, `@scope/tool`): never a path, version spec or URL. */
