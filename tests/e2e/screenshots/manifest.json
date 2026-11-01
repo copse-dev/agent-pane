@@ -3221,6 +3221,10 @@
       "sha256": "47fd62dd70a9a6db0cc9d0f6fbed176dad3f9ca0a6421f477d6e3d04fd8a3432",
       "bytes": 63511
     },
+    "project-switch-resident-thread.png": {
+      "sha256": "b8b7c414ca6f33c78ad6afff2fb5d2042427327f8d222ea85911d27b6753a83b",
+      "bytes": 266564
+    },
     "projects-drag-after.png": {
       "sha256": "f707756387a138ae08dce5f1ab6006f6164d8d8d0991e84dd356eb4a6b66021f",
       "bytes": 26650
