@@ -1131,6 +1131,7 @@ export interface ApiClient {
     ) => Promise<void>
   }
   usage: {
+    signInToClaude: () => Promise<{ ok: boolean; error?: string }>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     /** Classifier calls, verdicts, latency and tokens a thread caused (its decision log). */
     getThreadClassifierUse: (

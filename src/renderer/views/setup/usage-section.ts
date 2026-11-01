@@ -59,24 +59,19 @@ export function claudeReasonNeedsLogin(reason: string): boolean {
 }
 
 /**
- * Close settings so the shell is visible, then run the provider's interactive
+ * Close settings so the shell is visible, then run Codex's interactive
  * login command in a fresh Shells terminal.
  * Returns `null` without a store to route the request through. Exported so the
  * emit + close wiring is unit-testable without standing up the whole section.
  */
 export function createPlanSignInHandler(
   store: AppStore | undefined,
-  provider: 'claude' | 'codex',
   onRequestClose?: () => void,
 ): (() => void) | null {
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit(
-      'request_terminal_command',
-      provider === 'claude' ? 'claude auth login' : 'codex login',
-      { executionTarget: 'local' },
-    )
+    store.emit('request_terminal_command', 'codex login', { executionTarget: 'local' })
   }
 }
 
@@ -179,7 +174,10 @@ export function renderPlanProvider(
       signIn.type = 'button'
       signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
       signIn.textContent = signInProvider === 'claude' ? 'Sign in to Claude' : 'Sign in to Codex'
-      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude auth login' : 'codex login'}`
+      signIn.title =
+        signInProvider === 'claude'
+          ? 'Open Claude sign-in in your browser'
+          : 'Open a terminal and run codex login'
       signIn.addEventListener('click', () => {
         onProviderSignIn()
       })
@@ -680,7 +678,13 @@ export function createUsageSection(
 } {
   let pendingSignInProvider: 'claude' | 'codex' | null = null
   const onSignIn = (provider: 'claude' | 'codex'): (() => void) | undefined => {
-    const handler = createPlanSignInHandler(store, provider, onRequestClose)
+    if (provider === 'claude') {
+      return (): void => {
+        pendingSignInProvider = 'claude'
+        handleClaudeSignIn()
+      }
+    }
+    const handler = createPlanSignInHandler(store, onRequestClose)
     if (!handler) return undefined
     return (): void => {
       pendingSignInProvider = provider
@@ -754,6 +758,41 @@ export function createUsageSection(
   root.append(frontierPanel.root)
 
   const planEl = qsRequired(root, '#usage-plan-section')
+  const signInStatus = document.createElement('p')
+  signInStatus.className = 'usage-plan-signin-status field-hint'
+  signInStatus.setAttribute('role', 'status')
+  signInStatus.hidden = true
+  planEl.after(signInStatus)
+  let signInPending = false
+  function handleClaudeSignIn(): void {
+    if (signInPending) return
+    signInPending = true
+    const button = planEl.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+    if (button) button.disabled = true
+    signInStatus.hidden = false
+    signInStatus.textContent =
+      'Complete Claude sign-in in the browser. Copse will check the result…'
+    void api.usage
+      .signInToClaude()
+      .then(async (result) => {
+        if (!result.ok) {
+          signInStatus.textContent = result.error ?? 'Claude sign-in did not complete.'
+          return
+        }
+        signInStatus.textContent = 'Signed in to Claude. Refreshing plan usage…'
+        cachedPlanSnapshot = null
+        await refreshPlan()
+        await refreshWorthIt()
+        signInStatus.textContent = 'Claude sign-in complete.'
+      })
+      .catch(() => {
+        signInStatus.textContent = 'Claude sign-in could not start. Try again.'
+      })
+      .finally(() => {
+        signInPending = false
+        if (button?.isConnected) button.disabled = false
+      })
+  }
   const worthEl = qsRequired(root, '#usage-worth-section')
   const bodyEl = qsRequired(root, '#usage-period-body')
   const labelEl = qsRequired(root, '#usage-period-label')

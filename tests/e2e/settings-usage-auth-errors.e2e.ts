@@ -1,12 +1,15 @@
 import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const e2eEnvFile = join(process.cwd(), 'tests/e2e/electron-shell/.e2e-env.json')
+let initialEnv = ''
+let fakeClaudeDir: string | null = null
 
 function setPlanUsageMock(mode: string): void {
   const env = readFixtureJsonObject(e2eEnvFile)
@@ -16,6 +19,7 @@ function setPlanUsageMock(mode: string): void {
 
 describe('settings usage panel plan errors', () => {
   before(async () => {
+    initialEnv = readFileSync(e2eEnvFile, 'utf8')
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-usage-auth-errors')
     setPlanUsageMock('auth-errors')
@@ -23,9 +27,10 @@ describe('settings usage panel plan errors', () => {
   })
 
   after(async () => {
-    setPlanUsageMock('1')
+    writeFileSync(e2eEnvFile, initialEnv, 'utf8')
     resetUserData()
     await browser.reloadSession()
+    if (fakeClaudeDir) rmSync(fakeClaudeDir, { recursive: true, force: true })
   })
 
   it('shows rejected credentials as provider sign-in hints', async () => {
@@ -47,7 +52,7 @@ describe('settings usage panel plan errors', () => {
     const signIn = claude.$('.usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     assert.match(await signIn.getText(), /Sign in to Claude/i)
-    await expect(signIn).toHaveAttribute('title', 'Open a terminal and run claude auth login')
+    await expect(signIn).toHaveAttribute('title', 'Open Claude sign-in in your browser')
     // It is the kit primary (#3065), not a bespoke filled button: kit classes,
     // kit radius, and the readable --accent-fill tier behind its label.
     const signInStyle = await browser.execute(() => {
@@ -101,5 +106,32 @@ describe('settings usage panel plan errors', () => {
     await expect($('.frontier-fieldset .frontier-chart > *')).toBeExisting()
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-auth-errors.png')
+  })
+
+  it('keeps Settings open and shows guided Claude sign-in progress', async () => {
+    if (process.platform === 'win32') return
+    fakeClaudeDir = mkdtempSync(join(tmpdir(), 'copse-claude-login-'))
+    const fakeClaude = join(fakeClaudeDir, 'claude')
+    writeFileSync(
+      fakeClaude,
+      '#!/bin/sh\nif [ "$2" = "login" ]; then while [ ! -f "$(dirname "$0")/ready" ]; do sleep 0.1; done; exit 0; fi\nif [ "$2" = "status" ]; then echo \'{"authMethod":"claude.ai"}\'; exit 0; fi\nexit 1\n',
+    )
+    chmodSync(fakeClaude, 0o755)
+    const env = readFixtureJsonObject(e2eEnvFile)
+    env['PATH'] = `${fakeClaudeDir}:${process.env['PATH'] ?? ''}`
+    writeFileSync(e2eEnvFile, JSON.stringify(env), 'utf8')
+    await browser.reloadSession()
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="usage"]').click()
+    await $('.usage-plan-signin-btn').click()
+    const status = $('.usage-plan-signin-status')
+    await expect(status).toBeDisplayed()
+    assert.match(await status.getText(), /Complete Claude sign-in in the browser/)
+    await expect($('.usage-plan-signin-btn')).toBeDisabled()
+    await expect($('#settings-dialog')).toBeDisplayed()
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-progress.png')
+    writeFileSync(join(fakeClaudeDir, 'ready'), '')
+    await expect(status).toHaveText('Claude sign-in complete.')
   })
 })
