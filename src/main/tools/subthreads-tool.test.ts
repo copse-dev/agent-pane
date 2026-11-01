@@ -120,6 +120,26 @@ describe('subthread orchestration', () => {
     assert.equal(prompts, 1)
   })
 
+  it('explains recovery after a failed initial submission without duplicating the child', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    tool = createSubthreadsTool(async (command) => {
+      sent.push(command)
+      if (sent.length === 1) return { ok: false, error: 'Desktop unavailable' }
+      return { ok: true, queued: false }
+    })
+    const failed = await run(start)
+    assert.match(failed, /Desktop unavailable/)
+    const childId = id(failed)
+    const retried = await run(start)
+    assert.equal(id(retried), childId)
+    assert.match(retried, /Read this child.*Use send/)
+    assert.equal(sent.length, 1)
+    const recovered = await run({ action: 'send', thread_id: childId, prompt: start.prompt })
+    assert.match(recovered, /"ok":true/)
+    assert.equal(sent.length, 2)
+    assert.ok(sent.every((command) => command.thread.id === childId))
+  })
+
   it('uses an object schema accepted by MCP', () => {
     const schema = z.toJSONSchema(tool.parameters)
     ToolSchema.parse({ name: tool.name, description: tool.description, inputSchema: schema })

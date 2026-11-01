@@ -124,6 +124,8 @@ export function createSubthreadsTool(
                     thread_id: existing.threadId,
                     existing: true,
                     submitted: false,
+                    advice:
+                      'Read this child to check whether the original prompt ran. Use send with this thread_id to submit or continue work. Repeating start never resubmits to an existing child.',
                   }),
                 }
             }
