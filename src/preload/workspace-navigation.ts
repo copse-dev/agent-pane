@@ -7,6 +7,7 @@ type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>
 const ADDRESSED_CONTROLS: ReadonlySet<string> = new Set([
   'close-confirm:respond',
   'agent:abort',
+  'container:stop-run',
   'terminal:write',
   'terminal:resize',
   'terminal:destroy',

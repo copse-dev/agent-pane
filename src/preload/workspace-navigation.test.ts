@@ -126,6 +126,7 @@ test('controls for a live request, run or terminal session bypass a failing sele
   const controls = [
     f.invoke('close-confirm:respond', 'close-request', false),
     f.invoke('agent:abort', 'thread'),
+    f.invoke('container:stop-run', 'thread'),
     f.invoke('terminal:write', 'session', '\u0003'),
   ]
   // Creating a terminal still depends on the selected workspace.
@@ -134,6 +135,7 @@ test('controls for a live request, run or terminal session bypass a failing sele
     'workspace:set:/remote',
     'close-confirm:respond:close-request',
     'agent:abort:thread',
+    'container:stop-run:thread',
     'terminal:write:session',
   ])
   f.fail('/remote')
