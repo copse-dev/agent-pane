@@ -23,7 +23,8 @@
  *             (typically backend/logic with no DOM coupling). The subset may be
  *             incomplete; a full run is the safe choice. Reported explicitly.
  *   • Broad — a cross-cutting file changed (wdio config, e2e helpers, index.html,
- *             store, preload api, build scripts…). Everything is recommended.
+ *             store, preload api, build scripts, lockfile…). Everything is
+ *             recommended.
  *
  * Usage:
  *   node scripts/test-oracle.mts                 # changes vs the default branch + working tree
@@ -72,6 +73,11 @@ export const BROAD_PATTERNS: readonly RegExp[] = [
   /^tests\/e2e\/scenarios\//,
   /^tests\/demo\//,
   /^package(-lock)?\.json$/,
+  // pnpm resolves dependencies from these, not package-lock.json. A pin through
+  // `overrides`, a patched dependency or a lockfile-only bump changes shipped
+  // code without touching a source file the selector or import graph can see.
+  /^pnpm-(lock|workspace)\.yaml$/,
+  /^\.npmrc$/,
   /^tsconfig.*\.json$/,
   /^scripts\/(build|dev|run-tests)\.mts$/,
   /^src\/renderer\/index\.html$/,

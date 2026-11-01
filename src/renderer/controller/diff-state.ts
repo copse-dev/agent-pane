@@ -58,19 +58,21 @@ export function attachDiffState(
     // open here makes background/deferred proposals construct Monaco while the
     // user is still watching another surface.
     store.emit('staged_diffs_changed')
-    store.emit('panel_changed')
   }
 
   const unsubShowDiff = api.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
       if (!isActiveOwner(projectId, threadId)) return
-      store.setState({ activeDiff: { path, before, after, language } })
-      if (!options.revealOnShowDiff) return
-      store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      // Layout listeners subscribe before the panes, so this write unhides the
-      // pane and Changes hosts before the Changes pane refreshes.
+      const activeDiff = { path, before, after, language }
+      if (!options.revealOnShowDiff) {
+        store.setState({ activeDiff })
+        return
+      }
+      // One write, so the Changes pane hears the diff and its reveal together.
+      // Layout listeners subscribe before the panes, so it unhides the pane and
+      // Changes hosts before the Changes pane refreshes.
+      store.setState({ activeDiff, rightPanelMode: 'changes', filesPaneOpen: true })
       syncFilesPaneDom(store)
-      store.emit('panel_changed')
     },
   )
 

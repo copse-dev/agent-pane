@@ -72,9 +72,30 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
     await expect(input).toBeFocused()
     await saveAppScreenshot('file-search-palette.png')
 
+    // Close and reopen within the debounce window. The old query must not
+    // replace the unfiltered results beneath the newly empty search field.
+    await browser.execute(async () => {
+      const field = document.querySelector<HTMLInputElement>('.file-search-input')
+      const palette = document.querySelector<HTMLDialogElement>('#file-search-dialog')
+      if (!field || !palette) throw new Error('Missing file search palette')
+      field.value = 'zebra-widget'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      palette.close()
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true }),
+      )
+      // Cross the known 100ms debounce boundary before asserting stability.
+      await new Promise<void>((resolve) => setTimeout(resolve, 150))
+    })
+    await expect(input).toHaveValue('')
+    await expect($('.file-search-item[title="README.md"]')).toBeDisplayed()
+    await expect($('.file-search-item[title="src/zebra-widget.ts"]')).toBeDisplayed()
+    await expect(input).toBeFocused()
+    await saveAppScreenshot('file-search-palette-reopened.png')
+
     // Choosing the match closes the palette, opens the explorer, and loads the
     // file into the viewer (openWorkspaceFile → rightPanelMode: 'explorer').
-    const firstItem = await $('.file-search-item').getElement()
+    const firstItem = await $('.file-search-item[title="src/zebra-widget.ts"]').getElement()
     await firstItem.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
 

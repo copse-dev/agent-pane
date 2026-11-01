@@ -142,9 +142,11 @@ describe('permissionResponseFor', () => {
     assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a1' })
   })
 
-  it('falls back to allow_always when no one-shot allow is offered', () => {
+  it('never answers a one-shot approval with allow_always', () => {
+    // The agent would remember an answer the user gave once, so its later
+    // requests of that kind would never reach Copse's gate.
     const res = permissionResponseFor([ALLOW_ALWAYS, REJECT_ONCE], true)
-    assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a2' })
+    assert.deepEqual(res.outcome, { outcome: 'cancelled' })
   })
 
   it('selects a reject option on denial', () => {
@@ -1101,6 +1103,115 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     // Even a handler that answers "remember" yields a one-shot answer and no grant.
     assert.deepEqual(response, { outcome: { outcome: 'selected', optionId: ALLOW_ONCE.optionId } })
     assert.deepEqual(storageGet('acp-remembered-grants'), [])
+  })
+
+  it('sends a kind-less command to the shell gate despite a stored "other" grant', async () => {
+    // A grant stored from the generic prompt for an unclassified tool call.
+    storageSet('acp-remembered-grants', ['gemini@remote/dev:other'])
+    try {
+      for (const toolCall of [
+        { rawInput: { command: 'rm -rf build' } },
+        { kind: 'other' as const, rawInput: { command: 'rm -rf build' } },
+      ]) {
+        const { asked } = await askOnDev(permissionRequest(toolCall))
+        // The shell gate asks; the stored grant does not answer for it.
+        assert.deepEqual(
+          asked.map((approval) => approval.type),
+          ['shell'],
+          `kind: ${String(toolCall.kind)}`,
+        )
+        assert.ok(asked.every((approval) => approval.body.includes('rm -rf build')))
+      }
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
+  it('never stores an "other" grant for a kind-less command', async () => {
+    storageSet('acp-remembered-grants', [])
+    const { asked } = await askOnDev(permissionRequest({ rawInput: { command: 'rm -rf build' } }))
+    // No generic "Always allow … other tool calls" prompt was shown, so even a
+    // handler that answers "remember" leaves no kind-wide grant behind.
+    assert.deepEqual(
+      asked.map(({ type, rememberLabel }) => ({ type, other: rememberLabel?.includes('"other"') })),
+      [{ type: 'shell', other: undefined }],
+    )
+    assert.deepEqual(storageGet('acp-remembered-grants'), [])
+  })
+
+  it("does not answer a command approved once with the agent's allow_always", async () => {
+    storageSet('acp-remembered-grants', [])
+    // The agent offers no allow_once. Its allow_always would let it run later
+    // commands without asking, so a one-shot shell approval cannot select it.
+    const req = {
+      ...permissionRequest({ kind: 'execute', rawInput: { command: 'rm -rf build' } }),
+      options: [ALLOW_ALWAYS, REJECT_ONCE],
+    }
+    const { asked, response } = await askOnDev(req)
+    assert.deepEqual(
+      asked.map((approval) => approval.type),
+      ['shell'],
+    )
+    assert.deepEqual(response, { outcome: { outcome: 'cancelled' } })
+  })
+
+  it('still honours a stored "other" grant for a request that runs no command', async () => {
+    storageSet('acp-remembered-grants', ['gemini@remote/dev:other'])
+    try {
+      // The shape tests/fixtures/mock-acp-agent.mjs sends: a title and a path.
+      const { asked, response } = await askOnDev(
+        permissionRequest({ title: 'Delete everything', rawInput: { path: '/' } }),
+      )
+      assert.deepEqual(asked, [])
+      assert.deepEqual(response, {
+        outcome: { outcome: 'selected', optionId: ALLOW_ONCE.optionId },
+      })
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
+  it('classifies a kind-less command like an execute request outside the sandbox', async () => {
+    for (const command of ['gh api repos/octo/app/issues', 'rm -rf build']) {
+      for (const [posture, root] of [
+        [remote(), REMOTE_ROOT],
+        [local(), LOCAL_ROOT],
+      ] as const) {
+        // The agent's sandbox contains only its own shell, so a kind-less
+        // command is judged as an execute request without that claim.
+        const asExecute = await answer(
+          { ...posture, sandboxed: false },
+          'gemini',
+          permissionRequest({ kind: 'execute', rawInput: { command } }),
+          root,
+        )
+        const kindless = await answer(
+          posture,
+          'gemini',
+          permissionRequest({ rawInput: { command } }),
+          root,
+        )
+        assert.deepEqual(kindless, asExecute, `${command} on ${root}`)
+      }
+    }
+  })
+
+  it("does not auto-run an unclassified tool's command on the agent's sandbox", async () => {
+    // An MCP tool argument (a Redis or SQL command) runs outside the agent's
+    // seatbelt, so a sandboxed agent's kind-less call still prompts.
+    for (const command of ['GET user:1', 'ls']) {
+      const kindless = permissionRequest({ title: 'mcp__redis__exec', rawInput: { command } })
+      assert.deepEqual(await answer(local(), 'gemini', kindless, LOCAL_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    }
+    // The agent's own shell keeps its sandboxed auto-run.
+    const execute = permissionRequest({ kind: 'execute', rawInput: { command: 'ls' } })
+    assert.deepEqual(await answer(local(), 'gemini', execute, LOCAL_ROOT), {
+      prompted: false,
+      approved: true,
+    })
   })
 
   it('does not waive a prompt for a title that claims a bridged native tool', async () => {

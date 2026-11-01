@@ -23,23 +23,17 @@ const highlightsSupported =
   typeof (globalThis as { Highlight?: unknown }).Highlight === 'function'
 
 /**
- * Byte offsets of every (case-insensitive) occurrence of `needle` in `haystack`.
+ * UTF-16 offsets of every (case-insensitive) occurrence of `needle` in `haystack`.
  * Overlapping matches advance by the needle length, mirroring browser find. Pure
  * and DOM-free so the match logic is unit-testable without the Highlight API.
  */
 export function findMatchOffsets(haystack: string, needle: string): number[] {
   if (!needle) return []
-  const hay = haystack.toLowerCase()
-  const q = needle.toLowerCase()
-  const offsets: number[] = []
-  let from = 0
-  for (;;) {
-    const idx = hay.indexOf(q, from)
-    if (idx === -1) break
-    offsets.push(idx)
-    from = idx + q.length
-  }
-  return offsets
+  // Lowercasing the transcript can expand characters (İ → i + combining dot),
+  // shifting every later DOM offset. Match the original string instead.
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(literal, 'giu')
+  return Array.from(haystack.matchAll(pattern), (match) => match.index)
 }
 
 /**

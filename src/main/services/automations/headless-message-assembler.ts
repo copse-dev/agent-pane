@@ -224,6 +224,7 @@ export function createHeadlessAutomationRun(
             ...(chunk.images !== undefined ? { images: chunk.images } : {}),
             ...(chunk.content !== undefined ? { content: chunk.content } : {}),
             ...(chunk.locations !== undefined ? { locations: chunk.locations } : {}),
+            ...(chunk.commandPhase !== undefined ? { commandPhase: chunk.commandPhase } : {}),
           })
           return
         }
