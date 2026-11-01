@@ -17290,7 +17290,9 @@ function cardStatus2(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  if (toolCalls.some((call) => call.commandPhase?.state === "not_started")) return "interrupted";
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+    return "interrupted";
+  }
   return "done";
 }
 function toolCardKey(item) {
