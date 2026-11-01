@@ -7,7 +7,12 @@ import {
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
-import { isPlainPackageName, packageBinName, packageRunnerCall } from './package-runners.ts'
+import {
+  isPlainPackageName,
+  packageBinName,
+  packageManagerArgv,
+  packageRunnerCall,
+} from './package-runners.ts'
 import { productionTargetReason } from './production-targets.ts'
 import { packageRegistryOrigins, remoteChangeReasons } from './remote-change.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
@@ -554,7 +559,8 @@ function alwaysDownloads(argv: readonly string[]): string | null {
  * `shell-harm.ts` reads.
  */
 function fetchedCodeReasons(argv: readonly string[], context: HostReachContext): string[] {
-  const runner = alwaysDownloads(argv)
+  // `corepack pnpm@10 dlx …` fetches exactly as `pnpm dlx …` does.
+  const runner = alwaysDownloads(packageManagerArgv(argv))
   if (runner) return [`${runner} downloads and runs a package`]
   const call = packageRunnerCall(argv)
   if (call === null || !call.fetches) return []

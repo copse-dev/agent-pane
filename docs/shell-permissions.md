@@ -912,14 +912,17 @@ While active:
   - A pnpm `.bin` shim that is exactly pnpm's template, line for line and in order, is read as the
     file it runs, wherever the shim is: as JavaScript for the `exec node` form, and as a program for
     the form pnpm writes for a native binary. `$basedir` is the directory of the path the shell
-    runs, so a link to a real shim resolves from the link's directory. When `$basedir/node` exists
-    (or the host cannot say), the shim runs that instead of node, and it is read too. A file with
-    any other line, or the same lines out of order, is read as the shell script it is, which
-    prompts.
-  - `npx <name>`, `npm exec <name>` / `npm x <name>` and `pnpm exec <name>`, directly or through
-    `corepack`, read the workspace's `node_modules/.bin/<name>` the same way. `pnpm exec` runs any
-    other command from PATH, so that command is assessed as if typed, and `pnpm exec -c` assesses
-    its shell string. An option the gate does not model, which can choose another directory or
+    runs, so a link to a real shim resolves from the link's directory. The shim turns each `\` in
+    that path into `/`, so a shim run through a path holding one is read as the shell script it is,
+    which prompts. When `$basedir/node` exists (or the host cannot say), the shim runs that program
+    in node's place, as whatever it is (a copied `/bin/sh` would run the target as shell), so it
+    always asks, and that program is read too. A file with any other line, or the same lines out of
+    order, is read as the shell script it is, which prompts.
+  - `npx <name>`, `npm exec <name>` (and every spelling npm resolves to it: `x`, `exe`) and
+    `pnpm exec <name>`, directly or through `corepack` with or without a version pin
+    (`corepack pnpm@10.34.5 exec`), read the workspace's `node_modules/.bin/<name>` the same way.
+    `pnpm exec` runs any other command from PATH, so that command is assessed as if typed, and
+    `pnpm exec -c` assesses its shell string. An option the gate does not model, which can choose another directory or
     workspace package (`--prefix`, `-C`, `--filter`, `-r`), prompts, and so does `npx ./dir`, which
     runs the package in a local directory.
   - Registry packages are read the same way, with no exemption. Their bins are ordinarily small
@@ -927,8 +930,10 @@ While active:
     temporary directory) asks.
   - A `.bin` entry is a program whatever its suffix: `./node_modules/.bin/tool.png` is read, not
     skipped as an image.
-  - Package scripts (`pnpm run <script>`, `npm test`), `pnpm <bin>` without `exec`, and `yarn` are
-    not followed into what they run.
+  - Only the file a binary names is read, not the modules it loads: a clean entry point that
+    `require`s a rewritten file is allowed, as `node entry.js` is. Package scripts
+    (`pnpm run <script>`, `npm test`), `pnpm <bin>` without `exec`, and `yarn` are not followed into
+    what they run.
 - Script and inline code is read as code, not shell: a `${…}` template literal is not an
   expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
   deny on a catastrophic literal target and otherwise prompt, so a script that recursively
@@ -955,11 +960,11 @@ While active:
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
     every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
     `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
-  - `npx`/`npm exec` (including `npm -s exec` and `corepack npx`) of anything but a binary
-    installed in the workspace's `node_modules/.bin`, which is read as above instead,
+  - `npx`/`npm exec` (including `npm exe`, `npm -s exec` and `corepack npx`) of anything but a
+    binary installed in the workspace's `node_modules/.bin`, which is read as above instead,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
-    which download code before running it;
+    which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`);
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or

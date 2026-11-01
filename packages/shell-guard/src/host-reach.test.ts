@@ -283,6 +283,8 @@ describe('hostReachReasons — code fetched at run time', () => {
       'npx tsc --noEmit',
       'npm exec tsc',
       'npm -s exec tsc',
+      'npm exe tsc',
+      'corepack npm@11.0.0 exec tsc',
       'npx @scope/tool --check',
       'corepack npx tsc',
       // `pnpm exec` never fetches: it runs a command from PATH.
@@ -302,6 +304,13 @@ describe('hostReachReasons — code fetched at run time', () => {
       'npm -s exec serve dist',
       'npm --silent x serve dist',
       'corepack npx serve dist',
+      // npm resolves a unique abbreviation: `exe` is `exec`.
+      'npm exe serve dist',
+      'npm -s exe serve dist',
+      'corepack npm@11.0.0 exec serve dist',
+      'corepack pnpm dlx create-vite',
+      'corepack pnpm@10.0.0 dlx create-vite',
+      'corepack yarn@4.5.0 dlx create-vite',
       'pnpm dlx create-vite',
       'yarn dlx create-vite',
       'npm create vite@latest',

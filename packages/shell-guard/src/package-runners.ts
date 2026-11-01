@@ -41,7 +41,32 @@ const PNPM_GLOBAL_PLAIN_OPTIONS = new Set(['-s', '--silent', '-w', '--workspace-
 const PNPM_SHELL_MODE_OPTIONS = new Set(['-c', '--shell-mode'])
 
 /** Package managers corepack runs on the caller's behalf. */
-const COREPACK_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'pnpx'])
+const COREPACK_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'yarnpkg'])
+
+/**
+ * Every spelling npm resolves to `exec`. npm's `deref` accepts an alias (`x`)
+ * and any unique abbreviation of a command or alias, so `npm exe evil` is
+ * `npm exec evil`; `ex` is ambiguous with `explain` and `explore`. Checked
+ * against npm 11.19.1's command list. pnpm has no other name for `exec`.
+ */
+const NPM_EXEC_SPELLINGS = new Set(['exec', 'exe', 'x'])
+
+/**
+ * `argv` as the package manager receives it: a backslash-newline's empty word
+ * dropped, and `corepack <manager>[@<version>]` replaced by the manager it runs.
+ * shell-quote reads a backslash-newline as an empty word, so `npx \⏎ evil` would
+ * name a package of `''`; the shell joins the lines, and no manager runs an
+ * empty name. corepack takes a version pin on the manager's name
+ * (`corepack pnpm@10.34.5 exec`), which must not hide it.
+ */
+export function packageManagerArgv(argv: readonly string[]): string[] {
+  const words = argv.filter((word) => word !== '')
+  if (commandName(words[0]) !== 'corepack') return words
+  const manager = /^([a-z]+)(?:@.*)?$/.exec(words[1] ?? '')?.[1]
+  return manager !== undefined && COREPACK_MANAGERS.has(manager)
+    ? [manager, ...words.slice(2)]
+    : words
+}
 
 /**
  * The index of `subcommand` in `argv` when only global options precede it, or
@@ -134,19 +159,12 @@ function pnpmExecCall(args: readonly string[], unmodelled: string | null): Packa
 
 /** The package runner `argv` invokes, or null when it is not one. */
 export function packageRunnerCall(argv: readonly string[]): PackageRunnerCall | null {
-  // shell-quote reads a backslash-newline as an empty word: `npx \⏎ evil` would
-  // name a package of `''`. The shell joins the lines, and npx cannot run an
-  // empty name, so the word is dropped.
-  const present = argv.filter((word) => word !== '')
-  const words =
-    commandName(present[0]) === 'corepack' && COREPACK_MANAGERS.has(commandName(present[1]))
-      ? present.slice(1)
-      : present
+  const words = packageManagerArgv(argv)
   const head = commandName(words[0])
   if (head === 'npx' || head === 'pnpx') return npmExecCall(head, words.slice(1), null)
   const unmodelled: { option: string | null } = { option: null }
   if (head === 'npm') {
-    const at = subcommandIndex(words, new Set(['exec', 'x']), NPM_PLAIN_OPTIONS, unmodelled)
+    const at = subcommandIndex(words, NPM_EXEC_SPELLINGS, NPM_PLAIN_OPTIONS, unmodelled)
     if (at < 0) return null
     return npmExecCall(`npm ${words[at] ?? ''}`, words.slice(at + 1), unmodelled.option)
   }
