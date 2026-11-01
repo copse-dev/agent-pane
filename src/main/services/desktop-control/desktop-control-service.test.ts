@@ -7,6 +7,7 @@ import {
   openFuses,
   parseDesignatedRequirement,
   readFuseWires,
+  remoteDebuggingSwitch,
 } from './desktop-control-service.ts'
 import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 
@@ -183,5 +184,29 @@ describe('Electron fuse check', () => {
   it('treats a binary without a fuse wire as open', async () => {
     assert.deepEqual(await readFuseWires(fuseBinary([], 8)), [])
     assert.equal(openFuses([]).length, 5)
+  })
+})
+
+describe('remote debugging switch', () => {
+  it('finds the port or pipe switch in either Chromium spelling', () => {
+    assert.equal(
+      remoteDebuggingSwitch([
+        '/Applications/Copse.app/Contents/MacOS/Copse',
+        '--remote-debugging-port=9222',
+      ]),
+      '--remote-debugging-port=9222',
+    )
+    assert.equal(
+      remoteDebuggingSwitch(['copse', '-remote-debugging-pipe']),
+      '-remote-debugging-pipe',
+    )
+    assert.equal(
+      remoteDebuggingSwitch(['copse', '--Remote-Debugging-Port=1']),
+      '--Remote-Debugging-Port=1',
+    )
+  })
+
+  it('ignores ordinary switches and arguments', () => {
+    assert.equal(remoteDebuggingSwitch(['copse', '--lang=en', 'remote-debugging-port']), undefined)
   })
 })

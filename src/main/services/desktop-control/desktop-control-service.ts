@@ -445,7 +445,9 @@ async function copseCallerRequirement(env: NodeJS.ProcessEnv): Promise<string> {
 // NODE_OPTIONS or --inspect, or load app code from outside the signed
 // app.asar, so any of those would let another local program pass the caller
 // check and drive the helper without Copse's approvals. A packaged build
-// therefore serves computer use only when its fuses close all of them.
+// therefore serves computer use only when its fuses close all of them. Chromium
+// remote debugging is a launch switch, not a fuse: it lets another program
+// drive Copse's own windows, approval prompts included, so it is refused too.
 
 const FUSE_SENTINEL = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX', 'latin1')
 const FUSE_WIRE_VERSION = 0x01
@@ -500,9 +502,20 @@ export function openFuses(wires: readonly Buffer[]): string[] {
   ).map(({ name }) => name)
 }
 
-/** Refuse a packaged build whose fuses let another program run as Copse. */
-async function assertFusesCloseOtherCallers(): Promise<void> {
+/** The Chromium remote-debugging switch on a command line, if any; Chromium accepts `-` or `--`. */
+export function remoteDebuggingSwitch(argv: readonly string[]): string | undefined {
+  return argv.find((arg) => /^--?remote-debugging-/i.test(arg))
+}
+
+/** Refuse a packaged build that another program could run as, or drive as, Copse. */
+async function assertOnlyCopseCanDriveHelper(): Promise<void> {
   if (!isElectronAppPackaged()) return
+  const debugging = remoteDebuggingSwitch(process.argv)
+  if (debugging) {
+    throw new Error(
+      `Computer use is unavailable while Copse runs with remote debugging (${debugging.split('=')[0] ?? debugging}): another program could answer its approval prompts.`,
+    )
+  }
   const framework = join(
     dirname(process.execPath),
     '..',
@@ -534,11 +547,12 @@ async function assertFusesCloseOtherCallers(): Promise<void> {
  * The Copse executable's own code requirement is compiled in, and the helper
  * refuses any other parent, so its privacy grants are not usable by other
  * local processes that run the binary directly. A packaged build must also
- * have its Electron fuses closed; a development build, which runs as Node by
- * design, is trusted as the developer's own.
+ * have its Electron fuses closed and run without remote debugging; a
+ * development build, which runs as Node by design, is trusted as the
+ * developer's own.
  */
 async function compileHelper(): Promise<string> {
-  await assertFusesCloseOtherCallers()
+  await assertOnlyCopseCanDriveHelper()
   const sourceDirectory = helperSourceDirectory()
   const source = join(sourceDirectory, 'copse-desktop.swift')
   const plist = join(sourceDirectory, 'Info.plist')

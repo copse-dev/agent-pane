@@ -364,6 +364,12 @@ func modifierFlags(_ params: [String: Any]) -> CGEventFlags {
   return flags
 }
 
+/// Whether the app's focused element is a password field.
+func focusIsSecure(_ pid: pid_t) -> Bool {
+  guard let focused = axElement(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute) else { return false }
+  return axString(focused, kAXSubroleAttribute) == "AXSecureTextField"
+}
+
 func type(_ params: [String: Any]) throws -> [String: Any] {
   let pid = pid_t(try intParam(params, "pid"))
   let text = try stringParam(params, "text")
@@ -373,6 +379,8 @@ func type(_ params: [String: Any]) throws -> [String: Any] {
   let units = Array(text.utf16)
   var index = 0
   while index < units.count {
+    // Checked per chunk: typed text (a tab, a return) can move focus.
+    if focusIsSecure(pid) { throw fail("Refusing to type into a password field") }
     let chunk = Array(units[index..<min(index + 20, units.count)])
     for keyDown in [true, false] {
       guard let event = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: keyDown) else {

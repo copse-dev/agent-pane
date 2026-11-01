@@ -69,6 +69,11 @@ describe('Computer use permission boundary', () => {
     assert.equal(request.cause, 'desktop-app-control')
     assert.equal(request.approveLabel, 'Allow for this thread')
     assert.match(request.bodyAdvice ?? '', /read its window contents/)
+    assert.match(
+      request.bodyAdvice ?? '',
+      /operate this app \(click, type and choose menu items\) for the rest of this thread/,
+      'the prompt says the grant covers every action, not just this one',
+    )
     assert.deepEqual(getSetting<string[]>(DESKTOP_ALLOWED_APPS_SETTING, []), [])
 
     await inThread('thread-b', () => ensureToolPermitted(snapshotNotes))
@@ -80,7 +85,10 @@ describe('Computer use permission boundary', () => {
     assert.equal(await ensureToolPermitted(snapshotNotes), true)
     assert.equal(await ensureToolPermitted(snapshotNotes), true)
     assert.equal(requests.length, 2)
-    assert.equal(requests[0]?.approveLabel, 'Allow once')
+    const [first] = requests
+    assert.ok(first)
+    assert.equal(first.approveLabel, 'Allow once')
+    assert.match(first.bodyAdvice ?? '', /menu items\) for this request,/)
   })
 
   it('still asks per app when the tool has an explicit allow override', async () => {

@@ -116,7 +116,7 @@ export function desktopAppApproval(input: {
     title: `Let the agent use ${bundleId}?`,
     body: bundleId,
     bodyAdvice:
-      `The agent wants to ${input.action}. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` +
+      `The agent wants to ${input.action}. Allowing lets it read and operate this app (click, type and choose menu items) ${threadScoped ? 'for the rest of this thread' : 'for this request'}, not just this step. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` +
       (caution ? `\n\n${caution}` : ''),
     bodyFooter: allowRemember
       ? `${scope} “Always allow” lets every thread use this app without asking and is saved in Settings.`
