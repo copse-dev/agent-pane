@@ -469,7 +469,7 @@ from:
   `copse=;. ./run_shell` sources `./run_shell`.
 
 The agent's earlier reports of the same `toolCallId` can veto the request's claim but never stand
-in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`
+in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`, or that carries a command line (`acpShellCommandText`, as for an unclassified request with `rawInput.command`),
 is never delegated on titles alone. Absent, unknown, conflicting or title-only provenance for those
 kinds, or a session without a mounted bridge, keeps the ordinary ACP path. Each delegation records
 an `acp` `allowed` decision under the turn's own project and thread.

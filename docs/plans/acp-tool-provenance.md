@@ -53,7 +53,10 @@ most 512 calls with 8 reports each. Rules:
   nothing, would newly skip a prompt.
 - Every claim must agree on the server and the tool, compared exactly.
 - A title is the weakest evidence. A request the agent classifies as `execute`, `edit`, `delete`
-  or `move` is never delegated when every claim comes from a title.
+  or `move`, or that carries a command line (`acpShellCommandText`: an unclassified request with
+  `rawInput.command`), is never delegated when every claim comes from a title. The second case came
+  from the bot review of `5ca8e125`: such a request is gated as a command since #4068, so an exact
+  title alone must not skip that gate.
 
 The result is:
 
@@ -178,7 +181,7 @@ needs a security review and a change to `shell-permissions.md` in the same PR.
   prompt at the ACP layer. That is fail-closed and unchanged. Delegating them needs an
   adapter-authored identity on the Codex request.
 - **Cursor** relies on its exact permission-request title, and only for requests it does not mark
-  `execute`, `edit`, `delete` or `move`. Generic `MCP: tool` calls that never send a permission
+  `execute`, `edit`, `delete` or `move`, and that carry no command line. Generic `MCP: tool` calls that never send a permission
   request are unaffected.
 - **Linking an ACP call to a bridge execution** matches tool and arguments, because the MCP
   request carries no ACP `toolCallId`. See the residual under Attribution.

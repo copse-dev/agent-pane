@@ -28,7 +28,8 @@
  * `tool_call`/`tool_call_update` reports for the same `toolCallId` can only
  * veto it: every claim must agree. A title is the weakest evidence, so a
  * request the agent itself classifies as running or changing something
- * (`execute`, `edit`, `delete`, `move`) is never delegated on titles alone.
+ * (`execute`, `edit`, `delete`, `move`), or that carries a command line, is
+ * never delegated on titles alone.
  * Absent, unknown, conflicting or insufficient provenance returns a
  * non-`bridged` status, and the caller keeps its ordinary approval path (fail
  * closed).
@@ -182,12 +183,15 @@ function claimsFrom(
  * Resolve the provenance of `request` from its own fields plus what the agent
  * said earlier about the same tool call. `offeredTools` must be the tools this
  * session's live bridge serves; pass `[]` when there is no bridge, and nothing
- * resolves as `bridged`.
+ * resolves as `bridged`. `runsCommand` says the caller found a command line on
+ * the request (`acpShellCommandText`), which titles alone never vouch for,
+ * whatever the request's kind.
  */
 export function resolveAcpToolProvenance(
   request: AcpToolCallIdentityFields,
   observed: readonly AcpToolIdentity[],
   offeredTools: readonly string[],
+  { runsCommand = false }: { runsCommand?: boolean } = {},
 ): AcpToolProvenance {
   const own = claimsFrom(acpToolIdentityOf(request), offeredTools, false)
   // Earlier reports may veto the request's own claim, never stand in for it.
@@ -212,14 +216,15 @@ export function resolveAcpToolProvenance(
     return { status: 'not-bridged', server, ...(tool !== undefined ? { tool } : {}) }
   }
   const kind = request.kind ?? undefined
-  if (
-    kind !== undefined &&
-    TITLE_INSUFFICIENT_KINDS.has(kind) &&
-    claims.every((claim) => claim.source === 'title')
-  ) {
+  const risky = runsCommand || (kind !== undefined && TITLE_INSUFFICIENT_KINDS.has(kind))
+  if (risky && claims.every((claim) => claim.source === 'title')) {
     return {
       status: 'conflicting',
-      reasons: [`a title alone cannot vouch for a ${kind} request`],
+      reasons: [
+        runsCommand
+          ? 'a title alone cannot vouch for a request that carries a command'
+          : `a title alone cannot vouch for a ${kind ?? 'unknown'} request`,
+      ],
     }
   }
   const sources = [

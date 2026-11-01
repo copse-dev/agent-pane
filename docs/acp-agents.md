@@ -90,7 +90,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
     (`mcp__copse__gh_pr_view`).
   - **Cursor** qualifies through its exact permission-request title
     (`copse-gh_pr_list: gh_pr_list`). A title is weak evidence, so a request
-    the agent marks `execute`, `edit`, `delete` or `move` is never delegated on
+    the agent marks `execute`, `edit`, `delete` or `move`, or one that carries a
+    command line in `rawInput.command`, is never delegated on
     titles alone.
   - **Codex** titles its notifications `mcp.copse.<tool>`, but its permission
     requests carry no title and no `_meta` identity. An earlier report can

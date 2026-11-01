@@ -1341,6 +1341,7 @@ async function respondToPermission(
     agent.remote === true
       ? []
       : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+    { runsCommand },
   )
   const auditOwner = {
     ...(agent.threadId ? { threadId: agent.threadId } : {}),

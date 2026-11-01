@@ -184,6 +184,27 @@ describe('resolveAcpToolProvenance', () => {
     )
   })
 
+  // #4016 bot review: an unclassified request can carry a command line
+  // (#4068), which a title alone must not vouch for either.
+  it('never delegates a request that carries a command on titles alone', () => {
+    const request = { title: 'copse-run_shell: run_shell', kind: 'other' }
+    assert.equal(
+      resolveAcpToolProvenance(request, [], OFFERED, { runsCommand: true }).status,
+      'conflicting',
+    )
+    assert.equal(resolveAcpToolProvenance(request, [], OFFERED).status, 'bridged')
+    assert.equal(
+      resolveAcpToolProvenance(
+        { kind: 'other', _meta: claudeMeta('mcp__copse__run_shell') },
+        [],
+        OFFERED,
+        { runsCommand: true },
+      ).status,
+      'bridged',
+      "the adapter's own tool name still qualifies",
+    )
+  })
+
   it('leaves external MCP servers and agent-native tools on their own path', () => {
     assert.deepEqual(
       resolveAcpToolProvenance(
