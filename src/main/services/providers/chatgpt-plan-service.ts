@@ -240,6 +240,17 @@ export class ChatGptPlanService {
 
 let service: ChatGptPlanService | undefined
 
+async function focusCopseWindow(): Promise<void> {
+  const { app } = await import('electron')
+  const { getMainWindow } = await import('../../windows/create-main-window.ts')
+  app.focus({ steal: true })
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
 /** Lazy construction respects the host's persistent-store and secure-storage boot order. */
 export function getChatGptPlanService(): ChatGptPlanService {
   service ??= new ChatGptPlanService(createChatGptPlanStore(), {
@@ -247,6 +258,11 @@ export function getChatGptPlanService(): ChatGptPlanService {
     openBrowser: async (url): Promise<void> => {
       const { shell } = await import('electron')
       await shell.openExternal(url)
+    },
+    focusApp: (): void => {
+      void focusCopseWindow().catch((err: unknown) => {
+        console.warn('[chatgpt-plan] could not focus Copse after sign-in callback:', err)
+      })
     },
   })
   return service
