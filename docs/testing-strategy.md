@@ -156,7 +156,8 @@ Read the **confidence line** before trusting the subset:
 - **LOW** — some changed source has no importing test and no selector match.
   The subset can't cover it; the listed unmapped files are your blind spot.
 - **broad** — a cross-cutting file changed (build scripts, store, preload,
-  `index.html`). The oracle recommends everything, and means it.
+  `index.html`, the dependency manifest or lockfile). The oracle recommends
+  everything, and means it.
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
