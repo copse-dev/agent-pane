@@ -121,41 +121,27 @@ either layer can therefore be attributed to:
 | No bridge, no delegation                                                                       | "prompts when the session has no live bridge to re-gate the call"; the remote-agent test                                                |
 | One attributable path for ACP plus the bridge                                                  | The ACP `allowed` record and the `bridge-request` record share `toolCallId`; the bridge delegation tests                                |
 | Destructive and external operations keep prompting or being denied                             | Unchanged: the bridge's native gate decides them. No native policy changed                                                              |
-| Guarded Auto never auto-runs on classifier failure                                             | Not implemented in this change; see below                                                                                               |
+| Guarded Auto never auto-runs on classifier failure                                             | Not built: decided against in [#4106](https://github.com/copse-dev/agent-pane/issues/4106); see below                                   |
 
 ## Not in this change
 
-### Guarded Auto (part 2 of the issue): needs a policy decision
+### Guarded Auto (part 2 of the issue): decided against
 
 The proposed mode would auto-run shell commands **without an OS sandbox** when deterministic
 scope, deterministic harm, a classifier verdict above a threshold, and workspace trust all agree.
-That contradicts the current binding contract:
+[#4106](https://github.com/copse-dev/agent-pane/issues/4106) records the owner's decision not to
+build it for now:
 
-- [`shell-permissions.md`](../shell-permissions.md) says the deterministic auto-approval classifier
-  may skip a prompt only while the project sandbox is active.
-- The same document says that without a sandbox "there is no containment boundary, so ambiguity
-  must prompt".
-- [`auto-approval-classifier.md`](auto-approval-classifier.md#verdict-authority) says that no gate
-  which consults a model may authorize.
+- Auto-run stays sandbox-only, as [`shell-permissions.md`](../shell-permissions.md) already says.
+- A model classifier never authorizes, as
+  [`auto-approval-classifier.md`](auto-approval-classifier.md#verdict-authority) already says.
+  It stays advisory through the `tier-shadow` measurements in `tier-screening.ts`.
+- Guarded YOLO remains the explicit, user-armed escape hatch, and unattended work belongs in the
+  contained runtime.
 
-In the issue the classifier only corroborates, so it would add a veto rather than authority. Even
-so, an unsandboxed command would run because deterministic analysis said "workspace-contained",
-and with no OS boundary to enforce that claim it is a prediction, not containment.
-
-These questions need an owner's answer before any implementation:
-
-1. Is a deterministic `sandbox`-scope verdict plus a harm-gate `allow` acceptable authority for
-   unsandboxed execution? If so, the binding sentences above change, and so does the
-   [SSH workspaces](../shell-permissions.md#ssh-workspaces) contract, which needs named security
-   review.
-2. Which classifier, which confidence threshold, and which default? Is the threshold user-tunable,
-   given that a low threshold silently widens authority?
-3. How does the mode relate to Guarded YOLO (mutually exclusive, or a sub-mode) and to the
-   unattended container (excluded)?
-4. Where is it armed, and is it session-only and thread-scoped like Guarded YOLO?
-
-The `tier-shadow` decisions in `tier-screening.ts` already record what a classifier-corroborated
-blend would have approved, without approving anything. That data should inform question 1.
+#4106 also says when to revisit: when `tier-shadow` data from hosts without a sandbox shows a
+meaningful share of prompts would have been approved with no harmful approvals. Any change then
+needs a security review and a change to `shell-permissions.md` in the same PR.
 
 ### Other limits
 
