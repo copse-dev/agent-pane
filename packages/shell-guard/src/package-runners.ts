@@ -51,21 +51,30 @@ const COREPACK_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'yarnpk
  */
 const NPM_EXEC_SPELLINGS = new Set(['exec', 'exe', 'x'])
 
+/** A manager's other executable names: `yarnpkg` is Yarn under the name Debian kept free. */
+const MANAGER_ALIASES: ReadonlyMap<string, string> = new Map([['yarnpkg', 'yarn']])
+
 /**
- * `argv` as the package manager receives it: a backslash-newline's empty word
- * dropped, and `corepack <manager>[@<version>]` replaced by the manager it runs.
+ * `argv` as the package manager receives it, with the manager named canonically:
+ * a backslash-newline's empty word dropped, `corepack <manager>[@<version>]`
+ * replaced by the manager it runs, and an alias (`yarnpkg`) by its manager.
  * shell-quote reads a backslash-newline as an empty word, so `npx \⏎ evil` would
  * name a package of `''`; the shell joins the lines, and no manager runs an
  * empty name. corepack takes a version pin on the manager's name
- * (`corepack pnpm@10.34.5 exec`), which must not hide it.
+ * (`corepack pnpm@10.34.5 exec`), which must not hide it. Every check that reads
+ * a manager's subcommand goes through this, so a spelling it accepts cannot
+ * reach a check that only knows another.
  */
 export function packageManagerArgv(argv: readonly string[]): string[] {
-  const words = argv.filter((word) => word !== '')
-  if (commandName(words[0]) !== 'corepack') return words
-  const manager = /^([a-z]+)(?:@.*)?$/.exec(words[1] ?? '')?.[1]
-  return manager !== undefined && COREPACK_MANAGERS.has(manager)
-    ? [manager, ...words.slice(2)]
-    : words
+  let words = argv.filter((word) => word !== '')
+  if (commandName(words[0]) === 'corepack') {
+    const manager = /^([a-z]+)(?:@.*)?$/.exec(words[1] ?? '')?.[1]
+    if (manager !== undefined && COREPACK_MANAGERS.has(manager)) {
+      words = [manager, ...words.slice(2)]
+    }
+  }
+  const alias = MANAGER_ALIASES.get(commandName(words[0]))
+  return alias === undefined ? words : [alias, ...words.slice(1)]
 }
 
 /**
