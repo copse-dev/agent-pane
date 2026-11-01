@@ -4813,6 +4813,10 @@
       "sha256": "807c282c2ba76039efb7652bafd151be8c5027929704237929825aafa8336fb1",
       "bytes": 298287
     },
+    "sidebar-status-compact.png": {
+      "sha256": "2f99488d9c4ad82e285ff60a95ae0c3d56d5d0862ac7d185fb90a19b4ea0b3e6",
+      "bytes": 269478
+    },
     "sidebar-status-details.png": {
       "sha256": "0ddd8c32595c2b9f767aa47fe643e8270087a1d6f075281b97f29d9841aad7ff",
       "bytes": 276846
