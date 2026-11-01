@@ -2,7 +2,8 @@
  * The MCP server name Copse assigns its native-tool bridge when handing it to
  * the external agent in `session/new` `mcpServers`. The agent prefixes bridged
  * tool calls with it (e.g. Cursor titles a call `copse-gh_pr_list: gh_pr_list`),
- * which is how the client recognises its own tools in a permission request.
+ * which is how the agent-eval harness recognises Copse's tools in a transcript.
+ * Permission decisions do not use this prefix match: see `acp-tool-provenance.ts`.
  *
  * A leaf module of its own so importing the *name* does not drag in the bridge
  * implementation — whose transitive graph reaches `spawn.ts` and therefore
@@ -40,11 +41,11 @@ function escapeRegex(text: string): string {
  * hard-coded to `-`, so an agent that joins with `/`, `_`, `.`, or `__` still
  * matches; text in some entirely different shape just falls through.
  *
- * Shared by two callers that must agree on what counts as a bridged call: the
- * permission gate that auto-approves Copse's own tools, and the agent-eval
- * harness scoring which tools an agent chose. A scenario naming `gh_pr_view`
- * has to match the namespaced form an ACP agent actually emits, or the
- * expectation silently never fires.
+ * Used by the agent-eval harness scoring which tools an agent chose: a
+ * scenario naming `gh_pr_view` has to match the namespaced form an ACP agent
+ * actually emits, or the expectation silently never fires. It is display-text
+ * matching and must not authorize anything: a title that starts with a bridged
+ * name can still carry model-chosen text after it (#1446).
  */
 export function matchesBridgedToolName(text: string, tool: string): boolean {
   return new RegExp(
