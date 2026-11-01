@@ -1,6 +1,7 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
@@ -1206,8 +1207,8 @@ const api: ApiClient = {
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) =>
       ipcRenderer.invoke('remote-agent:download-artifact', agentId, path),
-    artifactImageDataUrl: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remote-agent:artifact-image-data-url', agentId, path),
+    artifactImageDataUrl: (request: RemoteArtifactImageRequest) =>
+      ipcRenderer.invoke('remote-agent:artifact-image-data-url', request),
     models: () => ipcRenderer.invoke('remote-agent:models'),
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>

@@ -1770,8 +1770,8 @@
       "remote-agent:artifact-image-data-url": {
         "api": "remoteAgent.artifactImageDataUrl",
         "args": [
-          2,
-          2
+          1,
+          1
         ]
       },
       "remote-agent:discover-external": {

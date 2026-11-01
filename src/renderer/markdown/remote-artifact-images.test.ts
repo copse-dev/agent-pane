@@ -1,115 +1,152 @@
 import '../../../tests/setup-dom.ts'
-import { describe, it, mock } from 'node:test'
+import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
+import type {
+  RemoteArtifactImageRequest,
+  RemoteArtifactImageResult,
+} from '@shared/remote-artifact-image.ts'
+import { hydrateRemoteArtifactImages, type ArtifactImageScope } from './remote-artifact-images.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
-function fakeApi(): {
+const SCOPE: ArtifactImageScope = { projectId: 'project-1', threadId: 'thread-1' }
+
+function fakeApi(results: RemoteArtifactImageResult[] = []): {
   api: Parameters<typeof hydrateRemoteArtifactImages>[1]
-  requests: Array<[string, string]>
+  requests: RemoteArtifactImageRequest[]
 } {
-  const requests: Array<[string, string]> = []
+  const requests: RemoteArtifactImageRequest[] = []
   return {
     requests,
     api: {
       remoteAgent: {
-        artifactImageDataUrl: (agentId: string, path: string): Promise<string> => {
-          requests.push([agentId, path])
-          return Promise.resolve('data:image/png;base64,AA==')
+        artifactImageDataUrl: (request): Promise<RemoteArtifactImageResult> => {
+          requests.push(request)
+          return Promise.resolve(
+            results.shift() ?? { ok: true, dataUrl: 'data:image/png;base64,AA==' },
+          )
         },
       },
     },
   }
 }
 
-/** A conversation list holding an earlier message that links the Cursor agent. */
-function listWithAgentLink(agentHref: string | null): HTMLElement {
+function message(html: string): HTMLElement {
   const list = document.createElement('div')
   list.className = 'messages-list'
-  const earlier = document.createElement('div')
-  earlier.className = 'msg'
-  earlier.innerHTML = agentHref === null ? '<p>no agent</p>' : `<a href="${agentHref}">agent</a>`
-  list.append(earlier)
+  list.innerHTML = html
   document.body.append(list)
   return list
 }
 
-function appendMessage(list: HTMLElement, html: string): HTMLElement {
-  const msg = document.createElement('div')
-  msg.className = 'msg'
-  msg.innerHTML = html
-  list.append(msg)
-  return msg
-}
-
-function linkScans(list: HTMLElement): { count: () => number } {
-  const spy = mock.method(list, 'querySelectorAll')
-  return {
-    count: () => spy.mock.calls.filter((call) => call.arguments[0] === 'a[href]').length,
-  }
-}
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('hydrateRemoteArtifactImages', () => {
-  it('falls back to the agent linked elsewhere in the thread', () => {
-    const list = listWithAgentLink('https://cursor.com/agents/bc-thread-1')
-    const msg = appendMessage(list, '<img data-remote-artifact-path="out/shot.png">')
+  it('asks main for the image by thread, not by a transcript agent link', async () => {
+    const list = message(
+      '<a href="https://cursor.com/agents/bc-spoofed">agent</a><img alt="Shot" data-remote-artifact-path="artifacts/shot.png">',
+    )
     const { api, requests } = fakeApi()
 
-    hydrateRemoteArtifactImages(msg, api)
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    await settle()
 
-    assert.deepEqual(requests, [['bc-thread-1', 'out/shot.png']])
-    assert.equal(qsRequired<HTMLImageElement>(msg, 'img').dataset['remoteArtifactState'], 'loading')
+    assert.deepEqual(requests, [
+      { projectId: 'project-1', threadId: 'thread-1', path: 'artifacts/shot.png' },
+    ])
+    const img = qsRequired<HTMLImageElement>(list, 'img')
+    assert.equal(img.dataset['remoteArtifactState'], 'loaded')
+    assert.equal(img.src, 'data:image/png;base64,AA==')
     list.remove()
   })
 
-  it("prefers the image's own agent id and then skips the thread scan", () => {
-    const list = listWithAgentLink('https://cursor.com/agents/bc-thread-1')
-    const msg = appendMessage(
-      list,
-      '<img data-remote-artifact-path="a.png" data-remote-artifact-agent-id="bc-own">',
+  it("passes the image's own agent id as a selector for main to check", () => {
+    const list = message(
+      '<img data-remote-artifact-path="artifacts/a.png" data-remote-artifact-agent-id="bc-own">',
     )
-    const scans = linkScans(list)
     const { api, requests } = fakeApi()
 
-    hydrateRemoteArtifactImages(msg, api)
+    hydrateRemoteArtifactImages(list, api, SCOPE)
 
-    assert.deepEqual(requests, [['bc-own', 'a.png']])
-    assert.equal(scans.count(), 0)
+    assert.deepEqual(requests, [{ ...SCOPE, path: 'artifacts/a.png', agentId: 'bc-own' }])
     list.remove()
   })
 
-  it('does not scan the thread for a message without artifact images', () => {
-    const list = listWithAgentLink('https://cursor.com/agents/bc-thread-1')
-    const msg = appendMessage(
-      list,
-      '<p>plain answer with <a href="https://example.com">a link</a></p>',
-    )
-    const scans = linkScans(list)
+  it('makes no request without a thread scope', () => {
+    const list = message('<img data-remote-artifact-path="artifacts/a.png">')
     const { api, requests } = fakeApi()
 
-    hydrateRemoteArtifactImages(msg, api)
+    hydrateRemoteArtifactImages(list, api, null)
 
     assert.deepEqual(requests, [])
-    assert.equal(scans.count(), 0)
+    assert.equal(
+      qsRequired<HTMLImageElement>(list, 'img').dataset['remoteArtifactState'],
+      'missing-scope',
+    )
     list.remove()
   })
 
-  it('scans the thread once however many images lack an agent', () => {
-    const list = listWithAgentLink(null)
-    const msg = appendMessage(
-      list,
-      '<img data-remote-artifact-path="a.png"><img data-remote-artifact-path="b.png">',
-    )
-    const scans = linkScans(list)
+  it('does not re-request an image that is loading or loaded', async () => {
+    const list = message('<img data-remote-artifact-path="artifacts/a.png">')
     const { api, requests } = fakeApi()
 
-    hydrateRemoteArtifactImages(msg, api)
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    await settle()
+    hydrateRemoteArtifactImages(list, api, SCOPE)
 
-    assert.deepEqual(requests, [])
-    assert.equal(scans.count(), 1)
-    for (const img of msg.querySelectorAll<HTMLImageElement>('img')) {
-      assert.equal(img.dataset['remoteArtifactState'], 'missing-agent')
+    assert.equal(requests.length, 1)
+    list.remove()
+  })
+
+  it('shows a policy denial with its alt text and no retry', async () => {
+    const list = message('<img alt="Login page" data-remote-artifact-path="artifacts/a.png">')
+    const { api } = fakeApi([{ ok: false, code: 'sandbox-unavailable', retryable: false }])
+
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    await settle()
+
+    const img = qsRequired<HTMLImageElement>(list, 'img')
+    assert.equal(img.hidden, true)
+    assert.equal(img.dataset['remoteArtifactState'], 'unavailable')
+    assert.equal(img.dataset['remoteArtifactError'], 'sandbox-unavailable')
+    const notice = qsRequired(list, '.remote-artifact-unavailable')
+    assert.match(notice.textContent, /sandbox/u)
+    assert.equal(qsRequired(notice, '.remote-artifact-unavailable-alt').textContent, 'Login page')
+    assert.equal(notice.querySelector('.remote-artifact-retry'), null)
+    list.remove()
+  })
+
+  it('offers Retry for a transient failure, and retrying replaces the notice', async () => {
+    const list = message('<img alt="Shot" data-remote-artifact-path="artifacts/a.png">')
+    const { api, requests } = fakeApi([{ ok: false, code: 'timeout', retryable: true }])
+
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    await settle()
+    qsRequired<HTMLButtonElement>(list, '.remote-artifact-retry').click()
+    await settle()
+
+    assert.equal(requests.length, 2)
+    const img = qsRequired<HTMLImageElement>(list, 'img')
+    assert.equal(img.dataset['remoteArtifactState'], 'loaded')
+    assert.equal(img.hidden, false)
+    assert.equal(list.querySelector('.remote-artifact-unavailable'), null)
+    list.remove()
+  })
+
+  it('treats a rejected IPC call as unavailable without retry', async () => {
+    const list = message('<img data-remote-artifact-path="artifacts/a.png">')
+    const api: Parameters<typeof hydrateRemoteArtifactImages>[1] = {
+      remoteAgent: { artifactImageDataUrl: () => Promise.reject(new Error('invalid')) },
     }
+
+    hydrateRemoteArtifactImages(list, api, SCOPE)
+    await settle()
+
+    assert.equal(
+      qsRequired<HTMLImageElement>(list, 'img').dataset['remoteArtifactError'],
+      'invalid-request',
+    )
+    assert.equal(list.querySelector('.remote-artifact-retry'), null)
     list.remove()
   })
 })
