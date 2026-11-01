@@ -830,6 +830,13 @@ export function acpAgentSandboxOverlay(
      * paths stay writable, so its session files still persist.
      */
     readonlyCheckout?: boolean
+    /**
+     * Directories Copse created for this agent's own state, such as the
+     * thread-scoped `CLAUDE_CONFIG_DIR`. They sit in the chat store, which is
+     * otherwise read-only to the agent, so grant them read and write and keep
+     * the store's read-only mounts off them.
+     */
+    stateDirs?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -839,9 +846,10 @@ export function acpAgentSandboxOverlay(
 function acpAgentSandboxOverlayWithCheckoutWrites(
   workspaceRoot: string,
   sandbox: AcpAgentSandboxConfig,
-  opts: { allowLocalhost?: boolean } | undefined,
+  opts: { allowLocalhost?: boolean; stateDirs?: readonly string[] } | undefined,
 ): Partial<SandboxRuntimeConfig> {
-  const base = workspaceSandboxOverlay(workspaceRoot)
+  const stateDirs = opts?.stateDirs ?? []
+  const base = workspaceSandboxOverlay(workspaceRoot, { chatStoreCarveOuts: stateDirs })
   const fs = base.filesystem
   if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   const home = homedir()
@@ -865,9 +873,10 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
   const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
-  const scratchPaths = (sandbox.scratchPaths ?? [])
-    .flatMap(expandScratchPath)
-    .flatMap((abs) => [abs, `${abs}/**`])
+  const scratchPaths = [
+    ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
+    ...stateDirs,
+  ].flatMap((abs) => [abs, `${abs}/**`])
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -999,7 +1008,13 @@ export function readAllowedSandboxOverlay(
   }
 }
 
-export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+export function workspaceSandboxOverlay(
+  workspaceRoot: string,
+  opts?: {
+    /** Paths inside the chat store that keep their own grants, not its read-only mount. */
+    chatStoreCarveOuts?: readonly string[]
+  },
+): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = [...resolveNodeToolchainAllowRead(), ...resolveRustToolchainAllowRead()]
@@ -1040,6 +1055,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       root,
       tmpDir,
       ...(internalRoot ? [internalRoot.commonGitDir] : []),
+      ...(opts?.chatStoreCarveOuts ?? []),
     ]),
   )
   // Git discovers a repository by probing `.git` while walking from cwd toward

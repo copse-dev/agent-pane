@@ -472,10 +472,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
-  out (#590). A sandboxed agent reads its workspace, its declared `homeDirs` and,
-  when it declares any, `~/Library/Keychains` (where macOS keeps its login). It
-  never gets the rest of the home directory: no `~/.ssh`, cloud credentials or
-  other projects.
+  out (#590). A sandboxed agent reads its workspace, its declared `homeDirs`,
+  the thread-scoped config directory Copse creates for it (read and write) and,
+  when it declares `homeDirs`, `~/Library/Keychains` (where macOS keeps its
+  login). It never gets the rest of the home directory: no `~/.ssh`, cloud
+  credentials or other projects.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

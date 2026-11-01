@@ -27,6 +27,7 @@ import {
   acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
+  grantableAcpStateDir,
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
@@ -1475,5 +1476,28 @@ describe('continuing into a granted worktree', () => {
         err.partial.assistantText === 'Going to edit. half' &&
         err.partial.usage.inputTokens === 15,
     )
+  })
+})
+
+describe('grantableAcpStateDir', () => {
+  const scoped = { CLAUDE_CONFIG_DIR: '/profile/workspace/p/t/acp-agent-config/claude' }
+
+  it('grants the scoped config directory Copse created while it is in effect', () => {
+    assert.equal(
+      grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, { ...scoped }),
+      scoped.CLAUDE_CONFIG_DIR,
+    )
+  })
+
+  it('never grants a directory the user named in the agent env', () => {
+    assert.equal(
+      grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, { CLAUDE_CONFIG_DIR: '/Users/me' }),
+      undefined,
+    )
+  })
+
+  it('grants nothing when no directory was scoped', () => {
+    assert.equal(grantableAcpStateDir(undefined, scoped, scoped), undefined)
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', undefined, undefined), undefined)
   })
 })

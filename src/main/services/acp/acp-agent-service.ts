@@ -734,6 +734,7 @@ async function runAcpAgentTurn(
   }
   const env =
     defaultConfigEnv || agent.env ? { ...defaultConfigEnv, ...(agent.env ?? {}) } : undefined
+  const stateDir = grantableAcpStateDir(configDirEnvVar, defaultConfigEnv, env)
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
@@ -743,6 +744,7 @@ async function runAcpAgentTurn(
     ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(sandbox && stateDir ? { stateDir } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
     ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
@@ -1070,6 +1072,22 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
+}
+
+/**
+ * The thread-scoped config directory a sandboxed agent may be granted: the one
+ * Copse created, and only while it is still the one in effect. A user override
+ * in the agent's own env can name any path, home included, so it is never
+ * granted.
+ */
+export function grantableAcpStateDir(
+  envVar: string | undefined,
+  scoped: Record<string, string> | undefined,
+  env: Record<string, string> | undefined,
+): string | undefined {
+  if (!envVar) return undefined
+  const dir = scoped?.[envVar]
+  return dir !== undefined && env?.[envVar] === dir ? dir : undefined
 }
 
 /** How far a turn's ACP agent process is contained, resolved once per turn. */

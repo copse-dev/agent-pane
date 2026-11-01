@@ -1187,6 +1187,41 @@ describe('gitBackupSandboxOverlay', () => {
 })
 
 describe('chat-store sandbox reads', () => {
+  it("grants an agent's own state dir in the chat store read and write, clear of read-only mounts", () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-state-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const root = join(store, 'project', 'active')
+      const stateDir = join(store, 'project', 'thread', 'acp-agent-config', 'claude')
+      mkdirSync(root, { recursive: true })
+      mkdirSync(stateDir, { recursive: true })
+      const sandbox = { allowedDomains: [], homeDirs: ['.claude'] }
+      const fs = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [stateDir] }).filesystem
+      assert.ok(fs?.allowRead)
+      for (const list of [fs.allowRead, fs.allowWrite]) {
+        assert.ok(list.includes(stateDir))
+        assert.ok(list.includes(`${stateDir}/**`))
+      }
+      if (process.platform === 'linux') {
+        // A read bind on an ancestor would shadow the state dir's write bind.
+        const shadowing = fs.allowRead.filter((path) => {
+          const base = path.replace(/\/\*\*$/, '')
+          return base !== stateDir && stateDir.startsWith(`${base}/`)
+        })
+        assert.deepEqual(shadowing, [])
+      }
+      // Without the state dir, the thread's chat data stays read-only.
+      const plain = acpAgentSandboxOverlay(root, sandbox).filesystem
+      assert.equal(plain?.allowWrite.includes(stateDir), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
   it('keeps chat data read-only without shadowing nested scratch or checkout write mounts', () => {
     const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-chat-overlay-')))
     const previous = process.env['COPSE_DIR']
