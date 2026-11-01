@@ -82,7 +82,16 @@ export async function acceptThreadPrompt(
     const origin: MachineMessageOrigin = {
       kind: 'machine',
       operationId: `thread:${command.sourceThreadId}`,
+      crossThreadScope: JSON.stringify([command.sourceThreadId, command.sourceTurnTreeId]),
     }
+    // A never-used destination inherits the existing sender root instead of
+    // minting a fresh epoch on every machine run. Subsequent incoming prompts
+    // cannot replenish its own outgoing allowance or self-continuation budget.
+    if (current.currentEpoch === undefined)
+      patchThreadAnywhere(store, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: command.sourceTurnTreeId,
+      }))
     // An earlier failed run does not prevent an authorized new prompt.
     if (current.status === 'error')
       patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, status: 'idle' }))
@@ -104,6 +113,7 @@ export async function acceptThreadPrompt(
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
           crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...(accepted.currentEpoch !== undefined ? { currentEpoch: accepted.currentEpoch } : {}),
           updatedAt: accepted.updatedAt,
         })

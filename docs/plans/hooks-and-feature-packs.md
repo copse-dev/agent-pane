@@ -79,9 +79,10 @@ revisiting this document, not silently diverging in an implementation PR.
 5. **One self-continuation budget, plus a separate cross-thread allowance.** A single
    self-continuation counter per **turn tree** (everything descending from one
    human-originated submission). Incoming cross-thread prompts have an independent
-   cap of five per destination turn tree, shared across senders. They neither spend
-   nor reset the self-continuation counter. Both counters reset only at a human or
-   scheduled automation root, including human release. This keeps authorized coordination
+   cap of five per destination, per sending thread's user turn. Each new human or
+   scheduled automation root in the sender gives it five fresh prompts for every
+   destination. Incoming prompts neither spend nor reset the self-continuation
+   counter. Human release permits a held prompt to run. This keeps authorized coordination
    usable after local continuations are exhausted without unbounding thread-to-thread loops. Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
    and originating epoch. The wake waits until the thread runs no turn and no machine
@@ -1133,12 +1134,19 @@ Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-si
 `send_thread_prompt` is a machine submission surface, authorized by a separate durable
 send grant on the source thread. It enters the destination's pending-message queue with
 `kind: 'machine'` provenance and the reserved `thread:<sourceThreadId>` operation namespace.
-These items consume a separate allowance of five incoming prompts per destination turn tree
-(decision 5, amended 31 October 2026), persisted as `crossThreadPromptsUsed` in metadata.
-All senders share that allowance; it is charged at drain time and refunded on a busy
-rejection. Exhaustion holds further cross-thread prompts with an allowance-specific note,
-while hooks and human prompts may still drain. Incoming prompts never reset either
-counter or start a human turn tree, never interrupt an
+These items carry a host-bound sender turn-tree ID and consume a separate allowance of
+five prompts per destination, per sender user turn (decision 5, amended 1 November 2026).
+Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
+sender turn-tree ID; it survives reloads and destination human submissions. Each sender
+and new sender root has its own allowance for every destination. Charging happens at drain
+time and busy rejections refund the same scope. Legacy prompts without a sender epoch
+retain the old `crossThreadPromptsUsed` destination counter. Exhaustion holds further
+prompts from that sender turn with an allowance-specific note; new sender turns can drain
+past those held prompts. Human release resets only the selected scope. Neither reloads
+nor interleaved old/new sender prompts replenish an existing scope. Hooks and human
+prompts may still drain. A destination without any epoch inherits the sender's existing
+root so machine runs cannot mint fresh outgoing allowances. Incoming prompts never reset
+self-continuation spend or replace an existing destination epoch, never interrupt an
 active run, and respect held/paused queues. The renderer remains the queue writer; the
 turn a drained item starts is written by main like any dispatched turn (`client-server-split.md`
 step 1a).

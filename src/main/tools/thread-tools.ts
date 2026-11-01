@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { ensureThreadAccess, hasThreadAccess } from '../services/security/thread-access.ts'
 import { getActiveRunThread } from '../services/active-run-identity.ts'
+import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
 import { loadProjectCatalog, getProjectThread, getThreadMeta } from '../services/thread-store.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from '../services/storage/storage.ts'
@@ -35,7 +36,7 @@ export const listThreadsTool = defineTool({
 export const sendThreadPromptTool = defineTool({
   name: 'send_thread_prompt',
   description:
-    'Send a prompt to an existing conversation. First use separately asks permission to send prompts to other threads; reading permission does not grant sending. The destination runs it when idle, or queues it behind its current work. This does not interrupt or switch the visible conversation. Write a self-contained prompt and never send to yourself.',
+    'Send a prompt to an existing conversation. First use separately asks permission to send prompts to other threads; reading permission does not grant sending. Each user turn in this sending thread allows five prompts to each destination; a new user instruction gives a fresh allowance for every destination. The destination runs it when idle, or queues it behind its current work. This does not interrupt or switch the visible conversation. Write a self-contained prompt and never send to yourself.',
   parameters: z.object({
     project_id: z.string().min(1),
     thread_id: z.string().min(1),
@@ -43,6 +44,7 @@ export const sendThreadPromptTool = defineTool({
   }),
   async execute({ project_id, thread_id, prompt }, signal) {
     const sourceThreadId = getActiveRunThread()
+    const sourceTurnTreeId = getActiveRunTurnTreeId()
     if (!sourceThreadId || sourceThreadId === thread_id)
       return 'Choose a different destination thread.'
     const initial = await getThreadMeta(project_id, thread_id)
@@ -55,8 +57,10 @@ export const sendThreadPromptTool = defineTool({
     if (!thread || thread.archivedAt !== undefined) return 'The destination thread is unavailable.'
     if (signal.aborted) return 'Sending was cancelled.'
     if (!hasThreadAccess(sourceThreadId, 'send')) return 'Permission to send prompts was revoked.'
+    if (!sourceTurnTreeId) return 'No active user turn is available for sending prompts.'
     const result = await sendThreadPrompt({
       sourceThreadId,
+      sourceTurnTreeId,
       projectId: project_id,
       thread,
       text: prompt,

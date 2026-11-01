@@ -1411,6 +1411,25 @@ test('a busy cross-thread dispatch refunds its own allowance without refunding s
   assert.equal(getThread(store, threadId).pendingMessages?.[0]?.messageId, 'cross')
 })
 
+test('a busy scoped cross-thread dispatch refunds only its sender user turn', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  const scope = JSON.stringify(['source', 'user-turn'])
+  const messageId = addMessage(store, threadId, 'user', 'Continue')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'Continue' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'thread:source', crossThreadScope: scope },
+  })
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).crossThreadPromptCounts?.[scope], 1)
+  await settle()
+  assert.equal(getThread(store, threadId).crossThreadPromptCounts?.[scope], 0)
+  assert.equal(getThread(store, threadId).pendingMessages?.[0]?.messageId, messageId)
+})
+
 test('a busy rejection refunds the continuation unit its drain charged', async () => {
   const store = createProjectStore()
   const api = busyOnceApi()

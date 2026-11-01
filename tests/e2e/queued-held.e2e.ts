@@ -29,9 +29,10 @@ describe('held cross-thread prompt', function () {
     resetUserData()
     const now = Date.now()
     const prompt = 'Review the original task and continue its remaining authorized work.'
-    const origin = { kind: 'machine', operationId: 'thread:coordinator' }
+    const scope = JSON.stringify(['coordinator', 'coordinator-user-turn'])
+    const origin = { kind: 'machine', operationId: 'thread:coordinator', crossThreadScope: scope }
     const note =
-      'Cross-thread prompt allowance reached — 5 prompts from other threads have run in this turn. The next cross-thread prompt is held; release it to continue with a reset allowance.'
+      "Cross-thread prompt allowance reached — 5 prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance."
     writeSeedConfig({
       projects: [{ id: 'cross-thread-project', path: process.cwd(), name: 'workspace' }],
       activeProjectId: 'cross-thread-project',
@@ -43,6 +44,7 @@ describe('held cross-thread prompt', function () {
           currentEpoch: 'destination-turn',
           continuationUsed: 5,
           crossThreadPromptsUsed: 5,
+          crossThreadPromptCounts: { [scope]: 5 },
           messages: [
             {
               id: 'user',

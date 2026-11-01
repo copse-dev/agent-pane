@@ -32,7 +32,7 @@ import type { TurnTreeId } from './turn-tree.ts'
  */
 export const DEFAULT_CONTINUATION_BUDGET = 5
 
-/** Independent incoming cross-thread prompt cap per destination turn tree. */
+/** Independent prompt cap per destination, per sending thread's user turn. */
 export const DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5
 
 /** The bounded mechanism that received an automatic-turn allowance. */

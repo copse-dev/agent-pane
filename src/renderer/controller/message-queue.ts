@@ -55,7 +55,7 @@ function isCrossThreadPrompt(item: QueuedUserMessage): boolean {
 }
 
 function crossThreadBudgetHeldNote(): string {
-  return `Cross-thread prompt allowance reached — ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from other threads have run in this turn. The next cross-thread prompt is held; release it to continue with a reset allowance.`
+  return `Cross-thread prompt allowance reached — ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`
 }
 
 export function continuationBudgetHeldNote(): string {
@@ -296,6 +296,16 @@ function requeueBusyMessage(
     // The drain that sent a machine continuation charged the turn tree's budget
     // for a turn that never ran; hand the unit back so the retry is not charged twice.
     if (isCrossThreadPrompt(item)) {
+      if (item.origin?.kind === 'machine' && item.origin.crossThreadScope !== undefined) {
+        const scope = item.origin.crossThreadScope
+        return {
+          ...requeued,
+          crossThreadPromptCounts: {
+            ...t.crossThreadPromptCounts,
+            [scope]: Math.max(0, (t.crossThreadPromptCounts?.[scope] ?? 0) - 1),
+          },
+        }
+      }
       return {
         ...requeued,
         crossThreadPromptsUsed: Math.max(0, (t.crossThreadPromptsUsed ?? 0) - 1),
@@ -381,17 +391,21 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
   // human-authored items never consume either budget.
   let used = thread.continuationUsed ?? 0
   let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts }
   let next: QueuedUserMessage | undefined
   const heldByBudget: string[] = []
   const heldByCrossThreadBudget: string[] = []
   for (const item of pending) {
     if (isHeldMessage(item)) continue
     if (isCrossThreadPrompt(item)) {
-      if (!canContinue(crossThreadUsed, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+      const scope = item.origin?.kind === 'machine' ? item.origin.crossThreadScope : undefined
+      const count = scope === undefined ? crossThreadUsed : (crossThreadCounts[scope] ?? 0)
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
         heldByCrossThreadBudget.push(item.messageId)
         continue
       }
-      crossThreadUsed += 1
+      if (scope === undefined) crossThreadUsed += 1
+      else crossThreadCounts[scope] = count + 1
       next = item
       break
     }
@@ -426,7 +440,11 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
     // Record the machine turn we are about to dispatch so the next drain (and the
     // run payload's seed) reflect it (decision 5).
     if (next && isCrossThreadPrompt(next))
-      return { ...base, crossThreadPromptsUsed: crossThreadUsed }
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts,
+      }
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base
   })
   // One visible note when the budget forced items to held (decision 5).
@@ -728,6 +746,14 @@ export function releaseHeldMessage(
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
       crossThreadPromptsUsed: 0,
+      ...(item.origin?.kind === 'machine' && item.origin.crossThreadScope !== undefined
+        ? {
+            crossThreadPromptCounts: {
+              ...t.crossThreadPromptCounts,
+              [item.origin.crossThreadScope]: 0,
+            },
+          }
+        : {}),
       pendingMessages: (t.pendingMessages ?? []).map((p) => {
         if (p.messageId !== messageId) return p
         // Clear the hold so the item can dispatch (and auto-drain if left queued).
