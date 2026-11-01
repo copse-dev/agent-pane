@@ -59,6 +59,7 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
   acpReattachMethods,
   noReattachMethodFailure,
@@ -117,6 +118,15 @@ export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, Acp
  * approval UX even though the external agent runs the model loop.
  */
 
+/** Host-owned facts about a permission request, beyond what the request itself says. */
+export interface AcpPermissionRequestContext {
+  /**
+   * Identity fields of the agent's earlier `tool_call`/`tool_call_update`
+   * notifications for the same `toolCallId` (#1446 provenance).
+   */
+  observedToolCall: readonly AcpToolIdentity[]
+}
+
 export interface AcpClientHandlers {
   /** Forward a translated update to the UI (`agent:chunk`). */
   onChunk: (chunk: StreamChunk) => void
@@ -124,6 +134,7 @@ export interface AcpClientHandlers {
   requestPermission: (
     req: RequestPermissionRequest,
     signal: AbortSignal,
+    context?: AcpPermissionRequestContext,
   ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
@@ -1266,6 +1277,7 @@ export async function openAcpSession(
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
+  const observedToolCalls = new AcpToolCallObservations()
 
   const enqueueUpdate = (sessionId: string, update: SessionUpdate): void => {
     if (activeUpdates?.sessionId === sessionId) {
@@ -1287,7 +1299,15 @@ export async function openAcpSession(
 
   const app = client({ name: 'copse' })
     .onNotification(methods.client.session.update, (ctx) => {
-      enqueueUpdate(ctx.params.sessionId, ctx.params.update)
+      const { sessionId, update } = ctx.params
+      if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+        observedToolCalls.record(sessionId, update.toolCallId, {
+          ...(update.title !== undefined ? { title: update.title } : {}),
+          ...(update.name !== undefined ? { name: update.name } : {}),
+          ...(update._meta !== undefined ? { _meta: update._meta } : {}),
+        })
+      }
+      enqueueUpdate(sessionId, update)
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const { sessionId, toolCall } = ctx.params
@@ -1326,7 +1346,9 @@ export async function openAcpSession(
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
       try {
-        return await current.requestPermission(ctx.params, ctx.signal)
+        return await current.requestPermission(ctx.params, ctx.signal, {
+          observedToolCall: observedToolCalls.get(sessionId, toolCall.toolCallId),
+        })
       } catch (err) {
         if (ctx.signal.aborted) return { outcome: { outcome: 'cancelled' as const } }
         throw err

@@ -45,6 +45,7 @@ import {
   type AcpAgentProbe,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
+  type AcpPermissionRequestContext,
 } from './acp-client.ts'
 import {
   getAcpAgent,
@@ -76,7 +77,12 @@ import {
   permissionKindLabel,
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
-import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
+import {
+  bridgedNativeToolsOffered,
+  dropAcpBridgeDelegation,
+  noteAcpBridgeDelegation,
+} from './acp-native-bridge.ts'
+import { describeAcpToolProvenance, resolveAcpToolProvenance } from './acp-tool-provenance.ts'
 import {
   requestApproval,
   trackAcpPermissionToolCall,
@@ -762,6 +768,8 @@ async function runAcpAgentTurn(
       // Agent finished/failed this tool without waiting for our permission answer
       // — dismiss that specific modal now, not at turn end.
       cancelApprovalsForAcpToolCall(chunk.toolCallId)
+      // A delegation still waiting now was never executed through the bridge.
+      dropAcpBridgeDelegation(options.threadId, chunk.toolCallId)
     }
     if (chunk.type === 'text') {
       assistantText += chunk.text
@@ -780,9 +788,13 @@ async function runAcpAgentTurn(
   // path shape). Anything else that changed on disk bypassed user approval and
   // is surfaced by the post-turn audit (issue #591).
   const queueWrites = new Set<string>()
+  // Set per attempt once the session is acquired: the tools this session's own
+  // bridge serves, or none when its agent did not mount one (remote, no HTTP
+  // MCP, bridge not started).
+  let bridgeToolNames: readonly string[] = []
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req, rpcSignal) =>
+    requestPermission: (req, rpcSignal, context) =>
       respondToPermission(
         {
           id: agent.id,
@@ -792,11 +804,15 @@ async function runAcpAgentTurn(
           remote,
           ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
+          bridgeToolNames,
+          threadId: options.threadId,
+          ...(executionContext ? { projectId: executionContext.projectId } : {}),
         },
         req,
         cwd,
         projectRoot,
         mergeAcpPermissionAbortSignals(options.signal, rpcSignal),
+        context,
       ),
     readTextFile: (req) => readTextFile(req, cwd),
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
@@ -863,6 +879,10 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    bridgeToolNames =
+      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
+        ? entry.bridge.toolNames
+        : []
     const skillToolNames =
       entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
@@ -1214,6 +1234,16 @@ interface AcpPermissionAgent {
   remote?: boolean
   /** The SSH host a remote agent runs on; remembered grants are scoped to it. */
   remoteHostId?: string
+  /**
+   * The tools this session's own native-tool bridge serves, so a call proven to
+   * target one is re-gated by the bridge on execution. Empty for remote agents,
+   * agents without HTTP MCP, and sessions whose bridge did not start.
+   */
+  bridgeToolNames?: readonly string[]
+  /** Owning thread, for attributing a delegated call to the bridge's record. */
+  threadId?: string
+  /** Owning project, so audit records land beside the thread whatever project is open. */
+  projectId?: string
 }
 
 /**
@@ -1243,6 +1273,7 @@ async function respondToPermission(
   root: string | null = getAgentExecutionRoot(),
   projectRoot: string | null = getAgentProjectRoot(),
   signal?: AbortSignal,
+  context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   if (agent.executionMode === 'agent') {
@@ -1290,20 +1321,65 @@ async function respondToPermission(
   if (shouldAutoApproveSandboxedCodexCodeMode(agent, req)) {
     return permissionResponseFor(req.options, true)
   }
-  // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,
-  // web fetch) reach the agent as an MCP server Copse mounts and *re-gates on
-  // execution* — so this ACP prompt only duplicates that gate. Auto-approve when
-  // the request is identifiably one of ours, so they sail through like the
-  // native tools do. See isBridgedNativeToolTitle for why the title is a sound
-  // (if best-effort) signal and why forgery isn't in scope. A remote agent is
-  // never offered the bridge (acp-session-pool.ts), so nothing would re-gate a
-  // call that merely claims a bridged title: it keeps the ordinary prompt.
+  // Copse's own bridged tools reach the agent as an MCP server Copse mounts and
+  // *re-gate on execution*, so this ACP prompt only duplicates that gate:
+  // reads run, edits take the diff queue, shell takes scope and harm policy,
+  // and network or external mutations still prompt there. Delegate only on
+  // adapter-authored provenance that agrees across the request and the
+  // agent's earlier reports of the same call (#1446), and only when this
+  // session really mounted the bridge — a remote agent, or one without HTTP
+  // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // This session's bridge, narrowed to what is still offered now (a plugin can
+  // be disabled mid-session).
+  const stillOffered = new Set(bridgedNativeToolsOffered())
+  const provenance = resolveAcpToolProvenance(
+    req.toolCall,
+    context?.observedToolCall ?? [],
+    agent.remote === true
+      ? []
+      : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+    { runsCommand },
+  )
+  const auditOwner = {
+    ...(agent.threadId ? { threadId: agent.threadId } : {}),
+    ...(agent.projectId ? { projectId: agent.projectId } : {}),
+  }
   if (
-    agent.remote !== true &&
-    getSetting<boolean>('acpAutoApproveNativeBridgeTools', true) &&
-    isBridgedNativeToolTitle(req.toolCall.title)
+    provenance.status === 'bridged' &&
+    getSetting<boolean>('acpAutoApproveNativeBridgeTools', true)
   ) {
+    const toolCallId = req.toolCall.toolCallId
+    if (agent.threadId && toolCallId) {
+      noteAcpBridgeDelegation(agent.threadId, provenance.tool, toolCallId, req.toolCall.rawInput)
+    }
+    recordDecision({
+      kind: 'acp',
+      actor: 'system',
+      verdict: 'allowed',
+      subject: `${agent.title}: ${provenance.server}/${provenance.tool}`,
+      scope: 'native-bridge',
+      reasons: [describeAcpToolProvenance(provenance)],
+      source: 'acp-bridge-provenance',
+      ...auditOwner,
+      ...(toolCallId ? { toolCallId } : {}),
+    })
     return permissionResponseFor(req.options, true)
+  }
+  if (provenance.status === 'conflicting') {
+    // The agent's own reports of this call disagree about which tool it is.
+    // Keep the ordinary path, and leave the reason in the audit so an export can
+    // say why the prompt that follows was not delegated to the bridge.
+    recordDecision({
+      kind: 'acp',
+      actor: 'system',
+      verdict: 'classified',
+      // The kind, not the title: a title can hold a whole command line.
+      subject: `${agent.title}: ${permissionKindLabel(kind)}`,
+      reasons: [describeAcpToolProvenance(provenance)],
+      source: 'acp-bridge-provenance',
+      ...auditOwner,
+      ...(req.toolCall.toolCallId ? { toolCallId: req.toolCall.toolCallId } : {}),
+    })
   }
   if (runsCommand) {
     const toolCallId = req.toolCall.toolCallId
@@ -1776,6 +1852,7 @@ export function respondToPermissionForTest(
   root: string | null,
   projectRoot: string | null,
   signal?: AbortSignal,
+  context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
-  return respondToPermission(agent, req, root, projectRoot, signal)
+  return respondToPermission(agent, req, root, projectRoot, signal, context)
 }

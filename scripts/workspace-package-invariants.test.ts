@@ -249,6 +249,8 @@ describe('workspace package resolution', () => {
         // Clean-checkout R2 hydration and trusted review run without an install.
         'scripts/lib/screenshot-manifest.mts',
         'scripts/lib/screenshot-hydration.mts',
+        // Stable promotion and release halting run in workflows without an install.
+        'scripts/release-promotion.mts',
       ].map((file) => resolve(file)),
     )
     for (const file of sourceFiles('scripts')) {

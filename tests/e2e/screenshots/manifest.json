@@ -3413,6 +3413,10 @@
       "sha256": "38194a2fdd72dad87396e714b122ab9e66cfd92ec2ca12df69bb34bd7acbbe04",
       "bytes": 50123
     },
+    "remote-watcher-install-approval.png": {
+      "sha256": "4fbf339885c3410c5693b19b4ad008288391f04b9e95868dc05586552bc4ca29",
+      "bytes": 66318
+    },
     "renderer-input-guards-font-size-empty.png": {
       "sha256": "cdf78e31485f00702b493d9722343c3b089916fdd83da100e5f3a11fc6f04b73",
       "bytes": 83756
@@ -5290,8 +5294,8 @@
       "bytes": 45052
     },
     "thread-proposal-isolation-refused.png": {
-      "sha256": "2d3b852a479ce6183cfc8ddfc3cc0111c64e00ebb94eb374ba37dde2d0dea580",
-      "bytes": 16912
+      "sha256": "dc390b56dac69921860fa02e26718cc24acfa2a8310b159db67ab14d73d6f2ba",
+      "bytes": 81359
     },
     "thread-proposal-pending.png": {
       "sha256": "71878fe5dea3caf10ba03cb74513bf95445be87f82c9789c2904b9aebe3e9f2c",

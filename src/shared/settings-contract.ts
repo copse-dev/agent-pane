@@ -174,6 +174,7 @@ export interface SettingsValues {
   sshStrictHostKeys: 'accept-new' | 'strict'
   sshWorkspaceEnabled: boolean
   acpOverSshEnabled: boolean
+  sshWatcherMode: 'auto' | 'poll' | 'off'
   sshWorkspaceHosts: Array<{
     id: string
     label: string
