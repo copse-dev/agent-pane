@@ -5122,6 +5122,8 @@ label {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-sm);
+  min-width: 0;
   padding: 0 var(--spacing-xl);
 }
 .scroll-to-bottom {
@@ -6335,22 +6337,20 @@ span.acp-resource-title {
   background: var(--accent);
 }
 .conversation-first-prompt {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xl);
-  z-index: 5;
-  display: flex;
+  flex: 0 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-xs);
-  min-width: 36px;
-  min-height: 32px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-base);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--text-secondary);
-  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 .conversation-first-prompt-label {
@@ -6359,6 +6359,7 @@ span.acp-resource-title {
 .conversation-first-prompt:hover,
 .conversation-first-prompt:focus-visible {
   opacity: 1;
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 .conversation-first-prompt:hover .conversation-first-prompt-label,
@@ -6372,7 +6373,7 @@ span.acp-resource-title {
 @media (hover: none) {
   .conversation-first-prompt {
     min-width: 44px;
-    min-height: 44px;
+    min-height: 40px;
   }
   .conversation-first-prompt-label {
     display: inline;
@@ -6960,6 +6961,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-stat {
   font-size: var(--font-size-sm);
   font-weight: 500;
+}
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }
 .tool-edit-stats {
   display: inline-flex;
