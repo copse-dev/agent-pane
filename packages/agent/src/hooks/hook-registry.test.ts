@@ -79,6 +79,7 @@ describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary list
         'truncation-continue',
         'reasoning-runaway',
         'malformed-tool-call',
+        'plan-verified-finalize',
       ],
     )
   })

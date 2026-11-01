@@ -824,65 +824,117 @@ describe('incremental screenshot stack selection', () => {
   })
 })
 describe('stack workflow integration', () => {
-  it('retains distinct events and performs full repair sweeps for missed removals', async () => {
+  it('coalesces pending triggers and repairs all live PRs without event history', async () => {
     const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
     const routing = z
       .object({
-        concurrency: z.object({ queue: z.literal('max'), 'cancel-in-progress': z.literal(false) }),
+        concurrency: z.object({
+          group: z.string(),
+          queue: z.never().optional(),
+          'cancel-in-progress': z.literal(false),
+        }),
         on: z.object({ schedule: z.array(z.object({ cron: z.string() })) }),
+        jobs: z.object({ reconcile: z.object({ if: z.string() }) }),
       })
       .parse(load(source))
     assert.equal(routing.on.schedule.length, 1)
-    const workflow = workflowSchema.parse(
-      load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
-    )
+    const group = (eventName: string, headRepo: string): unknown =>
+      new Script(routing.concurrency.group.slice(3, -2)).runInNewContext({
+        github: {
+          repository: 'copse-dev/agent-pane',
+          event_name: eventName,
+          event: { pull_request: { head: { repo: { full_name: headRepo } } } },
+        },
+      })
+    assert.equal(group('pull_request_target', 'copse-dev/agent-pane'), 'screenshot-stack-policy')
+    assert.equal(group('workflow_run', ''), 'screenshot-stack-policy')
+    assert.equal(group('schedule', ''), 'screenshot-stack-policy')
+    assert.notEqual(group('pull_request_target', 'someone/fork'), 'screenshot-stack-policy')
+    assert.match(routing.jobs.reconcile.if, /head\.repo\.full_name == github\.repository/)
+    const workflow = workflowSchema.parse(load(source))
     const script = workflow.jobs['reconcile']?.steps.find(
       (step) => step.name === 'Reconcile live screenshot stacks',
     )?.with?.['script']
-    assert.equal(typeof script, 'string')
     assert.ok(typeof script === 'string')
-    const start = script.indexOf('const eligible =')
-    const end = script.indexOf('for (const pr of selected)', start)
-    assert.ok(start >= 0 && end > start)
-    const removed = pull(3, BASE, '')
-    const foreign = {
-      ...pull(4, BASE),
-      head: { sha: BASE, repo: { full_name: 'someone/fork' } },
+    const start = script.indexOf('const { owner, repo }')
+    assert.ok(start >= 0)
+    const f = fixture()
+    f.pulls.set(3, pull(3, BASE, 'declaration removed in a superseded event'))
+    const otherHead = 'd'.repeat(40)
+    f.pulls.set(4, pull(4, otherHead, '<!-- copse-screenshot-stack: malformed -->'))
+    f.pulls.set(5, {
+      ...pull(5, 'e'.repeat(40)),
+      head: { sha: 'e'.repeat(40), repo: { full_name: 'someone/fork' } },
+    })
+    for (const pr of f.pulls.values()) pr['labels'] = []
+    f.statuses.set(BASE, [status('Screenshot review', 10, 'Stack deferred to approved tip')])
+    const comments = new Map<number, { id: number; body: string; user: { id: number } }>()
+    let commentWrites = 0
+    const write = f.github.rest.repos.createCommitStatus.bind(f.github.rest.repos)
+    f.github.rest.repos.createCommitStatus = async (value): Promise<void> => {
+      await write(value)
+      f.statuses.set(value.sha, [
+        status(value.context, 20 + f.writes.length, value.description, value.state),
+        ...(f.statuses.get(value.sha) ?? []).filter(
+          (entry) => z.object({ context: z.string() }).parse(entry).context !== value.context,
+        ),
+      ])
     }
-    const open = [pull(1, LOWER), removed, foreign]
-    const calls: unknown[] = []
-    const select = async (eventName: string, payload: unknown): Promise<unknown> =>
-      new Script(
-        `(async () => {\n${script.slice(start, end)}\nreturn selected.map(pr => pr.number) })()`,
-      ).runInNewContext({
-        open,
-        owner: 'copse-dev',
-        repo: 'agent-pane',
-        policy: 'memoized-client',
-        selectScreenshotStackPulls,
-        selectScreenshotStackCompletion: async (...args: unknown[]): Promise<number[]> => {
-          calls.push(args)
-          return [3]
+    const github = {
+      rest: {
+        ...f.github.rest,
+        pulls: {
+          ...f.github.rest.pulls,
+          list: async (): Promise<{ data: unknown[] }> => ({ data: [...f.pulls.values()] }),
         },
+        issues: {
+          listComments: async (): Promise<{ data: unknown[] }> => ({ data: [] }),
+          createComment: async ({
+            issue_number,
+            body,
+          }: {
+            issue_number: number
+            body: string
+          }): Promise<void> => {
+            commentWrites += 1
+            comments.set(issue_number, { id: issue_number, body, user: { id: 41898282 } })
+          },
+          updateComment: async (): Promise<void> => {
+            commentWrites += 1
+          },
+        },
+      },
+      paginate: async (method: unknown, args: { issue_number?: number }): Promise<unknown[]> => {
+        if (method === github.rest.pulls.list) return [...f.pulls.values()]
+        assert.equal(method, github.rest.issues.listComments)
+        return [comments.get(args.issue_number ?? -1)].filter(Boolean)
+      },
+    }
+    const run = async (eventName: string, payload: unknown): Promise<void> => {
+      await new Script(`(async () => {\n${script.slice(start)}\n})()`).runInNewContext({
+        github,
+        memoizeScreenshotStackAncestry,
+        reconcileScreenshotStack,
+        parseScreenshotStack,
         core: { info: (): void => {} },
-        context: { eventName, payload },
+        context: { repo: { owner: 'copse-dev', repo: 'agent-pane' }, eventName, payload },
       })
-    assert.equal(JSON.stringify(await select('schedule', {})), '[1,3]')
-    assert.equal(calls.length, 0, 'repair sweeps never read statuses to select')
-    const payload = { workflow_run: { head_sha: BASE, pull_requests: [] } }
-    assert.equal(JSON.stringify(await select('workflow_run', payload)), '[3]')
-    // The script runs in another realm: compare structure, not prototypes.
-    assert.equal(
-      JSON.stringify(calls),
-      JSON.stringify([
-        [
-          'memoized-client',
-          { owner: 'copse-dev', repo: 'agent-pane' },
-          [open[0], removed],
-          payload,
-        ],
-      ]),
+    }
+    // Only this unrelated trusted trigger survives; no earlier payloads remain.
+    // Fork PRs in the live list must still be excluded from reconciliation.
+    await run('pull_request_target', { pull_request: f.pulls.get(4) })
+    assert.deepEqual(
+      f.writes.map(({ sha }) => sha),
+      [LOWER, BASE, otherHead],
     )
+    assert.equal(f.writes[0]?.state, 'success')
+    assert.match(f.writes[1]?.description ?? '', /Stack removed/)
+    assert.equal(f.writes[2]?.state, 'error')
+    assert.equal(commentWrites, 3)
+    assert.equal(comments.has(2), false, 'explicit tip decision remains untouched')
+    await run('workflow_run', { workflow_run: { head_sha: otherHead, pull_requests: [] } })
+    assert.equal(f.writes.length, 3, 'unchanged sweep adds no statuses')
+    assert.equal(commentWrites, 3, 'unchanged sweep adds no comments')
   })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')

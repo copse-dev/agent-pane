@@ -639,7 +639,7 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
-  projectId: string | undefined,
+  projectId: string | null,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
@@ -657,7 +657,7 @@ async function deferInsteadOfPrompting(
       // The run's own project, not whichever one the window has open: a
       // schedule can fire in a background project, and Context and the status
       // tool read the queue by the thread's project.
-      projectId !== undefined ? { projectId } : {},
+      { projectId },
     )
     entryId = entry.id
   } catch (error) {
@@ -747,8 +747,10 @@ function requestApprovalUnobserved(
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
+    // The same project the audit identity above resolved: the turn's, else
+    // (outside any turn) the active one, else the no-project bucket.
     return answered(
-      deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
+      deferInsteadOfPrompting(req, deferringThread, projectId, () =>
         requestApprovalInteractive(req, signal),
       ),
     )

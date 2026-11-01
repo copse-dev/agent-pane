@@ -1563,6 +1563,58 @@ describe('release-publish.yml workflow invariants', () => {
   })
 })
 
+describe('stable channel workflow invariants', () => {
+  const publish = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
+  const promote = readFileSync(resolve('.github/workflows/release-promote.yml'), 'utf8')
+  const halt = readFileSync(resolve('.github/workflows/release-halt.yml'), 'utf8')
+
+  it('publishes every release, stable included, as a prerelease the stable feed ignores', () => {
+    assert.match(publish, /release_flags=\(--prerelease --latest=false\)/)
+    assert.doesNotMatch(publish, /release_flags\+=\(--latest\)/)
+  })
+
+  it('promotes in place after verifying the published bytes, behind the approval environment', () => {
+    assert.match(promote, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(promote, /^ {2}(push|schedule):/m)
+    assert.match(promote, /environment: stable-release/)
+    assert.match(promote, /release-promotion\.mts check-promotion/)
+    assert.match(promote, /cd published\n {12}shasum -a 256 --check SHA256SUMS/)
+    assert.match(promote, /release-promotion\.mts check-feeds/)
+    assert.match(promote, /RELEASE_VALIDATION\.json/)
+    assert.match(
+      promote,
+      /gh release edit "\$TAG" --repo "\$RELEASE_REPOSITORY" --prerelease=false --latest/,
+    )
+    assert.match(promote, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" promoted/)
+    const verify = promote.indexOf('check-feeds')
+    const flip = promote.indexOf('--prerelease=false --latest')
+    assert.ok(verify >= 0 && flip > verify, 'verification must precede promotion')
+    for (const body of [promote, halt]) {
+      assert.doesNotMatch(
+        body,
+        /electron-builder|build:release|pnpm install|gh release (create|upload|delete)/,
+      )
+    }
+  })
+
+  it('halts by drafting, never deleting, and serialises with promotion', () => {
+    assert.match(halt, /options: \[halt, resume\]/)
+    assert.match(halt, /--draft=true/)
+    assert.match(halt, /release-promotion\.mts fallback-latest/)
+    assert.match(halt, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" "\$STATE"/)
+    assert.match(halt, /--label area:release/)
+    for (const body of [promote, halt]) {
+      assert.match(body, /group: release-channel-change/)
+      assert.match(body, /repositories: copse-releases/)
+      // Dispatch inputs reach shells only through env, never interpolated.
+      assert.doesNotMatch(body, /run: .*\$\{\{ inputs\./)
+      for (const block of body.split(/\n {8}run: \|\n/).slice(1)) {
+        assert.doesNotMatch(block.split(/\n {6}- /)[0] ?? '', /\$\{\{ inputs\./)
+      }
+    }
+  })
+})
+
 describe('runner-routing invariants across every workflow', () => {
   const dir = resolve('.github/workflows')
   const workflows = readdirSync(dir)
@@ -1652,6 +1704,75 @@ describe('acp-v2-watch.yml workflow invariants', () => {
     // call here would quietly reintroduce the multi-minute node_modules restore.
     assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
     assert.match(workflow, /run: pnpm run watch:acp-v2/)
+  })
+})
+
+describe('boundary-contracts.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/boundary-contracts.yml'), 'utf8')
+  const triggers = workflow.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1] ?? ''
+
+  it('runs on a schedule, on manual dispatch and for release candidates only', () => {
+    // These jobs hold provider keys. A pull_request or merge_group trigger would
+    // put candidate code next to them and make ordinary CI depend on vendors.
+    assert.match(triggers, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m)
+    assert.match(triggers, /^ {2}workflow_dispatch:$/m)
+    assert.match(triggers, /^ {2}push:\n {4}branches: \[release\]$/m)
+    assert.deepEqual(
+      [...triggers.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]),
+      ['schedule', 'push', 'workflow_dispatch'],
+    )
+  })
+
+  it('keeps the token read-only, the runner hosted and the checkout credential-free', () => {
+    assert.match(workflow, /^permissions:\n {2}contents: read\n\n/m)
+    assert.doesNotMatch(workflow, /: write\b/)
+    assert.match(workflow, /^ {4}runs-on: ubuntu-24\.04$/m)
+    assert.doesNotMatch(workflow, /vars\.SELF_HOSTED/)
+    assert.match(workflow, /persist-credentials: false/)
+  })
+
+  it('reads keys only through a branch-restricted environment', () => {
+    // workflow_dispatch runs the dispatched branch's copy of this file, so only
+    // environment secrets behind a main/release deployment-branch policy keep a
+    // writer's branch from reaching the keys. The ref guard is defence in depth.
+    assert.match(workflow, /^ {4}environment: boundary-contracts$/m)
+    assert.match(
+      workflow,
+      /^ {4}if: github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/release'$/m,
+    )
+    const doc = readFileSync(resolve('docs/boundary-contracts.md'), 'utf8')
+    assert.match(doc, /Never\s+store them as repository or organization secrets/)
+    assert.match(doc, /deployment branches are limited to `main` and `release`/)
+  })
+
+  it('binds provider secrets to the run step alone, never the dependency install', () => {
+    const secretLines = workflow
+      .split('\n')
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => line.includes('secrets.'))
+    assert.ok(secretLines.length >= 3)
+    const runStep = workflow.split('\n').findIndex((line) => line.includes('- name: Run contracts'))
+    const setupStep = workflow
+      .split('\n')
+      .findIndex((line) => line.includes('uses: ./.github/actions/setup'))
+    assert.ok(setupStep >= 0 && runStep > setupStep)
+    for (const { line, index } of secretLines) {
+      assert.ok(index > runStep, `secret bound outside the run step: ${line.trim()}`)
+      assert.match(
+        line,
+        /^ {10}CONTRACT_[A-Z_]+_API_KEY: \$\{\{ secrets\.CONTRACT_[A-Z_]+_API_KEY \}\}$/,
+      )
+    }
+    // The dispatch input reaches the shell through env, never inline expansion.
+    assert.doesNotMatch(workflow, /run: [^\n]*\$\{\{ inputs\./)
+    assert.match(workflow, /TARGETS: \$\{\{ inputs\.targets \}\}/)
+  })
+
+  it('runs the bundled runner and keeps its report as evidence', () => {
+    assert.match(workflow, /pnpm run contracts:boundary -- "\$\{args\[@\]\}"/)
+    assert.match(workflow, /uses: actions\/upload-artifact@v7/)
+    assert.match(workflow, /path: boundary-contracts\.json/)
+    assert.match(workflow, /cancel-in-progress: false/)
   })
 })
 
