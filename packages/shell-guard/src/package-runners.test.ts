@@ -19,6 +19,9 @@ describe('packageManagerArgv', () => {
       ['corepack yarn@4.5.0 dlx x', 'yarn dlx x'],
       ['corepack yarnpkg dlx x', 'yarn dlx x'],
       ['yarnpkg dlx x', 'yarn dlx x'],
+      // `pnpx` is `pnpm dlx`: pnpm prints `Usage: pnpm dlx` for `pnpx --help`.
+      ['pnpx evil', 'pnpm dlx evil'],
+      ['corepack pnpx evil', 'pnpm dlx evil'],
       ['corepack enable', 'corepack enable'],
       ['pnpm exec tsc', 'pnpm exec tsc'],
     ]) {
@@ -48,6 +51,11 @@ describe('packageRunnerCall', () => {
       assert.equal(result.unmodelledOption, null, command)
     }
     assert.deepEqual(call('npm exec -- evil --flag')?.command, ['evil', '--flag'])
+  })
+
+  it('does not read pnpx as npx: it is pnpm dlx, which never runs a project binary', () => {
+    assert.equal(call('pnpx evil'), null)
+    assert.equal(call('corepack pnpx evil'), null)
   })
 
   it('reads pnpm exec, which runs a command from PATH rather than fetching', () => {

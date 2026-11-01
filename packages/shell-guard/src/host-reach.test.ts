@@ -318,6 +318,9 @@ describe('hostReachReasons — code fetched at run time', () => {
       'corepack yarnpkg dlx create-vite',
       'corepack yarnpkg@4.5.0 dlx create-vite',
       'pnpm dlx create-vite',
+      // `pnpx` is `pnpm dlx`, which downloads even a name the project installs.
+      'pnpx tsc',
+      'corepack pnpx tsc',
       'yarn dlx create-vite',
       'npm create vite@latest',
       'npm init vite@latest',

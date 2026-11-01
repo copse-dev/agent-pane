@@ -967,7 +967,8 @@ While active:
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
     which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`) or
-    under Yarn's other name, `yarnpkg`;
+    under another name: `yarnpkg` is Yarn, and `pnpx` is `pnpm dlx`, which downloads even a name
+    the workspace's `.bin` has, so it is not read as `npx`;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
