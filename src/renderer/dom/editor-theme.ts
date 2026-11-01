@@ -246,8 +246,8 @@ function sameTokens(a: EditorThemeTokens, b: EditorThemeTokens): boolean {
  * Call `onChange` with freshly resolved tokens whenever the appearance on
  * `<html>` changes. Theme (`data-theme`), tint (`data-tint-*`, `--tint-*`) and
  * accent (`--accent-color`) are all written there — by Settings previews, Save,
- * Cancel and the OS theme watcher — and not all of those paths emit
- * `theme_changed` (or emit it before the attribute lands), so the root element
+ * Cancel and the OS theme watcher — and only the light/dark theme is mirrored
+ * into the store (sometimes before the attribute lands), so the root element
  * itself is the one reliable signal. Unrelated inline-style writes (e.g.
  * `--ui-scale`) resolve to the same tokens and are dropped.
  */

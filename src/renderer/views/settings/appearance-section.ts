@@ -60,10 +60,7 @@ export function createAppearanceSection(
   }
   function apply(value: Preview): void {
     document.documentElement.dataset['theme'] = value.theme
-    if (store.getState().theme !== value.theme) {
-      store.setState({ theme: value.theme })
-      store.emit('theme_changed', value.theme)
-    }
+    if (store.getState().theme !== value.theme) store.setState({ theme: value.theme })
     applyUiAccent(value.accentColor)
     applyUiTint(value.tintColor, value.tintStrength)
   }

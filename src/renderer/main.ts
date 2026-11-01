@@ -333,7 +333,6 @@ async function boot(): Promise<void> {
     (nextTheme) => {
       applyThemeToDocument(nextTheme)
       store.setState({ theme: nextTheme })
-      store.emit('theme_changed', nextTheme)
     },
   )
   // Restore the interaction accent and whole-app tint before the layout paints
