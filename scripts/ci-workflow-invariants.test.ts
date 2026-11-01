@@ -83,8 +83,8 @@ describe('ci.yml workflow invariants', () => {
     const expected = listed.stdout.trim().split('\n')
     assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
     assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
-    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
-    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.ok(expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 9 }, (_unused, index) => shardSpecs('full', index + 1, 9))
     assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
     // The 720s attempt watchdog needs headroom on every shard, not on average:
     // round-robin by count let the slowest shard run ~180s past the fastest.
@@ -764,7 +764,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
+    assert.equal(precheck.split(binding).length - 1, 5) // includes the advisory shadow comparison and the accessibility baseline
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)

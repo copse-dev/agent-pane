@@ -300,6 +300,28 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand('echo hi && gh pr view', root).verdict, 'sandbox')
   })
 
+  it('routes simulator management to host approval, including commands masking failures', () => {
+    for (const command of [
+      'xcrun simctl list -j devices',
+      'xcrun simctl delete OWNED_UUID || echo DELETE_FAILED',
+      'sleep 2 && xcrun simctl delete OWNED_UUID; xcrun simctl list devices | grep -c OWNED_UUID',
+      'env DEVELOPER_DIR=/Applications/Xcode.app xcrun simctl boot OWNED_UUID',
+      'simctl shutdown OWNED_UUID',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(
+        result.reasons.includes('simulator management requires host CoreSimulator services'),
+      )
+    }
+    assert.equal(analyzeShellCommand('xcrun simctl help', root).verdict, 'sandbox')
+    assert.equal(
+      analyzeShellCommand("echo 'xcrun simctl delete OWNED_UUID'", root).verdict,
+      'sandbox',
+    )
+    assert.equal(analyzeShellCommand('xcrun --find clang', root).verdict, 'sandbox')
+  })
+
   it('flags host-dependent build drivers as ambiguous (#786)', () => {
     for (const cmd of [
       'xcodebuild -workspace Copse.xcworkspace build',

@@ -23,6 +23,9 @@ import { storageSet } from '../storage/storage.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const INSTALLED = 'google/gemma-4-e4b'
 const MISSING = 'qwen/qwen3-4b-2507'

@@ -84,10 +84,9 @@ describe('workspace image links', () => {
     })
     const api = { ...base, fs: { ...base.fs, readImage: (): Promise<string> => image } }
     const pending = openWorkspaceFile(store, api, 'chart.png')
+    // A plain state write, no event: the preview selects its owner.
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('panel_changed')
     store.setState({ activeThreadId: 'thread-1' })
-    store.emit('panel_changed')
     resolve(IMAGE)
     await pending
     assert.equal(document.querySelector('dialog[open]'), null)
