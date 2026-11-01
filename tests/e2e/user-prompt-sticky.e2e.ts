@@ -156,6 +156,30 @@ describe('latest user prompt anchor', () => {
       expect(motion.properties).toContain('max-height')
       expect(motion.duration).not.toBe('0s')
     }
+    // The previews grow through a max-width/max-height transition: capture
+    // the settled full size, not a frame of the way there.
+    let lastSizes = ''
+    let stableReads = 0
+    await browser.waitUntil(
+      async () => {
+        const sizes = await browser.execute(() =>
+          [
+            ...document.querySelectorAll<HTMLImageElement>(
+              '[data-message-id="msg-user-sticky-latest"] .message-image',
+            ),
+          ]
+            .map((image) => {
+              const rect = image.getBoundingClientRect()
+              return `${String(rect.width)}x${String(rect.height)}`
+            })
+            .join(','),
+        )
+        stableReads = sizes === lastSizes ? stableReads + 1 : 0
+        lastSizes = sizes
+        return stableReads >= 3
+      },
+      { timeout: 10_000, interval: 50, timeoutMsg: 'expected the full previews to stop resizing' },
+    )
     await saveAppScreenshot('user-prompt-previews-full.png')
 
     await browser.execute(() => {

@@ -76,6 +76,9 @@ describe('scroll to bottom', () => {
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await $('.conversation-first-prompt').waitForDisplayed()
     await setComposerValue('Keep the existing keyboard shortcuts working.')
+    // Older rows backfill a chunk per frame; measure the middle only once the
+    // whole thread is in, or each run lands on a different row.
+    await waitForTranscriptScrollSettled()
     // Save a position in the middle, rather than conflating return with latest.
     await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('.messages-list')
@@ -83,6 +86,7 @@ describe('scroll to bottom', () => {
       list.scrollTop = (list.scrollHeight - list.clientHeight) / 2
       list.dispatchEvent(new Event('scroll'))
     })
+    await waitForTranscriptScrollSettled(true)
     const before = await getScrollMetrics()
     await expect($('.scroll-to-bottom')).toHaveText('Back to latest')
     await saveAppScreenshot('first-prompt-desktop-resting.png')
