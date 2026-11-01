@@ -12853,7 +12853,12 @@ function createTranscriptScroll(host) {
       userScrolledUpAt = previous.pinned ? 0 : Date.now();
       restoreReadingAnchor(previous.anchor, previous.scrollTop);
       updateScrollButton();
-      firstPromptBtn.focus({ preventScroll: true });
+      const focusTarget = [firstPromptBtn, scrollToBottomBtn].find((control) => !control.hidden);
+      if (focusTarget) focusTarget.focus({ preventScroll: true });
+      else {
+        if (!list.hasAttribute("tabindex")) list.tabIndex = -1;
+        list.focus({ preventScroll: true });
+      }
     } else {
       userScrolledUpAt = 0;
       scrollToBottom(true);
