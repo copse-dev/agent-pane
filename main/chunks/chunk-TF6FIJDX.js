@@ -51484,7 +51484,11 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       await work();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+      message = ipcErrorMessage(error62, "Could not connect ChatGPT.");
+      try {
+        status = await api.chatGptPlan.status();
+      } catch {
+      }
     } finally {
       busy = false;
       render();
@@ -51656,7 +51660,7 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       status = await api.chatGptPlan.status();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+      message = ipcErrorMessage(error62, "Could not read the ChatGPT connection.");
     }
     render();
     await welcome();
@@ -51673,6 +51677,7 @@ var init_chatgpt_plan_section = __esm({
   "src/renderer/views/setup/chatgpt-plan-section.ts"() {
     init_confirm_dialog();
     init_helpers();
+    init_ipc_error_message();
     USAGE_URL = "https://chatgpt.com/settings/usage";
   }
 });
