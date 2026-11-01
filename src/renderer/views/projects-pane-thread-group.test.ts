@@ -125,6 +125,16 @@ describe('projects pane group by (component)', () => {
       document.querySelector('.chat-row[data-thread-id="day"] .chat-thread-age')?.textContent,
       '1d',
     )
+    assert.equal(row.querySelector('time')?.getAttribute('aria-label'), 'Started 1 hour ago')
+  })
+
+  it('reads a thread started under a minute ago as started just now', () => {
+    const now = Date.now()
+    mount('status', [{ ...thread('new', 'Fresh thread'), createdAt: now - 5_000, updatedAt: now }])
+    const age = document.querySelector('.chat-row[data-thread-id="new"] .chat-thread-age')
+    assert.ok(age)
+    assert.equal(age.textContent, 'now')
+    assert.equal(age.getAttribute('aria-label'), 'Started just now')
   })
 
   it('keeps the project tree on one line without status metadata', () => {

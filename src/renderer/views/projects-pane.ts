@@ -1709,6 +1709,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         const details = el('span', { class: 'chat-thread-details' })
         if (thread.createdAt !== undefined && Number.isFinite(thread.createdAt)) {
           const elapsed = Math.max(0, Date.now() - thread.createdAt)
+          const age = formatAgeLong(elapsed)
           details.append(
             el(
               'time',
@@ -1716,7 +1717,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 class: 'chat-thread-age',
                 datetime: new Date(thread.createdAt).toISOString(),
                 title: `Started ${new Date(thread.createdAt).toLocaleString()}`,
-                'aria-label': `Started ${formatAgeLong(elapsed)} ago`,
+                'aria-label': age === 'just now' ? 'Started just now' : `Started ${age} ago`,
               },
               formatAge(elapsed),
             ),

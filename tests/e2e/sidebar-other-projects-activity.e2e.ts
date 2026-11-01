@@ -212,4 +212,18 @@ describe('status sidebar title and details', () => {
     await expect(row.$('.chat-thread-details')).toBeDisplayed()
     await browser.keys('Escape')
   })
+
+  it('keeps compact status rows to the title line', async function () {
+    this.timeout(60_000)
+    const row = $('.chat-row[data-thread-id="status-hour"]')
+    await expect(row.$('.chat-thread-details')).toBeDisplayed()
+    const twoLineHeight = (await row.getSize()).height
+    await $('.projects-sort-btn').click()
+    await browser.$('.context-menu-item*=Compact rows').click()
+    await expect($('.projects-list.is-compact')).toExist()
+    await expect(row.$('.chat-title')).toBeDisplayed()
+    await expect(row.$('.chat-thread-details')).not.toBeDisplayed()
+    expect((await row.getSize()).height).toBeLessThan(twoLineHeight)
+    await saveAppScreenshot('sidebar-status-compact.png')
+  })
 })
