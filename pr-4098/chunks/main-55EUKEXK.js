@@ -17855,17 +17855,9 @@ var init_image_input_support = __esm({
 // src/renderer/views/conversation-search.ts
 function findMatchOffsets(haystack, needle) {
   if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from2 = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from2);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from2 = idx + q2.length;
-  }
-  return offsets;
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(literal, "giu");
+  return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
   return text.replace(/\s+/g, " ").trim();
