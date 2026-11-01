@@ -1,13 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import {
-  accessSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-} from 'node:fs'
+import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -76,32 +69,53 @@ export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[
  * treats as fatal (exit 128) — so these must stay readable or every git command
  * fails. A more-specific allowRead overrides the broad home denyRead.
  */
-export function gitConfigReadPaths(home: string = homedir()): string[] {
-  const globalConfigs = [join(home, '.gitconfig'), join(home, '.config/git/config')]
+function gitConfigReadPaths(): string[] {
+  const home = homedir()
   return [
     join(home, '.gitconfig'),
     join(home, '.config/git/**'),
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
-    ...new Set(globalConfigs.flatMap((file) => gitConfigIncludeTargets(file, home))),
+    ...gitConfigIncludeReadPaths,
   ]
+}
+
+/** The files the user's global git config includes, as last resolved. */
+let gitConfigIncludeReadPaths: readonly string[] = []
+
+/**
+ * Re-resolve the files the user's global git config includes, for
+ * {@link gitConfigReadPaths}. Overlays are built synchronously, so they read
+ * the last result: Copse refreshes it when the project sandbox starts and
+ * before it spawns each sandboxed agent.
+ */
+export async function refreshGitConfigIncludeReadPaths(): Promise<void> {
+  gitConfigIncludeReadPaths = await resolveGitConfigIncludes(homedir())
+}
+
+/**
+ * Files the global git config pulls in with `[include]` or `[includeIf "…"]`,
+ * followed the way git follows them. Git reads each on every invocation, so on
+ * macOS an unreadable include is as fatal as an unreadable `~/.gitconfig`.
+ * Only regular files the user's own config names are returned, never a
+ * directory.
+ */
+export async function resolveGitConfigIncludes(home: string): Promise<string[]> {
+  const globalConfigs = [join(home, '.gitconfig'), join(home, '.config/git/config')]
+  const targets = await Promise.all(
+    globalConfigs.map((file) => gitConfigIncludeTargets(file, home)),
+  )
+  return [...new Set(targets.flat())]
 }
 
 /** Git's own limit on nested config includes. */
 const GIT_MAX_INCLUDE_DEPTH = 10
 
-/**
- * Files a git config pulls in with `[include]` or `[includeIf "…"]`, followed
- * the way git follows them. Git reads each on every invocation too, so on
- * macOS an unreadable include is as fatal as an unreadable `~/.gitconfig`.
- * Only regular files the user's own config names are returned, never a
- * directory.
- */
-function gitConfigIncludeTargets(file: string, home: string, depth = 0): string[] {
+async function gitConfigIncludeTargets(file: string, home: string, depth = 0): Promise<string[]> {
   if (depth >= GIT_MAX_INCLUDE_DEPTH) return []
   let text: string
   try {
-    text = readFileSync(file, 'utf8')
+    text = await readFile(file, 'utf8')
   } catch {
     return []
   }
@@ -123,8 +137,8 @@ function gitConfigIncludeTargets(file: string, home: string, depth = 0): string[
       : isAbsolute(value)
         ? value
         : join(dirname(file), value)
-    if (!isRegularFile(target)) continue
-    targets.push(target, ...gitConfigIncludeTargets(target, home, depth + 1))
+    if (!(await isRegularFile(target))) continue
+    targets.push(target, ...(await gitConfigIncludeTargets(target, home, depth + 1)))
   }
   return targets
 }
@@ -139,9 +153,9 @@ function gitConfigValue(raw: string): string {
   return (value.split(/[#;]/, 1)[0] ?? '').trim()
 }
 
-function isRegularFile(path: string): boolean {
+async function isRegularFile(path: string): Promise<boolean> {
   try {
-    return statSync(path).isFile()
+    return (await stat(path)).isFile()
   } catch {
     return false
   }

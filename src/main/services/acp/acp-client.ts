@@ -68,7 +68,11 @@ import {
   type AcpSessionCarryOver,
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import {
+  acpAgentSandboxOverlay,
+  ensureWorkspaceTmpDir,
+  refreshGitConfigIncludeReadPaths,
+} from '../../project-sandbox/config.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -563,6 +567,8 @@ export async function spawnAcpAgentProcess(
     throw new Error('A read-only checkout cannot run a coding agent outside the project sandbox')
   }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    // The agent runs git with the user's config; pick up its current includes.
+    await refreshGitConfigIncludeReadPaths()
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),

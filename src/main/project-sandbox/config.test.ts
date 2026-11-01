@@ -28,7 +28,8 @@ import {
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
-  gitConfigReadPaths,
+  refreshGitConfigIncludeReadPaths,
+  resolveGitConfigIncludes,
   resolveRustToolchainAllowRead,
   sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
@@ -328,8 +329,8 @@ describe('resolveNodeToolchainAllowRead', () => {
   })
 })
 
-describe('gitConfigReadPaths', () => {
-  it("adds the files the user's git config includes, as git follows them", () => {
+describe('git config include reads', () => {
+  it("resolves the files the user's git config includes, as git follows them", async () => {
     const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-home-')))
     try {
       mkdirSync(join(home, 'work'))
@@ -352,32 +353,44 @@ describe('gitConfigReadPaths', () => {
       writeFileSync(join(home, '.gitconfig-work'), '[include]\n\tpath = dotfiles/nested/deep\n')
       writeFileSync(join(home, 'dotfiles', 'conditional'), '')
       writeFileSync(join(home, 'dotfiles', 'nested', 'deep'), '')
-      const paths = gitConfigReadPaths(home)
-      for (const included of [
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
         join(home, '.gitconfig-work'),
         join(home, 'dotfiles', 'conditional'),
         join(home, 'dotfiles', 'nested', 'deep'),
-      ]) {
-        assert.ok(paths.includes(included), `missing ${included}`)
-      }
-      // Only regular files an include section names: never a directory, a
-      // missing file, or a `path` key from another section.
-      for (const absent of ['missing', 'work', 'not-an-include']) {
-        assert.ok(!paths.includes(join(home, absent)), `grants ${absent}`)
-      }
-      assert.ok(!paths.some((path) => path.startsWith(join(home, 'work'))))
+      ])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
   })
 
-  it('stops at git’s include depth when configs include each other', () => {
+  it('stops at git’s include depth when configs include each other', async () => {
     const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-loop-')))
     try {
       writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.loop\n')
       writeFileSync(join(home, '.loop'), '[include]\npath = ~/.gitconfig\n')
-      assert.ok(gitConfigReadPaths(home).includes(join(home, '.loop')))
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
+        join(home, '.gitconfig'),
+        join(home, '.loop'),
+      ])
     } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('grants the resolved includes in every workspace overlay once refreshed', async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-overlay-')))
+    const previous = process.env['HOME']
+    try {
+      writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.gitconfig-work\n')
+      writeFileSync(join(home, '.gitconfig-work'), '')
+      process.env['HOME'] = home
+      await refreshGitConfigIncludeReadPaths()
+      const fs = workspaceSandboxOverlay('/tmp/acp-sandbox-test-workspace').filesystem
+      assert.ok(fs?.allowRead?.includes(join(home, '.gitconfig-work')))
+    } finally {
+      if (previous === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previous
+      await refreshGitConfigIncludeReadPaths()
       rmSync(home, { recursive: true, force: true })
     }
   })
