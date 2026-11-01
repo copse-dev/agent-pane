@@ -67,7 +67,9 @@ export function createSubthreadsTool(
       if (!sourceThreadId || !context || context.threadId !== sourceThreadId)
         return 'Subthreads require an active project thread.'
       const { projectId } = context
-      if (owners().some((entry) => entry.threadId === sourceThreadId))
+      if (
+        owners().some((entry) => entry.projectId === projectId && entry.threadId === sourceThreadId)
+      )
         return 'A subthread cannot orchestrate nested subthreads.'
       const parent = await getProjectThread(projectId, sourceThreadId)
       if (!parent || parent.archivedAt !== undefined) return 'The parent thread is unavailable.'

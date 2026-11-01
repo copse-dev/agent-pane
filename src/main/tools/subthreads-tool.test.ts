@@ -148,6 +148,16 @@ describe('subthread orchestration', () => {
     assert.equal(sent.length, 4)
   })
 
+  it('scopes the nested-child guard to the current project', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    await setSetting('threadSubthreadOwners', [
+      { projectId: 'project', parentThreadId: 'other', threadId: 'parent', key: 'collision' },
+    ])
+    assert.match(await run({ action: 'list' }), /cannot orchestrate nested/)
+    assert.equal(await run({ action: 'list' }, 'parent', 'other-project'), '[]')
+    assert.equal(sent.length, 0)
+  })
+
   it('returns capped text without reasoning, tool payloads or inline image data', async () => {
     await setSetting('threadSubthreadAccess', ['parent'])
     const childId = id(await run(start))
