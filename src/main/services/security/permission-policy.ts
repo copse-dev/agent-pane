@@ -135,6 +135,7 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
     title,
     approveLabel:
       {
+        gh_push: 'Push branch',
         gh_pr_create: 'Publish pull request',
         gh_pr_rerun_failed_ci: 'Re-run CI',
         gh_pr_approve: 'Submit approving review',

@@ -2766,6 +2766,9 @@ describe('formatGithubWritePrompt', () => {
       /CI resources or secrets/,
     )
   })
+  it('labels the thread-branch push button by its action', () => {
+    assert.equal(formatGithubWritePrompt('gh_push', {}).approveLabel, 'Push branch')
+  })
   it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
