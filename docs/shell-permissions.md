@@ -1142,8 +1142,11 @@ directory above `bin` only when that looks like a version install (nvm's `versio
 Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or one of its ancestors, and
 must sit at least two levels below home. So `~/bin/node` or `~/.local/bin/node` never turns `~` or
 `~/.local` (and `.ssh`, `.aws`, `.npmrc` with it) into a read grant. A version manager that keeps
-its shims in a top-level home directory (Volta's `~/.volta/bin`, asdf's `~/.asdf/shims`) gets only
-the shim and that directory.
+its shims in a top-level home directory gets the shim directory plus the trees the shim runs from,
+read-only, not the whole manager directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds
+`$VOLTA_HOME/tools`, and asdf (`$ASDF_DATA_DIR/shims`, default `~/.asdf/shims`) adds `installs`,
+`plugins`, `bin` and `lib` under `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager
+root that is home or an ancestor of it adds nothing.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.

@@ -479,12 +479,66 @@ function isNodeVersionRoot(versionRoot: string, binDir: string, homes: readonly 
 }
 
 /**
+ * The read grants a shim-based version manager needs when `binDir`, the
+ * directory holding a `node` on `PATH`, is its shim directory. The shim
+ * re-executes the managed install, so the shim directory alone is not enough,
+ * but the manager's whole directory is not needed either. Only the trees that
+ * hold installs, plugins and the manager's own code are granted, plus asdf's
+ * home-level version files. A manager root that is home or covers it grants
+ * nothing.
+ *
+ * - Volta (`$VOLTA_HOME`, default `~/.volta`): shims in `bin`, installs and
+ *   the default platform in `tools`.
+ * - asdf (`$ASDF_DATA_DIR`, default `~/.asdf`): shims in `shims`, installs in
+ *   `installs`, plugin scripts in `plugins`, and the pre-0.16 shell
+ *   implementation in `bin` and `lib`.
+ */
+function shimManagerAllowRead(
+  binDir: string,
+  env: NodeJS.ProcessEnv,
+  home: string,
+  homes: readonly string[],
+): string[] {
+  const root = (name: string, fallback: string): string | null => {
+    const value = env[name]
+    const dir = value === undefined || value === '' ? fallback : value
+    if (!isAbsolute(dir) || homes.some((h) => placeAgainstHome(dir, h) === 'covers')) return null
+    return dir
+  }
+  const existing = (paths: readonly string[], tree: boolean): string[] =>
+    paths.flatMap((path) => {
+      try {
+        accessSync(path)
+      } catch {
+        return []
+      }
+      return tree ? [path, `${path}/**`] : [path]
+    })
+
+  const volta = root('VOLTA_HOME', join(home, '.volta'))
+  if (volta && binDir === join(volta, 'bin')) return existing([join(volta, 'tools')], true)
+
+  const asdf = root('ASDF_DATA_DIR', join(home, '.asdf'))
+  if (asdf && binDir === join(asdf, 'shims')) {
+    return [
+      ...existing(
+        ['installs', 'plugins', 'bin', 'lib'].map((dir) => join(asdf, dir)),
+        true,
+      ),
+      ...existing([join(home, '.tool-versions'), join(home, '.asdfrc')], false),
+    ]
+  }
+  return []
+}
+
+/**
  * Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc.
  *
  * Each `node` on `PATH` is allowed both as found and canonicalized, with its
  * bin directory unless that is home or an ancestor. Its install tree is added
- * only when it passes `isNodeVersionRoot`; otherwise the binary and its bin
- * directory are all a contained command can read.
+ * only when it passes `isNodeVersionRoot`, and a Volta or asdf shim directory
+ * adds that manager's install trees (`shimManagerAllowRead`); otherwise the
+ * binary and its bin directory are all a contained command can read.
  */
 export function resolveNodeToolchainAllowRead(
   env: NodeJS.ProcessEnv = process.env,
@@ -517,6 +571,7 @@ export function resolveNodeToolchainAllowRead(
       if (homes.some((h) => placeAgainstHome(binDir, h) === 'covers')) continue
       allow.add(binDir)
       allow.add(`${binDir}/**`)
+      for (const path of shimManagerAllowRead(binDir, env, home, homes)) allow.add(path)
 
       // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
       const versionRoot = dirname(binDir)

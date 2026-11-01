@@ -325,6 +325,75 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
+  it('grants a Volta shim its tools tree, not the rest of ~/.volta or home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const shims = join(home, '.volta', 'bin')
+      installNode(shims)
+      const tools = join(home, '.volta', 'tools')
+      installNode(join(tools, 'image', 'node', '24.0.0', 'bin'))
+      mkdirSync(join(home, '.volta', 'cache'), { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: shims }, home)
+      assert.ok(allow.includes(`${shims}/**`))
+      assert.ok(allow.includes(tools))
+      assert.ok(allow.includes(`${tools}/**`))
+      assert.ok(
+        !allow.some((p) => p === join(home, '.volta') || p.startsWith(`${home}/.volta/cache`)),
+      )
+      assert.ok(!allow.includes(home) && !allow.includes(`${home}/**`))
+
+      // A custom VOLTA_HOME moves the shim directory with it.
+      const custom = join(home, 'tools', 'volta')
+      installNode(join(custom, 'bin'))
+      mkdirSync(join(custom, 'tools'), { recursive: true })
+      const moved = resolveNodeToolchainAllowRead(
+        { PATH: join(custom, 'bin'), VOLTA_HOME: custom },
+        home,
+      )
+      assert.ok(moved.includes(`${join(custom, 'tools')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants an asdf shim its installs, plugins and version files only', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const asdf = join(home, '.asdf')
+      installNode(join(asdf, 'shims'))
+      installNode(join(asdf, 'installs', 'nodejs', '24.0.0', 'bin'))
+      mkdirSync(join(asdf, 'plugins', 'nodejs'), { recursive: true })
+      mkdirSync(join(asdf, 'downloads'), { recursive: true })
+      writeFileSync(join(home, '.tool-versions'), 'nodejs 24.0.0\n')
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(asdf, 'shims') }, home)
+      assert.ok(allow.includes(`${join(asdf, 'installs')}/**`))
+      assert.ok(allow.includes(`${join(asdf, 'plugins')}/**`))
+      assert.ok(allow.includes(join(home, '.tool-versions')))
+      // Paths that do not exist add nothing.
+      assert.ok(!allow.includes(join(asdf, 'lib')))
+      assert.ok(!allow.includes(join(home, '.asdfrc')))
+      assert.ok(!allow.some((p) => p === asdf || p.startsWith(join(asdf, 'downloads'))))
+      assert.ok(!allow.includes(home) && !allow.includes(`${home}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('ignores a shim manager root that is home itself', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      installNode(join(home, 'bin'))
+      mkdirSync(join(home, 'tools'), { recursive: true })
+      const allow = resolveNodeToolchainAllowRead(
+        { PATH: join(home, 'bin'), VOLTA_HOME: home },
+        home,
+      )
+      assert.ok(!allow.some((p) => p.startsWith(join(home, 'tools'))))
+    } finally {
+      cleanup()
+    }
+  })
+
   it('needs npm beside a version root before re-allowing it', () => {
     const { home, cleanup } = fakeHome()
     try {
