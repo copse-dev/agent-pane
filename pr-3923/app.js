@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-AJLUJVRF.js";
+} from "./chunks/chunk-NGIO6L22.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -3084,6 +3084,45 @@ var init_demo_scenarios = __esm({
                         }
                       ]
                     }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+        id: "read-explored",
+        label: "Quote explored lines",
+        project: project("demo-read-explored-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-read-explored-thread",
+            title: "Read explored",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-read-explored-assistant",
+                role: "assistant",
+                content: "Quoting the whole function before editing it.",
+                toolCalls: [
+                  {
+                    id: "demo-read-explored-call",
+                    name: "read_explored",
+                    args: { path: "src/renderer/browser-pane.ts", start_line: 289, end_line: 296 },
+                    status: "done",
+                    resultFormat: "markdown",
+                    result: "`src/renderer/browser-pane.ts` lines 289\u2013296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```"
                   }
                 ],
                 createdAt: FIXED_TIME
@@ -7340,7 +7379,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-PLIHEUYY.js").then(async (main) => {
+    void import("./chunks/main-5DALYXWO.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

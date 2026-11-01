@@ -23078,7 +23078,8 @@ function normalizeBlankThreads(store) {
   const keepIds = /* @__PURE__ */ new Set([...blanks.filter(hasUnsubmittedPrompt).map((t2) => t2.id), keepEmptyId]);
   pruneBlankThreads(store, keepIds);
 }
-function createThread(store, draftPrompt) {
+function createThread(store, draftPrompt, options) {
+  const activate2 = options?.activate ?? true;
   const id = randomUUID();
   const defaultModel = store.getState().settings?.model;
   const threads = [
@@ -23100,15 +23101,21 @@ function createThread(store, draftPrompt) {
     },
     ...store.getState().threads
   ];
-  store.setState({
-    threads,
-    activeThreadId: id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
+  if (activate2) {
+    store.setState({
+      threads,
+      activeThreadId: id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+  } else {
+    store.setState({ threads });
+  }
   store.emit("threads_changed");
-  store.emit("new_thread_opened");
+  if (activate2) {
+    store.emit("new_thread_opened");
+  }
   return id;
 }
 function openNewThread(store) {
@@ -26718,6 +26725,7 @@ var init_tool_display = __esm({
     init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
+      read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
@@ -26786,7 +26794,14 @@ var init_tool_display = __esm({
     };
     TOOL_GROUPS = {
       reading: {
-        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
+        tools: [
+          "explore",
+          "read_explored",
+          "read_file",
+          "list_dir",
+          "video_frames",
+          "preflight_worktree"
+        ],
         label: { running: "Reading files", done: "Read files" }
       },
       searching: {

@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-AJLUJVRF.js";
+} from "./chunk-NGIO6L22.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -3339,156 +3339,6 @@ var init_thread_filter = __esm({
   }
 });
 
-// src/renderer/controller/thread-order.ts
-function orderSidebarThreads(threads, mode, reverse) {
-  const ordered = [...threads];
-  if (mode === "created") {
-    ordered.sort((a, b2) => (b2.createdAt ?? 0) - (a.createdAt ?? 0));
-  } else if (mode === "title") {
-    const name = (thread) => thread.title || "New Thread";
-    ordered.sort((a, b2) => name(a).localeCompare(name(b2), void 0, { sensitivity: "base" }));
-  }
-  return reverse ? ordered.reverse() : ordered;
-}
-function orderSidebarRows(rows, mode, reverse) {
-  const created = (row2) => row2.thread.createdAt ?? 0;
-  const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
-  const name = (row2) => row2.thread.title || "New Thread";
-  const ordered = [...rows];
-  if (mode === "created") {
-    ordered.sort((a, b2) => created(b2) - created(a));
-  } else if (mode === "title") {
-    ordered.sort((a, b2) => name(a).localeCompare(name(b2), void 0, { sensitivity: "base" }));
-  } else {
-    ordered.sort((a, b2) => activity(b2) - activity(a) || created(b2) - created(a));
-  }
-  return reverse ? ordered.reverse() : ordered;
-}
-function groupRowsByStatus(rows, needsYou) {
-  const sectionOf = (row2) => needsYou(row2.thread.id) ? "needs-you" : row2.thread.status === "running" ? "working" : "recent";
-  return STATUS_SECTION_LABELS.map(([id, label]) => ({
-    id,
-    label,
-    rows: rows.filter((row2) => sectionOf(row2) === id)
-  })).filter((section2) => section2.rows.length > 0);
-}
-var STATUS_SECTION_LABELS;
-var init_thread_order = __esm({
-  "src/renderer/controller/thread-order.ts"() {
-    init_sidebar_thread();
-    STATUS_SECTION_LABELS = [
-      ["needs-you", "Needs you"],
-      ["working", "Working"],
-      ["recent", "Recent"]
-    ];
-  }
-});
-
-// src/renderer/controller/attention.ts
-function recompute() {
-  const next = /* @__PURE__ */ new Set();
-  for (const set of bySource.values()) {
-    for (const id of set) next.add(id);
-  }
-  if (next.size === union.size && [...next].every((id) => union.has(id))) return false;
-  union = next;
-  return true;
-}
-function setAttentionThreads(store2, source, threadIds) {
-  bySource.set(source, new Set(threadIds));
-  if (recompute()) store2.emit("attention_changed");
-}
-function isThreadAwaitingAttention(threadId) {
-  return union.has(threadId);
-}
-function getAttentionThreadIds() {
-  return [...union];
-}
-var bySource, union;
-var init_attention = __esm({
-  "src/renderer/controller/attention.ts"() {
-    bySource = /* @__PURE__ */ new Map();
-    union = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/renderer/dom/patch-children.ts
-function patchChildren(parent, desired) {
-  const wanted = new Set(desired);
-  let stale = parent.firstElementChild;
-  while (stale) {
-    const next = stale.nextElementSibling;
-    if (!wanted.has(stale)) stale.remove();
-    stale = next;
-  }
-  let cursor = parent.firstElementChild;
-  for (const node of desired) {
-    if (node === cursor) {
-      cursor = cursor.nextElementSibling;
-      continue;
-    }
-    parent.insertBefore(node, cursor);
-  }
-}
-var init_patch_children = __esm({
-  "src/renderer/dom/patch-children.ts"() {
-  }
-});
-
-// src/renderer/controller/activity-final-reply.ts
-function finalReplyText(messages) {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message2 = messages[index];
-    if (!message2 || message2.role === "user") return null;
-    if (message2.role !== "assistant") continue;
-    const text = message2.content.trim();
-    if (text === "") continue;
-    return text.length <= FINAL_REPLY_MAX_CHARS ? text : `${text.slice(0, FINAL_REPLY_MAX_CHARS).trimEnd()}\u2026`;
-  }
-  return null;
-}
-function createFinalReplyCache(load, onLoaded) {
-  const entries = /* @__PURE__ */ new Map();
-  const remember = (key, reply) => {
-    entries.delete(key);
-    entries.set(key, reply);
-    while (entries.size > FINAL_REPLY_CACHE_SIZE) {
-      const oldest = entries.keys().next().value;
-      if (oldest === void 0) break;
-      entries.delete(oldest);
-    }
-  };
-  return (request) => {
-    if (request.messages) {
-      const reply = { state: "ready", text: finalReplyText(request.messages) };
-      remember(request.key, reply);
-      return reply;
-    }
-    const known = entries.get(request.key);
-    if (known) return known;
-    const loading = { state: "loading" };
-    remember(request.key, loading);
-    load(request.projectId, request.threadId).then(
-      (messages) => {
-        remember(request.key, { state: "ready", text: finalReplyText(messages) });
-        onLoaded();
-      },
-      () => {
-        remember(request.key, { state: "ready", text: null });
-        onLoaded();
-      }
-    );
-    return loading;
-  };
-}
-var FINAL_REPLY_MAX_CHARS, FINAL_REPLY_CACHE_SIZE;
-var init_activity_final_reply = __esm({
-  "src/renderer/controller/activity-final-reply.ts"() {
-    FINAL_REPLY_MAX_CHARS = 2e4;
-    FINAL_REPLY_CACHE_SIZE = 20;
-  }
-});
-
 // src/renderer/controller/activity-model.ts
 function truncateText(text, max = WANT_MAX_CHARS) {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -3795,6 +3645,156 @@ var init_activity_model = __esm({
     MINUTE = 6e4;
     HOUR = 60 * MINUTE;
     DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/controller/thread-order.ts
+function orderSidebarThreads(threads, mode, reverse) {
+  const ordered = [...threads];
+  if (mode === "created") {
+    ordered.sort((a, b2) => (b2.createdAt ?? 0) - (a.createdAt ?? 0));
+  } else if (mode === "title") {
+    const name = (thread) => thread.title || "New Thread";
+    ordered.sort((a, b2) => name(a).localeCompare(name(b2), void 0, { sensitivity: "base" }));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function orderSidebarRows(rows, mode, reverse) {
+  const created = (row2) => row2.thread.createdAt ?? 0;
+  const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
+  const name = (row2) => row2.thread.title || "New Thread";
+  const ordered = [...rows];
+  if (mode === "created") {
+    ordered.sort((a, b2) => created(b2) - created(a));
+  } else if (mode === "title") {
+    ordered.sort((a, b2) => name(a).localeCompare(name(b2), void 0, { sensitivity: "base" }));
+  } else {
+    ordered.sort((a, b2) => activity(b2) - activity(a) || created(b2) - created(a));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function groupRowsByStatus(rows, needsYou) {
+  const sectionOf = (row2) => needsYou(row2.thread.id) ? "needs-you" : row2.thread.status === "running" ? "working" : "recent";
+  return STATUS_SECTION_LABELS.map(([id, label]) => ({
+    id,
+    label,
+    rows: rows.filter((row2) => sectionOf(row2) === id)
+  })).filter((section2) => section2.rows.length > 0);
+}
+var STATUS_SECTION_LABELS;
+var init_thread_order = __esm({
+  "src/renderer/controller/thread-order.ts"() {
+    init_sidebar_thread();
+    STATUS_SECTION_LABELS = [
+      ["needs-you", "Needs you"],
+      ["working", "Working"],
+      ["recent", "Recent"]
+    ];
+  }
+});
+
+// src/renderer/controller/attention.ts
+function recompute() {
+  const next = /* @__PURE__ */ new Set();
+  for (const set of bySource.values()) {
+    for (const id of set) next.add(id);
+  }
+  if (next.size === union.size && [...next].every((id) => union.has(id))) return false;
+  union = next;
+  return true;
+}
+function setAttentionThreads(store2, source, threadIds) {
+  bySource.set(source, new Set(threadIds));
+  if (recompute()) store2.emit("attention_changed");
+}
+function isThreadAwaitingAttention(threadId) {
+  return union.has(threadId);
+}
+function getAttentionThreadIds() {
+  return [...union];
+}
+var bySource, union;
+var init_attention = __esm({
+  "src/renderer/controller/attention.ts"() {
+    bySource = /* @__PURE__ */ new Map();
+    union = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/dom/patch-children.ts
+function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
+  let cursor = parent.firstElementChild;
+  for (const node of desired) {
+    if (node === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(node, cursor);
+  }
+}
+var init_patch_children = __esm({
+  "src/renderer/dom/patch-children.ts"() {
+  }
+});
+
+// src/renderer/controller/activity-final-reply.ts
+function finalReplyText(messages) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message2 = messages[index];
+    if (!message2 || message2.role === "user") return null;
+    if (message2.role !== "assistant") continue;
+    const text = message2.content.trim();
+    if (text === "") continue;
+    return text.length <= FINAL_REPLY_MAX_CHARS ? text : `${text.slice(0, FINAL_REPLY_MAX_CHARS).trimEnd()}\u2026`;
+  }
+  return null;
+}
+function createFinalReplyCache(load, onLoaded) {
+  const entries = /* @__PURE__ */ new Map();
+  const remember = (key, reply) => {
+    entries.delete(key);
+    entries.set(key, reply);
+    while (entries.size > FINAL_REPLY_CACHE_SIZE) {
+      const oldest = entries.keys().next().value;
+      if (oldest === void 0) break;
+      entries.delete(oldest);
+    }
+  };
+  return (request) => {
+    if (request.messages) {
+      const reply = { state: "ready", text: finalReplyText(request.messages) };
+      remember(request.key, reply);
+      return reply;
+    }
+    const known = entries.get(request.key);
+    if (known) return known;
+    const loading = { state: "loading" };
+    remember(request.key, loading);
+    load(request.projectId, request.threadId).then(
+      (messages) => {
+        remember(request.key, { state: "ready", text: finalReplyText(messages) });
+        onLoaded();
+      },
+      () => {
+        remember(request.key, { state: "ready", text: null });
+        onLoaded();
+      }
+    );
+    return loading;
+  };
+}
+var FINAL_REPLY_MAX_CHARS, FINAL_REPLY_CACHE_SIZE;
+var init_activity_final_reply = __esm({
+  "src/renderer/controller/activity-final-reply.ts"() {
+    FINAL_REPLY_MAX_CHARS = 2e4;
+    FINAL_REPLY_CACHE_SIZE = 20;
   }
 });
 
@@ -7747,13 +7747,37 @@ function mountProjectsPane(root, store2, api2) {
           });
         }
       }
+      let content = title;
+      if (options.statusDetails) {
+        const details = el("span", { class: "chat-thread-details" });
+        if (thread.createdAt !== void 0 && Number.isFinite(thread.createdAt)) {
+          const elapsed = Math.max(0, Date.now() - thread.createdAt);
+          const age = formatAgeLong(elapsed);
+          details.append(
+            el(
+              "time",
+              {
+                class: "chat-thread-age",
+                datetime: new Date(thread.createdAt).toISOString(),
+                title: `Started ${new Date(thread.createdAt).toLocaleString()}`,
+                "aria-label": age === "just now" ? "Started just now" : `Started ${age} ago`
+              },
+              formatAge(elapsed)
+            )
+          );
+        }
+        details.append(
+          el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project)}`)
+        );
+        content = el("span", { class: "chat-thread-content" }, title, details);
+      }
       const chatRow = el(
         "div",
         {
           class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project.id === activeProjectId ? " selected" : ""}`,
           "data-thread-id": thread.id
         },
-        title
+        content
       );
       chatRow.addEventListener("click", () => {
         if (renaming?.threadId === thread.id) return;
@@ -7866,10 +7890,10 @@ function mountProjectsPane(root, store2, api2) {
       }
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
-        chatRow.insertBefore(runningStatus("Agent is working"), title);
+        chatRow.insertBefore(runningStatus("Agent is working"), content);
       } else if (isAutomationPendingStart(thread)) {
         chatRow.classList.add("is-running");
-        chatRow.insertBefore(runningStatus("Starting\u2026"), title);
+        chatRow.insertBefore(runningStatus("Starting\u2026"), content);
       } else if ((thread.unreadAt !== void 0 || getSideChatUnreadParents(store2, project.id).has(thread.id)) && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
@@ -7878,7 +7902,7 @@ function mountProjectsPane(root, store2, api2) {
             role: "img",
             "aria-label": thread.unreadAt !== void 0 ? "Unread agent completion" : "Unread reply in a side chat"
           }),
-          title
+          content
         );
       }
       if (isThreadAwaitingAttention(thread.id)) {
@@ -8549,10 +8573,12 @@ function mountProjectsPane(root, store2, api2) {
         for (const thread of paged.visibleThreads) {
           const project = owners.get(byThread.get(thread)?.projectId ?? "");
           if (!project) continue;
-          const row2 = renderThreadRow(project, thread);
-          row2.querySelector(".chat-title")?.after(
-            el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project)}`)
-          );
+          const row2 = renderThreadRow(project, thread, { statusDetails: mode === "status" });
+          if (mode !== "status") {
+            row2.querySelector(".chat-title")?.after(
+              el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project)}`)
+            );
+          }
           chats.append(row2);
         }
         if (paged.hasMore) {
@@ -8776,6 +8802,7 @@ var init_projects_pane = __esm({
     init_follow_up_thread3();
     init_thread_filter();
     init_thread_sort();
+    init_activity_model();
     init_thread_order();
     init_state();
     init_sidebar_thread();
@@ -15048,7 +15075,8 @@ var init_agent_loop_guards = __esm({
       "search_code",
       "search_codebase",
       "semantic_search",
-      "explore"
+      "explore",
+      "read_explored"
     ]);
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
@@ -16622,7 +16650,7 @@ async function startProposedThread(store2, api2, sourceThreadId, proposal, optio
   const projectId = store2.getState().activeProjectId;
   if (!projectId) throw new Error("Open a project before starting a proposed thread");
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2);
+  const threadId = createThread(store2, void 0, { activate: false });
   setThreadTitle(store2, threadId, proposal.title);
   patchThreadAnywhere(store2, threadId, (t) => ({
     ...t,
@@ -16726,7 +16754,8 @@ function buildPendingActions(proposal, handlers3, rerender) {
       start.disabled = false;
       dismiss.disabled = false;
       start.textContent = "Start this thread";
-      error.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
       error.hidden = false;
     });
   });
@@ -16807,6 +16836,7 @@ function createThreadProposalCard(proposal, state, handlers3) {
 var init_thread_proposal_card = __esm({
   "src/renderer/views/thread-proposal-card.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_icons();
     init_thread_proposal();
   }
@@ -16851,18 +16881,10 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
     onStart: async (accepted) => {
-      try {
-        const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-          confirmSharedCheckout
-        });
-        if (!result.started) noteDeclined();
-      } catch (cause) {
-        showToast(cause instanceof Error ? cause.message : "Could not start the proposed thread.", {
-          variant: "error",
-          durationMs: 15e3
-        });
-        throw cause;
-      }
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
     },
     onDismiss: (dismissed) => {
       setThreadProposalDecision(store2, sourceThreadId, {
