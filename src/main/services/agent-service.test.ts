@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
@@ -1201,6 +1201,58 @@ describe('runAgent AgentHost decoupling', () => {
     assert.match(summary.text, /pre-review plan reconciliation: 1/)
     assert.doesNotMatch(summary.text, /todo closeout/)
     assert.doesNotMatch(summary.text, /attempt/)
+  })
+
+  // A woken long task carries its open plan; reconciling it before review would
+  // spend the wake chain's shared budget on every wake (decision 5).
+  it('skips the pre-review todo gate on a long-task wake', async () => {
+    const received: StreamChunk[] = []
+    let providerCalls = 0
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        yield { type: 'text' as const, text: 'Progress on the long task.' }
+        yield { type: 'done' as const }
+      },
+    }
+
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-long-task-wake',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-long-task-wake', () =>
+          agentService.runAgent(
+            'thread-long-task-wake',
+            'continue the long task',
+            [],
+            { emit: (_threadId, chunk) => received.push(chunk) },
+            new ToolRegistry(),
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+              turnTreeId: 'tree-long-task-wake',
+              continuationBudgetUsed: 1,
+              longTaskWake: true,
+              priorTodos: [
+                { id: 'done', content: 'Migrate the first module', status: 'completed' },
+                { id: 'next', content: 'Migrate the second module', status: 'pending' },
+              ],
+            },
+          ),
+        ),
+    )
+
+    assert.equal(providerCalls, 1, 'no pre-review continuation turn')
+    const budget = received.find((chunk) => chunk.type === 'continuation_budget')
+    assert.ok(budget?.type === 'continuation_budget')
+    assert.equal(budget.used, 1, 'only the wake itself spent the turn tree budget')
   })
 })
 

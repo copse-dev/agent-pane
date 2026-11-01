@@ -811,6 +811,53 @@ const SIDE_CHATS_THREADS: Thread[] = [
   },
 ]
 
+/**
+ * The side-chats fixture with a reply that uses what the main transcript renders
+ * (a Mermaid diagram, a table, highlighted code) and a multi-line prompt, so a
+ * side chat can be checked against the shared message markdown.
+ */
+const SIDE_CHAT_RICH_THREADS: Thread[] = SIDE_CHATS_THREADS.map((thread) =>
+  thread.id === 'sc-side-1'
+    ? {
+        ...thread,
+        title: 'Why does the wait matter?',
+        messages: [
+          {
+            id: 'sc-rich-user',
+            role: 'user',
+            content: 'Why does the wait matter?\nDraw the sequence.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_100,
+          },
+          {
+            id: 'sc-rich-assistant',
+            role: 'assistant',
+            content: [
+              'The svg only exists after Mermaid finishes:',
+              '',
+              '```mermaid',
+              'graph TD',
+              '  A[Navigate] --> B[Empty svg]',
+              '  B --> C[Rendered diagram]',
+              '```',
+              '',
+              '| Wait | Passes on |',
+              '| --- | --- |',
+              '| waitForExist | Empty svg |',
+              '| waitForDisplayed | Rendered diagram |',
+              '',
+              '```ts',
+              "await $('.mermaid svg').waitForDisplayed()",
+              '```',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_900,
+          },
+        ],
+      }
+    : thread,
+)
+
 function approvalRiskScenario(
   id: string,
   request: NonNullable<DemoScenario['approvalRequests']>[number],
@@ -1330,6 +1377,91 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
                       id: 'demo-custom-agent-message-1',
                       role: 'assistant',
                       content: 'No authentication bypasses found.',
+                      toolCalls: [],
+                    },
+                  ],
+                },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    // #1433 Fix 0: an explore result is the summary plus harness-copied
+    // verbatim excerpts. The card shows the summary once (in the timeline) and
+    // only the excerpts below it.
+    id: 'explore-excerpts',
+    label: 'Explore result with verbatim excerpts',
+    project: project('demo-explore-excerpts-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-explore-excerpts-thread',
+        title: 'Explore excerpts',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-explore-excerpts-assistant',
+            role: 'assistant',
+            content: 'The Enter handler is in wireToolbar.',
+            toolCalls: [
+              {
+                id: 'demo-explore-excerpts-call',
+                name: 'explore',
+                args: { query: 'How does wireToolbar submit the URL?' },
+                status: 'done',
+                result: [
+                  'wireToolbar submits the URL on Enter in browser-pane.ts.',
+                  '',
+                  '---',
+                  '',
+                  'Verbatim excerpts — copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.',
+                  '',
+                  '`src/renderer/browser-pane.ts` lines 291–295:',
+                  '```',
+                  "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                  '```',
+                ].join('\n'),
+                subagent: {
+                  id: 'demo-explore-excerpts-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'How does wireToolbar submit the URL?',
+                  summary: 'wireToolbar submits the URL on Enter in browser-pane.ts.',
+                  messages: [
+                    {
+                      id: 'demo-explore-excerpts-message-1',
+                      role: 'assistant',
+                      content: 'Reading **browser-pane.ts** around wireToolbar.',
+                      toolCalls: [
+                        {
+                          id: 'demo-explore-excerpts-read',
+                          name: 'read_file',
+                          args: {
+                            path: 'src/renderer/browser-pane.ts',
+                            start_line: 291,
+                            end_line: 295,
+                          },
+                          status: 'done',
+                          result:
+                            "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                        },
+                      ],
+                    },
+                    {
+                      id: 'demo-explore-excerpts-message-2',
+                      role: 'assistant',
+                      content: 'wireToolbar submits the URL on Enter in browser-pane.ts.',
                       toolCalls: [],
                     },
                   ],
@@ -3295,6 +3427,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     },
     threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'side-chat-rich-markdown',
+    label: 'A side chat reply with a diagram, a table and code',
+    project: project('demo-side-chat-rich', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: SIDE_CHAT_RICH_THREADS,
   },
   {
     id: 'side-chats-restored',

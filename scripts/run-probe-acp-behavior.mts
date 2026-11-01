@@ -2,8 +2,7 @@ import * as esbuild from 'esbuild'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
-const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
+const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 
 // Bundle the Tier-2 ACP behavioural-probe runner (which imports app modules that
 // use the `@shared` alias and `.ts` extensions) into a single CJS file, then
@@ -23,12 +22,8 @@ await esbuild.build({
     {
       name: 'main-services-cli-shims',
       setup(build): void {
-        build.onResolve({ filter: /\/settings\.ts$/ }, (args) => {
-          if (!args.path.includes('settings.test-shim')) return { path: settingsShim }
-          return undefined
-        })
-        build.onResolve({ filter: /\/storage\.ts$/ }, (args) => {
-          if (!args.path.includes('storage.test-shim')) return { path: storageShim }
+        build.onResolve({ filter: /\/user-data-files\.ts$/ }, (args) => {
+          if (!args.path.includes('user-data-files.test-shim')) return { path: userDataFilesShim }
           return undefined
         })
       },

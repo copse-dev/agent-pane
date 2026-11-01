@@ -1,14 +1,41 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { RightPanelMode } from '@shared/types/state.ts'
+import type { AppState, RightPanelMode } from '@shared/types/state.ts'
 import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { addProject } from './projects.ts'
 
-/** Keep `#pane-files` visibility in sync with store state (also wired via `files_pane_changed`). */
+/** Keep `#pane-files` visibility in sync with store state (also selected on `filesPaneOpen`). */
 export function syncFilesPaneDom(store: AppStore): void {
   if (typeof document === 'undefined') return
   const pane = document.getElementById('pane-files')
   if (pane) pane.hidden = !store.getState().filesPaneOpen
+}
+
+/** Whether `mode`'s pane is on screen: the right panel is open and showing it. */
+function rightPanelShows(state: AppState, mode: RightPanelMode): boolean {
+  return state.filesPaneOpen && state.rightPanelMode === mode
+}
+
+/**
+ * Call `listener` after any `setState` that puts `mode`'s pane on screen or
+ * takes it off. Opening a closed panel on another mode is one change, so the
+ * listener runs once for it. Not called on subscribe.
+ */
+export function selectRightPanelMode(
+  store: AppStore,
+  mode: RightPanelMode,
+  listener: (active: boolean) => void,
+): () => void {
+  return store.select((state) => rightPanelShows(state, mode), listener)
+}
+
+/**
+ * Call `listener` after any `setState` that opens, closes or switches the right
+ * panel. A closed panel selects as `null`, so switching mode while it is closed
+ * is not a change. Not called on subscribe.
+ */
+export function selectRightPanel(store: AppStore, listener: () => void): () => void {
+  return store.select((state) => (state.filesPaneOpen ? state.rightPanelMode : null), listener)
 }
 
 /**
@@ -18,7 +45,6 @@ export function syncFilesPaneDom(store: AppStore): void {
 export function setRightPanelMaximized(store: AppStore, maximized: boolean): void {
   if (store.getState().rightPanelMaximized === maximized) return
   store.setState({ rightPanelMaximized: maximized })
-  store.emit('right_panel_maximized_changed')
 }
 
 export function toggleRightPanelMaximized(store: AppStore): void {
@@ -39,12 +65,10 @@ export function isRightPanelMaximized(store: AppStore): boolean {
 function clearMaximizedOnClose(store: AppStore): void {
   if (!store.getState().rightPanelMaximized) return
   store.setState({ rightPanelMaximized: false })
-  store.emit('right_panel_maximized_changed')
 }
 
 export function toggleProjectsPane(store: AppStore): void {
   store.setState({ projectsPaneOpen: !store.getState().projectsPaneOpen })
-  store.emit('projects_pane_changed')
 }
 
 export function toggleFilesPane(store: AppStore): void {
@@ -55,8 +79,6 @@ export function toggleFilesPane(store: AppStore): void {
   })
   if (!open) clearMaximizedOnClose(store)
   syncFilesPaneDom(store)
-  store.emit('files_pane_changed')
-  if (open) store.emit('right_panel_mode_changed')
 }
 
 export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
@@ -67,8 +89,6 @@ export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode })
   syncFilesPaneDom(store)
-  store.emit('files_pane_changed')
-  store.emit('right_panel_mode_changed')
 }
 
 /** Open the Changes panel and reveal the diff for a workspace-relative file path. */
@@ -119,13 +139,10 @@ export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
     store.setState({ filesPaneOpen: false })
     clearMaximizedOnClose(store)
     syncFilesPaneDom(store)
-    store.emit('files_pane_changed')
     return
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode })
   syncFilesPaneDom(store)
-  store.emit('files_pane_changed')
-  store.emit('right_panel_mode_changed')
 }
 
 export function ensureWorkspaceForPanel(api: ApiClient, store: AppStore): boolean {

@@ -56,11 +56,15 @@ import {
   bindCodeBlockRunRequests,
   setCodeBlockRunOutcome,
 } from '../markdown/code-block-copy.ts'
-import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
-import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import {
+  paintAssistantMarkdown,
+  renderUserPromptMarkdown,
+  STREAM_PAINT_EVENT,
+  STREAM_SETTLED_EVENT,
+} from '../markdown/message-markdown.ts'
+import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
 import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -112,17 +116,13 @@ import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
-  buildSubagentDisplayItems,
-  buildToolCallDisplayItems,
-  buildToolRunDisplayItems,
   getApplyPatchFiles,
   getToolCallLabel,
   getToolEditPath,
-  RUN_ROLLUP_KEY,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
-import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
-import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
+import { commandPhaseLabel, liveCommandPhase } from '@shared/tools/command-phase-display.ts'
+import type { ToolRun } from '@shared/tools/tool-runs.ts'
 import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { navigateToChange } from '../controller/panels.ts'
 import { mountThreadRoadmapOrigin } from './thread-roadmap-origin.ts'
@@ -163,14 +163,26 @@ import {
 import { renderToolArgs } from './tool-args-format.ts'
 import { mcpErrorMessage } from './tool-error-format.ts'
 import { splitAppendedReminders } from './tool-result-reminders.ts'
-import {
-  createThreadProposalToolCard,
-  isThreadProposalCall,
-  threadProposalCardSignature,
-} from './thread-proposal-tool-card.ts'
+import { createThreadProposalToolCard, isThreadProposalCall } from './thread-proposal-tool-card.ts'
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
+import {
+  cardStatus,
+  createToolCardRefresher,
+  isReasoningDisclosureLive,
+  liveStepMessageId,
+  messageToolCardOpts,
+  multiStepRunFor,
+  shouldNestReasoningInTools,
+  toolCardKey,
+  toolCardKeys,
+  toolCardSignature,
+  toolCardSignatures,
+  toolCallSignature,
+  userInterruption,
+  type ToolCardStatus,
+} from './tool-card-refresh.ts'
 import {
   drainMessageQueue,
   isHeldMessage,
@@ -198,57 +210,7 @@ import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { bindSelectionQuote } from '../dom/selection-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { QueuedUserMessage } from '@shared/types'
-import { interruptionCause, interruptionNote, type InterruptionCause } from './turn-interruption.ts'
-
-type ToolCardStatus = ToolCall['status'] | 'interrupted'
-
-// The host records cancelled ACP calls as errors so the next model does not
-// assume they completed. Their transcript presentation can still distinguish a
-// user interruption from a tool failure using the turn outcome. Every call of a
-// user-cancelled turn is keyed here; {@link userInterruption} checks live
-// whether the call was actually cut off, since tool calls update in place.
-const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
-
-// Transcripts already walked. Adding, moving or removing a message and landing
-// a turn outcome all replace `thread.messages`, so a list is only walked again
-// after a change that can move an interruption. `renderToolCards` runs once per
-// message; walking the whole thread on every call was quadratic per rebuild.
-const markedTranscripts = new WeakSet<readonly Message[]>()
-
-function markUserInterruptedCalls(thread: Thread | undefined): void {
-  if (!thread || markedTranscripts.has(thread.messages)) return
-  markedTranscripts.add(thread.messages)
-  let turnCalls: ToolCall[] = []
-  for (const [index, message] of thread.messages.entries()) {
-    if (message.role !== 'assistant') turnCalls = []
-    else turnCalls.push(...message.toolCalls)
-    if (!message.turnOutcome) continue
-    const next = thread.messages[index + 1]
-    const userCancelled =
-      message.turnOutcome.status === 'cancelled' &&
-      message.turnOutcome.source === 'user' &&
-      !(next?.role === 'user' && next.origin !== undefined)
-    const cause = userCancelled ? interruptionCause(message.turnOutcome, next) : null
-    for (const call of turnCalls) {
-      if (cause) userInterruptedCalls.set(call, cause)
-      else userInterruptedCalls.delete(call)
-    }
-    turnCalls = []
-  }
-}
-
-function userInterruption(call: ToolCall): InterruptionCause | undefined {
-  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : undefined
-}
-
-function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
-  if (toolCalls.some((call) => call.status === 'running')) return 'running'
-  if (toolCalls.some((call) => call.status === 'error' && userInterruption(call) === undefined)) {
-    return 'error'
-  }
-  if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
-  return 'done'
-}
+import { interruptionNote } from './turn-interruption.ts'
 
 function interruptionLabel(call: ToolCall): string {
   return interruptionNote(userInterruption(call) ?? 'user')
@@ -401,6 +363,7 @@ function createToolHeader(
   count?: number,
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
+  commandPhase?: ToolCall['commandPhase'],
 ): HTMLElement {
   // Nothing here precedes the label in flow: the slot renders in the transcript
   // gutter, or trails the row when it is indented (tool-cards.css). So the label
@@ -440,6 +403,20 @@ function createToolHeader(
   }
   if (count !== undefined && count > 1) {
     children.push(el('span', { class: 'tool-count' }, `×${String(count)}`))
+  }
+  const phase = commandPhaseLabel(commandPhase)
+  if (phase && commandPhase) {
+    children.push(
+      el(
+        'span',
+        {
+          class: 'tool-command-phase',
+          'data-phase': commandPhase.state,
+          ...(phase.detail !== undefined ? { 'data-tooltip': phase.detail } : {}),
+        },
+        phase.text,
+      ),
+    )
   }
   children.push(el('span', { class: 'tool-status-icon', 'aria-label': status }, statusIcon(status)))
   return el('summary', { class: summaryClass }, ...children)
@@ -502,6 +479,7 @@ function appendStandardToolSections(
     count,
     tc.editStats,
     getToolEditPath(tc),
+    tc.commandPhase,
   )
   card.append(header)
   const buildBody = (): void => {
@@ -832,19 +810,6 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   return entry
 }
 
-// Per-message incremental renderers for the active streaming pass. Keyed by the
-// `.message-text` element so re-entrant token events reuse the same DOM regions
-// instead of rebuilding the whole message innerHTML each token (O(n²)).
-const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
-// Streamed text reaches `.message-text` through the package's input smoother,
-// one frame at a time, so the transcript learns about each paint and the
-// deferred final render through these events rather than at the call site.
-const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
-/** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
-const STREAM_PAINT_EVENT = 'copse:stream-paint'
-/** A paced stream finished revealing and took its final render. Bubbles. */
-const STREAM_SETTLED_EVENT = 'copse:stream-settled'
-
 /**
  * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
  * after useful output. Keep it out of the primary markdown for everyone. In
@@ -892,36 +857,6 @@ function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
   syncAcpTransportNoiseDisclosure(messageTextEl, pending)
 }
 
-function paintStreamingMarkdown(el: HTMLElement, display: string): void {
-  let renderer = streamingRenderers.get(el)
-  if (!renderer) {
-    renderer = new StreamingMarkdownRenderer(el)
-    streamingRenderers.set(el, renderer)
-  }
-  renderer.update(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-}
-
-function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
-  const existing = streamSmoothers.get(el)
-  if (existing) return existing
-  // Text already on screen — a message rebuilt mid-stream — stays put; only
-  // what arrives from now on is paced. A fresh bubble paces from its start.
-  const shown = el.hasChildNodes() ? display : ''
-  if (shown) paintStreamingMarkdown(el, shown)
-  const smoother = createInputSmoother({
-    update: (text) => {
-      paintStreamingMarkdown(el, text)
-      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
-    },
-    // Follow the provider's own rate: a steady reveal a little behind it.
-    cadence: 'adaptive',
-    initial: shown,
-  })
-  streamSmoothers.set(el, smoother)
-  return smoother
-}
-
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
@@ -929,71 +864,18 @@ function setAssistantMarkdown(
   api: ApiClient,
 ): void {
   const { body: display, transportNoise } = assistantDisplayParts(content)
-  if (streaming) {
-    el.classList.add('is-streaming')
-    streamSmootherFor(el, display).push(display)
-    // Demote as soon as the trailing line is complete; keep collapsed while live.
-    syncAcpTransportNoiseDisclosure(el, transportNoise)
-    return
-  }
-  const smoother = streamSmoothers.get(el)
-  if (smoother) {
-    // Let the reveal catch up before the final render replaces the scaffold,
-    // so the end of the answer doesn't arrive in one pop. A later call pushes
-    // again, which voids this settle in favour of its own content.
-    smoother.push(display)
-    smoother.finish(() => {
-      smoother.dispose()
-      streamSmoothers.delete(el)
-      setAssistantMarkdown(el, content, false, api)
-      el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
-    })
-    return
-  }
-  // Final render: replace the incremental scaffold with the finished markdown.
-  el.classList.remove('is-streaming')
-  streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-  // Tables only on the committed final render — during streaming they are
-  // patched with pending rows, so wrapping them then would fight the DOM sync.
-  attachTableCopyButtons(el)
-  void annotateFileReferences(el, api)
-  hydrateRemoteArtifactImages(el, api)
-  void renderMermaidIn(el)
+  paintAssistantMarkdown(
+    el,
+    display,
+    streaming,
+    desktopMessageHost(api, { runCommands: true }),
+    () => {
+      syncAcpTransportNoiseDisclosure(el, transportNoise)
+    },
+  )
+  // While live, demote as soon as the trailing line is complete; keep collapsed.
+  // A paced settle syncs again after its final render (above).
   syncAcpTransportNoiseDisclosure(el, transportNoise)
-}
-
-/** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
-function userPromptMarkdown(source: string): string {
-  const parts: string[] = []
-  const fenceRe = /```[\s\S]*?```/g
-  let last = 0
-  let match: RegExpExecArray | null
-  while ((match = fenceRe.exec(source)) !== null) {
-    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)))
-    parts.push(match[0])
-    last = match.index + match[0].length
-  }
-  parts.push(hardBreakSingleNewlines(source.slice(last)))
-  return parts.join('')
-}
-
-function hardBreakSingleNewlines(text: string): string {
-  return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
-}
-
-/** Render markdown into a user-prompt sink (full bubble or one fold region). */
-function paintUserMarkdown(el: HTMLElement, content: string): void {
-  if (!content) {
-    el.replaceChildren()
-    return
-  }
-  // escape-all: angle-bracketed examples (`<cd … && npm test>`) must stay literal.
-  // Default passthrough emits raw tags; the sink sanitizer then strips unknown
-  // elements and the command vanishes from the transcript.
-  el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
-  attachCodeBlockCopyButtons(el)
 }
 
 /**
@@ -1001,12 +883,7 @@ function paintUserMarkdown(el: HTMLElement, content: string): void {
  * get a mid-fold accordion — opening + closing stay visible; middle collapses.
  */
 function setUserMarkdown(el: HTMLElement, content: string): void {
-  const parts = splitUserPromptForFold(content)
-  if (!parts) {
-    paintUserMarkdown(el, content)
-    return
-  }
-  fillUserPromptFold(el, parts, paintUserMarkdown)
+  renderUserPromptMarkdown(el, content)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
@@ -1033,9 +910,29 @@ function timelineShowsText(session: SubagentSession, text: string): boolean {
 }
 
 /**
+ * The part of `result` after a leading copy of one of the timeline's messages,
+ * or null when it does not start with one. An explore result is the summary
+ * followed by harness-copied verbatim excerpts (#1433), so only the excerpts
+ * are new to the reader; the `---` that separates them in the model-facing text
+ * is dropped, since the card already sets them apart.
+ */
+function textAfterTimelinePrefix(session: SubagentSession, result: string): string | null {
+  for (const m of session.messages) {
+    const prefix = m.content.trimEnd()
+    if (!prefix || !result.startsWith(prefix)) continue
+    return result
+      .slice(prefix.length)
+      .replace(/^\s*---\s*\n/, '')
+      .trim()
+  }
+  return null
+}
+
+/**
  * The result text to render below the timeline, or `''` when there is nothing
  * left to add — the subagent already said it in the timeline above, or it has
- * not settled yet.
+ * not settled yet. A result that repeats a timeline message and then adds more
+ * (explore's verbatim excerpts) renders only the addition.
  */
 function parentResultText(
   tc: ToolCall,
@@ -1043,7 +940,8 @@ function parentResultText(
   status: ToolCall['status'],
 ): string {
   if (status !== 'done' || !tc.result) return ''
-  return timelineShowsText(session, tc.result) ? '' : tc.result
+  if (timelineShowsText(session, tc.result)) return ''
+  return textAfterTimelinePrefix(session, tc.result) ?? tc.result
 }
 
 function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
@@ -1338,7 +1236,18 @@ function createGroupToolCard(
 
   const count = item.toolCalls.length
   const groupItems = el('div', { class: 'tool-group-items' })
-  card.append(createToolHeader(item.label, status, 'tool-card-header', count), groupItems)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      count,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    groupItems,
+  )
 
   for (const tc of item.toolCalls) {
     const entry = el('details', {
@@ -1394,7 +1303,18 @@ function createRollupToolCard(
     body.append(childCard)
   }
   syncRollupInterruptionNote(body, item.toolCalls)
-  card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      count,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    body,
+  )
   return card
 }
 
@@ -1427,7 +1347,18 @@ function createStepToolCard(
     toolCardSignatures.set(childCard, toolCardSignature(child))
     body.append(childCard)
   }
-  card.append(createToolHeader(item.label, status, 'tool-card-header'), body)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      undefined,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    body,
+  )
   return card
 }
 
@@ -1443,41 +1374,7 @@ function createToolCard(
   return createIndividualToolCard(item.toolCall, item.label, api, threadId, store)
 }
 
-// Stable identity for a tool card across `tool_call_updated` ticks: group cards
-// key on the group bucket, individual cards on the tool-call id. Held in
-// WeakMaps (rather than DOM attributes) so large signatures don't bloat the DOM.
-const toolCardKeys = new WeakMap<HTMLElement, string>()
-const toolCardSignatures = new WeakMap<HTMLElement, string>()
 const toolGroupItemSignatures = new WeakMap<HTMLElement, string>()
-
-function toolCardKey(item: ToolCallDisplayItem): string {
-  // One identity for a message's rollup, whether it is still one message's
-  // `turn` or has become a cross-message `run`: the disclosure is patched in
-  // place (keeping its open state) instead of being replaced as messages join.
-  if (item.type === 'rollup') return 'r:activity'
-  if (item.type === 'step') return `s:${item.key}`
-  if (item.type === 'group') return `g:${item.key}`
-  return `t:${item.toolCall.id}`
-}
-
-// Everything that determines a card's rendered output. When it is unchanged
-// since the last tick the existing card is reused verbatim, so its markdown is
-// not re-rendered and its copy buttons are not re-attached (#728). Wire tool
-// calls are plain JSON, so a stringify captures args/result/status/subagent —
-// digested rather than kept, or the cache would pin a second copy of every tool
-// result for as long as its card is on screen (see {@link renderSignature}).
-function toolCallSignature(call: ToolCall): string {
-  return renderSignature({ call, interruption: userInterruption(call) ?? null })
-}
-
-function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
-  const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
-  const base = renderSignature({
-    item,
-    interruptions: calls.map((call) => userInterruption(call) ?? null),
-  })
-  return extra === undefined ? base : `${base}|${extra}`
-}
 
 function replaceDirectToolHeader(card: HTMLElement, header: HTMLElement): void {
   const current = Array.from(card.children).find((node) =>
@@ -1525,7 +1422,15 @@ function reconcileGroupCard(
   card.dataset['status'] = status
   replaceDirectToolHeader(
     card,
-    createToolHeader(item.label, status, 'tool-card-header', item.toolCalls.length),
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      item.toolCalls.length,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
   )
   let host = Array.from(card.children).find(
     (node): node is HTMLElement =>
@@ -1619,7 +1524,18 @@ function reconcileToolCard(
       card.dataset['rollupKey'] = item.key
     }
     const count = item.type === 'rollup' ? rollupHeaderCount(item) : undefined
-    replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
+    replaceDirectToolHeader(
+      card,
+      createToolHeader(
+        item.label,
+        status,
+        'tool-card-header',
+        count,
+        undefined,
+        undefined,
+        liveCommandPhase(item.toolCalls),
+      ),
+    )
     let body = Array.from(card.children).find(
       (node): node is HTMLElement =>
         node instanceof HTMLElement && node.classList.contains('tool-rollup-body'),
@@ -2274,49 +2190,6 @@ function hasReasoningContent(
   return Boolean(reasoning?.trim()) || Boolean(blocks?.length)
 }
 
-/** True when reasoning should fold into the tool rollup for this message. */
-function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
-  return toolCalls.some((tc) => !tc.subagent)
-}
-
-/**
- * The presentation run this message belongs to, but only once it actually spans
- * more than one assistant message. A one-message run is indistinguishable from
- * the per-message rollup, so it stays on the untouched single-message path.
- */
-function multiStepRunFor(thread: Thread | undefined, msgId: string): ToolRun | undefined {
-  if (!thread) return undefined
-  const run = toolRunForMessage(thread.messages, msgId)
-  return run && run.steps.length > 1 ? run : undefined
-}
-
-/** The summary/reasoning inputs a message contributes to its own tool cards. */
-function messageToolCardOpts(msg: Message): {
-  commandSummary?: string
-  toolSummary?: string
-  reasoning?: string
-  reasoningBlocks?: AcpContentBlock[]
-} {
-  return {
-    ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
-    ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
-    ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
-    ...(msg.reasoningBlocks !== undefined ? { reasoningBlocks: msg.reasoningBlocks } : {}),
-  }
-}
-
-/**
- * The message whose reasoning is still live, by the same rule
- * {@link isReasoningDisclosureLive} applies: a running thread's last bubble
- * with no answer text yet.
- */
-function liveStepMessageId(thread: Thread | undefined): string | null {
-  if (!thread || thread.status !== 'running') return null
-  const last = thread.messages[thread.messages.length - 1]
-  if (!last || last.content.trim()) return null
-  return last.id
-}
-
 /** Progressive while this bubble is the live step; past once settled. */
 function reasoningDisclosureTitle(live: boolean): string {
   return live ? 'Reasoning…' : 'Reasoned'
@@ -2333,16 +2206,6 @@ function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean)
     if (textEl && state?.live)
       renderReasoningText(textEl, state.text, false, state.blocks, state.workspaceRoot)
   }
-}
-
-/** Live = running thread, this is the latest bubble, and no answer text yet. */
-function isReasoningDisclosureLive(
-  thread: Thread | undefined,
-  msg: { id: string; content: string },
-): boolean {
-  if (!thread || thread.status !== 'running') return false
-  if (msg.content.trim()) return false
-  return thread.messages[thread.messages.length - 1]?.id === msg.id
 }
 
 /**
@@ -2691,12 +2554,6 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 /** Time constant of the glide that keeps streamed text in view. */
 const STREAM_FOLLOW_EASE_MS = 90
-/** Fast operations should finish without flashing their detail open. */
-const TOOL_AUTO_REVEAL_DELAY_MS = 300
-/** Once shown, live detail remains visible long enough to be read. */
-const TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1_000
-/** Compact auto-opened work once, after the completed run has gone quiet. */
-const TOOL_AUTO_COMPACT_DELAY_MS = 750
 
 // Newest-first thread load (see rebuildForThread): render this many of the
 // most recent messages up front — enough to fill and slightly overfill a
@@ -2795,7 +2652,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     details.dataset['userToggled'] = '1'
     details.open = true
     const key = details.dataset['disclosureKey']
-    if (key) disclosurePreferences.set(key, true)
+    const threadId = store.getState().activeThreadId
+    if (key && threadId) disclosures.choose(threadId, key, true)
     details.scrollIntoView({ block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
@@ -3228,131 +3086,39 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
 
-  // Disclosure presentation is deliberately independent from execution status.
-  // A brief done -> running gap must not close and reopen the same rollup, and a
-  // user's explicit choice must survive status updates and mounted thread switches.
-  const disclosurePreferences = new Map<string, boolean>()
-  // Once a live message starts as a rollup, keep that wrapper shape for this
-  // mounted session so a one-tool update cannot turn into a different card type.
-  const liveRollupMessages = new Set<string>()
-  const autoOpenedDisclosures = new Set<string>()
-  const autoOpenedAt = new Map<string, number>()
-  const runningDisclosures = new Set<string>()
-  const disclosureElements = new Map<string, HTMLDetailsElement>()
-  const wiredDisclosureSummaries = new WeakSet<HTMLElement>()
-  const revealTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const deferredCompactions = new Set<string>()
-
-  function cancelReveal(key: string): void {
-    const timer = revealTimers.get(key)
-    if (timer !== undefined) clearTimeout(timer)
-    revealTimers.delete(key)
-  }
-
-  function wireDisclosurePreference(details: HTMLDetailsElement, key: string): void {
-    const summary = details.querySelector<HTMLElement>(':scope > summary')
-    if (!summary || wiredDisclosureSummaries.has(summary)) return
-    wiredDisclosureSummaries.add(summary)
-    summary.addEventListener('click', (event) => {
-      const target = event.target
-      if (target instanceof Element && target.closest('button')) return
-      // Chromium can run microtasks before the summary's default action. Own
-      // the toggle so the stored preference always matches the visible state.
-      event.preventDefault()
-      details.open = !details.open
-      disclosurePreferences.set(key, details.open)
-      details.dataset['userToggled'] = '1'
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      cancelReveal(key)
-      if (details.open) ensureToolCardBodyRendered(details)
-    })
-  }
-
-  function registerReasoningDisclosures(msgEl: HTMLElement): void {
-    const threadId = getActiveThread(store)?.id
-    const fallbackMessageId = msgEl.dataset['messageId']
-    if (!threadId || !fallbackMessageId) return
-    msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
-      const step = details.closest<HTMLElement>('.tool-card-step[data-step-message-id]')
-      const messageId = step?.dataset['stepMessageId'] ?? fallbackMessageId
-      const key = `${threadId}:${messageId}:reasoning`
-      details.dataset['disclosureKey'] = key
-      disclosureElements.set(key, details)
-      wireDisclosurePreference(details, key)
-      const preference = disclosurePreferences.get(key)
-      if (preference !== undefined) {
-        details.dataset['userToggled'] = '1'
-        details.open = preference
-      }
-    })
-  }
-
-  function cancelThreadCompaction(threadId: string): void {
-    const timer = compactTimers.get(threadId)
-    if (timer !== undefined) clearTimeout(timer)
-    compactTimers.delete(threadId)
-  }
-
-  function revealAfterDelay(key: string): void {
-    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return
-    const timer = setTimeout(() => {
-      revealTimers.delete(key)
-      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return
-      const details = disclosureElements.get(key)
-      if (!details?.isConnected) return
-      autoOpenedDisclosures.add(key)
-      autoOpenedAt.set(key, Date.now())
-      details.open = true
-      ensureToolCardBodyRendered(details)
+  // Tool-card refresh and disclosure state (see tool-card-refresh.ts). The
+  // disclosure model owns auto / user-open / user-closed per key; the DOM only
+  // renders that state.
+  const toolCards = createToolCardRefresher({
+    store,
+    api,
+    list,
+    dom: {
+      createToolCard,
+      reconcileToolCard,
+      ensureToolCardBodyRendered,
+      syncToolResultContent,
+      syncToolRunMemberVisibility,
+      syncNestedRollupReasoning,
+      syncRunStepReasoning,
+      syncReasoningEl,
+    },
+    isPinnedToBottom: () => pinnedToBottom,
+    scrollToBottom: () => {
       scrollToBottom()
-    }, TOOL_AUTO_REVEAL_DELAY_MS)
-    revealTimers.set(key, timer)
-  }
-
-  function compactThreadDisclosures(threadId: string): void {
-    compactTimers.delete(threadId)
-    if (threadId === store.getState().activeThreadId && !pinnedToBottom) {
-      deferredCompactions.add(threadId)
-      return
-    }
-    deferredCompactions.delete(threadId)
-    const prefix = `${threadId}:`
-    const now = Date.now()
-    let dwellRemaining = 0
-    for (const key of autoOpenedDisclosures) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      const openedAt = autoOpenedAt.get(key) ?? 0
-      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now - openedAt))
-    }
-    if (dwellRemaining > 0) {
-      const timer = setTimeout(() => {
-        compactThreadDisclosures(threadId)
-      }, Math.ceil(dwellRemaining))
-      compactTimers.set(threadId, timer)
-      return
-    }
-    for (const key of [...autoOpenedDisclosures]) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false
-    }
-    if (threadId === store.getState().activeThreadId) scrollToBottom()
-  }
-
-  function scheduleThreadCompaction(threadId: string): void {
-    cancelThreadCompaction(threadId)
-    const timer = setTimeout(() => {
-      compactThreadDisclosures(threadId)
-    }, TOOL_AUTO_COMPACT_DELAY_MS)
-    compactTimers.set(threadId, timer)
-  }
+    },
+    keepReadingPosition,
+    conciseEnabledFor,
+  })
+  const {
+    disclosures,
+    renderToolCards,
+    refreshToolCards,
+    registerReasoningDisclosures,
+    syncRunLayout,
+    resyncRunMembership,
+    syncRunStepTrail,
+  } = toolCards
 
   function isNearBottom(): boolean {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight
@@ -3447,7 +3213,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else if (isNearBottom()) {
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     lastScrollTop = scrollTop
     updateScrollButton()
@@ -3637,7 +3403,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       userScrolledUpAt = 0
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     updateScrollButton()
   }
@@ -3678,437 +3444,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setScrollTopProgrammatically(list.scrollTop + delta)
     pinnedToBottom = false
     updateScrollButton()
-  }
-
-  function applyRollupSummaries(
-    item: ToolCallDisplayItem,
-    opts: { commandSummary?: string; toolSummary?: string },
-  ): void {
-    const { commandSummary, toolSummary } = opts
-    // LLM polish for the turn rollup: replaces the canned `Used N tools` /
-    // category label when ready. Failures stay visible on the collapsed line.
-    if (item.type === 'rollup') {
-      if (toolSummary?.trim()) {
-        const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
-        item.label =
-          failed > 0 ? `${toolSummary.trim()} · ${String(failed)} failed` : toolSummary.trim()
-      }
-      for (const child of item.children) applyRollupSummaries(child, opts)
-      // Legacy shell-only path: when no toolSummary yet, a commandSummary can
-      // still label a pure shell turn.
-      if (
-        !toolSummary?.trim() &&
-        commandSummary &&
-        item.children.length === 1 &&
-        item.children[0]?.type === 'group' &&
-        item.children[0].key === 'shell'
-      ) {
-        item.label = commandSummary
-      }
-      // When the polish lands on a single shell group, keep the nested header
-      // in sync so expand doesn't revert to the canned "Ran commands".
-      if (
-        toolSummary?.trim() &&
-        item.children.length === 1 &&
-        item.children[0]?.type === 'group' &&
-        item.children[0].key === 'shell'
-      ) {
-        item.children[0].label = toolSummary.trim()
-      }
-      return
-    }
-    // LLM-only rollup: a small-model summary, when ready, replaces the generic
-    // "Ran commands" header for the shell group.
-    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
-      item.label = commandSummary
-    }
-  }
-
-  function labelUserInterruptions(item: ToolCallDisplayItem): void {
-    const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
-    if (calls.some((call) => userInterruption(call) !== undefined)) {
-      const failed = calls.filter(
-        (call) => call.status === 'error' && userInterruption(call) === undefined,
-      ).length
-      const base = item.label.replace(/ · \d+ failed$/, '')
-      item.label = `${base}${failed ? ` · ${String(failed)} failed` : ''} · Interrupted`
-    }
-    if (item.type === 'rollup' || item.type === 'step') {
-      for (const child of item.children) labelUserInterruptions(child)
-    }
-  }
-
-  function applyToolCardOpenState(
-    card: HTMLDetailsElement,
-    item: ToolCallDisplayItem,
-    threadId: string,
-    messageId: string,
-    autoRevealEligible: boolean,
-  ): void {
-    // Proposal cards derive their open state from the pending user decision.
-    if (card.classList.contains('thread-proposal')) return
-    const key = `${threadId}:${messageId}:${toolCardKey(item)}`
-    card.dataset['disclosureKey'] = key
-    // Keep dataset.status aligned with the live tool status so compaction can
-    // leave failed cards open (it only inspects this attribute).
-    const itemStatus =
-      item.type === 'individual' ? cardStatus([item.toolCall]) : cardStatus(item.toolCalls)
-    card.dataset['status'] = itemStatus
-    disclosureElements.set(key, card)
-    wireDisclosurePreference(card, key)
-    const preference = disclosurePreferences.get(key)
-    const running =
-      item.type === 'individual'
-        ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
-        : itemStatus === 'running'
-    const failed = itemStatus === 'error'
-    if (itemStatus === 'interrupted') {
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-    }
-
-    if (running) runningDisclosures.add(key)
-    else {
-      runningDisclosures.delete(key)
-      cancelReveal(key)
-    }
-
-    if (preference !== undefined) {
-      card.open = preference
-    } else if (item.type === 'rollup' || item.type === 'step') {
-      // Background activity stays quiet, including while it runs and when a
-      // call failed: failures render beside the rollup, already open.
-      card.open = false
-    } else if (failed) {
-      // Failed tools stay expanded so the error body is visible without a click.
-      // Compaction already skips data-status=error; auto-open here covers the
-      // case where the tool never ran long enough for revealAfterDelay.
-      card.open = true
-      autoOpenedDisclosures.add(key)
-      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now())
-    } else if (autoOpenedDisclosures.has(key)) {
-      card.open = true
-    } else {
-      card.open = false
-      if (running && autoRevealEligible) revealAfterDelay(key)
-    }
-    if (card.open) ensureToolCardBodyRendered(card)
-
-    if (item.type === 'rollup' || item.type === 'step') {
-      const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
-        ':scope > .tool-rollup-body > .tool-card',
-      )
-      item.children.forEach((child, index) => {
-        const nested = nestedCards[index]
-        if (nested) {
-          applyToolCardOpenState(nested, child, threadId, messageId, false)
-        }
-      })
-      return
-    }
-    if (item.type === 'group') {
-      card
-        .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
-        .forEach((entry) => {
-          const id = entry.dataset['toolId']
-          if (!id) return
-          const itemKey = `${threadId}:${messageId}:t:${id}`
-          entry.dataset['disclosureKey'] = itemKey
-          disclosureElements.set(itemKey, entry)
-          wireDisclosurePreference(entry, itemKey)
-          const preference = disclosurePreferences.get(itemKey)
-          const entryFailed = entry.dataset['status'] === 'error'
-          if (preference !== undefined) {
-            entry.open = preference
-          } else if (entryFailed) {
-            entry.open = true
-            autoOpenedDisclosures.add(itemKey)
-            if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now())
-          } else {
-            entry.open = false
-          }
-          if (entry.open) ensureToolCardBodyRendered(entry)
-        })
-    }
-  }
-
-  function renderToolCards(
-    msgEl: HTMLElement,
-    toolCalls: ToolCall[],
-    opts: {
-      commandSummary?: string
-      toolSummary?: string
-      reasoning?: string
-      reasoningBlocks?: AcpContentBlock[]
-      reasoningLive?: boolean
-      /**
-       * The multi-message run this message belongs to. The run's combined
-       * rollup renders on its anchor; every other member keeps only its
-       * subagent cards (see {@link buildToolRunDisplayItems}).
-       */
-      run?: ToolRun
-      /** Message id whose reasoning is still streaming, for the step titles. */
-      liveStepId?: string | null
-    } = {},
-  ): void {
-    const threadId = store.getState().activeThreadId ?? ''
-    const msgId = msgEl.dataset['messageId'] ?? ''
-    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null
-    const activeThread = getActiveThread(store)
-    markUserInterruptedCalls(activeThread)
-    if (
-      messageKey &&
-      activeThread?.status === 'running' &&
-      toolCalls.some((tool) => !tool.subagent)
-    ) {
-      liveRollupMessages.add(messageKey)
-    }
-    // A run only renders as one when its anchor is actually on screen. During
-    // the newest-first backfill a member can be rendered before its anchor is;
-    // it falls back to its own rollup and is repainted once the anchor lands
-    // (see finalizeMessageEl), rather than hiding its tools in the meantime.
-    const run =
-      opts.run &&
-      (opts.run.anchorId === msgId ||
-        list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null)
-        ? opts.run
-        : undefined
-    const isRunMember = run !== undefined && run.anchorId !== msgId
-    // Keep the persisted message node for stable event routing and backfill, but
-    // let CSS collapse it when the run absorbed everything it could show. The
-    // selector deliberately checks the live DOM, so a retained subagent card or
-    // a canvas preview added later makes the bubble visible again automatically.
-    msgEl.classList.toggle('msg-tool-run-member', isRunMember)
-    // Refresh compact tool activity without changing assistant text visibility.
-    const message = activeThread?.messages.find((m) => m.id === msgId)
-    if (message) syncConciseMessageClasses(msgEl, message, conciseEnabledFor(activeThread, msgId))
-
-    const nestReasoning =
-      run === undefined &&
-      (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
-      shouldNestReasoningInTools(toolCalls)
-    // User-interrupted calls fold into the rollup; genuine failures sit beside it.
-    const isInterrupted = (call: ToolCall): boolean => userInterruption(call) !== undefined
-    const items = run
-      ? isRunMember
-        ? buildSubagentDisplayItems(toolCalls)
-        : [
-            ...buildToolRunDisplayItems(run, { isInterrupted }),
-            ...buildSubagentDisplayItems(toolCalls),
-          ]
-      : buildToolCallDisplayItems(toolCalls, {
-          isInterrupted,
-          ...(nestReasoning || (messageKey !== null && liveRollupMessages.has(messageKey))
-            ? { forceRollup: true }
-            : {}),
-        })
-    // Run rollups carry their own composed label (polish + counts + steps), so
-    // the per-message summary only applies on the single-message path.
-    if (!run) for (const item of items) applyRollupSummaries(item, opts)
-    for (const item of items) labelUserInterruptions(item)
-
-    // Index the cards already in the DOM by their stable key so unchanged ones
-    // are reused wholesale instead of torn down and rebuilt on every tick — the
-    // former remove-all/rebuild-all churned every card's markdown and copy
-    // buttons while a subagent streamed (#728).
-    const existing = new Map<string, HTMLDetailsElement>()
-    for (const node of msgEl.querySelectorAll<HTMLDetailsElement>(':scope > .tool-card')) {
-      const key = toolCardKeys.get(node)
-      if (key) existing.set(key, node)
-    }
-
-    const desired: HTMLDetailsElement[] = []
-    for (const item of items) {
-      const key = toolCardKey(item)
-      // A proposal card also renders the user's answer, which lives on the
-      // thread rather than on the tool call — fold it in so accepting or
-      // dismissing an offer rebuilds the card the way a new result would.
-      const sig = toolCardSignature(
-        item,
-        item.type === 'individual'
-          ? threadProposalCardSignature(item.toolCall, store, threadId)
-          : undefined,
-      )
-      let card = existing.get(key) ?? null
-      if (card) existing.delete(key)
-
-      if (card && toolCardSignatures.get(card) === sig) {
-        // Nothing this card renders has changed — leave its DOM (and any
-        // streaming renderers / copy buttons) exactly as they are.
-      } else if (
-        card &&
-        !card.classList.contains('thread-proposal') &&
-        !(item.type === 'individual' && isThreadProposalCall(item.toolCall)) &&
-        !(item.type === 'individual' && isReviewerInputCall(item.toolCall))
-      ) {
-        // Patch the existing disclosure shell so status/result changes preserve
-        // focus, open state, and the browser's scroll anchor.
-        reconcileToolCard(card, item, api, threadId, store)
-      } else {
-        // The stale node was already claimed out of `existing`, so the cleanup
-        // below won't drop it — remove it here or the rebuilt card duplicates.
-        card?.remove()
-        card = createToolCard(item, api, threadId, store)
-        toolCardKeys.set(card, key)
-        toolCardSignatures.set(card, sig)
-      }
-
-      applyToolCardOpenState(card, item, threadId, msgId, true)
-      if (item.type === 'rollup' && nestReasoning) {
-        syncNestedRollupReasoning(
-          card,
-          msgEl,
-          opts.reasoning,
-          opts.reasoningBlocks,
-          opts.reasoningLive === true,
-          acpWorkspaceRoot(store),
-        )
-      }
-      if (item.type === 'rollup' && run && item.key === RUN_ROLLUP_KEY) {
-        syncRunStepReasoning(card, run, opts.liveStepId ?? null, acpWorkspaceRoot(store))
-      }
-      desired.push(card)
-    }
-
-    // Drop cards whose tool calls are gone (e.g. an individual card absorbed
-    // into a newly-formed group).
-    existing.forEach((node) => {
-      node.remove()
-    })
-    if (run) {
-      // Every member's reasoning is shown as a step inside the run's rollup, so
-      // no bubble keeps a trail of its own — including the anchor's, which the
-      // single-message path would have nested in its own rollup.
-      msgEl.querySelectorAll<HTMLElement>('.message-body > .message-reasoning').forEach((node) => {
-        node.remove()
-      })
-    } else if (!nestReasoning) {
-      // No rollup this tick (tools cleared) — leave body-level reasoning alone;
-      // when tools exist without nested reasoning, strip any orphan nested trail.
-      msgEl
-        .querySelectorAll<HTMLElement>('.tool-card-rollup .message-reasoning')
-        .forEach((node) => {
-          node.remove()
-        })
-    }
-    // Move/insert only when a card is out of place. Blind `append` of an
-    // already-correct child still remove+reinserts it and can flash siblings
-    // whenever any other tool on the message ticks (#728).
-    const firstToolIdx = Array.from(msgEl.children).findIndex((node) =>
-      node.classList.contains('tool-card'),
-    )
-    const base = firstToolIdx === -1 ? msgEl.children.length : firstToolIdx
-    for (let i = 0; i < desired.length; i++) {
-      const node = desired[i]
-      if (!node) continue
-      if (msgEl.children[base + i] !== node) {
-        msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
-      }
-    }
-    syncToolResultContent(
-      msgEl,
-      run ? (isRunMember ? [] : run.toolCalls) : toolCalls,
-      acpWorkspaceRoot(store),
-    )
-    hydrateAcpResourceImages(msgEl, api, store)
-    registerReasoningDisclosures(msgEl)
-    syncToolRunMemberVisibility(msgEl)
-  }
-
-  /**
-   * A run's combined rollup renders on its anchor, so anything that changes a
-   * member — a tool ticking, a new member arriving — has to repaint the anchor
-   * as well as the member's own bubble.
-   */
-  function renderRunAnchor(thread: Thread | undefined, run: ToolRun): void {
-    const anchor = thread?.messages.find((m) => m.id === run.anchorId)
-    const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
-    if (!anchor || !anchorEl) return
-    renderToolCards(anchorEl, anchor.toolCalls, {
-      ...messageToolCardOpts(anchor),
-      run,
-      liveStepId: liveStepMessageId(thread),
-    })
-  }
-
-  /**
-   * Hand back any rollup a member painted for itself while the anchor was still
-   * off screen — the newest-first backfill renders the transcript's tail before
-   * the history above it. Only members that still hold one are repainted.
-   */
-  function releaseRunMembers(thread: Thread | undefined, run: ToolRun): void {
-    for (const id of run.memberIds) {
-      if (id === run.anchorId) continue
-      const memberEl = list.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
-      if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
-      const msg = thread?.messages.find((m) => m.id === id)
-      if (!msg) continue
-      renderToolCards(memberEl, msg.toolCalls, {
-        ...messageToolCardOpts(msg),
-        run,
-        liveStepId: liveStepMessageId(thread),
-      })
-    }
-  }
-
-  /** Repaint whichever side of `run` the message that just changed is not. */
-  function syncRunLayout(thread: Thread | undefined, run: ToolRun, changedId: string): void {
-    if (changedId === run.anchorId) releaseRunMembers(thread, run)
-    else renderRunAnchor(thread, run)
-  }
-
-  /**
-   * A bubble that gains visible prose leaves the run it had joined — prose is a
-   * run boundary. Rare (it takes the mid-sentence continuation heuristic landing
-   * on a bubble that so far had only tools or reasoning), but without this the
-   * old anchor would keep showing a step for a message that has moved on, and
-   * the message itself would show none of its tools or its reasoning trail.
-   */
-  function resyncRunMembership(thread: Thread | undefined, msgId: string): void {
-    const staleStep = list.querySelector<HTMLElement>(
-      `.tool-card-step[data-step-message-id="${msgId}"]`,
-    )
-    const anchorEl = staleStep?.closest<HTMLElement>('.msg')
-    const anchorId = anchorEl?.dataset['messageId']
-    if (!anchorEl || !anchorId || anchorId === msgId) return
-    const anchorRun = multiStepRunFor(thread, anchorId)
-    if (anchorRun?.memberIds.includes(msgId) === true) return
-    const anchor = thread?.messages.find((m) => m.id === anchorId)
-    if (!anchor) return
-    renderToolCards(anchorEl, anchor.toolCalls, {
-      ...messageToolCardOpts(anchor),
-      ...(anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}),
-    })
-    refreshToolCards(msgId)
-    // The step that held this message's reasoning is gone with the repaint
-    // above. Unless the message now anchors a run of its own (where the trail
-    // lives on its step again), hand the trail back to its bubble.
-    const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
-    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
-    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store))
-  }
-
-  /**
-   * Update the run's reasoning trails in place after a reasoning chunk. Falls
-   * back to a full anchor repaint only when a step this run now has does not
-   * exist in the DOM yet — a member that has streamed reasoning but no tools.
-   */
-  function syncRunStepTrail(thread: Thread | undefined, run: ToolRun): void {
-    const runCard = list.querySelector<HTMLElement>(
-      `[data-message-id="${run.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`,
-    )
-    const complete =
-      runCard !== null &&
-      run.steps.every((step) =>
-        runCard.querySelector(`.tool-card-step[data-step-message-id="${step.messageId}"]`),
-      )
-    if (!complete) {
-      renderRunAnchor(thread, run)
-      return
-    }
-    syncRunStepReasoning(runCard, run, liveStepMessageId(thread), acpWorkspaceRoot(store))
-    hydrateAcpResourceImages(runCard, api, store)
   }
 
   /**
@@ -4965,8 +4300,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const m = thread.messages[i]
       if (m) prependMessageEl(thread.id, m.id, anchor)
     }
-    const delta = list.scrollHeight - heightBefore
-    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     // Older messages can start new model segments; appendMessageEl only syncs
     // labels for the window it saw, so a chunk further back needs its own pass.
     syncModelLabels()
@@ -4978,6 +4311,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncUserActions()
     // A chunk can hold resources that the replies already on screen cite.
     syncAcpResourceReferences(list, api, store)
+    // Footers and labels contribute height too. Finish the whole chunk before
+    // measuring its growth; the deferred footer observer would otherwise move
+    // the transcript after we had already compensated for the insertion.
+    syncConciseTurnFooters()
+    const delta = list.scrollHeight - heightBefore
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     updateScrollButton()
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -5011,7 +4350,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       userScrolledUpAt = 0
       lastScrollTop = 0
     }
-    disclosureElements.clear()
+    toolCards.forgetDisclosureElements()
     if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
     avatarMotion.setActive(null)
@@ -5058,6 +4397,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncUserActions()
     syncAcpResourceReferences(list, api, store)
     finishThreadChrome(thread)
+    // Include Show steps in the initial geometry, before the observer's later
+    // microtask can add height below the position we just scrolled to.
+    syncConciseTurnFooters()
     refreshStickyImagePrompt()
     if (preservedScrollTop === null) {
       scrollToBottom(true)
@@ -5065,10 +4407,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setScrollTopProgrammatically(preservedScrollTop)
       updateScrollButton()
     }
-    if (thread.status === 'running') cancelThreadCompaction(thread.id)
-    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
-      scheduleThreadCompaction(thread.id)
-    }
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -5104,26 +4444,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop)
   }
 
-  function refreshToolCards(msgId: string): void {
-    const thread = store.getState().threads.find((t) => t.messages.some((m) => m.id === msgId))
-    const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
-    if (!msg || !msgEl) return
+  function keepReadingPosition(update: () => void): void {
     // Preserve the first visible transcript item's viewport offset. Numeric
     // scrollTop alone cannot protect what the reader is looking at when a
     // disclosure above that item changes height (#468).
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
     const readingAnchor = wasPinned ? null : captureReadingAnchor()
-    const run = multiStepRunFor(thread, msgId)
-    renderToolCards(msgEl, msg.toolCalls, {
-      ...messageToolCardOpts(msg),
-      reasoningLive: isReasoningDisclosureLive(thread, msg),
-      ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
-    })
-    // This message's tools may belong to a rollup anchored on another bubble.
-    if (run) syncRunLayout(thread, run, msgId)
-    syncAcpResourceReferences(list, api, store)
+    update()
     if (wasPinned) {
       scrollToBottom()
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
@@ -5357,8 +4685,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     }),
     store.on('thread_status_changed', (tid, status) => {
-      if (status === 'running') cancelThreadCompaction(tid)
-      else scheduleThreadCompaction(tid)
+      if (status === 'running') disclosures.cancelCompaction(tid)
+      else disclosures.scheduleCompaction(tid)
       if (tid !== store.getState().activeThreadId) return
       if (status === 'running') {
         list.querySelectorAll('[data-turn-recovery-card]').forEach((card) => {
@@ -5408,14 +4736,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     listResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
-    revealTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    compactTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    revealTimers.clear()
-    compactTimers.clear()
+    disclosures.dispose()
     disposeInlineArtefacts(list)
     unbindFileLinks()
     unbindWorkspaceLinks()

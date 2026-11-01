@@ -83,6 +83,12 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(dialog.querySelector('#settings-close')?.textContent, '')
   })
 
+  it('takes its accessible name from the Settings heading', () => {
+    const labelId = dialog.getAttribute('aria-labelledby')
+    assert.ok(labelId)
+    assert.equal(document.getElementById(labelId)?.textContent, 'Settings')
+  })
+
   it('opens via showModal() and closes via close()', () => {
     openSettingsDialog()
     assert.equal(spy.showModalCalls, 1)

@@ -1,13 +1,14 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
+import { createSecureContext, type SecureContext } from 'node:tls'
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { MOBILE_CONTENT_SECURITY_POLICY } from '../../../shared/mobile-content-security-policy.ts'
+import { mobileAssetRoutes, mobileResponseHeaders } from '../../../shared/mobile-asset-routes.ts'
 import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
 import {
   mobileActivity,
@@ -17,7 +18,9 @@ import {
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
+import { isVirtualInterface } from './default-route.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
+import type { PublicIdentity } from '../remote-names/names-service.ts'
 import { clientLabelSchema, type ClientAccess } from '../../../shared/client-auth.ts'
 
 /** The complete data surface available to a paired phone. */
@@ -35,19 +38,32 @@ const idPattern = /^[\w-]{1,128}$/
 export interface MobileLanAddress {
   address: string
   interfaceName: string
+  /** A VM bridge or VPN tunnel: a phone on the local network almost never reaches it. */
+  virtual: boolean
 }
 
-/** Keep interface identity: laptops commonly have Wi-Fi, VPN and VM addresses. */
+/**
+ * Keep interface identity: laptops commonly have Wi-Fi, VPN and VM addresses.
+ * The default-route interface comes first, then other physical interfaces,
+ * then virtual ones, so the first entry is the sensible default.
+ */
 export function mobileLanAddresses(
   interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
+  defaultInterface: string | null = null,
 ): MobileLanAddress[] {
-  return Object.entries(interfaces).flatMap(([interfaceName, entries]) =>
-    (entries ?? []).flatMap((entry) =>
-      entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address)
-        ? [{ address: entry.address, interfaceName }]
-        : [],
-    ),
-  )
+  const rank = (candidate: MobileLanAddress): number =>
+    candidate.interfaceName === defaultInterface ? 0 : candidate.virtual ? 2 : 1
+  return Object.entries(interfaces)
+    .flatMap(([interfaceName, entries]) =>
+      (entries ?? []).flatMap((entry) =>
+        entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address)
+          ? [{ address: entry.address, interfaceName, virtual: isVirtualInterface(interfaceName) }]
+          : [],
+      ),
+    )
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => rank(a.candidate) - rank(b.candidate) || a.index - b.index)
+    .map(({ candidate }) => candidate)
 }
 
 function isRfc1918(address: string): boolean {
@@ -60,33 +76,30 @@ function isRfc1918(address: string): boolean {
   )
 }
 
-/** Reject DNS rebinding, cross-origin calls, and public peers before any route dispatch. */
+/**
+ * Reject DNS rebinding, cross-origin calls, and public peers before any route
+ * dispatch. `Host` must be exactly one of `authorities`: the bound `ip:port`
+ * literal, and, when this Mac has one, its trusted `lan.<label>.u.copse.me:port`
+ * name. That name is safe here because only this Mac's device key can point it
+ * anywhere, and the names service publishes nothing but private addresses for
+ * it. `Origin` must be the origin of the authority the request named.
+ */
 export function mobileRequestAllowed(
   req: IncomingMessage,
-  authority: string,
-  origin: string,
+  authorities: readonly string[],
 ): boolean {
   const peer = req.socket.remoteAddress
   if (!peer || !isPrivateOrLinkLocalHost(peer)) return false
-  if (req.headers.host !== authority) return false
+  const host = req.headers.host
+  if (host === undefined || !authorities.includes(host)) return false
+  const origin = `https://${host}`
   if (req.headers.origin !== undefined && req.headers.origin !== origin) return false
   if (req.method !== 'GET' && req.headers.origin !== origin) return false
   return true
 }
 
-function headers(contentType: string): Record<string, string> {
-  return {
-    'Content-Type': contentType,
-    'Cache-Control': 'no-store',
-    'Content-Security-Policy': MOBILE_CONTENT_SECURITY_POLICY,
-    'X-Frame-Options': 'DENY',
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-  }
-}
-
 function send(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, headers('application/json; charset=utf-8'))
+  res.writeHead(status, mobileResponseHeaders('application/json; charset=utf-8'))
   res.end(JSON.stringify(value))
 }
 
@@ -108,6 +121,8 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<string 
 
 export interface MobileServer {
   url: string
+  address: string
+  port: number
   rootPath: string
   devices: MobileDevices
   isRunning(): boolean
@@ -117,7 +132,14 @@ export interface MobileServer {
 export async function startMobileServer(options: {
   address: string
   devices: MobileDevices
-  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
+  approvePair: (
+    label: string,
+    code: string,
+    signal: AbortSignal,
+    trustedName: boolean,
+  ) => Promise<ClientAccess | null>
+  /** The publicly trusted name and certificate to serve beside the LAN IP, while valid. */
+  publicIdentity?: () => PublicIdentity | null
   assetsDir?: string
   onDevicesChanged?: () => void
   onStop?: () => void
@@ -126,21 +148,15 @@ export async function startMobileServer(options: {
     throw new Error('Choose an active private IPv4 interface')
   const identity = mobileCertificate(options.address)
   const assets = options.assetsDir ?? join(__dirname, '..', 'mobile')
-  const files = new Map([
-    ['/', { path: 'index.html', type: 'text/html; charset=utf-8' }],
-    ['/app.css', { path: 'app.css', type: 'text/css; charset=utf-8' }],
-    ['/app.js', { path: 'app.js', type: 'text/javascript; charset=utf-8' }],
-  ])
+  const files = mobileAssetRoutes()
   // Read once, before binding, so a missing package asset cannot yield a
   // half-working listener. The map is fixed and contains no user path.
   const staticFiles = new Map(
-    [...files].map(([route, file]) => [
-      route,
-      {
-        body: readFileSync(join(assets, file.path)),
-        type: file.type,
-      },
-    ]),
+    [...files].map(([route, file]) => {
+      const body = readFileSync(join(assets, file.path))
+      const etag = `"${createHash('sha256').update(body).digest('base64url')}"`
+      return [route, { body, etag, headers: { ...file.headers, ETag: etag } }]
+    }),
   )
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
@@ -158,23 +174,64 @@ export async function startMobileServer(options: {
       options.devices.revoke(id)
       options.onDevicesChanged?.()
     },
-    approve: options.approvePair,
+    approve: (label, code, signal, context): Promise<ClientAccess | null> =>
+      options.approvePair(label, code, signal, context?.trustedName === true),
   })
   let authority = ''
-  let origin = ''
+  let port = 0
+  // The trusted name, when there is one, is served by SNI: a phone that opens
+  // the bare IP sends no server name and gets the local-root certificate.
+  let sniCache: { identity: PublicIdentity; context: SecureContext } | null = null
+  const publicIdentity = (): PublicIdentity | null => options.publicIdentity?.() ?? null
+  const authorities = (): string[] => {
+    const name = publicIdentity()?.hostname
+    return name ? [authority, `${name}:${String(port)}`] : [authority]
+  }
   const server: Server = createServer(
-    { key: identity.key, cert: identity.cert, minVersion: 'TLSv1.2' },
+    {
+      key: identity.key,
+      cert: identity.cert,
+      minVersion: 'TLSv1.2',
+      SNICallback: (servername, done): void => {
+        const current = publicIdentity()
+        if (!current || servername !== current.hostname) {
+          done(null, undefined)
+          return
+        }
+        try {
+          if (sniCache?.identity !== current)
+            sniCache = {
+              identity: current,
+              context: createSecureContext({
+                key: current.key,
+                cert: current.cert,
+                minVersion: 'TLSv1.2',
+              }),
+            }
+          done(null, sniCache.context)
+        } catch (error) {
+          done(error instanceof Error ? error : new Error(String(error)), undefined)
+        }
+      },
+    },
     (req, res) => {
       void (async (): Promise<void> => {
-        if (!active() || !mobileRequestAllowed(req, authority, origin)) {
+        if (!active() || !mobileRequestAllowed(req, authorities())) {
           send(res, 403, { error: 'Forbidden' })
           return
         }
+        const origin = `https://${req.headers.host ?? authority}`
+        const trustedName = req.headers.host !== authority
         const path = new URL(req.url ?? '/', origin)
         if (req.method === 'GET') {
           const file = staticFiles.get(path.pathname)
           if (file) {
-            res.writeHead(200, headers(file.type))
+            if (req.headers['if-none-match'] === file.etag) {
+              res.writeHead(304, file.headers)
+              res.end()
+              return
+            }
+            res.writeHead(200, file.headers)
             res.end(file.body)
             return
           }
@@ -190,7 +247,7 @@ export async function startMobileServer(options: {
             send(res, 403, { error: 'Mobile Companion stopped' })
             return
           }
-          const pairing = pairings.request(body.label, req.socket.remoteAddress)
+          const pairing = pairings.request(body.label, req.socket.remoteAddress, { trustedName })
           if (!pairing) {
             send(res, 429, { error: 'Pairing already in progress' })
             return
@@ -342,10 +399,12 @@ export async function startMobileServer(options: {
     const bound = server.address()
     if (!bound || typeof bound === 'string')
       throw new Error('Mobile Companion listener has no address')
-    authority = `${options.address}:${String(bound.port)}`
-    origin = `https://${authority}`
+    port = bound.port
+    authority = `${options.address}:${String(port)}`
     return {
-      url: origin,
+      url: `https://${authority}`,
+      address: options.address,
+      port,
       rootPath: identity.rootPath,
       devices: options.devices,
       isRunning: () => !stopped,

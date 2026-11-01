@@ -99,7 +99,11 @@ import {
   type ThreadGroupMode,
   type ThreadSortMode,
 } from '@shared/types/state.ts'
-import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
+import {
+  isAutomationPendingStart,
+  sidebarPrRefs,
+  type SidebarThread,
+} from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
@@ -565,7 +569,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } =
       store.getState()
     const chosen = projects.find((project) => project.id === sidebarProjectFilterId)
-    if (!chosen) store.setState({ sidebarProjectFilterId: null })
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
     const suffix = archivedOnly ? ' · Archived' : needsCleanupOnly ? ' · Needs cleanup' : ''
     filterLabel.textContent = `${projectName}${suffix}`
@@ -1582,6 +1585,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A filter naming a removed project lists everything. Clear it before any
+    // DOM work: the write re-renders through the filter selection.
+    const { projects: known, sidebarProjectFilterId } = store.getState()
+    if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
+      store.setState({ sidebarProjectFilterId: null })
+    }
     // A redraw removes the source row, so Chromium may have nowhere to send
     // its eventual dragend. Clear the gesture before replacing its DOM.
     endDrag()
@@ -1828,6 +1837,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
         chatRow.insertBefore(runningStatus('Agent is working'), title)
+      } else if (isAutomationPendingStart(thread)) {
+        chatRow.classList.add('is-running')
+        chatRow.insertBefore(runningStatus('Starting…'), title)
       } else if (
         (thread.unreadAt !== undefined ||
           getSideChatUnreadParents(store, project.id).has(thread.id)) &&
@@ -1998,7 +2010,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         el('span', { class: 'automation-threads-title' }, 'Automations'),
         el('span', { class: 'automation-threads-count' }, String(scheduleOwners.size)),
       )
-      if (allRuns.some((thread) => thread.status === 'running')) {
+      if (
+        allRuns.some((thread) => thread.status === 'running' || isAutomationPendingStart(thread))
+      ) {
         const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
         status.setAttribute('role', 'img')
         status.setAttribute('aria-label', 'An automation is running')
@@ -2141,7 +2155,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               ),
             )
           }
-          if (runs.some((thread) => thread.status === 'running')) {
+          if (
+            runs.some((thread) => thread.status === 'running' || isAutomationPendingStart(thread))
+          ) {
             const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
             status.setAttribute('role', 'img')
             status.setAttribute('aria-label', 'This automation is running')
@@ -2819,7 +2835,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     unsubWorkingTree,
     store.on('projects_changed', render),
-    store.on('sidebar_project_filter_changed', render),
+    store.select(
+      (s) => s.sidebarProjectFilterId,
+      () => {
+        render()
+      },
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', () => {

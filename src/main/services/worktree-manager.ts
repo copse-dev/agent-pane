@@ -1276,8 +1276,9 @@ function activeWorktreeMetadata(worktree: ThreadWorktree, path: string): ThreadW
 }
 
 /**
- * Reattach a deliberately retired checkout to its retained local branch.
- * Ordinary missing worktrees remain errors; only explicit retirement metadata
+ * Reattach a deliberately retired checkout, branching from its recorded tip when
+ * a newer managed checkout holds its old branch. Ordinary missing worktrees remain
+ * errors; only explicit retirement metadata
  * authorizes reconstruction.
  */
 export async function restoreRetiredThreadWorktree(
@@ -1293,13 +1294,22 @@ export async function restoreRetiredThreadWorktree(
   const projectRoot = location.repositoryRoot
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
-    const registered = (await listRecords(projectRoot)).find((record) =>
-      sameWorktreePath(record.path, target),
-    )
+    const records = await listRecords(projectRoot)
+    const registered = records.find((record) => sameWorktreePath(record.path, target))
+    let branch = registered?.branch ?? input.worktree.branch
     if (!registered) {
+      const holder = records.find((record) => record.branch === branch)
+      const retiredHead = input.worktree.retiredHead
+      // Automation reuse hands the branch to a newer managed checkout. Restore
+      // the old run's recorded commit on a fresh branch without touching its owner.
+      const handedOver =
+        input.worktree.retiredAt !== undefined &&
+        retiredHead !== undefined &&
+        holder !== undefined &&
+        managedThreadIdForPath(input.projectId, holder.path) !== null
       const branchHead = await requireGitValue(
         projectRoot,
-        ['rev-parse', '--verify', `${branchRef(input.worktree.branch)}^{commit}`],
+        ['rev-parse', '--verify', `${handedOver ? retiredHead : branchRef(branch)}^{commit}`],
         `Cannot restore retired branch ${input.worktree.branch}`,
       )
       if (
@@ -1308,10 +1318,13 @@ export async function restoreRetiredThreadWorktree(
       ) {
         throw new Error('Retired worktree branch changed since retirement')
       }
+      if (handedOver) branch = await chooseAllocationBranch(projectRoot, input.threadId, undefined)
       const createdTarget = await prepareManagedWorktreeDestination(input.projectId, target)
       const add = await git(
         projectRoot,
-        ['worktree', 'add', target, input.worktree.branch],
+        handedOver
+          ? ['worktree', 'add', '-b', branch, target, branchHead]
+          : ['worktree', 'add', target, branch],
         undefined,
         [target],
       )
@@ -1324,7 +1337,7 @@ export async function restoreRetiredThreadWorktree(
       }
     }
     const canonicalPath = await realpath(target)
-    return activeWorktreeMetadata(input.worktree, canonicalPath)
+    return { ...activeWorktreeMetadata(input.worktree, canonicalPath), branch }
   })
 }
 
@@ -1406,6 +1419,11 @@ async function nulSeparatedPaths(cwd: string, args: string[]): Promise<Set<strin
  * Every signal must agree, including that the staged paths are exactly the
  * picked commit's paths, so a rebase stopped for any other reason keeps the
  * plain `--continue`.
+ *
+ * Git 2.56 stopped rescheduling such a pick: it stops on it the way it does
+ * for a conflict, recording `stopped-sha` and the commit message, and the
+ * plain `--continue` commits the staged changes itself. That stop never
+ * matches here, which is right.
  */
 async function uncommittedRebasePick(
   checkout: string,

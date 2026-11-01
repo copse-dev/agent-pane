@@ -23,7 +23,8 @@
  *             (typically backend/logic with no DOM coupling). The subset may be
  *             incomplete; a full run is the safe choice. Reported explicitly.
  *   • Broad — a cross-cutting file changed (wdio config, e2e helpers, index.html,
- *             store, preload api, build scripts…). Everything is recommended.
+ *             store, preload api, build scripts, lockfile…). Everything is
+ *             recommended.
  *
  * Usage:
  *   node scripts/test-oracle.mts                 # changes vs the default branch + working tree
@@ -72,6 +73,11 @@ export const BROAD_PATTERNS: readonly RegExp[] = [
   /^tests\/e2e\/scenarios\//,
   /^tests\/demo\//,
   /^package(-lock)?\.json$/,
+  // pnpm resolves dependencies from these, not package-lock.json. A pin through
+  // `overrides`, a patched dependency or a lockfile-only bump changes shipped
+  // code without touching a source file the selector or import graph can see.
+  /^pnpm-(lock|workspace)\.yaml$/,
+  /^\.npmrc$/,
   /^tsconfig.*\.json$/,
   /^scripts\/(build|dev|run-tests)\.mts$/,
   /^src\/renderer\/index\.html$/,
@@ -900,15 +906,25 @@ export type ScreenshotGate = {
  * labeled PR always passes. This static gate never reruns the e2e tier itself.
  *
  * Only files that can influence rendered output drive the gate: shipped source
- * (`src/**`) and the e2e harness/fixtures/specs (`tests/e2e/**`). Root-level
- * infra — a lockfile bump, tsconfig, build scripts, wdio config — is broad for
- * *test selection* but cannot change a pixel, so it must not demand a full
- * screenshot regen. (A genuinely visual broad change like the shared base
- * stylesheets or index.html lives under `src/` and still fans out to every shot.)
+ * (`src/**` and the workspace packages it bundles, `packages/**`) and the e2e
+ * harness/fixtures/specs (`tests/e2e/**`). Root-level infra — a lockfile bump,
+ * tsconfig, build scripts, wdio config — is broad for *test selection* but
+ * cannot change a pixel, so it must not demand a full screenshot regen. (A
+ * genuinely visual broad change like the shared base stylesheets or index.html
+ * lives under `src/` and still fans out to every shot.)
+ *
+ * `affected` is also the ownership the candidate filter holds out-of-scope
+ * renders against (lib/screenshot-scope.mts). A package change the oracle
+ * selects specs for, such as the weekly intellect sync in
+ * `packages/llm/src/model-intellect.generated.ts`, must own those specs' shots:
+ * otherwise its re-render is held on its own PR, merges unreviewed, and shows up
+ * as drift on every later PR that does own them.
  */
 export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
   const renderAffecting = changed.filter(
-    (f) => (f.startsWith('src/') || f.startsWith(`${E2E_DIR}/`)) && !f.endsWith('.test.ts'),
+    (f) =>
+      (f.startsWith('src/') || f.startsWith('packages/') || f.startsWith(`${E2E_DIR}/`)) &&
+      !f.endsWith('.test.ts'),
   )
   const sel = computeSelection(renderAffecting)
   const affected = affectedScreenshots(sel)

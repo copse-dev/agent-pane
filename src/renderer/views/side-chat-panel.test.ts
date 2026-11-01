@@ -13,6 +13,7 @@ import {
   renderSideChat,
   resolveSideChatSelection,
   SIDE_CHAT_SUGGESTIONS,
+  type SideChatMessageNodes,
 } from './side-chat-panel.ts'
 
 function message(id: string, role: Message['role'], content: string): Message {
@@ -104,6 +105,91 @@ test('renders the context line, safe messages, tool names, a thinking marker and
   // Still running, so Archive waits for the run to settle.
   view.header.querySelector<HTMLElement>('button')?.click()
   assert.deepEqual(archived, [])
+})
+
+const RICH_REPLY = [
+  'Here is the flow:',
+  '',
+  '```mermaid',
+  'graph TD; A-->B',
+  '```',
+  '',
+  '| Step | Result |',
+  '| --- | --- |',
+  '| build | ok |',
+  '',
+  '```sh',
+  'pnpm test',
+  '```',
+].join('\n')
+
+test('renders prompts and replies with the main conversation’s message markdown', () => {
+  const side = thread('s', {
+    sideChat: link,
+    messages: [
+      message('u', 'user', 'first line\nsecond line'),
+      message('a', 'assistant', RICH_REPLY),
+    ],
+  })
+  const { body } = renderSideChat({
+    side,
+    parent: thread('main'),
+    onSuggestion: () => {},
+    onArchive: () => {},
+  })
+
+  // Composer newlines become hard breaks, as in the main transcript.
+  assert.ok(body.querySelector('.is-user br'))
+  const reply = body.querySelector('.is-assistant .message-text')
+  // The shared Mermaid pass took the fence. This DOM cannot build the isolated
+  // frame, so it settles on the source fallback; the browser spec
+  // (tests/e2e/side-chat-rich-markdown.e2e.ts) checks the rendered diagram.
+  assert.ok(reply?.querySelector('.mermaid-diagram[data-mermaid-ui]'), 'diagram handed to Mermaid')
+  assert.ok(reply?.querySelector('.table-copy'), 'table copy button')
+  assert.ok(reply?.querySelector('.code-block-copy'), 'code copy button')
+  // A side chat cannot run commands: a run would land in the main thread.
+  assert.equal(reply?.querySelector('.code-block-run'), null)
+})
+
+test('a settled reply and its diagram stay mounted while a later reply streams', () => {
+  const body = document.createElement('div')
+  document.body.append(body)
+  const messageNodes: SideChatMessageNodes = new Map()
+  const draw = (partial: string): void => {
+    renderSideChat({
+      side: thread('s', {
+        sideChat: link,
+        status: 'running',
+        messages: [
+          message('u1', 'user', 'Draw it'),
+          message('a1', 'assistant', RICH_REPLY),
+          message('u2', 'user', 'And again?'),
+          message('a2', 'assistant', partial),
+        ],
+      }),
+      parent: thread('main'),
+      onSuggestion: () => {},
+      onArchive: () => {},
+      body,
+      messageNodes,
+    })
+  }
+  try {
+    draw('Working')
+    const settled = body.querySelector('[data-role="assistant"]')
+    const diagram = settled?.querySelector('.mermaid-diagram[data-mermaid-ui]')
+    const live = body.querySelectorAll('[data-role="assistant"]')[1]
+    assert.ok(settled && diagram && live)
+
+    draw('Working on the second diagram')
+    assert.equal(body.querySelector('[data-role="assistant"]'), settled)
+    assert.equal(settled.querySelector('.mermaid-diagram'), diagram, 'the diagram is not rebuilt')
+    assert.ok(diagram.isConnected, 'the diagram was never detached')
+    // The streaming reply keeps its element so the incremental renderer resumes.
+    assert.equal(body.querySelectorAll('[data-role="assistant"]')[1], live)
+  } finally {
+    body.remove()
+  }
 })
 
 test('the context line reads a markdown anchor as plain text', () => {
@@ -374,12 +460,42 @@ test('the mounted panel pins only its selected transcript and releases it when h
     assert.equal(store.getState().threads.find((t) => t.id === 'side-0')?.messagesLoaded, false)
     // Closing releases the latest pin; the next loads can evict it normally.
     store.setState({ filesPaneOpen: false })
-    store.emit('files_pane_changed')
     for (let i = 0; i < 13; i++) await ensureThreadMessages('project-1', `side-${String(i)}`)
     assert.equal(store.getState().threads.find((t) => t.id === 'side-13')?.messagesLoaded, false)
   } finally {
     dispose()
     detach()
+    document.body.replaceChildren()
+  }
+})
+
+test('the mounted panel repaints when it opens from the store alone, with no event emitted', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'project-1',
+    activeThreadId: 'main',
+    filesPaneOpen: false,
+    rightPanelMode: 'explorer',
+    threads: [thread('main'), thread('a', { sideChat: link })],
+  })
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  const dispose = mountSideChatPane(list, viewer, store, createFakeApi())
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+  try {
+    await settle()
+    // A side chat lands while the panel is closed, with no event announcing it.
+    const { threads } = store.getState()
+    store.setState({ threads: [...threads, thread('b', { sideChat: link, createdAt: 2 })] })
+    await settle()
+    assert.equal(list.querySelector('[data-side-chat-id="b"]'), null)
+
+    store.setState({ filesPaneOpen: true, rightPanelMode: 'side-chat' })
+    await settle()
+    assert.ok(list.querySelector('[data-side-chat-id="b"]'))
+  } finally {
+    dispose()
     document.body.replaceChildren()
   }
 })

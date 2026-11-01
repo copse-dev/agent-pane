@@ -5,13 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
-import {
-  storageGet,
-  storageListFiles,
-  storageReadFile,
-  storageSet,
-  storageWriteFile,
-} from './storage.ts'
+import { storageGet, storageSet } from './storage.ts'
+import { storageListFiles, storageReadFile, storageWriteFile } from './user-data-files.ts'
 import { setSetting } from './settings.ts'
 import { OPENROUTER_PRICING_KEY } from '../providers/model-pricing-store.ts'
 import {

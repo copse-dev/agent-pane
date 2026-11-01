@@ -91,6 +91,14 @@ export function indexBuildFinished(component: IndexComponent, ok: boolean): void
   notify()
 }
 
+/** Release obsolete work without overwriting a newer build's resting result. */
+export function indexBuildDiscarded(component: IndexComponent): void {
+  const state = components[component]
+  state.active = Math.max(0, state.active - 1)
+  if (state.active === 0) state.startedAt = null
+  notify()
+}
+
 /**
  * Finish a semantic pass that neither completed nor failed.
  *

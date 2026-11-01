@@ -8,6 +8,7 @@ import {
 } from './approved-provider-hosts.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
+import { seedHandEditedSetting } from '../storage/settings.test-support.ts'
 
 describe('approved-provider-hosts', () => {
   beforeEach(async () => {
@@ -68,7 +69,7 @@ describe('approved-provider-hosts', () => {
     await setSetting('extraProviders', [
       { slug: 'acme-custom', baseUrl: 'https://api.acme.example/v1' },
     ])
-    await setSetting('approvedProviderHosts', null)
+    await seedHandEditedSetting('approvedProviderHosts', null)
 
     assert.deepEqual(getApprovedProviderHosts(), [])
 

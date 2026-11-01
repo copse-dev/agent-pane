@@ -7,9 +7,9 @@
 //  - Plugin settings persist under a plugin-scoped bag, keyed by field id.
 //  - The list snapshot reflects the current registry state + persisted values.
 //
-// electron-store is replaced by the shared test-shim (`storage.test-shim.ts`,
-// wired in `scripts/run-tests.mts`), so writes go through the same
-// write-queue used in production but land in an in-memory Map.
+// Unit tests install no electron-store backend, so the real `storage.ts` runs
+// over the in-memory store `@copse/store-kit` uses headless: writes go through
+// the same write-queue and cache as production but land in a Map.
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
@@ -38,7 +38,6 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
@@ -60,10 +59,10 @@ import {
 
 const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
-const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
+const MCP_UI_CANVAS_STABLE_MIGRATION_KEY = 'pluginMigration.mcpUiCanvasStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
 const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
 const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
@@ -140,11 +139,11 @@ function clearStorage(): void {
   // Keep one-time rollout migrations out of unrelated cases; dedicated tests
   // below delete their marker explicitly.
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
-  storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
+  storageSet(MCP_UI_CANVAS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
@@ -384,6 +383,7 @@ describe('PluginService', () => {
     // Stable plugins start on; every experimental plugin starts off.
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PLUGIN_ID), true)
     assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PLUGIN_ID), true)
+    assert.equal(service.registry.isEnabled(MCP_UI_CANVAS_PLUGIN_ID), true)
     for (const id of [
       REVIEW_PLUGIN_ID,
       LONG_HORIZON_TASKS_PLUGIN_ID,
@@ -393,13 +393,11 @@ describe('PluginService', () => {
       CI_INVESTIGATOR_PLUGIN_ID,
       PII_REDACTION_PLUGIN_ID,
       FORCED_PLANNING_PLUGIN_ID,
-      // Capability-only experiments replace retired opt-in booleans and remain off.
-      MCP_UI_CANVAS_PLUGIN_ID,
+      // Capability-only experiment replacing a retired opt-in boolean, remains off.
       DEVTOOLS_SHORTCUT_PLUGIN_ID,
       PLUGIN_CLIENT_API_ID,
       AUTOMATIONS_PLUGIN_ID,
       DARK_FACTORY_PLUGIN_ID,
-      PARALLEL_SEARCH_PLUGIN_ID,
       ARTIFACT_CHECKPOINT_PLUGIN_ID,
       REVIEWER_INPUT_PLUGIN_ID,
       APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -418,12 +416,10 @@ describe('PluginService', () => {
         CI_INVESTIGATOR_PLUGIN_ID,
         PII_REDACTION_PLUGIN_ID,
         FORCED_PLANNING_PLUGIN_ID,
-        MCP_UI_CANVAS_PLUGIN_ID,
         DEVTOOLS_SHORTCUT_PLUGIN_ID,
         PLUGIN_CLIENT_API_ID,
         AUTOMATIONS_PLUGIN_ID,
         DARK_FACTORY_PLUGIN_ID,
-        PARALLEL_SEARCH_PLUGIN_ID,
         ARTIFACT_CHECKPOINT_PLUGIN_ID,
         REVIEWER_INPUT_PLUGIN_ID,
         APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -450,6 +446,24 @@ describe('PluginService', () => {
     assert.equal(later.registry.isEnabled(BACKGROUND_TASKS_PLUGIN_ID), false)
   })
 
+  it('graduates MCP-UI canvas to default-on once and preserves later opt-out', async () => {
+    storageSet(PLUGIN_DISABLED_KEY, [MCP_UI_CANVAS_PLUGIN_ID])
+    storageDelete(MCP_UI_CANVAS_STABLE_MIGRATION_KEY)
+
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(MCP_UI_CANVAS_PLUGIN_ID), true)
+    assert.equal(
+      parseStringList(storageGet(PLUGIN_DISABLED_KEY)).includes(MCP_UI_CANVAS_PLUGIN_ID),
+      false,
+    )
+    assert.equal(storageGet(MCP_UI_CANVAS_STABLE_MIGRATION_KEY), true)
+
+    await service.setEnabled(MCP_UI_CANVAS_PLUGIN_ID, false)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(MCP_UI_CANVAS_PLUGIN_ID), false)
+  })
+
   it('seeds the new automations plugin disabled without erasing later choices', async () => {
     storageDelete(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY)
     const service = getPluginService()
@@ -474,18 +488,6 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID), true)
-  })
-
-  it('seeds Parallel Search off once for existing profiles without erasing later choices', async () => {
-    storageDelete(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY)
-    const service = getPluginService()
-    assert.equal(service.registry.isEnabled(PARALLEL_SEARCH_PLUGIN_ID), false)
-    assert.equal(storageGet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY), true)
-
-    await service.setEnabled(PARALLEL_SEARCH_PLUGIN_ID, true)
-    __resetPluginServiceForTests()
-    const later = getPluginService()
-    assert.equal(later.registry.isEnabled(PARALLEL_SEARCH_PLUGIN_ID), true)
   })
 
   it('seeds artifact checkpoints off once for existing profiles without erasing later choices', async () => {
@@ -667,7 +669,6 @@ describe('migratePackKeysToPlugin', () => {
     'packSources',
     'packMigration.packModelSettings',
     'packMigration.automationsEnablement',
-    'packMigration.parallelSearchEnablement',
     'pack.demo.plugin.settings',
     // The nested subtree a real electron-store profile carries.
     'pack',
@@ -677,7 +678,6 @@ describe('migratePackKeysToPlugin', () => {
     'pluginSources',
     'pluginMigration.pluginModelSettings',
     'pluginMigration.automationsEnablement',
-    'pluginMigration.parallelSearchEnablement',
     'plugin.demo.plugin.settings',
     'plugin',
   ]
@@ -702,7 +702,6 @@ describe('migratePackKeysToPlugin', () => {
     // stable plugin OFF (present). Both must survive.
     storageSet('packDisabled', ['copse.todos'])
     storageSet('packMigration.automationsEnablement', true)
-    storageSet('packMigration.parallelSearchEnablement', true)
 
     getPluginService()
 
@@ -717,7 +716,6 @@ describe('migratePackKeysToPlugin', () => {
     // it is what stops a fully-opted-in profile reverting to the defaults.
     storageSet('packDisabled', [])
     storageSet('packMigration.automationsEnablement', true)
-    storageSet('packMigration.parallelSearchEnablement', true)
 
     getPluginService()
 
@@ -796,9 +794,9 @@ describe('migratePackKeysToPlugin', () => {
 
     getPluginService()
 
-    // Asserting membership rather than the whole array: the automations and
-    // parallel-search one-shots legitimately append their own default-off ids
-    // on a profile that has not seen them, and that is not this test's subject.
+    // Asserting membership rather than the whole array: the one-time
+    // default-off migrations legitimately append their own ids on a profile
+    // that has not seen them, and that is not this test's subject.
     const after = parseStringList(storageGet('pluginDisabled'))
     assert.equal(after.includes('current'), true, 'the existing value must survive')
     assert.equal(

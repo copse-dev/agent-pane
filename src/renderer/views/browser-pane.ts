@@ -31,7 +31,7 @@ import {
 } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import {
   createBrowserSessionWriter,
   loadBrowserPaneSession,
@@ -1624,8 +1624,8 @@ export function mountBrowserPane(
 
   function onRightPanelMaximizedChanged(): void {
     if (!browserModeActive(store)) return
-    // Layout class is applied by right-panel-layout on the same event; wait a
-    // frame so getBoundingClientRect sees the expanded pane.
+    // Layout class is applied by right-panel-layout on the same state change;
+    // wait a frame so getBoundingClientRect sees the expanded pane.
     requestAnimationFrame(() => {
       syncActiveWebviewSize()
     })
@@ -1922,9 +1922,8 @@ export function mountBrowserPane(
   const unsubs = [
     store.on('threads_changed', onThreadMaybeChanged),
     store.on('workspace_changed', onThreadMaybeChanged),
-    store.on('right_panel_mode_changed', onBrowserModeChange),
-    store.on('files_pane_changed', onBrowserModeChange),
-    store.on('right_panel_maximized_changed', onRightPanelMaximizedChanged),
+    selectRightPanelMode(store, 'browser', onBrowserModeChange),
+    store.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store.on('browser_url_requested', openRequestedBrowserUrl),
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),

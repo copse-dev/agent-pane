@@ -87,9 +87,11 @@ function serializedWrite(key: string, write: () => Promise<void>): Promise<void>
     }
   }
   writeChains.set(key, next)
-  void next.finally(() => {
-    if (writeChains.get(key) === next) writeChains.delete(key)
-  })
+  void next
+    .finally(() => {
+      if (writeChains.get(key) === next) writeChains.delete(key)
+    })
+    .catch(() => undefined)
   return next
 }
 
@@ -297,6 +299,98 @@ function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
 // never mistakes the other project's threads for deletions.
 const persistedMeta = new Map<string, Map<string, ThreadMeta>>()
 
+type PendingThreadWrite = { kind: 'save'; thread: Thread; meta: ThreadMeta } | { kind: 'delete' }
+
+// These are targets, not acknowledgements. Comparing against the latest queued
+// target coalesces repeated autosave events, while executing against persistedMeta
+// lets a later write recover from an earlier failed create/update/delete.
+const pendingThreadWrites = new Map<string, Map<string, PendingThreadWrite[]>>()
+
+// Creation can commit before its IPC rejects (for example, a catalog write
+// fails). Keep the first submitted metadata until acknowledgement: after an
+// idempotent create retry, only subsequent user edits may be patched back.
+const unconfirmedCreates = new Map<string, Map<string, { meta: ThreadMeta }>>()
+
+interface UncertainThreadWrite {
+  fields: Set<string>
+  deleted: boolean
+  target: ThreadMeta | null
+}
+
+// A rejection does not prove the primary write was rolled back: catalog repair
+// can fail after metadata changed or the directory was removed. Preserve the
+// touched fields/existence uncertainty until a later operation confirms them.
+const uncertainThreadWrites = new Map<string, Map<string, UncertainThreadWrite>>()
+
+interface ReadProjection {
+  generation: number
+  messagesLoaded: boolean | undefined
+  hasSavedPlan: boolean | undefined
+}
+
+interface MetadataLoad {
+  changed: Set<string>
+  generation: number
+  fullProjectionGeneration: number
+  projections: Map<string, ReadProjection>
+}
+
+// Acknowledgements, submitted writes and uncertain rejections protect their IDs
+// from older reads, including absent → create → delete ABA changes. The sets
+// live only for the duration of their reads; no permanent tombstone cache.
+const activeMetadataLoads = new Map<string, Set<MetadataLoad>>()
+let metadataLoadGeneration = 0
+const appliedProjectLoads = new Map<string, number>()
+const appliedThreadLoads = new Map<string, Map<string, number>>()
+
+function markMetadataChanged(projectId: string, threadId: string, ownLoad?: MetadataLoad): void {
+  // Read/read ordering is handled by request generations below. Seeding an
+  // older response must not suppress a newer response that is still pending.
+  if (ownLoad) return
+  for (const load of activeMetadataLoads.get(projectId) ?? []) load.changed.add(threadId)
+}
+
+function metadataBaseline(projectId: string): Map<string, ThreadMeta> {
+  let metas = persistedMeta.get(projectId)
+  if (!metas) {
+    metas = new Map()
+    persistedMeta.set(projectId, metas)
+  }
+  return metas
+}
+
+function acknowledgeMetadata(
+  projectId: string,
+  threadId: string,
+  meta: ThreadMeta | null,
+  ownLoad?: MetadataLoad,
+): void {
+  const metas = metadataBaseline(projectId)
+  if (meta) metas.set(threadId, meta)
+  else metas.delete(threadId)
+  markMetadataChanged(projectId, threadId, ownLoad)
+}
+
+function retryMetaPatch(
+  previous: ThreadMeta,
+  next: ThreadMeta,
+  uncertain: UncertainThreadWrite | undefined,
+): Partial<ThreadMeta> {
+  const patch = metaPatch(previous, next)
+  const values: Record<string, unknown> = { ...next }
+  for (const key of uncertain?.fields ?? []) Object.assign(patch, { [key]: values[key] })
+  return patch
+}
+
+function runtimeMeta(previous: ThreadMeta, thread: Thread, before?: TranscriptMeta): ThreadMeta {
+  const next = { ...previous }
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue
+    Object.assign(next, { [key]: thread[key] })
+  }
+  return next
+}
+
 /** Runtime-derived fields are already owned by main, never autosaved back. */
 export function acceptRuntimeThreadMeta(
   projectId: string,
@@ -304,57 +398,149 @@ export function acceptRuntimeThreadMeta(
   before?: TranscriptMeta,
 ): void {
   const previous = persistedMeta.get(projectId)?.get(thread.id)
-  if (!previous) return
-  const next = { ...previous }
-  for (const key of TRANSCRIPT_META_KEYS) {
-    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue
-    Object.assign(next, { [key]: thread[key] })
+  if (previous) acknowledgeMetadata(projectId, thread.id, runtimeMeta(previous, thread, before))
+  // Main can accept runtime-owned fields while a user metadata write is queued
+  // or in flight. Carry only those accepted fields into its target; acknowledging
+  // the whole renderer thread would falsely persist an unsaved draft/model edit.
+  for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+    if (pending.kind === 'save') pending.meta = runtimeMeta(pending.meta, thread, before)
   }
-  persistedMeta.get(projectId)?.set(thread.id, next)
+  const creation = unconfirmedCreates.get(projectId)?.get(thread.id)
+  if (creation) creation.meta = runtimeMeta(creation.meta, thread, before)
+  const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id)
+  if (uncertain?.target) uncertain.target = runtimeMeta(uncertain.target, thread, before)
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (!before || JSON.stringify(before[key]) !== JSON.stringify(thread[key])) {
+      uncertain?.fields.delete(key)
+    }
+  }
 }
 
-/** Register a thread loaded from main without resetting other pending metadata edits. */
-export function recordPersistedThread(projectId: string, thread: Thread): void {
-  let metas = persistedMeta.get(projectId)
-  if (!metas) {
-    metas = new Map<string, ThreadMeta>()
-    persistedMeta.set(projectId, metas)
+/** Queue one target, updating the acknowledged baseline only after success. */
+function queueThreadWrite(
+  api: ApiClient,
+  projectId: string,
+  threadId: string,
+  target: PendingThreadWrite,
+): Promise<void> {
+  let projectPending = pendingThreadWrites.get(projectId)
+  if (!projectPending) {
+    projectPending = new Map()
+    pendingThreadWrites.set(projectId, projectPending)
   }
-  metas.set(thread.id, metaOf(thread))
+  const queue = projectPending.get(threadId) ?? []
+  projectPending.set(threadId, queue)
+  queue.push(target)
+  markMetadataChanged(projectId, threadId)
+
+  return serializedWrite(threadWriteKey(projectId, threadId), async () => {
+    const previous = metadataBaseline(projectId).get(threadId)
+    const uncertain = uncertainThreadWrites.get(projectId)?.get(threadId)
+    let submittedPatch: Partial<ThreadMeta> | undefined
+    let attemptedDelete = false
+    try {
+      if (target.kind === 'delete') {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId) || uncertain?.deleted) {
+          attemptedDelete = true
+          await api.threads.delete(projectId, threadId)
+        }
+        acknowledgeMetadata(projectId, threadId, null)
+      } else {
+        if (!previous || uncertain?.deleted || unconfirmedCreates.get(projectId)?.has(threadId)) {
+          let creations = unconfirmedCreates.get(projectId)
+          if (!creations) {
+            creations = new Map()
+            unconfirmedCreates.set(projectId, creations)
+          }
+          const creation = creations.get(threadId) ?? { meta: previous ?? target.meta }
+          creations.set(threadId, creation)
+          await api.threads.create(projectId, { ...target.thread, ...target.meta })
+          submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain)
+        } else {
+          submittedPatch = retryMetaPatch(previous, target.meta, uncertain)
+        }
+        if (Object.keys(submittedPatch).length > 0) {
+          await api.threads.updateMeta(projectId, threadId, submittedPatch)
+        }
+        acknowledgeMetadata(projectId, threadId, target.meta)
+      }
+      const creations = unconfirmedCreates.get(projectId)
+      creations?.delete(threadId)
+      if (creations?.size === 0) unconfirmedCreates.delete(projectId)
+      const uncertainties = uncertainThreadWrites.get(projectId)
+      uncertainties?.delete(threadId)
+      if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId)
+    } catch (error) {
+      const fields = Object.keys(submittedPatch ?? {})
+      if (fields.length > 0 || attemptedDelete || target.kind === 'save') {
+        let uncertainties = uncertainThreadWrites.get(projectId)
+        if (!uncertainties) {
+          uncertainties = new Map()
+          uncertainThreadWrites.set(projectId, uncertainties)
+        }
+        const failed = uncertainties.get(threadId) ?? {
+          fields: new Set<string>(),
+          deleted: false,
+          target: null,
+        }
+        for (const field of fields) failed.fields.add(field)
+        failed.deleted ||= attemptedDelete
+        failed.target = target.kind === 'save' ? target.meta : null
+        uncertainties.set(threadId, failed)
+        markMetadataChanged(projectId, threadId)
+      }
+      throw error
+    } finally {
+      queue.splice(queue.indexOf(target), 1)
+      if (queue.length === 0) projectPending.delete(threadId)
+      if (projectPending.size === 0 && pendingThreadWrites.get(projectId) === projectPending) {
+        pendingThreadWrites.delete(projectId)
+      }
+    }
+  })
 }
 
 /**
- * Diff a project's threads against the last-persisted metadata baseline and emit
- * exactly `create` (new id), `updateMeta` (changed meta), or `delete` (removed
- * id). Message content is persisted separately via `appendMessage`; a brand-new
- * thread's `create` writes its current messages too. Updates the baseline.
+ * Diff against the latest submitted target to avoid duplicate queued writes.
+ * Each callback resolves create/update/delete against the acknowledged baseline
+ * when it runs: a failed create must not turn the next save into an update of a
+ * thread that does not exist. Rejected targets stay dirty for an unchanged flush.
  */
 function reconcileThreads(api: ApiClient, projectId: string, threads: Thread[]): Promise<void> {
-  const prev = persistedMeta.get(projectId) ?? new Map<string, ThreadMeta>()
-  const next = new Map<string, ThreadMeta>()
+  const previous = new Map(persistedMeta.get(projectId))
+  for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
+    const target = queue.at(-1)
+    if (target?.kind === 'save') previous.set(id, target.meta)
+    else previous.delete(id)
+  }
+  const next = new Map(threads.map((thread) => [thread.id, { thread, meta: metaOf(thread) }]))
   const writes: Array<Promise<void>> = []
-
-  for (const t of threads) {
-    const meta = metaOf(t)
-    next.set(t.id, meta)
-    const key = threadWriteKey(projectId, t.id)
-    const prevMeta = prev.get(t.id)
-    if (prevMeta === undefined) {
-      writes.push(serializedWrite(key, () => api.threads.create(projectId, t)))
-    } else if (metaSig(prevMeta) !== metaSig(meta)) {
-      const patch = metaPatch(prevMeta, meta)
-      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t.id, patch)))
+  for (const [id, target] of next) {
+    const before = previous.get(id)
+    const uncertain = uncertainThreadWrites.get(projectId)?.has(id)
+    const pending = pendingThreadWrites.get(projectId)?.has(id)
+    if (!before || metaSig(before) !== metaSig(target.meta) || (uncertain && !pending)) {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: 'save', ...target }))
     }
   }
-  for (const id of prev.keys()) {
-    if (!next.has(id)) {
-      writes.push(
-        serializedWrite(threadWriteKey(projectId, id), () => api.threads.delete(projectId, id)),
-      )
+  const potentiallyCreated = new Set([
+    ...previous.keys(),
+    ...(unconfirmedCreates.get(projectId)?.keys() ?? []),
+    ...(uncertainThreadWrites.get(projectId)?.keys() ?? []),
+  ])
+  for (const id of potentiallyCreated) {
+    const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1)
+    if (!next.has(id) && pending?.kind !== 'delete') {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: 'delete' }))
     }
   }
-
-  persistedMeta.set(projectId, next)
+  // A flush is a durability barrier even when its target was already queued.
+  // In particular, switching away must await a pending create or deletion and
+  // observe its failure instead of treating deduplication as an acknowledgement.
+  for (const id of pendingThreadWrites.get(projectId)?.keys() ?? []) {
+    const pending = writeChains.get(threadWriteKey(projectId, id))
+    if (pending) writes.push(pending.then(() => undefined))
+  }
   return Promise.all(writes).then(() => undefined)
 }
 
@@ -374,6 +560,13 @@ export function flushProjectThreads(
 /** Test-only: clear the per-project metadata baseline and write chains. */
 export function __resetPersistenceForTest(): void {
   persistedMeta.clear()
+  pendingThreadWrites.clear()
+  unconfirmedCreates.clear()
+  uncertainThreadWrites.clear()
+  activeMetadataLoads.clear()
+  appliedProjectLoads.clear()
+  appliedThreadLoads.clear()
+  metadataLoadGeneration = 0
   persistedProjectsJson = null
   writeChains.clear()
   activeAutosave = null
@@ -470,24 +663,196 @@ export function invalidateProjectThreadLoads(api: ApiClient, projectId: string):
   revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1)
 }
 
-export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  let loaded: Thread[]
-  let revision: number
-  do {
-    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0
-    loaded = await api.threads.loadProject(projectId)
-  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0))
-  const threads = sortThreadsNewestFirst(loaded).map((thread) =>
-    thread.status !== 'running' && thread.lastSettledAt === undefined
-      ? { ...thread, lastSettledAt: thread.updatedAt }
-      : thread,
-  )
-  // Seed the persisted-metadata baseline so the autosave doesn't re-create these
-  // (they're already on disk) but still detects later deletions and removed keys.
-  const metas = new Map<string, ThreadMeta>()
-  for (const t of threads) metas.set(t.id, metaOf(t))
-  persistedMeta.set(projectId, metas)
-  return threads
+/** Replace metadata exactly, preserving only the separately loaded projections. */
+function threadWithMeta(thread: Thread, meta: ThreadMeta, projection?: ReadProjection): Thread {
+  const messagesLoaded = projection ? projection.messagesLoaded : thread.messagesLoaded
+  const hasSavedPlan = projection ? projection.hasSavedPlan : thread.hasSavedPlan
+  return {
+    ...meta,
+    messages: thread.messages,
+    ...(messagesLoaded !== undefined ? { messagesLoaded } : {}),
+    ...(hasSavedPlan !== undefined ? { hasSavedPlan } : {}),
+  }
+}
+
+async function readThreadMetadata(
+  api: ApiClient,
+  projectId: string,
+  onlyThreadId?: string,
+): Promise<Thread[]> {
+  const load: MetadataLoad = {
+    changed: new Set(),
+    generation: 0,
+    fullProjectionGeneration: 0,
+    projections: new Map(),
+  }
+  let loads = activeMetadataLoads.get(projectId)
+  if (!loads) {
+    loads = new Set()
+    activeMetadataLoads.set(projectId, loads)
+  }
+  loads.add(load)
+  try {
+    let loaded: Thread[]
+    let revision: number
+    do {
+      revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0
+      load.generation = ++metadataLoadGeneration
+      loaded = await api.threads.loadProject(projectId)
+    } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0))
+    const threads = sortThreadsNewestFirst(loaded)
+      .filter((thread) => onlyThreadId === undefined || thread.id === onlyThreadId)
+      .map((thread) =>
+        onlyThreadId === undefined &&
+        thread.status !== 'running' &&
+        thread.lastSettledAt === undefined
+          ? { ...thread, lastSettledAt: thread.updatedAt }
+          : thread,
+      )
+    const baseline = metadataBaseline(projectId)
+    const beforeSeed = new Map(baseline)
+    const returned = new Map(threads.map((thread) => [thread.id, thread]))
+    if (load.generation < (appliedProjectLoads.get(projectId) ?? 0)) {
+      for (const id of new Set([...baseline.keys(), ...returned.keys()])) load.changed.add(id)
+    }
+    for (const [id, generation] of appliedThreadLoads.get(projectId) ?? []) {
+      if (load.generation < generation) load.changed.add(id)
+    }
+    // Preserve the live map: in-flight writers must never acknowledge an
+    // orphaned map. Changed IDs also protect acknowledgements that landed
+    // before this stale read returned, and tombstones for newer deletions.
+    for (const id of baseline.keys()) {
+      if (onlyThreadId !== undefined && id !== onlyThreadId) continue
+      if (!returned.has(id) && !load.changed.has(id)) {
+        acknowledgeMetadata(projectId, id, null, load)
+      }
+    }
+    for (const thread of threads) {
+      if (!load.changed.has(thread.id)) {
+        const meta = metaOf(thread)
+        const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id)
+        const creation = unconfirmedCreates.get(projectId)?.get(thread.id)
+        const before = beforeSeed.get(thread.id) ?? creation?.meta ?? meta
+        // Adopt proven disk fields while retaining only local write intent.
+        // Neither a pending target nor a rejected patch becomes acknowledged.
+        for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+          if (pending.kind === 'save') {
+            pending.meta = { ...meta, ...retryMetaPatch(before, pending.meta, uncertain) }
+          }
+        }
+        if (uncertain?.target) {
+          uncertain.target = { ...meta, ...retryMetaPatch(before, uncertain.target, uncertain) }
+        }
+        if (creation) creation.meta = meta
+        acknowledgeMetadata(projectId, thread.id, meta, load)
+      }
+    }
+    for (const id of load.changed) {
+      if (onlyThreadId !== undefined && id !== onlyThreadId) continue
+      const current = baseline.get(id)
+      if (current) {
+        const old = returned.get(id) ?? { ...current, messages: [], messagesLoaded: false }
+        returned.set(id, threadWithMeta(old, current))
+      } else {
+        returned.delete(id)
+      }
+    }
+    // A read must not replace UI intent that is queued or awaiting repair.
+    // This is a projection only: those fields are NOT acknowledged as saved.
+    for (const id of new Set([
+      ...returned.keys(),
+      ...(pendingThreadWrites.get(projectId)?.keys() ?? []),
+      ...(uncertainThreadWrites.get(projectId)?.keys() ?? []),
+    ])) {
+      if (onlyThreadId !== undefined && id !== onlyThreadId) continue
+      const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1)
+      const uncertain = uncertainThreadWrites.get(projectId)?.get(id)
+      if (pending?.kind === 'delete' || (!pending && uncertain?.target === null)) {
+        returned.delete(id)
+        continue
+      }
+      const target = pending?.kind === 'save' ? pending.meta : uncertain?.target
+      if (!target) continue
+      const current = returned.get(id) ?? { ...target, messages: [], messagesLoaded: false }
+      const before =
+        beforeSeed.get(id) ?? unconfirmedCreates.get(projectId)?.get(id)?.meta ?? target
+      const patch = retryMetaPatch(before, target, uncertain)
+      returned.set(id, threadWithMeta(current, { ...metaOf(current), ...patch }))
+    }
+    // Derived retention/load flags are not mutable metadata. A newer read
+    // must nevertheless carry them into older pending reads, or a saved plan
+    // can become a "blank" task after hydration and be deleted by pruning.
+    for (const [id, thread] of returned) {
+      const known = load.projections.get(id)
+      const projection =
+        known && known.generation >= load.fullProjectionGeneration
+          ? known
+          : {
+              generation: load.fullProjectionGeneration,
+              messagesLoaded: undefined,
+              hasSavedPlan: undefined,
+            }
+      if (projection.generation > load.generation) {
+        returned.set(id, threadWithMeta(thread, metaOf(thread), projection))
+      }
+    }
+    for (const older of loads) {
+      if (older === load || older.generation >= load.generation) continue
+      if (onlyThreadId === undefined) {
+        older.fullProjectionGeneration = Math.max(older.fullProjectionGeneration, load.generation)
+        for (const [id, projection] of older.projections) {
+          if (projection.generation <= load.generation) older.projections.delete(id)
+        }
+      }
+      for (const [id, thread] of returned) {
+        const previous = older.projections.get(id)
+        if (!previous || previous.generation < load.generation) {
+          older.projections.set(id, {
+            generation: load.generation,
+            messagesLoaded: thread.messagesLoaded,
+            hasSavedPlan: thread.hasSavedPlan,
+          })
+        }
+      }
+    }
+    if (onlyThreadId === undefined) {
+      appliedProjectLoads.set(
+        projectId,
+        Math.max(appliedProjectLoads.get(projectId) ?? 0, load.generation),
+      )
+      const scoped = appliedThreadLoads.get(projectId)
+      for (const [id, generation] of scoped ?? []) {
+        if (generation <= load.generation) scoped?.delete(id)
+      }
+      if (scoped?.size === 0) appliedThreadLoads.delete(projectId)
+    } else {
+      let scoped = appliedThreadLoads.get(projectId)
+      if (!scoped) {
+        scoped = new Map()
+        appliedThreadLoads.set(projectId, scoped)
+      }
+      scoped.set(onlyThreadId, Math.max(scoped.get(onlyThreadId) ?? 0, load.generation))
+    }
+    return sortThreadsNewestFirst([...returned.values()])
+  } finally {
+    loads.delete(load)
+    if (loads.size === 0 && activeMetadataLoads.get(projectId) === loads) {
+      activeMetadataLoads.delete(projectId)
+    }
+  }
+}
+
+export function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
+  return readThreadMetadata(api, projectId)
+}
+
+/** Read/register one restored thread without letting a stale read erase newer writes. */
+export async function loadPersistedThread(
+  api: ApiClient,
+  projectId: string,
+  threadId: string,
+): Promise<Thread | undefined> {
+  return (await readThreadMetadata(api, projectId, threadId))[0]
 }
 
 export const AUTOSAVE_DEBOUNCE_MS = 250

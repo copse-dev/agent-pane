@@ -561,6 +561,8 @@ export function seedEmptyProject(
     nextStepSuggestionEnabled?: boolean
     /** Opt into the experimental unattended container runs (off by default). */
     containerRunsEnabled?: boolean
+    /** Opt into the experimental "Start planning" composer control (off by default). */
+    planModeEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -614,15 +616,6 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
-    /**
-     * Store a Parallel API key. The `copse.parallel-search` pack is
-     * credential-gated in both directions — the host only registers
-     * `parallel_search` when a key resolves, and Settings only lets the toggle
-     * be turned on once one is saved — so a spec exercising the enabled pack
-     * has to seed one. Same base64-plaintext record shape as
-     * {@link seedOpenRouterFixture}.
-     */
-    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /** Seed rolling usage-ledger events before the app launches. */
@@ -715,6 +708,9 @@ export function seedEmptyProject(
   if (options?.containerRunsEnabled !== undefined) {
     settings['containerRunsEnabled'] = options.containerRunsEnabled
   }
+  if (options?.planModeEnabled !== undefined) {
+    settings['planModeEnabled'] = options.planModeEnabled
+  }
   if (options?.model) {
     settings['model'] = options.model
   }
@@ -775,15 +771,6 @@ export function seedEmptyProject(
   }
   if (options?.openRouterPricing !== undefined) {
     settings['openRouterPricing'] = options.openRouterPricing
-  }
-  if (options?.parallelApiKey !== undefined) {
-    settings['apiKey'] = {
-      parallel: {
-        v: 1,
-        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
-        plain: true,
-      },
-    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -2588,6 +2575,12 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     '',
     '```bash',
     'node -e "console.log(424242)"',
+    '```',
+    '',
+    'Or clean up stale profiles first:',
+    '',
+    '```',
+    "find . -maxdepth 1 -name '.wdio-profile-*' -exec rm -rf {} +",
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })

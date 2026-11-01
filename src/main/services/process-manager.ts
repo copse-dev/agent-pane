@@ -1,4 +1,5 @@
 import { startProcessMemoryDiagnostics } from './diagnostics/process-memory.ts'
+import { readProcessMemory } from './process-manager-memory.ts'
 import type { ProcessManagerRow, ProcessManagerSnapshot } from '@shared/types/process-manager.ts'
 import {
   buildProcessSnapshot,
@@ -26,10 +27,11 @@ export function createProcessManagerSampler(
     const result = buildProcessSnapshot(metrics, readLabels(), samples, now)
     samples = result.samples
     pending = readOwnedRows(new Set(metrics.map((metric) => metric.pid)))
-      .then((owned) => {
+      .then(async (owned) => {
+        const memory = await readProcessMemory([...result.snapshot.processes, ...owned])
         cached = {
-          sampledAt: now,
-          processes: [...result.snapshot.processes, ...owned],
+          sampledAt: Date.now(),
+          ...memory,
         }
         return cached
       })

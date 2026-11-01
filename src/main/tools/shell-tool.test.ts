@@ -13,7 +13,7 @@ import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import { clearGitRemotesCache } from '../services/security/git-remotes.ts'
 import { setWorkspaceTrusted } from '../services/security/workspace-trust.ts'
-import { setSetting } from '../services/storage/settings.test-shim.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import {
   runWithThreadExecutionContext,
@@ -180,11 +180,11 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     cleanups.push(() => {
       setWorkspaceTrusted(root, false)
     })
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
-    setSetting('autoRunSandboxCommands', true)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    await setSetting('autoRunSandboxCommands', true)
     await setSetting('safetyClassifierEnabled', false)
-    cleanups.push(() => {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    cleanups.push(async () => {
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
     })
 
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')

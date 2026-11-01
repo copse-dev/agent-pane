@@ -26,7 +26,10 @@ This directory keeps the app-side integration only:
   hash-pinned CSP document builder; `scripts/write-mermaid-frame.mts` supplies
   Copse CSS and writes the generated `mermaid-frame.html`. `pele-frame.ts` adapts
   the package's Pele backend to this isolated runtime and sanitizes its SVG inside
-  the frame. Electron navigation
+  the frame. Whole `$$...$$` labels use the existing KaTeX adapter's sanitized MathML,
+  centered within Pele's node geometry; invalid expressions retain their inert source.
+  Math labels remain inside the same opaque frame and require no font or network URLs.
+  Electron navigation
   enforcement remains in `src/main/windows/web-contents-lockdown.ts`.
   See [the isolation prototype](../../../docs/spikes/mermaid-isolation.md) for
   the protocol, security boundaries, and remaining production work.

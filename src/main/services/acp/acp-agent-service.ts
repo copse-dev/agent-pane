@@ -14,7 +14,7 @@ import type {
   Usage,
   WriteTextFileRequest,
   WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -39,13 +39,20 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
+  ACP_CANCEL_GRACE_MS,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import {
+  getAcpAgent,
+  resolveAcpConfigDirEnvVar,
+  resolveAcpPermissionMode,
+  resolveAcpSandbox,
+} from './acp-agent-registry.ts'
+import { ensureAcpAgentConfigDir, ensureClaudeAcpConfigDir } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
@@ -65,6 +72,7 @@ import {
 } from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
+  acpShellCommandText,
   permissionKindLabel,
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
@@ -76,6 +84,7 @@ import {
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
 import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
+import { withRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -692,13 +701,46 @@ async function runAcpAgentTurn(
     agent.configOptions && Object.keys(agent.configOptions).length > 0
       ? agent.configOptions
       : undefined
+  // Default the agent's own home/config dir (e.g. Claude Code's
+  // `CLAUDE_CONFIG_DIR`) to this thread's scoped directory rather than the
+  // real `$HOME`, so a Copse coding thread never inherits the user's personal
+  // synced skills, plugins, or MCP servers into an unrelated project. An
+  // explicit `agent.env` override (set in Settings → Coding agents) always
+  // wins. Best-effort: a thread whose owning project cannot be resolved here
+  // keeps the agent's own default rather than failing the turn over it.
+  const configDirEnvVar = resolveAcpConfigDirEnvVar(agent)
+  let defaultConfigEnv: Record<string, string> | undefined
+  if (configDirEnvVar && executionContext?.projectId) {
+    try {
+      // `CLAUDE_CONFIG_DIR` is the only one today; the Claude-aware ensure
+      // also keeps the agent's own OAuth login live (see
+      // `ensureClaudeAcpConfigDir`). A future non-Claude `configDirEnvVar`
+      // falls back to the plain, credential-unaware ensure.
+      const ensureConfigDir =
+        configDirEnvVar === 'CLAUDE_CONFIG_DIR' ? ensureClaudeAcpConfigDir : ensureAcpAgentConfigDir
+      defaultConfigEnv = {
+        [configDirEnvVar]: await ensureConfigDir(
+          executionContext.projectId,
+          options.threadId,
+          agent.id,
+        ),
+      }
+    } catch (err) {
+      console.warn(
+        `[acp-agent-service] could not scope ${configDirEnvVar} to this thread; the agent will use its own default:`,
+        err,
+      )
+    }
+  }
+  const env =
+    defaultConfigEnv || agent.env ? { ...defaultConfigEnv, ...(agent.env ?? {}) } : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
     cwd,
     sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
+    ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
     ...(permissionMode ? { permissionMode } : {}),
@@ -788,6 +830,18 @@ async function runAcpAgentTurn(
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
 
+  // The thread's model has dropped off the agent's list: say so in the thread.
+  // Like the handover note, straight to the caller's sink rather than
+  // `onChunk`, so it is not replayed to the agent as its own words and does
+  // not count as progress that blocks a retry. A retry runs on a fresh
+  // session, which would notice again; once per turn is enough.
+  let staleModelNoticed = false
+  const onStaleModel = (notice: string): void => {
+    if (staleModelNoticed) return
+    staleModelNoticed = true
+    options.onChunk({ type: 'text', text: notice })
+  }
+
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
   // a FRESH session — a reused or resumed one already has its own memory of
@@ -795,15 +849,28 @@ async function runAcpAgentTurn(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
+    let reportedSetup = false
     const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
-        acquireAcpSession({
-          ...(executionContext ? { projectId: executionContext.projectId } : {}),
-          threadId: options.threadId,
-          config: spawnConfig,
-          registry: options.registry,
-          signal: options.signal,
+        // Reaching an agent on an SSH host can take a while (probes, a first-run
+        // install); name each stage in the activity row. Straight to the caller's
+        // sink, like the handover note: it is status, not assistant progress.
+        withRemoteAcpSetupProgress(
+          (progress) => {
+            reportedSetup = true
+            options.onChunk({ type: 'agent_setup_progress', ...progress })
+          },
+          () =>
+            acquireAcpSession({
+              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              threadId: options.threadId,
+              config: spawnConfig,
+              registry: options.registry,
+              signal: options.signal,
+            }),
+        ).finally(() => {
+          if (reportedSetup) options.onChunk({ type: 'agent_setup_progress', phase: 'ready' })
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
@@ -869,7 +936,14 @@ async function runAcpAgentTurn(
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
+      return await runAcpSessionPrompt(
+        entry.open,
+        promptBlocks,
+        model,
+        options.signal,
+        ACP_CANCEL_GRACE_MS,
+        { onStaleModel },
+      )
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
@@ -968,16 +1042,17 @@ async function runAcpAgentTurn(
 /**
  * Probe a configured ACP agent for the models and session modes it offers (for
  * the settings picker, issue #607). Resolves the agent + workspace, then probes
- * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
- * agent is unknown/disabled; otherwise each selector is `null` when the agent
- * exposes none of that kind.
+ * it via {@link probeAcpAgent}. Rejects unknown/disabled agents so connection
+ * verification cannot mistake an unattempted probe for success. Each selector
+ * is `null` when a connected agent exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
   if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
-  if (!agent) return { models: null, modes: null }
+  if (!agent)
+    throw new Error('Enable this coding agent in Options before verifying its connection.')
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting a coding agent’s models.')
@@ -1091,14 +1166,19 @@ export function mergeAcpPermissionAbortSignals(
   return AbortSignal.any([turnSignal, rpcSignal])
 }
 
+/**
+ * Answer a request that runs `command` (see `acpShellCommandText`) through the
+ * shell gate, as native `run_shell` is. Null when there is no command text to
+ * classify, which leaves the request to the generic prompt.
+ */
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean; contained?: boolean },
   req: RequestPermissionRequest,
+  command: string | null,
   root: string | null,
   projectRoot: string | null,
   signal?: AbortSignal,
 ): Promise<RequestPermissionResponse | null> {
-  const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
@@ -1157,7 +1237,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
  * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
  * approved without prompting; checking the dialog's remember box persists such
  * a grant and also answers with the agent's own `allow_always` option so the
- * agent-side session stops asking within the turn.
+ * agent-side session stops asking within the turn. A request that runs a
+ * command is never remembered: each command must reach the shell gate.
  */
 async function respondToPermission(
   agent: AcpPermissionAgent,
@@ -1191,7 +1272,16 @@ async function respondToPermission(
   }
   const kind = req.toolCall.kind ?? 'other'
   const grantLocation = acpGrantLocationFor(agent)
-  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
+  // A grant is keyed by kind alone, so one remembered answer for a request
+  // that runs a command would wave every later command of that kind past the
+  // shell gate below. Such requests — `execute`, or an unclassified request
+  // carrying `rawInput.command` — are never rememberable, and a stored grant
+  // never answers them. The grant store also ignores stored execute grants;
+  // a stored `other` grant still covers `other` requests without a command.
+  const shellCommand = acpShellCommandText(req.toolCall)
+  const runsCommand = kind === 'execute' || shellCommand !== null
+  const rememberable = !runsCommand
+  if (rememberable && grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -1218,7 +1308,7 @@ async function respondToPermission(
   ) {
     return permissionResponseFor(req.options, true)
   }
-  if (kind === 'execute') {
+  if (runsCommand) {
     const toolCallId = req.toolCall.toolCallId
     const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
     const approvalSignal = tracked
@@ -1228,8 +1318,13 @@ async function respondToPermission(
       : signal
     try {
       const executeResponse = await respondToAcpExecutePermission(
-        agent,
+        // Only an `execute` request runs in the agent's own shell. An
+        // unclassified call's `command` may be an MCP tool argument (a Redis or
+        // SQL command) that runs outside that sandbox, so it is judged without
+        // the sandbox's containment claim: gated, never auto-run on it.
+        kind === 'execute' ? agent : { ...agent, sandboxed: false },
         req,
+        shellCommand,
         root,
         projectRoot,
         approvalSignal,
@@ -1287,8 +1382,10 @@ async function respondToPermission(
       {
         ...presentation,
         cause: 'acp-permission',
-        allowRemember: true,
-        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+        allowRemember: rememberable,
+        ...(rememberable
+          ? { rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}` }
+          : {}),
         // Lets turn bookkeeping leave this tool call open while its prompt
         // outlives the turn (approval parking), instead of stamping it
         // "interrupted" underneath a question the user can still answer.
@@ -1297,10 +1394,11 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember && grantLocation) {
+    const remembered = approved && remember && rememberable
+    if (remembered && grantLocation) {
       void rememberAcpPermission(agent.id, kind, grantLocation)
     }
-    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+    return permissionResponseFor(req.options, approved, { preferAlways: remembered })
   } finally {
     tracked?.unregister()
   }
@@ -1308,10 +1406,13 @@ async function respondToPermission(
 
 /**
  * Translate the user's approve/deny into one of the agent-provided option ids.
- * By default a one-shot option (`*_once`) wins over a remembered one
- * (`*_always`) since Copse asks per call; `preferAlways` flips that for grants
- * the user chose to remember. Falls back to `cancelled` when the agent offered
- * no option of the needed polarity.
+ * Copse asks per call, so an approval selects the agent's one-shot
+ * `allow_once`. Only `preferAlways`, for grants the user chose to remember,
+ * selects `allow_always` (falling back to `allow_once`). A one-shot approval
+ * never falls back to `allow_always`: the agent would remember an answer given
+ * once, and its later requests of that kind would never reach Copse's gate. A
+ * denial prefers `reject_once`. Falls back to `cancelled` when the agent
+ * offered no option that matches the answer.
  */
 export function permissionResponseFor(
   options: PermissionOption[],
@@ -1321,7 +1422,7 @@ export function permissionResponseFor(
   const wanted: PermissionOptionKind[] = approved
     ? opts?.preferAlways
       ? ['allow_always', 'allow_once']
-      : ['allow_once', 'allow_always']
+      : ['allow_once']
     : ['reject_once', 'reject_always']
   const option = pickPermissionOption(options, wanted)
   return option
