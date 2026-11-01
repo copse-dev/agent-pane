@@ -83,12 +83,31 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   the identical retry (same command, working directory and thread) reuses it
   without prompting again. A retry that arrives while the prompt is still open
   simply joins it. Turn end still dismisses the prompt, as before.
-- Because that title is also how Copse recognises **its own** bridged tools to
-  skip a duplicate approval prompt, the same per-agent spread applies: Cursor's
-  `copse-gh_pr_list: gh_pr_list` and Claude's `mcp__copse__gh_pr_view` are both
-  recognised. Codex sends no title at all, so its bridged calls still prompt
-  twice — the bridge's own gate still enforces them, so this is noise, not a
-  hole.
+- Copse skips the agent's duplicate approval for **its own** bridged tools only
+  on adapter-authored provenance carried by the permission request itself,
+  never on a title prefix (#1446, [plan](plans/acp-tool-provenance.md)).
+  - **Claude** qualifies through `_meta.claudeCode.toolName`
+    (`mcp__copse__gh_pr_view`).
+  - **Cursor** qualifies through its exact permission-request title
+    (`copse-gh_pr_list: gh_pr_list`). A title is weak evidence, so a request
+    the agent marks `execute`, `edit`, `delete` or `move`, or one that carries a
+    command line in `rawInput.command`, is never delegated on
+    titles alone.
+  - **Codex** titles its notifications `mcp.copse.<tool>`, but its permission
+    requests carry no title and no `_meta` identity. An earlier report can
+    only veto a request's own claim, never stand in for one, so Codex's
+    bridged calls still prompt twice. The bridge's own gate still enforces
+    them, so this is noise, not a hole.
+
+  Every claim on the request and on the agent's earlier reports of the same
+  `toolCallId` must agree, and the tool must be one this session's own bridge
+  serves: a local agent with HTTP MCP whose bridge started. Titles match only
+  the literal observed shapes, so shell text such as `copse=;. ./run_shell`
+  claims nothing. Each delegation is recorded as an `acp` `allowed` decision.
+  The bridge's `bridge-request` record repeats its `toolCallId` when the call
+  can be matched (same tool, and the same arguments when the request carried
+  any), so an export can attribute both layers.
+
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's
@@ -381,7 +400,8 @@ tokens such as `GITHUB_TOKEN` are passed through.
 
 An agent `resolveAcpConfigDirEnvVar` (`acp-agent-registry.ts`) recognises as
 wrapping Claude (today, any Claude ACP adapter — see `isClaudeAcpAgent`) is
-**thread-scoped by default**: Copse points `CLAUDE_CONFIG_DIR` at
+**thread-scoped by default** when it runs locally: Copse points
+`CLAUDE_CONFIG_DIR` at
 `<chat store>/<projectId>/<threadId>/acp-agent-config/<agentId>/`
 (`acp-agent-config-dir.ts`) rather than letting the agent fall back to the real
 `$HOME`. Without this, every ACP-backed Copse thread shares — and is shaped
@@ -389,14 +409,52 @@ by — whatever the signed-in device's Claude Code account has globally:
 personal synced skills, plugins, and MCP servers from a completely unrelated
 context, with no relation to the project the thread is actually working in.
 
+**The login is not scoped.** `CLAUDE_CONFIG_DIR` alone would sign every new
+thread out: Claude Code derives its secure storage from that directory too. On
+macOS the Keychain item becomes `Claude Code-credentials-<first 8 hex of
+sha256(dir)>`, and on Linux/Windows `.credentials.json` moves into the
+directory. Copse's Settings auth check stays unscoped, so it would still say
+"signed in" while the agent failed. Copse therefore also sets an **empty**
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, which the CLI reads as "the default
+Keychain item and `~/.claude/.credentials.json`". Every thread uses the account's
+one real login, its token refreshes and their lock included, and nothing
+credential-shaped is linked or copied into the thread.
+
+Scoping happens only when Copse can see that the CLI the adapter will run
+honours that variable. That means **Claude Code 2.1.144 or newer**, read from the
+`claudeCodeVersion` of the `@anthropic-ai/claude-agent-sdk` installed with the
+adapter (`@agentclientprotocol/claude-agent-acp` 0.37.0+). Copse finds the
+adapter on the agent's own spawn `PATH`, so a `PATH` set in Settings is
+respected. An older adapter
+already hashes the Keychain item name but ignores the override, so it is left
+**unscoped** rather than signed out. So is any agent whose CLI Copse cannot
+identify:
+
+- a runner such as `npx`;
+- a `CLAUDE_CODE_EXECUTABLE` override;
+- an install with no SDK version to read.
+
+Run `npm install -g @agentclientprotocol/claude-agent-acp@latest` to get the
+scoping on an older install.
+
+**SSH-hosted agents are never scoped.** The directory is a path on this
+machine, so it means nothing on the remote host. Putting it in the agent's
+`env` would also make the forwarding consent prompt (`acp-remote-env-gate.ts`,
+see [`acp-over-ssh.md`](plans/acp-over-ssh.md)) ask to send it there. A remote agent
+keeps the host's own `~/.claude`. Copse asks to forward only the env configured
+in Settings.
+
 An explicit `CLAUDE_CONFIG_DIR` in the agent's own `env` (Settings → Coding
-agents) always overrides the default — e.g. to point every thread at one
-shared config on purpose. OAuth login state survives the scoping either way:
-on macOS it lives in the Keychain, outside this directory entirely; on
-Linux/Windows, where `claude`'s only saved login is a `.credentials.json` file
-directly under its config dir, `ensureClaudeAcpConfigDir` symlinks that one
-file in from the account's real credentials so every thread shares the same
-login without sharing anything else.
+agents) always overrides the default, for example to point every thread at one
+shared config on purpose. Copse then adds no secure-storage override, so that
+directory behaves exactly as it does for the CLI on its own, login included.
+
+> **Known gap — sandboxed writes.** The seatbelt mounts the chat store
+> read-only and grants the agent writes only to its declared `homeDirs`
+> (`~/.claude`, …). A sandboxed agent can therefore read and refresh its login
+> but cannot write into its scoped directory (`.claude.json`, session
+> transcripts under `projects/`). Granting that directory is a separate
+> sandbox-policy change, not made here.
 
 This directory is a root-level sibling of `events.jsonl`, like the ACP wire
 trace: untouched by thread save/load, and carried along by "Export thread

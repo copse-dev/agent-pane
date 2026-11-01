@@ -5,6 +5,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
+import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { qsRequired } from '../../dom/helpers.ts'
@@ -518,7 +519,7 @@ export function createPacksSection(
       chips.push({
         label: 'Tools',
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(', '),
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(', '),
       })
     }
     if (contributions.modelRoutes.length > 0) {
