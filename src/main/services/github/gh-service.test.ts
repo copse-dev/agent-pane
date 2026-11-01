@@ -6,6 +6,7 @@ import {
   formatGhPrList,
   formatGhPrView,
   ghEnv,
+  pickCurrentBranchPr,
   collectRestPrList,
   type GhPrListEntry,
   isGhGraphQlRateLimited,
@@ -286,6 +287,29 @@ describe('restCurrentBranchPrSelector', () => {
       }),
       { head: 'contributor:fix/parser' },
     )
+  })
+})
+
+describe('pickCurrentBranchPr', () => {
+  it('prefers the open PR over a newer closed one on the same branch', () => {
+    assert.equal(
+      pickCurrentBranchPr([
+        { number: 12, state: 'closed' },
+        { number: 7, state: 'open' },
+      ]),
+      7,
+    )
+  })
+
+  it('falls back to the newest PR when none is open, and to null for none', () => {
+    assert.equal(
+      pickCurrentBranchPr([
+        { number: 12, state: 'closed' },
+        { number: 7, state: 'closed' },
+      ]),
+      12,
+    )
+    assert.equal(pickCurrentBranchPr([]), null)
   })
 })
 

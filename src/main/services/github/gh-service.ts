@@ -419,8 +419,18 @@ async function restFindPrNumberForBranch(
   )
   if (code !== 0) return null
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
-  if (!Array.isArray(list) || list.length === 0) return null
-  return list[0]?.number ?? null
+  return Array.isArray(list) ? pickCurrentBranchPr(list) : null
+}
+
+/**
+ * The PR `gh pr view` means for a branch with several PRs: the open one, else
+ * the newest (REST lists newest first). A branch reused after a PR was closed
+ * can carry both.
+ */
+export function pickCurrentBranchPr(
+  list: ReadonlyArray<{ number: number; state?: string | undefined }>,
+): number | null {
+  return (list.find((pr) => pr.state === 'open') ?? list[0])?.number ?? null
 }
 
 async function restListCommitOids(
