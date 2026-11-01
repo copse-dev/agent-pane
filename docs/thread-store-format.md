@@ -41,6 +41,16 @@ restore, stop the app and remove the index and its sidecars to force a rebuild.
 The spike does not add an external-file watcher or migrate `catalog.jsonl` and the
 legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-index.md).
 
+Sidebar request search has a separate disposable `.thread-prompt-index.sqlite`
+projection (and SQLite sidecars). A dedicated worker warms it after opening a project
+and reconciles it after native writes. It stores only NFC-normalized, case-folded human
+prompt text, with spine file signatures and per-prompt content hashes for incremental
+reuse. Search returns thread IDs rather than loading transcripts or tool/blob content.
+Queries reconcile source signatures before matching; edits, truncation, archive/restore,
+and deletion replace/remove affected rows. A missing/incompatible/corrupt database
+rebuilds from thread files. It uses the same store containment and symlink rules.
+Source files remain authoritative; deleting this cache is safe.
+
 ## Layout
 
 ```
@@ -49,6 +59,7 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
                                      #   createdAt, updatedAt, digest, path}
   agent-pr-index-v2.jsonl            # rebuildable legacy agent/PR links; all matching threads
   .thread-index.sqlite              # disposable metadata / PR / commit projection
+  .thread-prompt-index.sqlite       # disposable human-prompt search projection (worker-owned)
   stream-stats.jsonl                 # append-only stream-cut eval records
   reasoning-checkpoints.jsonl        # append-only reasoning checkpoint records
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread

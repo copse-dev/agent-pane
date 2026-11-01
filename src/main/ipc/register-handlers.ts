@@ -181,6 +181,11 @@ import {
 } from '../windows/create-main-window.ts'
 import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
+  searchThreadRequests,
+  cancelThreadRequestSearch,
+  warmThreadRequestSearch,
+} from '../services/thread-request-search.ts'
+import {
   measureThreadStorage,
   backfillThreadPrRefs,
   getLatestThreadPlan,
@@ -1802,7 +1807,10 @@ export function registerAllHandlers(
     // Archived threads stay on disk but are hidden from renderer surfaces.
     // The sidebar loads metadata only; legacy PR links are filled on demand
     // when their rows enter the visible viewport.
-    return loadProjectThreadMetas(id, { includeArchived: false })
+    return loadProjectThreadMetas(id, { includeArchived: false }).then((threads) => {
+      warmThreadRequestSearch(id)
+      return threads
+    })
   })
   ipcMain.handle('threads:archive-state', async (event, projectId: unknown, view: unknown) => {
     assertMainFrameSender(event, win)
@@ -1840,6 +1848,15 @@ export function registerAllHandlers(
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.
+  ipcMain.handle('threads:search-requests', (event, projectId: unknown, query: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, text] = parseIpcArgs(z.tuple([zProjectId, z.string().max(4096)]), [projectId, query])
+    return searchThreadRequests(id, text)
+  })
+  ipcMain.handle('threads:cancel-request-search', (event) => {
+    assertMainFrameSender(event, win)
+    cancelThreadRequestSearch()
+  })
   ipcMain.handle('threads:load-messages', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])

@@ -1081,6 +1081,26 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) =>
+        resolved({
+          matches: threads
+            .filter(
+              (thread) =>
+                thread.archivedAt == null &&
+                thread.messages.some(
+                  (message) =>
+                    message.role === 'user' &&
+                    (message.origin === undefined || message.editedByUser === true) &&
+                    message.content
+                      .normalize('NFC')
+                      .toLowerCase()
+                      .includes(query.normalize('NFC').toLowerCase()),
+                ),
+            )
+            .map((thread) => thread.id),
+          incomplete: false,
+        }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)

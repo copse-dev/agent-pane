@@ -30,6 +30,7 @@
     "probe:acp:behavior": "node scripts/run-probe-acp-behavior.mts",
     "probe:acp:long": "node scripts/run-probe-acp-long-run.mts",
     "watch:acp-v2": "node scripts/acp-v2-watch.mts",
+    "contracts:boundary": "node scripts/run-boundary-contracts.mts",
     "ci:base-freshness": "node scripts/base-freshness.mts",
     "probe:openai-agents": "node scripts/run-probe-openai-agents.mts",
     "probe:plan-usage": "node scripts/probe-plan-usage.mts",
