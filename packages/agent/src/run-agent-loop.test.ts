@@ -31,6 +31,7 @@ import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 import {
   EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
+  PLAN_VERIFIED_FINALIZE_NUDGE,
   STUCK_FINALIZE_NUDGE,
 } from './agent-loop-guards.ts'
 
@@ -3173,4 +3174,147 @@ it('executes a capped read page once and allows the next page', async () => {
   )
   assert.ok(duplicate?.type === 'tool_result')
   assert.match(duplicate.result, /duplicate/i)
+})
+
+describe('goal-met guards (#1433 Fix 4)', () => {
+  const prCheck = { kind: 'shell', command: 'gh pr view --json url', expectExit: 0 } as const
+
+  /** Turn 1 closes the last todo; afterwards record what each stream was offered. */
+  function closingRun(check: TodoItem['check']): {
+    run: () => Promise<void>
+    applied: AppliedNudgeRecord[]
+    offered: { tools: number; lastUser: string }[]
+  } {
+    const applied: AppliedNudgeRecord[] = []
+    const offered: { tools: number; lastUser: string }[] = []
+    const todos: TodoItem[] = [
+      { id: 'pr', content: 'Open the PR', status: 'in_progress', ...(check ? { check } : {}) },
+    ]
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+        calls++
+        const last = messages.at(-1)
+        offered.push({
+          tools: tools.length,
+          lastUser: last?.role === 'user' && typeof last.content === 'string' ? last.content : '',
+        })
+        if (calls === 1) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'todo-close',
+              name: 'update_todos',
+              args: {
+                merge: true,
+                todos: [{ id: 'pr', content: 'Open the PR', status: 'completed' }],
+              },
+            },
+          }
+        } else if (calls === 2 && tools.length > 0) {
+          // A run that is not finalized goes back for another verification lap.
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'lap', name: 'run_shell', args: { command: 'git status' } },
+          }
+        } else {
+          yield { type: 'text', text: 'The PR is open and verified.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const run = async (): Promise<void> => {
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'ship it' }],
+        tools: [
+          { name: 'update_todos', description: 'todos', parameters: {} },
+          { name: 'run_shell', description: 'shell', parameters: {} },
+        ],
+        getOpenTodos: () => todos,
+        recordAppliedNudge: (record) => applied.push(record),
+        onChunk: () => {},
+        executeTool: async (name) => {
+          if (name === 'update_todos') {
+            const item = todos[0]
+            if (item) item.status = 'completed'
+          }
+          return 'ok'
+        },
+      })
+    }
+    return { run, applied, offered }
+  }
+
+  it('finalizes with one tool-free turn once the last todo closes on its check', async () => {
+    const r = closingRun(prCheck)
+    await r.run()
+    assert.equal(r.offered.length, 2, 'no verification lap after the plan closed')
+    const finalTurn = at(r.offered, 1)
+    assert.equal(finalTurn.tools, 0)
+    assert.equal(finalTurn.lastUser, PLAN_VERIFIED_FINALIZE_NUDGE)
+    assert.deepEqual(
+      r.applied.map((a) => [a.hookId, a.mechanism]),
+      [['plan-verified-finalize', 'text-only-turn']],
+    )
+  })
+
+  it('leaves a plan closed without a check to finish the way it always has', async () => {
+    const r = closingRun(undefined)
+    await r.run()
+    assert.ok(r.offered.length > 2, 'the run continued with tools')
+    assert.equal(at(r.offered, 1).tools, 2)
+    assert.equal(
+      r.applied.some((a) => a.hookId === 'plan-verified-finalize'),
+      false,
+    )
+  })
+
+  function suiteRun(between: { name: string; args: unknown } | null): Promise<string[]> {
+    const executed: string[] = []
+    const steps: { name: string; args: unknown }[] = [
+      { name: 'run_shell', args: { command: 'npm run check 2>&1 | tail -40' } },
+      ...(between ? [between] : []),
+      { name: 'run_shell', args: { command: 'npm run check | tail -80' } },
+    ]
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        const step = steps[calls]
+        calls++
+        if (step) {
+          yield { type: 'tool_call', toolCall: { id: `s${String(calls)}`, ...step } }
+        } else {
+          yield { type: 'text', text: 'Done.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    return runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'verify' }],
+      tools: [
+        { name: 'run_shell', description: 'shell', parameters: {} },
+        { name: 'str_replace', description: 'edit', parameters: {} },
+      ],
+      onChunk: () => {},
+      executeTool: async (name, args) => {
+        executed.push(`${name}:${JSON.stringify(args)}`)
+        return 'exit 1: 16 failing'
+      },
+    }).then(() => executed)
+  }
+
+  it('skips a repeated full-suite run with nothing changed in between', async () => {
+    const executed = await suiteRun({ name: 'run_shell', args: { command: 'git status' } })
+    assert.equal(executed.filter((e) => e.includes('npm run check')).length, 1)
+  })
+
+  it('runs the suite again after an edit', async () => {
+    const executed = await suiteRun({
+      name: 'str_replace',
+      args: { path: 'a.ts', old_string: 'a', new_string: 'b' },
+    })
+    assert.equal(executed.filter((e) => e.includes('npm run check')).length, 2)
+  })
 })

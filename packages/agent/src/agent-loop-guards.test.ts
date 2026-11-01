@@ -8,7 +8,11 @@ import {
   nextConsecutiveExploreWithoutRead,
   toolCallFingerprint,
   normalizeExploreArgs,
+  planClosedByVerifiedChecks,
+  RepeatVerificationTracker,
+  verificationCommandKey,
 } from './agent-loop-guards.ts'
+import type { TodoItem } from './wire-types.ts'
 import { SUBAGENT_ALLOWED_TOOL_NAMES } from './run-subagent.ts'
 
 describe('toolCallFingerprint', () => {
@@ -215,5 +219,139 @@ describe('capped read_file pages', () => {
       ),
       false,
     )
+  })
+})
+
+describe('planClosedByVerifiedChecks (#1433 Fix 4)', () => {
+  const check = { kind: 'shell', command: 'gh pr view --json url', expectExit: 0 } as const
+
+  it('fires when the step completed the last open item and it carried a check', () => {
+    const before: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'in_progress', check },
+    ]
+    const after: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'completed', check },
+    ]
+    assert.equal(planClosedByVerifiedChecks(before, after), true)
+  })
+
+  it('does not fire when the closing item had no check, or todos remain open', () => {
+    const before: TodoItem[] = [{ id: 'a', content: 'Edit', status: 'in_progress' }]
+    assert.equal(
+      planClosedByVerifiedChecks(before, [{ id: 'a', content: 'Edit', status: 'completed' }]),
+      false,
+    )
+    const twoOpen: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'in_progress', check },
+      { id: 'b', content: 'Test', status: 'pending' },
+    ]
+    assert.equal(
+      planClosedByVerifiedChecks(twoOpen, [
+        { id: 'a', content: 'Edit', status: 'completed', check },
+        { id: 'b', content: 'Test', status: 'pending' },
+      ]),
+      false,
+    )
+  })
+
+  it('does not fire when one of several items closed in the step had no check', () => {
+    const before: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'in_progress' },
+      { id: 'b', content: 'Open PR', status: 'in_progress', check },
+    ]
+    const after: TodoItem[] = [
+      { id: 'a', content: 'Edit', status: 'completed' },
+      { id: 'b', content: 'Open PR', status: 'completed', check },
+    ]
+    assert.equal(planClosedByVerifiedChecks(before, after), false)
+  })
+
+  it('does not fire for a plan that was already closed, or closed by cancelling', () => {
+    const done: TodoItem[] = [{ id: 'a', content: 'Edit', status: 'completed', check }]
+    assert.equal(planClosedByVerifiedChecks(done, done), false)
+    assert.equal(
+      planClosedByVerifiedChecks(
+        [{ id: 'a', content: 'Edit', status: 'pending', check }],
+        [{ id: 'a', content: 'Edit', status: 'cancelled', check }],
+      ),
+      false,
+    )
+  })
+})
+
+describe('verificationCommandKey (#1433 Fix 4)', () => {
+  it('keys whole-suite runs, ignoring output filters and stderr merges', () => {
+    assert.equal(verificationCommandKey('npm run check'), 'npm run check')
+    assert.equal(verificationCommandKey('npm run check 2>&1 | tail -50'), 'npm run check')
+    assert.equal(verificationCommandKey('  npm   run check | grep -i fail'), 'npm run check')
+    assert.equal(verificationCommandKey('pnpm test -- thread-store'), 'pnpm test -- thread-store')
+    assert.equal(
+      verificationCommandKey('cd packages/agent && pnpm test'),
+      'cd packages/agent && pnpm test',
+    )
+    assert.equal(verificationCommandKey('cargo test'), 'cargo test')
+    assert.equal(verificationCommandKey('python -m pytest tests'), 'python -m pytest tests')
+  })
+
+  it('refuses commands that are not verification, or that may write', () => {
+    for (const command of [
+      'git status',
+      'cd packages/agent',
+      'npm install',
+      'npm run lint -- --fix',
+      'pnpm exec eslint --fix src',
+      'npm test -- -u',
+      'npm run check > check.log',
+      'npm run check | tee check.log',
+      'npm run check && git push',
+      'npm run format',
+    ]) {
+      assert.equal(verificationCommandKey(command), null, command)
+    }
+  })
+})
+
+describe('RepeatVerificationTracker (#1433 Fix 4)', () => {
+  const check = { command: 'npm run check 2>&1 | tail -40' }
+  const sameSuite = { command: 'npm run check | grep fail' }
+
+  it('flags the #1433 shape: check, read-only inspection, check again', () => {
+    const tracker = new RepeatVerificationTracker()
+    assert.equal(tracker.isRepeat('run_shell', check), false)
+    tracker.observe('run_shell', check)
+    tracker.observe('run_shell', { command: 'git status' })
+    tracker.observe('run_shell', { command: 'git diff origin/main --stat' })
+    tracker.observe('run_shell', { command: 'git show --stat HEAD' })
+    tracker.observe('update_todos', { todos: [] })
+    assert.equal(tracker.isRepeat('run_shell', sameSuite), true)
+  })
+
+  it('re-arms after an edit, a writing shell command, an unknown tool, or a reset', () => {
+    for (const [name, args] of [
+      ['str_replace', { path: 'a.ts', old_string: 'a', new_string: 'b' }],
+      ['write_file', { path: 'a.ts', content: '' }],
+      ['run_shell', { command: 'git stash' }],
+      ['run_shell', { command: 'echo x > a.ts' }],
+      ['some_mcp_tool', {}],
+    ] as const) {
+      const tracker = new RepeatVerificationTracker()
+      tracker.observe('run_shell', check)
+      tracker.observe(name, args)
+      assert.equal(tracker.isRepeat('run_shell', check), false, name)
+    }
+    const tracker = new RepeatVerificationTracker()
+    tracker.observe('run_shell', check)
+    tracker.reset()
+    assert.equal(tracker.isRepeat('run_shell', check), false)
+  })
+
+  it('never flags a different suite, or a non-verification command', () => {
+    const tracker = new RepeatVerificationTracker()
+    tracker.observe('run_shell', check)
+    assert.equal(tracker.isRepeat('run_shell', { command: 'npm run typecheck' }), false)
+    tracker.observe('run_shell', { command: 'git status' })
+    assert.equal(tracker.isRepeat('run_shell', { command: 'git status' }), false)
   })
 })

@@ -116,3 +116,16 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''abcdefgh2345''']
 paths = ['''^packages/remote-protocol/src/protocol\.test\.ts$''']
+
+[[allowlists]]
+# The boundary-contract redaction test first carried an inert classic-PAT-shaped
+# literal (commit 315dac3fa381 on PR #4008) to prove the report redactor strips
+# GitHub tokens. The test now assembles its fake token at run time; this entry
+# clears only that exact literal in the one file's history, so any other
+# credential-shaped value there is still reported.
+description = "Boundary-contract redaction fixture (history only)"
+targetRules = ["github-pat"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''ghp_0123456789abcdefghijABCDEFGHIJ012345''']
+paths = ['''^scripts/lib/boundary-contracts\.test\.ts$''']
