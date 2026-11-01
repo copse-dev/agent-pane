@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-IPJMYZQV.js";
+} from "./chunk-NOGFTDUX.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1732,7 +1732,7 @@ var init_roadmap_plans_plugin = __esm({
     roadmapPlansPlugin = definePlugin(
       {
         name: ROADMAP_PLANS_PLUGIN_ID,
-        description: "Keeps a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.",
+        description: "Keeps a durable, per-project backlog of future work, with a Roadmap pane to browse, track and run tasks when you are ready.",
         trust: "first-party",
         stability: "experimental",
         tools: { native: [ROADMAP_PLANS_TOOL_NAME] },
@@ -3251,46 +3251,11 @@ function residentRequestMatches(messages, query) {
 }
 function createThreadFilter(store2, api2, changed) {
   const matches3 = /* @__PURE__ */ new Set();
-  const promptIndex = /* @__PURE__ */ new Map();
-  let promptIndexSize = 0;
   let generation = 0;
   let timer;
-  let scan = Promise.resolve();
   let pending = false;
   let waiting = false;
   let failed = false;
-  const forget = (key) => {
-    const entry = promptIndex.get(key);
-    if (!entry) return;
-    promptIndex.delete(key);
-    promptIndexSize -= entry.size;
-  };
-  const remember = (key, entry) => {
-    forget(key);
-    promptIndex.set(key, entry);
-    promptIndexSize += entry.size;
-    for (const oldest of promptIndex.keys()) {
-      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
-      forget(oldest);
-    }
-  };
-  const savedPrompts = async (projectId, thread) => {
-    const key = `${projectId}/${thread.id}`;
-    const cached = promptIndex.get(key);
-    if (cached && cached.updatedAt === thread.updatedAt && cached.lastPromptAt === thread.lastPromptAt) {
-      return cached.prompts;
-    }
-    const messages = await api2.threads.loadMessages(projectId, thread.id);
-    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
-    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
-    remember(key, {
-      updatedAt: thread.updatedAt,
-      lastPromptAt: thread.lastPromptAt,
-      prompts,
-      size
-    });
-    return prompts;
-  };
   const notify = () => {
     try {
       changed();
@@ -3305,6 +3270,8 @@ function createThreadFilter(store2, api2, changed) {
     pending = false;
     waiting = false;
     failed = false;
+    void api2.threads.cancelRequestSearch().catch(() => {
+    });
   };
   const search = (rawQuery) => {
     cancel();
@@ -3313,7 +3280,7 @@ function createThreadFilter(store2, api2, changed) {
     if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
-    const candidates = sortThreadsNewestFirst(threads).filter(
+    const candidates = threads.filter(
       (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
     if (candidates.length === 0) return;
@@ -3322,33 +3289,29 @@ function createThreadFilter(store2, api2, changed) {
       waiting = false;
       pending = true;
       notify();
-      scan = scan.then(async () => {
-        for (const thread of candidates) {
-          if (!isCurrent()) return;
-          try {
-            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
-              (prompt) => prompt.includes(query)
-            );
-            if (!isCurrent()) return;
-            if (matched) {
-              matches3.add(thread.id);
-              notify();
-            }
-          } catch {
-            if (!isCurrent()) return;
-            failed = true;
+      const run4 = async () => {
+        try {
+          for (const thread of candidates) {
+            if (residentRequestMatches(thread.messages, query)) matches3.add(thread.id);
           }
+          if (candidates.some((thread) => thread.messagesLoaded === false)) {
+            const result = await api2.threads.searchRequests(activeProjectId, query);
+            if (!isCurrent()) return;
+            const lazy = new Set(
+              candidates.filter((thread) => thread.messagesLoaded === false).map((thread) => thread.id)
+            );
+            for (const id of result.matches) if (lazy.has(id)) matches3.add(id);
+            failed = result.incomplete;
+          }
+        } catch {
+          if (!isCurrent()) return;
+          failed = true;
         }
         if (!isCurrent()) return;
         pending = false;
         notify();
-      }).catch((error) => {
-        console.error("[thread-filter] request scan failed", error);
-        if (!isCurrent()) return;
-        pending = false;
-        failed = true;
-        notify();
-      });
+      };
+      void run4();
     }, SCAN_DELAY_MS);
   };
   return {
@@ -3366,13 +3329,12 @@ function createThreadFilter(store2, api2, changed) {
     }
   };
 }
-var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
     MIN_REQUEST_QUERY_LENGTH = 2;
     SCAN_DELAY_MS = 200;
-    PROMPT_INDEX_MAX_CHARS = 8e6;
     filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -12681,6 +12643,176 @@ var init_frame_loop = __esm({
   }
 });
 
+// src/renderer/views/transcript-scroll.ts
+function createTranscriptScroll(host) {
+  const { list, scrollToBottomBtn } = host;
+  let pinnedToBottom = true;
+  let lastScrollTop = 0;
+  let lastProgrammaticScrollTop = -1;
+  let userScrolledUpAt = 0;
+  function isNearBottom() {
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
+    return distance <= SCROLL_PIN_THRESHOLD_PX;
+  }
+  function shouldAutoScroll() {
+    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS;
+  }
+  function updateScrollButton() {
+    scrollToBottomBtn.hidden = isNearBottom();
+  }
+  function handleUserScroll() {
+    const scrollTop = list.scrollTop;
+    if (scrollTop === lastProgrammaticScrollTop) {
+      lastProgrammaticScrollTop = -1;
+      lastScrollTop = scrollTop;
+      return;
+    }
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    host.syncStickyImagePreview(dropped && !clamped);
+    if (clamped) {
+    } else if (dropped) {
+      userScrolledUpAt = Date.now();
+      pinnedToBottom = false;
+    } else if (isNearBottom()) {
+      pinnedToBottom = true;
+      host.onReturnToLiveEnd();
+    }
+    lastScrollTop = scrollTop;
+    updateScrollButton();
+  }
+  function setScrollTopProgrammatically(top) {
+    const before = list.scrollTop;
+    list.scrollTop = top;
+    const landed = list.scrollTop;
+    host.syncStickyImagePreview(false);
+    lastScrollTop = landed;
+    if (landed !== before) {
+      lastProgrammaticScrollTop = landed;
+    }
+  }
+  function scrollToBottom(force = false) {
+    if (!force && !shouldAutoScroll()) return;
+    setScrollTopProgrammatically(list.scrollHeight);
+    if (force) {
+      userScrolledUpAt = 0;
+      pinnedToBottom = true;
+      host.onReturnToLiveEnd();
+    }
+    updateScrollButton();
+  }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
+  function captureReadingAnchor() {
+    const listRect = list.getBoundingClientRect();
+    const candidates = list.querySelectorAll(READING_ANCHOR_CANDIDATES);
+    for (const element of candidates) {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top };
+    }
+    return null;
+  }
+  function restoreReadingAnchor(anchor, fallbackScrollTop) {
+    if (anchor?.element.isConnected) {
+      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop;
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
+      return;
+    }
+    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
+  }
+  function keepReadingPosition(update) {
+    const prevScrollTop = list.scrollTop;
+    const wasPinned = pinnedToBottom;
+    const readingAnchor = wasPinned ? null : captureReadingAnchor();
+    update();
+    if (wasPinned) {
+      scrollToBottom();
+    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
+  }
+  list.addEventListener("scroll", handleUserScroll, { passive: true });
+  function nestedScrollerTakesWheelUp(target) {
+    for (let node = target instanceof Element ? target : null; node && node !== list; node = node.parentElement) {
+      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue;
+      const { overflowY } = window.getComputedStyle(node);
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    return false;
+  }
+  list.addEventListener(
+    "wheel",
+    (event) => {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
+        userScrolledUpAt = Date.now();
+        pinnedToBottom = false;
+        updateScrollButton();
+      }
+    },
+    { passive: true }
+  );
+  scrollToBottomBtn.addEventListener("click", () => {
+    userScrolledUpAt = 0;
+    scrollToBottom(true);
+  });
+  const streamFollow = createFrameLoop((dt) => {
+    if (!shouldAutoScroll()) return false;
+    const gap = list.scrollHeight - list.clientHeight - list.scrollTop;
+    if (gap <= 1 || dt === Infinity) {
+      scrollToBottom();
+      return false;
+    }
+    setScrollTopProgrammatically(
+      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS)))
+    );
+    scrollToBottomBtn.hidden = true;
+    return true;
+  });
+  list.addEventListener(STREAM_PAINT_EVENT, () => {
+    if (shouldAutoScroll()) streamFollow.start();
+  });
+  return {
+    isPinnedToBottom: () => pinnedToBottom,
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition,
+    unpin: () => {
+      pinnedToBottom = false;
+      userScrolledUpAt = Date.now();
+    },
+    resetForThread: () => {
+      pinnedToBottom = true;
+      userScrolledUpAt = 0;
+      lastScrollTop = 0;
+    }
+  };
+}
+var SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, READING_ANCHOR_CANDIDATES;
+var init_transcript_scroll = __esm({
+  "src/renderer/views/transcript-scroll.ts"() {
+    init_message_markdown();
+    init_frame_loop();
+    SCROLL_PIN_THRESHOLD_PX = 48;
+    USER_SCROLL_UP_DEBOUNCE_MS = 150;
+    STREAM_FOLLOW_EASE_MS = 90;
+    READING_ANCHOR_CANDIDATES = ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]";
+  }
+});
+
 // src/renderer/markdown/pr-title-cache.ts
 function cachedPrTitle(ref) {
   return titles.get(githubPrKey(ref));
@@ -14443,6 +14575,47 @@ var init_composer_editor = __esm({
   }
 });
 
+// src/shared/tools/command-phase-display.ts
+function commandPhaseLabel(phase) {
+  if (!phase) return null;
+  switch (phase.state) {
+    case "queued":
+      return { text: "Queued" };
+    case "awaiting_approval":
+      return { text: "Waiting for approval" };
+    case "starting":
+      return { text: "Starting" };
+    case "running":
+      return phase.backgroundTaskId === void 0 ? { text: "Running" } : {
+        text: `Background task ${phase.backgroundTaskId}`,
+        detail: "Its output is under Background tasks."
+      };
+    case "exited":
+      if (phase.exitCode === void 0) return { text: "Exited" };
+      return phase.exitCode === 0 ? null : { text: `Exit ${String(phase.exitCode)}` };
+    case "timed_out":
+      return { text: "Timed out" };
+    case "cancelled":
+      return { text: phase.launched ? "Stopped" : "Cancelled before start" };
+    case "not_started":
+      return {
+        text: "Did not start",
+        ...phase.reason !== void 0 && phase.reason !== "" ? { detail: phase.reason } : {}
+      };
+  }
+}
+function liveCommandPhase(calls) {
+  for (let index = calls.length - 1; index >= 0; index--) {
+    const call = calls[index];
+    if (call?.status === "running" && call.commandPhase) return call.commandPhase;
+  }
+  return void 0;
+}
+var init_command_phase_display = __esm({
+  "src/shared/tools/command-phase-display.ts"() {
+  }
+});
+
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -14811,11 +14984,20 @@ var init_read_file_limits = __esm({
 function hasOpenTodos(todos) {
   return todos.some((t) => t.status === "pending" || t.status === "in_progress");
 }
-var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
+var DUPLICATE_GUARDED_TOOL_NAMES, MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT, WORKSPACE_READ_ONLY_TOOL_NAMES;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
     init_read_file_limits();
     init_unknown_value();
+    DUPLICATE_GUARDED_TOOL_NAMES = /* @__PURE__ */ new Set([
+      "list_dir",
+      "read_file",
+      "find_files",
+      "search_code",
+      "search_codebase",
+      "semantic_search",
+      "explore"
+    ]);
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -14825,6 +15007,17 @@ Do not reply with plain text claiming todos are done; the plan only updates via 
 - merge=true, patch each item by id with status completed or cancelled, OR
 - continue executing the remaining pending/in_progress work, then update_todos.
 Plain-text claims that work is done are not accepted \u2014 update_todos is required.`;
+    WORKSPACE_READ_ONLY_TOOL_NAMES = /* @__PURE__ */ new Set([
+      ...DUPLICATE_GUARDED_TOOL_NAMES,
+      "update_todos",
+      "read_skill",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "git_show",
+      "staged_diffs",
+      "read_staged_diff"
+    ]);
   }
 });
 
@@ -14879,7 +15072,7 @@ var init_todos_plugin = __esm({
     todosPlugin = definePlugin(
       {
         name: TODOS_PLUGIN_ID,
-        description: "Owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.",
+        description: "Helps the agent plan multi-step work, track progress in the plan panel, and check remaining steps before finishing.",
         trust: "first-party",
         stability: "stable",
         tools: { native: [TODOS_TOOL_NAME] },
@@ -17814,17 +18007,9 @@ var init_image_input_support = __esm({
 // src/renderer/views/conversation-search.ts
 function findMatchOffsets(haystack, needle) {
   if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from2 = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from2);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from2 = idx + q2.length;
-  }
-  return offsets;
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(literal, "giu");
+  return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
   return text.replace(/\s+/g, " ").trim();
@@ -18537,7 +18722,7 @@ function createToolLocationsSection(locations) {
     })
   );
 }
-function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
+function createToolHeader(label, status, summaryClass, count, editStats, editPath, commandPhase) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
     "aria-hidden": "true"
@@ -18572,6 +18757,20 @@ function createToolHeader(label, status, summaryClass, count, editStats, editPat
   if (count !== void 0 && count > 1) {
     children.push(el("span", { class: "tool-count" }, `\xD7${String(count)}`));
   }
+  const phase = commandPhaseLabel(commandPhase);
+  if (phase && commandPhase) {
+    children.push(
+      el(
+        "span",
+        {
+          class: "tool-command-phase",
+          "data-phase": commandPhase.state,
+          ...phase.detail !== void 0 ? { "data-tooltip": phase.detail } : {}
+        },
+        phase.text
+      )
+    );
+  }
   children.push(el("span", { class: "tool-status-icon", "aria-label": status }, statusIcon2(status)));
   return el("summary", { class: summaryClass }, ...children);
 }
@@ -18599,7 +18798,8 @@ function appendStandardToolSections(card, tc, label, summaryClass, count) {
     summaryClass,
     count,
     tc.editStats,
-    getToolEditPath(tc)
+    getToolEditPath(tc),
+    tc.commandPhase
   );
   card.append(header);
   const buildBody2 = () => {
@@ -19082,7 +19282,18 @@ function createGroupToolCard(item) {
   });
   const count = item.toolCalls.length;
   const groupItems = el("div", { class: "tool-group-items" });
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), groupItems);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    groupItems
+  );
   for (const tc of item.toolCalls) {
     const entry = el("details", {
       class: "tool-group-item",
@@ -19116,7 +19327,18 @@ function createRollupToolCard(item, api2, threadId, store2) {
     body.append(childCard);
   }
   syncRollupInterruptionNote(body, item.toolCalls);
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
@@ -19135,7 +19357,18 @@ function createStepToolCard(item, api2, threadId) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
-  card.append(createToolHeader(item.label, status, "tool-card-header"), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      void 0,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createToolCard(item, api2, threadId, store2) {
@@ -19179,7 +19412,15 @@ function reconcileGroupCard(card, item) {
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
-    createToolHeader(item.label, status, "tool-card-header", item.toolCalls.length)
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      item.toolCalls.length,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    )
   );
   let host = Array.from(card.children).find(
     (node) => node instanceof HTMLElement && node.classList.contains("tool-group-items")
@@ -19256,7 +19497,18 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       card.dataset["rollupKey"] = item.key;
     }
     const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
-    replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
+    replaceDirectToolHeader(
+      card,
+      createToolHeader(
+        item.label,
+        status,
+        "tool-card-header",
+        count,
+        void 0,
+        void 0,
+        liveCommandPhase(item.toolCalls)
+      )
+    );
     let body = Array.from(card.children).find(
       (node) => node instanceof HTMLElement && node.classList.contains("tool-rollup-body")
     );
@@ -20374,15 +20626,29 @@ function mountConversation(root, store2, api2) {
     }
     queuedHost.hidden = queuedHost.childElementCount === 0;
   }
-  let pinnedToBottom = true;
-  let lastScrollTop = 0;
-  let lastProgrammaticScrollTop = -1;
-  let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
+  const transcriptScroll = createTranscriptScroll({
+    list,
+    scrollToBottomBtn,
+    syncStickyImagePreview,
+    onReturnToLiveEnd: () => {
+      const threadId = store2.getState().activeThreadId;
+      if (threadId) disclosures.resumeDeferredCompaction(threadId);
+    }
+  });
+  const {
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition
+  } = transcriptScroll;
   const toolCards = createToolCardRefresher({
     store: store2,
     api: api2,
@@ -20397,7 +20663,7 @@ function mountConversation(root, store2, api2) {
       syncRunStepReasoning,
       syncReasoningEl
     },
-    isPinnedToBottom: () => pinnedToBottom,
+    isPinnedToBottom: transcriptScroll.isPinnedToBottom,
     scrollToBottom: () => {
       scrollToBottom();
     },
@@ -20413,16 +20679,6 @@ function mountConversation(root, store2, api2) {
     resyncRunMembership,
     syncRunStepTrail
   } = toolCards;
-  function isNearBottom() {
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    return distance <= SCROLL_PIN_THRESHOLD_PX;
-  }
-  function shouldAutoScroll() {
-    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS;
-  }
-  function updateScrollButton() {
-    scrollToBottomBtn.hidden = isNearBottom();
-  }
   function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
     if (!prompt?.isConnected) return;
@@ -20458,74 +20714,12 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = next;
     syncStickyImagePreview();
   }
-  function handleUserScroll() {
-    const scrollTop = list.scrollTop;
-    if (scrollTop === lastProgrammaticScrollTop) {
-      lastProgrammaticScrollTop = -1;
-      lastScrollTop = scrollTop;
-      return;
-    }
-    const dropped = scrollTop < lastScrollTop - 1;
-    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
-    syncStickyImagePreview(dropped && !clamped);
-    if (clamped) {
-    } else if (dropped) {
-      userScrolledUpAt = Date.now();
-      pinnedToBottom = false;
-    } else if (isNearBottom()) {
-      pinnedToBottom = true;
-      const threadId = store2.getState().activeThreadId;
-      if (threadId) disclosures.resumeDeferredCompaction(threadId);
-    }
-    lastScrollTop = scrollTop;
-    updateScrollButton();
-  }
-  list.addEventListener("scroll", handleUserScroll, { passive: true });
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     syncStickyImagePreview();
   });
   listResizeObserver?.observe(list);
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
-  function nestedScrollerTakesWheelUp(target) {
-    for (let node = target instanceof Element ? target : null; node && node !== list; node = node.parentElement) {
-      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue;
-      const { overflowY } = window.getComputedStyle(node);
-      if (overflowY === "auto" || overflowY === "scroll") return true;
-    }
-    return false;
-  }
-  list.addEventListener(
-    "wheel",
-    (event) => {
-      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
-        userScrolledUpAt = Date.now();
-        pinnedToBottom = false;
-        updateScrollButton();
-      }
-    },
-    { passive: true }
-  );
-  scrollToBottomBtn.addEventListener("click", () => {
-    userScrolledUpAt = 0;
-    scrollToBottom(true);
-  });
-  const streamFollow = createFrameLoop((dt) => {
-    if (!shouldAutoScroll()) return false;
-    const gap = list.scrollHeight - list.clientHeight - list.scrollTop;
-    if (gap <= 1 || dt === Infinity) {
-      scrollToBottom();
-      return false;
-    }
-    setScrollTopProgrammatically(
-      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS)))
-    );
-    scrollToBottomBtn.hidden = true;
-    return true;
-  });
-  list.addEventListener(STREAM_PAINT_EVENT, () => {
-    if (shouldAutoScroll()) streamFollow.start();
-  });
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
     hydrateRemoteArtifactImages(list, api2);
     syncAcpResourceReferences(list, api2, store2);
@@ -20584,41 +20778,6 @@ function mountConversation(root, store2, api2) {
       return;
     }
     setActivity(agentActivityLabel(thread, false));
-  }
-  function setScrollTopProgrammatically(top) {
-    const before = list.scrollTop;
-    list.scrollTop = top;
-    const landed = list.scrollTop;
-    syncStickyImagePreview();
-    lastScrollTop = landed;
-    if (landed !== before) {
-      lastProgrammaticScrollTop = landed;
-    }
-  }
-  function scrollToBottom(force = false) {
-    if (!force && !shouldAutoScroll()) return;
-    setScrollTopProgrammatically(list.scrollHeight);
-    if (force) {
-      userScrolledUpAt = 0;
-      pinnedToBottom = true;
-      const threadId = store2.getState().activeThreadId;
-      if (threadId) disclosures.resumeDeferredCompaction(threadId);
-    }
-    updateScrollButton();
-  }
-  function scrollUserPromptIntoView(msgEl) {
-    const listRect = list.getBoundingClientRect();
-    const msgRect = msgEl.getBoundingClientRect();
-    let delta = 0;
-    if (msgRect.top < listRect.top) {
-      delta = msgRect.top - listRect.top;
-    } else if (msgRect.bottom > listRect.bottom) {
-      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
-    }
-    if (delta === 0) return;
-    setScrollTopProgrammatically(list.scrollTop + delta);
-    pinnedToBottom = false;
-    updateScrollButton();
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store2, threadId);
@@ -20942,7 +21101,7 @@ function mountConversation(root, store2, api2) {
   function syncConciseThreadClasses(holdPlace = true) {
     const thread = getActiveThread(store2);
     if (!thread) return;
-    const wasPinned = pinnedToBottom;
+    const wasPinned = transcriptScroll.isPinnedToBottom();
     const prevScrollTop = list.scrollTop;
     const readingAnchor = holdPlace && !wasPinned ? captureReadingAnchor() : null;
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
@@ -21210,11 +21369,12 @@ function mountConversation(root, store2, api2) {
       const m2 = thread.messages[i2];
       if (m2) prependMessageEl(thread.id, m2.id, anchor);
     }
-    const delta = list.scrollHeight - heightBefore;
-    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
+    syncConciseTurnFooters();
+    const delta = list.scrollHeight - heightBefore;
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     updateScrollButton();
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -21234,12 +21394,8 @@ function mountConversation(root, store2, api2) {
         return;
       }
     }
-    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
-    if (!rebuildingSameThread) {
-      pinnedToBottom = true;
-      userScrolledUpAt = 0;
-      lastScrollTop = 0;
-    }
+    const preservedScrollTop = rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null;
+    if (!rebuildingSameThread) transcriptScroll.resetForThread();
     toolCards.forgetDisclosureElements();
     if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
@@ -21270,6 +21426,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    syncConciseTurnFooters();
     refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
@@ -21285,34 +21442,6 @@ function mountConversation(root, store2, api2) {
         backfillOlderMessages(thread, initialStart, generation);
       });
     }
-  }
-  function captureReadingAnchor() {
-    const listRect = list.getBoundingClientRect();
-    const candidates = list.querySelectorAll(
-      ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
-    );
-    for (const element of candidates) {
-      const rect = element.getBoundingClientRect();
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top };
-    }
-    return null;
-  }
-  function restoreReadingAnchor(anchor, fallbackScrollTop) {
-    if (anchor?.element.isConnected) {
-      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop;
-      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
-      return;
-    }
-    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
-  }
-  function keepReadingPosition(update) {
-    const prevScrollTop = list.scrollTop;
-    const wasPinned = pinnedToBottom;
-    const readingAnchor = wasPinned ? null : captureReadingAnchor();
-    update();
-    if (wasPinned) {
-      scrollToBottom();
-    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
   function jumpToReviewerInput(messageId, requestId) {
     const activeThreadId = store2.getState().activeThreadId;
@@ -21331,8 +21460,7 @@ function mountConversation(root, store2, api2) {
       );
       if (card instanceof HTMLDetailsElement) card.open = true;
       const target = card ?? message2;
-      pinnedToBottom = false;
-      userScrolledUpAt = Date.now();
+      transcriptScroll.unpin();
       target.scrollIntoView({ behavior: "smooth", block: "center" });
       target.classList.add("reviewer-input-highlight");
       setTimeout(() => {
@@ -21602,7 +21730,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -21625,7 +21753,7 @@ var init_conversation = __esm({
     init_dist();
     init_message_markdown();
     init_desktop_message_host();
-    init_frame_loop();
+    init_transcript_scroll();
     init_file_links();
     init_browser_links();
     init_workspace_links();
@@ -21647,6 +21775,7 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
+    init_command_phase_display();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
@@ -21701,9 +21830,6 @@ var init_conversation = __esm({
     acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
-    SCROLL_PIN_THRESHOLD_PX = 48;
-    USER_SCROLL_UP_DEBOUNCE_MS = 150;
-    STREAM_FOLLOW_EASE_MS = 90;
     INITIAL_RENDER_WINDOW = 40;
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
@@ -71694,7 +71820,7 @@ var init_review_plugin = __esm({
     reviewPlugin = definePlugin(
       {
         name: REVIEW_PLUGIN_ID,
-        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or when you ask the agent to review your changes.',
         trust: "first-party",
         stability: "experimental",
         tools: { native: [REVIEW_TOOL_NAME] },
@@ -71874,6 +72000,10 @@ function getFirstGitChange(status) {
   if (unstaged) return { path: unstaged.path, staged: false };
   return null;
 }
+function workingTreePathLeft(prev, next) {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path));
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path));
+}
 function defaultProposedPath(queue, activeDiff) {
   const [first2] = queue;
   if (!first2) return null;
@@ -72034,6 +72164,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   let gitAvailable = false;
   let loaded = false;
   let committedPending = false;
+  let hasSettledGitRead = false;
+  let renderedListKey = null;
   let sessionBackup = null;
   let restoreInFlight = false;
   let selection = null;
@@ -72080,7 +72212,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
     if (nextKey === displayedOwnerKey) return false;
-    if (displayedOwnerKey && loaded && gitAvailable) {
+    if (displayedOwnerKey && hasSettledGitRead && gitAvailable) {
       snapshotsByOwner.delete(displayedOwnerKey);
       snapshotsByOwner.set(displayedOwnerKey, {
         status,
@@ -72100,6 +72232,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     selectRequestId++;
     const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
     loaded = known !== void 0;
+    hasSettledGitRead = loaded;
     committedPending = false;
     gitAvailable = loaded;
     status = known?.status ?? null;
@@ -72276,6 +72409,18 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderList() {
     const queue = store2.getState().stagedDiffs;
     syncBulkActions(queue.length);
+    const key = JSON.stringify([
+      displayedOwnerKey,
+      loaded,
+      gitAvailable,
+      committedPending,
+      status,
+      committed,
+      queue.map((entry) => entry.path),
+      selection
+    ]);
+    if (key === renderedListKey) return;
+    renderedListKey = key;
     clear(listBody);
     renderProposedSection(queue);
     if (!loaded) {
@@ -72585,7 +72730,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.hidden = false;
     if (!loaded) setInlineStatus(emptyState, "pending", "Loading changes\u2026");
     else if (committedPending) setInlineStatus(emptyState, "pending", "Checking committed changes\u2026");
-    else emptyState.textContent = "Select a changed file";
+    else if (emptyState.textContent !== "Select a changed file") {
+      emptyState.textContent = "Select a changed file";
+    }
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
@@ -72680,6 +72827,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!owner) {
       gitAvailable = false;
       loaded = false;
+      hasSettledGitRead = false;
       renderList();
       return;
     }
@@ -72700,6 +72848,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       status = null;
       committed = null;
       sessionBackup = null;
@@ -72712,17 +72861,22 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const backupRead = settleRead(api2.git.sessionBackup(owner.projectId, owner.threadId));
     let nextStatus;
     let nextCommitted;
-    let selectedEarly;
+    let selectedEarly = false;
     try {
       nextStatus = await api2.git.status(owner.projectId, owner.threadId);
       if (requestId !== refreshRequestId) return;
-      status = nextStatus;
-      loaded = true;
-      committedPending = true;
-      renderList();
-      if (!selection) clearViewer();
-      selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
-      if (selectedEarly) void syncSelection();
+      if (!hasSettledGitRead) {
+        status = nextStatus;
+        loaded = true;
+        committedPending = true;
+        renderList();
+        if (!selection) clearViewer();
+        selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
+        if (selectedEarly) void syncSelection();
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        status = nextStatus;
+        renderList();
+      }
       const committedResult = await committedRead;
       if (requestId !== refreshRequestId) return;
       if (!committedResult.ok) throw committedResult.error;
@@ -72737,6 +72891,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       gitAvailable = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       renderRestoreBanner();
       renderList();
       clearViewer();
@@ -72745,6 +72900,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     gitFailureLogged = false;
     loaded = true;
     committedPending = false;
+    hasSettledGitRead = true;
     status = nextStatus;
     committed = nextCommitted;
     renderList();
@@ -86402,7 +86558,8 @@ function createTranscriptReducer(store2, hooks = {}) {
             ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.images !== void 0 ? { images: chunk.images } : {},
             ...chunk.content !== void 0 ? { content: chunk.content } : {},
-            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {},
+            ...chunk.commandPhase !== void 0 ? { commandPhase: chunk.commandPhase } : {}
           });
         }
         st.writing = false;

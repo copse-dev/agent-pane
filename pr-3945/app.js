@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-IPJMYZQV.js";
+} from "./chunks/chunk-NOGFTDUX.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -1815,6 +1815,20 @@ function threadAccessApproval(access) {
     bodyFooter: "Applies only to this thread. Revoke it in the thread\u2019s Context panel \u2192 Permissions.",
     approveLabel: access === "read" ? "Allow reading" : "Allow sending",
     allowRemember: false
+  };
+}
+function gitPushApproval(branch, expectedRemoteSha) {
+  return {
+    title: "Push branch to origin?",
+    approveLabel: "Push branch",
+    body: [
+      `Branch: ${branch}`,
+      "Remote: origin",
+      expectedRemoteSha ? `Push mode: Force with lease
+Expected remote commit: ${expectedRemoteSha}` : "Push mode: Fast-forward only"
+    ].join("\n"),
+    bodyAdvice: expectedRemoteSha ? "This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit." : "This publishes the branch to origin without replacing existing remote history.",
+    bodyFooter: "Approval covers this push once."
   };
 }
 function webApprovalDetails(origin, url, allowRemember, context) {
@@ -5474,6 +5488,13 @@ var init_demo_scenarios = __esm({
           ...threadAccessApproval(access)
         })
       ),
+      ...[void 0, "0123456789abcdef0123456789abcdef01234567"].map(
+        (sha) => approvalRiskScenario(sha ? "approval-git-push-lease" : "approval-git-push", {
+          id: "git-push",
+          type: "mcp",
+          ...gitPushApproval("copse/friendly-action-names-213c32", sha)
+        })
+      ),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -6178,6 +6199,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -7347,7 +7377,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-34HO3QWX.js").then(async (main) => {
+    void import("./chunks/main-V7SJSJT2.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

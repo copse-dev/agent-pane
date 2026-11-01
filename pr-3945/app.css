@@ -6976,6 +6976,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: var(--font-size-sm);
   font-weight: 500;
 }
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .tool-edit-stats {
   display: inline-flex;
   align-items: center;
@@ -11567,13 +11572,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
-}
-.automation-permission-id {
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: var(--font-size-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .automation-permission-empty {
   margin: 0;
