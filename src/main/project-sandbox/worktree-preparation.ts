@@ -320,10 +320,7 @@ async function runContainedPreparationProcess(
         root,
         scratch,
         ...caches,
-        // Do not let a ~/bin/node layout turn the whole home into a read grant.
-        ...resolveNodeToolchainAllowRead(env).filter(
-          (path) => path !== homedir() && path !== `${homedir()}/**`,
-        ),
+        ...resolveNodeToolchainAllowRead(env),
         ...electronRuntimeAllowReadPaths(),
         ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
         ...(options.additionalExecutables ?? []).flatMap((executable) =>

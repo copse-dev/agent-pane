@@ -67,15 +67,33 @@ export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[
  * seatbelt denials surface as EPERM ("Operation not permitted"), which git
  * treats as fatal (exit 128) — so these must stay readable or every git command
  * fails. A more-specific allowRead overrides the broad home denyRead.
+ *
+ * The whole XDG directory, not just `config`, `ignore` and `attributes`: an
+ * `include.path` or `core.hooksPath` often points into it, and git also treats
+ * EPERM on an included file as fatal. Its credential store is denied again by
+ * `gitCredentialDenyReadPaths`.
  */
 function gitConfigReadPaths(): string[] {
   const home = homedir()
   return [
     join(home, '.gitconfig'),
+    join(home, '.config/git'),
     join(home, '.config/git/**'),
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
   ]
+}
+
+/**
+ * Git's XDG credential store, which holds plaintext tokens, inside the
+ * `.config/git` read grant above. ASRT re-emits a literal read deny nested in a
+ * literal allow after the allows on macOS, so it beats the grant, and masks the
+ * file with `/dev/null` on Linux. When the file does not exist Linux has
+ * nothing to mask, and the directory is bound read-only, so a contained command
+ * cannot create it either.
+ */
+function gitCredentialDenyReadPaths(): string[] {
+  return [join(homedir(), '.config/git/credentials')]
 }
 
 /**
@@ -443,11 +461,146 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
   }
 }
 
-/** Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc. */
-export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.env): string[] {
+/** Where `path` sits relative to `home`: covering it (home or an ancestor), inside it, or apart. */
+function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'apart' {
+  const toHome = relative(path, home)
+  if (toHome === '' || (!toHome.startsWith('..') && !isAbsolute(toHome))) return 'covers'
+  const fromHome = relative(home, path)
+  return !fromHome.startsWith('..') && !isAbsolute(fromHome) ? 'inside' : 'apart'
+}
+
+/**
+ * `path`, as spelled and canonicalized, placed against each spelling of home.
+ * A `PATH` entry can reach home through an alias (`/tmp/alias -> $HOME`) that
+ * the spelling alone hides, so every home check looks at both.
+ */
+function homePlacements(
+  path: string,
+  homes: readonly string[],
+): { path: string; home: string; place: 'covers' | 'inside' | 'apart' }[] {
+  return [...new Set([path, canonicalizePathCached(path)])].flatMap((spelling) =>
+    homes.map((home) => ({ path: spelling, home, place: placeAgainstHome(spelling, home) })),
+  )
+}
+
+/** Whether `path` is home or one of its ancestors under any spelling of either. */
+function coversHome(path: string, homes: readonly string[]): boolean {
+  return homePlacements(path, homes).some(({ place }) => place === 'covers')
+}
+
+/**
+ * How much of `versionRoot`, the parent of a node's `binDir`, is safe to
+ * re-allow. `tree`: the whole root, a Node install such as the nvm/fnm
+ * `.../versions/node/vX.Y.Z` shape, a Homebrew Cellar keg or a distro `/usr`.
+ * `npm`: only its `lib/node_modules`, because the root is a shallow home
+ * directory such as `~/.local` (an npm prefix), `~/.n` or an unpacked tarball,
+ * whose other contents (`.local/share`, …) are not a toolchain. `null`:
+ * nothing. A `~/bin/node` must not turn `~` (with `.ssh`, `.aws`, `.npmrc`, …)
+ * into a read grant, so a root that covers home is never allowed; any grant
+ * needs the root to hold npm's `lib/node_modules`, and `tree` needs it at least
+ * two levels below home when inside it, judged on every spelling of the root
+ * and of home (`homePlacements`).
+ */
+function nodeVersionRootGrant(
+  versionRoot: string,
+  binDir: string,
+  homes: readonly string[],
+): 'tree' | 'npm' | null {
+  if (basename(binDir) !== 'bin' || versionRoot === binDir) return null
+  let shallow = false
+  for (const { path, home, place } of homePlacements(versionRoot, homes)) {
+    if (place === 'covers') return null
+    if (place === 'inside' && relative(home, path).split(sep).length < 2) shallow = true
+  }
+  try {
+    if (!statSync(join(versionRoot, 'lib', 'node_modules')).isDirectory()) return null
+  } catch {
+    return null
+  }
+  return shallow ? 'npm' : 'tree'
+}
+
+/**
+ * The read grants a shim-based version manager needs when `binDir`, the
+ * directory holding a `node` on `PATH`, is its shim directory. The shim
+ * re-executes the managed install, so the shim directory alone is not enough,
+ * but the manager's whole directory is not needed either. Only the trees that
+ * hold installs, plugins and the manager's own code are granted, plus asdf's
+ * home-level version files. A manager root that is home or covers it grants
+ * nothing.
+ *
+ * - Volta (`$VOLTA_HOME`, default `~/.volta`): shims in `bin`, installs and
+ *   the default platform in `tools`.
+ * - asdf (`$ASDF_DATA_DIR`, default `~/.asdf`): shims in `shims`, installs in
+ *   `installs`, plugin scripts in `plugins`, and the pre-0.16 shell
+ *   implementation in `bin` and `lib`.
+ */
+function shimManagerAllowRead(
+  binDir: string,
+  env: NodeJS.ProcessEnv,
+  home: string,
+  homes: readonly string[],
+): string[] {
+  const root = (name: string, fallback: string): string | null => {
+    const value = env[name]
+    const dir = value === undefined || value === '' ? fallback : value
+    if (!isAbsolute(dir) || coversHome(dir, homes)) return null
+    return dir
+  }
+  const existing = (paths: readonly string[], tree: boolean): string[] =>
+    paths.flatMap((path) => {
+      try {
+        accessSync(path)
+      } catch {
+        return []
+      }
+      return tree ? [path, `${path}/**`] : [path]
+    })
+
+  const volta = root('VOLTA_HOME', join(home, '.volta'))
+  if (volta && binDir === join(volta, 'bin')) return existing([join(volta, 'tools')], true)
+
+  const asdf = root('ASDF_DATA_DIR', join(home, '.asdf'))
+  if (asdf && binDir === join(asdf, 'shims')) {
+    return [
+      ...existing(
+        ['installs', 'plugins', 'bin', 'lib'].map((dir) => join(asdf, dir)),
+        true,
+      ),
+      ...existing([join(home, '.tool-versions'), join(home, '.asdfrc')], false),
+    ]
+  }
+  return []
+}
+
+/**
+ * Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc.
+ *
+ * Each `node` on `PATH` is allowed as found, with its bin directory unless
+ * that is home or an ancestor. Its install root is added as far as
+ * `nodeVersionRootGrant` allows, and a Volta or asdf shim directory adds that
+ * manager's install trees (`shimManagerAllowRead`); otherwise the binary and
+ * its bin directory are all a contained command can read.
+ *
+ * A symlinked `node` (`~/bin/node` into nvm, Homebrew's `bin/node` into its
+ * Cellar) also grants its target's install, but only when the target is
+ * itself a `node` in a whole-tree version root. A `PATH` directory a contained
+ * command can write (a checkout's `node_modules/.bin`) could otherwise hold
+ * `node -> ~/.ssh/id_ed25519` and turn the next overlay into a grant on
+ * `~/.ssh`.
+ */
+export function resolveNodeToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
   const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
+  const homes = [...new Set([home, canonicalizePathCached(home)])]
+  const addTree = (path: string): void => {
+    allow.add(path)
+    allow.add(`${path}/**`)
+  }
 
   for (const dir of dirs) {
     let nodePath: string
@@ -460,14 +613,33 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
 
     allow.add(nodePath)
     const binDir = dirname(nodePath)
-    allow.add(binDir)
-    allow.add(`${binDir}/**`)
+    if (!coversHome(binDir, homes)) {
+      addTree(binDir)
+      for (const path of shimManagerAllowRead(binDir, env, home, homes)) allow.add(path)
 
-    // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
-    const versionRoot = dirname(binDir)
-    if (versionRoot !== binDir) {
-      allow.add(versionRoot)
-      allow.add(`${versionRoot}/**`)
+      // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
+      const versionRoot = dirname(binDir)
+      const grant = nodeVersionRootGrant(versionRoot, binDir, homes)
+      if (grant === 'tree') addTree(versionRoot)
+      if (grant === 'npm') addTree(join(versionRoot, 'lib', 'node_modules'))
+    }
+
+    let realNodePath: string
+    try {
+      realNodePath = realpathSync(nodePath)
+    } catch {
+      continue
+    }
+    const realBinDir = dirname(realNodePath)
+    const realRoot = dirname(realBinDir)
+    if (
+      realNodePath !== nodePath &&
+      basename(realNodePath) === 'node' &&
+      nodeVersionRootGrant(realRoot, realBinDir, homes) === 'tree'
+    ) {
+      allow.add(realNodePath)
+      addTree(realBinDir)
+      addTree(realRoot)
     }
   }
 
@@ -1148,7 +1320,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...siblingDeny, ...nestedCheckoutDeny],
+      denyRead: [homedir(), ...gitCredentialDenyReadPaths(), ...siblingDeny, ...nestedCheckoutDeny],
       allowRead: [
         root,
         `${root}/**`,
