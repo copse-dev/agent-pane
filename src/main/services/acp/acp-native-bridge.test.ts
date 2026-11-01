@@ -56,6 +56,7 @@ import {
   BRIDGE_MCP_SERVER_NAME,
   bridgedWorkspaceWritePaths,
   bridgedNativeToolsOffered,
+  dropAcpBridgeDelegation,
   noteAcpBridgeDelegation,
   takeAcpBridgeDelegation,
 } from './acp-native-bridge.ts'
@@ -1678,16 +1679,42 @@ describe('startAcpNativeBridge', () => {
 describe('ACP bridge delegation attribution', () => {
   it('links one delegated ACP tool call to the next bridge execution of that tool', () => {
     noteAcpBridgeDelegation('thread-a', 'run_shell', 'acp-call-1')
-    assert.equal(takeAcpBridgeDelegation('thread-a', 'gh_pr_list'), null, 'another tool')
-    assert.equal(takeAcpBridgeDelegation('thread-b', 'run_shell'), null, 'another thread')
-    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell'), 'acp-call-1')
-    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell'), null, 'consumed once')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'gh_pr_list', {}), null, 'another tool')
+    assert.equal(takeAcpBridgeDelegation('thread-b', 'run_shell', {}), null, 'another thread')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell', {}), 'acp-call-1')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell', {}), null, 'consumed once')
   })
 
   it('names no ACP call when concurrent delegations of one tool cannot be told apart', () => {
     noteAcpBridgeDelegation('thread-c', 'run_shell', 'acp-call-1')
     noteAcpBridgeDelegation('thread-c', 'run_shell', 'acp-call-2')
-    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell'), null)
-    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell'), null, 'nor guessed later')
+    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell', {}), null)
+    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell', {}), null, 'nor guessed later')
+  })
+
+  it('links by arguments when the ACP request carried them', () => {
+    noteAcpBridgeDelegation('thread-d', 'run_shell', 'call-ls', { command: 'ls', cwd: '.' })
+    noteAcpBridgeDelegation('thread-d', 'run_shell', 'call-pwd', { command: 'pwd' })
+    // Key order differs from the ACP request; the arguments are the same.
+    assert.equal(
+      takeAcpBridgeDelegation('thread-d', 'run_shell', { cwd: '.', command: 'ls' }),
+      'call-ls',
+    )
+    assert.equal(
+      takeAcpBridgeDelegation('thread-d', 'run_shell', { command: 'whoami' }),
+      null,
+      'an execution with other arguments is not any waiting call',
+    )
+    assert.equal(takeAcpBridgeDelegation('thread-d', 'run_shell', { command: 'pwd' }), 'call-pwd')
+  })
+
+  it('forgets a delegation once the agent reports its call finished', () => {
+    noteAcpBridgeDelegation('thread-e', 'run_shell', 'abandoned')
+    dropAcpBridgeDelegation('thread-e', 'abandoned')
+    assert.equal(
+      takeAcpBridgeDelegation('thread-e', 'run_shell', {}),
+      null,
+      'a later execution is not the abandoned call',
+    )
   })
 })

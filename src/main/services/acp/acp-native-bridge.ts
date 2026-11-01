@@ -41,6 +41,7 @@ import {
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { ACP_WRITE_ACCESS_HANDOFF_NOTE } from './acp-write-access.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
 import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
@@ -266,6 +267,8 @@ const DELEGATION_TTL_MS = 10 * 60_000
 
 interface AcpDelegation {
   toolCallId: string
+  /** Canonical JSON of the ACP request's `rawInput`; null when it carried none. */
+  argsKey: string | null
   at: number
 }
 
@@ -276,36 +279,87 @@ const pendingDelegations = new Map<string, AcpDelegation[]>()
 
 const delegationKey = (threadId: string, tool: string): string => `${threadId}\u0000${tool}`
 
-/**
- * Remember that the ACP layer approved `toolCallId` because it proved to be a
- * call of `tool` on this thread's bridge, so the bridge's execution record can
- * name the ACP tool call it carries out.
- */
-export function noteAcpBridgeDelegation(threadId: string, tool: string, toolCallId: string): void {
-  const key = delegationKey(threadId, tool)
+/** JSON with object keys sorted at every level, so equal arguments compare equal. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort()
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  // JSON.stringify(undefined) is undefined at runtime, whatever its type says.
+  return value === undefined ? 'null' : JSON.stringify(value)
+}
+
+function liveDelegations(key: string): AcpDelegation[] {
   const now = Date.now()
-  const live = (pendingDelegations.get(key) ?? []).filter(
-    (entry) => now - entry.at < DELEGATION_TTL_MS,
-  )
-  live.push({ toolCallId, at: now })
-  pendingDelegations.set(key, live)
+  return (pendingDelegations.get(key) ?? []).filter((entry) => now - entry.at < DELEGATION_TTL_MS)
+}
+
+function storeDelegations(key: string, entries: AcpDelegation[]): void {
+  if (entries.length === 0) pendingDelegations.delete(key)
+  else pendingDelegations.set(key, entries)
 }
 
 /**
- * The ACP tool call a bridge execution of `tool` carries out, when exactly one
- * unexpired delegation is waiting for it. When two or more are waiting,
- * concurrent calls of one tool cannot be told apart from the MCP request, so
- * every waiting entry is dropped and none is named: a guessed link would
- * misattribute a prompt.
+ * Remember that the ACP layer approved `toolCallId` because it proved to be a
+ * call of `tool` on this thread's bridge, so the bridge's execution record can
+ * name the ACP tool call it carries out. `rawInput` is the ACP request's
+ * arguments, when it had any: the bridge then links only an execution with
+ * the same arguments.
  */
-export function takeAcpBridgeDelegation(threadId: string, tool: string): string | null {
+export function noteAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  toolCallId: string,
+  rawInput?: unknown,
+): void {
   const key = delegationKey(threadId, tool)
-  const now = Date.now()
-  const live = (pendingDelegations.get(key) ?? []).filter(
-    (entry) => now - entry.at < DELEGATION_TTL_MS,
+  storeDelegations(key, [
+    ...liveDelegations(key),
+    { toolCallId, argsKey: isRecord(rawInput) ? canonicalJson(rawInput) : null, at: Date.now() },
+  ])
+}
+
+/**
+ * The ACP tool call a bridge execution of `tool` with `args` carries out, when
+ * exactly one unexpired delegation could be it: same tool, and the same
+ * arguments when the ACP request had any. When two or more could be, they
+ * cannot be told apart from the MCP request, so all of them are dropped and
+ * none is named. A delegation that carried no arguments (Cursor sends none)
+ * can still be linked to a later execution of the same tool after the call it
+ * approved was abandoned; `dropAcpBridgeDelegation` removes it once the agent
+ * reports that call finished, which bounds that window.
+ */
+export function takeAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  args: unknown,
+): string | null {
+  const key = delegationKey(threadId, tool)
+  const live = liveDelegations(key)
+  const argsKey = canonicalJson(args ?? {})
+  const candidates = live.filter((entry) => entry.argsKey === null || entry.argsKey === argsKey)
+  storeDelegations(
+    key,
+    live.filter((entry) => !candidates.includes(entry)),
   )
-  pendingDelegations.delete(key)
-  return live.length === 1 && live[0] ? live[0].toolCallId : null
+  return candidates.length === 1 && candidates[0] ? candidates[0].toolCallId : null
+}
+
+/**
+ * Forget a delegation whose ACP tool call the agent reported finished, failed
+ * or cancelled: anything still waiting for it was never executed through the
+ * bridge, and must not be linked to a later execution.
+ */
+export function dropAcpBridgeDelegation(threadId: string, toolCallId: string): void {
+  const prefix = `${threadId}\u0000`
+  for (const key of [...pendingDelegations.keys()]) {
+    if (!key.startsWith(prefix)) continue
+    storeDelegations(
+      key,
+      liveDelegations(key).filter((entry) => entry.toolCallId !== toolCallId),
+    )
+  }
 }
 
 export interface AcpNativeBridge {
@@ -672,7 +726,7 @@ function buildMcpServer(
       executeSignal.addEventListener('abort', stopKeepalive, { once: true })
       if (executeSignal.aborted) stopKeepalive()
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
-        const acpToolCallId = takeAcpBridgeDelegation(ctx.threadId, name)
+        const acpToolCallId = takeAcpBridgeDelegation(ctx.threadId, name, request.params.arguments)
         recordDecision({
           kind: 'bridge-request',
           actor: 'system',

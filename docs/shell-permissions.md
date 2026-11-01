@@ -459,15 +459,20 @@ point for a stdio or HTTP MCP server the external agent mounts itself.
 
 Because every bridged call is re-gated there, the agent's own ACP permission request for one only
 duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**
-names a `copse` bridge tool that the session's live bridge serves. Provenance comes from:
+on the request itself names a `copse` tool that this session's own bridge serves. Provenance comes
+from:
 
 - the adapter's structured tool name (`_meta.claudeCode.toolName`, or a qualified ACP `name`);
-- a title that is _exactly_ a bridge identity.
+- a title in one of the literal observed shapes: `copse-<tool>: <tool>`, `mcp__copse__<tool>` or
+  `mcp.copse.<tool>`. Separators are fixed, the tool name is ASCII and spelled exactly as offered,
+  and nothing is unwrapped or case-folded first. A looser grammar reads shell text as a tool:
+  `copse=;. ./run_shell` sources `./run_shell`.
 
-The claims on the request and on the agent's earlier reports of the same `toolCallId` must agree.
-Absent, unknown or conflicting provenance, or a session without a mounted bridge, keeps the
-ordinary ACP path. A display title that merely starts with a bridged name is model-reachable text,
-such as a shell command, and claims nothing. Each delegation records an `acp` `allowed` decision.
+The agent's earlier reports of the same `toolCallId` can veto the request's claim but never stand
+in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`
+is never delegated on titles alone. Absent, unknown, conflicting or title-only provenance for those
+kinds, or a session without a mounted bridge, keeps the ordinary ACP path. Each delegation records
+an `acp` `allowed` decision under the turn's own project and thread.
 See [`plans/acp-tool-provenance.md`](plans/acp-tool-provenance.md).
 
 ## ACP client terminals

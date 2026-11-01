@@ -77,7 +77,11 @@ import {
   permissionKindLabel,
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
-import { bridgedNativeToolsOffered, noteAcpBridgeDelegation } from './acp-native-bridge.ts'
+import {
+  bridgedNativeToolsOffered,
+  dropAcpBridgeDelegation,
+  noteAcpBridgeDelegation,
+} from './acp-native-bridge.ts'
 import { describeAcpToolProvenance, resolveAcpToolProvenance } from './acp-tool-provenance.ts'
 import {
   requestApproval,
@@ -783,6 +787,8 @@ async function runAcpAgentTurn(
       // Agent finished/failed this tool without waiting for our permission answer
       // — dismiss that specific modal now, not at turn end.
       cancelApprovalsForAcpToolCall(chunk.toolCallId)
+      // A delegation still waiting now was never executed through the bridge.
+      dropAcpBridgeDelegation(options.threadId, chunk.toolCallId)
     }
     if (chunk.type === 'text') {
       assistantText += chunk.text
@@ -801,9 +807,10 @@ async function runAcpAgentTurn(
   // path shape). Anything else that changed on disk bypassed user approval and
   // is surfaced by the post-turn audit (issue #591).
   const queueWrites = new Set<string>()
-  // Set per attempt once the session is acquired: whether its agent actually
-  // mounted the native-tool bridge (local, HTTP MCP, bridge started).
-  let bridgeMounted = false
+  // Set per attempt once the session is acquired: the tools this session's own
+  // bridge serves, or none when its agent did not mount one (remote, no HTTP
+  // MCP, bridge not started).
+  let bridgeToolNames: readonly string[] = []
   const handlers: AcpClientHandlers = {
     onChunk,
     requestPermission: (req, rpcSignal, context) =>
@@ -816,8 +823,9 @@ async function runAcpAgentTurn(
           remote,
           ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
-          nativeBridge: bridgeMounted,
+          bridgeToolNames,
           threadId: options.threadId,
+          ...(executionContext ? { projectId: executionContext.projectId } : {}),
         },
         req,
         cwd,
@@ -890,7 +898,10 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
-    bridgeMounted = !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
+    bridgeToolNames =
+      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
+        ? entry.bridge.toolNames
+        : []
     const skillToolNames =
       entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
@@ -1227,13 +1238,15 @@ interface AcpPermissionAgent {
   /** The SSH host a remote agent runs on; remembered grants are scoped to it. */
   remoteHostId?: string
   /**
-   * This session mounted Copse's native-tool bridge, so a call proven to target
-   * it is re-gated by the bridge on execution. False for remote agents, agents
-   * without HTTP MCP, and sessions whose bridge did not start.
+   * The tools this session's own native-tool bridge serves, so a call proven to
+   * target one is re-gated by the bridge on execution. Empty for remote agents,
+   * agents without HTTP MCP, and sessions whose bridge did not start.
    */
-  nativeBridge?: boolean
+  bridgeToolNames?: readonly string[]
   /** Owning thread, for attributing a delegated call to the bridge's record. */
   threadId?: string
+  /** Owning project, so audit records land beside the thread whatever project is open. */
+  projectId?: string
 }
 
 /**
@@ -1319,18 +1332,27 @@ async function respondToPermission(
   // agent's earlier reports of the same call (#1446), and only when this
   // session really mounted the bridge — a remote agent, or one without HTTP
   // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // This session's bridge, narrowed to what is still offered now (a plugin can
+  // be disabled mid-session).
+  const stillOffered = new Set(bridgedNativeToolsOffered())
   const provenance = resolveAcpToolProvenance(
     req.toolCall,
     context?.observedToolCall ?? [],
-    agent.nativeBridge === true && agent.remote !== true ? bridgedNativeToolsOffered() : [],
+    agent.remote === true
+      ? []
+      : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
   )
+  const auditOwner = {
+    ...(agent.threadId ? { threadId: agent.threadId } : {}),
+    ...(agent.projectId ? { projectId: agent.projectId } : {}),
+  }
   if (
     provenance.status === 'bridged' &&
     getSetting<boolean>('acpAutoApproveNativeBridgeTools', true)
   ) {
     const toolCallId = req.toolCall.toolCallId
     if (agent.threadId && toolCallId) {
-      noteAcpBridgeDelegation(agent.threadId, provenance.tool, toolCallId)
+      noteAcpBridgeDelegation(agent.threadId, provenance.tool, toolCallId, req.toolCall.rawInput)
     }
     recordDecision({
       kind: 'acp',
@@ -1340,7 +1362,7 @@ async function respondToPermission(
       scope: 'native-bridge',
       reasons: [describeAcpToolProvenance(provenance)],
       source: 'acp-bridge-provenance',
-      ...(agent.threadId ? { threadId: agent.threadId } : {}),
+      ...auditOwner,
       ...(toolCallId ? { toolCallId } : {}),
     })
     return permissionResponseFor(req.options, true)
@@ -1353,10 +1375,11 @@ async function respondToPermission(
       kind: 'acp',
       actor: 'system',
       verdict: 'classified',
-      subject: `${agent.title}: ${req.toolCall.title ?? permissionKindLabel(kind)}`,
+      // The kind, not the title: a title can hold a whole command line.
+      subject: `${agent.title}: ${permissionKindLabel(kind)}`,
       reasons: [describeAcpToolProvenance(provenance)],
       source: 'acp-bridge-provenance',
-      ...(agent.threadId ? { threadId: agent.threadId } : {}),
+      ...auditOwner,
       ...(req.toolCall.toolCallId ? { toolCallId: req.toolCall.toolCallId } : {}),
     })
   }

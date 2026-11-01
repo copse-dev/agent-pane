@@ -59,7 +59,7 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
-import { AcpToolCallObservations, type AcpToolCallIdentityFields } from './acp-tool-provenance.ts'
+import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
   acpReattachMethods,
   noReattachMethodFailure,
@@ -120,7 +120,7 @@ export interface AcpPermissionRequestContext {
    * Identity fields of the agent's earlier `tool_call`/`tool_call_update`
    * notifications for the same `toolCallId` (#1446 provenance).
    */
-  observedToolCall: readonly AcpToolCallIdentityFields[]
+  observedToolCall: readonly AcpToolIdentity[]
 }
 
 export interface AcpClientHandlers {

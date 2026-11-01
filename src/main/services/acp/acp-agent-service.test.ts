@@ -914,8 +914,9 @@ describe('remote ACP agents are never treated as sandboxed', () => {
 
   async function answer(
     posture: ReturnType<typeof resolveAcpRunContainment> & {
-      nativeBridge?: boolean
+      bridgeToolNames?: readonly string[]
       threadId?: string
+      projectId?: string
     },
     agentId: string,
     req: RequestPermissionRequest,
@@ -1216,28 +1217,31 @@ describe('remote ACP agents are never treated as sandboxed', () => {
 
   it('does not waive a prompt for a title that claims a bridged native tool', async () => {
     // Remote agents are never offered the bridge, so nothing would re-gate it.
-    const req = permissionRequest({ kind: 'other', title: 'copse-semantic_search' })
-    assert.deepEqual(
-      await answer({ ...remote(), nativeBridge: true }, 'gemini', req, REMOTE_ROOT),
-      {
-        prompted: true,
-        approved: false,
-      },
-    )
-    assert.deepEqual(await answer({ ...local(), nativeBridge: true }, 'gemini', req, LOCAL_ROOT), {
-      prompted: false,
-      approved: true,
+    const req = permissionRequest({
+      kind: 'other',
+      title: 'copse-semantic_search: semantic_search',
     })
+    const tools = ['semantic_search']
+    assert.deepEqual(
+      await answer({ ...remote(), bridgeToolNames: tools }, 'gemini', req, REMOTE_ROOT),
+      { prompted: true, approved: false },
+    )
+    assert.deepEqual(
+      await answer({ ...local(), bridgeToolNames: tools }, 'gemini', req, LOCAL_ROOT),
+      { prompted: false, approved: true },
+    )
   })
 
   // #1446: the ACP layer delegates to the bridge's gate only on provenance the
   // adapter authored, never on a display title alone.
   describe('bridged tool provenance', () => {
     const GENERIC = 'MCP: tool'
+    const SESSION_TOOLS = ['semantic_search', 'run_shell']
     const bridged = (): ReturnType<typeof resolveAcpRunContainment> & {
-      nativeBridge: boolean
+      bridgeToolNames: readonly string[]
       threadId: string
-    } => ({ ...local(), nativeBridge: true, threadId: 't-local' })
+      projectId: string
+    } => ({ ...local(), bridgeToolNames: SESSION_TOOLS, threadId: 't-local', projectId: 'p-local' })
     const claude = (toolName: string): Record<string, unknown> => ({ claudeCode: { toolName } })
 
     it('delegates a generic-titled call with valid provenance and records why', async () => {
@@ -1251,7 +1255,7 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         (decision) => recorded.push(decision),
         () =>
           answer(bridged(), 'claude', req, LOCAL_ROOT, {
-            observedToolCall: [{ title: GENERIC, _meta: claude('mcp__copse__semantic_search') }],
+            observedToolCall: [{ title: GENERIC, metaToolName: 'mcp__copse__semantic_search' }],
           }),
       )
       assert.deepEqual(result, { prompted: false, approved: true })
@@ -1262,11 +1266,46 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       assert.equal(line.line.subject, 'Agent: copse/semantic_search')
     })
 
+    // The active project is p1 (beforeEach); the turn belongs to p-local. The
+    // record must follow the turn, not whichever project the window shows.
+    it("files the decision under the turn's own project", async () => {
+      const req = permissionRequest({ kind: 'other', _meta: claude('mcp__copse__semantic_search') })
+      const recorded: RecordedDecision[] = []
+      await runWithDecisionRecorder(
+        (decision) => recorded.push(decision),
+        () => answer(bridged(), 'claude', req, LOCAL_ROOT),
+      )
+      const line = recorded.find((decision) => decision.line.source === 'acp-bridge-provenance')
+      assert.equal(line?.projectId, 'p-local')
+      assert.equal(line?.threadId, 't-local')
+    })
+
+    it("prompts for a bridged tool this session's own bridge does not serve", async () => {
+      // `gh_pr_list` is a bridge tool in general, but not one this session offered.
+      const req = permissionRequest({ kind: 'other', _meta: claude('mcp__copse__gh_pr_list') })
+      assert.deepEqual(await answer(bridged(), 'claude', req, LOCAL_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    })
+
     it('prompts for a generic-titled call with no provenance', async () => {
       const req = permissionRequest({ kind: 'other', title: GENERIC })
       assert.deepEqual(
         await answer(bridged(), 'cursor', req, LOCAL_ROOT, {
           observedToolCall: [{ title: GENERIC }],
+        }),
+        { prompted: true, approved: false },
+      )
+    })
+
+    // Codex: its notification titles the call `mcp.copse.<tool>`, but the
+    // permission request names nothing. Earlier reports may only veto.
+    it('prompts when only an earlier report names a bridged tool', async () => {
+      const req = permissionRequest({ kind: 'other', rawInput: { query: 'x' } })
+      assert.deepEqual(
+        await answer(bridged(), 'codex', req, LOCAL_ROOT, {
+          observedToolCall: [{ title: 'mcp.copse.semantic_search' }],
         }),
         { prompted: true, approved: false },
       )
@@ -1283,7 +1322,7 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         (decision) => recorded.push(decision),
         () =>
           answer(bridged(), 'claude', req, LOCAL_ROOT, {
-            observedToolCall: [{ title: GENERIC, _meta: claude('Bash') }],
+            observedToolCall: [{ title: GENERIC, metaToolName: 'Bash' }],
           }),
       )
       assert.deepEqual(result, { prompted: true, approved: false })
@@ -1291,6 +1330,8 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       assert.ok(conflict)
       assert.match(conflict.line.reasons?.[0] ?? '', /^acp provenance: conflicting/)
       assert.equal(conflict.line.toolCallId, 't1')
+      assert.equal(conflict.line.subject, 'Agent: "other" tool calls', 'the kind, never the title')
+      assert.equal(conflict.projectId, 'p-local')
     })
 
     it('prompts when the session has no live bridge to re-gate the call', async () => {
@@ -1323,6 +1364,44 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         rawInput: { command },
       })
       assert.deepEqual(await answer(bridged(), 'cursor', req, LOCAL_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    })
+
+    // #4016 security review: a looser title grammar read `copse=;. ./run_shell`
+    // as the bridged `run_shell`, and that line sources `./run_shell` in the
+    // agent's own shell. An unsandboxed agent has nothing else to contain it.
+    it('does not read shell text as a bridged identity', async () => {
+      const unsandboxed = { ...bridged(), sandboxed: false }
+      for (const command of ['copse=;. ./run_shell', 'copse;run_shell', 'COPSE RUN_SHELL']) {
+        const req = permissionRequest({
+          kind: 'execute',
+          title: `\`${command}\``,
+          rawInput: { command },
+        })
+        const recorded: RecordedDecision[] = []
+        const result = await runWithDecisionRecorder(
+          (decision) => recorded.push(decision),
+          () => answer(unsandboxed, 'cursor', req, LOCAL_ROOT),
+        )
+        assert.deepEqual(result, { prompted: true, approved: false }, command)
+        assert.equal(
+          recorded.some((decision) => decision.line.verdict === 'allowed'),
+          false,
+          command,
+        )
+      }
+    })
+
+    it('does not delegate an execute request on an exact title alone', async () => {
+      const unsandboxed = { ...bridged(), sandboxed: false }
+      const req = permissionRequest({
+        kind: 'execute',
+        title: 'copse-run_shell: run_shell',
+        rawInput: { command: 'copse-run_shell: run_shell' },
+      })
+      assert.deepEqual(await answer(unsandboxed, 'cursor', req, LOCAL_ROOT), {
         prompted: true,
         approved: false,
       })

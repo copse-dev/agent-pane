@@ -84,18 +84,29 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   without prompting again. A retry that arrives while the prompt is still open
   simply joins it. Turn end still dismisses the prompt, as before.
 - Copse skips the agent's duplicate approval for **its own** bridged tools only
-  on adapter-authored provenance, never on a title prefix (#1446,
-  [plan](plans/acp-tool-provenance.md)). Claude's `_meta.claudeCode.toolName`
-  (`mcp__copse__gh_pr_view`) and an exact Cursor title
-  (`copse-gh_pr_list: gh_pr_list`) both qualify. Every claim on the request and
-  on the agent's earlier reports of the same `toolCallId` must agree. The
-  session must also have mounted the bridge: a local agent with HTTP MCP whose
-  bridge started. A title that only _starts_ with a bridged name, such as a shell
-  command `copse-run_shell; …`, claims nothing. Codex sends no identity, so its
-  bridged calls still prompt twice. The bridge's own gate still enforces
-  them, so this is noise, not a hole. Each delegation is recorded as an `acp`
-  `allowed` decision whose `toolCallId` the bridge's `bridge-request` record
-  repeats, so an export can attribute both layers.
+  on adapter-authored provenance carried by the permission request itself,
+  never on a title prefix (#1446, [plan](plans/acp-tool-provenance.md)).
+  - **Claude** qualifies through `_meta.claudeCode.toolName`
+    (`mcp__copse__gh_pr_view`).
+  - **Cursor** qualifies through its exact permission-request title
+    (`copse-gh_pr_list: gh_pr_list`). A title is weak evidence, so a request
+    the agent marks `execute`, `edit`, `delete` or `move` is never delegated on
+    titles alone.
+  - **Codex** titles its notifications `mcp.copse.<tool>`, but its permission
+    requests carry no title and no `_meta` identity. An earlier report can
+    only veto a request's own claim, never stand in for one, so Codex's
+    bridged calls still prompt twice. The bridge's own gate still enforces
+    them, so this is noise, not a hole.
+
+  Every claim on the request and on the agent's earlier reports of the same
+  `toolCallId` must agree, and the tool must be one this session's own bridge
+  serves: a local agent with HTTP MCP whose bridge started. Titles match only
+  the literal observed shapes, so shell text such as `copse=;. ./run_shell`
+  claims nothing. Each delegation is recorded as an `acp` `allowed` decision.
+  The bridge's `bridge-request` record repeats its `toolCallId` when the call
+  can be matched (same tool, and the same arguments when the request carried
+  any), so an export can attribute both layers.
+
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's

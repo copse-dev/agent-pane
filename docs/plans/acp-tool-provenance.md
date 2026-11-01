@@ -29,23 +29,40 @@ call that only claims to be bridged.
 A permission request is delegated to the bridge's gate only when its stable `{server, tool}`
 identity is established from adapter-authored fields:
 
-| Field                                                 | Claim                                                                                                                                                                                           |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `_meta.claudeCode.toolName`                           | `mcp__<server>__<tool>` names an MCP tool; any other value (`Bash`) names an agent-native tool. The Claude adapter sets this from the real tool name, on both the notification and the request. |
-| `_meta.claudeCode.mcpServer.name`                     | Server only.                                                                                                                                                                                    |
-| ACP `name`                                            | Only a qualified `mcp__<server>__<tool>` value.                                                                                                                                                 |
-| `title`, only when the **whole** title is an identity | `copse-<tool>`, `copse-<tool>: <tool>` (Cursor), `mcp__copse__<tool>`, `mcp.copse.<tool>`. A title that merely starts with an identity is display text and claims nothing.                      |
+| Field                                     | Claim                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_meta.claudeCode.toolName`               | `mcp__<server>__<tool>` names an MCP tool; any other value (`Bash`) names an agent-native tool. The Claude adapter sets this from the real tool name, on both the notification and the request.                                                                             |
+| `_meta.claudeCode.mcpServer.name`         | Server only.                                                                                                                                                                                                                                                                |
+| ACP `name`                                | Only a qualified `mcp__<server>__<tool>` value.                                                                                                                                                                                                                             |
+| `title`, only in a literal observed shape | `copse-<tool>: <tool>` (Cursor), `mcp__copse__<tool>` (Claude), `mcp.copse.<tool>` (Codex notifications). Fixed separators, an ASCII tool name spelled exactly as offered, no case folding and no inline-code unwrapping. Anything else is display text and claims nothing. |
+
+The title grammar is literal on purpose. An earlier version accepted any run of non-alphanumeric
+characters between the server and the tool, case-insensitively, after unwrapping inline code. The
+security review of #4016 showed that this reads shell text as a bridged tool: `copse=;. ./run_shell`
+sources `./run_shell`, and `copse;run_shell`, `copse|read_file` and `COPSE RUN_SHELL` matched too.
+Under an adapter whose execute title is the raw command and which sends no `_meta` (Cursor), the
+agent's own shell would then have run it with no Copse prompt.
 
 Claims are collected from the permission request and from the agent's earlier `tool_call` and
 `tool_call_update` notifications for the same `toolCallId`. That record is host-owned:
-`acp-client.ts` stores it per connection, bounded to 512 calls with 8 reports each. The result is:
+`acp-client.ts` keeps only the extracted identity strings, each at most 512 characters, for at
+most 512 calls with 8 reports each. Rules:
 
-- `bridged`: every claim agrees, the server is `copse`, and this session's live bridge serves the
+- The **request itself** must carry a claim. Earlier reports can veto it, never stand in for it.
+  Otherwise a Codex call, whose notification is titled `mcp.copse.<tool>` but whose request names
+  nothing, would newly skip a prompt.
+- Every claim must agree on the server and the tool, compared exactly.
+- A title is the weakest evidence. A request the agent classifies as `execute`, `edit`, `delete`
+  or `move` is never delegated when every claim comes from a title.
+
+The result is:
+
+- `bridged`: every claim agrees, the server is `copse`, and this session's own bridge serves the
   tool;
-- `not-bridged`: the claims agree on another MCP server, an agent-native tool, or a tool the bridge
-  does not serve;
-- `conflicting`: claims disagree on the server or the tool;
-- `absent`: there are no claims, for example a generic title or no title.
+- `not-bridged`: the claims agree on another MCP server, an agent-native tool, or a tool this
+  session's bridge does not serve;
+- `conflicting`: claims disagree, or only titles vouch for a running or changing request;
+- `absent`: the request itself names no tool, for example a generic title or no title.
 
 Only `bridged` changes behaviour. The ACP layer approves the request, and the bridge's native gate
 decides at execution as it already does:
@@ -59,8 +76,9 @@ Every other status follows the existing path (remembered grants, low-risk reads,
 gate, edit backup, or the prompt), so absent, unknown and conflicting provenance fail closed. The
 setting `acpAutoApproveNativeBridgeTools` still turns delegation off.
 
-The live offered set is empty unless the session mounted a bridge: a local agent with
-HTTP MCP whose bridge started. Remote (SSH) agents never qualify.
+The offered set is this session's own bridge tool list (`AcpNativeBridge.toolNames`), narrowed to
+tools still offered now. It is empty unless the session mounted a bridge: a local agent with HTTP
+MCP whose bridge started. Remote (SSH) agents never qualify.
 
 ### Why adapter metadata, when an agent could forge it too
 
@@ -83,18 +101,27 @@ Each ACP-layer delegation records a decision:
 - `subject: <agent>: copse/<tool>` (no arguments)
 - the ACP `toolCallId`
 - a reason naming which fields agreed
+- the turn's own project and thread, not whichever project the window has open
 
 Its `toolCallId` links it to the bridge execution:
 
-- `noteAcpBridgeDelegation` records the delegation, keyed by thread and tool.
+- `noteAcpBridgeDelegation` records the delegation, keyed by thread and tool, with the canonical
+  JSON of the request's `rawInput` when it carried one.
 - When the bridge executes that tool, its existing `bridge-request` record takes the same
   `toolCallId`, beside the host-owned `bridgeExecutionId` that the native gate's own decisions
-  already carry.
-- When two delegations of one tool are waiting at once, the MCP request cannot tell them apart.
-  Neither is named, and nothing is guessed.
+  already carry. A waiting delegation with arguments links only an execution with the same
+  arguments.
+- When two waiting delegations could both be the execution, the MCP request cannot tell them
+  apart. Neither is named, and both are dropped.
+- When the agent reports an ACP tool call finished, failed or cancelled, any delegation still
+  waiting for it is dropped, so an abandoned approval cannot attach to a later call.
+- Residual: a delegation without arguments (Cursor sends none) can still attach to a later
+  execution of the same tool if the call it approved was abandoned without any report, within the
+  10-minute expiry. The link is audit data only; it authorizes nothing.
 
 When a request's claims conflict, Copse records a `classified` `acp` decision with the ACP
-`toolCallId` and the reason (`acp provenance: conflicting (…)`) before the ordinary path runs.
+`toolCallId` and the reason (`acp provenance: conflicting (…)`) before the ordinary path runs. Its
+subject names the request's kind, never its title, which can hold a whole command line.
 Absent and not-bridged provenance, the common case for agent-native tools, write no extra line: the
 prompt's own record already carries its `toolCallId`. Provenance stays out of
 `ApprovalRequest.reasons` on purpose: those reasons key prompt sharing and are repeated in the
@@ -112,16 +139,17 @@ either layer can therefore be attributed to:
 
 ## Acceptance criteria
 
-| Criterion (issue)                                                                              | Evidence                                                                                                                                |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Copse-native bridged calls produce no duplicate ACP approval when stable provenance is present | `acp-agent-service.test.ts` → "delegates a generic-titled call with valid provenance and records why"                                   |
-| Forged display titles alone cannot bypass approval                                             | "does not skip the shell gate for the agent's own command titled like a bridged tool"; `acp-tool-provenance.test.ts` forged-title cases |
-| External MCP tools remain subject to existing policy                                           | "keeps an external MCP tool on the ordinary prompt"                                                                                     |
-| Regression: generic titles with valid, missing and conflicting provenance                      | `resolveAcpToolProvenance` suite and the three service tests                                                                            |
-| No bridge, no delegation                                                                       | "prompts when the session has no live bridge to re-gate the call"; the remote-agent test                                                |
-| One attributable path for ACP plus the bridge                                                  | The ACP `allowed` record and the `bridge-request` record share `toolCallId`; the bridge delegation tests                                |
-| Destructive and external operations keep prompting or being denied                             | Unchanged: the bridge's native gate decides them. No native policy changed                                                              |
-| Guarded Auto never auto-runs on classifier failure                                             | Not built: decided against in [#4106](https://github.com/copse-dev/agent-pane/issues/4106); see below                                   |
+| Criterion (issue)                                                                              | Evidence                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Copse-native bridged calls produce no duplicate ACP approval when stable provenance is present | `acp-agent-service.test.ts` → "delegates a generic-titled call with valid provenance and records why"                                                                                                                                                   |
+| Forged display titles alone cannot bypass approval                                             | "does not read shell text as a bridged identity", "does not delegate an execute request on an exact title alone", "does not skip the shell gate for the agent's own command titled like a bridged tool"; `acp-tool-provenance.test.ts` shell-text cases |
+| External MCP tools remain subject to existing policy                                           | "keeps an external MCP tool on the ordinary prompt"                                                                                                                                                                                                     |
+| Regression: generic titles with valid, missing and conflicting provenance                      | `resolveAcpToolProvenance` suite and the three service tests                                                                                                                                                                                            |
+| No bridge, no delegation                                                                       | "prompts when the session has no live bridge to re-gate the call", "prompts for a bridged tool this session's own bridge does not serve"; the remote-agent test                                                                                         |
+| Earlier reports never establish provenance                                                     | "prompts when only an earlier report names a bridged tool"; "never establishes provenance from earlier reports alone"                                                                                                                                   |
+| One attributable path for ACP plus the bridge                                                  | The ACP `allowed` record and the `bridge-request` record share `toolCallId`; the bridge delegation tests                                                                                                                                                |
+| Destructive and external operations keep prompting or being denied                             | Unchanged: the bridge's native gate decides them. No native policy changed                                                                                                                                                                              |
+| Guarded Auto never auto-runs on classifier failure                                             | Not built: decided against in [#4106](https://github.com/copse-dev/agent-pane/issues/4106); see below                                                                                                                                                   |
 
 ## Not in this change
 
@@ -145,13 +173,20 @@ needs a security review and a change to `shell-permissions.md` in the same PR.
 
 ### Other limits
 
-- **Codex** sends neither a title nor `_meta` identity on permission requests, so its bridged
-  calls still prompt at the ACP layer. That is fail-closed and unchanged. Delegating them needs an
-  adapter-authored identity in a Codex trace.
-- **Cursor** still relies on its exact permission-request title. Generic `MCP: tool` calls that
-  never send a permission request are unaffected.
-- **Linking an ACP call to a bridge execution** uses the call ordering, because the MCP request
-  carries no ACP `toolCallId`. When delegations of one tool overlap, neither call is linked.
+- **Codex** titles its notifications `mcp.copse.<tool>`, but its permission requests carry
+  neither a title nor `_meta` identity. Earlier reports can only veto, so its bridged calls still
+  prompt at the ACP layer. That is fail-closed and unchanged. Delegating them needs an
+  adapter-authored identity on the Codex request.
+- **Cursor** relies on its exact permission-request title, and only for requests it does not mark
+  `execute`, `edit`, `delete` or `move`. Generic `MCP: tool` calls that never send a permission
+  request are unaffected.
+- **Linking an ACP call to a bridge execution** matches tool and arguments, because the MCP
+  request carries no ACP `toolCallId`. See the residual under Attribution.
+- **Server-name collision (follow-up).** An MCP server the user configured in the agent itself
+  and named `copse` would produce the same `mcp__copse__<tool>` names, and Copse's bridge would not
+  see those calls. The offered-tool check narrows this to tool names Copse also serves. A
+  per-session `copse-<nonce>` bridge name would close it; that changes every bridged tool name the
+  agent sees, so it is left to its own change.
 - **Export fields not yet added:** a prompt or batch episode ID and a command fingerprint. The
   existing detail blob's `toolCallIds` covers coalesced prompts. A non-reversible command
   fingerprint already exists for `tier-shadow` and could be reused later.
