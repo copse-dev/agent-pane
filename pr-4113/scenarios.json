@@ -410,5 +410,13 @@
   {
     "id": "approval-provider-url",
     "label": "Allow model provider host?"
+  },
+  {
+    "id": "approval-desktop-app",
+    "label": "Let the agent use com.apple.Notes?"
+  },
+  {
+    "id": "approval-desktop-finder",
+    "label": "Let the agent use com.apple.finder?"
   }
 ]
