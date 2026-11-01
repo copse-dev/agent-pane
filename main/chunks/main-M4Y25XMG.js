@@ -62890,7 +62890,17 @@ function initMentionPicker(opts) {
     mentionStart = -1;
   }
   function updateSelection2() {
-    picker.querySelectorAll(".mention-item").forEach((el2, i2) => el2.classList.toggle("selected", i2 === selectedIdx));
+    const items = picker.querySelectorAll(".mention-item");
+    items.forEach((el2, i2) => el2.classList.toggle("selected", i2 === selectedIdx));
+    const selected = items[selectedIdx];
+    if (!selected) return;
+    const top = selected.offsetTop;
+    const bottom = top + selected.offsetHeight;
+    if (top < picker.scrollTop) {
+      picker.scrollTop = top;
+    } else if (bottom > picker.scrollTop + picker.clientHeight) {
+      picker.scrollTop = bottom - picker.clientHeight;
+    }
   }
   input.el.addEventListener("input", () => {
     const val = input.value;
