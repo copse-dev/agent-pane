@@ -2713,6 +2713,37 @@ describe('shell prompt execution boundary', () => {
 })
 
 describe('formatGithubWritePrompt', () => {
+  it('renders the push branch, origin, and fast-forward restriction without JSON', () => {
+    const prompt = formatGithubWritePrompt('git_push', { branch: 'fix/parser' })
+    assert.equal(prompt.title, 'Push branch to origin?')
+    assert.equal(prompt.approveLabel, 'Push branch')
+    assert.equal(prompt.body, 'Branch: fix/parser\nRemote: origin\nPush mode: Fast-forward only')
+    assert.match(prompt.bodyAdvice, /without replacing existing remote history/)
+    assert.equal(prompt.bodyFooter, 'Approval covers this push once.')
+  })
+  it('exposes the full remote commit and history replacement for a leased push', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const prompt = formatGithubWritePrompt('git_push', {
+      branch: 'fix/parser',
+      expected_remote_sha: sha,
+    })
+    assert.equal(
+      prompt.body,
+      `Branch: fix/parser\nRemote: origin\nPush mode: Force with lease\nExpected remote commit: ${sha}`,
+    )
+    assert.match(prompt.bodyAdvice, /can replace remote history only if/)
+  })
+  it('keeps unexpected or malformed push arguments visible', () => {
+    for (const args of [
+      { branch: 'fix/parser', extra: true },
+      { branch: 'fix/parser', expected_remote_sha: 123 },
+      { branch: 'fix/parser', expected_remote_sha: '' },
+      { branch: '' },
+      {},
+    ]) {
+      assert.equal(formatGithubWritePrompt('git_push', args).body, JSON.stringify(args, null, 2))
+    }
+  })
   it('names concrete effects while keeping the PR target visible', () => {
     const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
     assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')

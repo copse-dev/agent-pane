@@ -17,6 +17,7 @@ import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-stat
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
+  gitPushApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -3890,6 +3891,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       id: `thread-${access}`,
       type: 'mcp',
       ...threadAccessApproval(access),
+    }),
+  ),
+  ...[undefined, '0123456789abcdef0123456789abcdef01234567'].map((sha) =>
+    approvalRiskScenario(sha ? 'approval-git-push-lease' : 'approval-git-push', {
+      id: 'git-push',
+      type: 'mcp',
+      ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
   approvalRiskScenario('approval-web-url', {
