@@ -769,14 +769,22 @@ sticky behavior above that threshold. The paired regression states live in
 and one narrow reference that proves the response reaches the composer unobscured.
 
 A pinned prompt covers the top of its own scrollport, the mirror of a sticky footer, so its band is
-not landing space either. `conversation.ts` writes the prompt's height (plus the list's row gap) to
-the list's `scroll-padding-top` while it sticks, and clears it when the prompt rejoins the flow:
-conversation search, opened disclosures, canvas cards and keyboard focus then land below the
-prompt, not under it. Only while it is stuck: scroll padding also narrows the region the
-browser picks its scroll anchor from, so padding a prompt that is still in the flow lets the
-prompt's own growth push it into sticking, and its previews shrink and grow without end. Focused proof: `stickyPromptCollisions()` in
+not landing space either. While the latest prompt is stuck, `conversation.ts` writes its height
+(plus the list's row gap) to the list's `scroll-padding-top` and `--sticky-prompt-band`: conversation
+search, opened disclosures, canvas cards and keyboard focus then land below the prompt, not under
+it. Three limits keep that from moving anything else:
+
+- Only while stuck. Scroll padding also narrows the region the browser picks its scroll anchor
+  from, so padding a prompt that is still in the flow lets its own growth push it into sticking, and
+  its previews shrink and grow without end.
+- Only for its reply. The prompt and every row before it cancel the band with a negative
+  `scroll-margin-top` (`conversation.css`): scrolling to one of them leaves the prompt at or below
+  the target, so the target lands flush, exactly as without the band.
+- The reading anchor skips rows ending inside the band only while the prompt covers it.
+
+Focused proof: `stickyPromptCollisions()` in
 [`tests/e2e/helpers/sticky-prompt.ts`](../tests/e2e/helpers/sticky-prompt.ts), asserted by the
-explainer specs before their captures.
+explainer specs before their captures; `tests/demo/concise-thread-toggle.demo.ts` for the anchor.
 
 ## Conversation navigation stays out of the transcript
 

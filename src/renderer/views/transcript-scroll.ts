@@ -68,8 +68,8 @@ export interface TranscriptScrollHost {
    */
   syncStickyImagePreview: (releaseOnScrollUp: boolean) => void
   /**
-   * Height of the band the pinned latest prompt covers at the top of the
-   * list (0 when it cannot stick). Rows ending inside it never anchor reading.
+   * Height of the band the stuck latest prompt covers at the top of the list
+   * (0 while it is not stuck). Rows ending inside it never anchor reading.
    */
   stickyPromptBand: () => number
   /** The reader is back at the live end (scrolled there, or forced there). */

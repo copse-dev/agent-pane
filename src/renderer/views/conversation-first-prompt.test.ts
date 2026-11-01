@@ -191,8 +191,8 @@ describe('first prompt navigation', () => {
     // scrollIntoView and search hits land below the prompt and its row gap.
     sync(-100)
     assert.equal(list.style.scrollPaddingTop, '71px')
-    // Scrolling to the prompt itself still lands it at the top.
-    assert.equal(latest.style.scrollMarginTop, '-71px')
+    // The prompt and the rows before it cancel the band through this variable.
+    assert.equal(list.style.getPropertyValue('--sticky-prompt-band'), '71px')
     // Still in the flow lower down: no padding, or the browser's scroll anchor
     // would skip past the prompt and its own growth would push it into sticking.
     sync(200)
@@ -201,13 +201,13 @@ describe('first prompt navigation', () => {
     latest.style.position = 'relative'
     sync(-100)
     assert.equal(list.style.scrollPaddingTop, '')
-    assert.equal(latest.style.scrollMarginTop, '')
+    assert.equal(list.style.getPropertyValue('--sticky-prompt-band'), '')
   })
 
   it('anchors the way back on the first row below the pinned band, not the tail inside it', () => {
     const { list, first, back } = fixture()
-    // A latest prompt 138px tall sticks under 16px of list padding with a 12px
-    // gap: a 150px band, whether or not it is stuck right now.
+    // A latest prompt 138px tall stuck under 16px of list padding with a 12px
+    // gap covers a 150px band.
     const prompts = list.querySelectorAll<HTMLElement>('.msg-user')
     const latest = prompts[prompts.length - 1]
     assert.ok(latest)
@@ -216,6 +216,10 @@ describe('first prompt navigation', () => {
     latest.style.position = 'sticky'
     latest.style.top = '-16px'
     latest.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 600, 138)
+    // Stuck: the row before it has scrolled above the top.
+    const before = latest.previousElementSibling
+    assert.ok(before instanceof HTMLElement)
+    before.getBoundingClientRect = (): DOMRect => new DOMRect(0, -200, 600, 100)
     // Rows are 100px tall from the list top. At 935, row 9 ends 65px down,
     // inside the band; row 10 is the first readable row.
     scroll(list, 935)

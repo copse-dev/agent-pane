@@ -3087,7 +3087,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
   // The latest human prompt, which sticks while its response is read, and the
-  // height of the band it covers at the top of the transcript when it does.
+  // height of the band it covers at the top of the transcript while stuck.
   let stickyPrompt: HTMLElement | null = null
   let stickyPromptBand = 0
   let stickyImageFullHeight = 0
@@ -3216,19 +3216,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5
       }
     }
-    stickyPromptBand = band
-    // The prompt is never behind itself: scrolling to it lands it at the top,
-    // where it sticks, rather than a band's height down with the previous
-    // turn's tail above it.
-    if (prompt) {
-      const margin = band > 0 ? `${String(-band)}px` : ''
-      if (prompt.style.scrollMarginTop !== margin) prompt.style.scrollMarginTop = margin
-    }
+    // The reading anchor skips the band only while the prompt covers it.
+    stickyPromptBand = stuck ? band : 0
     // Only while stuck: scroll padding also narrows the region the browser picks
     // its scroll anchor from, and a prompt still in the flow inside that region
     // would be pushed into sticking (and its previews shrunk) by its own growth.
     const value = stuck && band > 0 ? `${String(band)}px` : ''
-    if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value
+    if (list.style.scrollPaddingTop !== value) {
+      list.style.scrollPaddingTop = value
+      // The prompt and the rows before it cancel the band (conversation.css).
+      if (value) list.style.setProperty('--sticky-prompt-band', value)
+      else list.style.removeProperty('--sticky-prompt-band')
+    }
   }
 
   function refreshStickyImagePrompt(): void {
@@ -3237,10 +3236,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
     const latest = prompts[prompts.length - 1]
     if (stickyPrompt !== (latest ?? null)) {
-      if (stickyPrompt) {
-        stickyPromptResizeObserver?.unobserve(stickyPrompt)
-        stickyPrompt.style.scrollMarginTop = ''
-      }
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt)
       stickyPrompt = latest ?? null
       if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt)
     }

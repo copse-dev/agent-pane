@@ -942,6 +942,18 @@
   z-index: 3;
   box-shadow: var(--shadow-sm);
 }
+/* While the latest prompt is stuck, conversation.ts reserves its band as the
+   list's scroll-padding-top and --sticky-prompt-band, so a scrolled-to reply
+   row lands below the prompt. The prompt itself and every row before it cancel
+   that band: scrolling to one of them leaves the prompt at or below it, so
+   nothing covers the top and the target lands flush, as without the band. */
+.messages-list
+  > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(
+    :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))
+  ),
+.messages-list > :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)) {
+  scroll-margin-top: calc(-1 * var(--sticky-prompt-band, 0px));
+}
 /* A narrow split pane cannot afford to pin a tall request over the response it
    owns. Let the prompt rejoin the transcript once the chat column reaches the
    compact width used beside a full-size Browser or editor. */
