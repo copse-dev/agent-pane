@@ -318,3 +318,166 @@ Plain-text claims that work is done are not accepted — update_todos is require
 
 export const OPEN_TODOS_STILL_OPEN_MESSAGE =
   'Note: the task plan still has open items — the agent did not reconcile todos before finishing.'
+
+/**
+ * True when one step's todo update closed the plan on checks (#1433, Fix 4):
+ * todos were open before the step, none are open after it, at least one item is
+ * completed, and every item the step completed carries an acceptance `check`.
+ * A `check` on a completed item has been executed and passed: the host's
+ * update_todos runs it before accepting `completed`, holds back a check that
+ * arrived in the completing call, and reverts a failing one to `in_progress`.
+ * So this is the plan's own terminal step having been verified, not the model
+ * asserting it. Plans closed without checks are left alone, and the run
+ * finishes the way it always has.
+ */
+export function planClosedByVerifiedChecks(
+  before: readonly TodoItem[],
+  after: readonly TodoItem[],
+): boolean {
+  if (!hasOpenTodos(before) || hasOpenTodos(after)) return false
+  const wasCompleted = new Set(before.filter((t) => t.status === 'completed').map((t) => t.id))
+  const closedNow = after.filter((t) => t.status === 'completed' && !wasCompleted.has(t.id))
+  return closedNow.length > 0 && closedNow.every((t) => t.check !== undefined)
+}
+
+export const PLAN_VERIFIED_FINALIZE_NUDGE =
+  "Every item in your plan is completed and the final item's acceptance check passed, so the task is done. Do not run more checks, re-verify, or inspect the repository again. Write the final answer for the user now: what changed, how it was verified, and anything left for them to do."
+
+/** Splits a shell command on `&&`, `||` and `;` into trimmed, non-empty segments. */
+function shellSegments(command: string): string[] {
+  return command
+    .split(/&&|\|\||;/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+/** A stderr-to-stdout merge, the one redirection that writes no file. */
+const STDERR_MERGE = /\s*\d?>&\d\b/g
+
+/**
+ * Output filters that only reshape what the model sees of a command's output,
+ * so `pnpm test | tail -50` and `pnpm test 2>&1 | grep fail` are the same run.
+ */
+const OUTPUT_FILTER = /^(?:tail|head|grep|egrep|rg|wc|sort|uniq|cat|less|more)(?:\s|$)/
+
+/**
+ * Whole-suite verification invocations: test, check, lint, typecheck and build
+ * scripts through a package manager or make, and the common direct runners.
+ */
+const VERIFICATION_INVOCATION =
+  /^(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify)(?::[\w:-]+)?|(?:npx\s+|pnpm\s+exec\s+)?(?:vitest|jest|tsc|eslint|oxlint|mocha)|make\s+(?:test|check|lint|build)|cargo\s+(?:test|check|build|clippy)|go\s+(?:test|vet|build)|pytest|python3?\s+-m\s+pytest|tox|mvn\s+(?:test|verify)|\.?\/?gradlew?\s+(?:test|check|build))(?:\s|$)/
+
+/** Flags that make a verification command write (fix, format, update snapshots). */
+const WRITING_FLAG = /(?:^|\s)(?:--fix|--write|-u|--update-snapshots?|-w)(?:\s|=|$)/
+
+/** A segment's pipeline stages, or null when it redirects output to a file. */
+function pipelineStages(segment: string): string[] | null {
+  const merged = segment.replace(STDERR_MERGE, '')
+  if (merged.includes('>')) return null
+  return merged.split('|').map((p) => p.replace(/\s+/g, ' ').trim())
+}
+
+/**
+ * The repeat-damping key for a `run_shell` command, or null when it is not a
+ * whole-suite verification run (#1433, Fix 4). `cd` segments are kept in the
+ * key (the same suite in another package is a different run); output filters
+ * are dropped; any other segment, a file redirection, or a writing flag makes
+ * the command ineligible, since it may change state.
+ */
+export function verificationCommandKey(command: string): string | null {
+  const parts: string[] = []
+  let verifies = false
+  for (const segment of shellSegments(command)) {
+    const stages = pipelineStages(segment)
+    if (!stages) return null
+    const [producer = '', ...filters] = stages
+    if (filters.some((f) => !OUTPUT_FILTER.test(f))) return null
+    if (/^cd\s/.test(producer)) {
+      parts.push(producer)
+      continue
+    }
+    if (!VERIFICATION_INVOCATION.test(producer) || WRITING_FLAG.test(producer)) return null
+    verifies = true
+    parts.push(producer)
+  }
+  return verifies ? parts.join(' && ') : null
+}
+
+/**
+ * Read-only inspection a model typically runs between two verification passes
+ * (#1433's run: `git status`, `git diff --stat`, `git show --stat`).
+ */
+const READ_ONLY_SHELL_STAGE =
+  /^(?:cd|pwd|ls|cat|head|tail|wc|echo|which|rg|grep|egrep|sort|uniq|git\s+(?:status|diff|show|log|rev-parse|remote\s+-v|branch\s+--show-current))(?:\s|$)/
+
+function isReadOnlyShellCommand(command: string): boolean {
+  const segments = shellSegments(command)
+  if (segments.length === 0) return false
+  return segments.every((segment) => {
+    const stages = pipelineStages(segment)
+    return stages !== null && stages.every((stage) => READ_ONLY_SHELL_STAGE.test(stage))
+  })
+}
+
+/** Tools that never change the workspace, so they do not re-arm verification. */
+const WORKSPACE_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...DUPLICATE_GUARDED_TOOL_NAMES,
+  'update_todos',
+  'read_skill',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_show',
+  'staged_diffs',
+  'read_staged_diff',
+])
+
+function shellCommandOf(name: string, args: unknown): string | null {
+  if (name !== 'run_shell' || !isRecord(args)) return null
+  const command = args['command']
+  return typeof command === 'string' ? command : null
+}
+
+/**
+ * Remembers which verification commands ran since the last call that may have
+ * changed the workspace (#1433, Fix 4). Re-running the same suite with nothing
+ * changed reproduces the result already in context — the motivating run ran a
+ * five-minute `npm run check` three times after its PR was up, re-diagnosing
+ * the same pre-existing failures each time. Anything that might have changed
+ * the tree — an edit tool, an unrecognized shell command, an unknown tool —
+ * re-arms every command, so the guard errs toward letting a run verify.
+ */
+export class RepeatVerificationTracker {
+  private readonly ran = new Set<string>()
+
+  /** True when this call would repeat a verification run with nothing changed since. */
+  isRepeat(name: string, args: unknown): boolean {
+    const command = shellCommandOf(name, args)
+    const key = command === null ? null : verificationCommandKey(command)
+    return key !== null && this.ran.has(key)
+  }
+
+  /** Records a call that actually executed (not one that was skipped). */
+  observe(name: string, args: unknown): void {
+    const command = shellCommandOf(name, args)
+    if (command !== null) {
+      const key = verificationCommandKey(command)
+      if (key !== null) {
+        this.ran.add(key)
+        return
+      }
+      if (isReadOnlyShellCommand(command)) return
+    } else if (WORKSPACE_READ_ONLY_TOOL_NAMES.has(name)) {
+      return
+    }
+    this.ran.clear()
+  }
+
+  /** Forgets every run, e.g. once trimming may have dropped their output from history. */
+  reset(): void {
+    this.ran.clear()
+  }
+}
+
+export const REPEAT_VERIFICATION_RESULT_PREFIX =
+  '[Verification skipped — this exact command already ran in this run and nothing that could change the workspace has happened since, so its result above still stands. Act on that result instead of re-running it, or answer.]'
