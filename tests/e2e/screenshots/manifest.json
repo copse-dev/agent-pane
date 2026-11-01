@@ -1109,6 +1109,10 @@
       "sha256": "d0535112444955d9fb93fb8189121d985a74a523d57b8b2a70ff858f40928f8b",
       "bytes": 80495
     },
+    "chatgpt-plan-sign-in-expired.png": {
+      "sha256": "33baafead68563b820a3f08a86d133e7fe480fe65a4ae9815daa12753dc5c985",
+      "bytes": 18843
+    },
     "chatgpt-plan-usage-limit.png": {
       "sha256": "2daae70ee21038d998109a3986c1fb4d0075b7b6066fa46b631a9741383686df",
       "bytes": 20931
