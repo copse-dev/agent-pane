@@ -103,6 +103,12 @@ export interface ApprovalRequest {
   timeoutMs?: number
   title: string
   body: string
+  /**
+   * A markdown section (e.g. a PR description) rendered separately from
+   * {@link body}'s plain-text block, so it parses as markdown instead of
+   * showing literal `#`/`*` characters.
+   */
+  bodyMarkdown?: string
   /** Explanatory copy rendered outside the monospaced command block when set. */
   bodyAdvice?: string
   /** Call-to-action or trailing context rendered below the command block when set. */
@@ -227,6 +233,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     timeoutMs: req.timeoutMs ?? null,
     title: req.title,
     body: req.body,
+    bodyMarkdown: req.bodyMarkdown ?? '',
     bodyAdvice: req.bodyAdvice ?? '',
     bodyFooter: req.bodyFooter ?? '',
     type: req.type,

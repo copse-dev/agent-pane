@@ -1055,7 +1055,7 @@ async function checkGithubWriteToolPermission(
       ? automationPermissionTarget(permission)
       : null
   if (automation?.allowed) return true
-  const prompt = formatGithubWritePrompt(toolName, args)
+  const prompt = await formatGithubWritePrompt(toolName, args)
   const { approved, remember } = await requestApproval(
     {
       ...prompt,

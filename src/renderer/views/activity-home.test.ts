@@ -42,6 +42,7 @@ function approval(id: string, threadId: string): PendingApprovalSummary {
     threadId,
     title: 'Run shell command?',
     body: 'pnpm test',
+    bodyMarkdown: undefined,
     bodyAdvice: undefined,
     bodyFooter: undefined,
     type: 'shell',

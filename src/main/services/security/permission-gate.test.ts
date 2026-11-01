@@ -2713,12 +2713,12 @@ describe('shell prompt execution boundary', () => {
 })
 
 describe('formatGithubWritePrompt', () => {
-  it('names concrete effects while keeping the PR target visible', () => {
-    const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
+  it('names concrete effects while keeping the PR target visible', async () => {
+    const ready = await formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
     assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')
     assert.equal(ready.body, 'PR #1478')
     assert.match(ready.bodyAdvice, /notify reviewers or trigger workflows/)
-    const approve = formatGithubWritePrompt('gh_pr_approve', {
+    const approve = await formatGithubWritePrompt('gh_pr_approve', {
       number: 42,
       owner: 'acme',
       repo: 'widgets',
@@ -2726,20 +2726,20 @@ describe('formatGithubWritePrompt', () => {
     assert.equal(approve.body, 'acme/widgets#42')
     assert.match(approve.bodyAdvice, /required approval for merging/)
     assert.match(
-      formatGithubWritePrompt('gh_pr_enable_auto_merge', { number: 42 }).bodyAdvice,
+      (await formatGithubWritePrompt('gh_pr_enable_auto_merge', { number: 42 })).bodyAdvice,
       /merge the pull request when its requirements are met/,
     )
     assert.match(
-      formatGithubWritePrompt('gh_pr_rerun_failed_ci', { number: 42 }).bodyAdvice,
+      (await formatGithubWritePrompt('gh_pr_rerun_failed_ci', { number: 42 })).bodyAdvice,
       /CI resources or secrets/,
     )
   })
-  it('falls back to JSON without hiding unknown inputs', () => {
-    const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
+  it('falls back to JSON without hiding unknown inputs', async () => {
+    const prompt = await formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
-  it('exposes publication contents and branch targets for PR creation', () => {
-    const prompt = formatGithubWritePrompt('gh_pr_create', {
+  it('exposes publication contents and branch targets for PR creation', async () => {
+    const prompt = await formatGithubWritePrompt('gh_pr_create', {
       title: 'Fix the parser',
       body: 'Review all changes',
       head: 'fix/parser',
@@ -2748,18 +2748,12 @@ describe('formatGithubWritePrompt', () => {
       owner: 'acme',
       repo: 'widgets',
     })
-    for (const value of [
-      'acme/widgets',
-      'Fix the parser',
-      'Review all changes',
-      'fix/parser',
-      'develop',
-      'Draft: yes',
-    ])
+    for (const value of ['acme/widgets', 'Fix the parser', 'fix/parser', 'develop', 'Draft: yes'])
       assert.ok(prompt.body.includes(value))
+    assert.equal(prompt.bodyMarkdown, 'Review all changes')
     assert.match(prompt.bodyAdvice, /people with access/)
     assert.match(prompt.bodyFooter, /once/)
-    const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
+    const implicit = await formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
     assert.match(implicit.body, /current branch \(will be pushed\)/)
     assert.match(implicit.body, /repository default branch/)
   })
