@@ -42,6 +42,15 @@ concurrency:
 
 jobs:
   contracts:
+    # The provider keys are ENVIRONMENT secrets of `boundary-contracts`, never
+    # repository secrets, and that environment's deployment-branch policy allows
+    # only `main` and `release`. That policy lives in repository settings, so it
+    # is what stops a writer dispatching this workflow from their own branch
+    # with a modified runner: a branch copy that keeps `environment:` is refused,
+    # and one that drops it receives no keys. The `if` below is defence in depth
+    # and makes a stray dispatch a visible skip instead of a refused deployment.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release'
+    environment: boundary-contracts
     # Hosted only: this job holds provider keys, so it never routes to the
     # self-hosted fleet regardless of SELF_HOSTED_CHECKS.
     runs-on: ubuntu-24.04

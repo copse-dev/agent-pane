@@ -100,10 +100,18 @@ Expiry is enforced by the scheduled lane, so a date passing never turns an unrel
 
 ## Secrets and redaction
 
-- Keys come only from Actions secrets: `CONTRACT_ANTHROPIC_API_KEY`, `CONTRACT_OPENAI_API_KEY` and
-  `CONTRACT_OPENROUTER_API_KEY`. Use dedicated, budget-capped keys and not personal or reviewer
-  keys, so revoking one breaks nothing else. GitHub contracts use the job's own `contents: read`
-  token.
+- Keys come only from secrets of the `boundary-contracts` **environment**:
+  `CONTRACT_ANTHROPIC_API_KEY`, `CONTRACT_OPENAI_API_KEY` and `CONTRACT_OPENROUTER_API_KEY`. Never
+  store them as repository or organization secrets. Use dedicated, budget-capped keys and not
+  personal or reviewer keys, so revoking one breaks nothing else. GitHub contracts use the job's own
+  `contents: read` token.
+- The environment's deployment branches are limited to `main` and `release` (Settings →
+  Environments → `boundary-contracts` → Deployment branches and tags → Selected branches). This is
+  the control that matters. `workflow_dispatch` runs the workflow file from whichever branch it is
+  dispatched on, so a writer could otherwise dispatch a branch whose runner sends the keys
+  elsewhere. The policy lives in repository settings, out of a branch's reach: a branch copy that
+  keeps `environment:` is refused, and one that drops it gets no keys. The job's
+  `if: github.ref == …` guard is defence in depth, so a stray dispatch shows up as a skip.
 - Secrets are bound to the single run step. The dependency install, which runs package lifecycle
   scripts, never sees them. The checkout does not persist credentials.
 - The workflow has no `pull_request` or `merge_group` trigger and runs only on hosted runners. Fork

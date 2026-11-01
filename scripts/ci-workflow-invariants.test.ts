@@ -1679,6 +1679,20 @@ describe('boundary-contracts.yml workflow invariants', () => {
     assert.match(workflow, /persist-credentials: false/)
   })
 
+  it('reads keys only through a branch-restricted environment', () => {
+    // workflow_dispatch runs the dispatched branch's copy of this file, so only
+    // environment secrets behind a main/release deployment-branch policy keep a
+    // writer's branch from reaching the keys. The ref guard is defence in depth.
+    assert.match(workflow, /^ {4}environment: boundary-contracts$/m)
+    assert.match(
+      workflow,
+      /^ {4}if: github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/release'$/m,
+    )
+    const doc = readFileSync(resolve('docs/boundary-contracts.md'), 'utf8')
+    assert.match(doc, /Never\s+store them as repository or organization secrets/)
+    assert.match(doc, /deployment branches are limited to `main` and `release`/)
+  })
+
   it('binds provider secrets to the run step alone, never the dependency install', () => {
     const secretLines = workflow
       .split('\n')
