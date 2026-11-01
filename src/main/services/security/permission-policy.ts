@@ -11,6 +11,7 @@ import {
 import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
 
 /** Tools that always auto-run (writes still go through the diff queue). */
 export const SANDBOX_TOOLS = new Set([
@@ -95,6 +96,12 @@ const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
 export interface GithubWritePrompt {
   title: string
   body: string
+  /**
+   * The PR/comment body, kept out of {@link body}'s plain-text block so the
+   * renderer can parse it as markdown instead of showing literal `#`/`*`
+   * characters.
+   */
+  bodyMarkdown?: string
   bodyAdvice: string
   bodyFooter: string
   approveLabel: string
@@ -106,7 +113,10 @@ export interface GithubWritePrompt {
  * Unrecognised args fall back to pretty-printed JSON so the user still sees what
  * would run.
  */
-export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
+export async function formatGithubWritePrompt(
+  toolName: string,
+  args: unknown,
+): Promise<GithubWritePrompt> {
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
   const effects: Record<string, string> = {
     gh_pr_create:
@@ -120,6 +130,7 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
     gh_pr_enable_auto_merge:
       'This allows GitHub to merge the pull request when its requirements are met, using the repository’s preferred merge strategy.',
   }
+  const { body, bodyMarkdown } = await formatGithubWritePromptBody(toolName, args)
   return {
     title,
     approveLabel:
@@ -130,7 +141,8 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
         gh_pr_mark_ready: 'Mark ready for review',
         gh_pr_enable_auto_merge: 'Enable auto-merge',
       }[toolName] ?? 'Run GitHub action',
-    body: formatGithubWritePromptBody(toolName, args),
+    body,
+    ...(bodyMarkdown !== undefined ? { bodyMarkdown } : {}),
     bodyAdvice: effects[toolName] ?? 'This changes state on GitHub using your account.',
     bodyFooter: 'Approval covers this GitHub action once.',
   }
@@ -141,45 +153,61 @@ function nonEmptyStringArg(args: Record<string, unknown>, key: string): string |
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function formatGithubWritePromptBody(toolName: string, args: unknown): string {
+async function formatGithubWritePromptBody(
+  toolName: string,
+  args: unknown,
+): Promise<{ body: string; bodyMarkdown?: string }> {
   if (toolName === 'gh_push')
-    return 'Push the current thread branch to origin, updating any existing pull request. No force push.'
-  if (!isRecord(args)) return JSON.stringify(args, null, 2)
+    return {
+      body: 'Push the current thread branch to origin, updating any existing pull request. No force push.',
+    }
+  if (!isRecord(args)) return { body: JSON.stringify(args, null, 2) }
   // Maintenance actions must expose the body, lease/head guard, or exact thread
   // being authorized, not just the PR number.
   if (
     ['git_push', 'gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'].includes(toolName)
   ) {
-    return JSON.stringify(args, null, 2)
+    return { body: JSON.stringify(args, null, 2) }
   }
   // gh_pr_create has no PR number yet — show the title, and the target repo
   // when one was passed explicitly, so a retargeted create is visible in the
   // modal before it is approved.
   if (toolName === 'gh_pr_create') {
     const title = nonEmptyStringArg(args, 'title')
-    if (!title) return JSON.stringify(args, null, 2)
-    const owner = nonEmptyStringArg(args, 'owner')
-    const repo = nonEmptyStringArg(args, 'repo')
+    if (!title) return { body: JSON.stringify(args, null, 2) }
+    let owner = nonEmptyStringArg(args, 'owner')
+    let repo = nonEmptyStringArg(args, 'repo')
+    // The tool call omits owner/repo to mean "current workspace repository"
+    // (see gh-pr-action-tools.ts's resolveOwnerRepo); resolve the same way here
+    // so the prompt shows the real target instead of a placeholder.
+    if (!owner || !repo) {
+      const slug = await getGithubRepoSlug()
+      const [slugOwner, slugRepo] = slug?.split('/') ?? []
+      owner = owner ?? slugOwner ?? null
+      repo = repo ?? slugRepo ?? null
+    }
     const head = nonEmptyStringArg(args, 'head')
     const base = nonEmptyStringArg(args, 'base')
     const body = nonEmptyStringArg(args, 'body')
-    return [
-      `Repository: ${owner ?? '(current owner)'}/${repo ?? '(current repository)'}`,
-      `Title: ${title}`,
-      `Head: ${head ?? 'current branch (will be pushed)'}`,
-      `Base: ${base ?? 'repository default branch'}`,
-      `Draft: ${args['draft'] === true ? 'yes' : 'no'}`,
-      `Body:\n${body ?? '(empty)'}`,
-    ].join('\n')
+    return {
+      body: [
+        `Repository: ${owner ?? '(current owner)'}/${repo ?? '(current repository)'}`,
+        `Title: ${title}`,
+        `Head: ${head ?? 'current branch (will be pushed)'}`,
+        `Base: ${base ?? 'repository default branch'}`,
+        `Draft: ${args['draft'] === true ? 'yes' : 'no'}`,
+      ].join('\n'),
+      ...(body !== null ? { bodyMarkdown: body } : {}),
+    }
   }
   const number = args['number']
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
-    return JSON.stringify(args, null, 2)
+    return { body: JSON.stringify(args, null, 2) }
   }
   const owner = nonEmptyStringArg(args, 'owner')
   const repo = nonEmptyStringArg(args, 'repo')
-  if (owner && repo) return `${owner}/${repo}#${String(number)}`
-  return `PR #${String(number)}`
+  if (owner && repo) return { body: `${owner}/${repo}#${String(number)}` }
+  return { body: `PR #${String(number)}` }
 }
 
 export interface PermissionCheck {

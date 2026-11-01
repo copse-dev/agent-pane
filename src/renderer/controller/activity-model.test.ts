@@ -46,6 +46,7 @@ function approval(
     threadId,
     title: 'Run shell command?',
     body: 'printf done',
+    bodyMarkdown: undefined,
     bodyAdvice: undefined,
     bodyFooter: undefined,
     type: 'shell',
