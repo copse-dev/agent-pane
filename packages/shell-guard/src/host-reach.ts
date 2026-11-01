@@ -8,9 +8,9 @@ import {
   unwrapWrappers,
 } from './shell-argv.ts'
 import {
+  downloadingRunner,
   isPlainPackageName,
   packageBinName,
-  packageManagerArgv,
   packageRunnerCall,
 } from './package-runners.ts'
 import { productionTargetReason } from './production-targets.ts'
@@ -533,26 +533,6 @@ function hostControlReasons(argv: readonly string[]): string[] {
 // Code fetched at run time
 // ---------------------------------------------------------------------------
 
-/** Runners that always download what they run. */
-function alwaysDownloads(argv: readonly string[]): string | null {
-  const head = commandName(argv[0])
-  const sub = argv[1] ?? ''
-  if ((head === 'pnpm' || head === 'yarn') && sub === 'dlx') return `${head} dlx`
-  const initializer = argv[2] ?? ''
-  if (
-    initializer &&
-    !initializer.startsWith('-') &&
-    ((head === 'npm' && (sub === 'create' || sub === 'init')) ||
-      ((head === 'pnpm' || head === 'yarn' || head === 'bun') && sub === 'create'))
-  ) {
-    return `${head} ${sub}`
-  }
-  if (head === 'bun' && sub === 'x') return 'bun x'
-  if (head === 'bunx' || head === 'uvx') return head
-  if (head === 'pipx' && sub === 'run') return 'pipx run'
-  return null
-}
-
 /**
  * `npx <name>`, `npm exec <name>`: a name the project does not install is
  * fetched. The project binary a name resolves to is local code, which
@@ -561,7 +541,7 @@ function alwaysDownloads(argv: readonly string[]): string | null {
  */
 function fetchedCodeReasons(argv: readonly string[], context: HostReachContext): string[] {
   // `corepack pnpm@10 dlx …` fetches exactly as `pnpm dlx …` does.
-  const runner = alwaysDownloads(packageManagerArgv(argv))
+  const runner = downloadingRunner(argv)
   if (runner) return [`${runner} downloads and runs a package`]
   const call = packageRunnerCall(argv)
   if (call === null || !call.fetches) return []

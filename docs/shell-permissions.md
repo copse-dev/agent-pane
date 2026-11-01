@@ -968,7 +968,10 @@ While active:
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
     which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`) or
     under another name: `yarnpkg` is Yarn, and `pnpx` is `pnpm dlx`, which downloads even a name
-    the workspace's `.bin` has, so it is not read as `npx`;
+    the workspace's `.bin` has, so it is not read as `npx`. The subcommand is found past global
+    options (`pnpm --silent dlx`, `pnpm -C sub dlx`) and in npm's abbreviations (`npm cr vite` is
+    `npm create vite`). Any word after an initializer subcommand names an initializer, even after
+    an option (`npm init -y vite`), so `npm init -w packages/a` asks too;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
