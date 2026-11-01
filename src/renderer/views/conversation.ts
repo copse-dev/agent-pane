@@ -2564,12 +2564,20 @@ const INITIAL_RENDER_WINDOW = 40
 const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasoning'
 const BACKFILL_CHUNK_SIZE = 30
 
-export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+export function mountConversation(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  options: { host?: 'desktop' | 'remote' } = {},
+): () => void {
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
-  const archiveReview = createThreadArchiveReview(store, api)
-  const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+  const desktop = options.host !== 'remote'
+  const archiveReview = desktop ? createThreadArchiveReview(store, api) : null
+  const appleDevelopmentHost = desktop
+    ? createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+    : null
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   let agentNames: ReadonlyMap<string, string> = new Map()
   let agentNamesRequested = false
@@ -2588,17 +2596,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     arrowDownIcon('ui-icon'),
   )
-  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
-    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
-  )
-  const environmentSetupOffer = mountEnvironmentSetupOffer(store, api)
+  const appleSuggestions = desktop
+    ? mountAppleProjectSuggestions(store, api, () =>
+        appleDevelopmentHost?.dispatchEvent(new Event('apple-development-refresh')),
+      )
+    : null
+  const environmentSetupOffer = desktop ? mountEnvironmentSetupOffer(store, api) : null
+  if (appleSuggestions) scrollArea.append(appleSuggestions.element)
+  if (environmentSetupOffer) scrollArea.append(environmentSetupOffer.element)
+  if (appleDevelopmentHost) scrollArea.append(appleDevelopmentHost)
   scrollArea.append(
-    appleSuggestions.element,
-    environmentSetupOffer.element,
-    appleDevelopmentHost,
     todoHost,
     list,
-    archiveReview.element,
+    ...(archiveReview ? [archiveReview.element] : []),
     scrollToBottomBtn,
   )
 
@@ -4252,7 +4262,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    */
   function finishThreadChrome(thread: Thread | null): void {
     syncTodoPanel()
-    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh'))
+    appleDevelopmentHost?.dispatchEvent(new Event('apple-development-refresh'))
     // Inline review cards are rendered per message by appendMessageEl above.
     syncReviewReportCard()
     syncComparisonPanel()
@@ -4727,7 +4737,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   syncFromStore()
   return () => {
     disposed = true
-    archiveReview.dispose()
+    archiveReview?.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
@@ -4742,8 +4752,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
-    appleSuggestions.destroy()
-    environmentSetupOffer.destroy()
+    appleSuggestions?.destroy()
+    environmentSetupOffer?.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

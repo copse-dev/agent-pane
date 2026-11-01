@@ -22,6 +22,7 @@ describe('shared desktop chat in the paired browser', () => {
     await expect($('#connection')).toHaveText('Connected to your Mac')
     await expect($('#conversation')).toHaveText(expect.stringContaining('shared chat'))
     await expect($('#conversation strong')).toHaveText('shared chat')
+    await expect($('.apple-development-error')).not.toExist()
     const editor = $('.prompt-input')
     await expect(editor).toHaveAttribute('contenteditable', 'plaintext-only')
     await expect($('.remote-next-step')).toBeDisplayed()

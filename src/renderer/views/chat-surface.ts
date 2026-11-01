@@ -12,7 +12,9 @@ export function mountChatSurface(
   options: MountInputBarOptions = {},
 ): ReturnType<typeof mountInputBar> {
   const composer = mountInputBar(input, store, api, options)
-  const unmountConversation = mountConversation(conversation, store, api)
+  const unmountConversation = mountConversation(conversation, store, api, {
+    host: options.transport ? 'remote' : 'desktop',
+  })
   return {
     ...composer,
     unmount(): void {

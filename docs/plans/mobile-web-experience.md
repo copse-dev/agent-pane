@@ -35,12 +35,16 @@ Draft validation status (2026-11-01): the demo build and 62 focused protocol, re
 asset, publisher and mobile tests pass. The full static gate passes. The full unit
 suite timed out after 30 minutes with failures recorded in provider HTTP fixtures,
 review preparation, sandbox worker startup, workflow invariants and terminal benchmarks;
-these have not been baseline-triaged and are not a green full check. Shared-renderer
-browser coverage is added but has not run successfully: the default harness could not
-download baselines/ChromeDriver; the local fallback reached server startup with port
-binding enabled but could not probe the installed Chrome version. No shared-renderer
-visual pass or real-phone delivery/reconnect result is claimed. The standalone HTML
-prototype remains simulated and is separate from the shipped remote renderer.
+these have not been baseline-triaged and are not a green full check. The shared-renderer
+browser spec now passes in Chrome for Testing 152 through a host-launched browser,
+with reviewed light/dark screenshots at 390px. It verifies editable suggestions,
+draft retention across a simulated disconnect/reconnect, and single submission.
+Review found a desktop-only Apple panel attempting an unsupported startup read; the
+remote host now omits native panels, and the browser asserts that error is absent.
+The 25 focused composer/chat-layout/disclosure/scroll regression tests and all four
+typecheck projects pass. These are network-fixture results, not real-phone delivery
+or real-agent evidence. Physical-phone verification remains outstanding. The standalone
+HTML prototype remains simulated and is separate from the shipped remote renderer.
 
 **Status: Experimental, opt-in LAN companion with desktop-authorized chat and run control.** Activity,
 saved transcripts, pairing, persistent HTTPS, per-device revocation, phone message
