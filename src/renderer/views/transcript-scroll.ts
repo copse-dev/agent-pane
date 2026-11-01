@@ -67,6 +67,11 @@ export interface TranscriptScrollHost {
    * is true only for a genuine upward scroll by the reader.
    */
   syncStickyImagePreview: (releaseOnScrollUp: boolean) => void
+  /**
+   * Height of the band the pinned latest prompt covers at the top of the
+   * list (0 when it cannot stick). Rows ending inside it never anchor reading.
+   */
+  stickyPromptBand: () => number
   /** The reader is back at the live end (scrolled there, or forced there). */
   onReturnToLiveEnd: () => void
 }
@@ -261,8 +266,7 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
     // that band is either under the prompt or the tail of the turn before a
     // scrolled-to target, and the stuck prompt itself never moves with the
     // scroll, so none of them can anchor what the reader is looking at.
-    const readingTop =
-      list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0)
+    const readingTop = list.getBoundingClientRect().top + host.stickyPromptBand()
     const candidates = list.querySelectorAll<HTMLElement>(READING_ANCHOR_CANDIDATES)
     for (const element of candidates) {
       const rect = element.getBoundingClientRect()

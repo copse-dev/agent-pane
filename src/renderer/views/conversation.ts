@@ -3086,8 +3086,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // What the last full rebuild drew the transcript from (see TranscriptInputs).
   let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
-  // The latest human prompt, which sticks while its response is read.
+  // The latest human prompt, which sticks while its response is read, and the
+  // height of the band it covers at the top of the transcript when it does.
   let stickyPrompt: HTMLElement | null = null
+  let stickyPromptBand = 0
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
@@ -3103,7 +3105,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     firstPromptId: () =>
       getActiveThread(store)?.messages.find((message) => message.role === 'user' && !message.origin)
         ?.id ?? null,
-    syncStickyImagePreview,
+    syncStickyImagePreview: (releaseOnScrollUp) => {
+      syncStickyImagePreview(releaseOnScrollUp)
+      // Whether the prompt is stuck changes with every scroll.
+      syncStickyPromptClearance()
+    },
+    stickyPromptBand: () => stickyPromptBand,
     onReturnToLiveEnd: () => {
       const threadId = store.getState().activeThreadId
       if (threadId) disclosures.resumeDeferredCompaction(threadId)
@@ -3182,29 +3189,38 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   /**
-   * Reserve the pinned prompt's band as scroll padding, so scrollIntoView
-   * (conversation search, opened disclosures, canvas cards) and focus land
-   * content below the prompt instead of underneath it.
+   * While the latest prompt is stuck, reserve its band as scroll padding, so
+   * scrollIntoView (conversation search, opened disclosures, canvas cards) and
+   * focus land content below the prompt instead of underneath it. The band's
+   * height is kept whenever the prompt can stick, for the reading anchor.
    */
   function syncStickyPromptClearance(): void {
     const prompt = stickyPrompt
-    let clearance = 0
+    let band = 0
+    let stuck = false
     if (prompt?.isConnected) {
       const promptStyle = window.getComputedStyle(prompt)
       if (promptStyle.position === 'sticky') {
         const listStyle = window.getComputedStyle(list)
-        clearance = Math.max(
+        const stickyOffset =
+          Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
+        band = Math.max(
           0,
           Math.ceil(
-            Number.parseFloat(listStyle.paddingTop) +
-              Number.parseFloat(promptStyle.top) +
+            stickyOffset +
               prompt.getBoundingClientRect().height +
               Number.parseFloat(listStyle.rowGap),
           ),
         )
+        // Stuck: its place in the flow has scrolled to or past where it sticks.
+        stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5
       }
     }
-    const value = clearance > 0 ? `${String(clearance)}px` : ''
+    stickyPromptBand = band
+    // Only while stuck: scroll padding also narrows the region the browser picks
+    // its scroll anchor from, and a prompt still in the flow inside that region
+    // would be pushed into sticking (and its previews shrunk) by its own growth.
+    const value = stuck && band > 0 ? `${String(band)}px` : ''
     if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value
   }
 

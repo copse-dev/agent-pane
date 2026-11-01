@@ -772,7 +772,9 @@ A pinned prompt covers the top of its own scrollport, the mirror of a sticky foo
 not landing space either. `conversation.ts` writes the prompt's height (plus the list's row gap) to
 the list's `scroll-padding-top` while it sticks, and clears it when the prompt rejoins the flow:
 conversation search, opened disclosures, canvas cards and keyboard focus then land below the
-prompt, not under it. Focused proof: `stickyPromptCollisions()` in
+prompt, not under it. Only while it is stuck: scroll padding also narrows the region the
+browser picks its scroll anchor from, so padding a prompt that is still in the flow lets the
+prompt's own growth push it into sticking, and its previews shrink and grow without end. Focused proof: `stickyPromptCollisions()` in
 [`tests/e2e/helpers/sticky-prompt.ts`](../tests/e2e/helpers/sticky-prompt.ts), asserted by the
 explainer specs before their captures.
 

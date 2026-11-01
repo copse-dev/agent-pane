@@ -150,7 +150,7 @@ describe('first prompt navigation', () => {
     assert.equal(host.querySelector('.conversation-scroll')?.contains(first), false)
   })
 
-  it('reserves the pinned prompt band as scroll padding, and none once it un-sticks', () => {
+  it('reserves the pinned prompt band as scroll padding only while it is stuck', () => {
     const callbacks: Array<() => void> = []
     class CapturingResizeObserver {
       constructor(callback: () => void) {
@@ -176,26 +176,45 @@ describe('first prompt navigation', () => {
     }
     const prompts = list.querySelectorAll<HTMLElement>('.msg-user')
     const latest = prompts[prompts.length - 1]
-    assert.ok(latest)
+    const before = latest?.previousElementSibling
+    assert.ok(latest && before instanceof HTMLElement)
     list.style.paddingTop = '16px'
     list.style.rowGap = '12px'
     latest.style.position = 'sticky'
     latest.style.top = '-16px'
     latest.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 600, 58.4)
-    for (const callback of callbacks) callback()
+    const sync = (previousBottom: number): void => {
+      before.getBoundingClientRect = (): DOMRect => new DOMRect(0, previousBottom - 100, 600, 100)
+      for (const callback of callbacks) callback()
+    }
+    // Its place in the flow has scrolled above the top: it is stuck, so
     // scrollIntoView and search hits land below the prompt and its row gap.
+    sync(-100)
     assert.equal(list.style.scrollPaddingTop, '71px')
+    // Still in the flow lower down: no padding, or the browser's scroll anchor
+    // would skip past the prompt and its own growth would push it into sticking.
+    sync(200)
+    assert.equal(list.style.scrollPaddingTop, '')
     // A narrow pane returns the prompt to the flow: nothing to clear.
     latest.style.position = 'relative'
-    for (const callback of callbacks) callback()
+    sync(-100)
     assert.equal(list.style.scrollPaddingTop, '')
   })
 
   it('anchors the way back on the first row below the pinned band, not the tail inside it', () => {
     const { list, first, back } = fixture()
+    // A latest prompt 138px tall sticks under 16px of list padding with a 12px
+    // gap: a 150px band, whether or not it is stuck right now.
+    const prompts = list.querySelectorAll<HTMLElement>('.msg-user')
+    const latest = prompts[prompts.length - 1]
+    assert.ok(latest)
+    list.style.paddingTop = '16px'
+    list.style.rowGap = '12px'
+    latest.style.position = 'sticky'
+    latest.style.top = '-16px'
+    latest.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 600, 138)
     // Rows are 100px tall from the list top. At 935, row 9 ends 65px down,
-    // inside a 150px pinned-prompt band; row 10 is the first readable row.
-    list.style.scrollPaddingTop = '150px'
+    // inside the band; row 10 is the first readable row.
     scroll(list, 935)
     first.click()
     // While away, content above row 10 grows by 30px (a disclosure opening).

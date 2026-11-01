@@ -75,6 +75,7 @@ function mount(heights: readonly number[]): Fixture {
     // First prompt navigation is covered in conversation-first-prompt.test.ts.
     firstPromptBtn: document.createElement('button'),
     firstPromptId: () => null,
+    stickyPromptBand: () => 0,
     syncStickyImagePreview: (release) => {
       stickySyncs.push(release)
     },
