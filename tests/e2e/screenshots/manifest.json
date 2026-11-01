@@ -521,6 +521,14 @@
       "sha256": "c71046fb15e3da3a210a69b9430743750869f67c38bbdab965715ea40773d1a3",
       "bytes": 272344
     },
+    "approval-desktop-app.png": {
+      "sha256": "1972545f842dcb6636ed6e371c01636e2e9868bd4e131375a686320d53527569",
+      "bytes": 33512
+    },
+    "approval-desktop-finder.png": {
+      "sha256": "61191b8e7b3eef8eb90b634ccf9114617a2d5004f67831085c6ace6de19c474d",
+      "bytes": 35511
+    },
     "approval-git-push-lease.png": {
       "sha256": "e79dc6a9291b1986c946c75fdb8d16c0ce59fd442f3496159fb552af7f0295f6",
       "bytes": 26519
