@@ -1,5 +1,17 @@
 import assert from 'node:assert/strict'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
+import { isCompiledProgram, readScriptForHarm } from './script-files.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 
 const context: ShellHarmContext = {
@@ -889,6 +901,11 @@ describe('Guarded YOLO shell harm gate — package binaries', () => {
     'pnpm -s exec evil',
     'pnpm -w exec evil',
     'corepack pnpm exec evil',
+    'corepack pnpm@10.34.5 exec evil',
+    'corepack npm@11.0.0 exec evil',
+    // npm resolves a unique abbreviation: `exe` is `exec`.
+    'npm exe evil',
+    'npm -s exe evil',
     'env FOO=1 npx evil',
   ]
 
@@ -980,10 +997,65 @@ describe('Guarded YOLO shell harm gate — package binaries', () => {
     const hijacked = installed({ [`${BIN}/node`]: '#!/bin/sh\nrm -rf "$HOME"\n' })
     assert.equal(action('./node_modules/.bin/eslint src', hijacked), 'deny')
     assert.equal(action('npx eslint src', hijacked), 'deny')
+    // A copied `/bin/sh` is compiled, and runs the target as shell, which reads
+    // clean as JavaScript. Whatever stands in for node, the shim asks.
+    const base = installed({ [STORE_ESLINT]: 'x=r; y=m; $x$y -rf "$HOME"\n' })
+    const copiedShell: Partial<ShellHarmContext> = {
+      ...base,
+      pathExists: (path) => path === `${BIN}/node` || base.pathExists?.(path) === true,
+      isCompiledProgram: (path) => path === `${BIN}/node`,
+    }
+    assert.equal(action('./node_modules/.bin/eslint src', copiedShell), 'prompt')
+    assert.equal(action('npx eslint src', copiedShell), 'prompt')
     // Without a way to tell that `$basedir/node` is absent, the shim is not run unread.
     const unknown: Partial<ShellHarmContext> = { ...installed() }
     delete unknown.pathExists
     assert.equal(action('./node_modules/.bin/eslint src', unknown), 'prompt')
+  })
+
+  it('reads a shim invoked through a backslash as the script it is', () => {
+    // The shim rewrites `\\` in `$0` to `/`: through `p\\q/run`, `$basedir` is
+    // `p/q`, so it runs `p/x/index.js`, not the `x/index.js` beside `p\\q`.
+    const context = disk({
+      [`${WS}/p\\q/run`]: shim('../x/index.js'),
+      [`${WS}/x/index.js`]: 'console.log(1)\n',
+      [`${WS}/p/x/index.js`]: RM_ROOT,
+    })
+    assert.equal(action("'./p\\q/run'", context), 'prompt')
+  })
+
+  it('reads package binaries on a real filesystem, through real links', (t) => {
+    const ws = realpathSync(mkdtempSync(join(tmpdir(), 'harm-bins-')))
+    t.after(() => {
+      rmSync(ws, { recursive: true, force: true })
+    })
+    const write = (path: string, contents: string): void => {
+      mkdirSync(dirname(join(ws, path)), { recursive: true })
+      writeFileSync(join(ws, path), contents)
+    }
+    const store = 'node_modules/.pnpm/eslint@9.0.0/node_modules/eslint'
+    write(`${store}/bin/eslint.js`, ESLINT_BIN)
+    symlinkSync('.pnpm/eslint@9.0.0/node_modules/eslint', join(ws, 'node_modules/eslint'))
+    write('node_modules/.bin/eslint', shim('../eslint/bin/eslint.js'))
+    write('node_modules/.bin/evil', shim('../evil/index.js'))
+    write('node_modules/evil/index.js', RM_ROOT)
+    // Never executed: the gate only reads these files.
+    write('eslint/bin/eslint.js', RM_ROOT)
+    mkdirSync(join(ws, 'x'))
+    symlinkSync('../node_modules/.bin/eslint', join(ws, 'x/run'))
+    const real: Partial<ShellHarmContext> = {
+      workspaceRoot: ws,
+      canonicalizePath: realpathSync.native,
+      readScript: readScriptForHarm,
+      isCompiledProgram,
+      pathExists: existsSync,
+    }
+    for (const command of ['./node_modules/.bin/eslint src', 'npx eslint src']) {
+      assert.equal(action(command, real), 'allow', command)
+    }
+    for (const command of ['./node_modules/.bin/evil', 'npx evil', './x/run src']) {
+      assert.equal(action(command, real), 'deny', command)
+    }
   })
 
   it('reads a .bin file that is not exactly a shim as the script it is', () => {

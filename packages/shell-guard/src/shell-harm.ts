@@ -1280,6 +1280,8 @@ function isPlainShimTarget(target: string): boolean {
 interface ProgramFile {
   path: string
   interpreter: SourceLanguage | null
+  /** A shim's `$basedir/node`: it runs the target in node's place, as whatever it is. */
+  standsInForNode?: boolean
 }
 
 /**
@@ -1290,9 +1292,14 @@ interface ProgramFile {
  *
  * `$basedir` is the directory of the path the shell was handed (`$0`), not of
  * the file a link points to: a link elsewhere to a real shim makes it run a file
- * beside the link. The node form prefers `$basedir/node` to the node on PATH, so
- * when the shim's directory holds one (or might: no `pathExists`), that is a
- * program the shim runs too.
+ * beside the link. The shim also rewrites every `\` in `$0` to `/`, so a path
+ * that holds one names a different directory to the shell than to the gate; such
+ * a shim is read as the script it is, which prompts.
+ *
+ * The node form prefers `$basedir/node` to the node on PATH. When the shim's
+ * directory holds one (or might: no `pathExists`), that program runs the target
+ * as whatever it is: a copied `/bin/sh` runs it as shell, which reading it as
+ * JavaScript would miss. So it is never allowed: it asks, and is read too.
  */
 function pnpmShimPrograms(
   invoked: string,
@@ -1300,14 +1307,16 @@ function pnpmShimPrograms(
   context: ShellHarmContext,
 ): ProgramFile[] | null {
   const shim = pnpmShimTarget(contents)
-  if (shim === null || !isPlainShimTarget(shim.target)) return null
+  if (shim === null || !isPlainShimTarget(shim.target) || invoked.includes('\\')) return null
   const basedir = canonicalPath(dirname(invoked), context)
   // Spelled as the shell will hand it on: a native target's own `$0`.
   const target = resolve(basedir, shim.target)
   if (!shim.withNode) return [{ path: target, interpreter: null }]
   const node = join(basedir, 'node')
   const programs: ProgramFile[] = [{ path: target, interpreter: 'code' }]
-  if (context.pathExists?.(node) !== false) programs.unshift({ path: node, interpreter: null })
+  if (context.pathExists?.(node) !== false) {
+    programs.unshift({ path: node, interpreter: null, standsInForNode: true })
+  }
   return programs
 }
 
@@ -1361,6 +1370,12 @@ function inspectProgramFile(
       : null
   if (shim !== null) {
     for (const run of shim) {
+      if (run.standsInForNode === true) {
+        addUnique(
+          out.prompt,
+          `a pnpm shim runs ${run.path} in place of node, as an unknown program`,
+        )
+      }
       inspectProgramFile(run.path, run, context, out, depth, seenScripts, false)
     }
     return
