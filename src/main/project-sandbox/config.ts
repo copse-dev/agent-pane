@@ -470,6 +470,25 @@ function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'ap
 }
 
 /**
+ * `path`, as spelled and canonicalized, placed against each spelling of home.
+ * A `PATH` entry can reach home through an alias (`/tmp/alias -> $HOME`) that
+ * the spelling alone hides, so every home check looks at both.
+ */
+function homePlacements(
+  path: string,
+  homes: readonly string[],
+): { path: string; home: string; place: 'covers' | 'inside' | 'apart' }[] {
+  return [...new Set([path, canonicalizePathCached(path)])].flatMap((spelling) =>
+    homes.map((home) => ({ path: spelling, home, place: placeAgainstHome(spelling, home) })),
+  )
+}
+
+/** Whether `path` is home or one of its ancestors under any spelling of either. */
+function coversHome(path: string, homes: readonly string[]): boolean {
+  return homePlacements(path, homes).some(({ place }) => place === 'covers')
+}
+
+/**
  * How much of `versionRoot`, the parent of a node's `binDir`, is safe to
  * re-allow. `tree`: the whole root, a Node install such as the nvm/fnm
  * `.../versions/node/vX.Y.Z` shape, a Homebrew Cellar keg or a distro `/usr`.
@@ -479,8 +498,8 @@ function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'ap
  * nothing. A `~/bin/node` must not turn `~` (with `.ssh`, `.aws`, `.npmrc`, …)
  * into a read grant, so a root that covers home is never allowed; any grant
  * needs the root to hold npm's `lib/node_modules`, and `tree` needs it at least
- * two levels below home when inside it. `homes` lists home as spelled and
- * canonicalized.
+ * two levels below home when inside it, judged on every spelling of the root
+ * and of home (`homePlacements`).
  */
 function nodeVersionRootGrant(
   versionRoot: string,
@@ -489,10 +508,9 @@ function nodeVersionRootGrant(
 ): 'tree' | 'npm' | null {
   if (basename(binDir) !== 'bin' || versionRoot === binDir) return null
   let shallow = false
-  for (const home of homes) {
-    const place = placeAgainstHome(versionRoot, home)
+  for (const { path, home, place } of homePlacements(versionRoot, homes)) {
     if (place === 'covers') return null
-    if (place === 'inside' && relative(home, versionRoot).split(sep).length < 2) shallow = true
+    if (place === 'inside' && relative(home, path).split(sep).length < 2) shallow = true
   }
   try {
     if (!statSync(join(versionRoot, 'lib', 'node_modules')).isDirectory()) return null
@@ -526,7 +544,7 @@ function shimManagerAllowRead(
   const root = (name: string, fallback: string): string | null => {
     const value = env[name]
     const dir = value === undefined || value === '' ? fallback : value
-    if (!isAbsolute(dir) || homes.some((h) => placeAgainstHome(dir, h) === 'covers')) return null
+    if (!isAbsolute(dir) || coversHome(dir, homes)) return null
     return dir
   }
   const existing = (paths: readonly string[], tree: boolean): string[] =>
@@ -595,7 +613,7 @@ export function resolveNodeToolchainAllowRead(
 
     allow.add(nodePath)
     const binDir = dirname(nodePath)
-    if (!homes.some((h) => placeAgainstHome(binDir, h) === 'covers')) {
+    if (!coversHome(binDir, homes)) {
       addTree(binDir)
       for (const path of shimManagerAllowRead(binDir, env, home, homes)) allow.add(path)
 

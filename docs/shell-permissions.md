@@ -1144,7 +1144,8 @@ contained, because the directory is bound read-only).
 For each `node` on `PATH` the sandbox re-allows the binary and the directory holding it. It
 re-allows the directory above `bin` only when that looks like a version install (nvm's
 `versions/node/vX.Y.Z`, a Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or
-one of its ancestors, and must sit at least two levels below home. A shallow home root that passes
+one of its ancestors, and must sit at least two levels below home, judged on both the spelled and
+the canonical path (a `PATH` entry can reach home through an alias). A shallow home root that passes
 the rest (`~/.local` as an npm prefix, `~/.n`, an unpacked tarball) gets only its
 `lib/node_modules`. So `~/bin/node` or `~/.local/bin/node` never turns `~` or `~/.local` (and
 `.ssh`, `.aws`, `.npmrc` with it) into a read grant. A symlinked `node` also grants its target's

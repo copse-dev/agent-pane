@@ -489,6 +489,32 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
+  it('recognises home behind a PATH entry that reaches it through an alias', () => {
+    const { home: parent, cleanup } = fakeHome()
+    try {
+      const home = join(parent, 'home')
+      const alias = join(parent, 'alias')
+      installNode(join(home, 'bin'))
+      mkdirSync(join(home, 'lib', 'node_modules'), { recursive: true })
+      mkdirSync(join(home, '.local', 'lib', 'node_modules'), { recursive: true })
+      installNode(join(home, '.local', 'bin'))
+      symlinkSync(home, alias, 'dir')
+      const allow = resolveNodeToolchainAllowRead(
+        { PATH: [join(alias, 'bin'), join(alias, '.local', 'bin')].join(':') },
+        home,
+      )
+      // `alias` is home and `alias/.local` a shallow home directory, whichever
+      // spelling PATH uses.
+      for (const root of [alias, home, join(alias, '.local')]) {
+        assert.ok(!allow.includes(root), `${root} must not be granted`)
+        assert.ok(!allow.includes(`${root}/**`), `${root}/** must not be granted`)
+      }
+      assert.ok(allow.includes(`${join(alias, '.local', 'lib', 'node_modules')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
   it('recognises home through a symlink once node is canonicalized', () => {
     const { home: parent, cleanup } = fakeHome()
     try {
