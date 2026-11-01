@@ -1499,6 +1499,41 @@ test('switchProject quarantines on activation failure and stays put (#997)', asy
   assert.equal(store.getState().threads.length, 1)
 })
 
+test('a folder that fails to open before its threads load re-selects the workspace kept', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/gone', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  const selections: string[] = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      selections.push(path)
+      if (path === '/gone') throw new Error('folder moved')
+      return path
+    },
+    // The destination is never displayed: its metadata is still loading.
+    loadProjectThreads: (id) =>
+      id === 'b' ? new Promise<Thread[]>(() => undefined) : Promise.resolve([]),
+  })
+
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().projects.find((p) => p.id === 'b')?.missing === true)
+  await new Promise((resolve) => setTimeout(resolve, 5))
+
+  assert.equal(store.getState().activeProjectId, 'a')
+  // The preload holds the rejected selection as its barrier, so only a new
+  // selection lets file, Git and Roadmap requests for A run again.
+  assert.deepEqual(selections, ['/gone', '/a'])
+})
+
 test('relocateProject re-points a missing project and clears the flag (#997)', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

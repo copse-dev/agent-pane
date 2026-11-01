@@ -709,7 +709,19 @@ async function finishActivate(
   }
 
   if (!opened) {
-    rollbackSelection()
+    if (store.getState().activeProjectId === id) {
+      rollbackSelection()
+    } else {
+      // Never displayed, so there is no transcript to roll back. The preload
+      // still holds the rejected selection as its barrier until one succeeds,
+      // so re-select the kept project or its file, Git and Roadmap calls fail.
+      const kept = store.getState().projects.find((project) => project.id === outgoingId)
+      if (kept) {
+        void setWorkspaceForSelection(api, kept.path, kept.sshHost).catch((error: unknown) => {
+          console.warn('[projects] could not re-select the kept workspace:', error)
+        })
+      }
+    }
     // Quarantine rather than delete: flag the project missing and stay on the
     // project the user was already viewing (issue #997) — which means persisting
     // that project again, so lift the hold first.
