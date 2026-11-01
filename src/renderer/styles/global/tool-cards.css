@@ -136,6 +136,12 @@
   font-size: var(--font-size-sm);
   font-weight: 500;
 }
+/* Where a run_shell / run_background command is (#3956): quiet, like the count. */
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .tool-edit-stats {
   display: inline-flex;
   align-items: center;
