@@ -8,13 +8,9 @@
  */
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { isDefined } from '@shared/nullish.ts'
 import { electronRuntimeAllowReadPaths } from '../../../project-sandbox/config.ts'
-import {
-  resolveSandboxShellExecutable,
-  shellForSandboxWrap,
-} from '../../../project-sandbox/sandbox-argv.ts'
+import { resolveSandboxShellExecutable } from '../../../project-sandbox/sandbox-argv.ts'
+import { asrtHostSandbox } from './asrt-host-sandbox.ts'
 import { startEgressProxy } from './egress-proxy.ts'
 import { runArtifactImageHostJob, type HostDependencies } from './host.ts'
 import { BoundedLineSplitter, decodeLine, encodeFrame, zHostJob, type HostJob } from './protocol.ts'
@@ -22,38 +18,7 @@ import { BoundedLineSplitter, decodeLine, encodeFrame, zHostJob, type HostJob } 
 export const ARTIFACT_IMAGE_DOWNLOADER_BUNDLE = 'artifact-image-downloader.js'
 
 const dependencies: HostDependencies = {
-  sandbox: {
-    async initialize(config) {
-      if (process.platform === 'win32' || !SandboxManager.isSupportedPlatform()) {
-        throw new Error('no sandbox backend on this platform')
-      }
-      // The ask-callback never grants: the allowlist is decided before startup.
-      await SandboxManager.initialize(config, () => Promise.resolve(false), false)
-    },
-    wrap: (command) => {
-      // Linux reaches the proxy through ASRT's Unix-socket bridge, created in
-      // the temp directory the profile denies. Re-allow exactly those sockets:
-      // without them the in-namespace socat has nothing to connect to.
-      const filesystem = SandboxManager.getConfig()?.filesystem
-      const bridgeSockets = [
-        SandboxManager.getLinuxHttpSocketPath(),
-        SandboxManager.getLinuxSocksSocketPath(),
-      ].filter(isDefined)
-      return SandboxManager.wrapWithSandboxArgv(
-        command,
-        shellForSandboxWrap(),
-        filesystem && bridgeSockets.length > 0
-          ? {
-              filesystem: {
-                ...filesystem,
-                allowRead: [...new Set([...(filesystem.allowRead ?? []), ...bridgeSockets])],
-              },
-            }
-          : undefined,
-      )
-    },
-    reset: () => SandboxManager.reset(),
-  },
+  sandbox: asrtHostSandbox,
   startProxy: startEgressProxy,
   spawn: (file, args, env) =>
     spawn(resolveSandboxShellExecutable(file), args, {

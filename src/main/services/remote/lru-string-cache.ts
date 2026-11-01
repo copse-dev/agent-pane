@@ -55,11 +55,6 @@ export class LruStringCache {
     this.evict()
   }
 
-  clear(): void {
-    this.map.clear()
-    this.totalBytes = 0
-  }
-
   /** Number of entries currently cached. Exposed for tests/introspection. */
   get size(): number {
     return this.map.size

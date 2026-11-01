@@ -242,15 +242,36 @@ describe('ArtifactImageService', () => {
     assert.ok(h.logs.every((line) => !line.includes('key-1') && !line.includes('key-2')))
   })
 
-  it('does not let an in-flight result repopulate an invalidated cache', async () => {
+  it('remembers a non-retryable failure so a re-render does not refetch', async () => {
     const h = harness()
-    h.state.hostDelay = 20
-    const pending = h.service.load(REQUEST)
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    h.service.invalidate()
-    assert.equal((await pending).ok, true)
-    h.state.hostDelay = 0
+    h.state.frames = (job): ImageFrame[] => [errorFrame(job.requestId, 'bad-type')]
+    assert.deepEqual(await h.service.load(REQUEST), {
+      ok: false,
+      code: 'bad-type',
+      retryable: false,
+    })
+    assert.deepEqual(await h.service.load(REQUEST), {
+      ok: false,
+      code: 'bad-type',
+      retryable: false,
+    })
+    assert.equal(h.metadataCalls.length, 1)
+    assert.equal(h.hostJobs.length, 1)
+    // Authorization still runs first: an unlinked thread is refused, not served the memory.
+    h.state.link = null
+    assert.deepEqual(await h.service.load(REQUEST), {
+      ok: false,
+      code: 'unlinked-agent',
+      retryable: false,
+    })
+  })
+
+  it('does not remember a retryable failure', async () => {
+    const h = harness()
+    h.state.frames = (job): ImageFrame[] => [errorFrame(job.requestId, 'timeout')]
     await h.service.load(REQUEST)
+    h.state.frames = (job): ImageFrame[] => imageFrames(job.requestId, 'image/png', pngBytes())
+    assert.equal((await h.service.load(REQUEST)).ok, true)
     assert.equal(h.hostJobs.length, 2)
   })
 

@@ -18,6 +18,7 @@ import {
   CURSOR_ARTIFACT_DOWNLOAD_ORIGINS,
   isRetryableArtifactImageError,
   validateArtifactPath,
+  type ArtifactImageErrorCode,
 } from './policy.ts'
 import {
   ARTIFACT_IMAGE_PROTOCOL_VERSION,
@@ -31,6 +32,12 @@ const MAX_CONCURRENT_JOBS = 2
 const MAX_QUEUED_JOBS = 16
 const CACHE_ENTRIES = 64
 const CACHE_BYTES = 64 * 1024 * 1024
+/**
+ * A denied or malformed artifact stays that way: remember the code briefly so a
+ * transcript re-render does not re-run the metadata request and a host spawn.
+ */
+const FAILURE_TTL_MS = 60_000
+const MAX_REMEMBERED_FAILURES = 128
 
 /** The renderer's request. Identity comes from the thread, never from transcript text. */
 export const zArtifactImageRequest = z
@@ -91,21 +98,14 @@ function originOf(baseUrl: string): string {
 export class ArtifactImageService {
   private readonly dependencies: ArtifactImageServiceDependencies
   private readonly cache = new LruStringCache(CACHE_ENTRIES, CACHE_BYTES)
+  private readonly failures = new Map<string, { code: ArtifactImageErrorCode; until: number }>()
   private readonly inFlight = new Map<string, Promise<string>>()
   private readonly queue: Job[] = []
   private readonly activeThreads = new Set<string>()
   private active = 0
-  /** Bumped by {@link invalidate}; an older in-flight result may not repopulate the cache. */
-  private generation = 0
 
   constructor(dependencies: ArtifactImageServiceDependencies) {
     this.dependencies = dependencies
-  }
-
-  /** Drop every cached image and stop in-flight work from repopulating the cache. */
-  invalidate(): void {
-    this.generation++
-    this.cache.clear()
   }
 
   async load(request: ArtifactImageRequest): Promise<ArtifactImageResult> {
@@ -165,21 +165,42 @@ export class ArtifactImageService {
     // only to a thread that still holds the link.
     const cached = this.cache.get(key)
     if (cached) return cached
+    const failed = this.failures.get(key)
+    if (failed && failed.until > Date.now()) throw new ArtifactImageError(failed.code)
     const existing = this.inFlight.get(key)
     if (existing) return existing
 
-    const generation = this.generation
     const promise = this.enqueue(key, `${request.projectId}\u0000${request.threadId}`, () =>
       this.download(credentials, agentId, path),
-    ).then((dataUrl) => {
-      if (generation === this.generation) this.cache.set(key, dataUrl)
-      return dataUrl
-    })
+    ).then(
+      (dataUrl) => {
+        this.failures.delete(key)
+        this.cache.set(key, dataUrl)
+        return dataUrl
+      },
+      (error: unknown) => {
+        if (error instanceof ArtifactImageError && !isRetryableArtifactImageError(error.code)) {
+          this.rememberFailure(key, error.code)
+        }
+        throw error
+      },
+    )
     this.inFlight.set(key, promise)
     try {
       return await promise
     } finally {
       this.inFlight.delete(key)
+    }
+  }
+
+  private rememberFailure(key: string, code: ArtifactImageErrorCode): void {
+    this.failures.delete(key)
+    this.failures.set(key, { code, until: Date.now() + FAILURE_TTL_MS })
+    // Oldest first: drop from the front once over the bound.
+    while (this.failures.size > MAX_REMEMBERED_FAILURES) {
+      const oldest = this.failures.keys().next().value
+      if (oldest === undefined) break
+      this.failures.delete(oldest)
     }
   }
 

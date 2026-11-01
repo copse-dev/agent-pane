@@ -11,6 +11,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   ARTIFACT_IMAGE_ERROR_CODES,
   ArtifactImageError,
+  canonicalDownloadOrigin,
   MAX_ARTIFACT_IMAGE_BYTES,
   type ArtifactImageErrorCode,
 } from './policy.ts'
@@ -77,7 +78,12 @@ const zErrorFrame = z
     type: z.literal('error'),
     requestId: zRequestId,
     code: z.enum(ARTIFACT_IMAGE_ERROR_CODES),
-    origin: z.string().max(256).optional(),
+    // Logged by main: only a strict canonical origin, never free text.
+    origin: z
+      .string()
+      .max(256)
+      .refine((origin) => canonicalDownloadOrigin(origin) === origin)
+      .optional(),
   })
   .strict()
 export const zImageFrame = z.discriminatedUnion('type', [zChunkFrame, zDoneFrame, zErrorFrame])
@@ -145,6 +151,8 @@ export class ImageFrameAssembler {
   private readonly chunks: Buffer[] = []
   private received = 0
   private nextSeq = 0
+  /** A short chunk can only be the last one; this bounds the frame count. */
+  private sawShortChunk = false
   private state: 'open' | 'done' | 'failed' = 'open'
 
   constructor(requestId: string) {
@@ -159,9 +167,10 @@ export class ImageFrameAssembler {
       case 'chunk': {
         if (frame.seq !== this.nextSeq) throw this.fail('protocol')
         const data = Buffer.from(frame.data, 'base64')
-        if (data.length === 0 || data.length > ARTIFACT_IMAGE_CHUNK_BYTES) {
+        if (data.length === 0 || data.length > ARTIFACT_IMAGE_CHUNK_BYTES || this.sawShortChunk) {
           throw this.fail('protocol')
         }
+        if (data.length < ARTIFACT_IMAGE_CHUNK_BYTES) this.sawShortChunk = true
         this.received += data.length
         if (this.received > MAX_ARTIFACT_IMAGE_BYTES) throw this.fail('too-large')
         this.chunks.push(data)
@@ -232,6 +241,7 @@ export function errorFrame(
     type: 'error',
     requestId,
     code,
-    ...(origin ? { origin } : {}),
+    // Anything but a canonical origin is dropped rather than relayed.
+    ...(origin && canonicalDownloadOrigin(origin) === origin ? { origin } : {}),
   }
 }

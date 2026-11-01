@@ -1,9 +1,10 @@
 # Sandboxed remote artifact image hydration
 
-Status: implemented for Cursor. Main no longer fetches image bytes; downloads run in a per-job
-host and an ASRT-confined downloader. Linux containment is demonstrated (see the validation record
-below, with container caveats). macOS native validation and confirmation of Cursor's download
-origin against an authenticated fixture are still open, so containment is not yet claimed on macOS.
+Status: implemented for Cursor; Linux partially validated (seccomp Unix-socket filter off);
+macOS unvalidated. Main no longer fetches image bytes; downloads run in a per-job host and an
+ASRT-confined downloader. The Linux runs used a host that cannot apply ASRT's seccomp filter (see
+the validation record below), and confirmation of Cursor's download origin against an
+authenticated fixture is still open, so full containment is not yet claimed on either platform.
 Tracking: [#4005](https://github.com/copse-dev/agent-pane/issues/4005).
 
 ## Outcome
@@ -366,6 +367,45 @@ redirect pattern with an authenticated fixture. A different real origin fails cl
   from an earlier, replaced agent link is also refused.
 - Download-origin configuration for custom providers. Only Cursor links hydrate; other providers
   answer `unsupported-provider`.
+
+**Independent security review (2026-11-01).** A read-only review of the implementation found no
+SSRF, signed-URL leak or self-approving origin. Its findings fixed in #4030:
+
+- The authorization anchor was renderer-writable. `threads:create` and `threads:update-meta` now
+  strip `remoteAgentLink` (`src/main/ipc/thread-meta-guard.ts`), so a renderer can neither forge
+  a link nor erase one by sending a stale `undefined`. Only main records it, on launch or import.
+- Linux status is "partially validated": every Linux run had seccomp's Unix-socket filter off.
+  `host-native.test.ts` now runs the real profile and ASRT adapter wherever ASRT can start a
+  sandbox. It checks that the child reaches only its proxy, cannot reach host loopback or the
+  internet directly, and cannot read a sentinel. It skips, saying why, where ASRT cannot start.
+- `denyRead` names the common project and data roots (`/home`, `/workspace`, `/srv`, `/opt`,
+  `/mnt` and others), not only home and temp, since it is a denylist over a readable system.
+- An error frame's origin must be a strict canonical origin before main logs it, and only the
+  last chunk of an image may be short, which bounds the frame count.
+- Host teardown waits for the downloader to exit, even one that ignores SIGTERM, before closing
+  the proxy and resetting ASRT. A downloader that exits without any output is reported as
+  `sandbox-unavailable` rather than a retryable error.
+- Non-retryable failures are remembered for a minute after authorization, so re-renders do not
+  refetch. Cache invalidation was removed: every read re-authorizes against the durable link,
+  and the key carries the credential generation and API origin.
+
+**Residual risks, not fixed here:**
+
+- The older explicit-download IPC (`remote-agent:download-artifact`) still returns a signed URL
+  to the renderer for any agent ID, with no thread authorization. It is a separate, user-initiated
+  path and needs its own change.
+- A path-only image (`artifacts/…` with no agent in the URL) resolves against the thread's
+  _current_ link, so after a relaunch it may name a newer run's artifact of the same path.
+- Inside an approved tunnel, a compromised downloader could send any `Host` header to the same
+  S3 endpoint and so reach another bucket on the same certificate. The downloader holds no
+  credentials or workspace data, so it could leak only what it already has: the signed URL and
+  the image.
+- NAT64/DNS64 and split-horizon answers fail closed as non-public. The proxy dials only the
+  first vetted address. The single, unconfirmed S3 origin is a regression risk if Cursor uses
+  another one.
+- ASRT may leave its Linux bridge sockets in the temp directory after a SIGKILL.
+- Electron's RunAsNode fuse: the host and downloader run as `ELECTRON_RUN_AS_NODE`, so a build
+  that disables that fuse needs another launch method.
 
 ## Remaining implementation gates and tradeoffs
 

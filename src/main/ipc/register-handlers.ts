@@ -38,6 +38,7 @@ import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
 import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
+import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
@@ -1883,7 +1884,7 @@ export function registerAllHandlers(
       projectId,
       thread,
     ])
-    const parsed = parseThreadValue(payload)
+    const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
     return createThread(id, parsed)
   })
@@ -1908,7 +1909,7 @@ export function registerAllHandlers(
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, patch],
       )
-      return updateMeta(pid, tid, payload)
+      return updateMeta(pid, tid, withoutMainOwnedThreadFields(payload))
     },
   )
   ipcMain.handle(

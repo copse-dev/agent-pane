@@ -46,9 +46,13 @@ export function runArtifactImageHost(
   job: HostJob,
   onFrame: (frame: ImageFrame) => void,
   signal: AbortSignal,
+  launch: { execPath: string; hostPath: string } = {
+    execPath: process.execPath,
+    hostPath: artifactImageHostPath(),
+  },
 ): Promise<void> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [artifactImageHostPath()], {
+    const child = spawn(launch.execPath, [launch.hostPath], {
       cwd: '/',
       env: artifactImageHostEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],

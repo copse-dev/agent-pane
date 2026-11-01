@@ -211,6 +211,60 @@ describe('ImageFrameAssembler', () => {
   })
 })
 
+describe('ImageFrameAssembler frame bound', () => {
+  it('rejects a chunk after a short one, so a sender cannot drip tiny frames', () => {
+    const assembler = new ImageFrameAssembler(REQUEST)
+    const tiny = Buffer.from([1, 2, 3]).toString('base64')
+    assembler.accept({
+      v: ARTIFACT_IMAGE_PROTOCOL_VERSION,
+      type: 'chunk',
+      requestId: REQUEST,
+      seq: 0,
+      data: tiny,
+    })
+    assert.equal(
+      failure(() =>
+        assembler.accept({
+          v: ARTIFACT_IMAGE_PROTOCOL_VERSION,
+          type: 'chunk',
+          requestId: REQUEST,
+          seq: 1,
+          data: tiny,
+        }),
+      ),
+      'protocol',
+    )
+  })
+})
+
+describe('error frame origins', () => {
+  it('accepts only a canonical origin on the wire', () => {
+    const base = { v: 1, type: 'error', requestId: REQUEST, code: 'origin-denied' }
+    assert.ok(decodeLine(JSON.stringify({ ...base, origin: 'https://evil.example' }), zImageFrame))
+    for (const hostile of [
+      'https://evil.example/path?X-Amz-Signature=secret',
+      'free text\nwith a newline',
+      'https://*.amazonaws.com',
+      'http://evil.example',
+    ]) {
+      assert.equal(
+        decodeLine(JSON.stringify({ ...base, origin: hostile }), zImageFrame),
+        null,
+        hostile,
+      )
+    }
+  })
+
+  it('drops a non-canonical origin instead of relaying it', () => {
+    assert.deepEqual(errorFrame(REQUEST, 'origin-denied', 'https://evil.example/x?sig=1'), {
+      v: 1,
+      type: 'error',
+      requestId: REQUEST,
+      code: 'origin-denied',
+    })
+  })
+})
+
 describe('decodeLine', () => {
   it('rejects oversized lines before decoding', () => {
     const line = JSON.stringify({ pad: 'x'.repeat(ARTIFACT_IMAGE_MAX_LINE_BYTES) })

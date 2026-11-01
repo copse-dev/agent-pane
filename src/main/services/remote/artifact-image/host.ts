@@ -59,8 +59,28 @@ export interface HostDependencies {
   log?: (line: string) => void
 }
 
+/**
+ * Roots the downloader may not read. This is a denylist over a readable system,
+ * so it names every place user or project data commonly lives, not only home;
+ * the runtime and ASRT helper paths under them are re-allowed explicitly.
+ */
+const DATA_ROOTS = [
+  '/root',
+  '/home',
+  '/Users',
+  '/Volumes',
+  '/workspace',
+  '/workspaces',
+  '/srv',
+  '/opt',
+  '/mnt',
+  '/media',
+  '/data',
+  '/private/tmp',
+]
+
 function protectedReadRoots(): string[] {
-  const roots = new Set([homedir(), tmpdir(), '/Users', '/Volumes', '/private/tmp', '/root'])
+  const roots = new Set([homedir(), tmpdir(), ...DATA_ROOTS])
   if (process.platform === 'darwin') roots.add('/private/var/folders')
   return [...roots]
 }
@@ -302,7 +322,9 @@ function relayDownloader(
       },
     )
     child.stdout?.setEncoding('utf8')
+    let sawOutput = false
     child.stdout?.on('data', (chunk: string) => {
+      sawOutput = true
       splitter.push(chunk)
     })
     // Bounded drain: the downloader's stderr is not trusted output.
@@ -311,8 +333,11 @@ function relayDownloader(
       failWith('sandbox-unavailable')
     })
     child.once('close', () => {
-      // Exiting before a verified completion means the result is incomplete.
-      failWith('protocol')
+      // A running downloader always answers with a frame, even to fail. Silence
+      // means the sandbox itself never started (bubblewrap refused by a
+      // user-namespace restriction, say), which retrying cannot fix. Exiting
+      // after some output but before a verified completion is incomplete.
+      failWith(sawOutput ? 'protocol' : 'sandbox-unavailable')
     })
     child.stdin?.on('error', () => {})
     child.stdin?.end(encodeFrame(job))

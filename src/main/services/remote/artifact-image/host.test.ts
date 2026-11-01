@@ -67,6 +67,7 @@ function run() {
     case 'huge-line': process.stdout.write('x'.repeat(200000)); break
     case 'redirect-denied': frame({ type: 'error', requestId: job.requestId, code: 'redirect-denied', origin: 'https://evil.example' }); break
     case 'hang': setInterval(() => {}, 1000); return
+    case 'silent-exit': process.exit(1)
     case 'ignore-term': process.on('SIGTERM', () => {}); frame(chunk); frame(done); setInterval(() => {}, 1000); return
   }
   process.exit(0)
@@ -213,6 +214,10 @@ describe('artifact image host', () => {
     assert.deepEqual(config.filesystem.allowWrite, [])
     assert.ok(config.filesystem.denyRead.includes(homedir()))
     assert.ok(config.filesystem.denyRead.includes(tmpdir()))
+    // A denylist must cover the usual project and data roots, not only home.
+    for (const root of ['/workspace', '/srv', '/opt', '/mnt', '/home']) {
+      assert.ok(config.filesystem.denyRead.includes(root), root)
+    }
     assert.equal(config.filesystem.allowGitConfig, false)
     assert.deepEqual(result.proxyOptions?.allowedHosts, [
       'cloud-agent-artifacts.s3.us-east-1.amazonaws.com',
@@ -321,6 +326,11 @@ describe('artifact image host', () => {
       assert.equal(result.proxyClosed, true)
     })
   }
+
+  it('reports a downloader that exits silently as sandbox-unavailable, not a retryable error', async () => {
+    const result = await run('silent-exit')
+    assert.equal(onlyError(result.frames), 'sandbox-unavailable')
+  })
 
   it('kills a downloader that ignores SIGTERM before resetting ASRT', async () => {
     const result = await run('ignore-term')
