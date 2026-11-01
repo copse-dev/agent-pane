@@ -23,6 +23,10 @@ import {
   runWithActiveRunIdentity,
   setActiveRunThread,
 } from '../thread-models.ts'
+import {
+  threadExecutionContextStorage,
+  type ThreadExecutionContext,
+} from '../thread-execution-context-store.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { readDecisionLog } from './decision-log-store.ts'
@@ -176,6 +180,27 @@ describe('shell gate replay', () => {
     const project = `gate-replay-project-${String(replays)}`
     const thread = `gate-replay-thread-${String(replays)}`
     storageSet('activeProjectId', project)
+    // The decision log is read back below, so the replay runs as a turn of
+    // `project` does: decisions are recorded on the turn's own project.
+    const turn: ThreadExecutionContext = {
+      projectId: project,
+      threadId: thread,
+      projectRoot: workspace,
+      root: workspace,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    return threadExecutionContextStorage.run(turn, () =>
+      replayInRun(situation, testCase, project, thread),
+    )
+  }
+
+  async function replayInRun(
+    situation: Situation,
+    testCase: CorpusCase,
+    project: string,
+    thread: string,
+  ): Promise<Outcome> {
     return runWithActiveRunIdentity(thread, async () => {
       if (situation.guardedYolo) armGuardedYolo(thread)
       setActiveRunThread(thread)
