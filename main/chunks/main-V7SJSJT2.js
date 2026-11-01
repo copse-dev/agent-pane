@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-6F55QCCP.js";
+} from "./chunk-NOGFTDUX.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1732,7 +1732,7 @@ var init_roadmap_plans_plugin = __esm({
     roadmapPlansPlugin = definePlugin(
       {
         name: ROADMAP_PLANS_PLUGIN_ID,
-        description: "Keeps a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.",
+        description: "Keeps a durable, per-project backlog of future work, with a Roadmap pane to browse, track and run tasks when you are ready.",
         trust: "first-party",
         stability: "experimental",
         tools: { native: [ROADMAP_PLANS_TOOL_NAME] },
@@ -15072,7 +15072,7 @@ var init_todos_plugin = __esm({
     todosPlugin = definePlugin(
       {
         name: TODOS_PLUGIN_ID,
-        description: "Owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.",
+        description: "Helps the agent plan multi-step work, track progress in the plan panel, and check remaining steps before finishing.",
         trust: "first-party",
         stability: "stable",
         tools: { native: [TODOS_TOOL_NAME] },
@@ -71820,7 +71820,7 @@ var init_review_plugin = __esm({
     reviewPlugin = definePlugin(
       {
         name: REVIEW_PLUGIN_ID,
-        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or when you ask the agent to review your changes.',
         trust: "first-party",
         stability: "experimental",
         tools: { native: [REVIEW_TOOL_NAME] },

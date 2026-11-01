@@ -11573,13 +11573,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
 }
-.automation-permission-id {
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: var(--font-size-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .automation-permission-empty {
   margin: 0;
   padding: var(--spacing-md) var(--spacing-sm);

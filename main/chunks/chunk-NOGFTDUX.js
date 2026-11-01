@@ -26382,6 +26382,7 @@ var init_humanize_identifier = __esm({
       ["llm", "LLM"],
       ["macos", "macOS"],
       ["mcp", "MCP"],
+      ["mdn", "MDN"],
       ["okf", "OKF"],
       ["pdf", "PDF"],
       ["pii", "PII"],
@@ -26424,7 +26425,7 @@ function getToolDisplayName(name, tense = "done") {
   const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
-  if (mcp?.tool === "startup") return `${mcp.server} startup`;
+  if (mcp?.tool === "startup") return `${humanizeIdentifier(mcp.server)} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
@@ -26550,7 +26551,7 @@ function getToolGroupKey(name, kind) {
 }
 function getToolGroupLabel(key, tense = "done") {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length);
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length));
   }
   const group = TOOL_GROUPS[key];
   if (!group) return key;
@@ -66670,10 +66671,10 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   }
   function unavailablePermissionOption(permission) {
     const parts = permission.toolName.split("__");
-    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${humanizeIdentifier(parts[1] ?? "MCP")} / ${humanizeIdentifier(parts.slice(2).join("__"))}` : humanizeIdentifier(permission.toolName);
     return {
       permission,
-      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      label: mcpLabel,
       detail: "Not currently available. Kept so the approval works if this tool returns."
     };
   }
@@ -66700,7 +66701,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       "label",
       {
         class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
-        title: option.permission.toolName
+        "data-tool-name": option.permission.toolName
       },
       el(
         "span",
@@ -66717,8 +66718,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
             unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
           )
         ),
-        el("span", { class: "automation-permission-detail" }, option.detail),
-        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+        el("span", { class: "automation-permission-detail" }, option.detail)
       ),
       switchControl
     );
@@ -67153,6 +67153,7 @@ var init_automation_plugin_settings = __esm({
     init_automation_retained_worktrees();
     init_automation_failure();
     init_automations();
+    init_humanize_identifier();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -68207,7 +68208,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       chips.push({
         label: "Tools",
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(", ")
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(", ")
       });
     }
     if (contributions.modelRoutes.length > 0) {
@@ -68871,6 +68872,7 @@ var init_packs_section = __esm({
     init_plugin_catalog_browser();
     init_confirm_dialog();
     init_humanize_identifier();
+    init_tool_display();
     init_errors4();
     init_unknown_value3();
     init_helpers();
