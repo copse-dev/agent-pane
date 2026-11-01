@@ -106,16 +106,21 @@ export function isGhGraphQlRateLimited(stderr: string): boolean {
   return /rate limit/i.test(stderr)
 }
 
-/** `owner/repo` for `cwd`'s `origin` remote, or null off GitHub. */
-async function githubRepoSlug(cwd: string | null): Promise<{ owner: string; repo: string } | null> {
-  if (!cwd) return null
+/** Trimmed stdout of a read-only git command in `cwd`, or null on failure or no output. */
+async function gitText(cwd: string, args: string[]): Promise<string | null> {
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
-  const { stdout, code } = await runCommand('git', ['remote', 'get-url', 'origin'], {
+  const { stdout, code } = await runCommand('git', args, {
     cwd,
     env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
   })
-  if (code !== 0) return null
-  const slug = parseGithubRepoSlug(stdout.trim())
+  return code === 0 ? stdout.trim() || null : null
+}
+
+/** `owner/repo` for `cwd`'s `origin` remote, or null off GitHub. */
+async function githubRepoSlug(cwd: string | null): Promise<{ owner: string; repo: string } | null> {
+  if (!cwd) return null
+  const url = await gitText(cwd, ['remote', 'get-url', 'origin'])
+  const slug = url ? parseGithubRepoSlug(url) : null
   if (!slug) return null
   const [owner, repo] = slug.split('/')
   return owner && repo ? { owner, repo } : null
@@ -133,6 +138,19 @@ const restPrListEntrySchema = z.object({
   updated_at: optionalString,
 })
 const restPrListSchema = z.array(restPrListEntrySchema)
+
+const restSearchPrListSchema = z.object({
+  items: z.array(
+    z.object({
+      number: z.number(),
+      title: optionalString,
+      html_url: optionalString,
+      user: optionalAuthorSchema,
+      created_at: optionalString,
+      updated_at: optionalString,
+    }),
+  ),
+})
 
 const restPrDetailSchema = z.object({
   number: z.number(),
@@ -232,63 +250,172 @@ async function restListPrs(opts: {
 }): Promise<GhPrListEntry[] | null> {
   const repo = await githubRepoSlug(opts.cwd)
   if (!repo) return null
-  const merged = opts.state === 'merged'
-  return collectRestPrList(merged, Math.max(opts.limit, 1), async (page, perPage) => {
-    const query = new URLSearchParams({
-      state: merged ? 'closed' : opts.state,
-      per_page: String(perPage),
-      page: String(page),
-    })
-    if (opts.head) query.set('head', `${repo.owner}:${opts.head}`)
-    const { stdout, code } = await runGh(
-      ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
-      { cwd: opts.cwd },
-    )
-    if (code !== 0) return null
-    const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
-    return Array.isArray(list) ? list.map(mapRestPrListEntry) : null
+  const { cwd, head, state } = opts
+  return collectRestPrList(Math.max(opts.limit, 1), (page, perPage) =>
+    state === 'merged'
+      ? restSearchMergedPrsPage(cwd, repo, head, page, perPage)
+      : restPullsPage(cwd, repo, { state, head, page, perPage }),
+  )
+}
+
+/** The REST `head` filter for a branch: `owner:branch`, defaulting to `owner`'s repository. */
+function restHeadFilter(owner: string, head: string): string {
+  return head.includes(':') ? head : `${owner}:${head}`
+}
+
+/** One page of `repos/{owner}/{repo}/pulls`. */
+async function restPullsPage(
+  cwd: string | null,
+  repo: { owner: string; repo: string },
+  opts: {
+    state: 'open' | 'closed' | 'all'
+    head?: string | undefined
+    page: number
+    perPage: number
+  },
+): Promise<GhPrListEntry[] | null> {
+  const query = new URLSearchParams({
+    state: opts.state,
+    per_page: String(opts.perPage),
+    page: String(opts.page),
+  })
+  if (opts.head) query.set('head', restHeadFilter(repo.owner, opts.head))
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
+    { cwd },
+  )
+  if (code !== 0) return null
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
+  return Array.isArray(list) ? list.map(mapRestPrListEntry) : null
+}
+
+/**
+ * The `search/issues` path for one page of `repo`'s merged PRs, newest first
+ * like `gh pr list`. The search `head:` qualifier takes a bare branch name.
+ */
+export function restMergedSearchPath(
+  repo: { owner: string; repo: string },
+  head: string | undefined,
+  page: number,
+  perPage: number,
+): string {
+  const terms = [`repo:${repo.owner}/${repo.repo}`, 'is:pr', 'is:merged']
+  if (head) terms.push(`head:${head.slice(head.indexOf(':') + 1)}`)
+  const query = new URLSearchParams({
+    q: terms.join(' '),
+    sort: 'created',
+    order: 'desc',
+    per_page: String(perPage),
+    page: String(page),
+  })
+  return `search/issues?${query.toString()}`
+}
+
+/**
+ * One page of merged PRs from `search/issues`. The pulls endpoint has no merged
+ * filter, and reading closed pages for merged entries has no point at which a
+ * short result is known to be complete. Search items carry no head ref, so
+ * these entries have no branch name.
+ */
+async function restSearchMergedPrsPage(
+  cwd: string | null,
+  repo: { owner: string; repo: string },
+  head: string | undefined,
+  page: number,
+  perPage: number,
+): Promise<GhPrListEntry[] | null> {
+  const { stdout, code } = await runGh(['api', restMergedSearchPath(repo, head, page, perPage)], {
+    cwd,
+  })
+  if (code !== 0) return null
+  const result = safeJsonParse(stdout.trim(), decodeWithSchema(restSearchPrListSchema))
+  if (!result) return null
+  return result.items.map((item) => {
+    const entry: GhPrListEntry = {
+      number: item.number,
+      title: item.title ?? `PR #${String(item.number)}`,
+      url: item.html_url ?? '',
+      state: 'MERGED',
+    }
+    if (item.user?.login) entry.author = { login: item.user.login }
+    if (item.created_at) entry.createdAt = item.created_at
+    if (item.updated_at) entry.updatedAt = item.updated_at
+    return entry
   })
 }
 
-/** Closed-PR pages a `merged` REST fallback reads before it stops looking. */
-export const REST_MERGED_MAX_PAGES = 5
-
 /**
  * Collect a REST PR list page by page, until `limit` is met or the pages run
- * out: a REST page holds at most 100 PRs. REST has no merged filter, so a
- * `merged` list reads closed pages and keeps the merged entries, up to
- * {@link REST_MERGED_MAX_PAGES} pages: filtering one page misses merged PRs
- * whenever unmerged closed ones fill it. A failed page fails the whole list,
+ * out: a REST page holds at most 100 PRs. A failed page fails the whole list,
  * so the caller reports the error rather than a short list that reads as
  * complete.
  */
 export async function collectRestPrList(
-  merged: boolean,
   limit: number,
   fetchPage: (page: number, perPage: number) => Promise<GhPrListEntry[] | null>,
 ): Promise<GhPrListEntry[] | null> {
-  const perPage = merged ? 100 : Math.min(limit, 100)
-  const pages = merged ? REST_MERGED_MAX_PAGES : Math.ceil(limit / perPage)
+  const perPage = Math.min(limit, 100)
   const out: GhPrListEntry[] = []
-  for (let page = 1; page <= pages; page++) {
+  for (let page = 1; out.length < limit; page++) {
     const entries = await fetchPage(page, perPage)
     if (!entries) return null
-    out.push(...(merged ? entries.filter((pr) => pr.state === 'MERGED') : entries))
-    if (out.length >= limit || entries.length < perPage) break
+    out.push(...entries)
+    if (entries.length < perPage) break
   }
   return out.slice(0, limit)
 }
 
-/** The PR number for `branch` in `repo`, via the REST `pulls?head=` filter. */
+/**
+ * How the REST fallback finds the current branch's PR, as `gh pr view` does: a
+ * `refs/pull/N/head` merge ref (what `gh pr checkout` sets up for a fork's PR)
+ * names the PR outright. Otherwise the tracking remote's owner and merge ref
+ * give the `owner:branch` head filter, so a branch pushed to a fork is looked
+ * up under the fork's owner. With no tracking remote, the branch is assumed to
+ * be pushed to the base repository under the same name.
+ */
+export function restCurrentBranchPrSelector(input: {
+  branch: string
+  baseOwner: string
+  trackingOwner: string | null
+  mergeRef: string | null
+}): { number: number } | { head: string } {
+  const pull = /^refs\/pull\/(\d+)\/head$/.exec(input.mergeRef ?? '')
+  if (pull?.[1]) return { number: Number(pull[1]) }
+  if (!input.trackingOwner) return { head: `${input.baseOwner}:${input.branch}` }
+  const remoteBranch = input.mergeRef?.startsWith('refs/heads/')
+    ? input.mergeRef.slice('refs/heads/'.length)
+    : input.branch
+  return { head: `${input.trackingOwner}:${remoteBranch}` }
+}
+
+/** The GitHub owner of `branch`'s tracking remote, which git stores as a name or a URL. */
+async function trackingRemoteOwner(cwd: string, branch: string): Promise<string | null> {
+  const remote = await gitText(cwd, ['config', '--get', `branch.${branch}.remote`])
+  if (!remote || remote === '.') return null
+  const url = parseGithubRepoSlug(remote)
+    ? remote
+    : await gitText(cwd, ['remote', 'get-url', remote])
+  const slug = url ? parseGithubRepoSlug(url) : null
+  return slug?.split('/')[0] ?? null
+}
+
+/** The PR number for the current `branch` in `repo`, via the REST `pulls?head=` filter. */
 async function restFindPrNumberForBranch(
-  cwd: string | null,
+  cwd: string,
   repo: { owner: string; repo: string },
   branch: string,
 ): Promise<number | null> {
-  const query = new URLSearchParams({ head: `${repo.owner}:${branch}`, state: 'all' })
+  const selector = restCurrentBranchPrSelector({
+    branch,
+    baseOwner: repo.owner,
+    trackingOwner: await trackingRemoteOwner(cwd, branch),
+    mergeRef: await gitText(cwd, ['config', '--get', `branch.${branch}.merge`]),
+  })
+  if ('number' in selector) return selector.number
+  const query = new URLSearchParams({ head: selector.head, state: 'all' })
   const { stdout, code } = await runGh(
     ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
-    { cwd: cwd },
+    { cwd },
   )
   if (code !== 0) return null
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
@@ -344,7 +471,7 @@ async function restViewPr(opts: {
   let number = opts.number
   if (number === undefined) {
     const branch = await currentGitBranch(opts.cwd)
-    if (!branch) return null
+    if (!branch || !opts.cwd) return null
     const found = await restFindPrNumberForBranch(opts.cwd, repo, branch)
     if (found === null) return null
     number = found
@@ -643,13 +770,7 @@ export async function getGhPrListText(
 }
 
 async function currentGitBranch(cwd: string | null): Promise<string | null> {
-  if (!cwd) return null
-  const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
-  const { stdout, code } = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd,
-    env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
-  })
-  return code === 0 ? stdout.trim() || null : null
+  return cwd ? gitText(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']) : null
 }
 
 function shortSha(sha: string | undefined): string {

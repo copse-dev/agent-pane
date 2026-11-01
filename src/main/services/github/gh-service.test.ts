@@ -9,7 +9,8 @@ import {
   collectRestPrList,
   type GhPrListEntry,
   isGhGraphQlRateLimited,
-  REST_MERGED_MAX_PAGES,
+  restCurrentBranchPrSelector,
+  restMergedSearchPath,
   restPrMergeable,
   restPrState,
 } from './gh-service.ts'
@@ -166,73 +167,26 @@ describe('isGhGraphQlRateLimited', () => {
 })
 
 describe('collectRestPrList', () => {
-  const pr = (number: number, state: string): GhPrListEntry => ({
-    number,
-    title: `PR ${String(number)}`,
-    url: `https://github.com/o/r/pull/${String(number)}`,
-    state,
-  })
-  const closedPage = (
-    from: number,
-    count: number,
-    mergedAt: readonly number[] = [],
-  ): GhPrListEntry[] =>
-    Array.from({ length: count }, (_, i) =>
-      pr(from + i, mergedAt.includes(from + i) ? 'MERGED' : 'CLOSED'),
-    )
+  const open = (from: number, count: number): GhPrListEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      number: from + i,
+      title: `PR ${String(from + i)}`,
+      url: `https://github.com/o/r/pull/${String(from + i)}`,
+      state: 'OPEN',
+    }))
 
-  it('reads further closed pages until it has the merged PRs asked for', async () => {
-    const pages = [
-      closedPage(1, 100),
-      closedPage(101, 100, [150, 160]),
-      closedPage(201, 100, [205]),
-    ]
-    const read: number[] = []
-    const list = await collectRestPrList(true, 3, async (page, perPage) => {
-      read.push(page)
-      assert.equal(perPage, 100)
-      return pages[page - 1] ?? []
-    })
-    assert.deepEqual(
-      list?.map((entry) => entry.number),
-      [150, 160, 205],
-    )
-    assert.deepEqual(read, [1, 2, 3])
-  })
-
-  it('stops at a short page and at the page cap', async () => {
-    let calls = 0
-    const short = await collectRestPrList(true, 20, async () => {
-      calls += 1
-      return closedPage(1, 40, [7])
-    })
-    assert.deepEqual(
-      short?.map((entry) => entry.number),
-      [7],
-    )
-    assert.equal(calls, 1)
-    calls = 0
-    await collectRestPrList(true, 20, async (page) => {
-      calls += 1
-      return closedPage(page * 100, 100)
-    })
-    assert.equal(calls, REST_MERGED_MAX_PAGES)
-  })
-
-  it('reads one page of the requested size for other states', async () => {
-    const list = await collectRestPrList(false, 2, async (page, perPage) => {
+  it('reads one page of the requested size', async () => {
+    const list = await collectRestPrList(2, async (page, perPage) => {
       assert.equal(page, 1)
       assert.equal(perPage, 2)
-      return [pr(1, 'OPEN'), pr(2, 'OPEN')]
+      return open(1, 2)
     })
     assert.equal(list?.length, 2)
   })
 
-  it('pages past 100 for a larger limit in any state', async () => {
-    const open = (from: number, count: number): GhPrListEntry[] =>
-      Array.from({ length: count }, (_, i) => pr(from + i, 'OPEN'))
+  it('pages past 100 for a larger limit', async () => {
     const read: number[] = []
-    const list = await collectRestPrList(false, 150, async (page, perPage) => {
+    const list = await collectRestPrList(150, async (page, perPage) => {
       read.push(page)
       assert.equal(perPage, 100)
       return open((page - 1) * 100 + 1, 100)
@@ -241,11 +195,97 @@ describe('collectRestPrList', () => {
     assert.deepEqual(read, [1, 2])
   })
 
+  it('stops at a short page', async () => {
+    const read: number[] = []
+    const list = await collectRestPrList(150, async (page) => {
+      read.push(page)
+      return open(1, 40)
+    })
+    assert.equal(list?.length, 40)
+    assert.deepEqual(read, [1])
+  })
+
   it('fails the whole list when any page fails', async () => {
-    const list = await collectRestPrList(true, 5, async (page) =>
-      page === 1 ? closedPage(1, 100, [3]) : null,
-    )
+    const list = await collectRestPrList(150, async (page) => (page === 1 ? open(1, 100) : null))
     assert.equal(list, null)
+  })
+})
+
+describe('restMergedSearchPath', () => {
+  const query = (path: string): URLSearchParams => {
+    assert.ok(path.startsWith('search/issues?'))
+    return new URLSearchParams(path.slice('search/issues?'.length))
+  }
+
+  it('asks search for merged PRs only, newest first, one page at a time', () => {
+    const params = query(restMergedSearchPath({ owner: 'o', repo: 'r' }, undefined, 3, 100))
+    assert.equal(params.get('q'), 'repo:o/r is:pr is:merged')
+    assert.equal(params.get('sort'), 'created')
+    assert.equal(params.get('order'), 'desc')
+    assert.equal(params.get('per_page'), '100')
+    assert.equal(params.get('page'), '3')
+  })
+
+  it('filters by the bare head branch name', () => {
+    const repo = { owner: 'o', repo: 'r' }
+    assert.equal(
+      query(restMergedSearchPath(repo, 'fix/parser', 1, 30)).get('q'),
+      'repo:o/r is:pr is:merged head:fix/parser',
+    )
+    assert.equal(
+      query(restMergedSearchPath(repo, 'fork:fix/parser', 1, 30)).get('q'),
+      'repo:o/r is:pr is:merged head:fix/parser',
+    )
+  })
+})
+
+describe('restCurrentBranchPrSelector', () => {
+  it('looks a branch pushed to a fork up under the fork owner and remote branch', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'local-fix',
+        baseOwner: 'upstream',
+        trackingOwner: 'contributor',
+        mergeRef: 'refs/heads/fix/parser',
+      }),
+      { head: 'contributor:fix/parser' },
+    )
+  })
+
+  it('takes the PR number from a gh pr checkout merge ref', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: 'upstream',
+        mergeRef: 'refs/pull/4107/head',
+      }),
+      { number: 4107 },
+    )
+  })
+
+  it('assumes the base repository when the branch tracks no remote', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: null,
+        mergeRef: null,
+      }),
+      { head: 'upstream:fix/parser' },
+    )
+  })
+
+  it('keeps the local branch name when the merge ref is not a branch', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: 'contributor',
+        mergeRef: null,
+      }),
+      { head: 'contributor:fix/parser' },
+    )
   })
 })
 
