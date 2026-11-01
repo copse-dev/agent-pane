@@ -7,10 +7,7 @@ import { config as baseConfig } from './wdio.conf.ts'
  * Skips specs that need external network, fork-local git branches, onboarding
  * setup, agent-eval LLMs, or streaming timing that is flaky on Linux runners.
  */
-const ciExclude = [
-  './tests/e2e/agent-eval-drive.e2e.ts',
-  './tests/e2e/portrait-right-panel.e2e.ts',
-]
+const ciExclude = ['./tests/e2e/agent-eval-drive.e2e.ts', './tests/e2e/portrait-right-panel.e2e.ts']
 
 const outcomes = outcomeHooks(
   process.env['COPSE_E2E_OUTCOMES_DIR'],
