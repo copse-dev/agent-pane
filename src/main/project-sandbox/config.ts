@@ -514,6 +514,99 @@ export function resolveRustToolchainAllowRead(
   return allow
 }
 
+/**
+ * Interpreter installs under home that a project's `.venv/bin/python` symlinks
+ * into, or that put `bun` on PATH. Worktree preparation reads the same roots.
+ */
+export const HOME_INTERPRETER_TOOLCHAIN_DIRS = [
+  '.bun/bin',
+  '.pyenv/versions',
+  '.local/share/uv/python',
+] as const
+
+/**
+ * Home files that can hold registry or index credentials. No toolchain root may
+ * be one of them, contain one, or be home itself.
+ */
+const HOME_CREDENTIAL_PATHS = [
+  '.npmrc',
+  '.yarnrc.yml',
+  '.config/pnpm/rc',
+  '.bunfig.toml',
+  '.config/uv',
+  '.pypirc',
+  '.config/pip',
+  '.netrc',
+] as const
+
+/**
+ * Corepack's package-manager cache, resolved the way Corepack does: `$COREPACK_HOME`,
+ * else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`. macOS also gets
+ * `~/Library/Caches/node/corepack`, where some installs keep it.
+ */
+function corepackCacheCandidates(env: NodeJS.ProcessEnv, home: string): string[] {
+  const absolute = (value: string | undefined): string | null =>
+    value !== undefined && isAbsolute(value) ? value : null
+  const explicit = env['COREPACK_HOME']
+  if (explicit !== undefined && explicit !== '') {
+    const path = absolute(explicit)
+    return path ? [path] : []
+  }
+  const cacheHome = absolute(env['XDG_CACHE_HOME']) ?? join(home, '.cache')
+  return [
+    join(cacheHome, 'node', 'corepack'),
+    ...(process.platform === 'darwin' ? [join(home, 'Library', 'Caches', 'node', 'corepack')] : []),
+  ]
+}
+
+function isWithin(parent: string, child: string): boolean {
+  const rel = relative(parent, child)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+/**
+ * Resolve the user's installed package-manager and interpreter caches so contained
+ * commands can start them: Corepack's cache (pinned pnpm/yarn), `~/.bun/bin`, and
+ * the pyenv and uv Python installs a `.venv` links into.
+ *
+ * Read-only: a writable shim directory on PATH would let a contained command
+ * plant code that later runs unsandboxed. Only existing directories are added,
+ * and a root is dropped when it, or its canonical target, is home, an ancestor of
+ * home, or contains or sits inside a credential path such as `~/.npmrc`,
+ * `~/.config/uv`, or `~/.pypirc`.
+ */
+export function resolveInterpreterToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  let homes = [home]
+  try {
+    homes = [...new Set([home, realpathSync(home)])]
+  } catch {
+    /* Keep the literal home. */
+  }
+  const credentials = homes.flatMap((root) => HOME_CREDENTIAL_PATHS.map((path) => join(root, path)))
+  const safe = (path: string): boolean =>
+    !homes.some((root) => isWithin(path, root)) &&
+    !credentials.some((credential) => isWithin(path, credential) || isWithin(credential, path))
+  const allow: string[] = []
+  for (const path of [
+    ...corepackCacheCandidates(env, home),
+    ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((dir) => join(home, dir)),
+  ]) {
+    let canonical: string
+    try {
+      if (!statSync(path).isDirectory()) continue
+      canonical = realpathSync(path)
+    } catch {
+      continue
+    }
+    if (!safe(path) || !safe(canonical) || allow.includes(path)) continue
+    allow.push(path, `${path}/**`)
+  }
+  return allow
+}
+
 /** ASRT native helpers that must remain executable inside a denied home tree. */
 export function sandboxRuntimeHelperAllowReadPaths(
   seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
@@ -997,7 +1090,11 @@ export function readAllowedSandboxOverlay(
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
-  const toolchainRead = [...resolveNodeToolchainAllowRead(), ...resolveRustToolchainAllowRead()]
+  const toolchainRead = [
+    ...resolveNodeToolchainAllowRead(),
+    ...resolveRustToolchainAllowRead(),
+    ...resolveInterpreterToolchainAllowRead(),
+  ]
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
