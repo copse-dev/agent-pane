@@ -3,6 +3,7 @@ import type { Thread } from './types/thread.ts'
 export interface ThreadPromptCommand {
   id: string
   sourceThreadId: string
+  sourceTurnTreeId: string
   projectId: string
   thread: Thread
   text: string

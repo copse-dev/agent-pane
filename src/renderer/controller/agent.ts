@@ -198,6 +198,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             title: finished.title,
             pendingMessages: finished.pendingMessages ?? [],
             continuationUsed: finished.continuationUsed ?? 0,
+            crossThreadPromptsUsed: finished.crossThreadPromptsUsed ?? 0,
+            crossThreadPromptCounts: finished.crossThreadPromptCounts ?? {},
             ...(finished.currentEpoch !== undefined ? { currentEpoch: finished.currentEpoch } : {}),
             ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
           })
