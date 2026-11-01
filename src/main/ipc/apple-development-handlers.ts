@@ -16,7 +16,8 @@ import {
 } from './ipc-guards.ts'
 import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
 import { reloadMcpServers } from '../services/mcp/mcp-registry.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { getThreadMeta } from '../services/thread-store.ts'
+import { getProjectRoot } from '../services/workspace.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 
 export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: ToolRegistry): void {
@@ -40,7 +41,12 @@ export function registerAppleDevelopmentHandlers(win: BrowserWindow, registry: T
         rawProjectId,
         rawThreadId,
       ])
-      await resolveThreadExecutionContext(projectId, threadId)
+      // Reading panel state must not recreate a retired automation checkout.
+      // Explicit Apple actions still resolve and validate their execution root.
+      const thread = await getThreadMeta(projectId, threadId)
+      if (!getProjectRoot(projectId) || thread?.id !== threadId) {
+        throw new Error('Apple Development thread is unavailable')
+      }
       return getAppleDevelopmentService().getState({ projectId, threadId })
     },
   )
