@@ -74,6 +74,8 @@ export type OAuthTokens = z.infer<typeof oauthTokenSchema>
 export interface ChatGptOAuthDependencies {
   fetch: typeof fetch
   openBrowser: (url: string) => Promise<void>
+  /** Bring Copse back to the foreground once the external browser hands the callback back. */
+  focusApp: () => void
 }
 
 /** Carries the HTTP status so callers can tell a dead refresh token (400/401) from a transient failure. */
@@ -250,6 +252,7 @@ export async function authorizeChatGpt(
     try {
       const result = validateChatGptCallback(url, state, options.clientId)
       consumed = true
+      dependencies.focusApp()
       response
         .writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',

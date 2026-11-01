@@ -2446,6 +2446,13 @@
           3
         ]
       },
+      "threads:cancel-request-search": {
+        "api": "threads.cancelRequestSearch",
+        "args": [
+          0,
+          0
+        ]
+      },
       "threads:catalog": {
         "api": "threads.catalog",
         "args": [
@@ -2528,6 +2535,13 @@
         "args": [
           5,
           5
+        ]
+      },
+      "threads:search-requests": {
+        "api": "threads.searchRequests",
+        "args": [
+          2,
+          2
         ]
       },
       "threads:storage-size": {
