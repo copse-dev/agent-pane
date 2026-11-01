@@ -1932,6 +1932,9 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     requestAcpPackageInstallApproval(scenario: 'install' | 'upgrade' | 'mixed' = 'install') {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
+    requestRemoteWatcherInstallApproval() {
+      return ipcRenderer.invoke('test:requestRemoteWatcherInstallApproval')
+    },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
     },

@@ -1479,6 +1479,46 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+    id: 'read-explored',
+    label: 'Quote explored lines',
+    project: project('demo-read-explored-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-read-explored-thread',
+        title: 'Read explored',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-read-explored-assistant',
+            role: 'assistant',
+            content: 'Quoting the whole function before editing it.',
+            toolCalls: [
+              {
+                id: 'demo-read-explored-call',
+                name: 'read_explored',
+                args: { path: 'src/renderer/browser-pane.ts', start_line: 289, end_line: 296 },
+                status: 'done',
+                resultFormat: 'markdown',
+                result:
+                  "`src/renderer/browser-pane.ts` lines 289–296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```",
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     // #728: a subagent-backed explore must stay its own card when a sibling
     // read_file would otherwise fold both into a "Read files" group.
     id: 'subagent-ungrouped',

@@ -1134,6 +1134,31 @@ and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `cred
 a toolchain. So `cargo --version`, `rustc`, and `rustfmt` run contained, while a build that needs
 the registry still fails contained and offers to run outside.
 
+The git config grant is `~/.gitconfig`, the global ignore files, and the whole `~/.config/git`
+directory, because an `include.path` or `core.hooksPath` often points into it and git treats EPERM
+on an included file as fatal. Git's XDG credential store, `~/.config/git/credentials`, holds
+plaintext tokens, so it is denied again inside that grant: on macOS ASRT emits the nested deny after
+the allows, and on Linux it masks the file with `/dev/null` (a missing file cannot be created
+contained, because the directory is bound read-only).
+
+For each `node` on `PATH` the sandbox re-allows the binary and the directory holding it. It
+re-allows the directory above `bin` only when that looks like a version install (nvm's
+`versions/node/vX.Y.Z`, a Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or
+one of its ancestors, and must sit at least two levels below home, judged on both the spelled and
+the canonical path (a `PATH` entry can reach home through an alias). A shallow home root that passes
+the rest (`~/.local` as an npm prefix, `~/.n`, an unpacked tarball) gets only its
+`lib/node_modules`. So `~/bin/node` or `~/.local/bin/node` never turns `~` or `~/.local` (and
+`.ssh`, `.aws`, `.npmrc` with it) into a read grant. A symlinked `node` also grants its target's
+install, but only when the target is a `node` in such a version install: a `PATH` directory a
+contained command can write, such as a checkout's `node_modules/.bin`, could otherwise hold
+`node -> ~/.ssh/id_ed25519`. A version manager that keeps its shims in a top-level home directory
+gets the shim directory plus the trees the shim runs from, read-only, not the whole manager
+directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/tools`, and asdf
+(`$ASDF_DATA_DIR/shims`, default `~/.asdf/shims`) adds `installs`, `plugins`, `bin` and `lib` under
+`$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
+of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
+shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.

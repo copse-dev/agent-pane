@@ -1421,6 +1421,22 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /prepare:gortex:mac/)
   })
 
+  it('packages the checksum-verified remote watcher target set', () => {
+    assert.match(workflow, /uses: \.\/\.github\/workflows\/remote-watcher-build\.yml/)
+    assert.match(workflow, /ref: \$\{\{ needs\.preflight\.outputs\.release_sha \}\}/)
+    assert.match(workflow, /name: remote-watcher-all/)
+    assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
+    for (const target of [
+      'aarch64-apple-darwin',
+      'x86_64-apple-darwin',
+      'aarch64-unknown-linux-musl',
+      'x86_64-unknown-linux-musl',
+    ]) {
+      assert.match(workflow, new RegExp(target))
+    }
+    assert.match(workflow, /app\.asar\.unpacked\/dist\/resources\/remote-watcher/)
+  })
+
   it('assembles portable checksums without recompressing the packages', () => {
     assert.match(workflow, /assemble-macos-release\.mts/)
     assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
