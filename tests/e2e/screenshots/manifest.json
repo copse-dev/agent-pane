@@ -549,6 +549,10 @@
       "sha256": "a1175c2ec87a0fbd244c84eff76348df3a7251d4421f668bd3f867fb4cd7f703",
       "bytes": 67237
     },
+    "approval-thread-orchestrate.png": {
+      "sha256": "3d758e1649c38177c59ea911dc1514290dd4ea24292f2c14babd913e7f784ce6",
+      "bytes": 26338
+    },
     "approval-thread-read.png": {
       "sha256": "8dbc4e018f9a814b49bd8683caa9120eb14961148c26272c86e5506c9bf7b5c3",
       "bytes": 15711
@@ -1234,8 +1238,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "aed26ae30a8a63279b0e27c576de96d5cc4964f3e67b453e2333f3b06b8cde35",
-      "bytes": 40463
+      "sha256": "a08e26ac6946920f916610f0038d0166eec9200946d8c897e897d2f893aeb59f",
+      "bytes": 40312
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -2334,12 +2338,12 @@
       "bytes": 302654
     },
     "mcp-http-auth-connected.png": {
-      "sha256": "3d6916a3c4ed3d4cdafa71a9d65c793e4e2008b5a524def46960e5e5636f1736",
-      "bytes": 344490
+      "sha256": "f03f702cf3dbb467825cec06536c43705f2e1f0a1cced0081f2bd686df796df2",
+      "bytes": 359086
     },
     "mcp-http-sign-in-required.png": {
-      "sha256": "4c9d110c0d7c7d575679ed465cd953bd5822255425b78c4e53dc7c32989f3c02",
-      "bytes": 349087
+      "sha256": "8a45f864af468a244ef89893ab548ae934689cfeec84fa8d74ab05bc9b9e4820",
+      "bytes": 363924
     },
     "mcp-native-profile-error.png": {
       "sha256": "3e56c4768c5791ec44925fce793cd00f2cccf6d609fb7a20877f6561408742dc",
@@ -2350,8 +2354,8 @@
       "bytes": 335881
     },
     "mcp-settings-connected.png": {
-      "sha256": "71456dfb4b9253161e1acaafe1f61f4ac97656648451475a5f6e33a5e0a568fd",
-      "bytes": 346629
+      "sha256": "fe805fcfa69c04ada71e4ddebc727e2b9d7713235eec3fd7372e5686f56f39c5",
+      "bytes": 361362
     },
     "mcp-sign-in-states.png": {
       "sha256": "1e1280873fbce826c16e7adca77c4cf41003ba99c30242ee18b31ce6b73ca20d",
@@ -3330,8 +3334,8 @@
       "bytes": 30115
     },
     "queued-pinned-scrolled-top.png": {
-      "sha256": "7099471374e7dac8dfae6b9c6767b03176eb0422b4ab5ae273dc3533d40104eb",
-      "bytes": 366837
+      "sha256": "ddec1f4c489146eb8fd1628f70c7d7dc9cd543bddd19acd5ad29b23835786116",
+      "bytes": 427851
     },
     "read-outside-approval-collapsed.png": {
       "sha256": "ec3f3722a1b858eccb95d9fd5cd55a31ff5a9fc84fa74dad276007df9c0d0fd3",
@@ -4118,8 +4122,8 @@
       "bytes": 337380
     },
     "settings-mcp-server-row.png": {
-      "sha256": "530c20055d05d28c84b056a0882c5302f8113cf884bb8b9b20f3d4a93a126441",
-      "bytes": 342087
+      "sha256": "ea6a10fb4538e33559404a74d4c4bb57c79bfffbd079d894d032fdeeb468a5a0",
+      "bytes": 353499
     },
     "settings-mobile-companion-device-trust.png": {
       "sha256": "5efbc0a73e97750a424cdbbeb4b2bcdfd17edbba30ca9f859a4bfdeccbc671b5",
@@ -4978,28 +4982,28 @@
       "bytes": 25524
     },
     "staged-diff-css-accept-no-error.png": {
-      "sha256": "95c1c0f32f51c8ea7257699816de7de304d9a9321bde066212bab1678bfa07b8",
-      "bytes": 357831
+      "sha256": "8e9c6300025dc2217bfc8ef002a8c7ee7800022ccf2ee4156d2f6e59bb4f9485",
+      "bytes": 380566
     },
     "staged-diff-multi.png": {
-      "sha256": "2428e4a5fe8b567f13638a3410958e77e25911207f8a822c25060bee333b3655",
-      "bytes": 386691
+      "sha256": "15c0ef02b8280724df64c98c1b7b1c7fc87c7a658202316e9cf6049051e746bd",
+      "bytes": 374578
     },
     "staged-diff-popout-proposed.png": {
-      "sha256": "e40c2fa01a7deecdea80b3868f60f4cc085e6718febf61806f14bce444af44fc",
-      "bytes": 53542
+      "sha256": "d7ec0b7286827bc955671efd5ef9185e293490119681a565bff8a750a66f7a44",
+      "bytes": 67787
     },
     "staged-diff-rapid-selection.png": {
-      "sha256": "2428e4a5fe8b567f13638a3410958e77e25911207f8a822c25060bee333b3655",
-      "bytes": 386691
+      "sha256": "15c0ef02b8280724df64c98c1b7b1c7fc87c7a658202316e9cf6049051e746bd",
+      "bytes": 374578
     },
     "staged-diff-single.png": {
-      "sha256": "4e2a7ec595e40706110e88c2fa299d34f4a0deaa0499f3414821cf314d6db91c",
-      "bytes": 302804
+      "sha256": "eead95bef204cc02550107a789aa8149833915db324f348c32dcdfb8db936bb1",
+      "bytes": 303335
     },
     "staged-diff-thread-isolated.png": {
-      "sha256": "46f74bc5c2fc6b40502bcbb4c85b4dbf4705e4f187be1509fd24184cbae32e12",
-      "bytes": 230401
+      "sha256": "7d3e8d6df8a891b792bca00d6839e56dad0c2cbf492f47974256a91b295a3c27",
+      "bytes": 270835
     },
     "streamed-reply-mid-stream.png": {
       "sha256": "4ecd66e6eb9132c278f91a3c0a0f01e940ed8bab269222037fc90b19c9634f4b",
@@ -5028,6 +5032,14 @@
     "subagent-ungrouped-beside-read.png": {
       "sha256": "4e41b7a7cc4dc70adec6a9e84001d95f3d8a39b89f068c650678e9cee71461f0",
       "bytes": 97802
+    },
+    "subthread-orchestration-approval.png": {
+      "sha256": "eed8ddf81698d40ef60301fb6c9e38602547dead82dccb687e06230e3c2ae7d0",
+      "bytes": 63823
+    },
+    "subthread-orchestration-permission.png": {
+      "sha256": "6a0d3565a39da413407a224ea534348311637dd317f685af5220a472650ea89e",
+      "bytes": 102271
     },
     "supervised-tasks-resume.png": {
       "sha256": "40ae13c2582d813fa8f030ba968a281bb54cc8faa06c166495cff54ed96caa0e",
@@ -5316,6 +5328,10 @@
     "thread-submodule-worktree-sent.png": {
       "sha256": "4aa5e4d5fedc7ee27faf86a22bb7052260493dca11c2ff96229e7dbd72921bb3",
       "bytes": 278392
+    },
+    "thread-subthread-permissions.png": {
+      "sha256": "024f3f7d373953c1da65fc6de7cf382e924d31eb75c29a1610025be1076b82a4",
+      "bytes": 42598
     },
     "thread-switch-isolated-worktrees.png": {
       "sha256": "2971d9e89189f3f005088d7fefb8d8689764eb63dc42f5f54eb699e3bed9f5bf",
