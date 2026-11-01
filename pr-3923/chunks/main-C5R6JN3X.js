@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-NGIO6L22.js";
+} from "./chunk-O4QHX44E.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -8707,6 +8707,12 @@ function mountProjectsPane(root, store2, api2) {
         render2();
       }
       showThreadArchiveToast(store2, api2, event.projectId, event.threadId, event.title);
+    }),
+    // A trigger means main wrote this project's threads: it created a run and,
+    // when the project is not focused, drives that turn itself. A resident
+    // snapshot read before then lacks the run, so the next switch must reload.
+    api2.automations.onTriggered((event) => {
+      invalidateProjectThreadLoads(api2, event.projectId);
     }),
     store2.on("thread_archive_requested", (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId);
@@ -63019,7 +63025,17 @@ function initMentionPicker(opts) {
     mentionStart = -1;
   }
   function updateSelection2() {
-    picker.querySelectorAll(".mention-item").forEach((el2, i2) => el2.classList.toggle("selected", i2 === selectedIdx));
+    const items = picker.querySelectorAll(".mention-item");
+    items.forEach((el2, i2) => el2.classList.toggle("selected", i2 === selectedIdx));
+    const selected = items[selectedIdx];
+    if (!selected) return;
+    const top = selected.offsetTop;
+    const bottom = top + selected.offsetHeight;
+    if (top < picker.scrollTop) {
+      picker.scrollTop = top;
+    } else if (bottom > picker.scrollTop + picker.clientHeight) {
+      picker.scrollTop = bottom - picker.clientHeight;
+    }
   }
   input.el.addEventListener("input", () => {
     const val = input.value;
