@@ -1276,8 +1276,9 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         () => answer(bridged(), 'claude', req, LOCAL_ROOT),
       )
       const line = recorded.find((decision) => decision.line.source === 'acp-bridge-provenance')
-      assert.equal(line?.projectId, 'p-local')
-      assert.equal(line?.threadId, 't-local')
+      assert.ok(line)
+      assert.equal(line.projectId, 'p-local')
+      assert.equal(line.threadId, 't-local')
     })
 
     it("prompts for a bridged tool this session's own bridge does not serve", async () => {
