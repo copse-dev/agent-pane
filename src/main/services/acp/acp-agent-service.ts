@@ -1,4 +1,3 @@
-import { acpTranscriptChunk } from './acp-transcript-chunk.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
@@ -773,7 +772,7 @@ async function runAcpAgentTurn(
     if (!heldText) return
     const flush = heldText
     heldText = ''
-    options.onChunk(acpTranscriptChunk({ type: 'text', text: flush }))
+    options.onChunk({ type: 'text', text: flush })
   }
   const onChunk = (chunk: StreamChunk): void => {
     if (!sawChunk) perfMark('ttft:acp-first-activity', { kind: chunk.type })
@@ -793,7 +792,7 @@ async function runAcpAgentTurn(
     } else if (pendingApprovalCountForThread(options.threadId) === 0) {
       flushHeldText()
     }
-    options.onChunk(acpTranscriptChunk(chunk))
+    options.onChunk(chunk)
   }
 
   // Writes that went through the diff queue this turn (canonical git-status

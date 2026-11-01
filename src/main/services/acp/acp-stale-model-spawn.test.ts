@@ -52,16 +52,7 @@ describe('an ACP thread turn on a model the agent no longer offers', () => {
         onChunk: (chunk) => chunks.push(chunk),
       })
       assert.equal(result.stopReason, 'end_turn')
-      const streamed = chunks.flatMap((chunk) => {
-        if (chunk.type === 'text') return [chunk.text]
-        if (
-          chunk.type === 'acp_content' &&
-          chunk.channel === 'message' &&
-          chunk.content.type === 'text'
-        )
-          return [chunk.content.text]
-        return []
-      })
+      const streamed = chunks.flatMap((chunk) => (chunk.type === 'text' ? [chunk.text] : []))
       return { streamed: streamed.join(''), history: result.messages }
     }
 

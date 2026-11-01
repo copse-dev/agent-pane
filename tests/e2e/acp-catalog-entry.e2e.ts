@@ -155,6 +155,6 @@ describe('manual ACP catalog entry', function () {
     assert.ok(first && second)
     await expect(first.$('a[href="https://example.com"]')).toHaveText('Review')
     await expect(second).toHaveText(expect.stringContaining('Separate ACP message.'))
-    await saveElementScreenshot('.messages-list', 'acp-message-link-continuation.png')
+    await saveElementScreenshot('.messages-list', 'acp-copilot-fixture-turn.png')
   })
 })
