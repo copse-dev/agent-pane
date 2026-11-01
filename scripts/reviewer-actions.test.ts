@@ -251,7 +251,11 @@ describe('grounding artifact handoff', () => {
     })
   }
 
-  for (const [producerAttempt, consumerAttempt] of [[1, 1], [1, 2], [2, 2]] as const) {
+  for (const [producerAttempt, consumerAttempt] of [
+    [1, 1],
+    [1, 2],
+    [2, 2],
+  ] as const) {
     it(`downloads the producer's report for grounding attempt ${producerAttempt}, findings attempt ${consumerAttempt}`, () => {
       const upload = ground.runs.steps.find((step) => step.uses === 'actions/upload-artifact@v7')
       assert.ok(upload?.id)
@@ -293,8 +297,8 @@ describe('grounding artifact handoff', () => {
   }
 
   it('rejects missing or multiple artifact IDs before downloading', () => {
-    const validationIndex = findings.runs.steps.findIndex(
-      (step) => step.run?.includes('A single grounding artifact ID is required'),
+    const validationIndex = findings.runs.steps.findIndex((step) =>
+      step.run?.includes('A single grounding artifact ID is required'),
     )
     const downloadIndex = findings.runs.steps.findIndex(
       (step) => step.uses === 'actions/download-artifact@v8',
