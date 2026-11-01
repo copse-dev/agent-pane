@@ -486,6 +486,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     const store = memoryStore(savedState())
     const service = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (): Promise<Response> => new Response('', { status: 400 }),
     })
     await assert.rejects(service.refreshAccount('oaiapp_copse'), /sign-in expired/)
@@ -499,6 +500,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     const store = memoryStore(savedState())
     const service = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (): Promise<Response> => new Response('', { status: 503 }),
     })
     await assert.rejects(service.refreshAccount('oaiapp_copse'), /HTTP 503/)
