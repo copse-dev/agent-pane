@@ -6802,7 +6802,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
 }
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .message-text .code-block-actions > button,
   .message-text .table-copy {
     opacity: 1;
@@ -6913,6 +6913,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-stat {
   font-size: var(--font-size-sm);
   font-weight: 500;
+}
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }
 .tool-edit-stats {
   display: inline-flex;
@@ -12473,6 +12478,28 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .ask-user-action {
   padding: 8px 16px;
 }
+.ask-user-options-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ask-user-options-stacked .ask-user-option {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  text-align: left;
+}
+.ask-user-other {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ask-user-other:hover {
+  color: var(--text-primary);
+}
 .ask-user-recommended-label {
   margin-left: var(--spacing-sm);
   color: var(--accent);
@@ -12999,6 +13026,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   line-height: var(--line-height-base);
   white-space: pre-wrap;
 }
+.terminal-paste-preview {
+  display: block;
+  max-height: 12em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
 .confirm-dialog-buttons {
   margin-top: 0;
 }
@@ -13486,6 +13520,60 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .mcp-curated-row.mcp-state-error .mcp-curated-status {
   color: var(--error);
+}
+.mcp-server-editor {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.mcp-editor-heading {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+.mcp-server-editor textarea {
+  width: 100%;
+  max-width: 360px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.mcp-editor-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-lg);
+}
+.mcp-editor-group-label {
+  font-size: var(--font-size-sm);
+}
+.mcp-editor-secrets,
+.mcp-editor-secret-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+}
+.mcp-editor-secret-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.mcp-editor-secret-row input {
+  width: 172px;
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-sm);
+}
+.mcp-editor-secret-key {
+  font-family: var(--font-mono);
+}
+.mcp-editor-group[aria-invalid=true] input {
+  border-color: var(--error);
+}
+.mcp-editor-secrets-hint {
+  max-width: 560px;
+  margin-bottom: var(--spacing-md);
 }
 
 /* src/renderer/styles/global/tool-permissions.css */
