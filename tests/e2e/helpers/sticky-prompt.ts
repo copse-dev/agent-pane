@@ -20,10 +20,15 @@ export interface StickyPromptCollisions {
  * Transcript text that the pinned (sticky) latest human prompt covers. Only
  * line boxes inside the transcript's scrollport count, so text scrolled out of
  * view is not a collision; text tucked partly or wholly under the pinned
- * prompt is.
+ * prompt is. Content scrolling behind a sticky header is normal, so pass
+ * `scope` (a selector, and which match) to check only the rows a capture is
+ * about, such as the answer it frames.
  */
-export async function stickyPromptCollisions(): Promise<StickyPromptCollisions> {
-  return browser.execute(() => {
+export async function stickyPromptCollisions(scope?: {
+  selector: string
+  nth?: number
+}): Promise<StickyPromptCollisions> {
+  return browser.execute((only) => {
     const list = document.querySelector<HTMLElement>('.messages-list')
     if (!list) throw new Error('messages-list not found')
     const prompts = list.querySelectorAll<HTMLElement>(
@@ -36,7 +41,10 @@ export async function stickyPromptCollisions(): Promise<StickyPromptCollisions> 
     const port = list.getBoundingClientRect()
     const band = prompt.getBoundingClientRect()
     const collisions: { text: string; top: number; bottom: number }[] = []
-    for (const row of list.children) {
+    const scoped = only ? document.querySelectorAll(only.selector)[only.nth ?? 0] : null
+    if (only && !scoped) throw new Error(`${only.selector} [${String(only.nth ?? 0)}] not found`)
+    const rows = scoped ? [scoped] : Array.from(list.children)
+    for (const row of rows) {
       if (row === prompt || !(row instanceof HTMLElement)) continue
       const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -72,7 +80,7 @@ export async function stickyPromptCollisions(): Promise<StickyPromptCollisions> 
         band: list.style.getPropertyValue('--sticky-prompt-band'),
       },
     }
-  })
+  }, scope)
 }
 
 export interface TranscriptFrame {

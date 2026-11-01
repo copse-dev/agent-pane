@@ -181,7 +181,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {
-    sourceSha256: '7940d78461d66bb585963b3083a275032779d92684927e3beec30469968e9faa',
+    sourceSha256: '2f9e156344b418ebf679d4a7e443346875b886cc68cc530b10be1d7202877675',
     filenames: [
       'explainer-drawing-1-player.png',
       'explainer-drawing-1.png',
@@ -203,7 +203,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer.e2e.ts': {
-    sourceSha256: 'dc5c2b8a01495eb9e7193de2d12940f98bec0762fdf4dc018c82601d72e1b43f',
+    sourceSha256: '9537872e2bcf98bd1acf03478cc1130af77c19b4fb45b1a7420340081ac1e025',
     filenames: ['thread-explainer-player.png'],
   },
 }

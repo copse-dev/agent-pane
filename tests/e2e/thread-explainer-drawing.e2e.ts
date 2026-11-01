@@ -77,7 +77,10 @@ async function capture(index: number, name: string, playerName: string): Promise
   // Frame the answer around the card below the pinned prompt (the capture's
   // scrollIntoView above does not reserve its band), then prove it is clear.
   await frameInTranscript(['.msg:has(.canvas-inline-artefact)'], index)
-  const pinned = await stickyPromptCollisions()
+  const pinned = await stickyPromptCollisions({
+    selector: '.msg:has(.canvas-inline-artefact)',
+    nth: index,
+  })
   assert.deepEqual(pinned.collisions, [], `${name}: ${JSON.stringify(pinned.geometry)}`)
   await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `${name}.png`))
   await browser.execute((item) => {
