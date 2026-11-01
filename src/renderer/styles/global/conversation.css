@@ -83,9 +83,12 @@
   scrollbar-gutter: stable;
   padding: var(--spacing-lg) var(--spacing-xl);
   /* The breathing room under the last message is the scroll-to-bottom dock in
-     .conversation-scroll, outside this scrollport. Padding here would be space
-     scrolled text passes through, which is where the button used to sit. */
-  padding-bottom: var(--selection-reply-space, 0px);
+     .conversation-scroll, outside this scrollport, so only a small inset stays
+     here. Not zero: pinned to the bottom, the last row's fractional bottom would
+     sit flush on the scrollport edge, and a subpixel overshoot reads as "the new
+     prompt is cut off" to scrollUserPromptIntoView, which then unpins the reply
+     it should follow. */
+  padding-bottom: calc(var(--spacing-xs) + var(--selection-reply-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
