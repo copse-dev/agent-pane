@@ -849,17 +849,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
     const abs = join(home, rel)
     return [abs, `${abs}/**`]
   })
-  // macOS Keychain lookup from a sandboxed process needs metadata access to
-  // the home directory node before it can resolve credentials stored by tools
-  // such as Claude Code. Re-allow only the literal parent — never `home/**` —
-  // whenever an agent declares home-scoped state. Without this, the narrower
-  // `.claude` allowance is insufficient and `claude auth status` fails EPERM.
-  // On Linux a parent read bind shadows writable checkouts beneath home.
-  // Keep the metadata-only parent grant on platforms that support it.
-  const homeReadPaths =
-    configuredHomePaths.length > 0
-      ? [...(listingOnlyDirEntriesSupported() ? [home] : []), ...configuredHomePaths]
+  // Never re-allow `home` itself. ASRT renders a literal allowRead entry as
+  // `(subpath …)` on macOS (a read bind on Linux), and allows come after the
+  // home deny, so a bare `home` re-opened the whole home tree to the agent:
+  // ~/.ssh, cloud credentials and every other project. Stat and realpath
+  // through home already work: ASRT allows `file-read-metadata` on every
+  // directory whenever a read deny is in force.
+  //
+  // A sandboxed Claude login check on macOS (`claude auth status`) reads its
+  // credentials from the login keychain, which Security.framework opens
+  // in-process, so agents that keep home-scoped state get the keychain
+  // directory, and nothing else above their own home dirs.
+  const keychainReadPaths =
+    configuredHomePaths.length > 0 && process.platform === 'darwin'
+      ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
+  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
   const scratchPaths = (sandbox.scratchPaths ?? [])
     .flatMap(expandScratchPath)
     .flatMap((abs) => [abs, `${abs}/**`])

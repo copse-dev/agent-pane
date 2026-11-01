@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
@@ -131,7 +132,7 @@ describe('acpAgentSandboxOverlay', () => {
       assert.ok(list.includes(`${claudeDir}/**`))
       assert.ok(list.includes(join(homedir(), '.claude.json')))
     }
-    assert.equal(fs.allowRead.includes(homedir()), process.platform !== 'linux')
+    assert.ok(!fs.allowRead.includes(homedir()))
     assert.ok(!fs.allowRead.includes(`${homedir()}/**`))
     assert.ok(!fs.allowWrite.includes(homedir()))
     // Base workspace rules survive: home still deny-read, workspace still writable.
@@ -163,6 +164,51 @@ describe('acpAgentSandboxOverlay', () => {
     // Reads and the bridge's loopback are unchanged.
     assert.deepEqual(readonly.filesystem?.allowRead, writable.filesystem?.allowRead)
     assert.deepEqual(readonly.network, writable.network)
+  })
+
+  it('never re-opens the home tree on macOS: only the keychain and the declared dirs', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(platform)
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      const home = homedir()
+      const fs = acpAgentSandboxOverlay(workspace, sandbox).filesystem
+      assert.ok(fs?.allowRead)
+      // No read grant may cover home itself or anything above it.
+      for (const path of fs.allowRead) {
+        assert.ok(
+          !home.startsWith(path.replace(/\/\*\*$/, '')),
+          `allowRead re-opens home through ${path}`,
+        )
+      }
+      const keychains = join(home, 'Library', 'Keychains')
+      assert.ok(fs.allowRead.includes(keychains))
+      assert.ok(fs.allowRead.includes(`${keychains}/**`))
+
+      // ASRT renders a literal allow as `(subpath …)`, so check the profile it
+      // would run under: no read allow may name home.
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: fs.denyRead, allowWithinDeny: fs.allowRead },
+        writeConfig: { allowOnly: fs.allowWrite, denyWithinAllow: fs.denyWrite },
+        binShell: '/bin/sh',
+      })
+      const readAllows = profile
+        .split('(allow file-read*')
+        .slice(1)
+        .map((rule) => rule.split(/\n\(/)[0] ?? '')
+      assert.ok(readAllows.length > 0, 'the profile re-allows the workspace')
+      for (const rule of readAllows) {
+        assert.ok(!rule.includes(`(subpath "${home}")`), `profile re-allows home: ${rule}`)
+      }
+
+      // An agent that keeps no home-scoped state gets no keychain grant.
+      const bare = acpAgentSandboxOverlay(workspace, { allowedDomains: [] }).filesystem
+      assert.ok(!bare?.allowRead?.some((path) => path.startsWith(keychains)))
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
   })
 
   it('adds trustd only on opt-in without changing network or filesystem policy', () => {
