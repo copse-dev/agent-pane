@@ -1,8 +1,7 @@
 # Dynamic read-sandbox relaxation (follow-up to read-access grants)
 
-**Status: Implemented.** Design companion to the read-access approval work on the
-`claude/read-access-sandbox-warning-xh18ei` branch, now built on
-`claude/read-outside-sandbox-relaxation-impl`. The sections below are kept as the
+**Status: Resolved.** Design companion to the read-access approval work; the
+implementation is on `main` (`readGrantTargets` in `src/main/tools/shell-tool.ts`). The sections below are kept as the
 design record; **[What was actually built](#what-was-actually-built)** at the end
 notes where implementation diverged from this plan — including a correction to
 the diagnosis below.

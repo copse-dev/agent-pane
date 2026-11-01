@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "surfaces": {
+    "main-dark": {
+      "aria-prohibited-attr": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "color-contrast": {
+        "count": 4,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "label-content-name-mismatch": {
+        "count": 4,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "target-size": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      }
+    },
+    "settings-general": {
+      "color-contrast": {
+        "count": 5,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "label-content-name-mismatch": {
+        "count": 3,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "target-size": {
+        "count": 2,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      }
+    },
+    "transcript-dark": {
+      "aria-prohibited-attr": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "color-contrast": {
+        "count": 3,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "label-content-name-mismatch": {
+        "count": 4,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "target-size": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      }
+    },
+    "transcript-light": {
+      "aria-prohibited-attr": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "color-contrast": {
+        "count": 3,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "label-content-name-mismatch": {
+        "count": 4,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      },
+      "target-size": {
+        "count": 1,
+        "tracker": "https://github.com/copse-dev/agent-pane/issues/1369"
+      }
+    }
+  }
+}

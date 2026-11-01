@@ -36,7 +36,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
     setWorkspaceRoot(root)
     // Same indexing flow as workspace:open/set — this path previously built
     // only the file index, silently skipping the semantic index and watcher.
-    startWorkspaceIndexing(root)
+    startWorkspaceIndexing(root, { kind: 'local' })
     win.webContents.send('workspace:opened', root)
   }
 

@@ -1,6 +1,6 @@
 # New-thread activity screen: porting the #3450 prototype
 
-Status: **Built and merged, 2026-10-11.** Every slice of the Activity stack, including slice 7
+Status: **Resolved — built and merged, 2026-10-11.** Every slice of the Activity stack, including slice 7
 ([#3588](https://github.com/copse-dev/agent-pane/pull/3588)), has merged to `main`. Built behaviour
 that departs from the slice text below is recorded in
 [Divergences from the plan](#divergences-from-the-plan); what is still open

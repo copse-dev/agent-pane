@@ -347,77 +347,84 @@ describe('branch CI automations', () => {
     await supervisor.waitForIdle()
     assert.equal(threads.length, 1)
   })
-  it('keeps a CI failure that hit the live worktree limit, and handles it once the worktree is released', async (t) => {
-    storageSet(STORAGE_KEY, [])
-    const root = await mkdtemp(join(tmpdir(), 'copse-branch-ci-'))
-    const env = { COPSE_WORKSPACE_DIR: root }
-    const supervisor = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
-    const threads = new Map<string, Thread>()
-    let snapshot: BranchCiSnapshot = { headSha: SHA_A, runs: [run(1, SHA_A)] }
-    let worktreeReleased = false
-    const service = createBranchCiAutomationService({
-      now: () => Date.parse('2026-09-29T10:05:00Z'),
-      isPluginEnabled: () => true,
-      repositoryForProject: () => Promise.resolve('github.com/owner/repo'),
-      snapshot: () => Promise.resolve(snapshot),
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
-      getProjectThread: (_projectId, threadId) => Promise.resolve(threads.get(threadId) ?? null),
-      createProjectThread: (_projectId, thread) => {
-        threads.set(thread.id, thread)
-        return Promise.resolve()
-      },
-      releasePreviousRun: () =>
-        Promise.resolve(
-          worktreeReleased ? { released: true } : { released: false, reason: 'unmerged-commits' },
-        ),
-      supervisor: () => supervisor,
-      inboxStore: new FileEventInboxStore(env),
-    })
-    t.after(async () => {
-      service.stop()
-      await supervisor.shutdown()
-      await rm(root, { recursive: true, force: true })
-    })
-    const definition = await service.upsert('project-a', {
-      name: 'Investigate CI',
-      branch: 'main',
-      prompt: 'Investigate the failure.',
-      model: 'gpt-test',
-      enabled: true,
-    })
-    // An earlier, finished run still holds the schedule's only live worktree.
-    threads.set('earlier', {
-      id: 'earlier',
-      title: 'Investigate CI',
-      status: 'idle',
-      messages: [],
-      usage: { inputTokens: 0, outputTokens: 0 },
-      model: 'gpt-test',
-      automation: { scheduleId: definition.id, scheduleName: definition.name, triggeredAt: 1 },
-      worktree: {
-        path: '/worktrees/earlier',
-        branch: 'codex/earlier',
-        baseBranch: 'main',
-        baseCommit: 'a'.repeat(40),
+  for (const maxLiveWorktrees of [1, 'unlimited'] as const) {
+    it(`handles retained CI worktrees with limit ${String(maxLiveWorktrees)}`, async (t) => {
+      storageSet(STORAGE_KEY, [])
+      const root = await mkdtemp(join(tmpdir(), 'copse-branch-ci-'))
+      const env = { COPSE_WORKSPACE_DIR: root }
+      const supervisor = new TaskSupervisor({ store: new FileSupervisedTaskStore(env) })
+      const threads = new Map<string, Thread>()
+      let snapshot: BranchCiSnapshot = { headSha: SHA_A, runs: [run(1, SHA_A)] }
+      let worktreeReleased = false
+      const service = createBranchCiAutomationService({
+        now: () => Date.parse('2026-09-29T10:05:00Z'),
+        isPluginEnabled: () => true,
+        repositoryForProject: () => Promise.resolve('github.com/owner/repo'),
+        snapshot: () => Promise.resolve(snapshot),
+        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        getProjectThread: (_projectId, threadId) => Promise.resolve(threads.get(threadId) ?? null),
+        createProjectThread: (_projectId, thread) => {
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        releasePreviousRun: () =>
+          Promise.resolve(
+            worktreeReleased ? { released: true } : { released: false, reason: 'unmerged-commits' },
+          ),
+        supervisor: () => supervisor,
+        inboxStore: new FileEventInboxStore(env),
+      })
+      t.after(async () => {
+        service.stop()
+        await supervisor.shutdown()
+        await rm(root, { recursive: true, force: true })
+      })
+      const definition = await service.upsert('project-a', {
+        name: 'Investigate CI',
+        branch: 'main',
+        prompt: 'Investigate the failure.',
+        model: 'gpt-test',
+        enabled: true,
+      })
+      await service.upsert('project-a', { ...definition, maxLiveWorktrees })
+      // An earlier, finished run still holds a live worktree.
+      threads.set('earlier', {
+        id: 'earlier',
+        title: 'Investigate CI',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        model: 'gpt-test',
+        automation: { scheduleId: definition.id, scheduleName: definition.name, triggeredAt: 1 },
+        worktree: {
+          path: '/worktrees/earlier',
+          branch: 'codex/earlier',
+          baseBranch: 'main',
+          baseCommit: 'a'.repeat(40),
+          createdAt: 1,
+          seededFromDirtyProject: false,
+        },
         createdAt: 1,
-        seededFromDirtyProject: false,
-      },
-      createdAt: 1,
-      updatedAt: 1,
+        updatedAt: 1,
+      })
+
+      snapshot = { headSha: SHA_A, runs: [run(2, SHA_A), run(1, SHA_A)] }
+      await service.poll()
+      await supervisor.waitForIdle()
+      assert.equal(
+        threads.size,
+        maxLiveWorktrees === 'unlimited' ? 2 : 1,
+        'only a finite cap blocks a retained checkout',
+      )
+
+      worktreeReleased = true
+      await service.poll()
+      await supervisor.waitForIdle()
+      assert.equal(threads.size, 2, 'the held-back failure is handled once there is room')
+      const created = [...threads.values()].find((thread) => thread.id !== 'earlier')
+      assert.match(created?.draftPrompt ?? '', /"runId": 2/)
     })
-
-    snapshot = { headSha: SHA_A, runs: [run(2, SHA_A), run(1, SHA_A)] }
-    await service.poll()
-    await supervisor.waitForIdle()
-    assert.equal(threads.size, 1, 'no run starts while the worktree is held')
-
-    worktreeReleased = true
-    await service.poll()
-    await supervisor.waitForIdle()
-    assert.equal(threads.size, 2, 'the held-back failure is handled once there is room')
-    const created = [...threads.values()].find((thread) => thread.id !== 'earlier')
-    assert.match(created?.draftPrompt ?? '', /"runId": 2/)
-  })
+  }
   it('keeps working definitions usable and editable when one stored row is damaged', async (t) => {
     storageSet(STORAGE_KEY, [])
     const root = await mkdtemp(join(tmpdir(), 'copse-branch-ci-'))

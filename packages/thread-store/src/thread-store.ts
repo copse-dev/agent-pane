@@ -1739,7 +1739,11 @@ function runStoreWrite<T>(projectId: string, op: () => T | Promise<T>): Promise<
       return await op()
     } finally {
       invalidateProjectMetaCache(projectId)
-      await flushThreadIndex(projectId)
+      try {
+        await flushThreadIndex(projectId)
+      } finally {
+        threadStoreEnvironment().onProjectWrite?.(projectId)
+      }
     }
   })
 }
@@ -2085,9 +2089,21 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
 // debounced `updateMeta` for draft/usage/status/todos/title changes. All run
 // through the same per-project queue as the whole-thread paths to keep ordering.
 
-/** Create a thread directory from its metadata (+ any initial messages). */
+/**
+ * Create a thread once. A rejected create may already have committed its spine
+ * and metadata before its rebuildable catalog failed; retrying must not replace
+ * messages or runtime metadata main appended since that partial success.
+ */
 export function createThread(projectId: string, thread: Thread): Promise<void> {
   return runStoreWrite(projectId, () => {
+    const dir = threadDir(projectId, thread.id)
+    if (readMeta(dir) !== null) {
+      refreshCatalogLine(projectId, thread.id)
+      return
+    }
+    if (existsSync(join(dir, META_FILE))) {
+      throw new Error('Cannot create a thread over unreadable existing metadata')
+    }
     writeThread(projectId, thread)
     upsertCatalogEntry(projectId, thread)
   })

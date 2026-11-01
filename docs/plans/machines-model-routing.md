@@ -1,5 +1,9 @@
 # Machines settings and native remote model routing
 
+Status: **Implemented (experimental)** — shipped in
+[#3377](https://github.com/copse-dev/agent-pane/pull/3377) (experimental LAN System One model sharing).
+Open follow-ups: standalone packaging, an internet relay, and physical two-machine validation.
+
 ## Task brief — 2026-10-01
 
 Extend the real Electron client: Settings → Machines contains existing SSH management alongside

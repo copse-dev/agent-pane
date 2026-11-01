@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
+import type { CommandPhaseState } from '@copse/agent/wire-types.ts'
 import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 import { acpDelegateKind, isAcpDelegateToolCall } from '@shared/tools/copse-tool-call.ts'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
@@ -14,7 +15,7 @@ export function promptProgressLabel(fraction: number): string {
 }
 
 type RunningActivity =
-  | { kind: 'tool'; name: string }
+  | { kind: 'tool'; name: string; commandPhase?: CommandPhaseState }
   // ACP agents (e.g. Claude Code) dispatch their own subagents as one or more
   // plain tool calls, with no session to count them through like the native
   // `task` tool's `subagent`. Several can run at once on the same message, so
@@ -42,11 +43,22 @@ function findRunningActivity(thread: Thread): RunningActivity | null {
       const tc = toolCalls[j]
       if (!tc) continue
       if (tc.status === 'running') {
-        return { kind: 'tool', name: tc.name === 'explore' ? 'explore' : tc.name }
+        return {
+          kind: 'tool',
+          name: tc.name === 'explore' ? 'explore' : tc.name,
+          ...(tc.commandPhase ? { commandPhase: tc.commandPhase.state } : {}),
+        }
       }
       if (tc.subagent?.status === 'running') return { kind: 'tool', name: 'explore' }
     }
   }
+  return null
+}
+
+/** A command that has not launched yet is not "Running command" (#3956). */
+function commandWaitLabel(phase: CommandPhaseState | undefined): string | null {
+  if (phase === 'awaiting_approval') return 'Waiting for approval'
+  if (phase === 'starting') return 'Starting command'
   return null
 }
 
@@ -66,7 +78,7 @@ export function agentActivityLabel(thread: Thread | undefined, writing: boolean)
     const base =
       activity.kind === 'delegates'
         ? `${delegateActivityLabel(activity.count, activity.soleKind)}…`
-        : `${getToolDisplayName(activity.name, 'running')}…`
+        : `${commandWaitLabel(activity.commandPhase) ?? getToolDisplayName(activity.name, 'running')}…`
     return todoLabel ? `${base} (${todoLabel})` : base
   }
   if (writing) return todoLabel ? `Writing… (${todoLabel})` : 'Writing…'

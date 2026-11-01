@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { Message, Thread } from '@shared/types'
 import {
   compactSidebarThread,
+  isAutomationPendingStart,
   sidebarHasRun,
   sidebarPrRefs,
   type SidebarThread,
@@ -157,6 +158,34 @@ test('compaction records from metadata alone whether a thread ever ran', () => {
   const once = compactSidebarThread({ ...base, lastPromptAt: 3 })
   assert.deepEqual(compactSidebarThread(once), once)
   assert.equal(once.updatedAt, 5)
+})
+
+test('isAutomationPendingStart reads a live thread directly and a compacted one from its precomputed flag', () => {
+  const live = thread({
+    status: 'idle',
+    draftPrompt: 'Run the nightly build',
+    automation: { scheduleId: 's1', scheduleName: 'Nightly build', triggeredAt: 1 },
+  })
+  assert.equal(isAutomationPendingStart(live), true)
+
+  // Compaction drops `draftPrompt`, so the raw thread can no longer answer the
+  // question itself — it relies on the flag compaction precomputed for it.
+  const compacted = compactSidebarThread(live)
+  assert.equal('draftPrompt' in compacted, false)
+  assert.equal(isAutomationPendingStart(compacted), true)
+
+  const startFailed = thread({
+    status: 'idle',
+    draftPrompt: 'Run the nightly build',
+    automation: {
+      scheduleId: 's1',
+      scheduleName: 'Nightly build',
+      triggeredAt: 1,
+      startFailedAt: 2,
+    },
+  })
+  assert.equal(isAutomationPendingStart(startFailed), false)
+  assert.equal(isAutomationPendingStart(compactSidebarThread(startFailed)), false)
 })
 
 test('a prompt found in the transcript at compaction counts as having run, even with zero usage', () => {

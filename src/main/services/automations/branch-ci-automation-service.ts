@@ -115,7 +115,10 @@ const definitionSchema = z.strictObject({
   prompt: z.string().min(1).max(100_000),
   model: z.string().min(1).max(1024),
   enabled: z.boolean(),
-  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  maxLiveWorktrees: z.union([
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    z.literal('unlimited'),
+  ]),
   revision: z.uuid(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
@@ -580,7 +583,7 @@ export function createBranchCiAutomationService(
           }
           retained++
         }
-        if (retained >= definition.maxLiveWorktrees)
+        if (definition.maxLiveWorktrees !== 'unlimited' && retained >= definition.maxLiveWorktrees)
           return { allowed: false, reason: 'Live worktree limit reached', retryable: true }
         return { allowed: true }
       },

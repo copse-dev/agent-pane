@@ -4,22 +4,23 @@ import { readSeededSettings, resetUserData, seedOnboardingFixture } from './help
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
-// First-run with nothing detected: the automatic scan only checks local model
-// servers and agents, so shell keys cannot make this host-dependent. A developer
-// machine with a live local server lands in checklist mode instead; the spec
-// detects that and skips. The scan-import spec covers both the explicit
-// environment-key choice and checklist path with deterministic detections.
+// The test launcher supplies empty discovery results at the IPC boundary.
+// A real local server or installed agent cannot skip fallback acceptance.
+// The scan-import spec separately covers positive detections and consent.
 describe('onboarding: nothing detected → providers fallback', () => {
   before(async () => {
     // This spec exercises the explicitly enabled compatibility fallback on
     // keyring-less Linux CI. The default-off behavior has its own focused spec.
-    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: '1' })
+    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: '1', COPSE_E2E_EMPTY_DISCOVERY: '1' })
     seedOnboardingFixture()
     await browser.reloadSession()
   })
 
   after(() => {
-    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: undefined })
+    writeE2eEnv({
+      COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
+      COPSE_E2E_EMPTY_DISCOVERY: undefined,
+    })
     resetUserData()
   })
 
@@ -35,25 +36,6 @@ describe('onboarding: nothing detected → providers fallback', () => {
         () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open,
       ),
     ).toBe(true)
-
-    // Wait for the auto-scan to settle into one of its two modes.
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const fallback = document.querySelector<HTMLElement>('#onboarding-fallback-panel')
-          const results = document.querySelector('.onboarding-scan-results')
-          return fallback?.hidden === false || (results?.childElementCount ?? 0) > 0
-        }),
-      { timeout: 30_000, timeoutMsg: 'onboarding scan never settled' },
-    )
-
-    const fallbackShown = await browser.execute(
-      () => document.querySelector<HTMLElement>('#onboarding-fallback-panel')?.hidden === false,
-    )
-    if (!fallbackShown) {
-      // A real local server on this machine put onboarding in checklist mode.
-      this.skip()
-    }
 
     const chips = overlay.$('#onboarding-fallback-panel .provider-chips')
     await chips.waitForDisplayed({ timeout: 15_000 })

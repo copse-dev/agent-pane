@@ -21,13 +21,23 @@
  *
  * The prompt text steers it:
  *
- * | prompt contains | behaviour                                                  |
- * | --------------- | ---------------------------------------------------------- |
- * | `ask`           | request permission, then report the client's answer         |
- * | `crash`         | write to stderr and exit non-zero **mid-turn**              |
- * | anything else   | echo it back as an agent message chunk                      |
+ * | prompt contains  | behaviour                                                      |
+ * | ---------------- | -------------------------------------------------------------- |
+ * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
+ * | `ask-execute`    | request an `execute` permission with no command or title       |
+ * | `run-kindless`   | request permission for `rm -rf build` with no tool `kind`      |
+ * | `ask`            | request permission, then report the client's answer            |
+ * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
+ * | anything else    | echo it back as an agent message chunk                         |
+ *
+ * `report-env:` is checked first: a turn driven through Copse's own prompt
+ * builder carries a preamble whose words (`task`, …) would otherwise trip the
+ * substring branches below.
+ *
+ * No permission request ever runs anything: the agent only reports the
+ * client's answer.
  */
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
 
 /** Bridge Node's stdin to the SDK's Web Stream type (mirrors node-readable-stream.ts). */
@@ -75,6 +85,15 @@ agent({ name: 'mock-acp-agent' })
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: chunk } },
       })
 
+    // A null value means the var was absent, distinct from an empty string.
+    const reportEnv = /report-env:([A-Za-z0-9_,]+)/.exec(text)
+    if (reportEnv) {
+      const names = reportEnv[1].split(',').filter(Boolean)
+      const received = Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))
+      await say(`env:${JSON.stringify(received)}`)
+      return { stopReason: 'end_turn' }
+    }
+
     if (text.includes('crash')) {
       await say('about to fall over')
       // The client should surface this line with the exit, which is the whole
@@ -83,15 +102,49 @@ agent({ name: 'mock-acp-agent' })
       process.exit(3)
     }
 
-    if (text.includes('ask')) {
+    if (text.includes('ask-execute')) {
+      // No command and no title, like a code-mode cell: nothing the shell gate
+      // can classify, so the request reaches Copse's generic ACP prompt.
       const response = await ctx.client.request(methods.client.session.requestPermission, {
         sessionId,
         toolCall: {
-          toolCallId: 'mock-tool-1',
-          title: 'Delete everything',
+          toolCallId: 'mock-tool-execute',
+          kind: 'execute',
           status: 'pending',
-          rawInput: { path: '/' },
+          rawInput: { cell: 'print(1)' },
         },
+        options: [
+          { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
+          { kind: 'allow_always', name: 'Always allow', optionId: 'allow-always' },
+          { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
+        ],
+      })
+      const outcome = response.outcome
+      const decision =
+        outcome.outcome === 'cancelled' ? 'cancelled' : `answered ${String(outcome.optionId)}`
+      await say(`client ${decision}`)
+      return { stopReason: 'end_turn' }
+    }
+
+    // ACP makes `kind` optional; both requests omit it. `run-kindless` also
+    // carries a shell command, which the client must still gate as one.
+    const kindless = text.includes('run-kindless')
+    if (kindless || text.includes('ask')) {
+      const response = await ctx.client.request(methods.client.session.requestPermission, {
+        sessionId,
+        toolCall: kindless
+          ? {
+              toolCallId: 'mock-tool-2',
+              title: 'Clean build output',
+              status: 'pending',
+              rawInput: { command: 'rm -rf build' },
+            }
+          : {
+              toolCallId: 'mock-tool-1',
+              title: 'Delete everything',
+              status: 'pending',
+              rawInput: { path: '/' },
+            },
         options: [
           { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
           { kind: 'reject_once', name: 'Reject', optionId: 'reject' },

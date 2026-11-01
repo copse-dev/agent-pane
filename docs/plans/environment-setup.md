@@ -1,7 +1,7 @@
 # Environment setup: teach Copse what you already approve
 
-Status: **Active** — Phases 1–3 are implemented on `claude/agent-panel-feature-compat-1e3ead`
-(not yet merged). The classifier-context idea in Phase 3 is deliberately not built; see
+Status: **Resolved** — Phases 1–3 are on `main`
+([#3950](https://github.com/copse-dev/agent-pane/pull/3950)). The classifier-context idea in Phase 3 is deliberately not built; see
 [Later work](#later-work).
 
 ## Motivation
@@ -57,7 +57,8 @@ These are binding. To diverge, update this section in the same PR.
    trusting `git` to run every subcommand outside the sandbox.
 7. **Main owns the values.** Main computes the suggestions and holds them under an opaque review
    id. The renderer sends back the ticked ids, and main applies the values it computed. An unknown
-   id, a stale review or a different active project changes nothing.
+   id, a stale review or a review issued for another project changes nothing. The project is the
+   one open in the asking window; each project keeps its own latest review.
 8. **Only user-level state, no project file.** Accepted values go to the existing settings.
    Offer state and the setup log live in `user-data/environment-setup.json` and
    `user-data/environment-setup.jsonl` under `~/.copse/` (`COPSE_DIR`). No in-repo file is read as

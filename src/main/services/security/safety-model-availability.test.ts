@@ -17,12 +17,16 @@ import {
   resetSafetyModelProblemReportsForTest,
 } from './safety-model-availability.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import { readDecisionLog } from './decision-log-store.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { storageSet } from '../storage/storage.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const INSTALLED = 'google/gemma-4-e4b'
 const MISSING = 'qwen/qwen3-4b-2507'
@@ -127,6 +131,23 @@ describe('classifyShellScope with an unavailable safety model', () => {
  */
 describe('reportSafetyModelProblem', () => {
   const PROJECT = 'proj-safety-availability'
+
+  /** Run `fn` as a turn of PROJECT's `threadId` does, so its decisions land on PROJECT. */
+  function inTurn(threadId: string, fn: () => void): void {
+    threadExecutionContextStorage.run(
+      {
+        projectId: PROJECT,
+        threadId,
+        projectRoot: tmpdir(),
+        root: tmpdir(),
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => {
+        runWithActiveRunIdentity(threadId, fn)
+      },
+    )
+  }
   let store = ''
   let previousStore: string | undefined
 
@@ -148,7 +169,7 @@ describe('reportSafetyModelProblem', () => {
   })
 
   it('records the fault as a system "ask", not a classification or a user denial', async () => {
-    runWithActiveRunIdentity('t-availability', () => {
+    inTurn('t-availability', () => {
       reportSafetyModelProblem({
         model: `lmstudio:${MISSING}`,
         reason: 'not-available',
@@ -172,12 +193,12 @@ describe('reportSafetyModelProblem', () => {
       reason: 'not-available' as const,
       message: 'missing',
     }
-    runWithActiveRunIdentity('t-availability', () => {
+    inTurn('t-availability', () => {
       reportSafetyModelProblem(problem)
       reportSafetyModelProblem(problem)
       reportSafetyModelProblem(problem)
     })
-    runWithActiveRunIdentity('t-other', () => {
+    inTurn('t-other', () => {
       reportSafetyModelProblem(problem)
     })
     const events = await readDecisionLog(PROJECT)

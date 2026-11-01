@@ -1246,20 +1246,27 @@ export interface GitPushResult {
 export async function pushBranchToOrigin(
   branch: string,
   root: string | null = getAgentExecutionRoot(),
+  expectedRemoteSha?: string,
 ): Promise<GitPushResult> {
   if (!root) return { ok: false, message: 'No workspace open.' }
+  if (expectedRemoteSha !== undefined && !/^[a-f0-9]{40}$/i.test(expectedRemoteSha)) {
+    return { ok: false, message: 'Expected remote SHA must be a full 40-character commit SHA.' }
+  }
   if (!(await localBranchExists(root, branch))) {
     return { ok: false, message: `Local branch ${branch} does not exist.` }
   }
 
   const ref = `refs/heads/${branch}`
+  const lease =
+    expectedRemoteSha === undefined ? [] : [`--force-with-lease=${ref}:${expectedRemoteSha}`]
   const { stdout, stderr, code } = await runCommand(
     'git',
-    ['push', '--set-upstream', 'origin', `${ref}:${ref}`],
+    ['push', '--set-upstream', ...lease, 'origin', `${ref}:${ref}`],
     {
       cwd: root,
-      // This is called only after the user approved `gh_pr_create` / `gh_push` or confirmed
-      // the composer dialog. A sandboxed push cannot reach the remote.
+      // Callers require an approved `gh_pr_create` / `gh_push` / `git_push` action (or an
+      // exact automation grant), or a confirmed composer dialog. A sandboxed push
+      // cannot reach the remote.
       unsandboxed: true,
       timeout_ms: 120_000,
     },
@@ -1393,6 +1400,34 @@ export async function localBranchExists(root: string, branch: string): Promise<b
     root,
   )
   return code === 0
+}
+
+/**
+ * Commits on `branch` that origin does not have yet and that carry no
+ * signature, when the checkout requires signing (`commit.gpgsign`). Presence of
+ * a `gpgsig` header is checked rather than `%G?`, which reports SSH signatures
+ * as unverifiable without an allowed-signers file. Returns null when the
+ * commits cannot be listed, so callers fail closed.
+ */
+export async function unsignedCommitsToPublish(
+  root: string,
+  branch: string,
+): Promise<string[] | null> {
+  const signing = await runGitRead(['config', '--bool', '--get', 'commit.gpgsign'], root)
+  if (signing.stdout.trim() !== 'true') return []
+  const pending = await runGitRead(
+    ['rev-list', `refs/heads/${branch}`, '--not', '--remotes=origin'],
+    root,
+  )
+  if (pending.code !== 0) return null
+  const unsigned: string[] = []
+  for (const sha of pending.stdout.split('\n').filter(Boolean)) {
+    const object = await runGitRead(['cat-file', 'commit', sha], root)
+    if (object.code !== 0) return null
+    const header = object.stdout.split('\n\n', 1)[0] ?? ''
+    if (!/^gpgsig(-sha256)? /m.test(header)) unsigned.push(sha)
+  }
+  return unsigned
 }
 
 async function resolveDefaultBranch(root: string): Promise<string | null> {

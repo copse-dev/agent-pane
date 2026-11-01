@@ -989,27 +989,6 @@ function canonicalizeReadTarget(target: string): string {
   }
 }
 
-/**
- * Every directory between a granted target and the filesystem root.
- *
- * macOS seatbelt resolves a path component by component, so reading
- * `~/notes/todo.md` needs metadata access to `~/notes` and to `$HOME` itself —
- * the broad `denyRead: [homedir()]` otherwise stops the walk before the
- * more-specific leaf allow is ever consulted. Emitted as literal directory
- * paths with no `/**`, so this grants traversal (and a listing of the named
- * directories) without exposing any sibling subtree's contents — the same
- * narrow shape `worktreeDiscoveryRead` uses for git's repository probe.
- */
-function readTargetTraversalPaths(canonicalTarget: string): string[] {
-  const paths: string[] = []
-  let cursor = dirname(canonicalTarget)
-  while (cursor !== dirname(cursor)) {
-    paths.push(cursor)
-    cursor = dirname(cursor)
-  }
-  return paths
-}
-
 function isDirectoryPath(path: string): boolean {
   try {
     return statSync(path).isDirectory()
@@ -1031,8 +1010,10 @@ function isDirectoryPath(path: string): boolean {
  * makes the prompt's wording true: reads of the named paths, and nothing else.
  *
  * Deliberately one axis only, mirroring {@link portBindingSandboxOverlay}:
- * `allowRead` gains the granted targets, their ancestor directories (needed for
- * path traversal), and `${target}/**` for a target that is a directory. Network
+ * `allowRead` gains the granted targets and `${target}/**` for directories. ASRT already permits
+ * directory metadata traversal. Ancestor allows are recursive subpaths, not
+ * literal metadata grants: they both expose siblings and trigger ASRT's late
+ * home-deny rule, which can hide the approved target again. Network
  * stays on the contained deny-all, `allowWrite`/`denyWrite` are untouched, and
  * the mandatory write denies still apply. Credential and whole-home targets
  * never reach here: `sensitiveTargetReason`/`breadthBlocker` refuse them at
@@ -1057,7 +1038,6 @@ export function readAllowedSandboxOverlay(
     const canonical = canonicalizeReadTarget(target)
     grantedRead.push(canonical)
     if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
-    grantedRead.push(...readTargetTraversalPaths(canonical))
   }
   if (grantedRead.length === 0) return base
 

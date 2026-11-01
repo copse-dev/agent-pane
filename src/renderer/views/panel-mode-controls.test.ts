@@ -40,10 +40,8 @@ describe('panel mode controls: side chat', () => {
   it('shows the control while its panel is open', () => {
     const { store, sideChat } = mount()
     store.setState({ filesPaneOpen: true, rightPanelMode: 'side-chat' })
-    store.emit('right_panel_mode_changed')
     assert.equal(sideChat().hidden, false)
     store.setState({ rightPanelMode: 'terminal' })
-    store.emit('right_panel_mode_changed')
     assert.equal(sideChat().hidden, true)
   })
 

@@ -211,6 +211,10 @@ describe('AutomationService', () => {
         .filter((option) => option.permission.kind === 'copse-action')
         .map((option) => option.permission.toolName),
       [
+        'git_push',
+        'gh_pr_merge',
+        'gh_pr_comment',
+        'gh_pr_resolve_review_thread',
         'gh_pr_create',
         'gh_pr_rerun_failed_ci',
         'gh_pr_approve',
@@ -872,6 +876,63 @@ describe('AutomationService', () => {
     assert.equal(threads.size, 2)
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
   })
+
+  for (const limit of [5, 'unlimited'] as const) {
+    it(`continues scheduled runs with a worktree limit of ${String(limit)}`, async () => {
+      let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+      const threads = new Map<string, Thread>()
+      const service = createAutomationService({
+        now: () => now,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        releasePreviousRun: () =>
+          Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
+        getActiveProjectId: () => 'project-a',
+      })
+      const schedule = await service.upsert('project-a', {
+        name: 'Frequent review',
+        cron: '* * * * *',
+        prompt: 'Review changes.',
+        model: 'gpt-5.4',
+        enabled: true,
+        maxLiveWorktrees: limit,
+      })
+      for (let run = 0; run < 7; run++) {
+        await service.tick()
+        const expected = limit === 'unlimited' ? run + 1 : Math.min(run + 1, limit)
+        assert.equal(threads.size, expected)
+        const latest = [...threads.values()].at(-1)
+        assert.ok(latest)
+        threads.set(latest.id, {
+          ...latest,
+          status: 'idle',
+          draftPrompt: '',
+          worktree: {
+            path: `/worktrees/${latest.id}`,
+            branch: `copse/${latest.id}`,
+            baseBranch: 'main',
+            baseCommit: 'a'.repeat(40),
+            createdAt: now,
+            seededFromDirtyProject: false,
+          },
+        })
+        now += 60_000
+      }
+      assert.equal(
+        service.list('project-a').find((saved) => saved.id === schedule.id)?.maxLiveWorktrees,
+        limit,
+      )
+      assert.equal(
+        service.list('project-a')[0]?.lastWorktreeLimitAt === undefined,
+        limit === 'unlimited',
+      )
+      service.stop()
+    })
+  }
 
   it('starts a manual run past the live worktree limit and still names what is retained', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()

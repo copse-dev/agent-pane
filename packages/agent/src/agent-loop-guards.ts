@@ -1,19 +1,27 @@
+import { READ_FILE_LIMITS_CEILING } from './read-file-limits.ts'
 import type { TodoItem } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
- * Tools that only gather context — repeating them often indicates a stuck
- * loop. `explore` is a free-text summarizing subagent (`{ query, paths? }`),
- * not a raw filesystem read, but it is exactly the tool #1433's 43-minute run
- * thrashed on (15 calls, 0 `read_file` calls) and was previously missing here,
- * so `isDuplicateExploreCall` never fired for it at all.
+ * Tools whose calls the duplicate guard fingerprints: they only gather context,
+ * so repeating one often indicates a stuck loop. `explore` is a free-text
+ * summarizing subagent (`{ query, paths? }`), not a raw filesystem read, but it
+ * is exactly the tool #1433's 43-minute run thrashed on (15 calls, 0
+ * `read_file` calls) and was previously missing here, so
+ * `isDuplicateExploreCall` never fired for it at all.
+ *
+ * Not to be confused with `SUBAGENT_ALLOWED_TOOL_NAMES` (`run-subagent.ts`),
+ * the explore subagent's allow-list. Both were once named
+ * `EXPLORE_TOOL_NAMES`; adding `explore` to that one would let the subagent
+ * spawn subagents.
  */
-export const EXPLORE_TOOL_NAMES = new Set([
+export const DUPLICATE_GUARDED_TOOL_NAMES = new Set([
   'list_dir',
   'read_file',
   'find_files',
   'search_code',
   'search_codebase',
+  'semantic_search',
   'explore',
 ])
 
@@ -39,13 +47,19 @@ function normalizeExplorePaths(rawPaths: unknown): string[] {
 /**
  * Normalizes tool args before fingerprinting. The result is also what
  * actually executes when a call turns out not to be a duplicate (see
- * `run-agent-loop.ts`'s `executeToolBatch`), so this only trims/sorts —
- * it must never change what the tool call means. Near-duplicate detection for
+ * `run-agent-loop.ts`'s `executeToolBatch`), so this preserves the effective request. File reads also canonicalize
+ * their existing line ceiling; asking for more cannot return more lines. Near-duplicate detection for
  * `explore`'s free-text `query` (tokenizing, dropping stopwords) happens
  * separately in `isDuplicateExploreCall`, over the fingerprint string, so the
  * executed args keep the model's actual wording.
  */
 export function normalizeExploreArgs(name: string, args: unknown): unknown {
+  if (name === 'read_file' && isRecord(args)) {
+    const start = typeof args['start_line'] === 'number' ? args['start_line'] : 1
+    const ceiling = start + READ_FILE_LIMITS_CEILING.maxLines - 1
+    const end = typeof args['end_line'] === 'number' ? Math.min(args['end_line'], ceiling) : ceiling
+    return { ...args, start_line: start, end_line: end }
+  }
   if (name === 'list_dir') {
     if (!isRecord(args)) return args
     const path = typeof args['path'] === 'string' ? args['path'].trim() || '.' : '.'
@@ -204,7 +218,7 @@ export function isDuplicateExploreCall(
   args: unknown,
   recentFingerprints: readonly string[],
 ): boolean {
-  if (!EXPLORE_TOOL_NAMES.has(name)) return false
+  if (!DUPLICATE_GUARDED_TOOL_NAMES.has(name)) return false
   const fp = toolCallFingerprint(name, normalizeExploreArgs(name, args))
   if (recentFingerprints.includes(fp)) return true
   if (name !== 'explore') return false
@@ -257,6 +271,15 @@ export const EXPLORE_WITHOUT_READ_NUDGE =
   'You have called explore several times in a row without calling read_file. explore returns a prose summary with approximate line numbers, not the verbatim bytes str_replace needs. Call read_file on the specific path you are about to edit, copy the exact text from its output, then retry the edit.'
 
 /**
+ * Explore-mode counterpart of `EXPLORE_WITHOUT_READ_NUDGE`. The parent has no
+ * `read_file` there; the exact bytes are the verbatim-excerpt blocks appended
+ * to each explore result (#1433, Fix 0), so naming read_file would send the
+ * model after a tool it cannot call.
+ */
+export const EXPLORE_REPEAT_USE_EXCERPTS_NUDGE =
+  'You have called explore several times in a row. Each explore result already ends with verbatim excerpts of the lines it read, copied from the files byte-for-byte. Copy str_replace old_string from those excerpt blocks, not from the prose summary, and make the edit. Explore again only if no excerpt covers the lines you need, and then name that path and function.'
+
+/**
  * Tracks the explore/read_file interleaving for `EXPLORE_WITHOUT_READ_NUDGE`:
  * increments on each `explore` call, resets to 0 on `read_file`, and is
  * otherwise unaffected by other tools (a `str_replace` failure in between
@@ -295,3 +318,166 @@ Plain-text claims that work is done are not accepted — update_todos is require
 
 export const OPEN_TODOS_STILL_OPEN_MESSAGE =
   'Note: the task plan still has open items — the agent did not reconcile todos before finishing.'
+
+/**
+ * True when one step's todo update closed the plan on checks (#1433, Fix 4):
+ * todos were open before the step, none are open after it, at least one item is
+ * completed, and every item the step completed carries an acceptance `check`.
+ * A `check` on a completed item has been executed and passed: the host's
+ * update_todos runs it before accepting `completed`, holds back a check that
+ * arrived in the completing call, and reverts a failing one to `in_progress`.
+ * So this is the plan's own terminal step having been verified, not the model
+ * asserting it. Plans closed without checks are left alone, and the run
+ * finishes the way it always has.
+ */
+export function planClosedByVerifiedChecks(
+  before: readonly TodoItem[],
+  after: readonly TodoItem[],
+): boolean {
+  if (!hasOpenTodos(before) || hasOpenTodos(after)) return false
+  const wasCompleted = new Set(before.filter((t) => t.status === 'completed').map((t) => t.id))
+  const closedNow = after.filter((t) => t.status === 'completed' && !wasCompleted.has(t.id))
+  return closedNow.length > 0 && closedNow.every((t) => t.check !== undefined)
+}
+
+export const PLAN_VERIFIED_FINALIZE_NUDGE =
+  "Every item in your plan is completed and the final item's acceptance check passed, so the task is done. Do not run more checks, re-verify, or inspect the repository again. Write the final answer for the user now: what changed, how it was verified, and anything left for them to do."
+
+/** Splits a shell command on `&&`, `||` and `;` into trimmed, non-empty segments. */
+function shellSegments(command: string): string[] {
+  return command
+    .split(/&&|\|\||;/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+/** A stderr-to-stdout merge, the one redirection that writes no file. */
+const STDERR_MERGE = /\s*\d?>&\d\b/g
+
+/**
+ * Output filters that only reshape what the model sees of a command's output,
+ * so `pnpm test | tail -50` and `pnpm test 2>&1 | grep fail` are the same run.
+ */
+const OUTPUT_FILTER = /^(?:tail|head|grep|egrep|rg|wc|sort|uniq|cat|less|more)(?:\s|$)/
+
+/**
+ * Whole-suite verification invocations: test, check, lint, typecheck and build
+ * scripts through a package manager or make, and the common direct runners.
+ */
+const VERIFICATION_INVOCATION =
+  /^(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify)(?::[\w:-]+)?|(?:npx\s+|pnpm\s+exec\s+)?(?:vitest|jest|tsc|eslint|oxlint|mocha)|make\s+(?:test|check|lint|build)|cargo\s+(?:test|check|build|clippy)|go\s+(?:test|vet|build)|pytest|python3?\s+-m\s+pytest|tox|mvn\s+(?:test|verify)|\.?\/?gradlew?\s+(?:test|check|build))(?:\s|$)/
+
+/** Flags that make a verification command write (fix, format, update snapshots). */
+const WRITING_FLAG = /(?:^|\s)(?:--fix|--write|-u|--update-snapshots?|-w)(?:\s|=|$)/
+
+/** A segment's pipeline stages, or null when it redirects output to a file. */
+function pipelineStages(segment: string): string[] | null {
+  const merged = segment.replace(STDERR_MERGE, '')
+  if (merged.includes('>')) return null
+  return merged.split('|').map((p) => p.replace(/\s+/g, ' ').trim())
+}
+
+/**
+ * The repeat-damping key for a `run_shell` command, or null when it is not a
+ * whole-suite verification run (#1433, Fix 4). `cd` segments are kept in the
+ * key (the same suite in another package is a different run); output filters
+ * are dropped; any other segment, a file redirection, or a writing flag makes
+ * the command ineligible, since it may change state.
+ */
+export function verificationCommandKey(command: string): string | null {
+  const parts: string[] = []
+  let verifies = false
+  for (const segment of shellSegments(command)) {
+    const stages = pipelineStages(segment)
+    if (!stages) return null
+    const [producer = '', ...filters] = stages
+    if (filters.some((f) => !OUTPUT_FILTER.test(f))) return null
+    if (/^cd\s/.test(producer)) {
+      parts.push(producer)
+      continue
+    }
+    if (!VERIFICATION_INVOCATION.test(producer) || WRITING_FLAG.test(producer)) return null
+    verifies = true
+    parts.push(producer)
+  }
+  return verifies ? parts.join(' && ') : null
+}
+
+/**
+ * Read-only inspection a model typically runs between two verification passes
+ * (#1433's run: `git status`, `git diff --stat`, `git show --stat`).
+ */
+const READ_ONLY_SHELL_STAGE =
+  /^(?:cd|pwd|ls|cat|head|tail|wc|echo|which|rg|grep|egrep|sort|uniq|git\s+(?:status|diff|show|log|rev-parse|remote\s+-v|branch\s+--show-current))(?:\s|$)/
+
+function isReadOnlyShellCommand(command: string): boolean {
+  const segments = shellSegments(command)
+  if (segments.length === 0) return false
+  return segments.every((segment) => {
+    const stages = pipelineStages(segment)
+    return stages !== null && stages.every((stage) => READ_ONLY_SHELL_STAGE.test(stage))
+  })
+}
+
+/** Tools that never change the workspace, so they do not re-arm verification. */
+const WORKSPACE_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...DUPLICATE_GUARDED_TOOL_NAMES,
+  'update_todos',
+  'read_skill',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_show',
+  'staged_diffs',
+  'read_staged_diff',
+])
+
+function shellCommandOf(name: string, args: unknown): string | null {
+  if (name !== 'run_shell' || !isRecord(args)) return null
+  const command = args['command']
+  return typeof command === 'string' ? command : null
+}
+
+/**
+ * Remembers which verification commands ran since the last call that may have
+ * changed the workspace (#1433, Fix 4). Re-running the same suite with nothing
+ * changed reproduces the result already in context — the motivating run ran a
+ * five-minute `npm run check` three times after its PR was up, re-diagnosing
+ * the same pre-existing failures each time. Anything that might have changed
+ * the tree — an edit tool, an unrecognized shell command, an unknown tool —
+ * re-arms every command, so the guard errs toward letting a run verify.
+ */
+export class RepeatVerificationTracker {
+  private readonly ran = new Set<string>()
+
+  /** True when this call would repeat a verification run with nothing changed since. */
+  isRepeat(name: string, args: unknown): boolean {
+    const command = shellCommandOf(name, args)
+    const key = command === null ? null : verificationCommandKey(command)
+    return key !== null && this.ran.has(key)
+  }
+
+  /** Records a call that actually executed (not one that was skipped). */
+  observe(name: string, args: unknown): void {
+    const command = shellCommandOf(name, args)
+    if (command !== null) {
+      const key = verificationCommandKey(command)
+      if (key !== null) {
+        this.ran.add(key)
+        return
+      }
+      if (isReadOnlyShellCommand(command)) return
+    } else if (WORKSPACE_READ_ONLY_TOOL_NAMES.has(name)) {
+      return
+    }
+    this.ran.clear()
+  }
+
+  /** Forgets every run, e.g. once trimming may have dropped their output from history. */
+  reset(): void {
+    this.ran.clear()
+  }
+}
+
+export const REPEAT_VERIFICATION_RESULT_PREFIX =
+  '[Verification skipped — this exact command already ran in this run and nothing that could change the workspace has happened since, so its result above still stands. Act on that result instead of re-running it, or answer.]'

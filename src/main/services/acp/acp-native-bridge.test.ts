@@ -55,7 +55,10 @@ import {
   BRIDGE_TOOL_NAMES,
   BRIDGE_MCP_SERVER_NAME,
   bridgedWorkspaceWritePaths,
-  isBridgedNativeToolTitle,
+  bridgedNativeToolsOffered,
+  dropAcpBridgeDelegation,
+  noteAcpBridgeDelegation,
+  takeAcpBridgeDelegation,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -76,7 +79,7 @@ import {
   prepareWorktreeTool,
 } from '../../tools/worktree-preparation-tool.ts'
 import { browserShowTool } from '../../tools/browser-tools.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   clearMcpToolPermissionTargets,
   registerMcpToolPermissionTarget,
@@ -357,7 +360,7 @@ describe('startAcpNativeBridge', () => {
     setDefaultPluginRegistry(null)
     setApprovalHandler(null)
     clearAbandonedVerdictsForTest()
-    setSetting('toolPermissionOverrides', {})
+    await setSetting('toolPermissionOverrides', {})
     clearMcpToolPermissionTargets()
     await bridge?.close()
     bridge = null
@@ -890,7 +893,7 @@ describe('startAcpNativeBridge', () => {
       toolName: 'list_messages',
       origin: 'user',
     })
-    setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
+    await setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
     bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
       threadId: 'bridge-mcp-policy',
     })
@@ -904,7 +907,7 @@ describe('startAcpNativeBridge', () => {
         (tool) => tool['name'] === 'mcp__mail__list_messages',
       ),
     )
-    assert.ok(isBridgedNativeToolTitle('copse-mcp__mail__list_messages'))
+    assert.ok(bridgedNativeToolsOffered().includes('mcp__mail__list_messages'))
 
     const denied = await rpc(bridge, {
       jsonrpc: '2.0',
@@ -912,7 +915,10 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'mcp__mail__list_messages', arguments: {} },
     })
-    assert.equal(contentText(denied), 'User rejected the mcp__mail__list_messages tool call.')
+    assert.equal(
+      contentText(denied),
+      'Tool mcp__mail__list_messages blocked: it is set to Block in tool permission settings. It did not run. The user did not reject this call.',
+    )
     assert.equal(executed, false, 'a denied bridged MCP call must not reach its handler')
   })
 
@@ -1451,7 +1457,7 @@ describe('startAcpNativeBridge', () => {
       recordArrayOrEmpty(rpcResult(listed)['tools']).some((tool) => tool['name'] === 'pack_search'),
     )
     assert.ok(activeBridgeToolNames().includes('pack_search'))
-    assert.ok(isBridgedNativeToolTitle('copse-pack_search: pack_search'))
+    assert.ok(bridgedNativeToolsOffered().includes('pack_search'))
 
     const call = await rpc(bridge, {
       jsonrpc: '2.0',
@@ -1468,7 +1474,7 @@ describe('startAcpNativeBridge', () => {
         (tool) => tool['name'] === 'pack_search',
       ),
     )
-    assert.ok(!isBridgedNativeToolTitle('copse-pack_search'))
+    assert.ok(!bridgedNativeToolsOffered().includes('pack_search'))
   })
 
   it('isolates advisor context between concurrent ACP thread bridges', async () => {
@@ -1670,76 +1676,45 @@ describe('startAcpNativeBridge', () => {
   })
 })
 
-describe('isBridgedNativeToolTitle', () => {
-  it("matches the observed Cursor title '<server>-<tool>: <tool>'", () => {
-    assert.ok(isBridgedNativeToolTitle(`${BRIDGE_MCP_SERVER_NAME}-gh_pr_list: gh_pr_list`))
-    assert.ok(isBridgedNativeToolTitle('copse-semantic_search'))
-    assert.ok(isBridgedNativeToolTitle('copse-fetch_url: fetch_url'))
+describe('ACP bridge delegation attribution', () => {
+  it('links one delegated ACP tool call to the next bridge execution of that tool', () => {
+    noteAcpBridgeDelegation('thread-a', 'run_shell', 'acp-call-1')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'gh_pr_list', {}), null, 'another tool')
+    assert.equal(takeAcpBridgeDelegation('thread-b', 'run_shell', {}), null, 'another thread')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell', {}), 'acp-call-1')
+    assert.equal(takeAcpBridgeDelegation('thread-a', 'run_shell', {}), null, 'consumed once')
   })
 
-  it('accepts any single non-alphanumeric separator after the server name', () => {
-    assert.ok(isBridgedNativeToolTitle('copse/gh_pr_view'))
-    assert.ok(isBridgedNativeToolTitle('copse.staged_diffs'))
-    assert.ok(isBridgedNativeToolTitle('copse_wait_for_ci_checks'))
-    assert.ok(isBridgedNativeToolTitle('COPSE-GH_PR_LIST')) // case-insensitive
+  it('names no ACP call when concurrent delegations of one tool cannot be told apart', () => {
+    noteAcpBridgeDelegation('thread-c', 'run_shell', 'acp-call-1')
+    noteAcpBridgeDelegation('thread-c', 'run_shell', 'acp-call-2')
+    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell', {}), null)
+    assert.equal(takeAcpBridgeDelegation('thread-c', 'run_shell', {}), null, 'nor guessed later')
   })
 
-  it('unwraps an inline-code-wrapped title before matching', () => {
-    assert.ok(isBridgedNativeToolTitle('`copse-gh_pr_list`'))
+  it('links by arguments when the ACP request carried them', () => {
+    noteAcpBridgeDelegation('thread-d', 'run_shell', 'call-ls', { command: 'ls', cwd: '.' })
+    noteAcpBridgeDelegation('thread-d', 'run_shell', 'call-pwd', { command: 'pwd' })
+    // Key order differs from the ACP request; the arguments are the same.
+    assert.equal(
+      takeAcpBridgeDelegation('thread-d', 'run_shell', { cwd: '.', command: 'ls' }),
+      'call-ls',
+    )
+    assert.equal(
+      takeAcpBridgeDelegation('thread-d', 'run_shell', { command: 'whoami' }),
+      null,
+      'an execution with other arguments is not any waiting call',
+    )
+    assert.equal(takeAcpBridgeDelegation('thread-d', 'run_shell', { command: 'pwd' }), 'call-pwd')
   })
 
-  // Claude infixes the server name under the conventional `mcp__` prefix rather
-  // than leading with it, so `^copse` never matched and every bridged call
-  // double-prompted. Found by a wire trace (#1659), not by the probe.
-  it("matches the observed Claude title 'mcp__<server>__<tool>'", () => {
-    assert.ok(isBridgedNativeToolTitle('mcp__copse__gh_pr_view'))
-    assert.ok(isBridgedNativeToolTitle('mcp__copse__run_shell'))
-    assert.ok(isBridgedNativeToolTitle('mcp.copse.staged_diffs'))
-    assert.ok(isBridgedNativeToolTitle('MCP__COPSE__GH_PR_LIST'))
-  })
-
-  // The `mcp` prefix is deliberately the *only* thing allowed to lead. Admitting
-  // an arbitrary leading word would re-admit the prose titles below.
-  it('does not let the optional prefix become "any leading word"', () => {
-    assert.ok(!isBridgedNativeToolTitle('Run copse gh_pr_list now'))
-    assert.ok(!isBridgedNativeToolTitle('mcpserver-copse-gh_pr_list'))
-    assert.ok(!isBridgedNativeToolTitle('Edit mcp__copse__gh_pr_list-notes.md'))
-  })
-
-  it('only matches at the start, so prose that merely mentions copse is safe', () => {
-    // `copse` is a common token in this repo; a description that happens to
-    // contain a bridged tool name must not be taken for a bridged call.
-    assert.ok(!isBridgedNativeToolTitle('Edit copse-gh_pr_list-notes.md'))
-    assert.ok(!isBridgedNativeToolTitle('Sync copse - gh_pr_list config'))
-    assert.ok(!isBridgedNativeToolTitle('Run copse gh_pr_list now'))
-  })
-
-  it('rejects titles that lack the bridge server prefix', () => {
-    // A bare bridged tool name (or one from some *other* server) is not ours.
-    assert.ok(!isBridgedNativeToolTitle('gh_pr_list'))
-    assert.ok(!isBridgedNativeToolTitle('otherserver-fetch_url'))
-    assert.ok(!isBridgedNativeToolTitle('fetch_url: fetch_url'))
-  })
-
-  it('rejects a copse-prefixed title for a tool we do not bridge', () => {
-    assert.ok(!isBridgedNativeToolTitle('copse-ask_user'))
-    assert.ok(!isBridgedNativeToolTitle('copse-explore'))
-    // A bridged name with trailing chars is a different, unknown tool.
-    assert.ok(!isBridgedNativeToolTitle('copse-gh_pr_lists'))
-  })
-
-  it('rejects empty and non-title input', () => {
-    assert.ok(!isBridgedNativeToolTitle(''))
-    assert.ok(!isBridgedNativeToolTitle(null))
-    assert.ok(!isBridgedNativeToolTitle(undefined))
-  })
-
-  it('keeps every curated bridged tool matchable', () => {
-    for (const tool of BRIDGE_TOOL_NAMES) {
-      assert.ok(
-        isBridgedNativeToolTitle(`${BRIDGE_MCP_SERVER_NAME}-${tool}`),
-        `expected ${tool} to be recognised`,
-      )
-    }
+  it('forgets a delegation once the agent reports its call finished', () => {
+    noteAcpBridgeDelegation('thread-e', 'run_shell', 'abandoned')
+    dropAcpBridgeDelegation('thread-e', 'abandoned')
+    assert.equal(
+      takeAcpBridgeDelegation('thread-e', 'run_shell', {}),
+      null,
+      'a later execution is not the abandoned call',
+    )
   })
 })

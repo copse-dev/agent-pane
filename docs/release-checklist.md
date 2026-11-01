@@ -44,6 +44,12 @@ _before_ the version bump reaches `release`, not after.
       test the forward migration on the release candidate.
 - [ ] Confirm [recovery guidance](recovery.md) still matches shipped data
       locations and migration behavior.
+- [ ] Accessibility acceptance ([accessibility.md](accessibility.md)): confirm
+      the accessibility lane passed in the candidate's full CI run, check that
+      every entry in `tests/e2e/accessibility-baseline.json` links an assigned
+      issue, run the manual VoiceOver journeys on the candidate, and record the
+      results — or a release-owner waiver with owner, scope, tracking issue and
+      expiry — in [product release evidence](product-release-evidence.md).
 
 ## Release notes
 
@@ -69,9 +75,10 @@ _before_ the version bump reaches `release`, not after.
 
 - [ ] Confirm anonymous, signed-out access to the public download location. A
       release in a private GitHub repository does not satisfy this check.
-- [ ] Confirm the workflow classified the version correctly: beta becomes a
-      GitHub prerelease on `beta-mac.yml`; stable becomes a normal/latest release
-      on `latest-mac.yml` and also refreshes beta metadata.
+- [ ] Confirm the workflow classified the version correctly: every version is
+      first published as a GitHub prerelease. A beta carries `beta-mac.yml`; a
+      stable candidate carries both `latest-mac.yml` and `beta-mac.yml` and
+      reaches stable users only through [stable promotion](#stable-promotion).
 - [ ] Confirm the five signing/notarization secrets are configured
       ([`releasing-macos.md`](releasing-macos.md#required-credentials)). The
       workflow refuses to package without them.
@@ -90,12 +97,34 @@ _before_ the version bump reaches `release`, not after.
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
 
+## Stable promotion
+
+For a stable `X.Y.Z` only, after it is published as a stable candidate. See
+[releasing-macos.md](releasing-macos.md#stable-promotion).
+
+- [ ] Before the first promotion, the `stable-release` Actions environment has
+      the release owner as a required reviewer.
+- [ ] A beta installation was offered the candidate and updated to it; a stable
+      installation (from the second stable release on) was not offered it.
+- [ ] The candidate has served the beta channel for the soak (72 hours by
+      default, never under 24), with no open `Release halted: <tag>` issue and
+      no new known issue that would block stable.
+- [ ] The security review, GA-blocker and sign-off items above are recorded
+      against this candidate's tag.
+- [ ] Dispatch `Promote stable release` with the tag and approve the run in the
+      `stable-release` environment. Do not rebuild, re-upload or edit assets by
+      hand; the workflow refuses anything but the published, checksummed bytes.
+- [ ] The run's anonymous check passed: `releases/latest` names the tag and its
+      `latest-mac.yml` serves the version.
+
 ## Channel rehearsal
 
 - [ ] Stable old → stable new updates successfully.
 - [ ] Stable old does not see a beta-only release.
 - [ ] Beta old → beta new updates successfully.
-- [ ] Beta old → newer stable updates successfully.
+- [ ] Beta old → newer stable candidate updates successfully.
+- [ ] Stable old is not offered a stable candidate until it is promoted, then
+      updates to it.
 - [ ] No client is offered an older version, even when an older release is
       published later.
 - [ ] A fresh user can download and install each DMG without repository
@@ -107,5 +136,7 @@ _before_ the version bump reaches `release`, not after.
       build and references the uploaded zip for both architectures.
 - [ ] Record newly discovered known issues in GitHub and link important ones
       from the release notes.
-- [ ] If the release is bad, preserve affected data, publish the known issue,
-      and prepare a corrective newer release. Do not direct users to downgrade.
+- [ ] If the release is bad, run `Halt release` for its tag
+      ([halting](releasing-macos.md#halting-a-release)), preserve affected
+      data, publish the known issue, and prepare a corrective newer release.
+      Do not direct users to downgrade.

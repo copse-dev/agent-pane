@@ -1,7 +1,7 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
-import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from './ipc-guards.ts'
-import { getActiveProjectId } from '../services/workspace.ts'
+import { defineHandler } from './define-handler.ts'
+import { zProjectId, zThreadId } from './ipc-guards.ts'
 import {
   exportDecisionLog,
   readDecisionLog,
@@ -9,25 +9,19 @@ import {
 } from '../services/security/decision-log-store.ts'
 
 export function registerDecisionHandlers(win: BrowserWindow): void {
-  // Durable permission-decision audit log (#656). `projectId` is optional — an
-  // empty/absent value falls back to the active project.
-  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
-    const resolved = projectId ?? getActiveProjectId()
-    if (!resolved) return []
-    return readDecisionLog(resolved)
-  })
-  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return readThreadDecisionLog(pid, tid)
-  })
-  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
-    const resolved = projectId ?? getActiveProjectId()
-    if (!resolved) throw new Error('No project to export decisions for.')
-    return exportDecisionLog(resolved)
+  // Durable permission-decision audit log (#656). The caller names the project;
+  // without one there is nothing to read. The window's active project is not
+  // main's to guess. The id stays optional in the schema only to keep the API
+  // protocol compatible (making it required is a breaking change that needs an
+  // API_PROTOCOL_VERSION bump); every caller passes it.
+  defineHandler(win, 'decisions:list', z.tuple([zProjectId.optional()]), (projectId) =>
+    projectId === undefined ? [] : readDecisionLog(projectId),
+  )
+  defineHandler(win, 'decisions:list-thread', z.tuple([zProjectId, zThreadId]), (pid, tid) =>
+    readThreadDecisionLog(pid, tid),
+  )
+  defineHandler(win, 'decisions:export', z.tuple([zProjectId.optional()]), (projectId) => {
+    if (projectId === undefined) throw new Error('No project to export decisions for.')
+    return exportDecisionLog(projectId)
   })
 }

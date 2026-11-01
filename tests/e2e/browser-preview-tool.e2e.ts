@@ -20,6 +20,7 @@ const FINAL_BOUNDARY_HOOKS = [
   'truncation-continue',
   'reasoning-runaway',
   'malformed-tool-call',
+  'plan-verified-finalize',
 ].sort()
 
 // Idle and tool completion do not establish the final transcript crop. Keep
