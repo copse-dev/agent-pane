@@ -191,6 +191,8 @@ describe('first prompt navigation', () => {
     // scrollIntoView and search hits land below the prompt and its row gap.
     sync(-100)
     assert.equal(list.style.scrollPaddingTop, '71px')
+    // Scrolling to the prompt itself still lands it at the top.
+    assert.equal(latest.style.scrollMarginTop, '-71px')
     // Still in the flow lower down: no padding, or the browser's scroll anchor
     // would skip past the prompt and its own growth would push it into sticking.
     sync(200)
@@ -199,6 +201,7 @@ describe('first prompt navigation', () => {
     latest.style.position = 'relative'
     sync(-100)
     assert.equal(list.style.scrollPaddingTop, '')
+    assert.equal(latest.style.scrollMarginTop, '')
   })
 
   it('anchors the way back on the first row below the pinned band, not the tail inside it', () => {

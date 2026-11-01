@@ -3217,6 +3217,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     }
     stickyPromptBand = band
+    // The prompt is never behind itself: scrolling to it lands it at the top,
+    // where it sticks, rather than a band's height down with the previous
+    // turn's tail above it.
+    if (prompt) {
+      const margin = band > 0 ? `${String(-band)}px` : ''
+      if (prompt.style.scrollMarginTop !== margin) prompt.style.scrollMarginTop = margin
+    }
     // Only while stuck: scroll padding also narrows the region the browser picks
     // its scroll anchor from, and a prompt still in the flow inside that region
     // would be pushed into sticking (and its previews shrunk) by its own growth.
@@ -3230,7 +3237,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
     const latest = prompts[prompts.length - 1]
     if (stickyPrompt !== (latest ?? null)) {
-      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt)
+      if (stickyPrompt) {
+        stickyPromptResizeObserver?.unobserve(stickyPrompt)
+        stickyPrompt.style.scrollMarginTop = ''
+      }
       stickyPrompt = latest ?? null
       if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt)
     }
