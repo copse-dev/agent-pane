@@ -190,4 +190,21 @@ describe('first prompt navigation', () => {
     for (const callback of callbacks) callback()
     assert.equal(list.style.scrollPaddingTop, '')
   })
+
+  it('anchors the way back on the first row below the pinned band, not the tail inside it', () => {
+    const { list, first, back } = fixture()
+    // Rows are 100px tall from the list top. At 935, row 9 ends 65px down,
+    // inside a 150px pinned-prompt band; row 10 is the first readable row.
+    list.style.scrollPaddingTop = '150px'
+    scroll(list, 935)
+    first.click()
+    // While away, content above row 10 grows by 30px (a disclosure opening).
+    const rows = list.querySelectorAll<HTMLElement>('.msg')
+    const row10 = rows[10]
+    assert.ok(row10)
+    row10.getBoundingClientRect = (): DOMRect => new DOMRect(0, 1_030 - list.scrollTop, 600, 100)
+    back.click()
+    // Row 10 is back where it was; anchoring on row 9 would have left it 30px low.
+    assert.equal(list.scrollTop, 965)
+  })
 })

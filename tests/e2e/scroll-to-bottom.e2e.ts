@@ -214,6 +214,7 @@ describe('scroll to bottom', () => {
       await scrollMessagesListToTop()
       await waitForTranscriptScrollSettled(true)
       expect(await isScrollToBottomVisible()).toBe(true)
+      expect(await navigationTextOverlaps()).toEqual([])
 
       const layout = await browser.execute(() => {
         const button = document.querySelector('.scroll-to-bottom')

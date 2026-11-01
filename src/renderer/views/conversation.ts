@@ -4557,13 +4557,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     element: HTMLElement
     viewportTop: number
   } | null {
-    const listRect = list.getBoundingClientRect()
+    // Reading starts below the pinned prompt's reserved band: a row ending in
+    // that band is either under the prompt or the tail of the turn before a
+    // scrolled-to target, and the stuck prompt itself never moves with the
+    // scroll, so none of them can anchor what the reader is looking at.
+    const readingTop =
+      list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0)
     const candidates = list.querySelectorAll<HTMLElement>(
       ':scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]',
     )
     for (const element of candidates) {
       const rect = element.getBoundingClientRect()
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top }
+      if (rect.bottom > readingTop) return { element, viewportTop: rect.top }
     }
     return null
   }
