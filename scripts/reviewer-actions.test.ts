@@ -208,6 +208,114 @@ const workflowSchema = z.object({
   }),
 })
 
+describe('grounding artifact handoff', () => {
+  const stepSchema = z.object({
+    id: z.string().optional(),
+    uses: z.string().optional(),
+    run: z.string().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    with: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
+  })
+  const actionSchema = z.object({
+    inputs: z.record(z.string(), z.object({ required: z.boolean().optional() })).optional(),
+    outputs: z.record(z.string(), z.object({ value: z.string() })).optional(),
+    runs: z.object({ steps: z.array(stepSchema) }),
+  })
+  const ground = actionSchema.parse(
+    load(readFileSync('.github/actions/review-ground/action.yml', 'utf8')),
+  )
+  const findings = actionSchema.parse(
+    load(readFileSync('.github/actions/review-findings/action.yml', 'utf8')),
+  )
+  const workflow = z
+    .object({
+      jobs: z.record(
+        z.string(),
+        z.object({
+          outputs: z.record(z.string(), z.string()).optional(),
+          steps: z.array(stepSchema),
+        }),
+      ),
+    })
+    .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+
+  function evaluate(expression: unknown, context: Record<string, unknown>): string {
+    assert.ok(typeof expression === 'string')
+    return expression.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_match, body: string) => {
+      const value: unknown = runInNewContext(
+        body.replace(/\.([a-z]+(?:-[a-z]+)+)/g, "['$1']"),
+        context,
+      )
+      assert.ok(typeof value === 'string' || typeof value === 'number')
+      return String(value)
+    })
+  }
+
+  for (const [producerAttempt, consumerAttempt] of [[1, 1], [1, 2], [2, 2]] as const) {
+    it(`downloads the producer's report for grounding attempt ${producerAttempt}, findings attempt ${consumerAttempt}`, () => {
+      const upload = ground.runs.steps.find((step) => step.uses === 'actions/upload-artifact@v7')
+      assert.ok(upload?.id)
+      const artifactId = `900${producerAttempt}`
+      const name = evaluate(upload.with?.['name'], {
+        github: { run_id: 123, run_attempt: producerAttempt },
+      })
+      assert.equal(name, `copse-review-ground-123-${producerAttempt}`)
+      const output = evaluate(ground.outputs?.['artifact-id']?.value, {
+        steps: { [upload.id]: { outputs: { 'artifact-id': artifactId } } },
+      })
+      const jobOutput = evaluate(workflow.jobs['ground']?.outputs?.['artifact-id'], {
+        steps: { ground: { outputs: { 'artifact-id': output } } },
+      })
+      for (const job of ['findings', 'copse-findings']) {
+        const consumer = workflow.jobs[job]?.steps.find(
+          (step) => step.uses === './.copse-reviewer/.github/actions/review-findings',
+        )
+        const input = evaluate(consumer?.with?.['ground-artifact-id'], {
+          needs: { ground: { outputs: { 'artifact-id': jobOutput } } },
+          github: { run_id: 123, run_attempt: consumerAttempt },
+        })
+        const download = findings.runs.steps.find(
+          (step) => step.uses === 'actions/download-artifact@v8',
+        )
+        assert.ok(download)
+        assert.equal(findings.inputs?.['ground-artifact-id']?.required, true)
+        assert.equal(
+          evaluate(download.with?.['artifact-ids'], {
+            inputs: { 'ground-artifact-id': input },
+            github: { run_id: 123, run_attempt: consumerAttempt },
+          }),
+          artifactId,
+        )
+        assert.equal(download.with?.['name'], undefined)
+        assert.equal(download.with?.['path'], '${{ runner.temp }}/copse-review-ground')
+      }
+    })
+  }
+
+  it('rejects missing or multiple artifact IDs before downloading', () => {
+    const validationIndex = findings.runs.steps.findIndex(
+      (step) => step.run?.includes('A single grounding artifact ID is required'),
+    )
+    const downloadIndex = findings.runs.steps.findIndex(
+      (step) => step.uses === 'actions/download-artifact@v8',
+    )
+    assert.ok(validationIndex >= 0 && validationIndex < downloadIndex)
+    const script = findings.runs.steps[validationIndex]?.run
+    assert.ok(script)
+    assert.equal(
+      findings.runs.steps[validationIndex]?.env?.['GROUND_ARTIFACT_ID'],
+      '${{ inputs.ground-artifact-id }}',
+    )
+    for (const id of ['', '9001,9002', 'latest', '9001']) {
+      const result = spawnSync('bash', ['-c', script], {
+        env: { ...process.env, GROUND_ARTIFACT_ID: id },
+        encoding: 'utf8',
+      })
+      assert.equal(result.status, id === '9001' ? 0 : 1, result.stderr)
+    }
+  })
+})
+
 async function authorize(
   options: {
     permission?: string

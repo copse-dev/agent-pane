@@ -913,7 +913,9 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   reviewed Copse preparation script installs offline with lifecycle scripts disabled and
   explicitly builds node-pty inside the cell.
 
-  A fresh findings runner imports only the same run/attempt's grounding artifact. The
+   A fresh findings runner imports the grounding job's immutable artifact ID from the
+   same run. Findings-only reruns reuse the successful producer's artifact even when
+   the consumer's attempt number advances; full reruns use the new producer's ID. The
   CLI validates the report's shape, head and merge-base; project commands and reproducers
   use `--backend container` with a scrubbed environment. The protected Copse variant enters
   `copse-review-models`, keeps a read-only workflow token for PR context and mints the
