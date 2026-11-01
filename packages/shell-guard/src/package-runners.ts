@@ -51,13 +51,22 @@ const COREPACK_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'yarnpk
  */
 const NPM_EXEC_SPELLINGS = new Set(['exec', 'exe', 'x'])
 
-/** A manager's other executable names: `yarnpkg` is Yarn under the name Debian kept free. */
-const MANAGER_ALIASES: ReadonlyMap<string, string> = new Map([['yarnpkg', 'yarn']])
+/**
+ * A manager's other executable names, as the command each one runs. `yarnpkg`
+ * is Yarn under the name Debian kept free. `pnpx` is `pnpm dlx` (pnpm 10.34.5's
+ * `pnpx --help` prints `Usage: pnpm dlx`): it runs the named package in a
+ * temporary environment and never a project binary, so it is not `npx`.
+ */
+const MANAGER_ALIASES: ReadonlyMap<string, readonly string[]> = new Map([
+  ['yarnpkg', ['yarn']],
+  ['pnpx', ['pnpm', 'dlx']],
+])
 
 /**
  * `argv` as the package manager receives it, with the manager named canonically:
  * a backslash-newline's empty word dropped, `corepack <manager>[@<version>]`
- * replaced by the manager it runs, and an alias (`yarnpkg`) by its manager.
+ * replaced by the manager it runs, and an alias by the command it runs
+ * (`yarnpkg` → `yarn`, `pnpx` → `pnpm dlx`).
  * shell-quote reads a backslash-newline as an empty word, so `npx \⏎ evil` would
  * name a package of `''`; the shell joins the lines, and no manager runs an
  * empty name. corepack takes a version pin on the manager's name
@@ -74,7 +83,7 @@ export function packageManagerArgv(argv: readonly string[]): string[] {
     }
   }
   const alias = MANAGER_ALIASES.get(commandName(words[0]))
-  return alias === undefined ? words : [alias, ...words.slice(1)]
+  return alias === undefined ? words : [...alias, ...words.slice(1)]
 }
 
 /**
@@ -179,7 +188,7 @@ function pnpmExecCall(args: readonly string[], unmodelled: string | null): Packa
 export function packageRunnerCall(argv: readonly string[]): PackageRunnerCall | null {
   const words = packageManagerArgv(argv)
   const head = commandName(words[0])
-  if (head === 'npx' || head === 'pnpx') return npmExecCall(head, words.slice(1), null)
+  if (head === 'npx') return npmExecCall(head, words.slice(1), null)
   const unmodelled: { option: string | null } = { option: null }
   if (head === 'npm') {
     const at = subcommandIndex(words, NPM_EXEC_SPELLINGS, NPM_PLAIN_OPTIONS, unmodelled)

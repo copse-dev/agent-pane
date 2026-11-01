@@ -554,9 +554,10 @@ function alwaysDownloads(argv: readonly string[]): string | null {
 }
 
 /**
- * `npx <name>`, `npm exec <name>`, `pnpx <name>`: a name the project does not
- * install is fetched. The project binary a name resolves to is local code, which
- * `shell-harm.ts` reads.
+ * `npx <name>`, `npm exec <name>`: a name the project does not install is
+ * fetched. The project binary a name resolves to is local code, which
+ * `shell-harm.ts` reads. `pnpx <name>` is `pnpm dlx <name>`, which always
+ * downloads.
  */
 function fetchedCodeReasons(argv: readonly string[], context: HostReachContext): string[] {
   // `corepack pnpm@10 dlx …` fetches exactly as `pnpm dlx …` does.

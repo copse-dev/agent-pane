@@ -1133,6 +1133,21 @@ describe('Guarded YOLO shell harm gate — package binaries', () => {
     }
   })
 
+  it('asks before pnpx, which downloads a package even when .bin has the name', () => {
+    // `pnpx` is `pnpm dlx`. It ran the registry package unread when it was
+    // read as `npx` and a staged, harmless-looking `.bin/evil` stood in for it.
+    const harmless = staged("console.log('ok')\n")
+    assert.equal(action('npx evil', harmless), 'allow')
+    for (const command of ['pnpx evil', 'corepack pnpx evil', 'pnpm dlx evil']) {
+      const verdict = assessShellHarm(command, { ...context, ...harmless })
+      assert.equal(verdict.action, 'prompt', command)
+      assert.ok(
+        verdict.reasons.some((reason) => reason.includes('pnpm dlx downloads and runs a package')),
+        command,
+      )
+    }
+  })
+
   it('assesses a command pnpm exec runs from PATH as if it were typed', () => {
     const scripts = disk({ [`${WS}/evil.js`]: RM_ROOT })
     assert.equal(action('pnpm exec node evil.js', scripts), 'deny')
