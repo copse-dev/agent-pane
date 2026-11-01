@@ -404,7 +404,9 @@ credential-shaped is linked or copied into the thread.
 Scoping happens only when Copse can see that the CLI the adapter will run
 honours that variable. That means **Claude Code 2.1.144 or newer**, read from the
 `claudeCodeVersion` of the `@anthropic-ai/claude-agent-sdk` installed with the
-adapter (`@agentclientprotocol/claude-agent-acp` 0.37.0+). An older adapter
+adapter (`@agentclientprotocol/claude-agent-acp` 0.37.0+). Copse finds the
+adapter on the agent's own spawn `PATH`, so a `PATH` set in Settings is
+respected. An older adapter
 already hashes the Keychain item name but ignores the override, so it is left
 **unscoped** rather than signed out. So is any agent whose CLI Copse cannot
 identify:

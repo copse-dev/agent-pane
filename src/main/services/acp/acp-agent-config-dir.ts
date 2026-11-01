@@ -105,10 +105,16 @@ async function bundledClaudeCodeVersion(adapterDir: string): Promise<string | nu
  * wrongly scoped one is silently signed out.
  */
 async function claudeCliKeepsDefaultLogin(agent: AcpAgentConfig): Promise<boolean> {
-  // The adapter runs that CLI instead of its bundled one. Read it the way the
-  // spawn composes env: the agent's own over Copse's.
-  if ({ ...process.env, ...agent.env }['CLAUDE_CODE_EXECUTABLE']) return false
-  const binary = isAbsolute(agent.command) ? agent.command : await resolveOnPath(agent.command)
+  // Env as `buildAcpAgentEnv` composes it for the spawn, the agent's own over
+  // Copse's (whose scrub drops only secrets, never PATH or this override).
+  const spawnEnv = { ...process.env, ...agent.env }
+  // The adapter runs that CLI instead of its bundled one.
+  if (spawnEnv['CLAUDE_CODE_EXECUTABLE']) return false
+  // A bare command is found on the spawn env's PATH, so look there: a PATH set
+  // in Settings can reach a different, older install than Copse's own would.
+  const binary = isAbsolute(agent.command)
+    ? agent.command
+    : await resolveOnPath(agent.command, spawnEnv)
   if (!binary) return false
   for (const packageName of CLAUDE_ADAPTER_PACKAGES) {
     const adapter = await findInstalledNpmPackage(binary, packageName)

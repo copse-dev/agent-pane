@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { delimiter, dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -300,6 +300,31 @@ describe('resolveAcpAgentTurnEnv', { skip: process.platform === 'win32' }, () =>
       sshTarget: null,
     })
     assert.deepEqual(env, { CLAUDE_CODE_EXECUTABLE: '/usr/local/bin/claude' })
+  })
+
+  it("vets the adapter the agent's own PATH spawns, not the one on Copse's", async () => {
+    const current = dirname(installClaudeAdapter(join(root, 'npm-path-current'), '2.1.312'))
+    const old = dirname(installClaudeAdapter(join(root, 'npm-path-old'), '2.1.143'))
+    const inherited = process.env['PATH'] ?? ''
+    const onPath = (dir: string): string => `${dir}${delimiter}${inherited}`
+    // A bare command resolves through the spawn env's PATH, where Settings wins.
+    const resolveWith = (agentPath: string): Promise<Record<string, string> | undefined> =>
+      resolveAcpAgentTurnEnv({
+        agent: claudeAgent('claude-agent-acp', { PATH: onPath(agentPath) }),
+        projectId: PROJECT_ID,
+        threadId: 'thread-path',
+        sshTarget: null,
+      })
+    try {
+      // Copse finds a current adapter, but the agent would spawn the old one.
+      process.env['PATH'] = onPath(current)
+      assert.deepEqual(await resolveWith(old), { PATH: onPath(old) })
+      // And the reverse: the agent's PATH reaches a current adapter.
+      process.env['PATH'] = onPath(old)
+      assert.equal((await resolveWith(current))?.['CLAUDE_SECURESTORAGE_CONFIG_DIR'], '')
+    } finally {
+      process.env['PATH'] = inherited
+    }
   })
 
   it('reads the CLI version from an SDK hoisted beside the adapter', async () => {
