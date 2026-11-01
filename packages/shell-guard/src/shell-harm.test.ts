@@ -1104,6 +1104,8 @@ describe('Guarded YOLO shell harm gate — package binaries', () => {
       'pnpm -r exec evil',
       'pnpm exec --parallel evil',
       'npm --prefix packages/app exec evil',
+      'npm --prefix /tmp --silent exec evil',
+      'pnpm --filter app -s exec evil',
       'npx --prefix packages/app evil',
       'npx ./tools/evil',
     ]) {

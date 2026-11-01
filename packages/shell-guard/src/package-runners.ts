@@ -79,8 +79,16 @@ export function packageManagerArgv(argv: readonly string[]): string[] {
 
 /**
  * The index of `subcommand` in `argv` when only global options precede it, or
- * -1. An option may take one value word (`pnpm --filter app exec`), the same
- * shape `shell-scope.ts` accepts. Records the first option outside `plain`.
+ * -1 when another subcommand comes first. Records the first option outside
+ * `plain`.
+ *
+ * An option in `plain` takes no value, so the word after it is the subcommand.
+ * Any other option may take one (`--prefix /tmp`, `--filter app`), so one word
+ * after it is skipped as its value, unless it is spelled `--opt=value`. Asking
+ * that the subcommand come straight after a value word instead let any option
+ * between them hide it: `npm --prefix /tmp --silent exec evil` was no runner
+ * call at all. A misread here only matters with an unmodelled option present,
+ * and that prompts wherever the subcommand turns out to be.
  */
 function subcommandIndex(
   argv: readonly string[],
@@ -88,16 +96,17 @@ function subcommandIndex(
   plain: ReadonlySet<string>,
   unmodelled: { option: string | null },
 ): number {
+  let valueMayFollow = false
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i] ?? ''
     if (subcommands.has(token)) return i
-    if (!token.startsWith('-')) {
-      // A value word belongs to the option before it only when the subcommand follows.
-      const previous = argv[i - 1] ?? ''
-      if (i > 1 && previous.startsWith('-') && subcommands.has(argv[i + 1] ?? '')) continue
-      return -1
+    if (token.startsWith('-')) {
+      if (!plain.has(token)) unmodelled.option ??= token
+      valueMayFollow = !plain.has(token) && !token.includes('=')
+      continue
     }
-    if (!plain.has(token)) unmodelled.option ??= token
+    if (!valueMayFollow) return -1
+    valueMayFollow = false
   }
   return -1
 }
