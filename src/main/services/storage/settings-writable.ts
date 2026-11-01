@@ -204,7 +204,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   animateAgentAvatars: z.boolean(),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
-  sidebarThreadSort: z.enum(['activity', 'created', 'title']),
+  sidebarThreadSort: z.enum(['activity', 'created', 'title', 'action']),
   sidebarThreadSortReverse: z.boolean(),
   sidebarThreadGroup: z.enum(['project', 'status', 'none']),
   // Interaction colour for links, primary actions, selections, and chat
