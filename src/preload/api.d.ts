@@ -195,7 +195,9 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
-    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
+    canSubmit: (id: string) => Promise<boolean>
+    revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>
     onPrompt: (
       handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
     ) => () => void

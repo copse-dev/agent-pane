@@ -3510,6 +3510,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       rightPanelMode: 'context',
       threadReadAccess: [SIDE_CHATS_MAIN_ID],
       threadSendAccess: [SIDE_CHATS_MAIN_ID],
+      threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
       webAllowedOrigins: ['https://example.org:443'],
       toolPermissionOverrides: { 'copse:run_shell': 'ask' },
       layout: {
@@ -3885,7 +3886,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
   ...CONCISE_STATE_SCENARIOS,
-  ...(['read', 'send'] as const).map((access) =>
+  ...(['read', 'send', 'orchestrate'] as const).map((access) =>
     approvalRiskScenario(`approval-thread-${access}`, {
       id: `thread-${access}`,
       type: 'mcp',

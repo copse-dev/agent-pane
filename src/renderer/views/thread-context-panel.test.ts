@@ -502,6 +502,7 @@ test('Context shows this thread’s saved read and send grants and revokes each 
   const grants = new Map<string, string[]>([
     ['threadReadAccess', [threadId]],
     ['threadSendAccess', [threadId]],
+    ['threadSubthreadAccess', [threadId]],
     ['webAllowedOrigins', ['https://saved.example:443']],
   ])
   const revoked: string[] = []
@@ -555,9 +556,14 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     },
     threadPrompts: {
       ...base.threadPrompts,
-      revokeAccess: async (id: string, access: 'read' | 'send'): Promise<void> => {
+      revokeAccess: async (id: string, access: 'read' | 'send' | 'orchestrate'): Promise<void> => {
         revoked.push(access)
-        const key = access === 'read' ? 'threadReadAccess' : 'threadSendAccess'
+        const key =
+          access === 'read'
+            ? 'threadReadAccess'
+            : access === 'send'
+              ? 'threadSendAccess'
+              : 'threadSubthreadAccess'
         grants.set(
           key,
           (grants.get(key) ?? []).filter((value) => value !== id),
@@ -570,7 +576,7 @@ test('Context shows this thread’s saved read and send grants and revokes each 
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(
     viewer.querySelectorAll('[data-context-section="permissions"] [data-access]').length,
-    2,
+    3,
   )
   const permissions =
     viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? ''
@@ -596,6 +602,11 @@ test('Context shows this thread’s saved read and send grants and revokes each 
   viewer.querySelector<HTMLButtonElement>('[data-action="revoke-send-access"]')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(revoked, ['read', 'send'])
+  assert.ok(viewer.querySelector('[data-access="orchestrate"]'))
+  viewer.querySelector<HTMLButtonElement>('[data-action="revoke-orchestrate-access"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(revoked, ['read', 'send', 'orchestrate'])
+  assert.equal(viewer.querySelector('[data-access="orchestrate"]'), null)
   assert.match(
     viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? '',
     /No saved conversation access/,

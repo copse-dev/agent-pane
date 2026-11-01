@@ -272,10 +272,9 @@
   );
 }
 .scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
+  /* Keep the control outside the transcript viewport so it cannot cover text. */
+  flex-shrink: 0;
+  margin: var(--spacing-xs) auto var(--spacing-sm);
   width: 36px;
   height: 36px;
   display: flex;
