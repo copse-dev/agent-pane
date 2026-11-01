@@ -190,6 +190,9 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
       if (typeof sandbox['allowMacOsTrustd'] === 'boolean') {
         agent.sandbox.allowMacOsTrustd = sandbox['allowMacOsTrustd']
       }
+      if (typeof sandbox['allowMacOsKeychain'] === 'boolean') {
+        agent.sandbox.allowMacOsKeychain = sandbox['allowMacOsKeychain']
+      }
     }
     return [agent]
   })

@@ -473,10 +473,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
   out (#590). A sandboxed agent reads its workspace, its declared `homeDirs`,
-  the thread-scoped config directory Copse creates for it (read and write) and,
-  when it declares `homeDirs`, `~/Library/Keychains` (where macOS keeps its
-  login). It never gets the rest of the home directory: no `~/.ssh`, cloud
-  credentials or other projects.
+  the thread-scoped config directory Copse creates for it (read and write), the
+  toolchains and git config contained commands get, and, when its preset sets
+  `allowMacOsKeychain` (the Claude presets, which keep their macOS login
+  there), `~/Library/Keychains`. It never gets the rest of the home directory:
+  no `~/.ssh`, cloud credentials or other projects.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

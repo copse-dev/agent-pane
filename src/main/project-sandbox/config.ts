@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -68,14 +76,75 @@ export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[
  * treats as fatal (exit 128) — so these must stay readable or every git command
  * fails. A more-specific allowRead overrides the broad home denyRead.
  */
-function gitConfigReadPaths(): string[] {
-  const home = homedir()
+export function gitConfigReadPaths(home: string = homedir()): string[] {
+  const globalConfigs = [join(home, '.gitconfig'), join(home, '.config/git/config')]
   return [
     join(home, '.gitconfig'),
     join(home, '.config/git/**'),
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
+    ...new Set(globalConfigs.flatMap((file) => gitConfigIncludeTargets(file, home))),
   ]
+}
+
+/** Git's own limit on nested config includes. */
+const GIT_MAX_INCLUDE_DEPTH = 10
+
+/**
+ * Files a git config pulls in with `[include]` or `[includeIf "…"]`, followed
+ * the way git follows them. Git reads each on every invocation too, so on
+ * macOS an unreadable include is as fatal as an unreadable `~/.gitconfig`.
+ * Only regular files the user's own config names are returned, never a
+ * directory.
+ */
+function gitConfigIncludeTargets(file: string, home: string, depth = 0): string[] {
+  if (depth >= GIT_MAX_INCLUDE_DEPTH) return []
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {
+    return []
+  }
+  const targets: string[] = []
+  let inInclude = false
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.trim()
+    const header = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"(?:[^"\\]|\\.)*")?\s*\]/.exec(line)
+    if (header) {
+      inInclude = /^include(?:if)?$/i.test(header[1] ?? '')
+      line = line.slice(header[0].length).trim()
+    }
+    if (!inInclude) continue
+    const entry = /^path\s*=\s*(.*)$/i.exec(line)
+    const value = entry ? gitConfigValue(entry[1] ?? '') : ''
+    if (!value) continue
+    const target = value.startsWith('~/')
+      ? join(home, value.slice(2))
+      : isAbsolute(value)
+        ? value
+        : join(dirname(file), value)
+    if (!isRegularFile(target)) continue
+    targets.push(target, ...gitConfigIncludeTargets(target, home, depth + 1))
+  }
+  return targets
+}
+
+/** A git config value without its quotes or a trailing comment. */
+function gitConfigValue(raw: string): string {
+  const value = raw.trim()
+  if (value.startsWith('"')) {
+    const end = value.indexOf('"', 1)
+    return end > 0 ? value.slice(1, end) : ''
+  }
+  return (value.split(/[#;]/, 1)[0] ?? '').trim()
+}
+
+function isRegularFile(path: string): boolean {
+  try {
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -443,11 +512,21 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
   }
 }
 
+/** Whether `dir` is `target` itself or one of its ancestors. */
+function coversPath(dir: string, target: string): boolean {
+  const rel = relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
 /** Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc. */
-export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.env): string[] {
+export function resolveNodeToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
   const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
+  const sharedHomeRoots = new Set(['Library', '.local', '.config'].map((dir) => join(home, dir)))
 
   for (const dir of dirs) {
     let nodePath: string
@@ -464,11 +543,19 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
     allow.add(`${binDir}/**`)
 
     // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
+    // That parent can be far wider than a Node install: `~/bin/node` makes it
+    // home itself, pnpm's `~/Library/pnpm/node` all of `~/Library`. Never grant
+    // home or above it, and from home's shared roots only npm's own packages.
     const versionRoot = dirname(binDir)
-    if (versionRoot !== binDir) {
-      allow.add(versionRoot)
-      allow.add(`${versionRoot}/**`)
+    if (versionRoot === binDir || coversPath(versionRoot, home)) continue
+    if (sharedHomeRoots.has(versionRoot)) {
+      const npmPackages = join(versionRoot, 'lib', 'node_modules')
+      allow.add(npmPackages)
+      allow.add(`${npmPackages}/**`)
+      continue
     }
+    allow.add(versionRoot)
+    allow.add(`${versionRoot}/**`)
   }
 
   return [...allow]
@@ -848,7 +935,7 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   sandbox: AcpAgentSandboxConfig,
   opts: { allowLocalhost?: boolean; stateDirs?: readonly string[] } | undefined,
 ): Partial<SandboxRuntimeConfig> {
-  const stateDirs = opts?.stateDirs ?? []
+  const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
   const base = workspaceSandboxOverlay(workspaceRoot, { chatStoreCarveOuts: stateDirs })
   const fs = base.filesystem
   if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
@@ -864,12 +951,12 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   // through home already work: ASRT allows `file-read-metadata` on every
   // directory whenever a read deny is in force.
   //
-  // A sandboxed Claude login check on macOS (`claude auth status`) reads its
-  // credentials from the login keychain, which Security.framework opens
-  // in-process, so agents that keep home-scoped state get the keychain
-  // directory, and nothing else above their own home dirs.
+  // Claude keeps its macOS login in the login keychain, which
+  // Security.framework opens in-process (`claude auth status` reads it), so an
+  // agent that opts in gets the keychain directory, and nothing else above its
+  // own home dirs.
   const keychainReadPaths =
-    configuredHomePaths.length > 0 && process.platform === 'darwin'
+    sandbox.allowMacOsKeychain === true && process.platform === 'darwin'
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
   const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
@@ -894,6 +981,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
       allowWrite: [...new Set([...fs.allowWrite, ...configuredHomePaths, ...scratchPaths])],
     },
   }
+}
+
+/**
+ * The agent state dirs an ACP overlay may grant: each spelled the way the
+ * kernel sees it, so a symlinked `COPSE_DIR` still matches the chat store's
+ * canonical mounts, and only when it sits strictly inside the chat store. The
+ * dir name is built from settings Copse does not fully validate (the agent
+ * id), so anything that resolves elsewhere, home included, is dropped.
+ */
+function grantableStateDirs(stateDirs: readonly string[]): string[] {
+  const chatStoreRoot = stateDirs.length > 0 ? getChatStoreRootSync() : undefined
+  if (!chatStoreRoot) return []
+  return stateDirs.flatMap((dir) => {
+    const canonical = canonicalizeReadTarget(dir)
+    return canonical !== chatStoreRoot && coversPath(chatStoreRoot, canonical) ? [canonical] : []
+  })
 }
 
 /** Loopback hostnames a local dev server binds/serves on. */
