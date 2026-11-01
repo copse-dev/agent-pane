@@ -228,6 +228,19 @@ describe('collectRestPrList', () => {
     assert.equal(list?.length, 2)
   })
 
+  it('pages past 100 for a larger limit in any state', async () => {
+    const open = (from: number, count: number): GhPrListEntry[] =>
+      Array.from({ length: count }, (_, i) => pr(from + i, 'OPEN'))
+    const read: number[] = []
+    const list = await collectRestPrList(false, 150, async (page, perPage) => {
+      read.push(page)
+      assert.equal(perPage, 100)
+      return open((page - 1) * 100 + 1, 100)
+    })
+    assert.equal(list?.length, 150)
+    assert.deepEqual(read, [1, 2])
+  })
+
   it('fails the whole list when any page fails', async () => {
     const list = await collectRestPrList(true, 5, async (page) =>
       page === 1 ? closedPage(1, 100, [3]) : null,

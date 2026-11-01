@@ -233,45 +233,42 @@ async function restListPrs(opts: {
   const repo = await githubRepoSlug(opts.cwd)
   if (!repo) return null
   const merged = opts.state === 'merged'
-  return collectRestPrList(
-    merged,
-    Math.min(Math.max(opts.limit, 1), 100),
-    async (page, perPage) => {
-      const query = new URLSearchParams({
-        state: merged ? 'closed' : opts.state,
-        per_page: String(perPage),
-        page: String(page),
-      })
-      if (opts.head) query.set('head', `${repo.owner}:${opts.head}`)
-      const { stdout, code } = await runGh(
-        ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
-        { cwd: opts.cwd },
-      )
-      if (code !== 0) return null
-      const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
-      return Array.isArray(list) ? list.map(mapRestPrListEntry) : null
-    },
-  )
+  return collectRestPrList(merged, Math.max(opts.limit, 1), async (page, perPage) => {
+    const query = new URLSearchParams({
+      state: merged ? 'closed' : opts.state,
+      per_page: String(perPage),
+      page: String(page),
+    })
+    if (opts.head) query.set('head', `${repo.owner}:${opts.head}`)
+    const { stdout, code } = await runGh(
+      ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
+      { cwd: opts.cwd },
+    )
+    if (code !== 0) return null
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
+    return Array.isArray(list) ? list.map(mapRestPrListEntry) : null
+  })
 }
 
 /** Closed-PR pages a `merged` REST fallback reads before it stops looking. */
 export const REST_MERGED_MAX_PAGES = 5
 
 /**
- * Collect a REST PR list page by page. REST has no merged filter, so a
- * `merged` list reads closed pages and keeps the merged entries until `limit`
- * is met, the pages run out, or {@link REST_MERGED_MAX_PAGES} is reached:
- * filtering one page misses merged PRs whenever unmerged closed ones fill it.
- * A failed page fails the whole list, so the caller reports the error rather
- * than a short list that reads as complete.
+ * Collect a REST PR list page by page, until `limit` is met or the pages run
+ * out: a REST page holds at most 100 PRs. REST has no merged filter, so a
+ * `merged` list reads closed pages and keeps the merged entries, up to
+ * {@link REST_MERGED_MAX_PAGES} pages: filtering one page misses merged PRs
+ * whenever unmerged closed ones fill it. A failed page fails the whole list,
+ * so the caller reports the error rather than a short list that reads as
+ * complete.
  */
 export async function collectRestPrList(
   merged: boolean,
   limit: number,
   fetchPage: (page: number, perPage: number) => Promise<GhPrListEntry[] | null>,
 ): Promise<GhPrListEntry[] | null> {
-  const perPage = merged ? 100 : limit
-  const pages = merged ? REST_MERGED_MAX_PAGES : 1
+  const perPage = merged ? 100 : Math.min(limit, 100)
+  const pages = merged ? REST_MERGED_MAX_PAGES : Math.ceil(limit / perPage)
   const out: GhPrListEntry[] = []
   for (let page = 1; page <= pages; page++) {
     const entries = await fetchPage(page, perPage)
