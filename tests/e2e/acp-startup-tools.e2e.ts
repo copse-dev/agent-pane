@@ -82,8 +82,8 @@ describe('Codex MCP startup failures', () => {
     // Every call failed, so there is no quiet activity to summarise: the
     // failure cards stand alone rather than under an empty rollup.
     await expect($('[data-message-id="startup-assistant"] .tool-card-rollup')).not.toExist()
-    await expect(docs.$('.tool-name')).toHaveText('docs startup')
-    await expect(tracker.$('.tool-name')).toHaveText('issue_tracker startup')
+    await expect(docs.$('.tool-name')).toHaveText('Docs startup')
+    await expect(tracker.$('.tool-name')).toHaveText('Issue tracker startup')
     await expect(docs).toHaveAttribute('data-status', 'error')
     await expect(tracker).toHaveAttribute('data-status', 'error')
     await expect(docs).toHaveAttribute('open')
