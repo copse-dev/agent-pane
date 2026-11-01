@@ -12,7 +12,6 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { humanDecisions, humanDecisionSource, humanDecisionActor } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
@@ -20,6 +19,13 @@ import type { UserAlertSender } from './user-alerts.ts'
 export interface AskUserRequest {
   questions: AskUserQuestion[]
   presentation?: AskUserActionsPresentation
+  /**
+   * The project of the thread asking, for a question raised outside its turn
+   * (an ACP agent's own continuation asking to go on). A running turn's project
+   * is used otherwise. With neither, the question stays on the desktop and is
+   * not offered to interactive clients.
+   */
+  projectId?: string
 }
 
 export interface AskUserResult {
@@ -262,7 +268,8 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(timedOutAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
-      const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+      // The asker's own project, never whichever one the window has open.
+      const projectId = req.projectId ?? getThreadExecutionContext()?.projectId
       const removeDecision =
         projectId && threadId
           ? humanDecisions.register(

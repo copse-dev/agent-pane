@@ -125,7 +125,10 @@ describe('deferral interception at the approval seam', () => {
     assert.equal((await readPendingDeferrals({ projectId: null, threadId: THREAD })).length, 0)
   })
 
-  it('outside any turn, queues under the active project as before', async () => {
+  // No production run thread lacks a turn (the dispatcher, ACP, headless and
+  // review paths all bind one), so this pins the rule rather than a live path:
+  // without a turn the window's project is never borrowed.
+  it("outside any turn, queues in the no-project bucket, never the window's project", async () => {
     setApprovalHandler(async () => ({ approved: true, remember: false }))
     beginDeferralMode(THREAD)
     const previous = storageGet('activeProjectId')
@@ -136,12 +139,11 @@ describe('deferral interception at the approval seam', () => {
       storageSet('activeProjectId', previous)
     }
 
-    const queued = await readPendingDeferrals({
-      projectId: 'window-project',
-      threadId: THREAD,
-    })
-    assert.equal(queued.length, 1)
-    assert.equal((await readPendingDeferrals({ projectId: null, threadId: THREAD })).length, 0)
+    assert.equal(
+      (await readPendingDeferrals({ projectId: 'window-project', threadId: THREAD })).length,
+      0,
+    )
+    assert.equal((await readPendingDeferrals({ projectId: null, threadId: THREAD })).length, 1)
   })
 
   it('collapses a repeated ask onto the one queue entry', async () => {
