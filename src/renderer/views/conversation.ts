@@ -61,11 +61,10 @@ import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 import {
   paintAssistantMarkdown,
   renderUserPromptMarkdown,
-  STREAM_PAINT_EVENT,
   STREAM_SETTLED_EVENT,
 } from '../markdown/message-markdown.ts'
 import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
-import { createFrameLoop } from './frame-loop.ts'
+import { createTranscriptScroll } from './transcript-scroll.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -2549,12 +2548,6 @@ function hydrationFailureEl(): HTMLElement {
   )
 }
 
-const SCROLL_PIN_THRESHOLD_PX = 48
-/** Ignore auto-scroll briefly after the user scrolls up during streaming. */
-const USER_SCROLL_UP_DEBOUNCE_MS = 150
-/** Time constant of the glide that keeps streamed text in view. */
-const STREAM_FOLLOW_EASE_MS = 90
-
 // Newest-first thread load (see rebuildForThread): render this many of the
 // most recent messages up front — enough to fill and slightly overfill a
 // typical viewport — then fill the rest of the history backwards in the
@@ -3069,13 +3062,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
 
-  let pinnedToBottom = true
-  let lastScrollTop = 0
-  // The scrollTop our own scrollToBottom() last landed on. Used to tell our
-  // programmatic scroll echo apart from a genuine user scroll, so a user scroll
-  // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
-  let lastProgrammaticScrollTop = -1
-  let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
   // What the last full rebuild drew the transcript from (see TranscriptInputs).
   let renderedInputs: TranscriptInputs | null = null
@@ -3085,6 +3071,26 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
+
+  // Scroll following and reading-position preservation (see transcript-scroll.ts).
+  const transcriptScroll = createTranscriptScroll({
+    list,
+    scrollToBottomBtn,
+    syncStickyImagePreview,
+    onReturnToLiveEnd: () => {
+      const threadId = store.getState().activeThreadId
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
+    },
+  })
+  const {
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition,
+  } = transcriptScroll
 
   // Tool-card refresh and disclosure state (see tool-card-refresh.ts). The
   // disclosure model owns auto / user-open / user-closed per key; the DOM only
@@ -3103,7 +3109,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncRunStepReasoning,
       syncReasoningEl,
     },
-    isPinnedToBottom: () => pinnedToBottom,
+    isPinnedToBottom: transcriptScroll.isPinnedToBottom,
     scrollToBottom: () => {
       scrollToBottom()
     },
@@ -3119,19 +3125,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     resyncRunMembership,
     syncRunStepTrail,
   } = toolCards
-
-  function isNearBottom(): boolean {
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight
-    return distance <= SCROLL_PIN_THRESHOLD_PX
-  }
-
-  function shouldAutoScroll(): boolean {
-    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
-  }
-
-  function updateScrollButton(): void {
-    scrollToBottomBtn.hidden = isNearBottom()
-  }
 
   function syncStickyImagePreview(releaseOnScrollUp = false): void {
     const prompt = stickyImagePrompt
@@ -3180,46 +3173,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncStickyImagePreview()
   }
 
-  function handleUserScroll(): void {
-    const scrollTop = list.scrollTop
-    // Ignore the scroll event emitted by our own scrollToBottom(): it lands on
-    // an exact, known position. Everything else is a real user scroll. Matching
-    // the position (rather than suppressing for a time window) means a user
-    // scroll-up during rapid autoscroll is never dropped, so the view reliably
-    // unpins instead of being yanked back to the bottom (#468). Consume the echo
-    // once so a later user scroll to the same pixel isn't swallowed too.
-    if (scrollTop === lastProgrammaticScrollTop) {
-      lastProgrammaticScrollTop = -1
-      lastScrollTop = scrollTop
-      return
-    }
-    // A drop that lands flush with the bottom is the browser clamping scrollTop
-    // after the content shrank (a finished turn's disclosures compacting), not
-    // the reader: scrolling up always leaves the bottom by at least the scroll.
-    // A clamp says nothing about what the reader wants, so it keeps the pin
-    // state it found: a pinned view keeps following (treating the clamp as a
-    // scroll-up used to unpin it), and one the reader scrolled away from is not
-    // re-pinned just because layout pulled it onto the bottom.
-    const dropped = scrollTop < lastScrollTop - 1
-    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
-    // A reader scrolling up can restore the full preview as soon as the prompt
-    // leaves its sticky position. A clamp caused by the preview shrinking cannot.
-    syncStickyImagePreview(dropped && !clamped)
-    if (clamped) {
-      // Layout, not the reader; the pin state stands.
-    } else if (dropped) {
-      userScrolledUpAt = Date.now()
-      pinnedToBottom = false
-    } else if (isNearBottom()) {
-      pinnedToBottom = true
-      const threadId = store.getState().activeThreadId
-      if (threadId) disclosures.resumeDeferredCompaction(threadId)
-    }
-    lastScrollTop = scrollTop
-    updateScrollButton()
-  }
-
-  list.addEventListener('scroll', handleUserScroll, { passive: true })
   const listResizeObserver =
     typeof ResizeObserver === 'undefined'
       ? null
@@ -3231,57 +3184,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // end a turn, so the footers follow the list's own children.
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync)
   conciseFooterObserver.observe(list, { childList: true })
-  // A wheel-up that a nested scroller (a long code block, tool output) takes
-  // for itself leaves the transcript where it is; unpinning on it would stop
-  // autoscroll with the view still at the bottom and no jump button to resume.
-  function nestedScrollerTakesWheelUp(target: EventTarget | null): boolean {
-    for (
-      let node = target instanceof Element ? target : null;
-      node && node !== list;
-      node = node.parentElement
-    ) {
-      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue
-      const { overflowY } = window.getComputedStyle(node)
-      if (overflowY === 'auto' || overflowY === 'scroll') return true
-    }
-    return false
-  }
-  list.addEventListener(
-    'wheel',
-    (event) => {
-      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
-        userScrolledUpAt = Date.now()
-        pinnedToBottom = false
-        updateScrollButton()
-      }
-    },
-    { passive: true },
-  )
-  scrollToBottomBtn.addEventListener('click', () => {
-    userScrolledUpAt = 0
-    scrollToBottom(true)
-  })
-
-  // Streamed prose grows a line at a time. Snapping to the bottom on every
-  // paint jerks the whole transcript up a line-height at once; glide there
-  // instead, closing a fixed fraction of the distance each frame.
-  const streamFollow = createFrameLoop((dt) => {
-    if (!shouldAutoScroll()) return false
-    const gap = list.scrollHeight - list.clientHeight - list.scrollTop
-    if (gap <= 1 || dt === Infinity) {
-      scrollToBottom()
-      return false
-    }
-    setScrollTopProgrammatically(
-      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
-    )
-    // Still following: the view is pinned, only a few pixels short mid-glide.
-    scrollToBottomBtn.hidden = true
-    return true
-  })
-  list.addEventListener(STREAM_PAINT_EVENT, () => {
-    if (shouldAutoScroll()) streamFollow.start()
-  })
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
     // The final render ran after message_done had already synced the list.
     hydrateRemoteArtifactImages(list, api)
@@ -3369,81 +3271,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     // Writing state lives in the agent controller; agent_activity events carry the label.
     setActivity(agentActivityLabel(thread, false))
-  }
-
-  // Single place that performs our own scroll bookkeeping. Assigns scrollTop,
-  // reads back the actual landed value (the browser may clamp it, e.g. when a
-  // rebuild shrank scrollHeight), and records it. The programmatic-echo arming
-  // is guarded on the position actually changing: when scrollTop doesn't move
-  // (already at the requested position, common while pinned during streaming)
-  // the browser fires NO scroll event, so handleUserScroll would never consume
-  // lastProgrammaticScrollTop back to -1 and it would silently swallow the next
-  // genuine user scroll landing on that pixel. Leaving it at -1 avoids that.
-  function setScrollTopProgrammatically(top: number): void {
-    const before = list.scrollTop
-    list.scrollTop = top
-    const landed = list.scrollTop
-    // Reading-anchor and layout corrections can move upward without reader
-    // intent. Keep the compact preview's hysteresis; only handleUserScroll
-    // releases it early for a genuine upward scroll.
-    syncStickyImagePreview()
-    lastScrollTop = landed
-    if (landed !== before) {
-      // Remember exactly where we landed so the resulting scroll event is
-      // recognized as ours and not treated as a user scroll (see handleUserScroll).
-      lastProgrammaticScrollTop = landed
-    }
-  }
-
-  function scrollToBottom(force = false): void {
-    if (!force && !shouldAutoScroll()) return
-    // The scrollable element is the messages list, not the mount root.
-    setScrollTopProgrammatically(list.scrollHeight)
-    if (force) {
-      userScrolledUpAt = 0
-      pinnedToBottom = true
-      const threadId = store.getState().activeThreadId
-      if (threadId) disclosures.resumeDeferredCompaction(threadId)
-    }
-    updateScrollButton()
-  }
-
-  /**
-   * scrollToBottom(true) flushes the transcript's bottom edge against the
-   * viewport, which is right for a short prompt but hides the start of one
-   * taller than the visible list: the reader only ever sees its tail (#2457).
-   * Nudge the scroll position, on top of scrollToBottom's, just enough to
-   * bring the whole row into view — or, when it can't fit, to show its top
-   * rather than its bottom, mirroring `scrollIntoView({ block: 'nearest' })`.
-   * Computed from rects (like captureReadingAnchor/restoreReadingAnchor above)
-   * and applied through setScrollTopProgrammatically so the programmatic-echo
-   * bookkeeping stays consistent with every other scroll in this module.
-   *
-   * When a correction was needed, this also un-pins autoscroll: otherwise the
-   * very next unforced scrollToBottom() (e.g. the reply's first token, which a
-   * mock model can emit before this function returns) would hug the tail
-   * again and immediately undo the correction. A pane wide enough to keep the
-   * prompt sticky-to-top never takes this branch, so this only affects the
-   * narrow layout where CSS stops anchoring it (`@container chat-pane
-   * (max-width: 360px)`) — the same layout the fold's own hand-off already
-   * treats as ordinary, unpinned transcript content.
-   */
-  function scrollUserPromptIntoView(msgEl: HTMLElement): void {
-    const listRect = list.getBoundingClientRect()
-    const msgRect = msgEl.getBoundingClientRect()
-    let delta = 0
-    if (msgRect.top < listRect.top) {
-      delta = msgRect.top - listRect.top
-    } else if (msgRect.bottom > listRect.bottom) {
-      delta =
-        msgRect.height > listRect.height
-          ? msgRect.top - listRect.top
-          : msgRect.bottom - listRect.bottom
-    }
-    if (delta === 0) return
-    setScrollTopProgrammatically(list.scrollTop + delta)
-    pinnedToBottom = false
-    updateScrollButton()
   }
 
   /**
@@ -3924,7 +3751,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!thread) return
     // Heights change as tool cards appear and vanish, so hold the reader's place
     // by the first visible item rather than by the numeric scroll offset.
-    const wasPinned = pinnedToBottom
+    const wasPinned = transcriptScroll.isPinnedToBottom()
     const prevScrollTop = list.scrollTop
     const readingAnchor = holdPlace && !wasPinned ? captureReadingAnchor() : null
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
@@ -4344,12 +4171,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         return
       }
     }
-    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
-    if (!rebuildingSameThread) {
-      pinnedToBottom = true
-      userScrolledUpAt = 0
-      lastScrollTop = 0
-    }
+    const preservedScrollTop =
+      rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null
+    if (!rebuildingSameThread) transcriptScroll.resetForThread()
     toolCards.forgetDisclosureElements()
     if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
@@ -4417,46 +4241,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
-  function captureReadingAnchor(): {
-    element: HTMLElement
-    viewportTop: number
-  } | null {
-    const listRect = list.getBoundingClientRect()
-    const candidates = list.querySelectorAll<HTMLElement>(
-      ':scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]',
-    )
-    for (const element of candidates) {
-      const rect = element.getBoundingClientRect()
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top }
-    }
-    return null
-  }
-
-  function restoreReadingAnchor(
-    anchor: { element: HTMLElement; viewportTop: number } | null,
-    fallbackScrollTop: number,
-  ): void {
-    if (anchor?.element.isConnected) {
-      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop
-      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta)
-      return
-    }
-    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop)
-  }
-
-  function keepReadingPosition(update: () => void): void {
-    // Preserve the first visible transcript item's viewport offset. Numeric
-    // scrollTop alone cannot protect what the reader is looking at when a
-    // disclosure above that item changes height (#468).
-    const prevScrollTop = list.scrollTop
-    const wasPinned = pinnedToBottom
-    const readingAnchor = wasPinned ? null : captureReadingAnchor()
-    update()
-    if (wasPinned) {
-      scrollToBottom()
-    } else restoreReadingAnchor(readingAnchor, prevScrollTop)
-  }
-
   function jumpToReviewerInput(messageId: string, requestId: string): void {
     const activeThreadId = store.getState().activeThreadId
     let attempts = 0
@@ -4476,8 +4260,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       if (card instanceof HTMLDetailsElement) card.open = true
       const target = card ?? message
-      pinnedToBottom = false
-      userScrolledUpAt = Date.now()
+      transcriptScroll.unpin()
       target.scrollIntoView({ behavior: 'smooth', block: 'center' })
       target.classList.add('reviewer-input-highlight')
       setTimeout(() => {

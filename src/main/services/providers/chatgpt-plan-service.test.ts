@@ -95,13 +95,19 @@ function authFixture(
   dependencies: ChatGptOAuthDependencies
   authorizations: URL[]
   tokenRequests: URLSearchParams[]
+  focusCalls: number[]
 } {
   const authorizations: URL[] = []
   const tokenRequests: URLSearchParams[] = []
+  const focusCalls: number[] = []
   return {
     authorizations,
     tokenRequests,
+    focusCalls,
     dependencies: {
+      focusApp: (): void => {
+        focusCalls.push(Date.now())
+      },
       openBrowser: async (raw): Promise<void> => {
         const authorization = new URL(raw)
         authorizations.push(authorization)
@@ -223,11 +229,13 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     assert.equal(first.accounts.at(0)?.planEnabled, true)
     assert.equal(first.accounts.at(0)?.label, 'user@example.com')
     assert.equal(JSON.stringify(first).includes('new-access'), false)
+    assert.equal(fixture.focusCalls.length, 1)
     const initial = fixture.authorizations.at(0)
     assert.ok(initial)
     assert.equal(initial.searchParams.get('client_id'), 'dynamic_agent_client')
     assert.equal(initial.searchParams.get('agent_name_hint'), 'Copse')
     await service.signIn('oaiapp_copse')
+    assert.equal(fixture.focusCalls.length, 2)
     const returning = fixture.authorizations.at(1)
     assert.ok(returning)
     assert.equal(returning.searchParams.get('client_id'), 'oaiapp_copse')
@@ -393,6 +401,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     let refreshes = 0
     const service = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (_input, init): Promise<Response> => {
         refreshes++
         assert.ok(init?.body instanceof URLSearchParams)
@@ -415,6 +424,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     assert.equal(store.read().accounts.at(0)?.credentials?.refreshToken, 'rotated-refresh')
     const restarted = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (): Promise<Response> => {
         throw new Error('Must reuse saved credentials')
       },
@@ -426,6 +436,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     const original = process.argv
     const service = new ChatGptPlanService(memoryStore(savedState()), {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (): Promise<Response> => {
         throw new Error('Must not refresh')
       },
@@ -447,6 +458,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     let refreshes = 0
     const service = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (_input, init): Promise<Response> => {
         refreshes++
         assert.ok(init?.body instanceof URLSearchParams)
@@ -470,6 +482,31 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     assert.equal(store.read().accounts.at(0)?.credentials?.refreshToken, 'rotated')
   })
 
+  it('clears a dead refresh token on a 400/401 so status stops claiming the account is connected', async () => {
+    const store = memoryStore(savedState())
+    const service = new ChatGptPlanService(store, {
+      openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
+      fetch: async (): Promise<Response> => new Response('', { status: 400 }),
+    })
+    await assert.rejects(service.refreshAccount('oaiapp_copse'), /sign-in expired/)
+    assert.equal(store.read().accounts.at(0)?.credentials, null)
+    assert.equal(chatGptPlanStatus(store.read()).accounts.at(0)?.connected, false)
+    // A later reconnect must start a real reauthorization, not another doomed refresh.
+    await assert.rejects(service.credentials('oaiapp_copse'), /Reconnect/)
+  })
+
+  it('keeps a stale refresh token on a transient 5xx instead of forcing a reconnect', async () => {
+    const store = memoryStore(savedState())
+    const service = new ChatGptPlanService(store, {
+      openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
+      fetch: async (): Promise<Response> => new Response('', { status: 503 }),
+    })
+    await assert.rejects(service.refreshAccount('oaiapp_copse'), /HTTP 503/)
+    assert.equal(store.read().accounts.at(0)?.credentials?.refreshToken, 'refresh-before')
+  })
+
   it('lists the OAuth catalog in server order, filters hidden models, and keeps accounts separate', async () => {
     const state = savedState()
     const first = state.accounts.at(0)
@@ -483,6 +520,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     })
     const service = new ChatGptPlanService(memoryStore(state), {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (_input, init): Promise<Response> => {
         assert.deepEqual(init?.headers, { Authorization: 'Bearer second-access' })
         return Response.json({
@@ -513,6 +551,7 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     const store = memoryStore(savedState())
     const service = new ChatGptPlanService(store, {
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
       fetch: async (): Promise<Response> => {
         throw new Error('Offline')
       },

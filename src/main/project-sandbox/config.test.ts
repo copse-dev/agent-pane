@@ -12,6 +12,8 @@ import {
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
+import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
   acpAgentSandboxOverlay,
   baseSandboxConfig,
@@ -27,6 +29,8 @@ import {
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  refreshGitConfigIncludeReadPaths,
+  resolveGitConfigIncludes,
   resolveRustToolchainAllowRead,
   sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
@@ -54,6 +58,54 @@ import {
   clearThreadReadRoots,
   grantThreadReadRoot,
 } from '../services/security/thread-read-roots.ts'
+
+/**
+ * The action of the last `file-read*` rule in a rendered Seatbelt profile that
+ * matches `path` (Seatbelt is last-match-wins). Understands the `subpath`,
+ * `literal` and `regex` filters ASRT emits for plain paths, and throws on any
+ * other filter rather than guess.
+ */
+function lastReadRule(profile: string, path: string): 'allow' | 'deny' | null {
+  let last: 'allow' | 'deny' | null = null
+  let current: { action: 'allow' | 'deny'; matched: boolean } | null = null
+  const finish = (): void => {
+    if (current?.matched) last = current.action
+    current = null
+  }
+  for (const line of profile.split('\n')) {
+    const header = /^\((allow|deny) file-read\*(\))?$/.exec(line)
+    if (header) {
+      finish()
+      const action = header[1] === 'allow' ? 'allow' : 'deny'
+      // A bare `(allow file-read*)` matches every path.
+      if (header[2]) last = action
+      else current = { action, matched: false }
+      continue
+    }
+    if (!current) continue
+    if (!line.startsWith('  ')) {
+      finish()
+      continue
+    }
+    const filter = /^ {2}\((subpath|literal|regex) "((?:[^"\\]|\\.)*)"\)\)?$/.exec(line)
+    if (filter) {
+      const [, kind, raw = ''] = filter
+      const value = raw.replace(/\\(.)/g, '$1')
+      const matches =
+        kind === 'subpath'
+          ? path === value || path.startsWith(`${value}/`)
+          : kind === 'literal'
+            ? path === value
+            : new RegExp(value).test(path)
+      if (matches) current.matched = true
+    } else if (!/^ {2}\(with message "[^"]*"\)\)?$/.test(line)) {
+      throw new Error(`unrecognized Seatbelt read filter: ${line}`)
+    }
+    if (line.endsWith('))')) finish()
+  }
+  finish()
+  return last
+}
 
 /** Bare directory entries are emitted everywhere but Linux (see config.ts). */
 const LISTING_ENTRIES = process.platform !== 'linux'
@@ -131,7 +183,7 @@ describe('acpAgentSandboxOverlay', () => {
       assert.ok(list.includes(`${claudeDir}/**`))
       assert.ok(list.includes(join(homedir(), '.claude.json')))
     }
-    assert.equal(fs.allowRead.includes(homedir()), process.platform !== 'linux')
+    assert.ok(!fs.allowRead.includes(homedir()))
     assert.ok(!fs.allowRead.includes(`${homedir()}/**`))
     assert.ok(!fs.allowWrite.includes(homedir()))
     // Base workspace rules survive: home still deny-read, workspace still writable.
@@ -163,6 +215,54 @@ describe('acpAgentSandboxOverlay', () => {
     // Reads and the bridge's loopback are unchanged.
     assert.deepEqual(readonly.filesystem?.allowRead, writable.filesystem?.allowRead)
     assert.deepEqual(readonly.network, writable.network)
+  })
+
+  it('never re-opens the home tree on macOS: only an opted-in keychain and the declared dirs', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(platform)
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      const home = homedir()
+      const fs = acpAgentSandboxOverlay(workspace, {
+        ...sandbox,
+        allowMacOsKeychain: true,
+      }).filesystem
+      assert.ok(fs?.allowRead)
+      // No read grant may cover home itself or anything above it.
+      for (const path of fs.allowRead) {
+        assert.ok(
+          !home.startsWith(path.replace(/\/\*\*$/, '')),
+          `allowRead re-opens home through ${path}`,
+        )
+      }
+      const keychains = join(home, 'Library', 'Keychains')
+      assert.ok(fs.allowRead.includes(keychains))
+      assert.ok(fs.allowRead.includes(`${keychains}/**`))
+
+      // ASRT renders a literal allow as `(subpath …)`, so check the profile it
+      // would run under: no read allow may name home.
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: fs.denyRead, allowWithinDeny: fs.allowRead },
+        writeConfig: { allowOnly: fs.allowWrite, denyWithinAllow: fs.denyWrite },
+        binShell: '/bin/sh',
+      })
+      const readAllows = profile
+        .split('(allow file-read*')
+        .slice(1)
+        .map((rule) => rule.split(/\n\(/)[0] ?? '')
+      assert.ok(readAllows.length > 0, 'the profile re-allows the workspace')
+      for (const rule of readAllows) {
+        assert.ok(!rule.includes(`(subpath "${home}")`), `profile re-allows home: ${rule}`)
+      }
+
+      // Home dirs alone never bring the keychain with them.
+      const declared = acpAgentSandboxOverlay(workspace, sandbox).filesystem
+      assert.ok(!declared?.allowRead?.some((path) => path.startsWith(keychains)))
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
   })
 
   it('adds trustd only on opt-in without changing network or filesystem policy', () => {
@@ -243,6 +343,312 @@ describe('resolveNodeToolchainAllowRead', () => {
     const binDir = dirname(nodePath)
     assert.ok(allow.includes(binDir))
     assert.ok(allow.some((p) => p === `${binDir}/**`))
+  })
+
+  function fakeHome(): { home: string; cleanup: () => void } {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-node-home-')))
+    return {
+      home,
+      cleanup: (): void => {
+        rmSync(home, { recursive: true, force: true })
+      },
+    }
+  }
+
+  function installNode(binDir: string): string {
+    mkdirSync(binDir, { recursive: true })
+    const node = join(binDir, 'node')
+    writeFileSync(node, '')
+    return node
+  }
+
+  it('does not widen ~/bin/node into a grant on the whole home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const node = installNode(join(home, 'bin'))
+      // Even with npm's global tree beside it, home is never a version root.
+      mkdirSync(join(home, 'lib', 'node_modules'), { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(home, 'bin') }, home)
+      assert.deepEqual(allow, [node, join(home, 'bin'), `${join(home, 'bin')}/**`])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants npm under ~/.local/bin/node its global tree, never all of ~/.local', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const binDir = join(home, '.local', 'bin')
+      installNode(binDir)
+      // `npm config set prefix ~/.local` puts lib/node_modules here too.
+      const npmTree = join(home, '.local', 'lib', 'node_modules')
+      mkdirSync(npmTree, { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: binDir }, home)
+      assert.ok(allow.includes(`${binDir}/**`))
+      assert.ok(allow.includes(npmTree))
+      assert.ok(allow.includes(`${npmTree}/**`))
+      assert.ok(!allow.includes(join(home, '.local')))
+      assert.ok(!allow.includes(`${join(home, '.local')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never re-allows home or its ancestors when node sits directly in them', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const node = installNode(home)
+      const allow = resolveNodeToolchainAllowRead({ PATH: home }, home)
+      assert.deepEqual(allow, [node])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('keeps the nvm version root, and follows a ~/bin symlink to it', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      const node = installNode(join(versionRoot, 'bin'))
+      mkdirSync(join(versionRoot, 'lib', 'node_modules'), { recursive: true })
+      const direct = resolveNodeToolchainAllowRead({ PATH: join(versionRoot, 'bin') }, home)
+      assert.ok(direct.includes(versionRoot))
+      assert.ok(direct.includes(`${versionRoot}/**`))
+
+      mkdirSync(join(home, 'bin'))
+      symlinkSync(node, join(home, 'bin', 'node'))
+      const linked = resolveNodeToolchainAllowRead({ PATH: join(home, 'bin') }, home)
+      assert.ok(linked.includes(join(home, 'bin', 'node')))
+      assert.ok(linked.includes(node))
+      assert.ok(linked.includes(`${versionRoot}/**`))
+      assert.ok(!linked.includes(home))
+      assert.ok(!linked.includes(`${home}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never follows a node symlink a contained command could plant', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // A PATH directory inside a checkout, writable by contained commands.
+      const pathDir = join(home, 'src', 'app', 'node_modules', '.bin')
+      mkdirSync(pathDir, { recursive: true })
+      const ssh = join(home, '.ssh')
+      mkdirSync(join(ssh, 'bin'), { recursive: true })
+      mkdirSync(join(ssh, 'lib', 'node_modules'), { recursive: true })
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+      // A target named `node` in a `bin` with npm beside it, but whose root is
+      // a shallow home directory, is followed no further than any other target.
+      writeFileSync(join(ssh, 'bin', 'node'), '')
+      for (const target of [join(ssh, 'id_ed25519'), join(ssh, 'bin', 'node')]) {
+        rmSync(join(pathDir, 'node'), { force: true })
+        symlinkSync(target, join(pathDir, 'node'))
+        const allow = resolveNodeToolchainAllowRead({ PATH: pathDir }, home)
+        assert.ok(allow.includes(join(pathDir, 'node')))
+        assert.deepEqual(
+          allow.filter((p) => p === ssh || p.startsWith(`${ssh}/`)),
+          [],
+          `${target} must not widen the grant`,
+        )
+      }
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants a Volta shim its tools tree, not the rest of ~/.volta or home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const shims = join(home, '.volta', 'bin')
+      installNode(shims)
+      const tools = join(home, '.volta', 'tools')
+      installNode(join(tools, 'image', 'node', '24.0.0', 'bin'))
+      mkdirSync(join(home, '.volta', 'cache'), { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: shims }, home)
+      assert.ok(allow.includes(`${shims}/**`))
+      assert.ok(allow.includes(tools))
+      assert.ok(allow.includes(`${tools}/**`))
+      assert.ok(
+        !allow.some((p) => p === join(home, '.volta') || p.startsWith(`${home}/.volta/cache`)),
+      )
+      assert.ok(!allow.includes(home) && !allow.includes(`${home}/**`))
+
+      // A custom VOLTA_HOME moves the shim directory with it.
+      const custom = join(home, 'tools', 'volta')
+      installNode(join(custom, 'bin'))
+      mkdirSync(join(custom, 'tools'), { recursive: true })
+      const moved = resolveNodeToolchainAllowRead(
+        { PATH: join(custom, 'bin'), VOLTA_HOME: custom },
+        home,
+      )
+      assert.ok(moved.includes(`${join(custom, 'tools')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants an asdf shim its installs, plugins and version files only', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const asdf = join(home, '.asdf')
+      installNode(join(asdf, 'shims'))
+      installNode(join(asdf, 'installs', 'nodejs', '24.0.0', 'bin'))
+      mkdirSync(join(asdf, 'plugins', 'nodejs'), { recursive: true })
+      mkdirSync(join(asdf, 'downloads'), { recursive: true })
+      writeFileSync(join(home, '.tool-versions'), 'nodejs 24.0.0\n')
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(asdf, 'shims') }, home)
+      assert.ok(allow.includes(`${join(asdf, 'installs')}/**`))
+      assert.ok(allow.includes(`${join(asdf, 'plugins')}/**`))
+      assert.ok(allow.includes(join(home, '.tool-versions')))
+      // Paths that do not exist add nothing.
+      assert.ok(!allow.includes(join(asdf, 'lib')))
+      assert.ok(!allow.includes(join(home, '.asdfrc')))
+      assert.ok(!allow.some((p) => p === asdf || p.startsWith(join(asdf, 'downloads'))))
+      assert.ok(!allow.includes(home) && !allow.includes(`${home}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('ignores a shim manager root that is home itself', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      installNode(join(home, 'bin'))
+      mkdirSync(join(home, 'tools'), { recursive: true })
+      const allow = resolveNodeToolchainAllowRead(
+        { PATH: join(home, 'bin'), VOLTA_HOME: home },
+        home,
+      )
+      assert.ok(!allow.some((p) => p.startsWith(join(home, 'tools'))))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('needs npm beside a version root before re-allowing it', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      installNode(join(versionRoot, 'bin'))
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(versionRoot, 'bin') }, home)
+      assert.ok(!allow.includes(versionRoot))
+      assert.ok(!allow.includes(`${versionRoot}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('recognises home behind a PATH entry that reaches it through an alias', () => {
+    const { home: parent, cleanup } = fakeHome()
+    try {
+      const home = join(parent, 'home')
+      const alias = join(parent, 'alias')
+      installNode(join(home, 'bin'))
+      mkdirSync(join(home, 'lib', 'node_modules'), { recursive: true })
+      mkdirSync(join(home, '.local', 'lib', 'node_modules'), { recursive: true })
+      installNode(join(home, '.local', 'bin'))
+      symlinkSync(home, alias, 'dir')
+      const allow = resolveNodeToolchainAllowRead(
+        { PATH: [join(alias, 'bin'), join(alias, '.local', 'bin')].join(':') },
+        home,
+      )
+      // `alias` is home and `alias/.local` a shallow home directory, whichever
+      // spelling PATH uses.
+      for (const root of [alias, home, join(alias, '.local')]) {
+        assert.ok(!allow.includes(root), `${root} must not be granted`)
+        assert.ok(!allow.includes(`${root}/**`), `${root}/** must not be granted`)
+      }
+      assert.ok(allow.includes(`${join(alias, '.local', 'lib', 'node_modules')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('recognises home through a symlink once node is canonicalized', () => {
+    const { home: parent, cleanup } = fakeHome()
+    try {
+      const realHome = join(parent, 'real')
+      const linkedHome = join(parent, 'linked')
+      installNode(join(realHome, 'bin'))
+      mkdirSync(join(realHome, 'lib', 'node_modules'), { recursive: true })
+      symlinkSync(realHome, linkedHome, 'dir')
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(linkedHome, 'bin') }, linkedHome)
+      assert.ok(allow.includes(join(linkedHome, 'bin', 'node')))
+      for (const home of [realHome, linkedHome]) {
+        assert.ok(!allow.includes(home))
+        assert.ok(!allow.includes(`${home}/**`))
+      }
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('git config include reads', () => {
+  it("resolves the files the user's git config includes, as git follows them", async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-home-')))
+    try {
+      mkdirSync(join(home, 'work'))
+      mkdirSync(join(home, 'dotfiles', 'nested'), { recursive: true })
+      writeFileSync(
+        join(home, '.gitconfig'),
+        [
+          '[user]',
+          '  path = ~/not-an-include',
+          '[include]',
+          '  path = ~/.gitconfig-work ; work identity',
+          '[includeIf "gitdir:~/work/"]',
+          '  path = "dotfiles/conditional"',
+          '[include]',
+          '  path = ~/missing',
+          '  path = ~/work',
+        ].join('\n'),
+      )
+      writeFileSync(join(home, 'not-an-include'), '')
+      writeFileSync(join(home, '.gitconfig-work'), '[include]\n\tpath = dotfiles/nested/deep\n')
+      writeFileSync(join(home, 'dotfiles', 'conditional'), '')
+      writeFileSync(join(home, 'dotfiles', 'nested', 'deep'), '')
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
+        join(home, '.gitconfig-work'),
+        join(home, 'dotfiles', 'conditional'),
+        join(home, 'dotfiles', 'nested', 'deep'),
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at git’s include depth when configs include each other', async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-loop-')))
+    try {
+      writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.loop\n')
+      writeFileSync(join(home, '.loop'), '[include]\npath = ~/.gitconfig\n')
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
+        join(home, '.gitconfig'),
+        join(home, '.loop'),
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('grants the resolved includes in every workspace overlay once refreshed', async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-overlay-')))
+    const previous = process.env['HOME']
+    try {
+      writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.gitconfig-work\n')
+      writeFileSync(join(home, '.gitconfig-work'), '')
+      process.env['HOME'] = home
+      await refreshGitConfigIncludeReadPaths()
+      const fs = workspaceSandboxOverlay('/tmp/acp-sandbox-test-workspace').filesystem
+      assert.ok(fs?.allowRead?.includes(join(home, '.gitconfig-work')))
+    } finally {
+      if (previous === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previous
+      await refreshGitConfigIncludeReadPaths()
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })
 
@@ -429,8 +835,98 @@ describe('workspaceSandboxOverlay', () => {
     // ...but git's user-level config must stay readable or seatbelt EPERM makes
     // every git command fatal (exit 128).
     assert.ok(filesystem.allowRead?.includes(join(home, '.gitconfig')))
+    // The whole XDG directory, so an include.path or hooksPath into it works.
+    assert.ok(filesystem.allowRead?.includes(join(home, '.config/git')))
     assert.ok(filesystem.allowRead?.includes(join(home, '.config/git/**')))
     assert.equal(filesystem.allowGitConfig, true)
+  })
+
+  it("keeps git's XDG credential store unreadable in the rendered macOS profile", () => {
+    const home = homedir()
+    const filesystem = workspaceSandboxOverlay('/Users/me/project').filesystem
+    assert.ok(filesystem)
+    // Shape the overlay the way ASRT's SandboxManager hands it to the macOS
+    // backend: a trailing `/**` is stripped from every read path.
+    const profile = wrapCommandWithSandboxMacOS({
+      command: 'true',
+      binShell: '/bin/bash',
+      needsNetworkRestriction: false,
+      readConfig: {
+        denyOnly: filesystem.denyRead.map(removeTrailingGlobSuffix),
+        allowWithinDeny: (filesystem.allowRead ?? []).map(removeTrailingGlobSuffix),
+      },
+      writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+    })
+    // Seatbelt is last-match-wins: the credential store must hit a deny last,
+    // while a config file beside it still hits an allow last.
+    assert.equal(lastReadRule(profile, join(home, '.config/git/credentials')), 'deny')
+    assert.equal(lastReadRule(profile, join(home, '.config/git/config')), 'allow')
+    assert.equal(lastReadRule(profile, join(home, '.ssh/id_ed25519')), 'deny')
+  })
+
+  describe('with node installed under the home directory', () => {
+    function withHomeNode(
+      layout: (home: string) => string,
+      check: (allowRead: string[], home: string) => void,
+    ): void {
+      const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-overlay-home-')))
+      const saved = { home: process.env['HOME'], path: process.env['PATH'] }
+      try {
+        const binDir = layout(home)
+        mkdirSync(binDir, { recursive: true })
+        writeFileSync(join(binDir, 'node'), '')
+        process.env['HOME'] = home
+        process.env['PATH'] = `${binDir}:${saved.path ?? ''}`
+        check(workspaceSandboxOverlay('/tmp/project').filesystem?.allowRead ?? [], home)
+      } finally {
+        if (saved.home === undefined) delete process.env['HOME']
+        else process.env['HOME'] = saved.home
+        if (saved.path === undefined) delete process.env['PATH']
+        else process.env['PATH'] = saved.path
+        rmSync(home, { recursive: true, force: true })
+      }
+    }
+
+    it('re-allows ~/bin but never the whole home', () => {
+      withHomeNode(
+        (home) => join(home, 'bin'),
+        (allowRead, home) => {
+          assert.ok(allowRead.includes(join(home, 'bin', 'node')))
+          assert.ok(!allowRead.includes(home))
+          assert.ok(!allowRead.includes(`${home}/**`))
+        },
+      )
+    })
+
+    it('re-allows ~/.local/bin but never all of ~/.local', () => {
+      withHomeNode(
+        (home) => {
+          mkdirSync(join(home, '.local', 'lib', 'node_modules'), { recursive: true })
+          return join(home, '.local', 'bin')
+        },
+        (allowRead, home) => {
+          assert.ok(allowRead.includes(`${join(home, '.local', 'bin')}/**`))
+          assert.ok(!allowRead.includes(join(home, '.local')))
+          assert.ok(!allowRead.includes(`${join(home, '.local')}/**`))
+        },
+      )
+    })
+
+    it('still re-allows an nvm version root', () => {
+      withHomeNode(
+        (home) => {
+          const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+          mkdirSync(join(versionRoot, 'lib', 'node_modules'), { recursive: true })
+          return join(versionRoot, 'bin')
+        },
+        (allowRead, home) => {
+          const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+          assert.ok(allowRead.includes(versionRoot))
+          assert.ok(allowRead.includes(`${versionRoot}/**`))
+          assert.ok(!allowRead.includes(`${home}/**`))
+        },
+      )
+    })
   })
 
   it('includes workspace-scoped mandatory write deny paths', () => {
@@ -1141,6 +1637,57 @@ describe('gitBackupSandboxOverlay', () => {
 })
 
 describe('chat-store sandbox reads', () => {
+  it("grants an agent's own state dir in the chat store read and write, clear of read-only mounts", () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-state-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const root = join(store, 'project', 'active')
+      const stateDir = join(store, 'project', 'thread', 'acp-agent-config', 'claude')
+      mkdirSync(root, { recursive: true })
+      mkdirSync(stateDir, { recursive: true })
+      const sandbox = { allowedDomains: [], homeDirs: ['.claude'] }
+      const fs = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [stateDir] }).filesystem
+      assert.ok(fs?.allowRead)
+      for (const list of [fs.allowRead, fs.allowWrite]) {
+        assert.ok(list.includes(stateDir))
+        assert.ok(list.includes(`${stateDir}/**`))
+      }
+      if (process.platform === 'linux') {
+        // A read bind on an ancestor would shadow the state dir's write bind.
+        const shadowing = fs.allowRead.filter((path) => {
+          const base = path.replace(/\/\*\*$/, '')
+          return base !== stateDir && stateDir.startsWith(`${base}/`)
+        })
+        assert.deepEqual(shadowing, [])
+      }
+      // Without the state dir, the thread's chat data stays read-only.
+      const plain = acpAgentSandboxOverlay(root, sandbox).filesystem
+      assert.equal(plain?.allowWrite.includes(stateDir), false)
+
+      // A dir that resolves outside the chat store, or is the store itself, is
+      // never granted: the agent id that names it is not fully validated.
+      const escaped = join(store, 'project', 'thread', 'acp-agent-config', '..', '..', '..', '..')
+      for (const outside of [homedir(), profile, escaped, store]) {
+        const grants = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [outside] }).filesystem
+        assert.equal(grants?.allowWrite.includes(resolve(outside)), false, outside)
+      }
+
+      // Spelled through a symlink, the grant names the path the kernel sees.
+      const alias = join(profile, 'alias')
+      symlinkSync(join(store, 'project'), alias)
+      const viaAlias = join(alias, 'thread', 'acp-agent-config', 'claude')
+      const aliased = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [viaAlias] }).filesystem
+      assert.ok(aliased?.allowWrite.includes(stateDir))
+      assert.equal(aliased?.allowWrite.includes(viaAlias), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
   it('keeps chat data read-only without shadowing nested scratch or checkout write mounts', () => {
     const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-chat-overlay-')))
     const previous = process.env['COPSE_DIR']

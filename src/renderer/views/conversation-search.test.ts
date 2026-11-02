@@ -16,6 +16,20 @@ describe('findMatchOffsets', () => {
     assert.deepEqual(findMatchOffsets('Foo foo FOO', 'foo'), [0, 4, 8])
   })
 
+  it('keeps original UTF-16 offsets after characters whose lowercase expands', () => {
+    assert.deepEqual(findMatchOffsets('İstanbul build build', 'build'), [9, 15])
+  })
+
+  it('matches Unicode case pairs without changing source offsets', () => {
+    assert.deepEqual(findMatchOffsets('İ Σ σ ς 𐐀', 'σ'), [2, 4, 6])
+    assert.deepEqual(findMatchOffsets('İ Σ σ ς 𐐀', '𐐨'), [8])
+    assert.deepEqual(findMatchOffsets('İstanbul', 'İstanbul'), [0])
+  })
+
+  it('treats search punctuation as literal text', () => {
+    assert.deepEqual(findMatchOffsets('İ [a+b].* [a+b].*', '[a+b].*'), [2, 10])
+  })
+
   it('returns an empty list for an empty needle', () => {
     assert.deepEqual(findMatchOffsets('anything', ''), [])
   })
@@ -87,6 +101,17 @@ describe('cross-node search index', () => {
     ])
     assert.deepEqual(findSegmentMatches(index, 'e b'), [
       { startSegment: 0, startOffset: 2, endSegment: 1, endOffset: 1 },
+    ])
+  })
+
+  it('maps matches after expanding case folds back across formatting', () => {
+    const index = buildSearchIndex([
+      { text: 'İstanbul: ', breakBefore: true },
+      { text: 'build', breakBefore: false },
+      { text: ' now', breakBefore: false },
+    ])
+    assert.deepEqual(findSegmentMatches(index, 'BUILD now'), [
+      { startSegment: 1, startOffset: 0, endSegment: 2, endOffset: 4 },
     ])
   })
 

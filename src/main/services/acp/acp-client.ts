@@ -59,6 +59,7 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
   acpReattachMethods,
   noReattachMethodFailure,
@@ -68,7 +69,11 @@ import {
   type AcpSessionCarryOver,
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import {
+  acpAgentSandboxOverlay,
+  ensureWorkspaceTmpDir,
+  refreshGitConfigIncludeReadPaths,
+} from '../../project-sandbox/config.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -113,6 +118,15 @@ export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, Acp
  * approval UX even though the external agent runs the model loop.
  */
 
+/** Host-owned facts about a permission request, beyond what the request itself says. */
+export interface AcpPermissionRequestContext {
+  /**
+   * Identity fields of the agent's earlier `tool_call`/`tool_call_update`
+   * notifications for the same `toolCallId` (#1446 provenance).
+   */
+  observedToolCall: readonly AcpToolIdentity[]
+}
+
 export interface AcpClientHandlers {
   /** Forward a translated update to the UI (`agent:chunk`). */
   onChunk: (chunk: StreamChunk) => void
@@ -120,6 +134,7 @@ export interface AcpClientHandlers {
   requestPermission: (
     req: RequestPermissionRequest,
     signal: AbortSignal,
+    context?: AcpPermissionRequestContext,
   ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
@@ -188,6 +203,14 @@ export interface AcpAgentSpawnConfig {
    * platform; otherwise the agent spawns unsandboxed as before.
    */
   sandbox?: AcpAgentSandboxConfig
+  /**
+   * The thread-scoped config directory Copse created for this agent (for
+   * Claude, the `CLAUDE_CONFIG_DIR` it was given). It sits in the chat store,
+   * which is read-only to a sandboxed agent, so the seatbelt grants it read and
+   * write. Unset when the user's own env override names the directory: that
+   * path could be anywhere, home included, so it is never granted.
+   */
+  stateDir?: string
   /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
@@ -555,9 +578,12 @@ export async function spawnAcpAgentProcess(
     throw new Error('A read-only checkout cannot run a coding agent outside the project sandbox')
   }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    // The agent runs git with the user's config; pick up its current includes.
+    await refreshGitConfigIncludeReadPaths()
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+      ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -1251,6 +1277,7 @@ export async function openAcpSession(
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
+  const observedToolCalls = new AcpToolCallObservations()
 
   const enqueueUpdate = (sessionId: string, update: SessionUpdate): void => {
     if (activeUpdates?.sessionId === sessionId) {
@@ -1272,7 +1299,15 @@ export async function openAcpSession(
 
   const app = client({ name: 'copse' })
     .onNotification(methods.client.session.update, (ctx) => {
-      enqueueUpdate(ctx.params.sessionId, ctx.params.update)
+      const { sessionId, update } = ctx.params
+      if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+        observedToolCalls.record(sessionId, update.toolCallId, {
+          ...(update.title !== undefined ? { title: update.title } : {}),
+          ...(update.name !== undefined ? { name: update.name } : {}),
+          ...(update._meta !== undefined ? { _meta: update._meta } : {}),
+        })
+      }
+      enqueueUpdate(sessionId, update)
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const { sessionId, toolCall } = ctx.params
@@ -1311,7 +1346,9 @@ export async function openAcpSession(
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
       try {
-        return await current.requestPermission(ctx.params, ctx.signal)
+        return await current.requestPermission(ctx.params, ctx.signal, {
+          observedToolCall: observedToolCalls.get(sessionId, toolCall.toolCallId),
+        })
       } catch (err) {
         if (ctx.signal.aborted) return { outcome: { outcome: 'cancelled' as const } }
         throw err
