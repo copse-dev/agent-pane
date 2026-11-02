@@ -75,7 +75,8 @@ async function main(): Promise<void> {
   const exec = promisify(execFile)
   const command = async (args: string[]): Promise<string> =>
     (
-      await exec('/usr/local/bin/container', args, {
+      await exec('container', args, {
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
         timeout: 30000,
         maxBuffer: 256 * 1024,
         signal: controller.signal,
@@ -88,7 +89,8 @@ async function main(): Promise<void> {
     await command(create)
     const shortfall = appleDesktopProbeShortfall(name, await command(['inspect', name]))
     if (shortfall) throw new Error(`Refusing desktop startup: ${shortfall}`)
-    const child = spawn('/usr/local/bin/container', ['start', '--attach', '--interactive', name], {
+    const child = spawn('container', ['start', '--attach', '--interactive', name], {
+      env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
       stdio: ['pipe', 'pipe', 'pipe'],
       signal: controller.signal,
       timeout: 90000,
@@ -160,7 +162,8 @@ async function main(): Promise<void> {
     }
   } finally {
     try {
-      await exec('/usr/local/bin/container', ['delete', '--force', name], {
+      await exec('container', ['delete', '--force', name], {
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
         timeout: 30000,
         maxBuffer: 256 * 1024,
       })

@@ -121,10 +121,10 @@ export class DesktopLeaseRecovery {
 const exec = promisify(execFile)
 async function command(args: string[]): Promise<string> {
   return (
-    await exec('/usr/local/bin/container', args, {
+    await exec('container', args, {
       timeout: 30_000,
       maxBuffer: 256 * 1024,
-      env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
+      env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
     })
   ).stdout
 }

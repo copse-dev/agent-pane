@@ -16,6 +16,23 @@ async function main(): Promise<void> {
     )
     return
   }
+  try {
+    await promisify(execFile)('container', ['image', 'inspect', 'copse-desktop-probe:local'], {
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+      env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
+    })
+  } catch (error) {
+    throw new Error(
+      'Cannot inspect the required local base image copse-desktop-probe:local. ' +
+        'Check that the Apple container service is running. If the image is missing, build and probe it first:\n' +
+        'COPSE_CONTAINER_ENGINE=apple node scripts/run-thread-container.mts --build-only --no-acp-agents --image copse-desktop-probe:local\n' +
+        'pnpm run probe:apple-desktop --image copse-desktop-probe:local\n' +
+        'This is a local development image, not an image to pull from Docker Hub.\n' +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error },
+    )
+  }
   const context = await mkdtemp(resolve('.tmp/apple-desktop-build-'))
   try {
     stageAppleDesktopInputs(process.cwd(), context)
@@ -34,13 +51,13 @@ async function main(): Promise<void> {
       'Building copse-desktop:local; the first Linux dependency install can take several minutes.',
     )
     const build = spawn(
-      '/usr/local/bin/container',
+      'container',
       ['build', '--tag', 'copse-desktop:local', '--file', join(context, 'Dockerfile'), context],
       {
         stdio: 'inherit',
         timeout: 15 * 60 * 1000,
         killSignal: 'SIGKILL',
-        env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
       },
     )
     await new Promise<void>((resolve, reject) => {
@@ -56,12 +73,12 @@ async function main(): Promise<void> {
       })
     })
     const inspection = await promisify(execFile)(
-      '/usr/local/bin/container',
+      'container',
       ['image', 'inspect', 'copse-desktop:local'],
       {
         timeout: 30_000,
         maxBuffer: 1024 * 1024,
-        env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
       },
     )
     const digest = await pinAppleDesktopBuild(inspection.stdout)

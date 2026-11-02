@@ -280,6 +280,45 @@ failure: rejection/copy/layout and approval → real VM → screenshot → Stop.
 confirmed the returned image was 1280×800. Visual inspection of `isolated-desktop-approved.png`
 confirmed the guest setup screen was displayed inside the parent tool result.
 
+## User-journey fixes and validation (2026-11-02)
+
+User testing exposed three setup failures: pin-read errors hid the receipt path and
+underlying cause; desktop commands assumed `/usr/local/bin/container` instead of
+supporting Homebrew's Apple-silicon location; and the desktop builder assumed a local
+probe base image without a supported build-only command. Diagnostics now identify the
+profile and cause, desktop commands use a restricted PATH containing both installation
+locations, and the thread-container CLI supports `--build-only --no-acp-agents`.
+
+Build the prerequisite and verify it before building the desktop:
+
+```bash
+COPSE_CONTAINER_ENGINE=apple node scripts/run-thread-container.mts --build-only --no-acp-agents --image copse-desktop-probe:local
+pnpm run probe:apple-desktop --image copse-desktop-probe:local
+COPSE_DIR="$HOME/.copse" node scripts/build-apple-desktop.mts
+```
+
+The user completed all three commands: the containment probe reported every required
+observation and teardown passing, and the desktop build wrote its digest receipt.
+An interactive tool-driven VM then completed setup, project creation and a real parent
+model response, but onboarding's Finish reset the seeded session model to Balanced.
+Selecting session manually worked. The guest now marks onboarding complete when seeding
+its already-configured approved provider, preserving the session default. No provider
+guard was relaxed.
+
+The corrected journey passed in desktop session `3e808e45-81fc-440d-a44e-d1f8abe0e20c`:
+the fresh guest did not show provider onboarding; after dismissing a product announcement,
+New Project created `default-model-test`; the composer already selected session; the
+first submitted greeting received `Hello!` without opening the model picker. Optional
+ACP package installation was rejected. Stop confirmed VM deletion. Screenshots were
+inspected during the journey. The current controller was transferred from the fresh host
+build; the existing trusted Linux app image was reused.
+
+All 34 focused desktop/build CLI tests, `pnpm run check:local`, and the host build passed.
+Logs are `.tmp/apple-desktop-fix-check-local.log` and `.tmp/apple-desktop-fix-build.log`.
+Independent review reported no findings but could not run its own checks because its
+separate checkout could not prepare offline dependencies. This follow-up did not rerun
+the full unit suite or establish the remaining combined ACP acceptance below.
+
 ## Remaining acceptance before merge
 
 1. Exercise authenticated ACP bridge, the real tool, approval and VM startup in one journey.

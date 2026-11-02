@@ -62,20 +62,17 @@ export async function pinAppleDesktopBuild(
 
 /** Fail closed on missing, corrupt, linked or other-user receipts. No mutable-tag fallback. */
 export async function readAppleDesktopPin(env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  const path = join(pinDirectory(env), 'image-pin.json')
   try {
-    const file = await open(
-      join(pinDirectory(env), 'image-pin.json'),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    )
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
       const stat = await file.stat()
-      if (
-        !stat.isFile() ||
-        stat.size > 4096 ||
-        stat.uid !== process.getuid?.() ||
-        (stat.mode & 0o022) !== 0
-      )
-        throw new Error('Desktop image pin must be an owner-controlled regular file')
+      if (!stat.isFile()) throw new Error('Desktop image pin is not a regular file')
+      if (stat.size > 4096) throw new Error('Desktop image pin exceeds 4096 bytes')
+      if (stat.uid !== process.getuid?.())
+        throw new Error('Desktop image pin is not owned by the current user')
+      if ((stat.mode & 0o022) !== 0)
+        throw new Error('Desktop image pin is group- or world-writable')
       const receipt = safeJsonParse(await file.readFile('utf8'), decodeWithSchema(receiptSchema))
       if (!receipt) throw new Error('Desktop image pin is invalid')
       return receipt.digest
@@ -83,8 +80,9 @@ export async function readAppleDesktopPin(env: NodeJS.ProcessEnv = process.env):
       await file.close()
     }
   } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
     throw new Error(
-      'No trusted desktop image pin; run node scripts/build-apple-desktop.mts for this COPSE_DIR',
+      `No trusted desktop image pin at ${JSON.stringify(path)}: ${reason}; run node scripts/build-apple-desktop.mts from the desktop feature checkout with COPSE_DIR set to ${JSON.stringify(copseDataRoot(env))}`,
       { cause: error },
     )
   }

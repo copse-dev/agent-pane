@@ -68,10 +68,10 @@ async function main(): Promise<void> {
     })
     const exec = promisify(execFile)
     await assert.rejects(
-      exec('/usr/local/bin/container', ['inspect', name], {
+      exec('container', ['inspect', name], {
         timeout: 10_000,
         maxBuffer: 16 * 1024,
-        env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
       }),
       (error: unknown) =>
         isRecord(error) &&

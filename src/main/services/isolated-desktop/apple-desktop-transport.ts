@@ -54,10 +54,10 @@ export class AppleDesktopTransport implements DesktopTransport {
 
   private async command(args: string[], signal?: AbortSignal): Promise<string> {
     return (
-      await exec('/usr/local/bin/container', args, {
+      await exec('container', args, {
         timeout: 30_000,
         maxBuffer: 256 * 1024,
-        env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
+        env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
         ...(signal ? { signal } : {}),
       })
     ).stdout
@@ -119,16 +119,12 @@ export class AppleDesktopTransport implements DesktopTransport {
     verifyAppleDesktopCreatedImage(inspection, pin)
     if (shortfall) throw new Error('Refusing desktop startup: ' + shortfall)
     signal.throwIfAborted()
-    const child = spawn(
-      '/usr/local/bin/container',
-      ['start', '--attach', '--interactive', this.name],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        signal,
-        killSignal: 'SIGKILL',
-        env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
-      },
-    )
+    const child = spawn('container', ['start', '--attach', '--interactive', this.name], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      signal,
+      killSignal: 'SIGKILL',
+      env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
+    })
     this.child = child
     this.inference = new HostInference({
       provider: this.provider,

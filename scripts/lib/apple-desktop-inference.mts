@@ -20,6 +20,28 @@ const responseSchema = z
   })
   .strict()
 
+/** The disposable guest already has its only supported provider configured. */
+export async function initializeDesktopGuestSettings(root = '/tmp/copse'): Promise<void> {
+  const userData = copseUserDataDir({ COPSE_DIR: root })
+  await mkdir(userData, { recursive: true, mode: 0o700 })
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({
+      onboardingCompleted: true,
+      model: DESKTOP_PARENT_MODEL,
+      extraProviders: [
+        {
+          slug: 'isolated-parent',
+          label: 'Approved parent session model',
+          baseUrl: 'http://127.0.0.1:1/v1',
+          models: [{ id: 'session', contextWindow: 128_000 }],
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  )
+}
+
 export async function startDesktopInferenceRelay(): Promise<{
   receive: (line: string) => Promise<boolean>
   close: () => void
@@ -54,23 +76,7 @@ export async function startDesktopInferenceRelay(): Promise<{
   server.on('error', () => connection?.destroy())
   // Fresh guest-owned settings, using the supported custom-provider and model settings.
   // No host profile, model key, account or upstream URL is transferred.
-  const userData = copseUserDataDir({ COPSE_DIR: '/tmp/copse' })
-  await mkdir(userData, { recursive: true, mode: 0o700 })
-  await writeFile(
-    join(userData, 'settings.json'),
-    JSON.stringify({
-      model: DESKTOP_PARENT_MODEL,
-      extraProviders: [
-        {
-          slug: 'isolated-parent',
-          label: 'Approved parent session model',
-          baseUrl: 'http://127.0.0.1:1/v1',
-          models: [{ id: 'session', contextWindow: 128_000 }],
-        },
-      ],
-    }),
-    { mode: 0o600 },
-  )
+  await initializeDesktopGuestSettings()
   return {
     async receive(line): Promise<boolean> {
       if (Buffer.byteLength(line) > 128 * 1024) throw new Error('Inference frame exceeds the limit')

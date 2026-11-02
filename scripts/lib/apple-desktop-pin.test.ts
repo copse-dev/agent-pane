@@ -105,4 +105,36 @@ describe('isolated desktop image pin', () => {
       await assert.rejects(readAppleDesktopPin(env), /No trusted desktop image pin/)
     })
   })
+
+  it('reports the profile path and filesystem cause when the receipt is missing', async () => {
+    await fixture(async (env, file) => {
+      await assert.rejects(readAppleDesktopPin(env), (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.ok(error.message.includes(JSON.stringify(file)))
+        assert.match(error.message, /ENOENT/)
+        assert.ok(error.message.includes(`COPSE_DIR set to ${JSON.stringify(env['COPSE_DIR'])}`))
+        assert.ok(error.cause instanceof Error)
+        assert.equal('code' in error.cause && error.cause.code, 'ENOENT')
+        return true
+      })
+    })
+  })
+
+  it('distinguishes invalid, unsafe and oversized receipts without exposing contents', async () => {
+    await fixture(async (env, file) => {
+      await writeFile(file, 'invalid-receipt-content', { mode: 0o600 })
+      await assert.rejects(readAppleDesktopPin(env), (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /Desktop image pin is invalid/)
+        assert.ok(!error.message.includes('invalid-receipt-content'))
+        return true
+      })
+      await pinAppleDesktopBuild(inspect, env)
+      await chmod(file, 0o666)
+      await assert.rejects(readAppleDesktopPin(env), /group- or world-writable/)
+      await chmod(file, 0o600)
+      await writeFile(file, 'x'.repeat(4097))
+      await assert.rejects(readAppleDesktopPin(env), /exceeds 4096 bytes/)
+    })
+  })
 })

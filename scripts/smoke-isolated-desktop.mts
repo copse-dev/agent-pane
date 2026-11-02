@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     assert.ok(Buffer.byteLength(input) <= APPLE_DESKTOP_MAX_CONTROLLER)
     const observation = await new Promise<string>((resolve, reject) => {
       const child = execFile(
-        '/usr/local/bin/container',
+        'container',
         [
           'exec',
           '--interactive',
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
           timeout: 30_000,
           maxBuffer: 64 * 1024,
           signal: controller.signal,
-          env: { PATH: '/usr/local/bin:/usr/bin:/bin' },
+          env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
         },
         (error, stdout, stderr) => {
           if (error) reject(new Error('Guest inference smoke failed: ' + stderr, { cause: error }))
