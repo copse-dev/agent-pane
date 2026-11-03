@@ -810,8 +810,8 @@
       "bytes": 277629
     },
     "background-task-completion-wake.png": {
-      "sha256": "db34233f8060a3a2ebea3670c01d8fcfc94e0097256b587a12880cbcdb87d156",
-      "bytes": 342391
+      "sha256": "4b93c2c968174dda4f88af5035314c441d6bd957180efadac3479e0f4547f38f",
+      "bytes": 346627
     },
     "balanced-acp-default-menu.png": {
       "sha256": "2de1a51afb5f7f108fd223b135eb784fd07325a42ad535d3922dc32353caaea4",
@@ -1213,9 +1213,17 @@
       "sha256": "6f77845a9db0e20fb14c31e23b62dc6cca37892c2fbad8799f7c8b7f6a31e253",
       "bytes": 305188
     },
+    "command-phase-background-exited.png": {
+      "sha256": "8f38db34de44a9097cb8c4738b1dfdff4b583e0544a3f96bee86a85c3d97b76a",
+      "bytes": 235711
+    },
+    "command-phase-background-logs.png": {
+      "sha256": "75b654f24210c8800aba232fd1a0084073c1ab1ea129946ed6b2410e512ff7e3",
+      "bytes": 169839
+    },
     "command-phase-not-started.png": {
-      "sha256": "e7d7915d0b7beaf23d198968852d33130490989b3eb3de626415ab32ba391b35",
-      "bytes": 87307
+      "sha256": "ef76e3a5ff6e2f75449cf895600f608695ed10fd5638363168bebef1f174d7dc",
+      "bytes": 87630
     },
     "command-phase-timed-out.png": {
       "sha256": "185895c6cbaee65d5f94b3944203b1bcbccb0bde1a48f5faac2575aca7814a2e",
