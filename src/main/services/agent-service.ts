@@ -2590,6 +2590,7 @@ async function runAgentWithInlineCanvas(
                 'value' in outcome
                   ? normalizeToolExecuteResult(outcome.value).result
                   : errorMessage(outcome.error),
+              toolCallId,
             )
           }
           return registry.executeNormalized(name, args, signal)

@@ -11,13 +11,39 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { CommandPhase, CommandPhaseState } from '@copse/agent/wire-types.ts'
 import type { ToolCallChunk } from '@shared/types/stream.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
 
 /** Delivers one call's new stage to the transcript. */
 export type CommandPhaseSink = (phase: CommandPhase) => void
 
 interface CommandPhaseReporter {
   readonly sink: CommandPhaseSink
+  /** The tool call this reporter's stages belong to, when the caller named it. */
+  readonly toolCallId: string | undefined
   current: CommandPhase
+  /** True once the tool call returned; later stages go to the transcript writer. */
+  closed: boolean
+  /** A background task's exit was recorded; a stale in-call `running` must not undo it. */
+  settledLate: boolean
+}
+
+/**
+ * Writes a stage onto a tool call whose own call has already returned, possibly
+ * in an earlier turn (#3956): a `run_background` task exits on its own
+ * schedule. The desktop installs the transcript writer here; without one (the
+ * headless host, tests) a late stage is dropped and the card keeps its last
+ * observed stage.
+ */
+export type LateCommandPhaseRecorder = (
+  owner: ThreadExecutionOwner,
+  toolCallId: string,
+  phase: CommandPhase,
+) => Promise<void>
+
+let lateRecorder: LateCommandPhaseRecorder | null = null
+
+export function setLateCommandPhaseRecorder(next: LateCommandPhaseRecorder | null): void {
+  lateRecorder = next
 }
 
 const reporters = new AsyncLocalStorage<CommandPhaseReporter>()
@@ -64,6 +90,7 @@ export interface CommandPhaseDetail {
 }
 
 function emit(reporter: CommandPhaseReporter, phase: CommandPhase): void {
+  if (reporter.settledLate && !isTerminalCommandPhase(phase.state)) return
   reporter.current = phase
   reporter.sink(phase)
 }
@@ -89,16 +116,26 @@ function nextPhase(
  * Run one command tool call with a reporter in scope. `initial` is the stage
  * already shown (normally `queued`). When `fn` settles without reaching a
  * terminal stage, the call is closed as `not_started` — unless it is running
- * on as a background task, which outlives the call by design.
+ * on as a background task, which outlives the call by design. Naming the
+ * `toolCallId` lets that task's later exit reach the same card
+ * ({@link captureLateCommandPhaseReport}).
  */
 export async function runWithCommandPhaseReporter<T>(
   sink: CommandPhaseSink,
   initial: CommandPhase,
   fn: () => Promise<T>,
   describeOutcome: (outcome: { value: T } | { error: unknown }) => string,
+  toolCallId?: string,
 ): Promise<T> {
-  const reporter: CommandPhaseReporter = { sink, current: initial }
+  const reporter: CommandPhaseReporter = {
+    sink,
+    toolCallId,
+    current: initial,
+    closed: false,
+    settledLate: false,
+  }
   const settle = (outcome: { value: T } | { error: unknown }): void => {
+    reporter.closed = true
     const { state, backgroundTaskId } = reporter.current
     if (isTerminalCommandPhase(state)) return
     if (state === 'running' && backgroundTaskId !== undefined) return
@@ -133,6 +170,38 @@ export function captureCommandPhaseReport(): CommandPhaseReport {
   const reporter = reporters.getStore()
   return (state, detail = {}) => {
     if (reporter) emit(reporter, nextPhase(reporter, state, detail))
+  }
+}
+
+/**
+ * A reporter for how a `run_background` task ends, usable after its tool call
+ * returned. Captured inside the call (the task's exit callbacks run outside
+ * it). Before the call returns it reports as usual; afterwards it writes
+ * through the {@link LateCommandPhaseRecorder} onto the same tool call, keeping
+ * the task id and `launched`. Only a terminal stage is accepted, and only the
+ * first: the card's last observed stage is the task's end. Resolves once the
+ * stage is written, so a completion wake that follows reads the updated card. A no-op outside a
+ * reporter scope or for a reporter with no tool-call id.
+ */
+export function captureLateCommandPhaseReport(
+  owner: ThreadExecutionOwner,
+): (state: CommandPhaseState, detail?: CommandPhaseDetail) => Promise<void> {
+  const reporter = reporters.getStore()
+  return async (state, detail = {}) => {
+    if (!reporter?.toolCallId || !isTerminalCommandPhase(state)) return
+    if (isTerminalCommandPhase(reporter.current.state)) return
+    const backgroundTaskId = detail.backgroundTaskId ?? reporter.current.backgroundTaskId
+    const phase = nextPhase(reporter, state, {
+      ...detail,
+      ...(backgroundTaskId !== undefined ? { backgroundTaskId } : {}),
+    })
+    reporter.settledLate = true
+    if (!reporter.closed) {
+      emit(reporter, phase)
+      return
+    }
+    reporter.current = phase
+    await lateRecorder?.(owner, reporter.toolCallId, phase)
   }
 }
 
