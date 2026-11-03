@@ -68,6 +68,7 @@ import {
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { AutomationPermission } from '@shared/types'
@@ -2781,6 +2782,37 @@ describe('shell prompt execution boundary', () => {
 })
 
 describe('formatGithubWritePrompt', () => {
+  it('renders the push branch, origin, and fast-forward restriction without JSON', () => {
+    const prompt = formatGithubWritePrompt('git_push', { branch: 'fix/parser' })
+    assert.equal(prompt.title, 'Push branch to origin?')
+    assert.equal(prompt.approveLabel, 'Push branch')
+    assert.equal(prompt.body, 'Branch: fix/parser\nRemote: origin\nPush mode: Fast-forward only')
+    assert.match(prompt.bodyAdvice, /without replacing existing remote history/)
+    assert.equal(prompt.bodyFooter, 'Approval covers this push once.')
+  })
+  it('exposes the full remote commit and history replacement for a leased push', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const prompt = formatGithubWritePrompt('git_push', {
+      branch: 'fix/parser',
+      expected_remote_sha: sha,
+    })
+    assert.equal(
+      prompt.body,
+      `Branch: fix/parser\nRemote: origin\nPush mode: Force with lease\nExpected remote commit: ${sha}`,
+    )
+    assert.match(prompt.bodyAdvice, /can replace remote history only if/)
+  })
+  it('keeps unexpected or malformed push arguments visible', () => {
+    for (const args of [
+      { branch: 'fix/parser', extra: true },
+      { branch: 'fix/parser', expected_remote_sha: 123 },
+      { branch: 'fix/parser', expected_remote_sha: '' },
+      { branch: '' },
+      {},
+    ]) {
+      assert.equal(formatGithubWritePrompt('git_push', args).body, JSON.stringify(args, null, 2))
+    }
+  })
   it('names concrete effects while keeping the PR target visible', () => {
     const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
     assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')
@@ -2801,6 +2833,9 @@ describe('formatGithubWritePrompt', () => {
       formatGithubWritePrompt('gh_pr_rerun_failed_ci', { number: 42 }).bodyAdvice,
       /CI resources or secrets/,
     )
+  })
+  it('labels the thread-branch push button by its action', () => {
+    assert.equal(formatGithubWritePrompt('gh_push', {}).approveLabel, 'Push branch')
   })
   it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
@@ -3396,12 +3431,26 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root, readDir) => {
-      const granted = await runWithActiveRunIdentity('thread-audit', () =>
+      // A turn of the logged project: the covered read is recorded on the
+      // turn's own project.
+      const inTurn = <T>(fn: () => Promise<T>): Promise<T> =>
+        threadExecutionContextStorage.run(
+          {
+            projectId: 'proj-read-outside',
+            threadId: 'thread-audit',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => runWithActiveRunIdentity('thread-audit', fn),
+        )
+      const granted = await inTurn(() =>
         runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
       assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
-      await runWithActiveRunIdentity('thread-audit', () =>
+      await inTurn(() =>
         runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
       )
 
@@ -3440,9 +3489,23 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  /** A turn of the logged project: the approval is recorded on the turn's own project. */
+  const inLoggedTurn = <T>(threadId: string, root: string, fn: () => Promise<T>): Promise<T> =>
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'proj-read-outside',
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, fn),
+    )
+
   it('records a one-command approval as a decision that granted nothing', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-once', () =>
+      await inLoggedTurn('thread-audit-once', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       const [event] = await recordedDecisions()
@@ -3454,7 +3517,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records a refusal to widen read access', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-denied', () =>
+      await inLoggedTurn('thread-audit-denied', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       const [event] = await recordedDecisions()

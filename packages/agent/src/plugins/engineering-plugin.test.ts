@@ -31,6 +31,12 @@ describe('Copse engineering workflows', () => {
       assert.ok(local.includes(workflow))
     assert.match(local, /do not turn it into an unsolicited patch/)
     assert.match(local, /Small mechanical edits do not automatically need new tests/)
+    assert.match(local, /Before broad test suites, run a bounded diagnostic spike/)
+    assert.match(local, /satisfy required project gates before marking the work ready/)
+    assert.match(local, /may create a draft PR after focused investigation and checks/)
+    assert.match(local, /on-device testing wherever CI is insufficient/)
+    assert.match(local, /explicitly cite this draft\/cloud-validation route/)
+    assert.match(local, /keep the PR draft until required checks and device evidence pass/)
     assert.doesNotMatch(local, /review_changes|Task|update_todos|composer-/)
     assert.match(
       buildEngineeringGuidance({ ...payload, toolNames: ['review_changes'] }) ?? '',

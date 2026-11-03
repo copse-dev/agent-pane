@@ -6,7 +6,7 @@
  *
  * Extracted from `mountConversation` (#3962). The card DOM builders stay in
  * `conversation.ts` and arrive through {@link ToolCardDom}; scroll anchoring
- * stays with the conversation view and arrives through {@link ToolCardRefreshHost}.
+ * (`transcript-scroll.ts`) arrives through {@link ToolCardRefreshHost}.
  */
 import type { AppStore } from '@shared/store/store.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
