@@ -16,6 +16,7 @@ import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
 import { runWithExploredSpanRecorder } from './explore-read-recorder.ts'
+import { retainExploredSpans } from './agent-run-explore-mode.ts'
 import {
   renderExploreResult,
   selectExploreExcerpts,
@@ -126,6 +127,8 @@ export async function runExploreSubagent(
     // One read's worth of characters: the budget the subagent's own reads were
     // held to, so excerpts never cost the parent more than a read_file would.
     const selection = selectExploreExcerpts(spans, summary, subagentReadLimits.maxChars)
+    // Everything read, not just what fit: read_explored serves the rest (Fix 0b).
+    retainExploredSpans(spans)
     return { summary, text: renderExploreResult(summary, selection), usage }
   })
 }

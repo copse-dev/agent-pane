@@ -153,6 +153,7 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
+import { SUBAGENT_ONLY_TOOLS } from './subagent-only-tools.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -402,9 +403,6 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-/** Tools that only function as subagent entry points; hidden when subagents are off. */
-const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
-
 /**
  * Only a thread still reading the user's checkout has write access to ask for,
  * so `request_write_access` is offered to deferred threads alone. Shared with
@@ -446,7 +444,7 @@ function parentTools(
   }
   if (!subagentsEnabled) {
     tools = tools
-      .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
+      .filter((t) => !SUBAGENT_ONLY_TOOLS.has(t.name))
       .map((t) =>
         t.name === 'read_file'
           ? {

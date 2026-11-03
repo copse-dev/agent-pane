@@ -396,6 +396,9 @@ cpSync('assets', 'dist/assets', { recursive: true })
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
+cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+  recursive: true,
+})
 buildProcessMemoryHelper()
 
 // The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
