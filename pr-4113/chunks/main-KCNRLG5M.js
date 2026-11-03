@@ -14649,6 +14649,96 @@ var init_command_phase_display = __esm({
   }
 });
 
+// src/renderer/views/command-task-links.ts
+function setBackgroundTaskLogLoader(next) {
+  loadLogs = next;
+}
+function createBackgroundTaskLogsSection(tc) {
+  const taskId = tc.commandPhase?.backgroundTaskId;
+  if (taskId === void 0) return null;
+  const button = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact tool-task-logs-button" },
+    "Show logs"
+  );
+  const output = el("div", { class: "tool-task-logs-output", hidden: true });
+  const section2 = el(
+    "div",
+    { class: "tool-task-logs", "data-background-task-id": taskId },
+    el(
+      "div",
+      { class: "tool-task-logs-header" },
+      el("span", { class: "acp-content-label" }, "Task output"),
+      button
+    ),
+    output
+  );
+  button.addEventListener("click", () => {
+    const loader = loadLogs;
+    if (!loader) return;
+    button.disabled = true;
+    void loader(taskId).then((result) => {
+      output.replaceChildren(logsContent(result));
+    }).catch(() => {
+      output.replaceChildren(
+        el("p", { class: "tool-result-empty" }, "Couldn't read this task's output.")
+      );
+    }).finally(() => {
+      output.hidden = false;
+      button.disabled = false;
+      button.textContent = "Refresh logs";
+    });
+  });
+  return section2;
+}
+function logsContent(result) {
+  if (!result) {
+    return el(
+      "p",
+      { class: "tool-result-empty" },
+      "This task\u2019s output is no longer available. It was stopped, or Copse restarted."
+    );
+  }
+  const text = result.logs.trim();
+  if (text === "") {
+    return el("p", { class: "tool-result-empty" }, result.running ? "No output yet." : "No output.");
+  }
+  return el("pre", {}, text);
+}
+function backgroundTaskCommandCall(thread, taskId) {
+  if (!thread) return void 0;
+  for (let index = thread.messages.length - 1; index >= 0; index--) {
+    const call = thread.messages[index]?.toolCalls.find(
+      (candidate) => candidate.commandPhase?.backgroundTaskId === taskId
+    );
+    if (call) return call;
+  }
+  return void 0;
+}
+function revealToolCard(root, toolCallId) {
+  const card = Array.from(root.querySelectorAll("[data-tool-id]")).find(
+    (candidate) => candidate.getAttribute("data-tool-id") === toolCallId
+  );
+  if (!card) return false;
+  for (let node = card.parentElement; node; node = node.parentElement) {
+    if (node instanceof HTMLDetailsElement && !node.open) node.open = true;
+  }
+  card.scrollIntoView({ block: "center" });
+  card.classList.add("tool-card-revealed");
+  setTimeout(() => {
+    card.classList.remove("tool-card-revealed");
+  }, REVEAL_FLASH_MS);
+  return true;
+}
+var loadLogs, REVEAL_FLASH_MS;
+var init_command_task_links = __esm({
+  "src/renderer/views/command-task-links.ts"() {
+    init_helpers();
+    loadLogs = null;
+    REVEAL_FLASH_MS = 1600;
+  }
+});
+
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -17380,6 +17470,9 @@ function cardStatus2(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+    return "interrupted";
+  }
   return "done";
 }
 function toolCardKey(item) {
@@ -18843,6 +18936,7 @@ function appendStandardToolSections(card, tc, label, summaryClass, count) {
         argsSection === null && tc.status !== "running",
         tc.appendedReminderLengths
       ),
+      ...appendIfPresent(createBackgroundTaskLogsSection(tc)),
       ...appendIfPresent(createToolLocationsSection(tc.locations))
     );
   };
@@ -19903,7 +19997,7 @@ function createHookCard(card, load) {
   cardEl.append(header, detail, createHookCardInspector(card, load));
   return cardEl;
 }
-function buildMessageOriginMarker(origin, editedByUser) {
+function buildMessageOriginMarker(origin, editedByUser, showCommand) {
   const fromHook = origin.kind === "hook";
   const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : origin.operationId.startsWith("thread:") ? "Thread \xB7 prompt from another conversation" : "Machine \xB7 automatic continuation";
   const marker = el(
@@ -19928,6 +20022,15 @@ function buildMessageOriginMarker(origin, editedByUser) {
         "edited"
       )
     );
+  }
+  if (showCommand) {
+    const button = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact msg-origin-command-link" },
+      "Show command"
+    );
+    button.addEventListener("click", showCommand);
+    marker.append(button);
   }
   return marker;
 }
@@ -20821,7 +20924,18 @@ function mountConversation(root, store2, api2) {
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
-    if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
+    const wakeCommand = origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId) : void 0;
+    if (origin) {
+      body.append(
+        buildMessageOriginMarker(
+          origin,
+          msg.editedByUser === true,
+          wakeCommand ? () => {
+            revealToolCard(list, wakeCommand.id);
+          } : void 0
+        )
+      );
+    }
     const nestReasoning = shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== void 0;
     appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
@@ -21703,10 +21817,17 @@ function mountConversation(root, store2, api2) {
   const unbindFileLinks = bindFileReferenceClicks(root, store2, api2);
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(root, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store2, api2);
+  setBackgroundTaskLogLoader(async (taskId) => {
+    const threadId = store2.getState().activeThreadId;
+    const projectId = threadId ? getThreadProjectId(store2, threadId) : null;
+    if (!threadId || !projectId) return null;
+    return api2.backgroundTasks.logs(projectId, threadId, taskId);
+  });
   rebuildForThread();
   syncFromStore();
   return () => {
     disposed = true;
+    setBackgroundTaskLogLoader(null);
     archiveReview.dispose();
     selectionQuote.destroy();
     avatarMotion.dispose();
@@ -21804,6 +21925,7 @@ var init_conversation = __esm({
     init_agent_activity();
     init_tool_display();
     init_command_phase_display();
+    init_command_task_links();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
