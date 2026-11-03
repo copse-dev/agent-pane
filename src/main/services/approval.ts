@@ -36,7 +36,6 @@ import {
   humanDecisionSource,
   type HumanDecisionPrincipal,
 } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { beginCommandApprovalWait } from './exec/command-phase.ts'
@@ -718,8 +717,10 @@ function requestApprovalUnobserved(
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
   }
-  const context = getThreadExecutionContext()
-  const projectId = context?.projectId ?? getActiveProjectId()
+  // The turn's own project. Outside a turn there is none: the request is
+  // audited only if a turn's thread later records it, and it can never defer
+  // (deferral needs a run thread, and every run thread runs inside a turn).
+  const projectId = getThreadExecutionContext()?.projectId ?? null
   const threadId = getActiveRunThread()
   approvalAuditIdentities.set(req, {
     ...(projectId ? { projectId } : {}),
@@ -748,7 +749,7 @@ function requestApprovalUnobserved(
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
     // The same project the audit identity above resolved: the turn's, else
-    // (outside any turn) the active one, else the no-project bucket.
+    // the no-project bucket. Never the window's active project.
     return answered(
       deferInsteadOfPrompting(req, deferringThread, projectId, () =>
         requestApprovalInteractive(req, signal),
@@ -1073,7 +1074,9 @@ export function initApproval(
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })
-        const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+        // The asking turn's project; outside a turn the prompt stays on the
+        // desktop, never filed under whichever project the window shows.
+        const projectId = getThreadExecutionContext()?.projectId
         const removeDecision =
           projectId && threadId
             ? humanDecisions.register(

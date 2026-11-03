@@ -3421,9 +3421,23 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  /** A turn of the logged project: the approval is recorded on the turn's own project. */
+  const inLoggedTurn = <T>(threadId: string, root: string, fn: () => Promise<T>): Promise<T> =>
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'proj-read-outside',
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, fn),
+    )
+
   it('records a one-command approval as a decision that granted nothing', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-once', () =>
+      await inLoggedTurn('thread-audit-once', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       const [event] = await recordedDecisions()
@@ -3435,7 +3449,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records a refusal to widen read access', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-denied', () =>
+      await inLoggedTurn('thread-audit-denied', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       const [event] = await recordedDecisions()
