@@ -182,6 +182,14 @@ Those categories are mandatory because the oracle only knows imports and selecto
 reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
 be invisible to it. When classification is unclear, take the full path.
 
+For slow suites, the [draft/cloud-validation exception](../AGENTS.md#before-committing) allows
+committing and opening a draft PR after focused investigation and checks, with suitable suites run
+on available cloud CI resources. Explicitly cite this route and its reason in the PR's Validation
+section, including local results, deferred commands, cloud run links, and on-device evidence or
+remaining work. Run focused on-device checks wherever CI is insufficient or additional evidence is
+needed. Inspect cloud results and resolve failures; keep the PR draft until required gates and
+device evidence pass. A pending cloud run is not passing evidence.
+
 That mandate is about catching failures the oracle would have missed, not about clearing a
 locally-unachievable zero-failure bar. Some unit tests fail for reasons that have nothing to do
 with the diff — a local sandbox blocking `/tmp` or loopback TCP, a `/private/tmp` realpath

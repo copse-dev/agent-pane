@@ -56,6 +56,11 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     outfile: 'dist/main/thread-request-search-worker.js',
   },
   {
+    entry: 'scripts/apple-desktop-guest.mts',
+    outfile: 'dist/main/apple-desktop-guest.cjs',
+    external: [],
+  },
+  {
     entry: 'src/main/services/remote/openai-git-worker-entry.ts',
     outfile: 'dist/main/openai-git-worker.cjs',
     external: [],

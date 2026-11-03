@@ -223,6 +223,8 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
+import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
   cancelAllSupervisedBackgroundProcesses,
   installBackgroundProcessSupervisor,
@@ -231,6 +233,7 @@ import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
+import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   getThreadExecutionContext,
@@ -515,6 +518,9 @@ app
   .whenReady()
   .then(async () => {
     await appRuntimeReady
+    await recoverIsolatedDesktops().catch((error: unknown) => {
+      console.error('[isolated-desktop] Orphan VM recovery failed:', error)
+    })
     // Ahead of the mode branches below: every mode, headless included, should
     // stop when its terminal does. See `installSignalHandlers` for why this
     // cannot be done at module scope.
@@ -701,6 +707,15 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+
+    // A background task's exit lands on the card that started it (#3956).
+    setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
+      transcriptWriter
+        .updateCommandPhase(owner.projectId, owner.threadId, toolCallId, phase)
+        .catch((error: unknown) => {
+          console.error('[threads] could not record a command stage:', error)
+        }),
+    )
 
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.
@@ -1403,6 +1418,10 @@ let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
+  await stopAllIsolatedDesktops().catch((error: unknown) => {
+    console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+  })
   stopEventLoopWatchdog()
   perfMark('main:quit')
   perfDumpCounters('quit')
