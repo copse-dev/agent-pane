@@ -81,10 +81,22 @@ interface InspectorSession {
 async function connectInspector(url: string): Promise<InspectorSession> {
   const socket = new WebSocket(url)
   await new Promise<void>((resolve, reject) => {
-    socket.addEventListener('open', () => resolve(), { once: true })
-    socket.addEventListener('error', () => reject(new Error(`Cannot connect to ${url}`)), {
-      once: true,
-    })
+    socket.addEventListener(
+      'open',
+      () => {
+        resolve()
+      },
+      { once: true },
+    )
+    socket.addEventListener(
+      'error',
+      () => {
+        reject(new Error(`Cannot connect to ${url}`))
+      },
+      {
+        once: true,
+      },
+    )
   })
   let nextId = 0
   const pending = new Map<
@@ -112,7 +124,9 @@ async function connectInspector(url: string): Promise<InspectorSession> {
         pending.set(id, { resolve, reject })
         socket.send(JSON.stringify({ id, method, params }))
       }),
-    close: () => socket.close(),
+    close: () => {
+      socket.close()
+    },
   }
 }
 
