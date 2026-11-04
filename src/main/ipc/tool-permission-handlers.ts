@@ -7,7 +7,9 @@ import {
   listToolPermissionCatalog,
   resetToolPermissions,
   updateToolPermissions,
+  copseToolPermissionId,
 } from '../services/security/tool-permissions.ts'
+import { stopAllIsolatedDesktops } from '../services/isolated-desktop/desktop-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 
 export function registerToolPermissionHandlers(win: BrowserWindow, registry: ToolRegistry): void {
@@ -24,7 +26,14 @@ export function registerToolPermissionHandlers(win: BrowserWindow, registry: Too
       }),
       [raw],
     )
-    return updateToolPermissions(registry, getMcpServerStatuses(), update)
+    const result = await updateToolPermissions(registry, getMcpServerStatuses(), update)
+    if (
+      update.policy === 'block' &&
+      update.toolIds.includes(copseToolPermissionId('isolated_copse'))
+    ) {
+      await stopAllIsolatedDesktops()
+    }
+    return result
   })
   ipcMain.handle('tool-permissions:reset', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)

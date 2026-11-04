@@ -500,8 +500,11 @@ function installAgentInitiatedTurnLease(
     resolveContext: resolveThreadExecutionContext,
     beginWriter: () => beginWorktreeWriter(cwd),
     confirmContinue: async () => {
+      // Outside any turn: name the thread's project so the question is filed
+      // with it, not with whichever project the window shows.
       const result = await runWithActiveRunIdentity(threadId, () =>
         requestUserAnswers({
+          projectId,
           questions: [
             {
               question:

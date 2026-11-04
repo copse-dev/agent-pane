@@ -45,11 +45,29 @@ const PROJECT = 'proj-approval'
 const THREAD = 't-approval'
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
+/** The project the window shows: never where a turn's approval is filed. */
+const WINDOW_PROJECT = 'proj-window'
+
+/** A real turn of THREAD in PROJECT, as the dispatcher binds one. */
+function inTurn<T>(fn: () => T): T {
+  return runWithThreadExecutionContext(
+    {
+      projectId: PROJECT,
+      threadId: THREAD,
+      projectRoot: tmpdir(),
+      root: tmpdir(),
+      checkoutMode: 'shared',
+      branch: null,
+    },
+    () => runWithActiveRunIdentity(THREAD, fn),
+  )
+}
+
 async function requestUnderThread(
   request: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
-  return runWithActiveRunIdentity(THREAD, () => requestApproval(request, signal))
+  return inTurn(() => requestApproval(request, signal))
 }
 
 describe('requestApproval pluggable transport', () => {
@@ -60,7 +78,7 @@ describe('requestApproval pluggable transport', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-audit-'))
     process.env['COPSE_WORKSPACE_DIR'] = auditRoot
-    storageSet('activeProjectId', PROJECT)
+    storageSet('activeProjectId', WINDOW_PROJECT)
   })
 
   afterEach(() => {
@@ -273,6 +291,49 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
     assert.equal(event.scope, 'external-read')
     assert.equal(event.remembered, true)
+  })
+
+  it("files concurrent turns' approvals under their own projects, never the window's", async () => {
+    const answers: (() => void)[] = []
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answers.push(() => {
+            resolve({ approved: true, remember: false })
+          })
+        }),
+    )
+    const turn = (projectId: string, threadId: string): Promise<ApprovalResponse> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: auditRoot,
+          root: auditRoot,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, () =>
+            requestApproval({ ...req, body: `rm -rf ${threadId}` }),
+          ),
+      )
+    const both = Promise.all([turn('proj-a', 'thread-a'), turn('proj-b', 'thread-b')])
+    await Promise.resolve()
+    assert.equal(answers.length, 2)
+    for (const answer of answers) answer()
+    await both
+    await drainWriteQueue()
+
+    assert.deepEqual(
+      (await readDecisionLog('proj-a')).map((event) => event.threadId),
+      ['thread-a'],
+    )
+    assert.deepEqual(
+      (await readDecisionLog('proj-b')).map((event) => event.threadId),
+      ['thread-b'],
+    )
+    assert.deepEqual(await readDecisionLog(WINDOW_PROJECT), [])
   })
 
   it('persists bridged identity and captures context before the handler settles', async () => {
@@ -714,7 +775,7 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-abandon-'))
     process.env['COPSE_WORKSPACE_DIR'] = auditRoot
-    storageSet('activeProjectId', PROJECT)
+    storageSet('activeProjectId', WINDOW_PROJECT)
     handlerCalls = 0
     handlerSignal = undefined
     release = undefined
