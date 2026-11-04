@@ -48,4 +48,34 @@ describe('thread switching with pending permissions', () => {
     await dialog.waitForDisplayed({ reverse: true })
     await assertAtBottom()
   })
+
+  it('stops following when the reader scrolls up, and the jump button follows the live end again', async () => {
+    const jump = $('.conversation-scroll .scroll-to-bottom')
+    await assertAtBottom()
+    await expect(jump).not.toBeDisplayed()
+
+    // A real scroll by the reader, not one of the transcript's own writes.
+    await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (!list) throw new Error('Missing transcript')
+      list.scrollTop = 0
+    })
+    await jump.waitForDisplayed()
+    const reading = await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      const first = list?.querySelector<HTMLElement>(':scope > .msg')
+      if (!list || !first) throw new Error('Missing transcript')
+      return {
+        scrollTop: list.scrollTop,
+        firstTop: first.getBoundingClientRect().top - list.getBoundingClientRect().top,
+      }
+    })
+    assert.equal(reading.scrollTop, 0)
+    assert.ok(reading.firstTop >= 0, 'the oldest message is in view')
+    await saveAppScreenshot('transcript-scroll-jump-button.png')
+
+    await jump.click()
+    await jump.waitForDisplayed({ reverse: true })
+    await assertAtBottom()
+  })
 })

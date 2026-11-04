@@ -36,6 +36,8 @@
  *   --build-network <net>   docker build --network (some sandboxes need host)
  *   --worker-bundle <path>  bundled guest entry (the wrapper passes the one it built)
  *   --build                 rebuild the worker image first
+ *   --build-only            build the worker image and exit without running a thread
+ *   --no-acp-agents         omit ACP agent packages when building the image
  *   --list                  list containers this host started and exit
  *   --teardown <runtimeId>  remove a container by runtime id and exit
  *   --sweep                 remove every managed container and volume that is not running
@@ -71,9 +73,15 @@ function parseCli(argv: readonly string[]): Cli {
     if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`)
     const name = token.slice(2)
     const next = argv[index + 1]
-    const boolean = ['build', 'list', 'sweep', 'forget-store', 'install-dependencies'].includes(
-      name,
-    )
+    const boolean = [
+      'build',
+      'build-only',
+      'no-acp-agents',
+      'list',
+      'sweep',
+      'forget-store',
+      'install-dependencies',
+    ].includes(name)
     const value = boolean || next === undefined || next.startsWith('--') ? '' : next
     if (value !== '') index++
     const list = flags.get(name) ?? []
@@ -130,7 +138,7 @@ async function main(): Promise<void> {
   }
 
   const image = cli.one('image') ?? WORKER_IMAGE
-  if (cli.has('build')) {
+  if (cli.has('build') || cli.has('build-only')) {
     const baseImage = cli.one('base-image') ?? process.env['COPSE_WORKER_BASE_IMAGE']
     const buildNetwork = cli.one('build-network') ?? process.env['COPSE_WORKER_BUILD_NETWORK']
     const workerBundle = cli.one('worker-bundle')
@@ -140,8 +148,10 @@ async function main(): Promise<void> {
       ...(baseImage ? { baseImage } : {}),
       ...(buildNetwork ? { buildNetwork } : {}),
       ...(workerBundle ? { workerBundle } : {}),
+      ...(cli.has('no-acp-agents') ? { acpAgents: [] } : {}),
     })
     console.log(`[thread-container] built ${image}`)
+    if (cli.has('build-only')) return
   }
 
   const providerUrl = required(

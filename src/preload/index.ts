@@ -6,11 +6,13 @@ import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
+import { createWorkspaceNavigation } from './workspace-navigation.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
 installPreloadPerfTracing()
 exposePerfBridge()
+ipcRenderer.invoke = createWorkspaceNavigation(ipcRenderer.invoke.bind(ipcRenderer))
 
 // Typed against the contract so the facade cannot drift from `ApiClient`: a
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
@@ -920,6 +922,9 @@ const api: ApiClient = {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
+    searchRequests: (projectId: string, query: string) =>
+      ipcRenderer.invoke('threads:search-requests', projectId, query),
+    cancelRequestSearch: () => ipcRenderer.invoke('threads:cancel-request-search'),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (
@@ -1537,6 +1542,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
     findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
   },
+  backgroundTasks: {
+    logs: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('background-tasks:logs', projectId, threadId, taskId),
+  },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
     cancel: (projectId: string, taskId: string) =>
@@ -1928,6 +1937,9 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     },
     requestAcpPackageInstallApproval(scenario: 'install' | 'upgrade' | 'mixed' = 'install') {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
+    },
+    requestRemoteWatcherInstallApproval() {
+      return ipcRenderer.invoke('test:requestRemoteWatcherInstallApproval')
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

@@ -10,14 +10,16 @@ thread `178909d1` ("Cmd+L Select Browser URL") — 43 minutes and 3.38M input to
 produce a 7-line change that did not work ([#1427](https://github.com/copse-dev/agent-pane/pull/1427),
 fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
 
-Status: **Partially implemented.** Fixes 1–3 landed in
+Status: **Resolved** for #1433's scope (Fixes 0, 0b, 1–5). Fixes 1–3 landed in
 [#2837](https://github.com/copse-dev/agent-pane/pull/2837) and Fix 7 in
 [#3277](https://github.com/copse-dev/agent-pane/pull/3277); the split-out #1436, #1437 and #1438 are
 closed. Fix 5's "check attached in the completing call" hold also landed
 (`holdChecksAttachedAtCompletion`), and step 0, the rename, is done: the guard set is
 `DUPLICATE_GUARDED_TOOL_NAMES` and the subagent allow-list is `SUBAGENT_ALLOWED_TOOL_NAMES`.
-Fix 0 (structured explore returns), Fix 4 and the rest of Fix 5 are implemented; see their
-sections. Fix 0b (routed reads) remains open under #1433. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
+Fix 0 (structured explore returns), Fix 0b (routed reads), Fix 4 and the rest of Fix 5 are
+implemented; see their sections. Follow-ups, separate work: the Fix 0 eval scenario
+(`maxExplore: 3`, `maxInputTokens`), excerpting search hits, and a model-run eval of the Fix 4
+finalize. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
 structured explore returns, which keep `read_file` off the parent's tool list entirely. Code
 references below describe the code as it was when the plan was written.
 
@@ -190,6 +192,19 @@ change is to stop discarding it and to render it. Blast radius is smaller than a
 that alters the parent's tool list.
 
 ### Fix 0b — route parent reads through the child's session (follow-on)
+
+**Status: implemented** as the parent tool `read_explored` (`src/main/tools/read-explored-tool.ts`),
+offered only in explore mode (`SUBAGENT_ONLY_TOOLS`). Every span the run's explore subagents
+read — including those Fix 0's budget left out of the excerpts — is retained on the run's
+explore-mode scope (`retainExploredSpans`). `quoteExploredLines` (pure, `explore-excerpts.ts`)
+looks lines up in those spans only: an unread path answers "not explored yet — call explore
+first", an unread range answers with the explored ranges, and a partly read range quotes the read
+part and names the rest. There is no disk fallback. Each quote is compared with the text
+`str_replace` would match today (pending staged diff, else disk), and a mismatch answers "changed
+since it was explored", so an edit never yields stale bytes. Retention is per run: a new turn
+starts empty and the parent explores again. `read_explored` counts as an exact read for the
+duplicate guard and the explore-without-read streak, is read-only-mode safe, and is native-only
+for ACP.
 
 Once the session is retained, a parent-side read request can be served from it rather than
 from disk. Two readings of "route through the child" behave very differently and only one

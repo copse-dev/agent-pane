@@ -52,6 +52,7 @@ import { decideContainedShellEffect } from '@copse/shell-guard/container-effects
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
+import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
@@ -125,6 +126,7 @@ import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
   shadowTierScreening,
+  type TierScreeningAttribution,
   tierScreeningClassifier,
 } from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
@@ -1179,6 +1181,12 @@ function consumeShellReplayLease(identity: ShellReplayLeaseIdentity, command: st
   return true
 }
 
+/** The running turn a tier screening is recorded on; null outside any turn. */
+function tierScreeningAttribution(): TierScreeningAttribution | null {
+  const context = getThreadExecutionContext()
+  return context ? { threadId: context.threadId, projectId: context.projectId } : null
+}
+
 function activeShellReplayLeaseIdentity(
   executionRoot: string,
   containment: ShellReplayLeaseIdentity['containment'],
@@ -1561,7 +1569,12 @@ export async function ensureShellCommandPermitted(
   // gate's one-time confirmation; it can never allow what the gate did not.
   // A contained command needs no second opinion: the sandbox bounds it.
   if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
-    const tierReason = await guardedYoloTierReason(command, workspaceRoot, opts.signal)
+    const tierReason = await guardedYoloTierReason(
+      command,
+      workspaceRoot,
+      tierScreeningAttribution(),
+      opts.signal,
+    )
     if (tierReason) {
       const approved = await promptGuardedYoloHarm(command, [tierReason], false, opts.signal)
       auditGuardedYolo(approved ? 'approved' : 'declined', [tierReason])
@@ -1620,7 +1633,7 @@ export async function ensureShellCommandPermitted(
       isCompiledProgram,
       ...harmHostReachContext(),
     })
-    void shadowTierScreening(command, workspaceRoot, harm.action)
+    void shadowTierScreening(command, workspaceRoot, harm.action, tierScreeningAttribution())
   }
 
   // A user may explicitly authorize one constituent for bounded exact retries in
@@ -2263,12 +2276,20 @@ async function decideToolPermitted(
       signal,
       explicitPolicy,
     )
+  } else if (isDesktopControlTool(toolName)) {
+    permitted = await checkDesktopAppPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
     const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'
     permitted =
       (!deletingSimulator && explicitPolicy === 'allow') ||
       (await promptExplicitToolAsk(toolName, args, signal))
+  } else if (toolName === 'isolated_copse') {
+    // The handler requires fresh, non-rememberable consent before creating a
+    // thread-owned VM. Later input still requires that live grant. Explicit Ask
+    // remains an additional per-call requirement; Blocked is handled above.
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;

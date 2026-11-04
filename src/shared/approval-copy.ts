@@ -21,6 +21,30 @@ export function threadAccessApproval(access: 'read' | 'send'): ApprovalDetails &
   }
 }
 
+export function gitPushApproval(
+  branch: string,
+  expectedRemoteSha?: string,
+): ApprovalDetails & {
+  title: string
+  approveLabel: string
+} {
+  return {
+    title: 'Push branch to origin?',
+    approveLabel: 'Push branch',
+    body: [
+      `Branch: ${branch}`,
+      'Remote: origin',
+      expectedRemoteSha
+        ? `Push mode: Force with lease\nExpected remote commit: ${expectedRemoteSha}`
+        : 'Push mode: Fast-forward only',
+    ].join('\n'),
+    bodyAdvice: expectedRemoteSha
+      ? 'This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit.'
+      : 'This publishes the branch to origin without replacing existing remote history.',
+    bodyFooter: 'Approval covers this push once.',
+  }
+}
+
 export interface ApprovalDetails {
   body: string
   bodyAdvice: string
@@ -66,5 +90,41 @@ export function providerApprovalDetails(host: string, baseUrl: string): Approval
     bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
     bodyFooter:
       'Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings.',
+  }
+}
+
+/** The per-app prompt for a computer-use tool, before the agent reads or drives a Mac app. */
+export function desktopAppApproval(input: {
+  bundleId: string
+  /** What the tool will do, phrased to follow "The agent wants to". */
+  action: string
+  /** Extra warning for an app that can launch code; such apps cannot be remembered. */
+  caution?: string | undefined
+  allowRemember: boolean
+  /** False when the call has no thread, so the grant lasts for this call only. */
+  threadScoped: boolean
+}): ApprovalDetails & {
+  title: string
+  approveLabel: string
+  allowRemember: boolean
+  rememberLabel: string
+} {
+  const { bundleId, caution, threadScoped } = input
+  const allowRemember = input.allowRemember && !caution
+  const scope = threadScoped ? 'Applies to this thread.' : 'Applies to this request only.'
+  return {
+    title: `Let the agent use ${bundleId}?`,
+    body: bundleId,
+    bodyAdvice:
+      `The agent wants to ${input.action}. Allowing lets it read and operate this app (click, type and choose menu items) ${threadScoped ? 'for the rest of this thread' : 'for this request'}, not just this step. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` +
+      (caution ? `\n\n${caution}` : ''),
+    bodyFooter: allowRemember
+      ? `${scope} “Always allow” lets every thread use this app without asking and is saved in Settings.`
+      : caution
+        ? `${scope} This app is asked about in every thread and cannot be always allowed.`
+        : scope,
+    approveLabel: threadScoped ? 'Allow for this thread' : 'Allow once',
+    allowRemember,
+    rememberLabel: `Always allow ${bundleId}`,
   }
 }

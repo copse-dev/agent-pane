@@ -8,7 +8,8 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, Thread } from '@shared/types'
+import type { Thread } from '@shared/types'
+import type { PromptSearchResult } from '@copse/thread-store/prompt-search.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 
@@ -112,18 +113,19 @@ describe('projects pane thread filter (component)', () => {
 
   it('keeps scan progress during streaming and shows newly submitted requests immediately', async () => {
     const api = createFakeApi()
-    let finishRead = (_messages: Message[]): void => {
-      throw new Error('Read not started')
+    let finishSearch = (_result: PromptSearchResult): void => {
+      throw new Error('Search not started')
     }
-    const waiting = new Promise<Message[]>((resolve) => {
-      finishRead = resolve
+    const waiting = new Promise<PromptSearchResult>((resolve) => {
+      finishSearch = resolve
     })
-    const reads: string[] = []
-    api.threads.loadMessages = async (_project, id): Promise<Message[]> => {
-      reads.push(id)
-      return id === 'old'
-        ? waiting
-        : [{ id: 'stored', role: 'user', content: 'needle', toolCalls: [], createdAt: 3 }]
+    const searches: string[] = []
+    api.threads.loadMessages = async (): Promise<Thread['messages']> => {
+      assert.fail('filter must not hydrate transcripts')
+    }
+    api.threads.searchRequests = (_project, query): Promise<PromptSearchResult> => {
+      searches.push(query)
+      return waiting
     }
     const store = mount(
       [
@@ -135,8 +137,9 @@ describe('projects pane thread filter (component)', () => {
     )
     setFilter('needle')
     await delay(250)
-    assert.deepEqual(reads, ['new', 'old'])
-    assert.deepEqual(titles(), ['Stored match'])
+    assert.deepEqual(searches, ['needle'])
+    assert.deepEqual(titles(), [])
+    assert.ok(document.querySelector('.thread-filter-status'))
     store.setState({
       threads: store.getState().threads.map((t) =>
         t.id === 'live'
@@ -156,11 +159,13 @@ describe('projects pane thread filter (component)', () => {
       ),
     })
     store.emit('threads_changed')
-    assert.deepEqual(titles(), ['Stored match', 'Live request'])
+    assert.deepEqual(titles(), ['Live request'])
     await delay(250)
-    assert.deepEqual(reads, ['new', 'old'])
-    finishRead([])
-    await delay(0)
+    assert.deepEqual(searches, ['needle'])
+    assert.ok(document.querySelector('.thread-filter-status'))
+    finishSearch({ matches: ['new'], incomplete: false })
+    await delay(30)
+    assert.deepEqual(titles(), ['Stored match', 'Live request'])
     assert.equal(document.querySelector('.thread-filter-status'), null)
   })
 
