@@ -176,9 +176,19 @@ export async function getPrWorkspaceContext(
   let hasOpenPr = false
   let hasMergeConflicts = hasLocalConflicts
   let hasCiFailures = false
+  // Set when `gh` reports this branch's PR as MERGED — its recorded head, for
+  // `mergedThrough` below. Distinct from `hasOpenPr` going false, which also
+  // covers "no PR ever existed" and must keep comparing against the default
+  // branch.
+  let mergedPr: { sha: string; label: string } | null = null
 
   const ghResult = await dependencies.runGh(
-    ['pr', 'view', '--json', 'state,mergeable,mergeStateStatus,statusCheckRollup'],
+    [
+      'pr',
+      'view',
+      '--json',
+      'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number',
+    ],
     { cwd: root },
   )
   if (ghResult.code === 0 && ghResult.stdout.trim()) {
@@ -187,12 +197,18 @@ export async function getPrWorkspaceContext(
       hasOpenPr = true
       hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)
       hasCiFailures = ghPrHasCiFailures(pr)
+    } else if (pr?.state === 'MERGED' && pr.headRefOid) {
+      mergedPr = {
+        sha: pr.headRefOid,
+        label: pr.number ? `merged PR #${String(pr.number)}` : 'merged PR',
+      }
     }
   }
 
   const changeStats = await getGitChangeStats(root, {
     includeCommitted: true,
     hasOpenPr: (candidate) => Promise.resolve(candidate === branch && hasOpenPr),
+    mergedThrough: (candidate) => Promise.resolve(candidate === branch ? mergedPr : null),
   })
 
   return {
@@ -201,7 +217,7 @@ export async function getPrWorkspaceContext(
     hasMergeConflicts,
     hasCiFailures,
     changeStats,
-    canOpenPr: await canOpenPrForBranch(root, branch, hasOpenPr),
+    canOpenPr: await canOpenPrForBranch(root, branch, hasOpenPr, mergedPr),
   }
 }
 
@@ -213,12 +229,15 @@ export async function getPrWorkspaceContext(
  * worse than no chip. In particular the branch must not be the default one
  * (there is nothing to open a PR *from*), and there must be a commit for GitHub
  * to put in the PR. Uncommitted-only work still belongs in the Changes chip;
- * offering Create PR for it can only end in "no commits between".
+ * offering Create PR for it can only end in "no commits between". A merged PR
+ * with no commits since it merged must get the same answer, or the chip offers
+ * to re-open a PR for work GitHub already has.
  */
 async function canOpenPrForBranch(
   root: string,
   branch: string | null,
   hasOpenPr: boolean,
+  mergedPr: { sha: string; label: string } | null,
 ): Promise<boolean> {
   // No `gh` means "we cannot tell whether a PR exists" as much as "we cannot
   // open one" — either way, do not offer.
@@ -226,8 +245,12 @@ async function canOpenPrForBranch(
   const defaultBranch = await getDefaultBranch(root)
   if (defaultBranch && branch === defaultBranch) return false
   // `hasOpenPr` is false here, so getCommittedChanges compares against the
-  // default branch — commits this branch has and the base does not.
-  const committed = await getCommittedChanges(root, { hasOpenPr: () => Promise.resolve(false) })
+  // default branch — commits this branch has and the base does not — unless
+  // `mergedPr` narrows that to just what post-dates the merge.
+  const committed = await getCommittedChanges(root, {
+    hasOpenPr: () => Promise.resolve(false),
+    mergedThrough: (candidate) => Promise.resolve(candidate === branch ? mergedPr : null),
+  })
   return (committed?.changes.length ?? 0) > 0
 }
 

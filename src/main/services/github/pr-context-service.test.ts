@@ -89,3 +89,56 @@ describe('getPrWorkspaceContext under the project sandbox', { skip: !gitOk }, ()
     }
   })
 })
+
+describe('getPrWorkspaceContext with a merged PR', { skip: !gitOk }, () => {
+  let repo = ''
+
+  before(async () => {
+    repo = await realpath(await mkdtemp(join(tmpdir(), 'copse-pr-context-merged-')))
+    const git = (...args: string[]): void => {
+      spawnSync('git', args, { cwd: repo })
+    }
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'in-pr.ts'), 'export const inPr = true\n')
+    git('add', 'in-pr.ts')
+    git('commit', '-qm', 'work that was merged')
+    setGitAvailableForTest(true)
+    setGhAvailableForTest(true)
+    invalidateGitWorkTreeProbe()
+    resetDefaultBranchCache()
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    setGhAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    resetDefaultBranchCache()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  const headSha = (): string => {
+    const { stdout } = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo })
+    return stdout.toString().trim()
+  }
+
+  it('stops reporting MERGED-PR work as committed, and stops offering Create PR for it', async () => {
+    const sha = headSha()
+    const context = await getPrWorkspaceContext(repo, {
+      runGh: () =>
+        Promise.resolve({
+          stdout: JSON.stringify({ state: 'MERGED', headRefOid: sha, number: 4104 }),
+          stderr: '',
+          code: 0,
+        }),
+    })
+    assert.equal(context.hasOpenPr, false)
+    assert.equal(context.canOpenPr, false)
+    assert.equal(context.changeStats, null)
+  })
+})
