@@ -209,6 +209,33 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     assert.equal(prompts, 2, 'Always ask never remembers the helper grant')
   })
 
+  it('keeps a relative configured private key inside the workspace unreadable to hooks', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { repo, secrets, git, commit } = setup
+    const key = join(repo, 'commit-key')
+    await writeFile(key, await readFile(join(secrets, 'key')), { mode: 0o600 })
+    await writeFile(`${key}.pub`, await readFile(join(secrets, 'key.pub')))
+    git('config', 'user.signingKey', './commit-key.pub')
+    const hooks = join(repo, 'hooks')
+    await mkdir(hooks)
+    await writeFile(
+      join(hooks, 'pre-commit'),
+      '#!/bin/sh\ncat commit-key > leaked-key 2>/dev/null\nexit 0\n',
+      { mode: 0o700 },
+    )
+    git('config', 'core.hooksPath', hooks)
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    await commit()
+    assert.equal(prompts, 0)
+    assert.equal((await readFile(join(repo, 'leaked-key'))).length, 0)
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+  })
+
   it('reports a missing agent key without retrying unsigned or reading the private key', async (t) => {
     const setup = await fixture(t)
     if (!setup) return

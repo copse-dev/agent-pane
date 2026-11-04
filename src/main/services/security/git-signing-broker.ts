@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   electronRuntimeAllowReadPaths,
@@ -436,12 +436,9 @@ export async function leaseGitSigningBroker(
     const gitOverlay = gitCommitSigningSandboxOverlay(root, [brokerPath])
     if (!gitOverlay.filesystem) throw new Error('Missing Git sandbox policy')
     gitOverlay.filesystem.denyRead.push(...(privateKey?.privatePaths ?? []))
-    if (pathKey && isAbsolute(pathKey)) {
-      const privatePath = pathKey.endsWith('.pub') ? pathKey.slice(0, -4) : pathKey
-      gitOverlay.filesystem.denyRead.push(
-        privatePath,
-        await realpath(privatePath).catch(() => privatePath),
-      )
+    if (privatePath) {
+      const keyFile = privatePath.endsWith('.pub') ? privatePath.slice(0, -4) : privatePath
+      gitOverlay.filesystem.denyRead.push(keyFile, await realpath(keyFile).catch(() => keyFile))
     }
     gitOverlay.filesystem.allowRead = [
       ...(gitOverlay.filesystem.allowRead ?? []),
