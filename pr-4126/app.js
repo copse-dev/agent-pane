@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-LQ7HXRVW.js";
+} from "./chunks/chunk-3JXPZVLF.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -6709,6 +6709,9 @@ function createDemoApi(scenario2, options = {}) {
       setThread: () => resolved(null),
       findByThread: () => resolved(null)
     },
+    backgroundTasks: {
+      logs: () => resolved(null)
+    },
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
@@ -7462,7 +7465,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-M4Y25XMG.js").then(async (main) => {
+    void import("./chunks/main-MB7FIREK.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
