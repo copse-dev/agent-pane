@@ -39,7 +39,7 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler } from '../approval.ts'
+import { setApprovalHandler, supportsInteractiveClientApproval } from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -53,7 +53,7 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
+import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -479,6 +479,41 @@ describe('ensureToolPermitted', () => {
       clearWebOriginGrant(webOriginKey(url))
       setApprovalHandler(null)
       await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    }
+  })
+
+  it('lets a paired client approve one web-origin request without saving the origin', async () => {
+    setPermissionGateForTests(null)
+    const url = new URL('https://paired-client.example/resource')
+    const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
+      await import('./web-origin-policy.ts')
+    const originalWebApproval = getSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    setApprovalHandler(async (request) => {
+      assert.equal(request.cause, 'web-origin')
+      assert.equal(supportsInteractiveClientApproval(request), true)
+      assert.equal(request.body, url.toString())
+      return { approved: true, remember: false, grantScope: 'once' }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'fetch_url', args: { url: url.toString() } }),
+        true,
+      )
+      assert.doesNotThrow(() => {
+        assertWebOriginAllowed(url, [])
+      })
+      assert.deepEqual(getSetting(WEB_ALLOWED_ORIGINS_SETTING, []), [])
+      clearWebOriginGrant(webOriginKey(url))
+      assert.throws(() => {
+        assertWebOriginAllowed(url, [])
+      })
+    } finally {
+      clearWebOriginGrant(webOriginKey(url))
+      setApprovalHandler(null)
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, originalWebApproval)
       await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })

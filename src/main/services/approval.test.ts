@@ -1052,14 +1052,24 @@ describe('paired approval capabilities', () => {
     assert.equal(supportsInteractiveClientApproval(preparation), false)
     const bounded: ApprovalRequest = { ...preparation, interactiveClientApproval: 'once' }
     assert.equal(supportsInteractiveClientApproval(bounded), true)
-    assert.equal(supportsInteractiveClientApproval({ ...bounded, allowRemember: true }), false)
+    assert.equal(supportsInteractiveClientApproval({ ...bounded, allowRemember: true }), true)
     const unspecifiedRemember: ApprovalRequest = { ...bounded }
     delete unspecifiedRemember.allowRemember
-    assert.equal(supportsInteractiveClientApproval(unspecifiedRemember), false)
+    assert.equal(supportsInteractiveClientApproval(unspecifiedRemember), true)
     assert.equal(
       supportsInteractiveClientApproval({ ...bounded, turnTreeLeaseDefault: true }),
       false,
     )
     assert.equal(supportsInteractiveClientApproval({ ...preparation, type: 'mcp' }), false)
+    assert.equal(
+      supportsInteractiveClientApproval({
+        title: 'Allow model provider host?',
+        body: 'https://example.com',
+        type: 'web',
+        cause: 'provider-host',
+        allowRemember: false,
+      }),
+      false,
+    )
   })
 })

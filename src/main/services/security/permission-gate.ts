@@ -865,6 +865,7 @@ async function promptWebOrigin(
       approveLabel: 'Allow request',
       type: 'web',
       cause: 'web-origin',
+      interactiveClientApproval: 'once',
       subject: origin,
       scope: 'external',
       allowRemember,
