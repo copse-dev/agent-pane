@@ -655,6 +655,66 @@ describe('getCommittedChanges', { skip: !gitOk && 'git not installed' }, () => {
     assert.deepEqual(committed.changes, [{ path: 'pushed.ts', status: 'added' }])
   })
 
+  it('is empty once the carrying PR has merged, even though it predates the default branch', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'in-pr.ts'), 'export const inPr = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work that was merged')
+    const mergedSha = git('rev-parse', 'HEAD').stdout.toString().trim()
+
+    // No `hasOpenPr` left: the PR is MERGED, not OPEN, so a real caller's
+    // `hasOpenPr` would already answer false here.
+    const committed = await getCommittedChanges(repo, {
+      hasOpenPr: async () => false,
+      mergedThrough: async () => ({ sha: mergedSha, label: 'merged PR #1' }),
+    })
+    assert.deepEqual(committed?.changes, [])
+  })
+
+  it('still shows commits made after the carrying PR merged', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'in-pr.ts'), 'export const inPr = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work that was merged')
+    const mergedSha = git('rev-parse', 'HEAD').stdout.toString().trim()
+    await writeFile(join(repo, 'after-merge.ts'), 'export const afterMerge = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work made after the PR merged')
+
+    const committed = await getCommittedChanges(repo, {
+      hasOpenPr: async () => false,
+      mergedThrough: async () => ({ sha: mergedSha, label: 'merged PR #1' }),
+    })
+    assert.ok(committed)
+    assert.equal(committed.baseLabel, 'merged PR #1')
+    assert.deepEqual(committed.changes, [{ path: 'after-merge.ts', status: 'added' }])
+  })
+
+  it('falls back to the default branch when the merged head is not an ancestor of HEAD', async () => {
+    // A commit this checkout can still read but never had on `feature` — stands
+    // in for a branch rebased onto a new default branch after its PR merged.
+    git('checkout', '-q', '-b', 'scratch')
+    await writeFile(join(repo, 'foreign.ts'), 'export const foreign = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'unrelated history')
+    const foreignSha = git('rev-parse', 'HEAD').stdout.toString().trim()
+    git('checkout', '-q', 'main')
+    git('branch', '-D', 'scratch')
+
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'rebased.ts'), 'export const rebased = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work later rebased')
+
+    const committed = await getCommittedChanges(repo, {
+      hasOpenPr: async () => false,
+      mergedThrough: async () => ({ sha: foreignSha, label: 'merged PR #1' }),
+    })
+    assert.ok(committed)
+    assert.equal(committed.baseLabel, 'main')
+    assert.deepEqual(committed.changes, [{ path: 'rebased.ts', status: 'added' }])
+  })
+
   it('diffs a committed file from the base, ignoring later working-tree edits', async () => {
     git('checkout', '-q', '-b', 'feature')
     await writeFile(join(repo, 'base.txt'), 'committed\n')

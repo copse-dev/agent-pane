@@ -23,7 +23,7 @@ import type {
   GhPrSummary,
   PrActionResult,
 } from '@shared/types/git.ts'
-import { branchPrCache } from '../branch-pr-cache.ts'
+import { invalidateBranchPrCaches } from '../branch-pr-cache.ts'
 import { AsyncTtlCache } from '../../async-ttl-cache.ts'
 import type { GhIssuePage, GitHubBackend, PrRef } from './backend.ts'
 
@@ -52,7 +52,7 @@ const wrappers: Array<{ clear(): void }> = []
 
 /** Drop every method-level slot. Manual refresh calls this so the next read is live. */
 export function invalidateGitHubReadCache(): void {
-  branchPrCache.invalidate()
+  invalidateBranchPrCaches()
   for (const wrapper of wrappers) wrapper.clear()
 }
 
@@ -164,7 +164,7 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
       // create changed nothing; keep the lists so a retry loop cannot burn
       // rate budget on refetches.
       if (result.ok) {
-        branchPrCache.invalidate()
+        invalidateBranchPrCaches()
         workspacePrs.clear()
         myPrs.clear()
       }
@@ -173,28 +173,28 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
 
     async rerunFailedRuns(root, ref) {
       const result = await inner.rerunFailedRuns(root, ref)
-      if (result.ok) branchPrCache.invalidate()
+      if (result.ok) invalidateBranchPrCaches()
       invalidatePr()
       return result
     },
 
     async approvePr(root, ref) {
       const result: PrActionResult = await inner.approvePr(root, ref)
-      if (result.ok) branchPrCache.invalidate()
+      if (result.ok) invalidateBranchPrCaches()
       invalidatePr()
       return result
     },
 
     async markPrReady(root, ref) {
       const result = await inner.markPrReady(root, ref)
-      if (result.ok) branchPrCache.invalidate()
+      if (result.ok) invalidateBranchPrCaches()
       invalidatePr()
       return result
     },
 
     async enableAutoMerge(root, ref) {
       const result = await inner.enableAutoMerge(root, ref)
-      if (result.ok) branchPrCache.invalidate()
+      if (result.ok) invalidateBranchPrCaches()
       invalidatePr()
       return result
     },

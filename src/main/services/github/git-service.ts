@@ -900,6 +900,12 @@ async function commitRefExists(ref: string, root: string): Promise<boolean> {
   return code === 0
 }
 
+/** True when `ancestor` is a real ancestor of (or equal to) `ref`. */
+async function isAncestor(ancestor: string, ref: string, root: string): Promise<boolean> {
+  const { code } = await runGitRead(['merge-base', '--is-ancestor', ancestor, ref], root)
+  return code === 0
+}
+
 export interface CommittedChangesOptions {
   /**
    * Whether an open pull request already carries `branch`. Injected by the
@@ -909,6 +915,19 @@ export interface CommittedChangesOptions {
    * comparison to the default branch rather than hiding committed work.
    */
   hasOpenPr?: (branch: string) => Promise<boolean>
+  /**
+   * The branch's own HEAD at the moment a pull request carrying it merged, when
+   * one did. Injected the same way as `hasOpenPr`, for the same reason. A merged
+   * PR's commits are not necessarily ancestors of the default branch — GitHub's
+   * squash and rebase merges create a new commit on the base rather than
+   * replaying the branch's own — so once `hasOpenPr` goes false on merge, the
+   * default-branch fallback below would otherwise keep reporting the same
+   * already-landed files as "committed" forever. The branch's pre-merge HEAD
+   * does not have that problem: it is a real ancestor of HEAD by construction
+   * (barring a rebase after the merge, guarded for below), so diffing against it
+   * shows only the empty set, or commits truly made after the merge.
+   */
+  mergedThrough?: (branch: string) => Promise<{ sha: string; label: string } | null>
 }
 
 /**
@@ -917,9 +936,12 @@ export interface CommittedChangesOptions {
  *
  * A branch whose commits are already published *and* carried by an open PR is
  * reviewed in the PR panel, so only what is local to this checkout is still
- * "not in a PR" — compare against `origin/<branch>`. Anything else (never
- * pushed, or pushed with no PR opened) compares against the default branch, so
- * work that has no PR to appear in stays visible.
+ * "not in a PR" — compare against `origin/<branch>`. A branch whose PR has
+ * since merged compares against that PR's recorded head instead — see
+ * `mergedThrough` on {@link CommittedChangesOptions}. Anything else (never
+ * pushed, pushed with no PR opened, or rebased since the merge) compares
+ * against the default branch, so work that has no PR to appear in stays
+ * visible.
  */
 async function resolveCommittedBase(
   root: string,
@@ -927,6 +949,7 @@ async function resolveCommittedBase(
 ): Promise<{ label: string; commit: string } | null> {
   const branch = await getCurrentBranchName(root)
   let ref: string | null = null
+  let label: string | null = null
   if (branch) {
     const remoteBranch = `origin/${branch}`
     // Probe the local ref first: it costs one `rev-parse` and rules out every
@@ -937,6 +960,17 @@ async function resolveCommittedBase(
       (await (options.hasOpenPr?.(branch) ?? Promise.resolve(false)))
     ) {
       ref = remoteBranch
+      label = remoteBranch
+    } else {
+      const merged = await (options.mergedThrough?.(branch) ?? Promise.resolve(null))
+      if (
+        merged &&
+        (await commitRefExists(merged.sha, root)) &&
+        (await isAncestor(merged.sha, 'HEAD', root))
+      ) {
+        ref = merged.sha
+        label = merged.label
+      }
     }
   }
   if (!ref) {
@@ -944,17 +978,18 @@ async function resolveCommittedBase(
     for (const candidate of [`origin/${defaultBranch}`, defaultBranch]) {
       if (await commitRefExists(candidate, root)) {
         ref = candidate
+        label = candidate
         break
       }
     }
   }
-  if (!ref) return null
+  if (!ref || !label) return null
   // Three-dot semantics: a branch that is behind its base must not report the
   // base's own commits as this branch's work.
   const { stdout, code } = await runGitRead(['merge-base', ref, 'HEAD'], root)
   const commit = stdout.trim()
   if (code !== 0 || !commit) return null
-  return { label: ref, commit }
+  return { label, commit }
 }
 
 /**
