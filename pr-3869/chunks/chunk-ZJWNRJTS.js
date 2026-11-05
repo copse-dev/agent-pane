@@ -27907,6 +27907,11 @@ function attentionThreadId(store, threadId) {
   }
   return threadId;
 }
+function proposingThreadId(store, threadId) {
+  const threads = store.getState().threads;
+  const proposerId = threads.find((t2) => t2.id === threadId)?.proposedBy?.threadId;
+  return proposerId !== void 0 && proposerId !== threadId && threads.some((t2) => t2.id === proposerId) ? proposerId : null;
+}
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
@@ -43439,12 +43444,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
+          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
+          // normally never sees it. The entry stays as a safety net for a wrap that
+          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -43538,12 +43544,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
+          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
+          // normally never sees it. The entry stays as a safety net for a wrap that
+          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -74269,6 +74276,7 @@ export {
   getSidebarThreads,
   getSideChatUnreadParents,
   attentionThreadId,
+  proposingThreadId,
   archiveCachedSidebarThread,
   isProjectSwitchInFlight,
   preloadSidebarThreads,
