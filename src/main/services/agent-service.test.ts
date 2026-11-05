@@ -651,7 +651,7 @@ describe('runAgent AgentHost decoupling', () => {
     ])
   })
 
-  it('activates nested instructions on first file access and defers the first edit', async () => {
+  it('defers every edit from one parent response until scoped instructions reach the next request', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
     await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
@@ -670,6 +670,7 @@ describe('runAgent AgentHost decoupling', () => {
     )
 
     let calls = 0
+    let writesBeforeDelivery: string[] = []
     const provider: LLMProvider = {
       stream: async function* (messages) {
         calls += 1
@@ -685,10 +686,19 @@ describe('runAgent AgentHost decoupling', () => {
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'second-edit-before-instructions',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
         assert.match(system.content, /Never edit before reading this/)
         if (calls === 2) {
+          writesBeforeDelivery = [...writes]
           const deferred = messages.find(
             (message) =>
               message.role === 'tool' &&
@@ -705,9 +715,17 @@ describe('runAgent AgentHost decoupling', () => {
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'retried-second-edit',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
-        assert.deepEqual(writes, ['packages/api/router.ts'])
+        assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
         yield { type: 'text' as const, text: 'Done.' }
       },
     }
@@ -747,8 +765,13 @@ describe('runAgent AgentHost decoupling', () => {
             ),
         ),
       )
+      assert.deepEqual(
+        writesBeforeDelivery,
+        [],
+        'no edit may run before its instructions are delivered',
+      )
       assert.equal(calls, 3)
-      assert.deepEqual(writes, ['packages/api/router.ts'])
+      assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
     } finally {
       setDefaultPluginRegistry(null)
       await rm(root, { recursive: true, force: true })
