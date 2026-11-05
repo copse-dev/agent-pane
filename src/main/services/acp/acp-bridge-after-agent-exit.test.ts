@@ -1,8 +1,21 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  closeSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   agent,
   methods,
@@ -282,5 +295,104 @@ describe('forgetClaudeMcpServerFailure', () => {
     writeFileSync(cacheFile(), '{not json')
     assert.equal(await forgetClaudeMcpServerFailure(dir, 'copse'), false)
     assert.equal(readFileSync(cacheFile(), 'utf8'), '{not json')
+  })
+
+  // The config dir is the sandboxed agent's writable state dir, while Copse
+  // edits it from the unsandboxed main process: whatever the agent plants
+  // there must not steer that edit outside the dir.
+  describe('in a dir the sandboxed agent can write', () => {
+    let outside: string
+    const settings = '{"hooks":{}}\n'
+    const staleBridge = JSON.stringify({ copse: { timestamp: 1 }, figma: { timestamp: 2 } })
+
+    beforeEach(() => {
+      outside = mkdtempSync(join(tmpdir(), 'copse-claude-outside-'))
+      writeFileSync(join(outside, 'settings.json'), settings)
+    })
+
+    afterEach(() => {
+      rmSync(outside, { recursive: true, force: true })
+    })
+
+    it(
+      'never writes through a link planted at a staging name',
+      { skip: process.platform === 'win32' },
+      async () => {
+        writeFileSync(cacheFile(), staleBridge)
+        // The name the staging file once had: the main process's pid.
+        const planted = `${cacheFile()}.${String(process.pid)}.tmp`
+        symlinkSync(join(outside, 'settings.json'), planted)
+
+        assert.equal(await forgetClaudeMcpServerFailure(dir, 'copse'), true)
+
+        assert.equal(readFileSync(join(outside, 'settings.json'), 'utf8'), settings)
+        assert.ok(lstatSync(cacheFile()).isFile())
+        assert.deepEqual(JSON.parse(readFileSync(cacheFile(), 'utf8')), { figma: { timestamp: 2 } })
+        // Nothing staged is left behind.
+        assert.deepEqual(readdirSync(dir).sort(), [
+          CLAUDE_MCP_FAILURE_CACHE_FILE,
+          basename(planted),
+        ])
+      },
+    )
+
+    it(
+      'does not follow a link at the cache file',
+      { skip: process.platform === 'win32' },
+      async () => {
+        writeFileSync(join(outside, 'cache.json'), staleBridge)
+        symlinkSync(join(outside, 'cache.json'), cacheFile())
+
+        assert.equal(await forgetClaudeMcpServerFailure(dir, 'copse'), false)
+
+        assert.ok(lstatSync(cacheFile()).isSymbolicLink())
+        assert.equal(readFileSync(join(outside, 'cache.json'), 'utf8'), staleBridge)
+      },
+    )
+
+    it(
+      'returns at once from a FIFO at the cache file',
+      { skip: process.platform === 'win32', timeout: 10_000 },
+      async (t) => {
+        try {
+          execFileSync('mkfifo', [cacheFile()])
+        } catch {
+          t.skip('mkfifo is unavailable')
+          return
+        }
+        const forgetting = forgetClaudeMcpServerFailure(dir, 'copse')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          const outcome = await Promise.race([
+            forgetting,
+            new Promise<'still waiting for a writer'>((resolve) => {
+              timer = setTimeout(() => {
+                resolve('still waiting for a writer')
+              }, 2_000)
+            }),
+          ])
+          assert.equal(outcome, false)
+        } finally {
+          clearTimeout(timer)
+          // Let a reader blocked on the FIFO see EOF, so a regression fails
+          // here instead of keeping the test process alive.
+          try {
+            closeSync(openSync(cacheFile(), constants.O_WRONLY | constants.O_NONBLOCK))
+          } catch {
+            // No reader is waiting.
+          }
+          await forgetting.catch(() => undefined)
+        }
+      },
+    )
+
+    it('does not read a cache far past any real size', async () => {
+      const huge = JSON.stringify({ copse: { timestamp: 1 }, padding: 'x'.repeat(1024 * 1024) })
+      writeFileSync(cacheFile(), huge)
+
+      assert.equal(await forgetClaudeMcpServerFailure(dir, 'copse'), false)
+
+      assert.equal(readFileSync(cacheFile(), 'utf8'), huge)
+    })
   })
 })

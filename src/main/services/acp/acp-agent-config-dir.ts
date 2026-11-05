@@ -1,4 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { constants } from 'node:fs'
+import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -55,6 +57,54 @@ export const CLAUDE_MCP_FAILURE_CACHE_FILE = 'mcp-needs-auth-cache.json'
 
 const claudeMcpFailureCacheSchema = z.record(z.string(), z.unknown())
 
+/** Far past a real cache, which holds a name and a timestamp per server. */
+const CLAUDE_MCP_FAILURE_CACHE_MAX_BYTES = 256 * 1024
+
+const missingFileErrorSchema = z.object({ code: z.literal('ENOENT') })
+
+function leaveClaudeMcpFailureCache(path: string, reason: string): null {
+  console.warn(`[acp-agent-config-dir] left ${path} as it is: ${reason}`)
+  return null
+}
+
+/**
+ * The text of the failure cache at `path`, or `null` when there is nothing to
+ * clear. The config dir is the sandboxed agent's writable state dir, read here
+ * by the unsandboxed main process under the thread's session lock, so only a
+ * regular file of a cache's size is read: never through a link the agent
+ * planted, never from a FIFO that would wait for a writer, never unbounded.
+ */
+async function readClaudeMcpFailureCache(path: string): Promise<string | null> {
+  const file = await open(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  ).catch((err: unknown) => {
+    if (!missingFileErrorSchema.safeParse(err).success) {
+      leaveClaudeMcpFailureCache(path, err instanceof Error ? err.message : String(err))
+    }
+    return null
+  })
+  if (!file) return null
+  try {
+    const stat = await file.stat()
+    if (!stat.isFile()) return leaveClaudeMcpFailureCache(path, 'not a regular file')
+    if (stat.size > CLAUDE_MCP_FAILURE_CACHE_MAX_BYTES) {
+      return leaveClaudeMcpFailureCache(
+        path,
+        `larger than ${String(CLAUDE_MCP_FAILURE_CACHE_MAX_BYTES)} bytes`,
+      )
+    }
+    const buffer = Buffer.alloc(stat.size + 1)
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+    if (bytesRead !== stat.size) return leaveClaudeMcpFailureCache(path, 'changed while being read')
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } catch (err) {
+    return leaveClaudeMcpFailureCache(path, err instanceof Error ? err.message : String(err))
+  } finally {
+    await file.close()
+  }
+}
+
 /**
  * Drop `serverName`'s entry from {@link CLAUDE_MCP_FAILURE_CACHE_FILE} in
  * `configDir`, keeping every other server's. Returns whether one was dropped.
@@ -63,22 +113,31 @@ const claudeMcpFailureCacheSchema = z.record(z.string(), z.unknown())
  * thread, but each process gets a new bridge (new port, new token) that is
  * listening before the agent starts. A failure the cache holds was against an
  * earlier bridge, so honouring it hides a live bridge from the agent (#4142).
- * A missing or unreadable cache is left as it is.
+ * A missing cache, or anything there but a regular file of a cache's size, is
+ * left as it is.
  */
 export async function forgetClaudeMcpServerFailure(
   configDir: string,
   serverName: string,
 ): Promise<boolean> {
   const path = join(configDir, CLAUDE_MCP_FAILURE_CACHE_FILE)
-  const text = await readFile(path, 'utf8').catch(() => null)
+  const text = await readClaudeMcpFailureCache(path)
   if (text === null) return false
   const cache = safeJsonParse(text, decodeWithSchema(claudeMcpFailureCacheSchema))
   if (!cache || !Object.hasOwn(cache, serverName)) return false
   const kept = Object.fromEntries(Object.entries(cache).filter(([name]) => name !== serverName))
-  // Replace, never truncate in place: the CLI reads this file whole.
-  const staging = `${path}.${String(process.pid)}.tmp`
-  await writeFile(staging, JSON.stringify(kept))
-  await rename(staging, path)
+  // Replace, never truncate in place: the CLI reads this file whole. The agent
+  // can write this dir, so the staging name is unguessable and created only if
+  // nothing is there (`wx` never opens through a planted link), and the rename
+  // swaps the cache's directory entry rather than writing into what it was.
+  const staging = `${path}.${randomBytes(16).toString('hex')}.tmp`
+  try {
+    await writeFile(staging, JSON.stringify(kept), { flag: 'wx', mode: 0o600 })
+    await rename(staging, path)
+  } catch (err) {
+    await rm(staging, { force: true }).catch(() => undefined)
+    throw err
+  }
   return true
 }
 
