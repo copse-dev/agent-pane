@@ -41,6 +41,16 @@ restore, stop the app and remove the index and its sidecars to force a rebuild.
 The spike does not add an external-file watcher or migrate `catalog.jsonl` and the
 legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-index.md).
 
+Sidebar request search has a separate disposable `.thread-prompt-index.sqlite`
+projection (and SQLite sidecars). A dedicated worker warms it after opening a project
+and reconciles it after native writes. It stores only NFC-normalized, case-folded human
+prompt text, with spine file signatures and per-prompt content hashes for incremental
+reuse. Search returns thread IDs rather than loading transcripts or tool/blob content.
+Queries reconcile source signatures before matching; edits, truncation, archive/restore,
+and deletion replace/remove affected rows. A missing/incompatible/corrupt database
+rebuilds from thread files. It uses the same store containment and symlink rules.
+Source files remain authoritative; deleting this cache is safe.
+
 ## Layout
 
 ```
@@ -49,6 +59,7 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
                                      #   createdAt, updatedAt, digest, path}
   agent-pr-index-v2.jsonl            # rebuildable legacy agent/PR links; all matching threads
   .thread-index.sqlite              # disposable metadata / PR / commit projection
+  .thread-prompt-index.sqlite       # disposable human-prompt search projection (worker-owned)
   stream-stats.jsonl                 # append-only stream-cut eval records
   reasoning-checkpoints.jsonl        # append-only reasoning checkpoint records
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
@@ -292,6 +303,13 @@ terminal `exited` (with `exitCode`), `timed_out`, `cancelled` or
 spawned, so a command that never started stays distinct from one that ran and
 failed; `backgroundTaskId` names the `run_background` task once there is one.
 It is display metadata: the fold decodes it and drops a malformed value.
+
+A `run_background` task usually ends after its tool call returned, often in a
+later turn. Its first terminal stage (`exited`, `timed_out`, or `cancelled` when
+it was stopped) is then written onto the same call by main, which rewrites the
+owning message line in place before any completion wake starts. A completion
+wake's `origin.operationId` is that task id, so a reader finds the command a
+wake reports on by matching it against `backgroundTaskId`.
 
 `model` on a spine line is the primary-chat picker id for that assistant
 message. The transcript surfaces it only when more than one distinct primary

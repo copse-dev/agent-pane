@@ -1,6 +1,6 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
+import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
@@ -11,7 +11,6 @@ import {
 import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
-import { getGithubRepoSlug } from '../github/git-service.ts'
 
 /** Tools that always auto-run (writes still go through the diff queue). */
 export const SANDBOX_TOOLS = new Set([
@@ -113,10 +112,22 @@ export interface GithubWritePrompt {
  * Unrecognised args fall back to pretty-printed JSON so the user still sees what
  * would run.
  */
-export async function formatGithubWritePrompt(
+export function formatGithubWritePrompt(
   toolName: string,
   args: unknown,
-): Promise<GithubWritePrompt> {
+  workspaceRepositorySlug: string | null = null,
+): GithubWritePrompt {
+  if (toolName === 'git_push' && isRecord(args)) {
+    const branch = nonEmptyStringArg(args, 'branch')
+    const expectedRemoteSha = nonEmptyStringArg(args, 'expected_remote_sha')
+    if (
+      branch &&
+      (args['expected_remote_sha'] === undefined || expectedRemoteSha) &&
+      Object.keys(args).every((key) => key === 'branch' || key === 'expected_remote_sha')
+    ) {
+      return gitPushApproval(branch, expectedRemoteSha ?? undefined)
+    }
+  }
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
   const effects: Record<string, string> = {
     gh_pr_create:
@@ -130,11 +141,16 @@ export async function formatGithubWritePrompt(
     gh_pr_enable_auto_merge:
       'This allows GitHub to merge the pull request when its requirements are met, using the repository’s preferred merge strategy.',
   }
-  const { body, bodyMarkdown } = await formatGithubWritePromptBody(toolName, args)
+  const { body, bodyMarkdown } = formatGithubWritePromptBody(
+    toolName,
+    args,
+    workspaceRepositorySlug,
+  )
   return {
     title,
     approveLabel:
       {
+        gh_push: 'Push branch',
         gh_pr_create: 'Publish pull request',
         gh_pr_rerun_failed_ci: 'Re-run CI',
         gh_pr_approve: 'Submit approving review',
@@ -153,10 +169,11 @@ function nonEmptyStringArg(args: Record<string, unknown>, key: string): string |
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-async function formatGithubWritePromptBody(
+function formatGithubWritePromptBody(
   toolName: string,
   args: unknown,
-): Promise<{ body: string; bodyMarkdown?: string }> {
+  workspaceRepositorySlug: string | null,
+): { body: string; bodyMarkdown?: string } {
   if (toolName === 'gh_push')
     return {
       body: 'Push the current thread branch to origin, updating any existing pull request. No force push.',
@@ -177,12 +194,10 @@ async function formatGithubWritePromptBody(
     if (!title) return { body: JSON.stringify(args, null, 2) }
     let owner = nonEmptyStringArg(args, 'owner')
     let repo = nonEmptyStringArg(args, 'repo')
-    // The tool call omits owner/repo to mean "current workspace repository"
-    // (see gh-pr-action-tools.ts's resolveOwnerRepo); resolve the same way here
-    // so the prompt shows the real target instead of a placeholder.
+    // Main resolves the workspace repository before calling this pure formatter.
+    // Fill omitted halves exactly as gh-pr-action-tools.ts's resolveOwnerRepo does.
     if (!owner || !repo) {
-      const slug = await getGithubRepoSlug()
-      const [slugOwner, slugRepo] = slug?.split('/') ?? []
+      const [slugOwner, slugRepo] = workspaceRepositorySlug?.split('/') ?? []
       owner = owner ?? slugOwner ?? null
       repo = repo ?? slugRepo ?? null
     }

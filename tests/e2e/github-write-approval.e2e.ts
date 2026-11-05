@@ -2,7 +2,13 @@ import { execFileSync } from 'node:child_process'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -23,6 +29,9 @@ describe('GitHub write approval', () => {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
+    // The origin exists only to resolve approval copy. Do not let startup fetch
+    // contact the synthetic repository and interrupt the fixture for credentials.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
   })
 

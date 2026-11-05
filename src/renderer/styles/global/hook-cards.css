@@ -284,3 +284,6 @@
   color: var(--text-muted);
   font-style: italic;
 }
+.msg-origin-command-link {
+  margin-left: auto;
+}

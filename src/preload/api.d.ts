@@ -1,5 +1,9 @@
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type {
+  RemoteArtifactImageRequest,
+  RemoteArtifactImageResult,
+} from '@shared/remote-artifact-image.ts'
+import type {
   AppRunOwner,
   AppRunSelection,
   AppRunAction,
@@ -701,6 +705,12 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<{ bytes: number; truncated: boolean }>
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    /** Search saved human requests without hydrating conversation history. */
+    searchRequests: (
+      projectId: string,
+      query: string,
+    ) => Promise<import('@copse/thread-store/prompt-search.ts').PromptSearchResult>
+    cancelRequestSearch: () => Promise<void>
     /** Fill legacy PR links for a bounded set of visible sidebar threads. */
     backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
     loadMessages: (
@@ -953,7 +963,10 @@ export interface ApiClient {
   remoteAgent: {
     /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
     downloadArtifact: (agentId: string, path: string) => Promise<string>
-    artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+    /** Hydrate one artifact image for the thread on screen; see sandboxed-artifact-image-downloads.md. */
+    artifactImageDataUrl: (
+      request: RemoteArtifactImageRequest,
+    ) => Promise<RemoteArtifactImageResult>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
     /**
@@ -1145,11 +1158,17 @@ export interface ApiClient {
     ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
   decisions: {
+    /**
+     * The project's decision log. Pass the project: main does not guess one, so
+     * an omitted id lists nothing. Optional only so the protocol stays
+     * compatible with peers that send none.
+     */
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
     listThread: (
       projectId: string,
       threadId: string,
     ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    /** Export the project's decision log. An omitted id is refused, as `list` explains. */
     export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {
@@ -1290,6 +1309,15 @@ export interface ApiClient {
     /** The roadmap item currently tracking `threadId` as its `thread` field, if any —
      * the reverse of `setThread`, used by the thread's back-link chip (#2501). */
     findByThread: (threadId: string) => Promise<{ id: string; title: string } | null>
+  }
+  /** `run_background` tasks the agent started in this session. */
+  backgroundTasks: {
+    /** A task's retained output, or null once it is gone (stopped, or the app restarted). */
+    logs(
+      projectId: string,
+      threadId: string,
+      taskId: string,
+    ): Promise<{ logs: string; running: boolean } | null>
   }
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
