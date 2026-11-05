@@ -5,7 +5,7 @@ import {
   invalidateGitHubReadCache,
   resetGitHubReadCacheForTest,
 } from './github-read-cache.ts'
-import { branchPrCache, type BranchPrResult } from '../branch-pr-cache.ts'
+import { branchMergedPrCache, branchPrCache, type BranchPrResult } from '../branch-pr-cache.ts'
 import type { GitHubBackend, PrRef } from './backend.ts'
 import type {
   GhCliStatus,
@@ -149,15 +149,24 @@ describe('cachingGitHubBackend', () => {
       ]
       for (const action of actions) {
         let reads = 0
+        let mergedReads = 0
         const load = async (): Promise<BranchPrResult> => {
           reads++
           return { ok: false, pr: null }
         }
+        const loadMerged = async (): Promise<BranchPrResult<{ sha: string; label: string }>> => {
+          mergedReads++
+          return { ok: false, pr: null }
+        }
         await branchPrCache.get('branch', load)
+        await branchMergedPrCache.get('branch', loadMerged)
         await action()
         await branchPrCache.get('branch', load)
+        await branchMergedPrCache.get('branch', loadMerged)
         assert.equal(reads, ok ? 2 : 1)
+        assert.equal(mergedReads, ok ? 2 : 1, 'the merged-PR base is re-read alongside')
         branchPrCache.invalidate()
+        branchMergedPrCache.invalidate()
       }
     })
   }

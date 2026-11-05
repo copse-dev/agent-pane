@@ -394,7 +394,11 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import {
+  branchHasOpenPr,
+  branchMergedThrough,
+  getGitBranchStatus,
+} from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
@@ -2712,6 +2716,7 @@ export function registerAllHandlers(
     return getGitChangeStats(root, {
       includeCommitted: true,
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
@@ -2729,6 +2734,7 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getCommittedChanges(root, {
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:committed-file-diff', async (event, ...rawArgs) => {
@@ -2737,6 +2743,7 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getCommittedFileDiff(filePath, root, {
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:working-file-diff', async (event, ...rawArgs) => {

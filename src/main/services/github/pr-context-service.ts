@@ -15,7 +15,7 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { ghPrViewListSchema, ghPrViewSchema, type GhPrView } from './gh-json-schemas.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
-import { branchPrCache } from './branch-pr-cache.ts'
+import { branchMergedPrCache, branchPrCache } from './branch-pr-cache.ts'
 
 const decodeGhPr = decodeWithSchema(ghPrViewSchema)
 
@@ -113,6 +113,55 @@ export async function branchHasOpenPr(
   return (await getOpenPrForBranch(projectId, branch, root)) !== null
 }
 
+/** A merged PR's recorded head as a committed base, labelled for the Changes panel. */
+function mergedPrHead(pr: GhPrView): { sha: string; label: string } | null {
+  if (!pr.headRefOid) return null
+  return {
+    sha: pr.headRefOid,
+    label: pr.number ? `merged PR #${String(pr.number)}` : 'merged PR',
+  }
+}
+
+/**
+ * The head `branch` had when its PR merged, for `mergedThrough` on the Changes
+ * panel's committed reads. Queries an explicit head like
+ * {@link getOpenPrForBranch}, with the same negative caching and failure
+ * backoff. The default branch is skipped: `--head` matches fork PRs by branch
+ * name alone, and a fork's merged `main` would otherwise become this
+ * checkout's base.
+ */
+export async function branchMergedThrough(
+  projectId: string,
+  branch: string,
+  root: string | null,
+  query: typeof runGh = runGh,
+): Promise<{ sha: string; label: string } | null> {
+  if (!root || !isGhAvailable()) return null
+  if (branch === (await getDefaultBranch(root))) return null
+  return branchMergedPrCache.get(branchStatusLookupKey(projectId, root, branch), async () => {
+    const result = await query(
+      [
+        'pr',
+        'list',
+        '--head',
+        branch,
+        '--state',
+        'merged',
+        '--json',
+        'number,headRefOid',
+        '--limit',
+        '1',
+      ],
+      { cwd: root },
+    )
+    const list =
+      result.code === 0 ? safeJsonParse(result.stdout, decodeWithSchema(ghPrViewListSchema)) : null
+    if (list === null) return { ok: false, pr: null }
+    const [pr] = list
+    return { ok: true, pr: pr ? mergedPrHead(pr) : null }
+  })
+}
+
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
 export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
@@ -197,11 +246,8 @@ export async function getPrWorkspaceContext(
       hasOpenPr = true
       hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)
       hasCiFailures = ghPrHasCiFailures(pr)
-    } else if (pr?.state === 'MERGED' && pr.headRefOid) {
-      mergedPr = {
-        sha: pr.headRefOid,
-        label: pr.number ? `merged PR #${String(pr.number)}` : 'merged PR',
-      }
+    } else if (pr?.state === 'MERGED') {
+      mergedPr = mergedPrHead(pr)
     }
   }
 
