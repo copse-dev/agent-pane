@@ -214,6 +214,21 @@ export type AcpAuthFailureKind = 'required' | 'expired'
 const EXPIRED_AUTH_RE =
   /re-?authenticat|re-?sign[\s_-]*in|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?(?:expired|been\s+revoked|was\s+rejected)|(?:expired|revoked|rejected)[\s:_-]*(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:workos\s+)?[\w-]*(?:token|session|credentials?)/i
 
+/**
+ * Claude Code's start-up organization check failed (#4147). It runs only when
+ * managed settings pin `forceLoginOrgUUID`, and asks Anthropic which
+ * organization the saved OAuth token belongs to; a token it cannot validate
+ * kills the process with exit 1 before the first prompt.
+ *
+ * In a sandboxed Claude agent on macOS the usual cause is an expired access
+ * token. Claude refreshes it, but the Keychain is read-only inside the
+ * sandbox, so the refreshed token is never saved (`security` exits 161 with
+ * EPERM) and the check runs against the expired one. The token can also
+ * have been revoked. Either way, signing in again from a terminal outside
+ * the sandbox stores a token that works, so this reads as an expiry.
+ */
+const CLAUDE_ORG_VERIFY_RE = /unable to verify organization for the current authentication token/i
+
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =
   /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|\/login\b/i
@@ -280,6 +295,7 @@ export function classifyAcpAuthFailure(
   // 401 there is a stale credential — `codex login status` still reports
   // signed-in and only a fresh login fixes it (openai/codex#47456).
   if (/workspace routing discovery unauthorized/i.test(text)) return 'expired'
+  if (CLAUDE_ORG_VERIFY_RE.test(text)) return 'expired'
 
   // Expiry wins over the generic signals: an expired token also reports
   // "Failed to authenticate", and only the expiry reading names the right fix.
@@ -457,10 +473,26 @@ function acpTechnicalDetails(rpc: JsonRpcError | null): string | null {
   return `**Technical details**\n\n${markdownCodeBlock(report)}`
 }
 
+/**
+ * Why a sign-in that should still work did not, when the agent's own words say.
+ * Only Claude's organization check gets one: its message reads like a network
+ * blip, so without this note "sign in again" looks like the wrong fix.
+ */
+function acpExpiredCauseNote(signalText: string, agentName: string): string | null {
+  if (!CLAUDE_ORG_VERIFY_RE.test(signalText)) return null
+  return (
+    `${agentName} checks its sign-in against your organization’s policy when it starts, and ` +
+    'couldn’t confirm the saved one. Usually its access token had expired: inside Copse’s ' +
+    'sandbox it can renew the token but can’t save the new one to the macOS Keychain. ' +
+    'Signing in from a terminal saves a fresh token.'
+  )
+}
+
 function formatAcpAuthError(
   rpc: JsonRpcError | null,
   kind: AcpAuthFailureKind,
-  agentId?: string,
+  agentId: string | undefined,
+  signalText: string,
 ): string {
   const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   const agentName = acpAgentDisplayName(agentId)
@@ -473,6 +505,7 @@ function formatAcpAuthError(
     const reauth = acpReauthCommand(known)
     return [
       acpAuthNotice(agentName, kind),
+      acpExpiredCauseNote(signalText, agentName),
       acpAuthSteps(reauth),
       acpCredentialsNote(known),
       acpTechnicalDetails(rpc),
@@ -549,7 +582,8 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   const detail = message ?? raw
 
   const authFailure = classifyAcpAuthFailure(err, ctx)
-  if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId)
+  if (authFailure)
+    return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId, acpSignalText(rpc, detail))
 
   // Straight after credentials, in the same order as `acpTurnInterruptionFor`:
   // a helper that cannot nest a second seatbelt dies before any provider call,

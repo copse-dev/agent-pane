@@ -89,6 +89,54 @@ describe('classifyAgentError', () => {
     assert.doesNotMatch(out, /setup-token/)
   })
 
+  // #4147: Claude Code's start-up organization check (managed
+  // `forceLoginOrgUUID`) could not validate the saved token, and the CLI exited
+  // with code 1. The wording is the 2.1.312 binary's, as the adapter relays it.
+  it('reads a failed Claude organization check as a stale sign-in, with its cause', () => {
+    const stderr = [
+      'Unable to verify organization for the current authentication token.',
+      'This machine requires organization 00000000-0000-4000-8000-000000000000 but the token could not be validated.',
+      'This may be a network error, or the token may have been revoked.',
+      'Try again, or run: claude auth login',
+    ].join('\n')
+    const err = new AcpTurnFailure(
+      new RequestError(-32603, 'Internal error', {
+        details: `Claude Code process exited with code 1. stderr: ${stderr}`,
+      }),
+      { assistantText: '', usage: { inputTokens: 0, outputTokens: 0 } },
+    )
+    const ctx = { acpAgentId: 'claude-acp' }
+    assert.equal(classifyAcpAuthFailure(err, ctx), 'expired')
+    const out = classifyAgentError(err, ctx)
+    assert.match(out, /Claude sign-in expired/)
+    // Says why "sign in again" is the fix for what reads like a network blip.
+    assert.match(out, /organization’s policy/)
+    assert.match(out, /can’t save the new one to the macOS Keychain/)
+    assert.match(out, /1\. Run `claude auth login` in a terminal\./)
+    assert.match(out, /Technical details[\s\S]*Unable to verify organization/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+    // A re-run fails the same way until someone signs in, so the marker for the
+    // next turn must not call it a transient provider error.
+    assert.equal(
+      acpTurnInterruptionFor(err, {
+        aborted: false,
+        authFailure: 'expired',
+        acpAgentId: 'claude-acp',
+      }),
+      'expired',
+    )
+  })
+
+  it('keeps the organization-check note off other expired sign-ins', () => {
+    const err = new RequestError(
+      -32603,
+      'Internal error: Failed to authenticate. API Error: 401 OAuth access token has expired.',
+    )
+    const out = classifyAgentError(err, { acpAgentId: 'claude-acp' })
+    assert.match(out, /Claude sign-in expired/)
+    assert.doesNotMatch(out, /organization’s policy|Keychain/)
+  })
+
   it("turns Cursor's rejected session into actionable sign-in guidance", () => {
     const err = new RequestError(
       -32603,

@@ -3033,6 +3033,32 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     'ACP error -32603 (Internal error): account/read failed: workspace routing discovery unauthorized (401)',
     '```',
   ].join('\n')
+  // #4147: Claude Code's start-up organization check (managed
+  // `forceLoginOrgUUID`) refused a token the sandboxed agent could not renew.
+  // Text is `classifyAgentError`'s output for the adapter's exit-code-1 report,
+  // with stderr cut to its first line so the message fits one capture.
+  const claudeOrgContent = [
+    '> [!WARNING]',
+    '> **Claude sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
+    '',
+    'Claude checks its sign-in against your organization’s policy when it starts, and couldn’t confirm the saved one. Usually its access token had expired: inside Copse’s sandbox it can renew the token but can’t save the new one to the macOS Keychain. Signing in from a terminal saves a fresh token.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude auth login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Coding agents.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Internal error',
+    'Details: Claude Code process exited with code 1. stderr: Unable to verify organization for the current authentication token.',
+    '```',
+  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -3086,10 +3112,24 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 5,
           },
+          {
+            id: 'msg-user-claude-org-auth',
+            role: 'user',
+            content: 'Try it again with Claude.',
+            toolCalls: [],
+            createdAt: now + 6,
+          },
+          {
+            id: 'msg-assistant-claude-org-auth',
+            role: 'assistant',
+            content: claudeOrgContent,
+            toolCalls: [],
+            createdAt: now + 7,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 5,
+        updatedAt: now + 7,
       },
     ],
   })
