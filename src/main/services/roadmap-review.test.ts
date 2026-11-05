@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
@@ -532,5 +533,34 @@ describe('classifyRoadmapReview', () => {
       ]),
       'likely',
     )
+  })
+})
+
+describe('roadmap IPC handlers', () => {
+  // The roadmap's notes come from the knowledge store, whose project outside a
+  // turn is the active one. A handler that read git or GitHub from the asking
+  // window instead would, in a second window on another project, import that
+  // project's issues into this roadmap and review these notes against its log.
+  it('read git and GitHub from the knowledge store project, not the asking window', async () => {
+    const source = await readFile(new URL('../ipc/register-handlers.ts', import.meta.url), 'utf8')
+    const start = source.indexOf('const roadmapProjectRoot = ')
+    const end = source.indexOf("ipcMain.handle('roadmap:complete-review'")
+    assert.ok(start !== -1 && end > start, 'roadmap handler block not found')
+    const block = source.slice(start, end)
+    assert.match(
+      block,
+      /roadmapProjectRoot = \(\): string \| null => currentProjectStoreScope\(\)\.root/,
+    )
+    for (const channel of [
+      'roadmap:issue-url',
+      'roadmap:open-issues',
+      'roadmap:check-fit',
+      'roadmap:prepare-review',
+      'roadmap:review-item',
+      'roadmap:review-item-deep',
+    ]) {
+      assert.ok(block.includes(`'${channel}'`), `${channel} is in the roadmap block`)
+    }
+    assert.doesNotMatch(block, /senderProjectRoot/)
   })
 })

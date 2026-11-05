@@ -172,6 +172,7 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet } from '../services/storage/storage.ts'
+import { currentProjectStoreScope } from '../services/storage/project-namespace.ts'
 import {
   getMainWindowBrowserSession,
   getMainWindowForWebContents,
@@ -1219,12 +1220,20 @@ export function registerAllHandlers(
     return updated
   })
 
+  // The roadmap's notes live in the knowledge store, which outside a turn
+  // belongs to the active project (`currentProjectStoreScope`), not to the
+  // asking window. Its git and GitHub evidence comes from that same project,
+  // so a review, a fit check or an issue import never pairs one project's
+  // repo with another's notes. Per-window roadmaps need a per-window
+  // knowledge store first (#3958).
+  const roadmapProjectRoot = (): string | null => currentProjectStoreScope().root
+
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
   ipcMain.handle('roadmap:issue-url', async (event, rawRef: unknown) => {
     assertMainFrameSender(event, win)
     const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
-    return issueRefToUrl(ref, await getGithubRepoSlug(senderProjectRoot(event.sender)))
+    return issueRefToUrl(ref, await getGithubRepoSlug(roadmapProjectRoot()))
   })
 
   // Import-from-issues flow: list the workspace's open issues, then turn the
@@ -1244,7 +1253,7 @@ export function registerAllHandlers(
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
     // the not-connected cases into real errors the picker can display.
-    const root = senderProjectRoot(event.sender)
+    const root = roadmapProjectRoot()
     const backend = resolveGitHubBackend()
     const status = await backend.getStatus(root)
     if (!status.installed || !status.authenticated) {
@@ -1299,12 +1308,12 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:check-fit', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    return checkRoadmapFit(senderProjectRoot(event.sender), id)
+    return checkRoadmapFit(roadmapProjectRoot(), id)
   })
 
   ipcMain.handle('roadmap:prepare-review', (event) => {
     assertMainFrameSender(event, win)
-    return prepareRoadmapReview(senderProjectRoot(event.sender))
+    return prepareRoadmapReview(roadmapProjectRoot())
   })
 
   ipcMain.handle('roadmap:last-review-at', (event) => {
@@ -1320,13 +1329,7 @@ export function registerAllHandlers(
       const commits = parseIpcArgs(z.string().max(20_000), [rawCommits])
       const bulkRunId =
         rawRunId === undefined || rawRunId === null ? undefined : parseIpcArgs(z.uuid(), [rawRunId])
-      const result = await reviewRoadmapItem(
-        senderProjectRoot(event.sender),
-        id,
-        commits,
-        'bulk',
-        bulkRunId,
-      )
+      const result = await reviewRoadmapItem(roadmapProjectRoot(), id, commits, 'bulk', bulkRunId)
       notifyRoadmapChanged()
       return result
     },
@@ -1335,7 +1338,7 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:review-item-deep', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    const result = await reviewRoadmapItemDeep(senderProjectRoot(event.sender), id)
+    const result = await reviewRoadmapItemDeep(roadmapProjectRoot(), id)
     notifyRoadmapChanged()
     return result
   })
