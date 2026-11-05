@@ -36,6 +36,14 @@
     "label": "Subagent display visual reference"
   },
   {
+    "id": "explore-excerpts",
+    "label": "Explore result with verbatim excerpts"
+  },
+  {
+    "id": "read-explored",
+    "label": "Quote explored lines"
+  },
+  {
     "id": "subagent-ungrouped",
     "label": "Subagent stays ungrouped beside reading tools"
   },
@@ -208,6 +216,10 @@
     "label": "Side chats beside the main thread"
   },
   {
+    "id": "side-chat-rich-markdown",
+    "label": "A side chat reply with a diagram, a table and code"
+  },
+  {
     "id": "side-chats-restored",
     "label": "Side chats after an app restart"
   },
@@ -282,6 +294,10 @@
   {
     "id": "chatgpt-plan-settings",
     "label": "ChatGPT plan onboarding and account options"
+  },
+  {
+    "id": "chatgpt-plan-expired",
+    "label": "ChatGPT plan whose sign-in has expired"
   },
   {
     "id": "site-fork-resend",
@@ -376,6 +392,14 @@
     "label": "Send prompts to your other threads?"
   },
   {
+    "id": "approval-git-push",
+    "label": "Push branch to origin?"
+  },
+  {
+    "id": "approval-git-push-lease",
+    "label": "Push branch to origin?"
+  },
+  {
     "id": "approval-web-url",
     "label": "Allow web origin?"
   },
@@ -386,5 +410,13 @@
   {
     "id": "approval-provider-url",
     "label": "Allow model provider host?"
+  },
+  {
+    "id": "approval-desktop-app",
+    "label": "Let the agent use com.apple.Notes?"
+  },
+  {
+    "id": "approval-desktop-finder",
+    "label": "Let the agent use com.apple.finder?"
   }
 ]
