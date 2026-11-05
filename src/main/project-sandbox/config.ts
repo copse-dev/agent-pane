@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -14,6 +22,11 @@ import {
 } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
+import {
+  createToolchainReadGuard,
+  type ToolchainReadGuard,
+  toolchainReadExceptions,
+} from './toolchain-read-guard.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
   getChatStoreRootSync,
@@ -628,35 +641,44 @@ function shimManagerAllowRead(
   binDir: string,
   env: NodeJS.ProcessEnv,
   home: string,
-  homes: readonly string[],
+  readTarget: ToolchainReadGuard,
 ): string[] {
   const root = (name: string, fallback: string): string | null => {
     const value = env[name]
     const dir = value === undefined || value === '' ? fallback : value
-    if (!isAbsolute(dir) || coversHome(dir, homes)) return null
+    if (!isAbsolute(dir) || readTarget(dir, true) === null) return null
     return dir
   }
-  const existing = (paths: readonly string[], tree: boolean): string[] =>
+  const existingFiles = (paths: readonly string[]): string[] =>
     paths.flatMap((path) => {
-      try {
-        accessSync(path)
-      } catch {
+      const canonical = readTarget(path, false)
+      return canonical === null ? [] : [canonical]
+    })
+  const existingTrees = (manager: string, paths: readonly string[]): string[] =>
+    paths.flatMap((path) => {
+      const canonicalRoot = readTarget(manager, true)
+      const canonical = readTarget(path, true)
+      if (
+        canonicalRoot === null ||
+        canonical === null ||
+        canonical === canonicalRoot ||
+        !coversPath(canonicalRoot, canonical)
+      )
         return []
-      }
-      return tree ? [path, `${path}/**`] : [path]
+      return [canonical, `${canonical}/**`]
     })
 
   const volta = root('VOLTA_HOME', join(home, '.volta'))
-  if (volta && binDir === join(volta, 'bin')) return existing([join(volta, 'tools')], true)
+  if (volta && binDir === join(volta, 'bin')) return existingTrees(volta, [join(volta, 'tools')])
 
   const asdf = root('ASDF_DATA_DIR', join(home, '.asdf'))
   if (asdf && binDir === join(asdf, 'shims')) {
     return [
-      ...existing(
+      ...existingTrees(
+        asdf,
         ['installs', 'plugins', 'bin', 'lib'].map((dir) => join(asdf, dir)),
-        true,
       ),
-      ...existing([join(home, '.tool-versions'), join(home, '.asdfrc')], false),
+      ...existingFiles([join(home, '.tool-versions'), join(home, '.asdfrc')]),
     ]
   }
   return []
@@ -686,9 +708,12 @@ export function resolveNodeToolchainAllowRead(
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
   const homes = [...new Set([home, canonicalizePathCached(home)])]
+  const readTarget = createToolchainReadGuard(env, home)
   const addTree = (path: string): void => {
-    allow.add(path)
-    allow.add(`${path}/**`)
+    const canonical = readTarget(path, true)
+    if (canonical === null) return
+    allow.add(canonical)
+    allow.add(`${canonical}/**`)
   }
 
   for (const dir of dirs) {
@@ -700,11 +725,18 @@ export function resolveNodeToolchainAllowRead(
       continue
     }
 
-    allow.add(nodePath)
+    const realNodePath = readTarget(nodePath, false)
+    if (realNodePath === null) continue
+    try {
+      accessSync(realNodePath, constants.X_OK)
+    } catch {
+      continue
+    }
+    allow.add(realNodePath)
     const binDir = dirname(nodePath)
     if (!coversHome(binDir, homes)) {
       addTree(binDir)
-      for (const path of shimManagerAllowRead(binDir, env, home, homes)) allow.add(path)
+      for (const path of shimManagerAllowRead(binDir, env, home, readTarget)) allow.add(path)
 
       // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
       const versionRoot = dirname(binDir)
@@ -713,12 +745,6 @@ export function resolveNodeToolchainAllowRead(
       if (grant === 'npm') addTree(join(versionRoot, 'lib', 'node_modules'))
     }
 
-    let realNodePath: string
-    try {
-      realNodePath = realpathSync(nodePath)
-    } catch {
-      continue
-    }
     const realBinDir = dirname(realNodePath)
     const realRoot = dirname(realBinDir)
     if (
@@ -1438,6 +1464,27 @@ export function workspaceSandboxOverlay(
           : []),
       ]
     : []
+  const existingRead = [
+    root,
+    `${root}/**`,
+    tmpDir,
+    `${tmpDir}/**`,
+    ...sandboxRuntimeRead,
+    ...preparationCacheRead,
+    ...gitConfigReadPaths(),
+    ...chatStoreRead,
+    ...worktreeDiscoveryRead,
+    ...gitAdminRead,
+    ...primaryCheckoutRead,
+    ...agentScratch,
+    ...threadReadRootAllowEntries(),
+  ]
+  const deniedRead = [
+    homedir(),
+    ...gitCredentialDenyReadPaths(),
+    ...siblingDeny,
+    ...nestedCheckoutDeny,
+  ]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1446,23 +1493,10 @@ export function workspaceSandboxOverlay(
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...gitCredentialDenyReadPaths(), ...siblingDeny, ...nestedCheckoutDeny],
+      denyRead: deniedRead,
       allowRead: [
-        root,
-        `${root}/**`,
-        tmpDir,
-        `${tmpDir}/**`,
-        ...toolchainRead,
-        ...sandboxRuntimeRead,
-        ...preparationCacheRead,
-        ...gitConfigReadPaths(),
-        ...chatStoreRead,
-        ...worktreeDiscoveryRead,
-        ...gitAdminRead,
-        ...primaryCheckoutRead,
-        ...agentScratch,
-        // Read-only roots the active thread earned (invoked skill directories).
-        ...threadReadRootAllowEntries(),
+        ...existingRead,
+        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
       ],
       allowWrite: [
         root,

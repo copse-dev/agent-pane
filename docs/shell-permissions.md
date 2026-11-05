@@ -1267,6 +1267,25 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+Shim roots and install subtrees are checked through their canonical destinations. An install
+subtree must stay strictly inside the canonical manager root; redirecting it to home, a parent,
+the manager root itself or a credential store grants nothing through that alias. A `node` file or
+npm implementation-directory alias into a sensitive path is omitted too: leaving only its lexical
+name in the read list would still let ASRT grant the canonical target. Safe whole-manager relocation
+and ordinary fnm/nvm installs retain their bounded read grants.
+A Node target must be a regular executable file. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores and their canonical aliases are excluded too. Grants use the
+checked canonical destinations and omit toolchain exceptions already covered by the workspace.
+Replacing a canonical path or its ancestors before ASRT constructs the profile still races; these
+checks do not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
