@@ -8,6 +8,11 @@
  *
  * `gh` CLI calls share the same user quotas as the API backend — there is no
  * extra CLI allowance — so the wrapper sits in front of both.
+ *
+ * Every slot is keyed by the checkout that asked as well as the arguments: the
+ * "workspace" reads name a different repository per root, and a read with no
+ * root (which the CLI backend refuses) must not be served to one that has a
+ * root (#3958).
  */
 import type {
   GhCliStatus,
@@ -38,6 +43,11 @@ function prKey(ref: PrRef): string {
   return `${ref.owner}/${ref.repo}#${String(ref.number)}`
 }
 
+/** Slot key for `root`; the NUL separator cannot occur in a path. */
+function rootKey(root: string | null, rest: string): string {
+  return `${root ?? ''}\u0000${rest}`
+}
+
 const wrappers: Array<{ clear(): void }> = []
 
 /** Drop every method-level slot. Manual refresh calls this so the next read is live. */
@@ -53,7 +63,7 @@ export function resetGitHubReadCacheForTest(): void {
 export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
   const status = new AsyncTtlCache<string, GhCliStatus>({
     ttlMs: TTL.status,
-    maxEntries: 1,
+    maxEntries: 8,
   })
   const workspacePrs = new AsyncTtlCache<string, GhPrSummary[]>({
     ttlMs: TTL.workspacePrs,
@@ -103,10 +113,11 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
   }
   wrappers.push(handle)
 
-  function invalidatePr(ref: PrRef): void {
-    const key = prKey(ref)
-    details.invalidate(key)
-    checks.invalidate(key)
+  // The PR's slots exist once per root that read it, so drop them all; writes
+  // are rare enough that clearing the whole slot is cheaper than indexing it.
+  function invalidatePr(): void {
+    details.clear()
+    checks.clear()
     diffs.clear()
     workspacePrs.clear()
     myPrs.clear()
@@ -115,32 +126,39 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
   const backend: GitHubBackend = {
     kind: inner.kind,
 
-    getStatus: () => status.get('status', () => inner.getStatus()),
+    getStatus: (root) => status.get(rootKey(root, 'status'), () => inner.getStatus(root)),
 
-    listMyOpenPrs: (limit) => myPrs.get(`me:${String(limit)}`, () => inner.listMyOpenPrs(limit)),
+    listMyOpenPrs: (root, limit) =>
+      myPrs.get(rootKey(root, `me:${String(limit)}`), () => inner.listMyOpenPrs(root, limit)),
 
-    listWorkspaceOpenPrs: (limit) =>
-      workspacePrs.get(`ws:${String(limit)}`, () => inner.listWorkspaceOpenPrs(limit)),
-
-    getPrDetails: (ref) => details.get(prKey(ref), () => inner.getPrDetails(ref)),
-
-    getPrFileDiff: (ref, path) =>
-      diffs.get(`${prKey(ref)}:${path}`, () => inner.getPrFileDiff(ref, path)),
-
-    getPrChecksState: (ref) => checks.get(prKey(ref), () => inner.getPrChecksState(ref)),
-
-    listWorkspaceOpenIssues: (page, pageSize) =>
-      issuePages.get(`${String(page)}:${String(pageSize)}`, () =>
-        inner.listWorkspaceOpenIssues(page, pageSize),
+    listWorkspaceOpenPrs: (root, limit) =>
+      workspacePrs.get(rootKey(root, `ws:${String(limit)}`), () =>
+        inner.listWorkspaceOpenPrs(root, limit),
       ),
 
-    getIssue: (ref) => issues.get(prKey(ref), () => inner.getIssue(ref)),
+    getPrDetails: (root, ref) =>
+      details.get(rootKey(root, prKey(ref)), () => inner.getPrDetails(root, ref)),
 
-    searchWorkspaceIssues: (query, limit) =>
-      searches.get(`${query}:${String(limit)}`, () => inner.searchWorkspaceIssues(query, limit)),
+    getPrFileDiff: (root, ref, path) =>
+      diffs.get(rootKey(root, `${prKey(ref)}:${path}`), () => inner.getPrFileDiff(root, ref, path)),
 
-    async createPr(input) {
-      const result = await inner.createPr(input)
+    getPrChecksState: (root, ref) =>
+      checks.get(rootKey(root, prKey(ref)), () => inner.getPrChecksState(root, ref)),
+
+    listWorkspaceOpenIssues: (root, page, pageSize) =>
+      issuePages.get(rootKey(root, `${String(page)}:${String(pageSize)}`), () =>
+        inner.listWorkspaceOpenIssues(root, page, pageSize),
+      ),
+
+    getIssue: (root, ref) => issues.get(rootKey(root, prKey(ref)), () => inner.getIssue(root, ref)),
+
+    searchWorkspaceIssues: (root, query, limit) =>
+      searches.get(rootKey(root, `${query}:${String(limit)}`), () =>
+        inner.searchWorkspaceIssues(root, query, limit),
+      ),
+
+    async createPr(root, input) {
+      const result = await inner.createPr(root, input)
       // A brand-new PR has no cached entry to drop, but it does belong in the
       // open-PR lists the panel renders — so those have to be re-read. A failed
       // create changed nothing; keep the lists so a retry loop cannot burn
@@ -153,31 +171,31 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
       return result
     },
 
-    async rerunFailedRuns(ref) {
-      const result = await inner.rerunFailedRuns(ref)
+    async rerunFailedRuns(root, ref) {
+      const result = await inner.rerunFailedRuns(root, ref)
       if (result.ok) branchPrCache.invalidate()
-      invalidatePr(ref)
+      invalidatePr()
       return result
     },
 
-    async approvePr(ref) {
-      const result: PrActionResult = await inner.approvePr(ref)
+    async approvePr(root, ref) {
+      const result: PrActionResult = await inner.approvePr(root, ref)
       if (result.ok) branchPrCache.invalidate()
-      invalidatePr(ref)
+      invalidatePr()
       return result
     },
 
-    async markPrReady(ref) {
-      const result = await inner.markPrReady(ref)
+    async markPrReady(root, ref) {
+      const result = await inner.markPrReady(root, ref)
       if (result.ok) branchPrCache.invalidate()
-      invalidatePr(ref)
+      invalidatePr()
       return result
     },
 
-    async enableAutoMerge(ref) {
-      const result = await inner.enableAutoMerge(ref)
+    async enableAutoMerge(root, ref) {
+      const result = await inner.enableAutoMerge(root, ref)
       if (result.ok) branchPrCache.invalidate()
-      invalidatePr(ref)
+      invalidatePr()
       return result
     },
   }
