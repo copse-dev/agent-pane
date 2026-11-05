@@ -14,7 +14,8 @@ import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { errorMessage } from '@shared/errors.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
-import { baseSandboxConfig } from '../../project-sandbox/config.ts'
+import { baseSandboxConfig, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import { pinSandboxWrapTmpDir } from '../../project-sandbox/tmp-env.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import {
   shutdownAcpChild,
@@ -97,6 +98,8 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
 }
 
 async function initHostSandbox(): Promise<void> {
+  // ASRT bakes TMPDIR into the agent's wrapped command from this process's env (#4149).
+  pinSandboxWrapTmpDir(ensureWorkspaceTmpDir())
   await SandboxManager.initialize(
     baseSandboxConfig(),
     ({ host, port }) => {
