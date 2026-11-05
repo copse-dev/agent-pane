@@ -36,7 +36,6 @@ import {
   humanDecisionSource,
   type HumanDecisionPrincipal,
 } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { beginCommandApprovalWait } from './exec/command-phase.ts'
@@ -109,7 +108,7 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
-  /** Host producer certifies that approval authorizes only this concrete request. */
+  /** Host producer certifies that an approve-once response authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
@@ -195,9 +194,7 @@ export interface ApprovalRequest {
 export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
   return (
     (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
-    (req.interactiveClientApproval === 'once' &&
-      req.allowRemember === false &&
-      req.turnTreeLeaseDefault !== true)
+    (req.interactiveClientApproval === 'once' && req.turnTreeLeaseDefault !== true)
   )
 }
 
@@ -639,7 +636,7 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
-  projectId: string | undefined,
+  projectId: string | null,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
@@ -657,7 +654,7 @@ async function deferInsteadOfPrompting(
       // The run's own project, not whichever one the window has open: a
       // schedule can fire in a background project, and Context and the status
       // tool read the queue by the thread's project.
-      projectId !== undefined ? { projectId } : {},
+      { projectId },
     )
     entryId = entry.id
   } catch (error) {
@@ -718,8 +715,10 @@ function requestApprovalUnobserved(
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
   }
-  const context = getThreadExecutionContext()
-  const projectId = context?.projectId ?? getActiveProjectId()
+  // The turn's own project. Outside a turn there is none: the request is
+  // audited only if a turn's thread later records it, and it can never defer
+  // (deferral needs a run thread, and every run thread runs inside a turn).
+  const projectId = getThreadExecutionContext()?.projectId ?? null
   const threadId = getActiveRunThread()
   approvalAuditIdentities.set(req, {
     ...(projectId ? { projectId } : {}),
@@ -747,8 +746,10 @@ function requestApprovalUnobserved(
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
+    // The same project the audit identity above resolved: the turn's, else
+    // the no-project bucket. Never the window's active project.
     return answered(
-      deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
+      deferInsteadOfPrompting(req, deferringThread, projectId, () =>
         requestApprovalInteractive(req, signal),
       ),
     )
@@ -1071,7 +1072,9 @@ export function initApproval(
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })
-        const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+        // The asking turn's project; outside a turn the prompt stays on the
+        // desktop, never filed under whichever project the window shows.
+        const projectId = getThreadExecutionContext()?.projectId
         const removeDecision =
           projectId && threadId
             ? humanDecisions.register(

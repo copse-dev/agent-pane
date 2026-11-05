@@ -4,6 +4,10 @@ import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  navigationTextOverlaps,
+  waitForTranscriptScrollSettled,
+} from './helpers/scroll-to-bottom.ts'
 
 const FIRST_PROMPT = 'Suggest how to make this module’s error handling clearer.'
 const QUEUED_PROMPTS = [
@@ -82,7 +86,10 @@ describe('queued chats stay pinned to the bottom', function () {
       const list = document.querySelector('.messages-list')
       if (list) list.scrollTop = 0
     })
-    await $('.scroll-to-bottom').waitForDisplayed({ timeout: 5_000 })
+    // Settled, not paused: the scroll handler shows Back to latest, and the
+    // capture waits for position, size and both controls to stop moving.
+    await waitForTranscriptScrollSettled(true)
+    expect(await browser.execute(() => document.querySelector('.messages-list')?.scrollTop)).toBe(0)
 
     const panelVisibleAfterScroll = await browser.execute(() => {
       const panel = document.querySelector('.conversation-queued')
@@ -91,29 +98,11 @@ describe('queued chats stay pinned to the bottom', function () {
       return rect.height > 0 && rect.bottom <= window.innerHeight + 1
     })
     expect(panelVisibleAfterScroll).toBe(true)
+    // The navigation row docks between the transcript and the queued panel; it
+    // must not cover a word of either.
+    expect(await navigationTextOverlaps()).toEqual([])
 
-    const jumpOutsideTranscript = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      const jump = document.querySelector('.scroll-to-bottom')
-      if (!(list instanceof HTMLElement) || !(jump instanceof HTMLElement)) return false
-      const transcript = list.getBoundingClientRect()
-      const control = jump.getBoundingClientRect()
-      return control.height > 0 && control.top >= transcript.bottom - 1
-    })
-    expect(jumpOutsideTranscript).toBe(true)
     await saveAppScreenshot('queued-pinned-scrolled-top.png')
-    await $('.scroll-to-bottom').click()
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const list = document.querySelector('.messages-list')
-          return (
-            list instanceof HTMLElement &&
-            list.scrollHeight - list.clientHeight - list.scrollTop < 2
-          )
-        }),
-      { timeout: 5_000, timeoutMsg: 'Jump control did not scroll to the latest message' },
-    )
     await scenario.release('module-refactor')
     // The agent can briefly read as idle after the first reply, before the
     // queued prompt dispatches. Wait for every scripted response to be served.

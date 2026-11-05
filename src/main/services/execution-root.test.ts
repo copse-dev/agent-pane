@@ -10,8 +10,11 @@ import { writeFileTool } from '../tools/write-file-tool.ts'
 import { clearDiffQueueForTest } from './diff-queue.ts'
 import {
   agentWorkspaceLabel,
+  currentAgentRoots,
   getAgentExecutionRoot,
   getAgentProjectRoot,
+  requireAgentExecutionRoot,
+  type AgentRoots,
 } from './execution-root.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
@@ -19,7 +22,7 @@ import {
   type ThreadExecutionContext,
 } from './thread-execution-context.ts'
 import { clearSessionBackupsForTest, ensureSessionBackup } from './worktree-backup.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from './workspace.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
@@ -81,7 +84,7 @@ describe('thread execution roots', () => {
         const shell = await runShellTool.execute({ command: 'pwd', timeout_ms: 10_000 }, signal)
         await writeFileTool.execute({ path: 'same.txt', content }, signal)
         const status = await gitStatusTool.execute({}, signal)
-        const backup = await ensureSessionBackup()
+        const backup = await ensureSessionBackup(ctx.root)
         assert.ok(backup)
         if (typeof shell !== 'string' || typeof status !== 'string') {
           throw new Error('Expected text results from shell and git status tools')
@@ -127,7 +130,54 @@ describe('thread execution roots', () => {
       () => agentWorkspaceLabel(),
     )
     assert.equal(label, worktreeRoot)
-    // Outside a turn the renderer-selected workspace root remains the label.
-    assert.equal(agentWorkspaceLabel(), projectRoot)
+    // Outside a turn there is no execution root: the window's workspace is not
+    // borrowed (#3958).
+    assert.equal(agentWorkspaceLabel(), '(none)')
+  })
+
+  it('resolves two concurrent runs to their own roots and never to the window workspace', async () => {
+    // The process-global workspace points at a third project throughout; it is
+    // whichever window switched project last, so no run may read it (#3958).
+    cleanups.push(setWorkspaceRootForTest('/projects/window'))
+    const turn = (root: string): ThreadExecutionContext => ({
+      projectId: `project-${root}`,
+      threadId: `thread-${root}`,
+      projectRoot: `${root}-project`,
+      root,
+      checkoutMode: 'worktree',
+      branch: null,
+    })
+    const observe = async (): Promise<[string | null, string | null, AgentRoots]> => {
+      // Yield so the two runs interleave before reading.
+      await new Promise((resolve) => setImmediate(resolve))
+      return [getAgentExecutionRoot(), getAgentProjectRoot(), currentAgentRoots()]
+    }
+
+    const [a, b, headless] = await Promise.all([
+      runWithThreadExecutionContext(turn('/projects/a'), observe),
+      runWithThreadExecutionContext(turn('/projects/b'), observe),
+      runWithWorkspaceRoot('/projects/headless', observe),
+    ])
+
+    assert.deepEqual(a, [
+      '/projects/a',
+      '/projects/a-project',
+      { projectRoot: '/projects/a-project', executionRoot: '/projects/a' },
+    ])
+    assert.deepEqual(b, [
+      '/projects/b',
+      '/projects/b-project',
+      { projectRoot: '/projects/b-project', executionRoot: '/projects/b' },
+    ])
+    // A headless run names its root explicitly and keeps it.
+    assert.deepEqual(headless, [
+      '/projects/headless',
+      '/projects/headless',
+      { projectRoot: '/projects/headless', executionRoot: '/projects/headless' },
+    ])
+    // Outside any run nothing resolves, rather than the window's project.
+    assert.equal(getAgentExecutionRoot(), null)
+    assert.equal(getAgentProjectRoot(), null)
+    assert.throws(() => requireAgentExecutionRoot(), /No workspace open/)
   })
 })

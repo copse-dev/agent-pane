@@ -1,0 +1,133 @@
+name: Promote stable release
+
+# Stable promotion of a vetted stable candidate. `Publish release artifacts`
+# publishes every release as a prerelease, so a stable X.Y.Z first reaches only
+# the beta channel. After it has soaked there and the release checklist's
+# stable sign-off is recorded, an owner dispatches this workflow. It verifies
+# the published bytes against their checksums, both update feeds, and the
+# source release evidence, then flips the same GitHub Release to the latest
+# non-prerelease. Nothing is rebuilt, re-signed, or re-uploaded, so stable users
+# install exactly the bytes beta users already ran.
+#
+# The `stable-release` environment is the human approval point: configure it
+# with required reviewers (docs/releasing-macos.md#stable-promotion).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable candidate to promote (vX.Y.Z)
+        required: true
+        type: string
+      soak_hours:
+        description: Hours the candidate must have served the beta channel (minimum 24)
+        required: true
+        default: '72'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # One channel change at a time across promotion and halting.
+  group: release-channel-change
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    environment: stable-release
+    env:
+      RELEASE_REPOSITORY: copse-dev/copse-releases
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+      - name: Mint a token scoped to the public release repository
+        uses: actions/create-github-app-token@v3
+        id: release-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: copse-dev
+          repositories: copse-releases
+          permission-contents: write
+      - name: Check the candidate can be promoted
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          SOAK_HOURS: ${{ inputs.soak_hours }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "Tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+          if [ "$(node scripts/release-channel.mts --release-type "$version")" != 'release' ]; then
+            echo "$TAG is a beta; only a stable X.Y.Z candidate can be promoted"
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release
+          if ! git merge-base --is-ancestor 'HEAD^{commit}' origin/release; then
+            echo "Release tag commit is not reachable from protected branch origin/release"
+            exit 1
+          fi
+          gh api "repos/$RELEASE_REPOSITORY/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"
+          # Only a confirmed 404 means no stable release exists yet.
+          latest=none
+          if ! lookup="$(gh api "repos/$RELEASE_REPOSITORY/releases/latest" 2>&1)"; then
+            case "$lookup" in
+              *"HTTP 404"*) ;;
+              *)
+                echo "::error::Could not read the latest release in $RELEASE_REPOSITORY: $lookup"
+                exit 1
+                ;;
+            esac
+          else
+            printf '%s' "$lookup" > "$RUNNER_TEMP/latest.json"
+            latest="$RUNNER_TEMP/latest.json"
+          fi
+          node scripts/release-promotion.mts check-promotion "$RUNNER_TEMP/release.json" "$latest" "$SOAK_HOURS"
+      - name: Download the published bytes
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: gh release download "$TAG" --repo "$RELEASE_REPOSITORY" --dir published
+      - name: Verify the bytes, both feeds, and the source evidence
+        run: |
+          set -euo pipefail
+          (
+            cd published
+            shasum -a 256 --check SHA256SUMS
+          )
+          node scripts/release-promotion.mts check-feeds "${TAG#v}" published
+          # The published validation record must name this tag's commit, so a
+          # release that was not built from it cannot be promoted under its name.
+          recorded="$(jq -er .release_sha published/RELEASE_VALIDATION.json)"
+          if [ "$recorded" != "$(git rev-parse 'HEAD^{commit}')" ]; then
+            echo "Published RELEASE_VALIDATION.json names $recorded, not the $TAG commit"
+            exit 1
+          fi
+      - name: Promote the release in place
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --prerelease=false --latest
+      - name: Record the stable release in LATEST.md
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo '# Latest Copse release'
+            echo
+            echo "**$TAG** (stable), promoted $(date -u +%Y-%m-%d)."
+            echo
+            echo "- Release and downloads: https://github.com/$RELEASE_REPOSITORY/releases/tag/$TAG"
+            echo "- All releases: https://github.com/$RELEASE_REPOSITORY/releases"
+            echo "- Built from copse-dev/agent-pane@$(git rev-parse 'HEAD^{commit}')"
+          } > "$RUNNER_TEMP/LATEST.md"
+          bash scripts/record-release-note.sh "$RELEASE_REPOSITORY" "$RUNNER_TEMP/LATEST.md" "Promote $TAG to stable"
+      - name: Confirm an anonymous stable client is offered it
+        run: bash scripts/verify-public-release-state.sh "$RELEASE_REPOSITORY" "$TAG" promoted

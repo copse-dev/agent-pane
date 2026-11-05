@@ -141,6 +141,7 @@ export const MAIN_ONLY_SETTING_SCHEMAS = {
       parentThreadId: z.string().min(1),
       threadId: z.string().min(1),
       key: z.string().min(1),
+      pendingCreation: z.literal(true).optional(),
     }),
   ),
   toolPermissionOverrides: z
@@ -156,6 +157,11 @@ export const MAIN_ONLY_SETTING_SCHEMAS = {
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
   browserAllowUserApproval: z.boolean(),
+  // Mac apps computer use may operate without asking (desktop-app-policy.ts).
+  // Written only by the permission gate's "Always allow" answer.
+  desktopControlAllowedApps: z
+    .array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/))
+    .max(256),
   // Custom LLM provider host allowlist (issue #438). Host keys only (no scheme).
   approvedProviderHosts: z.array(z.string().max(256)).max(256),
   providerAllowUserApproval: z.boolean(),

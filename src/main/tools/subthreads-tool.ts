@@ -16,6 +16,25 @@ const MAX_STARTS = 4
 const MAX_LIVE_CHILDREN = 2
 const READ_BYTES = 24_000
 
+async function commitChildCreation(
+  projectId: string,
+  parentThreadId: string,
+  threadId: string,
+): Promise<void> {
+  await updateSetting<Owners>('threadSubthreadOwners', [], (all) =>
+    all.map((entry) => {
+      if (
+        entry.projectId !== projectId ||
+        entry.parentThreadId !== parentThreadId ||
+        entry.threadId !== threadId
+      )
+        return entry
+      const { pendingCreation: _pending, ...committed } = entry
+      return committed
+    }),
+  )
+}
+
 // MCP and native providers require an object at the schema root.
 const subthreadParameters = z.object({
   action: z.enum(['start', 'list', 'read', 'send']),
@@ -115,21 +134,27 @@ export function createSubthreadsTool(
               return { child: null, result: 'Subthread orchestration was cancelled or revoked.' }
             const entries = owned()
             const existing = entries.findLast((entry) => entry.key === key)
-            if (existing) {
-              const meta = await getThreadMeta(projectId, existing.threadId)
-              if (meta && meta.archivedAt === undefined)
-                return {
-                  child: null,
-                  result: JSON.stringify({
-                    thread_id: existing.threadId,
-                    existing: true,
-                    submitted: false,
-                    advice:
-                      'Read this child to check whether the original prompt ran. Use send with this thread_id to submit or continue work. Repeating start never resubmits to an existing child.',
-                  }),
-                }
+            const meta = existing ? await getThreadMeta(projectId, existing.threadId) : null
+            if (existing && meta && meta.archivedAt === undefined) {
+              // A create may have persisted metadata before its catalog write or
+              // the ownership commit failed. Never replay an uncertain prompt.
+              if (existing.pendingCreation) {
+                await createThread(projectId, { ...meta, messages: [] })
+                await commitChildCreation(projectId, sourceThreadId, existing.threadId)
+              }
+              return {
+                child: null,
+                result: JSON.stringify({
+                  thread_id: existing.threadId,
+                  existing: true,
+                  submitted: false,
+                  advice:
+                    'Read this child to check whether the original prompt ran. Use send with this thread_id to submit or continue work. Repeating start never resubmits to an existing child.',
+                }),
+              }
             }
-            if (entries.length >= MAX_STARTS)
+            const recoverReservation = existing?.pendingCreation === true && meta === null
+            if (!recoverReservation && entries.length >= MAX_STARTS)
               return {
                 child: null,
                 result:
@@ -158,16 +183,23 @@ export function createSubthreadsTool(
               ...buildFollowUpThread(currentParent),
               title,
             }
+            if (recoverReservation) child.id = existing.threadId
+            // Reserve ownership first. If persistence fails there is no child;
+            // if creation is interrupted the same reservation recovers its ID.
+            if (!recoverReservation) {
+              await updateSetting<Owners>('threadSubthreadOwners', [], (all) => [
+                ...all,
+                {
+                  projectId,
+                  parentThreadId: sourceThreadId,
+                  threadId: child.id,
+                  key,
+                  pendingCreation: true,
+                },
+              ])
+            }
             await createThread(projectId, child)
-            await updateSetting<Owners>('threadSubthreadOwners', [], (all) => [
-              ...all,
-              {
-                projectId,
-                parentThreadId: sourceThreadId,
-                threadId: child.id,
-                key,
-              },
-            ])
+            await commitChildCreation(projectId, sourceThreadId, child.id)
             return { child, result: '' }
           },
         )

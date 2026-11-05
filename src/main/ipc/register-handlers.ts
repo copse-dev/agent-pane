@@ -36,8 +36,12 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
+import {
+  hasBackgroundProcessesForThread,
+  peekBackgroundProcessLogs,
+} from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
+import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
@@ -169,6 +173,7 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet } from '../services/storage/storage.ts'
+import { currentProjectStoreScope } from '../services/storage/project-namespace.ts'
 import {
   getMainWindowBrowserSession,
   getMainWindowForWebContents,
@@ -177,6 +182,11 @@ import {
   setMainWindowNavigation,
 } from '../windows/create-main-window.ts'
 import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
+import {
+  searchThreadRequests,
+  cancelThreadRequestSearch,
+  warmThreadRequestSearch,
+} from '../services/thread-request-search.ts'
 import {
   measureThreadStorage,
   backfillThreadPrRefs,
@@ -238,7 +248,12 @@ import {
   runAcpAutoSetup,
   type AcpPackageChange,
 } from '../services/acp/acp-auto-setup.ts'
+import { getSshConnectionManager } from '../services/ssh-workspace/connection-manager.ts'
+import { WorkspaceActivation } from '../services/workspace-activation.ts'
+import { prepareWorkspaceConnection } from '../services/workspace-connection.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
+import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
@@ -278,6 +293,7 @@ import { loadProjectInstructionSources } from '../services/project-instructions.
 import {
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
@@ -310,6 +326,8 @@ import {
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
+import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
@@ -361,6 +379,7 @@ import {
 import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
 import { issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
+import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
@@ -378,7 +397,11 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import {
+  branchHasOpenPr,
+  branchMergedThrough,
+  getGitBranchStatus,
+} from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
@@ -827,10 +850,17 @@ export function registerAllHandlers(
     )
   })
 
+  const workspaceActivations = new WeakMap<WebContents, WorkspaceActivation>()
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
+    let activation = workspaceActivations.get(event.sender)
+    if (!activation) {
+      activation = new WorkspaceActivation()
+      workspaceActivations.set(event.sender, activation)
+    }
+    const assertCurrentSelection = activation.begin()
     // Each phase is timed separately (COPSE_PERF=1) so a slow switch names the
     // phase, and `loop:stall` records show which of them held the event loop.
     const projects = perfSyncSpan('workspace-set:read-projects', storedWorkspaceProjects)
@@ -842,9 +872,20 @@ export function registerAllHandlers(
       () => seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, parsedRoot, sshHost)),
       { projects: projects.length },
     )
+    assertCurrentSelection()
     const canonical = await perfSpan('workspace-set:assert', () =>
       assertAllowedWorkspaceRoot(parsedRoot, sshHost),
     )
+    assertCurrentSelection()
+    if (sshHost) {
+      const connections = getSshConnectionManager()
+      await prepareWorkspaceConnection({
+        enabled: getSetting('sshWorkspaceEnabled', false),
+        connected: connections.getConnection(sshHost) !== null,
+        connect: () => connections.connect(sshHost),
+      })
+    }
+    assertCurrentSelection()
     perfSyncSpan('workspace-set:set-root', () => {
       setWorkspaceRoot(canonical)
     })
@@ -1184,12 +1225,20 @@ export function registerAllHandlers(
     return updated
   })
 
+  // The roadmap's notes live in the knowledge store, which outside a turn
+  // belongs to the active project (`currentProjectStoreScope`), not to the
+  // asking window. Its git and GitHub evidence comes from that same project,
+  // so a review, a fit check or an issue import never pairs one project's
+  // repo with another's notes. Per-window roadmaps need a per-window
+  // knowledge store first (#3958).
+  const roadmapProjectRoot = (): string | null => currentProjectStoreScope().root
+
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
   ipcMain.handle('roadmap:issue-url', async (event, rawRef: unknown) => {
     assertMainFrameSender(event, win)
     const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
-    return issueRefToUrl(ref, await getGithubRepoSlug())
+    return issueRefToUrl(ref, await getGithubRepoSlug(roadmapProjectRoot()))
   })
 
   // Import-from-issues flow: list the workspace's open issues, then turn the
@@ -1209,14 +1258,15 @@ export function registerAllHandlers(
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
     // the not-connected cases into real errors the picker can display.
+    const root = roadmapProjectRoot()
     const backend = resolveGitHubBackend()
-    const status = await backend.getStatus()
+    const status = await backend.getStatus(root)
     if (!status.installed || !status.authenticated) {
       throw new Error(
         status.message ?? 'GitHub is not connected — sign in via `gh auth login` or a token.',
       )
     }
-    const slug = await getGithubRepoSlug()
+    const slug = await getGithubRepoSlug(root)
     if (!slug) {
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
@@ -1226,7 +1276,7 @@ export function registerAllHandlers(
     // issue ceiling on the picker.
     return {
       slug,
-      ...(await backend.listWorkspaceOpenIssues(page, roadmapIssuePageSize)),
+      ...(await backend.listWorkspaceOpenIssues(root, page, roadmapIssuePageSize)),
     }
   })
 
@@ -1263,12 +1313,12 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:check-fit', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    return checkRoadmapFit(id)
+    return checkRoadmapFit(roadmapProjectRoot(), id)
   })
 
   ipcMain.handle('roadmap:prepare-review', (event) => {
     assertMainFrameSender(event, win)
-    return prepareRoadmapReview()
+    return prepareRoadmapReview(roadmapProjectRoot())
   })
 
   ipcMain.handle('roadmap:last-review-at', (event) => {
@@ -1284,7 +1334,7 @@ export function registerAllHandlers(
       const commits = parseIpcArgs(z.string().max(20_000), [rawCommits])
       const bulkRunId =
         rawRunId === undefined || rawRunId === null ? undefined : parseIpcArgs(z.uuid(), [rawRunId])
-      const result = await reviewRoadmapItem(id, commits, 'bulk', bulkRunId)
+      const result = await reviewRoadmapItem(roadmapProjectRoot(), id, commits, 'bulk', bulkRunId)
       notifyRoadmapChanged()
       return result
     },
@@ -1293,7 +1343,7 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:review-item-deep', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    const result = await reviewRoadmapItemDeep(id)
+    const result = await reviewRoadmapItemDeep(roadmapProjectRoot(), id)
     notifyRoadmapChanged()
     return result
   })
@@ -1799,7 +1849,10 @@ export function registerAllHandlers(
     // Archived threads stay on disk but are hidden from renderer surfaces.
     // The sidebar loads metadata only; legacy PR links are filled on demand
     // when their rows enter the visible viewport.
-    return loadProjectThreadMetas(id, { includeArchived: false })
+    return loadProjectThreadMetas(id, { includeArchived: false }).then((threads) => {
+      warmThreadRequestSearch(id)
+      return threads
+    })
   })
   ipcMain.handle('threads:archive-state', async (event, projectId: unknown, view: unknown) => {
     assertMainFrameSender(event, win)
@@ -1837,6 +1890,15 @@ export function registerAllHandlers(
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.
+  ipcMain.handle('threads:search-requests', (event, projectId: unknown, query: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, text] = parseIpcArgs(z.tuple([zProjectId, z.string().max(4096)]), [projectId, query])
+    return searchThreadRequests(id, text)
+  })
+  ipcMain.handle('threads:cancel-request-search', (event) => {
+    assertMainFrameSender(event, win)
+    cancelThreadRequestSearch()
+  })
   ipcMain.handle('threads:load-messages', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
@@ -1883,7 +1945,7 @@ export function registerAllHandlers(
       projectId,
       thread,
     ])
-    const parsed = parseThreadValue(payload)
+    const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
     return createThread(id, parsed)
   })
@@ -1908,7 +1970,7 @@ export function registerAllHandlers(
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, patch],
       )
-      return updateMeta(pid, tid, payload)
+      return updateMeta(pid, tid, withoutMainOwnedThreadFields(payload))
     },
   )
   ipcMain.handle(
@@ -2273,7 +2335,7 @@ export function registerAllHandlers(
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
     const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
     if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
-    return dryRunHook(target)
+    return dryRunHook(target, senderProjectRoot(event.sender))
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.
@@ -2405,6 +2467,19 @@ export function registerAllHandlers(
       return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
     },
   )
+  // A command card's "Logs" (#3956): one task's retained output, scoped to the
+  // thread that started it. Reading here is not the agent observing the exit.
+  ipcMain.handle(
+    'background-tasks:logs',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, taskId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawTaskId],
+      )
+      return peekBackgroundProcessLogs(taskId, { projectId, threadId })
+    },
+  )
   ipcMain.handle(
     'supervisor:resume',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
@@ -2508,6 +2583,10 @@ export function registerAllHandlers(
       await getAutomationService().sync()
       await getBranchCiAutomationService().sync()
     }
+    if (id === COMPUTER_USE_PLUGIN_ID) {
+      syncComputerUseTools(registry)
+      if (!enabled) disposeDesktopControlService()
+    }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
@@ -2553,11 +2632,12 @@ export function registerAllHandlers(
     if (!root) return []
     return listUnsandboxedProjectHooks(root)
   })
-  ipcMain.handle('instructions:list', async () =>
+  ipcMain.handle('instructions:list', async (event) =>
     (
       await loadProjectInstructionSources({
         useLatestNestedActivation: true,
         refreshNestedDiscovery: true,
+        roots: senderInstructionRoots(event.sender),
       })
     ).map(
       ({
@@ -2594,7 +2674,9 @@ export function registerAllHandlers(
   ipcMain.handle('instructions:read', async (event, rawPath: unknown) => {
     assertMainFrameSender(event, win)
     const path = parseIpcArgs(zPathString, [rawPath])
-    const source = (await loadProjectInstructionSources()).find((s) => s.path === path)
+    const source = (
+      await loadProjectInstructionSources({ roots: senderInstructionRoots(event.sender) })
+    ).find((s) => s.path === path)
     if (!source) throw new IpcValidationError('Not a discovered instruction file')
     return source.content
   })
@@ -2649,6 +2731,7 @@ export function registerAllHandlers(
     return getGitChangeStats(root, {
       includeCommitted: true,
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
@@ -2666,6 +2749,7 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getCommittedChanges(root, {
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:committed-file-diff', async (event, ...rawArgs) => {
@@ -2674,6 +2758,7 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getCommittedFileDiff(filePath, root, {
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
     })
   })
   ipcMain.handle('git:working-file-diff', async (event, ...rawArgs) => {
@@ -3016,6 +3101,10 @@ export function registerAllHandlers(
       return requestAcpPackageInstallApproval(
         scenario === 'upgrade' ? [upgrade] : [{ agent: codex, action: 'install' }],
       )
+    })
+    ipcMain.handle('test:requestRemoteWatcherInstallApproval', (event) => {
+      assertMainFrameSender(event, win)
+      return approveRemoteWatcherInstall(formatRemoteWatcherInstallApproval('Build server'))
     })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)

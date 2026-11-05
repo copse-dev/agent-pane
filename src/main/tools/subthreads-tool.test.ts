@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
@@ -16,7 +16,8 @@ import {
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { threadExecutionContextStorage } from '../services/thread-execution-context-store.ts'
 import { runWithApprovalHandler } from '../services/approval.ts'
-import { setSetting } from '../services/storage/settings.ts'
+import { getSetting, setSetting } from '../services/storage/settings.ts'
+import { runWithExplicitSettings } from '../services/storage/settings-context.ts'
 import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread-access.ts'
 import { z } from 'zod'
 import { ToolSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -138,6 +139,98 @@ describe('subthread orchestration', () => {
     assert.match(recovered, /"ok":true/)
     assert.equal(sent.length, 2)
     assert.ok(sent.every((command) => command.thread.id === childId))
+  })
+
+  it('creates no child when ownership persistence is rejected', async () => {
+    const before = await readdir(join(root, 'project'))
+    await assert.rejects(
+      runWithExplicitSettings(
+        { values: { threadSubthreadAccess: ['parent'], threadSubthreadOwners: [] } },
+        () => run(start),
+      ),
+      /Cannot mutate settings/,
+    )
+    assert.deepEqual(await readdir(join(root, 'project')), before)
+    assert.deepEqual(sent, [])
+  })
+
+  it('recovers an interrupted reservation without another child or lifetime start', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    await setSetting('threadSubthreadOwners', [
+      {
+        projectId: 'project',
+        parentThreadId: 'parent',
+        threadId: 'reserved-child',
+        key: start.key,
+        pendingCreation: true,
+      },
+    ])
+    const result = await run(start)
+    assert.equal(id(result), 'reserved-child')
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0]?.thread.id, 'reserved-child')
+    assert.deepEqual(getSetting('threadSubthreadOwners', []), [
+      {
+        projectId: 'project',
+        parentThreadId: 'parent',
+        threadId: 'reserved-child',
+        key: start.key,
+      },
+    ])
+    assert.match(await run(start), /"submitted":false/)
+    assert.equal(sent.length, 1)
+  })
+
+  it('commits a partially created reservation without resubmitting its prompt', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    await createThread('project', {
+      id: 'partly-created',
+      title: start.title,
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await setSetting('threadSubthreadOwners', [
+      {
+        projectId: 'project',
+        parentThreadId: 'parent',
+        threadId: 'partly-created',
+        key: start.key,
+        pendingCreation: true,
+      },
+    ])
+    assert.equal(await canDispatchSubthread('project', 'parent', 'partly-created'), false)
+    const result = await run(start)
+    assert.equal(id(result), 'partly-created')
+    assert.match(result, /"submitted":false/)
+    assert.deepEqual(sent, [])
+    assert.equal(await canDispatchSubthread('project', 'parent', 'partly-created'), true)
+    assert.equal(getSetting('threadSubthreadOwners', []).length, 1)
+  })
+
+  it('recovers the final reserved start without exceeding the lifetime limit', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    await setSetting('threadSubthreadOwners', [
+      ...Array.from({ length: 3 }, (_, index) => ({
+        projectId: 'project',
+        parentThreadId: 'parent',
+        threadId: `unavailable-${String(index)}`,
+        key: `finished-${String(index)}`,
+      })),
+      {
+        projectId: 'project',
+        parentThreadId: 'parent',
+        threadId: 'last-reserved-child',
+        key: start.key,
+        pendingCreation: true,
+      },
+    ])
+    assert.equal(id(await run(start)), 'last-reserved-child')
+    assert.equal(getSetting('threadSubthreadOwners', []).length, 4)
+    assert.match(await run({ ...start, key: 'fifth' }), /four child starts/)
+    assert.equal(sent.length, 1)
   })
 
   it('uses an object schema accepted by MCP', () => {

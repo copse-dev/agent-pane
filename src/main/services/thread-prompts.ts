@@ -20,7 +20,8 @@ export async function canDispatchSubthread(
     (entry) =>
       entry.projectId === projectId &&
       entry.parentThreadId === parentId &&
-      entry.threadId === childId,
+      entry.threadId === childId &&
+      entry.pendingCreation !== true,
   )
   if (!owned || !hasThreadAccess(parentId, 'orchestrate')) return false
   const [parent, child] = await Promise.all([
