@@ -1541,6 +1541,12 @@ describe('readAllowedSandboxOverlay', () => {
       symlinkSync(real, link)
       const allowRead = readAllowedSandboxOverlay(workspace, [link]).filesystem?.allowRead ?? []
       assert.ok(allowRead.includes(real))
+      assert.ok(allowRead.includes(`${real}/**`))
+      // Seatbelt reads the link before following it, so the link path itself is
+      // granted — but never as a subtree, and never its parent directory.
+      assert.ok(allowRead.includes(link))
+      assert.ok(!allowRead.includes(`${link}/**`))
+      assert.ok(!allowRead.includes(dir))
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
