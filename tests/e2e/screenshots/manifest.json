@@ -3341,6 +3341,10 @@
       "sha256": "2475d759e63f7c0f7f1a2314ab2af1cd42358144e7eed22cb145289b3e41d3c5",
       "bytes": 103726
     },
+    "proposed-thread-approval-over-source.png": {
+      "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
+      "bytes": 304084
+    },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
       "bytes": 212522
@@ -5624,6 +5628,10 @@
     "transcript-quote-sticky-reply.png": {
       "sha256": "708d6485b25f0589cb0f11d7b8dad64a093ab97786808cc27ac521d7e0486fc6",
       "bytes": 299381
+    },
+    "transcript-row-reconcile-new-turn.png": {
+      "sha256": "a7ae2fc42339bef2b4dcd497c04a107f633fb486fc68d7096f826fc2079c873a",
+      "bytes": 209222
     },
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
