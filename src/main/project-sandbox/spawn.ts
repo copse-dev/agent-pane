@@ -320,6 +320,8 @@ export async function spawnBackgroundProcess(
     unsandboxed?: boolean
     /** Named read targets derived from the command approved by the tool gate. */
     readGrantTargets?: readonly string[]
+    /** Unique host-owned attempt id for runner-side violation attribution. */
+    violationId?: string
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -369,6 +371,9 @@ export async function spawnBackgroundProcess(
       shellCommandLine,
       shellForSandboxWrap(),
       overlay,
+      undefined,
+      opts.cwd,
+      opts.violationId ? { commandId: opts.violationId } : undefined,
     )
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')

@@ -715,9 +715,20 @@ Background starts use the same approved command routing as `run_shell`. A comman
 outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
 standard mode too. An eligible outside-read command instead receives the same per-spawn read
 overlay as `run_shell`; its named paths become readable without granting writes or network.
-Separately approved loopback binding composes with that read overlay. Background starts do not yet
-offer `expects_sandbox_block`, reactive outside retries, or the foreground denial cache: an opaque
-task whose need for access appears only at runtime still needs the foreground escalation route.
+Separately approved loopback binding composes with that read overlay. Background starts accept
+`expects_sandbox_block` for ambiguous commands. The escape always asks afresh; declining runs
+contained and suppresses a second retry request for that attempt. Fully local commands ignore
+the hint, while hard-external commands retain their ordinary gate.
+
+A failed contained background task with per-attempt runner violations or a bounded denial
+signature can be retried explicitly: `action: start`, the exact same command and `retry_of` set
+to the failed task id. The agent must inspect partial effects first. This always requires fresh
+one-shot outside consent, including in Guarded YOLO; forgeable output cannot approve an escape.
+The owner, command, execution root and failed status are rechecked after approval. Only one
+retry may claim an original attempt, and the retry gets a new task id and its own completion
+lifecycle. Running, successful, cancelled, timed-out, already outside, remote and adopted tasks
+are ineligible. Background failures never restart automatically and add no continuation wake.
+The foreground denial cache and replay leases do not apply to background retries.
 Foreground and background installs share package-firewall preparation and JavaScript
 lifecycle-script suppression under the existing safe-install setting; a missing proxy launcher
 refuses the install before spawning.

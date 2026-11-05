@@ -618,13 +618,21 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { source?: 'agent' | 'prior-denial'; executionRoot?: string | null } = {},
+  opts: {
+    source?: 'agent' | 'prior-denial'
+    executionRoot?: string | null
+    requireInteractiveApproval?: boolean
+  } = {},
 ): Promise<boolean> {
   // An agent rerunning the same browser demo or test harness after each fix asks
   // to leave the sandbox with the same command every time. Bounded opaque local
   // execution may carry the same exact-command replay lease a verified-block
   // escalation offers; nothing else is eligible.
-  const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
+  const forceAsk =
+    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
+  const leaseIdentity = forceAsk
+    ? null
+    : expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
