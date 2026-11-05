@@ -383,11 +383,12 @@ export function buildHeadlessTurnEvents(params: {
   const events: HeadlessEvent[] = [
     { v: 1, type: 'turn_start', threadId, turnId, protocolVersion: HEADLESS_PROTOCOL_VERSION },
   ]
+  const projectionContext = { turnId, mintItemId }
   // Merge adjacent text/reasoning deltas so a streamed message is one item, not
-  // one item per character. Coalescing at the adapter layer keeps
-  // `projectStreamChunk` a pure per-chunk mapping.
+  // one item per character. The shared projection context retains that item's
+  // id when a later `text_replace` upserts the cleaned final text.
   for (const chunk of coalesceStreamText(chunks)) {
-    events.push(...projectStreamChunk(chunk, { turnId, mintItemId }))
+    events.push(...projectStreamChunk(chunk, projectionContext))
   }
   events.push({
     v: 1,

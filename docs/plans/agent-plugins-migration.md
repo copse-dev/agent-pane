@@ -3,8 +3,10 @@
 Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 
 **Status: Partially implemented.** Portable discovery and component activation (A),
-plus the product/runtime/storage rename (C), have landed. The marketplace install
-lifecycle and built-in manifest conversion (B) remain.
+plus the product/runtime/storage rename (C), have landed, and the install lifecycle for pinned,
+unsigned skills/MCP packages is implemented (see
+[`feature-pack-marketplace.md`](feature-pack-marketplace.md)). Built-in manifest conversion (B1/B2)
+remains.
 Adopts the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification)
 as Copse's on-disk distribution format, carries the intent of closed
 [#1342](https://github.com/copse-dev/agent-pane/pull/1342) forward in that format,

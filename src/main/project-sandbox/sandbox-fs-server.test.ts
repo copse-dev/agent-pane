@@ -28,6 +28,7 @@ const reply = (id, body) => process.stdout.write(JSON.stringify({ id, ...body })
 async function handle(req) {
   try {
     if (req.op === 'die') return process.exit(1);
+    if (req.op === 'hold') return;
     if (req.op === 'statDir') {
       const d = await fs.readdir(req.path, { withFileTypes: true });
       return reply(req.id, { ok: true, dirents: d.map((e) => ({ name: e.name, isDir: e.isDirectory() })) });
@@ -186,6 +187,119 @@ describe('sandbox-fs-server', () => {
     } finally {
       restore()
       await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('retires after 60 idle seconds and respawns on demand', async (t) => {
+    const restore = setWorkspaceRootForTest(tmpdir())
+    let spawnCount = 0
+    setWorkerSpawnerForTest(() => {
+      spawnCount += 1
+      return Promise.resolve(echoSpawner())
+    })
+    try {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      await requestViaServer({ op: 'statDir', path: tmpdir() })
+      t.mock.timers.tick(59_999)
+      assert.equal(isSandboxFsServerLive(), true)
+      t.mock.timers.tick(1)
+      assert.equal(isSandboxFsServerLive(), false)
+      await requestViaServer({ op: 'statDir', path: tmpdir() })
+      assert.equal(spawnCount, 2)
+    } finally {
+      shutdownSandboxFsServer()
+      t.mock.timers.reset()
+      restore()
+    }
+  })
+
+  it('restarts the full idle period after each request', async (t) => {
+    const restore = setWorkspaceRootForTest(tmpdir())
+    setWorkerSpawnerForTest(() => Promise.resolve(echoSpawner()))
+    try {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      await requestViaServer({ op: 'statDir', path: tmpdir() })
+      t.mock.timers.tick(59_000)
+      await requestViaServer({ op: 'statDir', path: tmpdir() })
+      t.mock.timers.tick(59_999)
+      assert.equal(isSandboxFsServerLive(), true)
+      t.mock.timers.tick(1)
+      assert.equal(isSandboxFsServerLive(), false)
+    } finally {
+      shutdownSandboxFsServer()
+      t.mock.timers.reset()
+      restore()
+    }
+  })
+
+  it('waits for every in-flight request before starting the idle period', async (t) => {
+    const restore = setWorkspaceRootForTest(tmpdir())
+    const proc = echoSpawner()
+    setWorkerSpawnerForTest(() => Promise.resolve(proc))
+    try {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      await requestViaServer({ op: 'statDir', path: tmpdir() })
+      t.mock.timers.tick(59_000)
+      const first = requestViaServer({ op: 'hold' })
+      const second = requestViaServer({ op: 'hold' })
+      // Let both requests register before advancing past the old idle deadline.
+      await Promise.resolve()
+      t.mock.timers.tick(1_000)
+      assert.equal(isSandboxFsServerLive(), true)
+      proc.stdout?.emit('data', '{"id":2,"ok":true}\n')
+      await first
+      t.mock.timers.tick(1_000)
+      assert.equal(isSandboxFsServerLive(), true)
+      proc.stdout?.emit('data', '{"id":3,"ok":true}\n')
+      await second
+      t.mock.timers.tick(59_999)
+      assert.equal(isSandboxFsServerLive(), true)
+      t.mock.timers.tick(1)
+      assert.equal(isSandboxFsServerLive(), false)
+    } finally {
+      shutdownSandboxFsServer()
+      t.mock.timers.reset()
+      restore()
+    }
+  })
+
+  it('tracks idle time independently for each workspace root', async (t) => {
+    const dirA = await mkdtemp(join(tmpdir(), 'copse-sbfs-idle-a-'))
+    const dirB = await mkdtemp(join(tmpdir(), 'copse-sbfs-idle-b-'))
+    setWorkerSpawnerForTest(() => Promise.resolve(echoSpawner()))
+    try {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      await requestViaServer({ op: 'statDir', path: dirA }, dirA)
+      t.mock.timers.tick(30_000)
+      await requestViaServer({ op: 'statDir', path: dirB }, dirB)
+      t.mock.timers.tick(30_000)
+      assert.deepEqual(
+        listSandboxFsServerProcesses().map(({ root }) => root),
+        [dirB],
+      )
+      t.mock.timers.tick(30_000)
+      assert.deepEqual(listSandboxFsServerProcesses(), [])
+    } finally {
+      shutdownSandboxFsServer()
+      t.mock.timers.reset()
+      await rm(dirA, { recursive: true, force: true })
+      await rm(dirB, { recursive: true, force: true })
+    }
+  })
+
+  it('retires idle workers after filesystem errors too', async (t) => {
+    const restore = setWorkspaceRootForTest(tmpdir())
+    setWorkerSpawnerForTest(() => Promise.resolve(echoSpawner()))
+    try {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      const result = await requestViaServer({ op: 'unknown' })
+      assert.equal(result.ok, false)
+      t.mock.timers.tick(60_000)
+      assert.equal(isSandboxFsServerLive(), false)
+    } finally {
+      shutdownSandboxFsServer()
+      t.mock.timers.reset()
+      restore()
     }
   })
 

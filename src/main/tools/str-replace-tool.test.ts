@@ -9,6 +9,7 @@ import { strReplaceTool } from './str-replace-tool.ts'
 import { clearStagedDiffsForTest, getStagedDiffEntry } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { runWithAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
+import { EXPLORE_EXCERPTS_HEADING } from '@copse/agent/explore-excerpts.ts'
 
 async function runStrReplace(args: {
   path: string
@@ -62,10 +63,11 @@ describe('strReplaceTool', () => {
   })
 
   ownedIt(
-    'names explore, not the withheld read_file, when old_string is missing in explore mode',
+    'points at explore excerpts, not the withheld read_file, when old_string is missing in explore mode',
     async () => {
       // In explore mode read_file is delegated to the subagent and withheld from
-      // the parent, so the remedy must be one the model can actually call.
+      // the parent, so the remedy must be one the model can actually call: the
+      // verbatim excerpts an explore result carries (#1433, Fix 0).
       await writeFile(join(tempRoot, 'f.ts'), 'a', 'utf-8')
       const out = await runWithAgentRunExploreMode(true, () =>
         runStrReplace({
@@ -76,7 +78,9 @@ describe('strReplaceTool', () => {
         }),
       )
       assert.match(out, /not found/)
-      assert.match(out, /call explore again on f\.ts/)
+      assert.ok(out.includes(`"${EXPLORE_EXCERPTS_HEADING}" block for f.ts`))
+      assert.match(out, /not from the prose summary/)
+      assert.match(out, /call explore with paths: \["f\.ts"\]/)
       assert.doesNotMatch(out, /read_file/)
     },
   )

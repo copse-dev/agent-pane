@@ -1,5 +1,9 @@
 # Event automation inbox: first implementation
 
+Status: **Resolved** — slice A is on `main` and the branch CI adapter installs the inbox at app
+startup. Remaining event-automation work is tracked in
+[event-driven-automations.md](event-driven-automations.md).
+
 Implements slice A of the [event-driven automation proposal](https://github.com/copse-dev/agent-pane/pull/2594).
 Slice A introduced an internal admission and recovery boundary, exercised with
 an injected adapter and durable filesystem fixtures. The branch CI adapter now

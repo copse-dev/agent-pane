@@ -233,7 +233,43 @@ export interface ToolCall {
   appendedReminderLengths?: number[]
   /** Images returned by the tool, rendered beside its collapsed transcript card. */
   images?: ToolResultImage[]
+  /**
+   * Where a `run_shell` / `run_background` command is in its life, from
+   * submission to exit (#3956). Absent for every other tool, for external ACP
+   * shells, and on calls recorded before phases existed.
+   */
+  commandPhase?: CommandPhase
   subagent?: SubagentSession
+}
+
+/**
+ * A command's lifecycle stage. `queued` → (`awaiting_approval`) → `starting` →
+ * `running` → a terminal stage. `not_started` is terminal and means no process
+ * ever ran, so a refusal or a sandbox that could not launch never reads as a
+ * running command with empty output.
+ */
+export type CommandPhaseState =
+  | 'queued'
+  | 'awaiting_approval'
+  | 'starting'
+  | 'running'
+  | 'exited'
+  | 'timed_out'
+  | 'cancelled'
+  | 'not_started'
+
+export interface CommandPhase {
+  state: CommandPhaseState
+  /** Wall-clock time this stage began. */
+  since: number
+  /** True once a process was spawned for this command, even if it later failed. */
+  launched: boolean
+  /** Exit status for `exited` (128 + signal number for a signal death). */
+  exitCode?: number
+  /** The `run_background` task handle once the command runs as one. */
+  backgroundTaskId?: string
+  /** Why the command never started, when it did not. */
+  reason?: string
 }
 
 export interface SubagentMessage {
@@ -391,4 +427,6 @@ export interface ToolCallUpdateChunk {
   content?: AcpToolCallContent[]
   /** Present (including `[]`) only when ACP replaced its locations collection. */
   locations?: AcpToolCallLocation[]
+  /** The command's new lifecycle stage; replaces the previous one. */
+  commandPhase?: CommandPhase
 }

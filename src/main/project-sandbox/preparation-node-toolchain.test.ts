@@ -8,11 +8,15 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { it } from 'node:test'
+import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
+import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 import {
   linkPreparationNodeToolchain,
   preparationNodeToolchainReadPaths,
@@ -52,10 +56,9 @@ it(
       )
       const allow = preparationNodeToolchainReadPaths({ PATH: path })
       for (const command of ['node', 'npm', 'corepack', 'pnpm']) {
-        assert.ok(allow.includes(join(multishell, 'bin', command)))
-        assert.ok(allow.includes(join(bin, command)))
         assert.ok(allow.includes(realpathSync(join(bin, command))))
       }
+      assert.ok(!allow.some((entry) => entry.startsWith(multishell)))
       for (const name of ['npm', 'corepack']) {
         assert.ok(allow.includes(join(installation, 'lib/node_modules', name)))
       }
@@ -131,6 +134,31 @@ it(
       assert.deepEqual(preparationNodeToolchainReadPaths({}), [])
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  },
+)
+
+it(
+  'does not grant or link a toolchain executable redirected into credentials',
+  { skip: process.platform === 'win32' },
+  () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-node-credential-')))
+    try {
+      const bin = join(home, 'project', 'node_modules', '.bin')
+      const target = join(home, '.ssh', 'id_ed25519')
+      const links = join(home, 'links')
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(dirname(target), { recursive: true })
+      mkdirSync(links)
+      writeFileSync(target, 'synthetic credential\n')
+      chmodSync(target, 0o755)
+      symlinkSync(target, join(bin, 'node'))
+      const env = { PATH: bin }
+      assert.deepEqual(preparationNodeToolchainReadPaths(env, home), [])
+      assert.equal(linkPreparationNodeToolchain(env, links), env)
+      assert.deepEqual(readdirSync(links), [])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
     }
   },
 )
@@ -222,3 +250,112 @@ it(
     }
   },
 )
+
+it(
+  'refuses redirected shim subtrees instead of recursively granting their targets or aliases',
+  { skip: process.platform === 'win32' },
+  () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-shim-redirect-')))
+    try {
+      const root = join(home, '.asdf')
+      const shims = join(root, 'shims')
+      mkdirSync(shims, { recursive: true })
+      writeFileSync(join(shims, 'node'), '')
+      chmodSync(join(shims, 'node'), 0o755)
+      const credentials = join(home, '.ssh')
+      mkdirSync(credentials)
+      const subtree = join(root, 'installs')
+      for (const target of [home, dirname(home), credentials, root]) {
+        symlinkSync(target, subtree, 'dir')
+        const allow = preparationNodeToolchainReadPaths({ PATH: shims }, home)
+        for (const unsafe of [subtree, target]) {
+          assert.ok(!allow.includes(unsafe), unsafe)
+          assert.ok(!allow.includes(`${unsafe}/**`), unsafe)
+        }
+        assert.ok(allow.includes(`${shims}/**`), 'unredirected shims stay available')
+        unlinkSync(subtree)
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  },
+)
+
+it(
+  'rejects redirected home and credential manager roots while retaining a safe relocated manager',
+  { skip: process.platform === 'win32' },
+  () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-manager-redirect-')))
+    try {
+      const alias = join(home, '.asdf')
+      for (const target of [home, join(home, '.ssh'), join(home, '.config', 'gh')]) {
+        const shims = join(target, 'shims')
+        mkdirSync(shims, { recursive: true })
+        mkdirSync(join(target, 'installs'), { recursive: true })
+        writeFileSync(join(shims, 'node'), '')
+        chmodSync(join(shims, 'node'), 0o755)
+        symlinkSync(target, alias, 'dir')
+        const allow = preparationNodeToolchainReadPaths({ PATH: join(alias, 'shims') }, home)
+        assert.ok(!allow.some((entry) => entry.endsWith('/**')), target)
+        unlinkSync(alias)
+      }
+      const target = join(home, 'relocated-asdf')
+      const shims = join(target, 'shims')
+      mkdirSync(shims, { recursive: true })
+      mkdirSync(join(target, 'installs'))
+      writeFileSync(join(shims, 'node'), '')
+      chmodSync(join(shims, 'node'), 0o755)
+      symlinkSync(target, alias, 'dir')
+      const allow = preparationNodeToolchainReadPaths({ PATH: join(alias, 'shims') }, home)
+      assert.ok(!allow.includes(`${join(alias, 'installs')}/**`))
+      assert.ok(allow.includes(`${join(target, 'installs')}/**`))
+      assert.ok(!allow.includes(`${target}/**`))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  },
+)
+
+it('does not render a later credential target through a replaced preparation executable alias', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-retarget-node-')))
+  try {
+    const project = join(home, 'project')
+    const bin = join(project, 'node_modules', '.bin')
+    const node = join(home, '.nvm', 'versions', 'node', 'v24.0.0', 'bin', 'node')
+    const credential = join(home, '.codex', 'auth.json')
+    for (const path of [node, credential]) {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, 'synthetic fixture\n')
+    }
+    chmodSync(node, 0o755)
+    mkdirSync(bin, { recursive: true })
+    const alias = join(bin, 'node')
+    symlinkSync(node, alias)
+    const allow = toolchainReadExceptions(
+      preparationNodeToolchainReadPaths({ PATH: bin }, home),
+      [home],
+      [project],
+    )
+    unlinkSync(alias)
+    symlinkSync(credential, alias)
+    const profile = wrapCommandWithSandboxMacOS({
+      command: 'true',
+      needsNetworkRestriction: false,
+      readConfig: {
+        denyOnly: [home],
+        allowWithinDeny: [project, ...allow.map(removeTrailingGlobSuffix)],
+      },
+      writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+    })
+    assert.ok(profile.includes(JSON.stringify(node)), 'the canonical runtime remains granted')
+    assert.ok(!profile.includes(JSON.stringify(credential)), 'ASRT must not re-resolve the alias')
+
+    for (const target of [credential, bin]) {
+      unlinkSync(alias)
+      symlinkSync(target, alias)
+      assert.deepEqual(preparationNodeToolchainReadPaths({ PATH: bin }, home), [], target)
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

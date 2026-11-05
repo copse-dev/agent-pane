@@ -34,7 +34,23 @@ describe('Storage cleanup controls', function () {
   it('shows both areas, saves retention and cleans only the confirmed target', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
+    const search = await $('#settings-search-input').getElement()
+    await search.setValue('Saved runs and build data')
+    await expect($('#settings-search-results #storage-runs-clean')).toBeEnabled()
+    await expect($('#settings-search-results #storage-runs-size')).toHaveText(
+      expect.stringContaining('1 item'),
+    )
+    await expect($('#settings-save-status')).not.toHaveText(
+      expect.stringContaining('Could not load'),
+    )
+    await $('#storage-expiry-days').selectByAttribute('value', '90')
+    await expect($('#storage-expiry-days')).toBeEnabled()
+    await expect($('#storage-expiry-days')).toHaveValue('90')
+    await saveElementScreenshot('#storage-saved-data', 'settings-storage-maintenance-search.png')
+    // Selecting a section is the explicit exit from search: it clears the box
+    // and returns lifted fieldsets. Clearing the value alone fires no input.
     await $('#settings-dialog button[data-section="storage"]').click()
+    await expect($('#storage-maintenance #storage-runs-clean')).toBeEnabled()
     const panel = await $('#storage-maintenance').getElement()
     await panel.scrollIntoView()
     const runs = await $('#storage-runs-clean').getElement()

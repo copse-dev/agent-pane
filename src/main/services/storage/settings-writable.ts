@@ -101,6 +101,7 @@ export const acpAgentConfigSchema = z.object({
       z.object({
         allowedDomains: z.array(z.string().min(1).max(256)).max(64),
         allowMacOsTrustd: z.boolean().optional(),
+        allowMacOsKeychain: z.boolean().optional(),
         homeDirs: z
           .array(
             z
@@ -410,6 +411,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Experimental living-plan workflow: the composer's "Start planning" button
+  // and dialog. Off by default — container, ACP, remote, and plugin-hosted
+  // executors still fail closed while a plan is active, and completion is
+  // agent-reported, not host-verified. See docs/plans/plan-mode-and-rewind.md.
+  planModeEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
@@ -445,6 +451,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // ACP. Only meaningful when `sshWorkspaceEnabled` is also on. See
   // docs/plans/acp-over-ssh.md.
   acpOverSshEnabled: z.boolean(),
+  // How external-edit detection runs on an SSH workspace. `auto` uploads and
+  // runs the bundled streaming watcher (native/remote-watcher) with polling as
+  // the fallback; `poll` skips the upload and only polls subscribed files;
+  // `off` disables external-edit detection entirely.
+  sshWatcherMode: z.enum(['auto', 'poll', 'off']),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
   sshWorkspaceHosts: z
     .array(

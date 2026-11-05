@@ -205,6 +205,21 @@ describe('parseProbeRequest', () => {
     }
   })
 
+  it('preserves an explicit keychain grant and rejects truthy non-boolean values', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const request = parseProbeRequest(
+        JSON.stringify({
+          config: {
+            command: 'claude-agent-acp',
+            cwd: '/workspace',
+            sandbox: { allowedDomains: ['api.anthropic.com'], allowMacOsKeychain: value },
+          },
+        }),
+      )
+      assert.equal(request?.config.sandbox?.allowMacOsKeychain, value === true ? true : undefined)
+    }
+  })
+
   it('requires a command and cwd', () => {
     assert.equal(parseProbeRequest('{"config":{"command":"x"}}'), null)
     assert.equal(parseProbeRequest('{"config":{"cwd":"/tmp"}}'), null)

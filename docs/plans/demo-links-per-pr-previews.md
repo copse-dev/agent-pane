@@ -1,6 +1,6 @@
 # Per-PR demo previews: clickable demo links on every PR
 
-**Status: Active.** Resolves the deliberately-deferred "per-PR distribution"
+**Status: Resolved (P0–P3 live; fork fallback and origin isolation are follow-ups).** Resolves the deliberately-deferred "per-PR distribution"
 question from [demo-links.md](demo-links.md) M3. The demo _build_ already existed and
 ran in CI on every eligible PR (`npm run build:demo` → `dist/demo/`, plus `test:demo`
 in `ci.yml`); the missing piece — publishing that artifact to a stable per-PR URL and

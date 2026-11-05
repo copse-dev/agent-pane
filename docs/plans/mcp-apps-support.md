@@ -1,7 +1,9 @@
 # MCP Apps host support
 
 Status: **Proposed** (2026-10-09). Implementation plan for the full MCP Apps
-enhancement tracked by [#611](https://github.com/copse-dev/agent-pane/issues/611).
+enhancement tracked by [#611](https://github.com/copse-dev/agent-pane/issues/611). The docs-only PR
+that added this plan ([#3607](https://github.com/copse-dev/agent-pane/pull/3607)) auto-closed #611 by
+mistake; no MCP Apps host code exists, so #611 remains the owner of this work.
 This document changes no runtime behavior or plugin defaults.
 
 Here, “full MCP UI support” means a complete host for the pinned MCP Apps
@@ -110,7 +112,7 @@ projects; they are not required by this baseline.
 
 ### Expected user journey
 
-1. Enable the experimental canvas plugin in Settings > Plugins and connect an
+1. Enable the canvas plugin in Settings > Plugins (on by default) and connect an
    MCP server through the existing MCP settings. No separate app installation is
    needed for a UI supplied by that server. Settings explains that the toggle
    reconnects external servers.
@@ -143,7 +145,7 @@ upgrade behavior separately before changing defaults.
 
 | Surface        | Existing implementation                                                       | Work needed                                                                                        |
 | -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Feature gate   | Experimental `copse.mcp-ui-canvas` plugin and capability                      | Gate protocol advertisement and every app entry point; revoke live sessions when disabled          |
+| Feature gate   | Stable, default-on `copse.mcp-ui-canvas` plugin and capability                | Gate protocol advertisement and every app entry point; revoke live sessions when disabled          |
 | MCP connection | `mcp-registry.ts` creates external clients with empty capabilities            | Negotiate the UI extension and preserve server/tool UI metadata                                    |
 | Tool execution | Lists tools, registers them for the agent, flattens `result.content`          | Separate model/app visibility on every model-facing list; retain complete results                  |
 | ACP execution  | Native bridge advertises every registered `mcp__*` tool to ACP agents         | Apply the same visibility filter to the bridge's offered list and `tools/list`                     |
@@ -635,10 +637,13 @@ step 3 then supplies the sessions that step 4 hosts. Step 5 depends on 3 and 4
 and must pass its denial, isolation and queue tests before step 6 enables
 interaction across presentation and history paths. Step 7 collects evidence
 throughout and gates the compatibility claim. Steps 1–4 are a useful rendering
-milestone but do not justify claiming interactive host support. Keep the plugin
-experimental through step 7. Default-on readiness is a separate decision,
-including profile migration, existing canvas readiness follow-ups, and the
-broader network exposure.
+milestone but do not justify claiming interactive host support. The plugin
+manifest graduated to `stable`/default-on 2026-10-31 for today's HTML-canvas
+rendering (see `docs/plans/default-on-readiness.md`) — that decision does not
+extend to this plan's full MCP Apps protocol work. None of steps 1–7 exist yet;
+treat that protocol surface as its own experiment requiring its own default-on
+decision when it ships, including profile migration, readiness follow-ups, and
+the broader network exposure, independent of the plugin's current stability.
 
 Step 1 must record numeric budgets for resource bytes, result/context bytes,
 concurrent live frames, queued messages, request duration and teardown duration.

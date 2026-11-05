@@ -2,6 +2,17 @@
   "version": 1,
   "entries": [
     {
+      "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",
+      "category": "platform",
+      "reason": "Isolated Copse desktop startup is available only on local Apple silicon macOS; unsupported platforms refuse before the consent dialog.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-01",
+      "reviewBy": "2026-11-08",
+      "coverage": "Lifecycle, ownership, protocol and preflight unit tests pass. The macOS approval spec passed on 2026-11-01 at 17:21 UTC with the body-fit assertion; screenshot review confirmed all disclosures and decision buttons are visible without scrolling. This mock-driven consent/rejection test does not start a VM. Integrated VM inference and self-approval containment evidence remain required.",
+      "markers": ["describe.skip"]
+    },
+    {
       "spec": "tests/e2e/agent-eval-drive.e2e.ts",
       "category": "external-service",
       "reason": "Real-model evaluation is deliberately excluded from default and CI suites.",
@@ -33,20 +44,6 @@
       "reviewBy": "2026-10-03",
       "coverage": "Unit tests cover the suggestion decision (main) and the dialog/reminder flow (renderer); this macOS spec adds the visual evidence.",
       "markers": ["describe.skip"]
-    },
-    {
-      "spec": "tests/e2e/context-wheel.e2e.ts",
-      "category": "quarantine",
-      "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Seeded and live mock specs remain runnable locally; current runtime stability and equivalent coverage need review.",
-      "markers": [
-        "describeSkipInCi: context wheel footer live mock",
-        "describeSkipInCi: context wheel footer seeded"
-      ]
     },
     {
       "spec": "tests/e2e/explorer-reload-spaced-path.e2e.ts",
@@ -93,17 +90,6 @@
       "markers": ["this.skip"]
     },
     {
-      "spec": "tests/e2e/onboarding.e2e.ts",
-      "category": "environment",
-      "reason": "Fallback test skips when a detected local server changes onboarding to checklist mode.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Onboarding maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "onboarding-scan-import.e2e.ts covers deterministic scan/checklist paths; the fallback run remains dependent on host detections.",
-      "markers": ["this.skip"]
-    },
-    {
       "spec": "tests/e2e/plugin-hook-loading.e2e.ts",
       "category": "platform",
       "reason": "Before hook skips non-macOS hosts for the seatbelt-backed plugin hook loading scenario.",
@@ -117,39 +103,13 @@
     {
       "spec": "tests/e2e/portrait-right-panel.e2e.ts",
       "category": "quarantine",
-      "reason": "Excluded by CI config; the specific historical reason and current reproduction need review.",
+      "reason": "The auto-portrait layout cannot occur on the CI display. The main window has minWidth 800, so portrait needs a window at least 1.35 x 800 = 1080 logical pixels tall, but scripts/run-e2e.mts runs Xvfb at 3200x2048 with a pinned 2x DPR, a 1600x1024 logical desktop. The seeded 760x1180 window stays below the aspect threshold: CI run 41092504471 (#4022) failed both cases at setPortraitWindow's 'expected Electron window to resize to a tall portrait viewport' wait on both shard attempts, while the other 53 specs in that shard passed. Restoring it needs a taller framebuffer, which changes every reference screenshot's capture identity.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
-      "coverage": "No equivalent layout/runtime evidence is established by this inventory.",
+      "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall.",
       "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
-      "spec": "tests/e2e/queued-pinned.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI config documents timing/scroll-pinning instability; this remaining runtime spec has not migrated with the other queue tests.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "message-queue, queued-send-now, and queued-message-edit component tests cover related behaviors, not the remaining scroll geometry.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
-      "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI config excludes the entire spec for historical renderer crash/timeouts; two streaming cases also skip in-spec.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent Electron streaming/scroll geometry evidence is established by this inventory.",
-      "markers": [
-        "itSkipInCi: hides scroll-to-bottom while auto-scrolling during streaming",
-        "itSkipInCi: keeps the view pinned when the user scrolls up during streaming",
-        "wdio.ci.conf.ts: exclude"
-      ]
     },
     {
       "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",
@@ -161,17 +121,6 @@
       "reviewBy": "2026-09-27",
       "coverage": "The Linux Settings spec remains enabled there; this inventory is not evidence of a current successful run.",
       "markers": ["this.skip"]
-    },
-    {
-      "spec": "tests/e2e/staged-diff-ui.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI config describes heavy multi-turn mock/Monaco diff-approval IPC after session reload as slow or unstable on constrained runners.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Diff UI and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Unit/component assertions do not replace Monaco approval IPC. Current runtime reproduction and successful evidence remain outstanding.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
       "spec": "tests/e2e/thread-deep-links.e2e.ts",

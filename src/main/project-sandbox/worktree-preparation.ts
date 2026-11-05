@@ -23,6 +23,7 @@ import {
   preparationNodeToolchainReadPaths,
   preparationPathEnvironment,
 } from './preparation-node-toolchain.ts'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 
 export function requirePreparationSandbox(): void {
   if (!isProjectSandboxEnabled() || !['darwin', 'linux'].includes(process.platform)) {
@@ -303,6 +304,18 @@ async function runContainedPreparationProcess(
   // startup files execute ambient code before sandbox-exec/bwrap takes over.
   delete env['BASH_ENV']
   delete env['ENV']
+  const deniedRead = [homedir(), tmpdir(), '/private/tmp', '/private/var/folders']
+  const existingRead = [
+    root,
+    scratch,
+    ...caches,
+    ...electronRuntimeAllowReadPaths(),
+    ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
+    ...(options.additionalExecutables ?? []).flatMap((executable) =>
+      preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
+    ),
+    ...sandboxRuntimeHelperAllowReadPaths(),
+  ]
   const params = {
     // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
     // scratch after those assignments, inside the confined command.
@@ -319,18 +332,14 @@ async function runContainedPreparationProcess(
     allowAllUnixSockets: false,
     allowGitConfig: false,
     readConfig: {
-      denyOnly: [homedir(), tmpdir(), '/private/tmp', '/private/var/folders'],
+      denyOnly: deniedRead,
       allowWithinDeny: [
-        root,
-        scratch,
-        ...caches,
-        ...preparationNodeToolchainReadPaths(env),
-        ...electronRuntimeAllowReadPaths(),
-        ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
-        ...(options.additionalExecutables ?? []).flatMap((executable) =>
-          preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
+        ...existingRead,
+        ...toolchainReadExceptions(
+          preparationNodeToolchainReadPaths(env),
+          deniedRead,
+          existingRead,
         ),
-        ...sandboxRuntimeHelperAllowReadPaths(),
       ],
     },
     writeConfig: {

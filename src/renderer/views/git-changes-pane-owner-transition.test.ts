@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, sameItems } from '@shared/store/store.ts'
 import { switchThread } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ActiveDiff } from '@shared/types/state.ts'
@@ -84,7 +84,7 @@ afterEach(() => {
 })
 
 describe('Changes pane owner transitions', () => {
-  it('production thread switching clears the proposed queue before panel_changed', () => {
+  it('production thread switching clears the proposed queue in the same write', () => {
     const store = createStore({
       activeProjectId: 'project-1',
       activeThreadId: 'a',
@@ -97,14 +97,18 @@ describe('Changes pane owner transitions', () => {
       stagedPaths: string[]
       activeDiff: ActiveDiff | null
     }> = []
-    store.on('panel_changed', () => {
-      const state = store.getState()
-      panelStates.push({
-        activeThreadId: state.activeThreadId,
-        stagedPaths: state.stagedDiffs.map((entry) => entry.path),
-        activeDiff: state.activeDiff,
-      })
-    })
+    store.select(
+      (s) => [s.activeDiff, s.stagedDiffs] as const,
+      () => {
+        const state = store.getState()
+        panelStates.push({
+          activeThreadId: state.activeThreadId,
+          stagedPaths: state.stagedDiffs.map((entry) => entry.path),
+          activeDiff: state.activeDiff,
+        })
+      },
+      sameItems,
+    )
 
     switchThread(store, 'b')
 

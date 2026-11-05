@@ -18,6 +18,9 @@ import type { StreamChunk } from '@shared/types'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { openAiAgentStateSchema } from './remote/openai-agents-api.ts'
 import { z } from 'zod'
+import { installInMemorySecretCipher } from './storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 for (const endpoint of ['/turns', '/session', '/items', '/artifacts']) {
   it(`reports post-cancellation ${endpoint} failure through the agent host`, async () => {

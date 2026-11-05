@@ -4,7 +4,7 @@ import type {
   NewSessionResponse,
   SessionConfigOption,
   SessionModeState,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { refreshAcpSessionState, type OpenAcpSession } from './acp-client.ts'
 
 function state(): Pick<OpenAcpSession, 'session' | 'availableCommands' | 'sessionInfo'> {

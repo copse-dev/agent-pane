@@ -23,6 +23,14 @@ export interface AppStore {
   ): Unsubscribe
 }
 
+/**
+ * `select` equality for a selector that builds a fresh tuple on every read:
+ * equal when each item is `Object.is`-equal to its counterpart.
+ */
+export function sameItems<T extends readonly unknown[]>(a: T, b: T): boolean {
+  return a.length === b.length && a.every((item, index) => Object.is(item, b[index]))
+}
+
 export function createStore(initial?: Partial<AppState>): AppStore {
   let state: AppState = {
     workspaceRoot: null,
@@ -78,13 +86,9 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     reviewer_input_jump: new Set(),
     thread_draft_changed: new Set(),
     new_thread_opened: new Set(),
-    panel_changed: new Set(),
     explorer_reveal: new Set(),
     workspace_changed: new Set(),
     projects_changed: new Set(),
-    files_pane_changed: new Set(),
-    right_panel_mode_changed: new Set(),
-    sidebar_project_filter_changed: new Set(),
     git_change_navigate: new Set(),
     roadmap_reveal: new Set(),
     thread_plan_open: new Set(),
@@ -97,8 +101,6 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     canvas_artefact_requested: new Set(),
     canvas_artefact_show_requested: new Set(),
     settings_changed: new Set(),
-    theme_changed: new Set(),
-    staged_diffs_changed: new Set(),
     usage_updated: new Set(),
     context_updated: new Set(),
     todos_changed: new Set(),

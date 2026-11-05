@@ -4,7 +4,11 @@ import {
   getGithubRepoSlug,
   getCurrentBranchName,
   pushBranchToOrigin,
+  unsignedCommitsToPublish,
 } from '../services/github/git-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { createPrMaintenanceService } from '../services/github/pr-maintenance-service.ts'
+import { runGh } from '../services/github/gh-service.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -29,13 +33,14 @@ const prActionParams = z.object({
     .describe('Repository name. Omit to use the current workspace repository.'),
 })
 
-/** Fill missing owner/repo halves from the workspace origin slug. */
+/** Fill missing owner/repo halves from the origin slug of the turn's checkout (`root`). */
 async function resolveOwnerRepo(
+  root: string | null,
   owner: string | undefined,
   repo: string | undefined,
 ): Promise<{ owner: string; repo: string } | null> {
   if (!owner || !repo) {
-    const slug = await getGithubRepoSlug()
+    const slug = await getGithubRepoSlug(root)
     const [slugOwner, slugRepo] = slug?.split('/') ?? []
     owner = owner ?? slugOwner
     repo = repo ?? slugRepo
@@ -45,12 +50,15 @@ async function resolveOwnerRepo(
 }
 
 /** Resolve owner/repo from args, falling back to the workspace origin slug. */
-async function resolveRef(args: {
-  number: number
-  owner?: string | undefined
-  repo?: string | undefined
-}): Promise<PrRef | null> {
-  const target = await resolveOwnerRepo(args.owner, args.repo)
+async function resolveRef(
+  root: string | null,
+  args: {
+    number: number
+    owner?: string | undefined
+    repo?: string | undefined
+  },
+): Promise<PrRef | null> {
+  const target = await resolveOwnerRepo(root, args.owner, args.repo)
   return target ? { ...target, number: args.number } : null
 }
 
@@ -61,13 +69,15 @@ function formatResult(result: Pick<PrActionResult, 'ok' | 'message' | 'noop'>): 
 
 async function runAction(
   args: { number: number; owner?: string | undefined; repo?: string | undefined },
-  action: (ref: PrRef) => Promise<PrActionResult>,
+  action: (root: string | null, ref: PrRef) => Promise<PrActionResult>,
 ): Promise<string> {
-  const ref = await resolveRef(args)
+  // The turn's own checkout, never the window's workspace (#3958).
+  const root = getAgentExecutionRoot()
+  const ref = await resolveRef(root, args)
   if (!ref) {
     return 'Failed: could not resolve the repository. Pass owner and repo, or open a GitHub workspace.'
   }
-  return formatResult(await action(ref))
+  return formatResult(await action(root, ref))
 }
 
 export const ghPushTool = defineTool({
@@ -167,6 +177,75 @@ export const ghEnableAutoMergeTool = defineTool({
   execute: async (args) => runAction(args, enablePrAutoMerge),
 })
 
+const commitSha = z.string().regex(/^[a-f0-9]{40}$/i)
+// Bound per call to the running turn's checkout, never the window's (#3958).
+const maintenance = createPrMaintenanceService((args) =>
+  runGh(args, { cwd: getAgentExecutionRoot() }),
+)
+
+export const gitPushTool = defineTool({
+  name: 'git_push',
+  description:
+    'Push one local branch to the same branch on origin. Requires approval or an exact automation grant. When the checkout requires signed commits, refuses to publish unsigned ones. For rebased history, supply the previously observed remote commit SHA; Copse uses a pinned force-with-lease. Never uses bare force.',
+  parameters: z.object({
+    branch: z.string().min(1).describe('Existing local branch to publish to origin.'),
+    expected_remote_sha: commitSha
+      .optional()
+      .describe(
+        'Previously observed remote head. Required to replace rewritten history; omit for a normal fast-forward push.',
+      ),
+  }),
+  execute: async ({ branch, expected_remote_sha }) => {
+    const root = getAgentExecutionRoot()
+    if (!root) return 'Failed: No workspace open.'
+    // Unattended runs must not publish work the checkout's signing policy rejects.
+    const unsigned = await unsignedCommitsToPublish(root, branch)
+    if (unsigned === null) return `Failed: could not list the commits ${branch} would publish.`
+    if (unsigned.length > 0) {
+      return `Failed: this checkout requires signed commits, and ${String(unsigned.length)} commit(s) to publish are unsigned (${unsigned.map((sha) => sha.slice(0, 9)).join(', ')}). Re-create them with signing before pushing.`
+    }
+    const outcome = await pushBranchToOrigin(branch, root, expected_remote_sha)
+    return `${outcome.ok ? 'Done' : 'Failed'}: ${outcome.message}`
+  },
+})
+
+export const ghMergePrTool = defineTool({
+  name: 'gh_pr_merge',
+  description:
+    'Request a pull request merge with the GitHub CLI, using repository merge policy and a required head-SHA guard. Refuses drafts, outstanding change requests, and PRs without an approving review of the current head commit. Does not bypass branch protection. Review checks, feedback, holds in the description, and visual evidence first; re-read PR state afterward to distinguish merged from queued.',
+  parameters: prActionParams.extend({ expected_head_sha: commitSha }),
+  execute: async (args) => {
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
+    return ref
+      ? maintenance.merge(ref, args.expected_head_sha)
+      : 'Failed: could not resolve repository.'
+  },
+})
+
+export const ghCommentPrTool = defineTool({
+  name: 'gh_pr_comment',
+  description:
+    'Post a markdown comment on a pull request using the GitHub CLI. Requires approval or an exact automation grant.',
+  parameters: prActionParams.extend({ body: z.string().min(1).max(65536) }),
+  execute: async (args) => {
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
+    return ref ? maintenance.comment(ref, args.body) : 'Failed: could not resolve repository.'
+  },
+})
+
+export const ghResolveReviewThreadTool = defineTool({
+  name: 'gh_pr_resolve_review_thread',
+  description:
+    'Resolve a verified stale review thread using the GitHub CLI. Verifies the thread belongs to the specified repository and PR. Inspect the finding and confirm the fix before calling.',
+  parameters: prActionParams.extend({ thread_id: z.string().min(1).max(512) }),
+  execute: async (args) => {
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
+    return ref
+      ? maintenance.resolveReviewThread(ref, args.thread_id)
+      : 'Failed: could not resolve repository.'
+  },
+})
+
 /**
  * All PR lifecycle write tools. `ToolDefinition<TArgs>` is invariant in TArgs,
  * so the heterogeneous list is only usable where names suffice (unregister);
@@ -180,7 +259,14 @@ export const ghPrActionTools = [
   ghApprovePrTool,
   ghMarkPrReadyTool,
   ghEnableAutoMergeTool,
+  gitPushTool,
+  ghMergePrTool,
+  ghCommentPrTool,
+  ghResolveReviewThreadTool,
 ]
+
+/** These actions currently require the host CLI, rather than the token-only backend. */
+export const ghCliMaintenanceTools = [ghMergePrTool, ghCommentPrTool, ghResolveReviewThreadTool]
 
 /** Register every PR lifecycle write tool (idempotent — register overwrites). */
 export function registerGhPrActionTools(registry: ToolRegistry): void {
@@ -190,4 +276,8 @@ export function registerGhPrActionTools(registry: ToolRegistry): void {
   registry.register(ghApprovePrTool)
   registry.register(ghMarkPrReadyTool)
   registry.register(ghEnableAutoMergeTool)
+  registry.register(gitPushTool)
+  registry.register(ghMergePrTool)
+  registry.register(ghCommentPrTool)
+  registry.register(ghResolveReviewThreadTool)
 }

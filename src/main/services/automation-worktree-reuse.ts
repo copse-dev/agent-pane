@@ -4,7 +4,7 @@ import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { disposeAcpSession } from './acp/acp-session-pool.ts'
 import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
-import { getProjectThread, loadProjectThreads, updateMetaOrThrow } from './thread-store.ts'
+import { getThreadMeta, loadProjectThreadMetas, updateMetaOrThrow } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { adoptThreadWorktree, canAdoptThreadWorktree } from './worktree-manager.ts'
 
@@ -18,8 +18,9 @@ import { adoptThreadWorktree, canAdoptThreadWorktree } from './worktree-manager.
  * two and the manager re-proves the filesystem facts under its own lock.
  */
 export interface AutomationWorktreeReuseDependencies {
-  loadThreads(projectId: string): Promise<Thread[]>
-  getThread(projectId: string, threadId: string): Promise<Thread | null>
+  /** Checkout selection needs metadata only, even when a project has large transcripts. */
+  loadThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
+  getThreadMeta?: (projectId: string, threadId: string) => Promise<Omit<Thread, 'messages'> | null>
   updateMeta(
     projectId: string,
     threadId: string,
@@ -51,13 +52,13 @@ export interface AutomationWorktreeReuse {
 
 /** A run and the checkout it still holds. */
 interface HeldCheckout {
-  thread: Thread
+  thread: Omit<Thread, 'messages'>
   worktree: ThreadWorktree
 }
 
 /** The schedule's most recent other run that still holds a checkout. */
 function previousRun(
-  threads: readonly Thread[],
+  threads: readonly Omit<Thread, 'messages'>[],
   scheduleId: string,
   excluding: string,
 ): HeldCheckout | null {
@@ -77,18 +78,20 @@ function previousRun(
   return held[0] ?? null
 }
 
-function settled(thread: Thread): boolean {
+function settled(thread: Omit<Thread, 'messages'>): boolean {
   return thread.status !== 'running' && automationRunBlock(thread) === null
 }
 
 export function createAutomationWorktreeReuse(
   deps: AutomationWorktreeReuseDependencies,
 ): AutomationWorktreeReuse {
+  const loadMetas = deps.loadThreadMetas ?? loadProjectThreadMetas
+  const getMeta = deps.getThreadMeta ?? getThreadMeta
   return {
     async canReusePreviousRun(projectId, threadId): Promise<boolean> {
       const root = deps.projectRoot(projectId)
       if (!root) return false
-      const threads = await deps.loadThreads(projectId)
+      const threads = await loadMetas(projectId)
       const subject = threads.find((thread) => thread.id === threadId)
       const scheduleId = subject?.automation?.scheduleId
       if (!subject || scheduleId === undefined) return false
@@ -104,14 +107,10 @@ export function createAutomationWorktreeReuse(
       })
     },
     async reuseFor(input): Promise<ThreadWorktree | null> {
-      const thread = await deps.getThread(input.projectId, input.threadId)
+      const thread = await getMeta(input.projectId, input.threadId)
       const scheduleId = thread?.automation?.scheduleId
       if (!thread || scheduleId === undefined) return null
-      const previous = previousRun(
-        await deps.loadThreads(input.projectId),
-        scheduleId,
-        input.threadId,
-      )
+      const previous = previousRun(await loadMetas(input.projectId), scheduleId, input.threadId)
       if (!previous) return null
       if (!settled(previous.thread) || deps.isLive(input.projectId, previous.thread.id)) return null
 
@@ -149,8 +148,6 @@ export function createAutomationWorktreeReuse(
 let singleton: AutomationWorktreeReuse | null = null
 export function getAutomationWorktreeReuse(): AutomationWorktreeReuse {
   singleton ??= createAutomationWorktreeReuse({
-    loadThreads: loadProjectThreads,
-    getThread: getProjectThread,
     updateMeta: updateMetaOrThrow,
     projectRoot: getProjectRoot,
     isLive: (projectId, threadId) =>

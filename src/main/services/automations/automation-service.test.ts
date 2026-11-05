@@ -157,7 +157,7 @@ describe('AutomationService', () => {
         created.push({ projectId, thread })
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -196,7 +196,7 @@ describe('AutomationService', () => {
         created.push(thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -211,6 +211,10 @@ describe('AutomationService', () => {
         .filter((option) => option.permission.kind === 'copse-action')
         .map((option) => option.permission.toolName),
       [
+        'git_push',
+        'gh_pr_merge',
+        'gh_pr_comment',
+        'gh_pr_resolve_review_thread',
         'gh_pr_create',
         'gh_pr_rerun_failed_ci',
         'gh_pr_approve',
@@ -309,7 +313,7 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -366,7 +370,7 @@ describe('AutomationService', () => {
         created += 1
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -393,7 +397,7 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -431,7 +435,7 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => pendingThreads,
+      loadProjectThreadMetas: () => pendingThreads,
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -461,7 +465,7 @@ describe('AutomationService', () => {
       now: () => now,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => pendingThreads,
+      loadProjectThreadMetas: () => pendingThreads,
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -510,7 +514,7 @@ describe('AutomationService', () => {
         attempts += 1
         return attempts === 1 ? Promise.reject(new Error('disk unavailable')) : Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -545,7 +549,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -616,7 +620,7 @@ describe('AutomationService', () => {
           threads.set(thread.id, thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         releasePreviousRun:
           options.release ??
           ((): Promise<AutomationWorktreeRelease> =>
@@ -743,7 +747,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
       supervisor: () => supervisor,
@@ -826,7 +830,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
       getActiveProjectId: () => 'project-a',
@@ -873,6 +877,63 @@ describe('AutomationService', () => {
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
   })
 
+  for (const limit of [5, 'unlimited'] as const) {
+    it(`continues scheduled runs with a worktree limit of ${String(limit)}`, async () => {
+      let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+      const threads = new Map<string, Thread>()
+      const service = createAutomationService({
+        now: () => now,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
+        releasePreviousRun: () =>
+          Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
+        getActiveProjectId: () => 'project-a',
+      })
+      const schedule = await service.upsert('project-a', {
+        name: 'Frequent review',
+        cron: '* * * * *',
+        prompt: 'Review changes.',
+        model: 'gpt-5.4',
+        enabled: true,
+        maxLiveWorktrees: limit,
+      })
+      for (let run = 0; run < 7; run++) {
+        await service.tick()
+        const expected = limit === 'unlimited' ? run + 1 : Math.min(run + 1, limit)
+        assert.equal(threads.size, expected)
+        const latest = [...threads.values()].at(-1)
+        assert.ok(latest)
+        threads.set(latest.id, {
+          ...latest,
+          status: 'idle',
+          draftPrompt: '',
+          worktree: {
+            path: `/worktrees/${latest.id}`,
+            branch: `copse/${latest.id}`,
+            baseBranch: 'main',
+            baseCommit: 'a'.repeat(40),
+            createdAt: now,
+            seededFromDirtyProject: false,
+          },
+        })
+        now += 60_000
+      }
+      assert.equal(
+        service.list('project-a').find((saved) => saved.id === schedule.id)?.maxLiveWorktrees,
+        limit,
+      )
+      assert.equal(
+        service.list('project-a')[0]?.lastWorktreeLimitAt === undefined,
+        limit === 'unlimited',
+      )
+      service.stop()
+    })
+  }
+
   it('starts a manual run past the live worktree limit and still names what is retained', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
     const threads = new Map<string, Thread>()
@@ -886,7 +947,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: false, reason: 'unmerged-commits' }),
       getActiveProjectId: () => 'project-a',
     })
@@ -944,7 +1005,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: (_projectId, threadId) => {
         if (threadId === 'dirty') {
           return Promise.resolve({
@@ -1015,7 +1076,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve(
           cleanReleased
@@ -1085,7 +1146,7 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       getActiveProjectId: () => 'project-a',
@@ -1125,7 +1186,7 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       getActiveProjectId: () => 'project-a',
@@ -1178,7 +1239,7 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       getActiveProjectId: () => 'project-a',
@@ -1215,7 +1276,7 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       getActiveProjectId: () => 'project-a',
@@ -1254,7 +1315,7 @@ describe('AutomationService', () => {
       now: () => 100,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -1314,7 +1375,7 @@ describe('AutomationService', () => {
         now: () => 0,
         isPluginEnabled: () => true,
         createProjectThread: () => Promise.resolve(),
-        loadProjectThreads: () => Promise.resolve([]),
+        loadProjectThreadMetas: () => Promise.resolve([]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
         recoveryDelayMs: 0,
@@ -1504,7 +1565,7 @@ describe('AutomationService', () => {
         if (begun.length === 3) openBarrier()
         await barrier
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -1549,7 +1610,7 @@ describe('AutomationService', () => {
         attempts += 1
         return attempts === 1 ? new Promise<void>(() => {}) : Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -1598,7 +1659,7 @@ describe('AutomationService', () => {
         })
         await createThread(projectId, thread)
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
@@ -1668,7 +1729,7 @@ describe('AutomationService', () => {
         threads.delete(threadId)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
@@ -1727,7 +1788,7 @@ describe('AutomationService', () => {
           threads.set(thread.id, thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         getActiveProjectId: () => 'project-a',
       })
@@ -1854,7 +1915,7 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       getActiveProjectId: () => 'project-a',
     })
@@ -1901,7 +1962,7 @@ describe('AutomationService', () => {
           created.push(thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve(created),
+        loadProjectThreadMetas: () => Promise.resolve(created),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
         getActiveProjectId: () => 'project-a',
@@ -2008,7 +2069,7 @@ describe('AutomationService', () => {
         now: () => Date.now(),
         isPluginEnabled: () => true,
         createProjectThread: createThread,
-        loadProjectThreads: () => Promise.resolve([]),
+        loadProjectThreadMetas: () => Promise.resolve([]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         getActiveProjectId: () => activeProjectId,
         prepareCheckout: async (input) => {

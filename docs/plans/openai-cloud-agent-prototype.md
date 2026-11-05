@@ -1,5 +1,9 @@
 # OpenAI cloud agent prototype
 
+Status: **Implemented (experimental)** — shipped in
+[#3584](https://github.com/copse-dev/agent-pane/pull/3584). Not yet validated against live OpenAI
+inference or GitHub push. The task briefs below record how it was built.
+
 Base: `2b0302a0fb8eca8f4c22b79b394aa09b4c433c74`.
 
 ## Task brief

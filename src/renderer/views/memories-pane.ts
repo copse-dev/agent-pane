@@ -8,6 +8,7 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { plusIcon, refreshIcon } from '../dom/icons.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -352,11 +353,8 @@ export function mountMemoriesPane(
   cancelBtn.addEventListener('click', cancel)
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
-      if (memoriesModeActive(store)) void refresh({ preserveDirty: true })
-    }),
-    store.on('files_pane_changed', () => {
-      if (memoriesModeActive(store)) void refresh({ preserveDirty: true })
+    selectRightPanelMode(store, 'memories', (active) => {
+      if (active) void refresh({ preserveDirty: true })
     }),
     store.on('workspace_changed', () => {
       // Memories are per-project; drop the previous workspace's selection.
@@ -374,7 +372,7 @@ export function mountMemoriesPane(
   renderList()
   renderEditor()
   // If memories are already the active pane on mount (pop-out window or restored
-  // layout), the *_changed events that normally trigger the first load fired
+  // layout), the mode change that normally triggers the first load happened
   // before this pane existed — so catch up here.
   if (memoriesModeActive(store)) void refresh()
 

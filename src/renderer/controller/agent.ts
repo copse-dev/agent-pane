@@ -285,6 +285,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
       chunk.type === 'acp_content' ||
+      chunk.type === 'acp_content_replace' ||
       (chunk.type === 'text' && chunk.text.trim() !== '') ||
       (chunk.type === 'reasoning' && chunk.text.trim() !== '')
     if (firstVisibleActivity && !st.firstActivityTraced) {

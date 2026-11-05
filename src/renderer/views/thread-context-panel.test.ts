@@ -808,3 +808,28 @@ test('Storage line totals reject stale thread replies, handle clean checkouts an
   assert.equal(replies.length, 3)
   dispose()
 })
+
+test('Context paints when the panel opens on it from the store alone, with no event emitted', () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work/widgets', name: 'Widgets' }],
+    filesPaneOpen: false,
+    rightPanelMode: 'explorer',
+  })
+  const threadId = createThread(store)
+  addMessage(store, threadId, 'user', 'Read https://docs.example.com/a')
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(
+    document.createElement('div'),
+    viewer,
+    store,
+    createFakeApi(),
+  )
+  const link = '[data-link-key="url:https://docs.example.com/a"]'
+  assert.equal(viewer.querySelector(link), null, 'nothing renders while Context is off screen')
+
+  store.setState({ filesPaneOpen: true, rightPanelMode: 'context' })
+  assert.ok(viewer.querySelector(link))
+  dispose()
+})

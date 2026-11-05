@@ -33,6 +33,44 @@ async function settle(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
 
+test('refresh and retention work while settings search lifts both fieldsets', async () => {
+  const base = createFakeApi()
+  const next = state()
+  next.containers.available = true
+  const policies: StorageRetention[] = []
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: {
+      ...base.storage,
+      maintenance: async () => next,
+      retention: async (policy) => {
+        policies.push(policy)
+      },
+    },
+  })
+  const results = document.createElement('div')
+  document.body.append(panel.element, results)
+  const saved = panel.element.querySelector('#storage-saved-data')
+  const containers = panel.element.querySelector('#storage-containers')
+  assert.ok(saved)
+  assert.ok(containers)
+  const pending = panel.refresh()
+  results.append(saved, containers)
+  await pending
+  await panel.refresh()
+  assert.equal(saved.querySelector('#storage-runs-size')?.textContent, '1.0 KB · 1 item')
+  assert.match(containers.querySelector('#storage-containers-status')?.textContent ?? '', /ready/)
+  const enabled = saved.querySelector<HTMLInputElement>('#storage-expiry-enabled')
+  assert.ok(enabled)
+  enabled.checked = false
+  enabled.dispatchEvent(new Event('change'))
+  await settle()
+  assert.deepEqual(policies, [{ enabled: false, days: 30 }])
+  panel.element.append(saved, containers)
+  await panel.refresh()
+  assert.equal(enabled.disabled, false)
+})
+
 test('cleanup requires confirmation, respects cancellation and refreshes after removal', async () => {
   const base = createFakeApi()
   const calls: StorageArea[] = []

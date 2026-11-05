@@ -1,6 +1,7 @@
 # Background agents and self-driving-codebase capability map
 
-**Status: Roadmap map.** This document does not introduce a second orchestrator or
+**Status: Reference (dated 2026-07-30).** Since then the background supervisor (#1081, closed)
+and event-driven automations have shipped, so several gaps below are partly closed. This document does not introduce a second orchestrator or
 runtime. It audits the background-agent model described by Ona's
 [Background Agents guide](https://background-agents.com/) and
 [complete text/white paper](https://background-agents.com/llms-full.txt) against Copse

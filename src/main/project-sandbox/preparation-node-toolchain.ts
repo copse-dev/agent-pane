@@ -1,6 +1,7 @@
-import { accessSync, constants, realpathSync, statSync, symlinkSync } from 'node:fs'
+import { accessSync, constants, realpathSync, symlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { createToolchainReadGuard } from './toolchain-read-guard.ts'
 
 const NODE_TOOLCHAIN_COMMANDS = ['node', 'npm', 'corepack', 'pnpm', 'yarn']
 
@@ -54,16 +55,6 @@ function isWithin(parent: string, child: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
-/** A directory's path and canonical spelling, or nothing when it is not a directory. */
-function directorySpellings(path: string): string[] {
-  try {
-    if (!statSync(path).isDirectory()) return []
-    return [...new Set([path, realpathSync(path)])]
-  } catch {
-    return []
-  }
-}
-
 /**
  * Read grants for the install trees behind a version-manager shim on PATH.
  * Only a resolved command whose PATH directory is that manager's own shim
@@ -75,6 +66,7 @@ function shimManagerReadPaths(
   home: string,
 ): string[] {
   const paths: string[] = []
+  const readTarget = createToolchainReadGuard(env, home)
   const directories = new Set(
     resolved.flatMap(({ candidate, canonicalCandidate }) => [
       dirname(candidate),
@@ -83,11 +75,18 @@ function shimManagerReadPaths(
   )
   for (const manager of SHIM_MANAGERS) {
     const root = manager.root(env, home)
-    if (root === null || isWithin(root, home)) continue
-    const shims = directorySpellings(join(root, manager.shims))
-    if (!shims.some((directory) => directories.has(directory))) continue
+    if (root === null) continue
+    const canonicalRoot = readTarget(root, true)
+    if (canonicalRoot === null) continue
+    const shims = join(root, manager.shims)
+    const canonicalShims = readTarget(shims, true)
+    if (!directories.has(shims) && (canonicalShims === null || !directories.has(canonicalShims)))
+      continue
     for (const subtree of manager.reads) {
-      for (const path of directorySpellings(join(root, subtree))) paths.push(path, `${path}/**`)
+      const canonical = readTarget(join(root, subtree), true)
+      if (canonical === null || canonical === canonicalRoot || !isWithin(canonicalRoot, canonical))
+        continue
+      paths.push(canonical, `${canonical}/**`)
     }
   }
   return paths
@@ -120,18 +119,24 @@ interface ResolvedToolchainCommand {
 }
 
 /** The first executable PATH match for each Node toolchain command. */
-function resolveNodeToolchain(env: NodeJS.ProcessEnv): ResolvedToolchainCommand[] {
+function resolveNodeToolchain(
+  env: NodeJS.ProcessEnv,
+  home: string = homedir(),
+): ResolvedToolchainCommand[] {
   const resolved: ResolvedToolchainCommand[] = []
+  const readTarget = createToolchainReadGuard(env, home)
   for (const command of NODE_TOOLCHAIN_COMMANDS) {
     for (const directory of (env['PATH'] ?? '').split(delimiter).filter(Boolean)) {
       const candidate = join(directory, command)
       try {
         accessSync(candidate, constants.X_OK)
+        const executable = readTarget(candidate, false)
+        if (executable === null) break
         resolved.push({
           command,
           candidate,
           canonicalCandidate: join(realpathSync(directory), command),
-          executable: realpathSync(candidate),
+          executable,
         })
         break
       } catch {
@@ -157,7 +162,8 @@ export function preparationNodeToolchainReadPaths(
   home: string = homedir(),
 ): string[] {
   const paths = new Set<string>()
-  const resolved = resolveNodeToolchain(env)
+  const resolved = resolveNodeToolchain(env, home)
+  const readTarget = createToolchainReadGuard(env, home)
   const implementations = [
     ['npm', 'bin', 'npm-cli.js'],
     ['corepack', 'dist', 'corepack.js'],
@@ -166,14 +172,16 @@ export function preparationNodeToolchainReadPaths(
     ['pnpm', 'bin', 'pnpm.cjs'],
     ['yarn', 'bin', 'yarn.js'],
   ]
-  for (const { candidate, canonicalCandidate, executable } of resolved) {
-    paths.add(candidate)
-    paths.add(canonicalCandidate)
+  for (const { executable } of resolved) {
     paths.add(executable)
     for (const parts of implementations) {
       const suffix = join('node_modules', ...parts)
       if (!executable.endsWith(`/${suffix}`)) continue
-      const implementation = executable.slice(0, -join(...parts.slice(1)).length - 1)
+      const implementation = readTarget(
+        executable.slice(0, -join(...parts.slice(1)).length - 1),
+        true,
+      )
+      if (implementation === null) continue
       paths.add(implementation)
       paths.add(`${implementation}/**`)
     }

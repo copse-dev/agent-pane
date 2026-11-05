@@ -373,7 +373,7 @@ describe('finished-thread auto archive with real Git and thread store', () => {
         { owner: 'owner', repo: 'repo', number: 2, url: 'https://github.com/owner/repo/pull/2' },
       ],
     })
-    deps.pr = async (ref): Promise<GhPrDetails> =>
+    deps.pr = async (_root, ref): Promise<GhPrDetails> =>
       ref.number === 1 ? pr : { ...pr, number: 2, state: 'OPEN' }
     await sweep()
     assert.equal(await archived(), false)

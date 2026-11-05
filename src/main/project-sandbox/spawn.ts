@@ -105,14 +105,15 @@ async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
 }
 
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  // A captured target is authoritative, including local. Cwd recovery only
+  // applies to callers that did not already resolve their execution owner.
+  if (explicit) return explicit
   // Inside an agent turn the turn's own project decides, not whichever project
   // the window shows now: the gate and the spawn resolve the same answer even
   // if the user switches projects between them.
-  if (!explicit) {
-    const threadTarget = threadProjectExecutionTarget()
-    if (threadTarget) return threadTarget
-  }
-  const target = resolveExecutionTarget(explicit)
+  const threadTarget = threadProjectExecutionTarget()
+  if (threadTarget) return threadTarget
+  const target = resolveExecutionTarget(undefined)
   if (isSshExecutionTarget(target)) return target
   // Activation races can leave activeProjectId without sshHost while cwd is already
   // a remote project path — recover instead of applying a local seatbelt to /etc/….
