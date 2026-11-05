@@ -146,6 +146,8 @@ describe('automation checks without project transcript allocation', () => {
             branch: 'copse/busy',
             baseBranch: 'main',
             baseCommit: SHA,
+            createdAt: NOW - 1,
+            seededFromDirtyProject: false,
           },
         }),
       )
