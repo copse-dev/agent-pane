@@ -493,6 +493,13 @@
           2
         ]
       },
+      "background-tasks:logs": {
+        "api": "backgroundTasks.logs",
+        "args": [
+          3,
+          3
+        ]
+      },
       "browser:capture-screenshot": {
         "api": "browser.captureScreenshot",
         "args": [
@@ -1770,8 +1777,8 @@
       "remote-agent:artifact-image-data-url": {
         "api": "remoteAgent.artifactImageDataUrl",
         "args": [
-          2,
-          2
+          1,
+          1
         ]
       },
       "remote-agent:discover-external": {

@@ -1,26 +1,30 @@
 import { getThreadExecutionContext } from './thread-execution-context.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getExplicitWorkspaceRoot } from './workspace.ts'
 
 /**
- * Filesystem root for work performed on behalf of the active agent run.
+ * Filesystem root for work performed on behalf of the running agent turn.
  *
- * Agent turns prefer their trusted AsyncLocal execution context; main-process
- * callers outside a turn keep the existing renderer-selected workspace behavior.
- * This fallback is intentionally for non-agent IPC and tests only — a worktree
- * context never falls back to the shared checkout when its root is present.
+ * It is the turn's trusted AsyncLocal execution context, else the root of a
+ * headless run scoped with `runWithWorkspaceRoot`, else null. It never falls
+ * back to the process-global workspace: that is whichever window switched
+ * project last, so a caller outside a turn would act on another window's
+ * project (#3958). A caller outside a turn (an IPC handler, a timer) names its
+ * root explicitly: from its window (`senderProjectRoot`), its thread
+ * (`resolveThreadExecutionContext`) or stored state.
  */
 export function getAgentExecutionRoot(): string | null {
-  return getThreadExecutionContext()?.root ?? getWorkspaceRoot()
+  return getThreadExecutionContext()?.root ?? getExplicitWorkspaceRoot()
 }
 
 /**
  * Persisted project root used for project-level trust and configuration lookup.
  * In worktree mode this deliberately differs from {@link getAgentExecutionRoot}:
  * repo-supplied config remains anchored to the trusted project, while file and
- * command effects land in the thread checkout.
+ * command effects land in the thread checkout. Resolved the same way, with no
+ * process-global fallback.
  */
 export function getAgentProjectRoot(): string | null {
-  return getThreadExecutionContext()?.projectRoot ?? getWorkspaceRoot()
+  return getThreadExecutionContext()?.projectRoot ?? getExplicitWorkspaceRoot()
 }
 
 /**

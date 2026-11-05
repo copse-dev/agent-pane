@@ -36,10 +36,10 @@ import {
   promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler } from '../approval.ts'
+import { setApprovalHandler, supportsInteractiveClientApproval } from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -53,7 +53,7 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
+import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -277,9 +277,11 @@ describe('prepare_worktree permission', () => {
     })
     try {
       assert.equal(
-        await ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        await runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         true,
       )
@@ -289,18 +291,22 @@ describe('prepare_worktree permission', () => {
         return { approved: false, remember: false }
       })
       assert.equal(
-        await ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        await runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         false,
       )
       assert.equal(prompts, 2)
       writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.20.0"}')
       await assert.rejects(
-        ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         /plan changed/,
       )
@@ -479,6 +485,41 @@ describe('ensureToolPermitted', () => {
       clearWebOriginGrant(webOriginKey(url))
       setApprovalHandler(null)
       await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    }
+  })
+
+  it('lets a paired client approve one web-origin request without saving the origin', async () => {
+    setPermissionGateForTests(null)
+    const url = new URL('https://paired-client.example/resource')
+    const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
+      await import('./web-origin-policy.ts')
+    const originalWebApproval = getSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    setApprovalHandler(async (request) => {
+      assert.equal(request.cause, 'web-origin')
+      assert.equal(supportsInteractiveClientApproval(request), true)
+      assert.equal(request.body, url.toString())
+      return { approved: true, remember: false, grantScope: 'once' }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'fetch_url', args: { url: url.toString() } }),
+        true,
+      )
+      assert.doesNotThrow(() => {
+        assertWebOriginAllowed(url, [])
+      })
+      assert.deepEqual(getSetting(WEB_ALLOWED_ORIGINS_SETTING, []), [])
+      clearWebOriginGrant(webOriginKey(url))
+      assert.throws(() => {
+        assertWebOriginAllowed(url, [])
+      })
+    } finally {
+      clearWebOriginGrant(webOriginKey(url))
+      setApprovalHandler(null)
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, originalWebApproval)
       await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })
@@ -1210,11 +1251,14 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       return Promise.resolve({ approved: false, remember: false })
     })
     try {
-      const permitted = await ensureShellCommandPermitted(command, {
-        sandboxEnabled: opts.sandboxEnabled ?? false,
-        autoRun: true,
-        executionRoot: root,
-      })
+      // The gate runs inside a run that names its root (#3958).
+      const permitted = await runWithWorkspaceRoot(root, () =>
+        ensureShellCommandPermitted(command, {
+          sandboxEnabled: opts.sandboxEnabled ?? false,
+          autoRun: true,
+          executionRoot: root,
+        }),
+      )
       return { permitted, prompted }
     } finally {
       setApprovalHandler(null)
@@ -1710,7 +1754,20 @@ describe('run_background permission', () => {
       assert.equal(await start('/tmp/port-binding-other-project', 'third'), true)
       assert.equal(portPrompts, 2, 'another project must obtain its own consent')
       // A shared checkout uses the same project grant as its worktrees.
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      assert.equal(
+        await runWithThreadExecutionContext(
+          {
+            projectId: '/tmp/port-binding-project',
+            projectRoot: '/tmp/port-binding-project',
+            threadId: 'shared',
+            root: '/tmp/port-binding-project',
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => ensureToolPermitted({ toolName: 'run_background', args }),
+        ),
+        true,
+      )
       assert.equal(portPrompts, 2)
     } finally {
       await setSetting('portBindingAllowedRoots', [])
@@ -1757,7 +1814,12 @@ describe('run_background permission', () => {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
       // Plugin enabled → the relaxation is declared → the grant is offered and, on
       // approval, the start proceeds.
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      const inRun = <T>(fn: () => Promise<T>): Promise<T> =>
+        runWithWorkspaceRoot('/tmp/loopback-gated-project', fn)
+      assert.equal(
+        await inRun(() => ensureToolPermitted({ toolName: 'run_background', args })),
+        true,
+      )
 
       // Disable the plugin → `isPermissionDeclared('loopback-bind')` flips false in
       // the same flag flip, so the gate refuses the relaxation (a thrown error
@@ -1766,10 +1828,12 @@ describe('run_background permission', () => {
       registry.disable(BACKGROUND_TASKS_PLUGIN_ID)
       await assert.rejects(
         () =>
-          ensureToolPermitted({
-            toolName: 'run_background',
-            args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
-          }),
+          inRun(() =>
+            ensureToolPermitted({
+              toolName: 'run_background',
+              args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
+            }),
+          ),
         /copse\.background-tasks|loopback|disabled/i,
       )
     } finally {
@@ -2266,73 +2330,122 @@ describe('turn-tree shell replay leases', () => {
     }
   })
 
-  it('offers argument changes explicitly and reuses the grant through both escalation paths', async () => {
-    const localRoot = mkdtempSync(join(tmpdir(), 'gate-script-lease-'))
-    writeFileSync(join(localRoot, 'audit.mjs'), '')
-    writeFileSync(join(localRoot, 'other.mjs'), '')
-    const localContext = { ...context, root: localRoot, projectRoot: localRoot }
-    const run = (fn: () => Promise<void>): Promise<void> =>
-      runWithThreadExecutionContext(localContext, () =>
-        runWithActiveRunIdentity(context.threadId, () => {
-          setActiveRunTurnTreeId(asTurnTreeId('script-tree'))
-          return fn()
-        }),
-      )
-    try {
-      for (const verifiedBlock of [false, true]) {
-        shellReplayLeaseStore.clear()
-        const requests: string[] = []
-        setApprovalHandler(async (request) => {
-          requests.push(request.turnTreeLeaseLabel ?? '')
-          assert.equal(request.turnTreeLeaseDefault, false)
-          return { approved: true, remember: false, grantScope: 'turn-tree' }
-        })
-        const ask = (command: string): Promise<boolean> =>
-          verifiedBlock
-            ? promptUnsandboxedShell(command, ['sandbox violation'])
-            : promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
-                executionRoot: localRoot,
-              })
-        await run(async () => {
-          assert.equal(await ask('node audit.mjs \'document.querySelectorAll("dialog")\''), true)
-          assert.equal(
-            await ask('node audit.mjs \'Array.from(document.querySelectorAll("iframe"))\''),
-            true,
-          )
-          assert.equal(requests.length, 1)
-          assert.match(
-            requests[0] ?? '',
-            /this script with different arguments outside the sandbox/,
-          )
-          await ask('node other.mjs next')
-          assert.equal(requests.length, 2)
-        })
-      }
-      shellReplayLeaseStore.clear()
-      let prompts = 0
-      setApprovalHandler(async () => {
-        prompts++
-        return { approved: true, remember: false, grantScope: 'once' }
-      })
-      await run(async () => {
-        for (const arg of ['first', 'second']) {
-          await promptExpectedSandboxBlock(
-            'node audit.mjs ' + arg,
-            ['runs a local script'],
-            undefined,
-            {
-              executionRoot: localRoot,
-            },
-          )
+  it(
+    'offers argument changes explicitly and reuses the grant through both escalation paths',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const localRoot = mkdtempSync(join(tmpdir(), 'gate-script-lease-'))
+      writeFileSync(join(localRoot, 'audit.mjs'), '')
+      writeFileSync(join(localRoot, 'other.mjs'), '')
+      const localContext = { ...context, root: localRoot, projectRoot: localRoot }
+      const run = (fn: () => Promise<void>): Promise<void> =>
+        runWithThreadExecutionContext(localContext, () =>
+          runWithActiveRunIdentity(context.threadId, () => {
+            setActiveRunTurnTreeId(asTurnTreeId('script-tree'))
+            return fn()
+          }),
+        )
+      try {
+        for (const verifiedBlock of [false, true]) {
+          shellReplayLeaseStore.clear()
+          const requests: string[] = []
+          setApprovalHandler(async (request) => {
+            requests.push(request.turnTreeLeaseLabel ?? '')
+            assert.equal(request.turnTreeLeaseDefault, false)
+            return { approved: true, remember: false, grantScope: 'turn-tree' }
+          })
+          const ask = (command: string): Promise<boolean> =>
+            verifiedBlock
+              ? promptUnsandboxedShell(command, ['sandbox violation'])
+              : promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+                  executionRoot: localRoot,
+                })
+          await run(async () => {
+            assert.equal(await ask('node audit.mjs \'document.querySelectorAll("dialog")\''), true)
+            assert.equal(
+              await ask('node audit.mjs \'Array.from(document.querySelectorAll("iframe"))\''),
+              true,
+            )
+            assert.equal(requests.length, 1)
+            assert.match(
+              requests[0] ?? '',
+              /this script with different arguments outside the sandbox/,
+            )
+            await ask('node other.mjs next')
+            assert.equal(requests.length, 2)
+          })
         }
-      })
-      assert.equal(prompts, 2)
-    } finally {
-      shellReplayLeaseStore.clear()
-      setApprovalHandler(null)
-      rmSync(localRoot, { recursive: true, force: true })
-    }
-  })
+        shellReplayLeaseStore.clear()
+        let prompts = 0
+        setApprovalHandler(async () => {
+          prompts++
+          return { approved: true, remember: false, grantScope: 'once' }
+        })
+        await run(async () => {
+          for (const arg of ['first', 'second']) {
+            await promptExpectedSandboxBlock(
+              'node audit.mjs ' + arg,
+              ['runs a local script'],
+              undefined,
+              {
+                executionRoot: localRoot,
+              },
+            )
+          }
+        })
+        assert.equal(prompts, 2)
+      } finally {
+        shellReplayLeaseStore.clear()
+        setApprovalHandler(null)
+        rmSync(localRoot, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it(
+    'rejects an argument grant when the script changes while approval is pending',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const localRoot = mkdtempSync(join(tmpdir(), 'gate-script-change-'))
+      const script = join(localRoot, 'audit.mjs')
+      writeFileSync(script, '// approved version\n')
+      const localContext = { ...context, root: localRoot, projectRoot: localRoot }
+      const run = (fn: () => Promise<void>): Promise<void> =>
+        runWithThreadExecutionContext(localContext, () =>
+          runWithActiveRunIdentity(context.threadId, () => {
+            setActiveRunTurnTreeId(asTurnTreeId('script-change-tree'))
+            return fn()
+          }),
+        )
+      try {
+        for (const verifiedBlock of [false, true]) {
+          shellReplayLeaseStore.clear()
+          let prompts = 0
+          setApprovalHandler(async () => {
+            prompts++
+            writeFileSync(script, '// changed during approval ' + String(prompts) + '\n')
+            return { approved: true, remember: false, grantScope: 'turn-tree' }
+          })
+          const ask = (command: string): Promise<boolean> =>
+            verifiedBlock
+              ? promptUnsandboxedShell(command, ['sandbox violation'])
+              : promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+                  executionRoot: localRoot,
+                })
+          await run(async () => {
+            assert.equal(await ask('node audit.mjs first'), false)
+            assert.equal(prompts, 1)
+            assert.equal(await ask('node audit.mjs second'), false)
+            assert.equal(prompts, 2)
+          })
+        }
+      } finally {
+        shellReplayLeaseStore.clear()
+        setApprovalHandler(null)
+        rmSync(localRoot, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('never offers an agent-requested escape a lease for network, deletion or installs', async () => {
     shellReplayLeaseStore.clear()
@@ -3224,7 +3337,8 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
     try {
-      return await fn(root, readDir)
+      // The gate runs inside a run that names its root (#3958).
+      return await runWithWorkspaceRoot(root, () => fn(root, readDir))
     } finally {
       // Decision recording is deliberately fire-and-forget. Drain it while the
       // throwaway store is still selected so an async physical append cannot

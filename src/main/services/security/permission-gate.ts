@@ -340,7 +340,7 @@ async function requestEscalationApproval(
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const scriptScope = leaseIdentity
-    ? scriptReplayScope(parts.command, leaseIdentity.executionRoot)
+    ? await scriptReplayScope(parts.command, leaseIdentity.executionRoot)
     : null
   const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
@@ -367,6 +367,16 @@ async function requestEscalationApproval(
     },
     signal,
   )
+  if (
+    approved &&
+    grantScope === 'turn-tree' &&
+    leaseIdentity &&
+    scriptScope &&
+    (await scriptReplayScope(parts.command, leaseIdentity.executionRoot)) !== scriptScope
+  ) {
+    return false
+  }
+  if (signal?.aborted) return false
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, parts.command, true, scriptScope)
@@ -606,7 +616,9 @@ export async function promptUnsandboxedShell(
   const leaseIdentity = forceAsk
     ? null
     : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
-  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !signal?.aborted
+  }
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
@@ -640,8 +652,12 @@ export async function promptExpectedSandboxBlock(
   // execution may carry the same exact-command replay lease a verified-block
   // escalation offers; nothing else is eligible.
   const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
-  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
-  const scriptScope = leaseIdentity ? scriptReplayScope(command, leaseIdentity.executionRoot) : null
+  if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !signal?.aborted
+  }
+  const scriptScope = leaseIdentity
+    ? await scriptReplayScope(command, leaseIdentity.executionRoot)
+    : null
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
   const { approved, grantScope } = await requestApproval(
@@ -668,6 +684,16 @@ export async function promptExpectedSandboxBlock(
     },
     signal,
   )
+  if (
+    approved &&
+    grantScope === 'turn-tree' &&
+    leaseIdentity &&
+    scriptScope &&
+    (await scriptReplayScope(command, leaseIdentity.executionRoot)) !== scriptScope
+  ) {
+    return false
+  }
+  if (signal?.aborted) return false
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, command, true, scriptScope)
   }
@@ -881,6 +907,7 @@ async function promptWebOrigin(
       approveLabel: 'Allow request',
       type: 'web',
       cause: 'web-origin',
+      interactiveClientApproval: 'once',
       subject: origin,
       scope: 'external',
       allowRemember,
@@ -1173,8 +1200,11 @@ async function checkShellPermission(
 }
 
 /** Spend a matching replay lease, recording that it answered the question. */
-function consumeShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): boolean {
-  const match = shellReplayLeaseStore.consume(identity, command, (segment) =>
+async function consumeShellReplayLease(
+  identity: ShellReplayLeaseIdentity,
+  command: string,
+): Promise<boolean> {
+  const match = await shellReplayLeaseStore.consume(identity, command, (segment) =>
     leaseCompanionAllowed(segment, identity.executionRoot),
   )
   if (!match.matched) return false
@@ -1673,7 +1703,9 @@ export async function ensureShellCommandPermitted(
   const leaseIdentity =
     leaseRoot !== null ? activeShellReplayLeaseIdentity(leaseRoot, 'project-sandbox') : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
-  if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (!forceAsk && leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !opts.signal?.aborted
+  }
 
   // Reads of accountable paths outside the project ask the narrower read-access
   // question — and can be answered once for the whole thread — instead of the
@@ -2300,6 +2332,12 @@ async function decideToolPermitted(
     permitted =
       (!deletingSimulator && explicitPolicy === 'allow') ||
       (await promptExplicitToolAsk(toolName, args, signal))
+  } else if (toolName === 'isolated_copse') {
+    // The handler requires fresh, non-rememberable consent before creating a
+    // thread-owned VM. Later input still requires that live grant. Explicit Ask
+    // remains an additional per-call requirement; Blocked is handled above.
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;

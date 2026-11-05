@@ -50,7 +50,7 @@ describe('thread switching with pending permissions', () => {
   })
 
   it('stops following when the reader scrolls up, and the jump button follows the live end again', async () => {
-    const jump = $('.conversation-scroll .scroll-to-bottom')
+    const jump = $('.conversation-navigation .scroll-to-bottom')
     await assertAtBottom()
     await expect(jump).not.toBeDisplayed()
 

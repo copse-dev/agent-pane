@@ -119,7 +119,11 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
   `run_shell`: that reuses Copse's native permission decision and can run
   approved external commands outside the agent sandbox. Direct agent-shell
-  `git push`/`npm install` still fail inside the sandbox.
+  `git push`/`npm install` still fail inside the sandbox. An agent's own
+  per-command escape, such as Claude Code's `dangerouslyDisableSandbox`, cannot
+  lift a sandbox around its whole process either; Copse refuses Claude Code's
+  with an explanation (see
+  [shell permissions](shell-permissions.md#an-agents-own-sandbox-escape)).
 - **Client terminals** (issue #623): Copse advertises
   `clientCapabilities.terminal: true`, so a spec-following agent asks Copse to
   run each shell command (`terminal/create`) instead of using its own shell.

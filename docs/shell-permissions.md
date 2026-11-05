@@ -38,6 +38,20 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; a request that runs a command is never remembered, so every command reaches the shell gate. See [ACP permission requests](#acp-permission-requests).                   |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
 
+The experimental `isolated_copse` tool asks for a fresh, non-rememberable grant before
+starting Linux Copse in an Apple container VM. The grant belongs to the invoking
+project/thread, expires after 15 minutes, and includes at most 100,000 input/output tokens
+on the parent model named in the approval. Only screenshots and bounded guest input are
+available; no host GUI control, folder mounts, credentials or general network access are
+granted. Stop/cancellation revokes input and inference before deleting the VM. Blocking the
+tool revokes all live isolated desktops. Failed deletion is surfaced and remains retryable.
+This grant does not change `launch_gui_app` or authorize a host-child fallback.
+ACP starts must name the host model explicitly. Their grant lasts only for the bound
+ACP turn/session; closing a completed MCP response does not revoke it, while abandoning
+startup, stopping the turn or closing the ACP session does. The created VM's image digest
+must match the owner-controlled local build receipt before startup. Host-only leases and
+VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
+
 ## Per-tool permission settings
 
 ### Web search providers
@@ -81,7 +95,7 @@ switch the visible thread. An unavailable or archived destination is rejected.
 
 The experimental interactive-client API requires its default-off plugin and desktop pairing.
 Viewing and submitting decisions are separate session-only grants across all projects. A client
-may approve once or deny an exact pending standard shell-command or bounded worktree-preparation session/request/revision; it cannot create remembered
+may approve once or deny an exact pending standard shell-command, web-origin request or bounded worktree-preparation session/request/revision; it cannot create remembered
 grants or task leases. Pairing is desktop-only, and agent-invoked plugin runtimes have no decision
 write API. Disable or quit revokes every client. Audit events identify the paired client as the
 human-response source. Authentication trusts the paired software; it does not attest a physical
@@ -435,6 +449,29 @@ otherwise remember an answer the user gave once and stop asking Copse. Agent man
 shows the agent's own request without Copse's shell classifier or remembered grants. Only its
 `allow_always` rule applies there: the dialog's box selects the agent's own option.
 
+### An agent's own sandbox escape
+
+Copse's sandbox wraps the whole agent process, so a per-command escape the agent
+offers itself cannot lift it. Claude Code's Bash `dangerouslyDisableSandbox: true`
+runs the command in the same sandbox, where it fails exactly as before. The
+agent cannot tell that from an ordinary sandboxed failure, so it retries (#4146).
+For a Claude agent that runs under Copse's sandbox on this machine,
+`acpSessionMeta` (`acp/acp-client.ts`) therefore sends Claude Code flag settings
+with every `session/new`, `session/resume` and `session/load`: one Bash
+`PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
+for the escape, the hook exits 2 and Claude Code returns its message to the model
+as the tool result. The message says the process runs inside Copse's sandbox and
+names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
+an outside run. When the session mounted no bridge, the message says so and tells
+the agent to ask the user instead.
+
+The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
+would not otherwise run, and leaves calls without the escape untouched. Claude
+Code's `sandbox.allowUnsandboxedCommands: false` is not used because it ignores
+the parameter silently. The sandbox prompt note says the same for every sandboxed
+agent. Agent managed thread mode, unsandboxed and SSH agents get no hook: there
+the agent's own escape is real or Copse has no sandbox to explain.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -590,11 +627,21 @@ also offers an optional retry grant, limited to 10 retries over 2 hours in the c
 turn tree, thread and execution root. For a plain interpreter invocation of an existing local
 script, the checkbox explicitly offers “Allow this script with different arguments outside the
 sandbox for this task”. It permits changing literal script arguments, including single-quoted
-browser inspection code. The interpreter and resolved script path stay fixed. An optional
-literal `cd … &&` prefix must stay fixed too. Environment assignments, interpreter options,
+browser inspection code. The resolved interpreter and script are bound to their regular-file
+identity and SHA-256 contents, read asynchronously with size limits. The inherited PATH is fixed
+for a bare interpreter name. Editing or replacing either file, retargeting either symlink, or
+changing interpreter lookup requires approval again. The files are checked again after an
+argument-grant approval and before a lease is consumed; revocation, expiry and replay limits
+are rechecked after asynchronous reads. Argument grants require a supported native ELF interpreter on Linux
+or Mach-O interpreter on macOS, with conservative executable-header and bounds checks; text shims,
+malformed or unsupported headers, and wrappers retain exact-command grants because their
+unchanged code can select a different interpreter through mutable configuration. An optional
+literal `cd … &&` prefix must stay fixed too; relative prefixes that can consult a nonempty
+inherited `CDPATH` retain exact-command grants. Environment assignments, interpreter options,
 shell substitutions, redirections, pipelines and additional commands do not qualify for this
-broader grant. Script symlinks are resolved again on replay; retargeting them asks again.
-Supported interpreters are Node, Python/Python3, Ruby and sh/bash/zsh; unsupported shapes keep
+broader grant. This is check-time identity validation, not an atomic check-and-execute boundary:
+later filesystem races, imported code and interpreter configuration are not frozen by a lease.
+Supported POSIX interpreters are Node, Python/Python3, Ruby and sh/bash/zsh; unsupported shapes keep
 “Allow retries outside the sandbox”, which leases an exact command or independently authorized
 composition as before. Neither checkbox is selected by default. Another turn tree or thread
 asks again. The same outside-sandbox grants are offered when a verified sandbox block escalates.
@@ -910,13 +957,39 @@ While active:
   described below. Read-only `gh` carve-outs keep the normal sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
-  it is no riskier than the `cargo run` or `make` that built it. The workspace's own pnpm shims
-  are a second exception: a file directly in `<workspace>/node_modules/.bin` that consists only of
-  pnpm's shim template, and runs only files under `<workspace>/node_modules`, runs like the
-  `npx <name>` that resolves to it. Any other line, or a target outside `node_modules`, and the
-  file is read as the script it is. Targets are followed through links, so a workspace package
-  that pnpm links to its source in the repository is read, not trusted. A word starting with `#`
-  in command position is a comment, not a script to inspect.
+  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
+  command position is a comment, not a script to inspect.
+- Nothing under `node_modules` is trusted for being there. An agent can write a shim and a payload
+  (`node_modules/.bin/evil`, `node_modules/evil/index.js`) or rewrite a file in an installed
+  package, so a package binary is read as the program it runs and gets the answer that running
+  that file with `node` gets:
+  - A pnpm `.bin` shim that is exactly pnpm's template, line for line and in order, is read as the
+    file it runs, wherever the shim is: as JavaScript for the `exec node` form, and as a program for
+    the form pnpm writes for a native binary. `$basedir` is the directory of the path the shell
+    runs, so a link to a real shim resolves from the link's directory. The shim turns each `\` in
+    that path into `/`, so a shim run through a path holding one is read as the shell script it is,
+    which prompts. When `$basedir/node` exists (or the host cannot say), the shim runs that program
+    in node's place, as whatever it is (a copied `/bin/sh` would run the target as shell), so it
+    always asks, and that program is read too. A file with any other line, or the same lines out of
+    order, is read as the shell script it is, which prompts.
+  - `npx <name>`, `npm exec <name>` (and every spelling npm resolves to it: `x`, `exe`) and
+    `pnpm exec <name>`, directly or through `corepack` with or without a version pin
+    (`corepack pnpm@10.34.5 exec`), read the workspace's `node_modules/.bin/<name>` the same way.
+    `pnpm exec` runs any other command from PATH, so that command is assessed as if typed, and
+    `pnpm exec -c` assesses its shell string. An option the gate does not model, which can choose another directory or
+    workspace package (`--prefix`, `-C`, `--filter`, `-r`), prompts, and so does `npx ./dir`, which
+    runs the package in a local directory. A scoped name (`npx @scope/pkg`) asks too: npm runs the
+    binary the installed package's manifest names, which need not be `.bin/pkg`, and `pnpm exec`
+    runs it as the relative path `./@scope/pkg`.
+  - Registry packages are read the same way, with no exemption. Their bins are ordinarily small
+    launchers that read clean; one that recursively deletes a computed path (`c8` clears its
+    temporary directory) asks.
+  - A `.bin` entry is a program whatever its suffix: `./node_modules/.bin/tool.png` is read, not
+    skipped as an image.
+  - Only the file a binary names is read, not the modules it loads: a clean entry point that
+    `require`s a rewritten file is allowed, as `node entry.js` is. Package scripts
+    (`pnpm run <script>`, `npm test`), `pnpm <bin>` without `exec`, and `yarn` are not followed into
+    what they run.
 - Script and inline code is read as code, not shell: a `${…}` template literal is not an
   expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
   deny on a catastrophic literal target and otherwise prompt, so a script that recursively
@@ -943,10 +1016,16 @@ While active:
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
     every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
     `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
-  - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
+  - `npx`/`npm exec` (including `npm exe`, `npm -s exec` and `corepack npx`) of anything but a
+    binary installed in the workspace's `node_modules/.bin`, which is read as above instead,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
-    which download code before running it;
+    which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`) or
+    under another name: `yarnpkg` is Yarn, and `pnpx` is `pnpm dlx`, which downloads even a name
+    the workspace's `.bin` has, so it is not read as `npx`. The subcommand is found past global
+    options (`pnpm --silent dlx`, `pnpm -C sub dlx`) and in npm's abbreviations (`npm cr vite` is
+    `npm create vite`). Any word after an initializer subcommand names an initializer, even after
+    an option (`npm init -y vite`), so `npm init -w packages/a` asks too;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
@@ -1117,6 +1196,33 @@ Review-thread resolution checks the thread's repository and PR before mutation. 
 PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
 scripts, general network access, or tool calls from unrelated threads.
 
+## Remote artifact image downloads
+
+Automatic hydration of remote-agent artifact images never fetches image bytes in the Electron
+main process ([design and validation record](plans/sandboxed-artifact-image-downloads.md)).
+
+- **Authorization first.** The renderer names the project and thread it shows. Main requires the
+  thread's durable `remoteAgentLink`; an agent ID from the transcript only selects that link and
+  never creates one. Path, provenance and sandbox-platform checks run before any network request.
+- **One credentialed request.** Main asks the configured Cursor API for a signed URL with a 10 s
+  timeout and a 64 KiB bound, and does not follow redirects. The URL must be HTTPS on port 443,
+  without userinfo, a fragment or an IP literal, on an exact approved download origin. A returned
+  URL never approves its own host.
+- **Per-job host and confinement.** Each download gets a short-lived host
+  (`dist/main/artifact-image-host.js`) with its own ASRT manager and egress proxy, so the
+  allowlist never touches main's process-global scope or another job. The downloader runs inside
+  ASRT with no writes, home and temp reads denied, no Unix sockets or local binding, and an
+  environment built from scratch. Its only route is the job proxy: authenticated `CONNECT` to an
+  approved host on 443, resolved once, refused if any answer is non-public, and dialled by vetted
+  address.
+- **Bounded, verified output.** At most three redirects, each rechecked. Identity encoding only.
+  PNG, JPEG, GIF or WebP with a matching signature, at most 16,384 px per side and 40 Mpx. 15 MiB
+  enforced while streaming, a 30 s deadline and a 10 s idle stall. Main and the host each verify
+  the frames, digest and type on their own; partial output is never shown or cached.
+- **Fail closed.** Windows, a failed ASRT start or a policy denial leaves the image unavailable
+  with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
+  retry re-authorizes and fetches a fresh signed URL.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
@@ -1208,6 +1314,9 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
+- `remote/artifact-image/`: automatic artifact-image hydration. `service.ts` (authorization,
+  queue, cache), `host.ts` / `host-entry.ts` (per-job ASRT and proxy), `egress-proxy.ts`,
+  `downloader.ts` / `downloader-entry.ts` (the confined client) and `policy.ts`.
 - `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
   permission catalogue, and corroboration of renderer-visible provenance against the schedule's
   main-owned latest-run record.

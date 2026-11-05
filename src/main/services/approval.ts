@@ -108,7 +108,7 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
-  /** Host producer certifies that approval authorizes only this concrete request. */
+  /** Host producer certifies that an approve-once response authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
@@ -194,9 +194,7 @@ export interface ApprovalRequest {
 export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
   return (
     (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
-    (req.interactiveClientApproval === 'once' &&
-      req.allowRemember === false &&
-      req.turnTreeLeaseDefault !== true)
+    (req.interactiveClientApproval === 'once' && req.turnTreeLeaseDefault !== true)
   )
 }
 

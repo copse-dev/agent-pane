@@ -1,10 +1,17 @@
+import { chmodSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   expectAssistantReply,
   prepareMockToolTurn,
   prepareMockTurn,
 } from './helpers/mock-scenario.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  E2E_WORKSPACE_ROOT,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { submitComposer } from './helpers/composer.ts'
@@ -15,8 +22,12 @@ describe('outside-sandbox approval copy', () => {
   before(async () => {
     resetUserData()
     const workspace = seedStableWorkspace({
-      files: { 'audit-ui.mjs': 'console.log(process.argv[2])\n' },
+      files: {
+        'audit-ui.mjs': 'console.log(process.argv[2])\n',
+        'tools/node': '#!/bin/sh\nexit 1\n',
+      },
     })
+    chmodSync(join(workspace, 'tools/node'), 0o755)
     seedEmptyProject(workspace, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
@@ -118,6 +129,37 @@ describe('outside-sandbox approval copy', () => {
     await waitForAgentIdle(30_000)
     await expectAssistantReply('I ran both inspections.')
     await expect(dialog).not.toBeDisplayed()
+    await scenario.assertComplete()
+  })
+
+  it('offers exact-command retries for a text interpreter shim', async () => {
+    const scenario = await prepareMockToolTurn(
+      'Inspect the browser through the project interpreter shim.',
+      {
+        name: 'run_shell',
+        args: { command: './tools/node audit-ui.mjs first', expects_sandbox_block: true },
+      },
+      'I left the interpreter shim unused.',
+    )
+    await submitComposer()
+
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
+    const leaseOption = dialog.$('.approval-turn-tree')
+    await expect(leaseOption).toBeDisplayed()
+    await expect(leaseOption).toHaveText(
+      'Allow retries outside the sandbox (up to 10, for 2 hours)',
+    )
+    await expect(leaseOption.$('.approval-turn-tree-input')).not.toBeChecked()
+    await saveElementScreenshot('#approval-dialog', 'text-shim-exact-retry-approval.png')
+
+    // Rejecting escalation still tries the contained command. Remove the fixture
+    // after observing the offer so this visual test never executes the shim.
+    rmSync(join(E2E_WORKSPACE_ROOT, 'tools/node'))
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('I left the interpreter shim unused.')
     await scenario.assertComplete()
   })
 })
