@@ -95,23 +95,23 @@ describe('gh-pr-service mock wiring', () => {
     process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'ready'
     assert.equal(isMockGhEnabled(), true)
 
-    const status = await getGhCliStatus()
+    const status = await getGhCliStatus(null)
     assert.equal(status.username, 'mock-user')
 
-    const prs = await listMyOpenPrs()
+    const prs = await listMyOpenPrs(null)
     assert.ok(prs && prs.length >= 2)
 
-    const workspacePrs = await listWorkspaceOpenPrs()
+    const workspacePrs = await listWorkspaceOpenPrs(null)
     assert.ok(workspacePrs.some((pr) => pr.number === MOCK_GH_WORKSPACE_PR_NUMBER))
 
-    const checks = await getGhPrChecksState({
+    const checks = await getGhPrChecksState(null, {
       owner: MOCK_GH_PR_OWNER,
       repo: MOCK_GH_PR_REPO,
       number: MOCK_GH_WORKSPACE_PR_NUMBER,
     })
     assert.equal(checks, 'failure')
 
-    const details = await getGhPrDetails({
+    const details = await getGhPrDetails(null, {
       owner: MOCK_GH_PR_OWNER,
       repo: MOCK_GH_PR_REPO,
       number: MOCK_GH_PR_NUMBER,

@@ -127,7 +127,7 @@ async function world(
     },
     labelEvents: () => guard(state.events),
     issueHasLabel: (_definition, issue) => Promise.resolve(state.labelled.has(issue)),
-    loadProjectThreads: () => Promise.resolve([...state.threads.values()]),
+    loadProjectThreadMetas: () => Promise.resolve([...state.threads.values()]),
     getProjectThread: (_projectId, threadId) =>
       Promise.resolve(state.threads.get(threadId) ?? null),
     createProjectThread: (_projectId, thread) => {
