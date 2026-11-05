@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-HZHR2CRE.js";
+} from "./chunk-6YY6Y3HG.js";
 import {
   clear,
   el,
@@ -28536,7 +28536,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-BE5HGUWH.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -54838,10 +54838,7 @@ function createAppearanceSection(form, store, markDirty) {
   }
   function apply(value) {
     document.documentElement.dataset["theme"] = value.theme;
-    if (store.getState().theme !== value.theme) {
-      store.setState({ theme: value.theme });
-      store.emit("theme_changed", value.theme);
-    }
+    if (store.getState().theme !== value.theme) store.setState({ theme: value.theme });
     applyUiAccent(value.accentColor);
     applyUiTint(value.tintColor, value.tintStrength);
   }
@@ -71363,8 +71360,6 @@ function createStore(initial) {
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
     settings_changed: /* @__PURE__ */ new Set(),
-    theme_changed: /* @__PURE__ */ new Set(),
-    staged_diffs_changed: /* @__PURE__ */ new Set(),
     usage_updated: /* @__PURE__ */ new Set(),
     context_updated: /* @__PURE__ */ new Set(),
     todos_changed: /* @__PURE__ */ new Set(),

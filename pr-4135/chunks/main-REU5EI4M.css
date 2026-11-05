@@ -5145,29 +5145,34 @@ label {
       color-mix(in srgb, var(--chat-gradient-top) 82%, transparent) 42%,
       transparent 100%);
 }
-.scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+.conversation-navigation {
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: 0 var(--spacing-xl);
+}
+.scroll-to-bottom {
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  gap: var(--spacing-sm);
+  border-radius: var(--radius);
   border: none;
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  line-height: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  box-shadow: var(--shadow-md);
-  z-index: 4;
-  transition: background 0.15s;
 }
 .scroll-to-bottom:hover {
   opacity: 1;
-  background: var(--accent-fill-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .scroll-to-bottom:focus-visible {
   outline: 2px solid var(--accent);
@@ -5706,6 +5711,10 @@ label {
   top: calc(-1 * var(--spacing-lg));
   z-index: 3;
   box-shadow: var(--shadow-sm);
+}
+.messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))),
+.messages-list > :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)) {
+  scroll-margin-top: calc(-1 * var(--sticky-prompt-scroll-band, 0px));
 }
 @container chat-pane (max-width: 360px) {
   .messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
@@ -6359,6 +6368,49 @@ span.acp-resource-title {
   border-radius: 50%;
   background: var(--accent);
 }
+.conversation-first-prompt {
+  flex: 0 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.conversation-first-prompt-label {
+  display: none;
+}
+.conversation-first-prompt:hover,
+.conversation-first-prompt:focus-visible {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.conversation-first-prompt:hover .conversation-first-prompt-label,
+.conversation-first-prompt:focus-visible .conversation-first-prompt-label {
+  display: inline;
+}
+.conversation-first-prompt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .conversation-first-prompt {
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .conversation-first-prompt-label {
+    display: inline;
+  }
+}
 
 /* src/renderer/markdown/pele-theme.css */
 .mermaid-diagram,
@@ -6720,6 +6772,32 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   border-radius: var(--radius);
   background: var(--bg-elevated);
   object-fit: contain;
+}
+.message-text .remote-artifact-unavailable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.message-text .remote-artifact-unavailable-alt {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.message-text .remote-artifact-unavailable-alt::before {
+  content: "\201c";
+}
+.message-text .remote-artifact-unavailable-alt::after {
+  content: "\201d";
+}
+.message-text .remote-artifact-retry {
+  margin-left: auto;
 }
 .message-text .code-block-shell {
   position: relative;
