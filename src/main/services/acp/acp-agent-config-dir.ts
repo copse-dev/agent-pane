@@ -1,4 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -33,6 +33,53 @@ export const ACP_AGENT_CONFIG_DIR_NAME = 'acp-agent-config'
  */
 export function acpAgentConfigDir(projectId: string, threadId: string, agentId: string): string {
   return join(threadDirectoryPath(projectId, threadId), ACP_AGENT_CONFIG_DIR_NAME, agentId)
+}
+
+/** Whether `dir` is one of this thread's {@link acpAgentConfigDir}s: Copse's, not the user's. */
+export function isThreadAcpAgentConfigDir(
+  dir: string,
+  projectId: string,
+  threadId: string,
+): boolean {
+  return dirname(dir) === join(threadDirectoryPath(projectId, threadId), ACP_AGENT_CONFIG_DIR_NAME)
+}
+
+/**
+ * Claude Code's negative cache of MCP servers, in its config dir. Since CLI
+ * 2.1.278 it records a server that failed to connect (CONNECTION_CLOSED, not
+ * only a 401) by **name**, and for 15 minutes every CLI started on that dir
+ * skips the server ("Skipping connection (recent failure cached…)") without
+ * trying the URL it was handed.
+ */
+export const CLAUDE_MCP_FAILURE_CACHE_FILE = 'mcp-needs-auth-cache.json'
+
+const claudeMcpFailureCacheSchema = z.record(z.string(), z.unknown())
+
+/**
+ * Drop `serverName`'s entry from {@link CLAUDE_MCP_FAILURE_CACHE_FILE} in
+ * `configDir`, keeping every other server's. Returns whether one was dropped.
+ *
+ * Copse names its native-tool bridge the same on every process it spawns for a
+ * thread, but each process gets a new bridge (new port, new token) that is
+ * listening before the agent starts. A failure the cache holds was against an
+ * earlier bridge, so honouring it hides a live bridge from the agent (#4142).
+ * A missing or unreadable cache is left as it is.
+ */
+export async function forgetClaudeMcpServerFailure(
+  configDir: string,
+  serverName: string,
+): Promise<boolean> {
+  const path = join(configDir, CLAUDE_MCP_FAILURE_CACHE_FILE)
+  const text = await readFile(path, 'utf8').catch(() => null)
+  if (text === null) return false
+  const cache = safeJsonParse(text, decodeWithSchema(claudeMcpFailureCacheSchema))
+  if (!cache || !Object.hasOwn(cache, serverName)) return false
+  const kept = Object.fromEntries(Object.entries(cache).filter(([name]) => name !== serverName))
+  // Replace, never truncate in place: the CLI reads this file whole.
+  const staging = `${path}.${String(process.pid)}.tmp`
+  await writeFile(staging, JSON.stringify(kept))
+  await rename(staging, path)
+  return true
 }
 
 /** {@link acpAgentConfigDir}, created first so the agent's first write never races a missing directory. */
