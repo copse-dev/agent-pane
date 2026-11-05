@@ -117,10 +117,15 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    same thread (a new message, an edit or truncation, the status at turn start
    and end), `src/renderer/views/transcript-rows.ts` plans against the rows
    already in the list: a row whose signature (its message, its multi-message
-   run, live reasoning and failed-turn recovery) still matches is kept with its
+   run, each call's user-interruption cause, live reasoning and failed-turn
+   recovery) still matches is kept with its
    async decorations and open disclosures; changed rows are rebuilt in place,
    new rows inserted, removed rows dropped with their anchored cards. A rebuilt
-   row under the reading anchor is relinked by id. A thread switch, hydration,
+   row under the reading anchor is relinked by id. The streaming handlers
+   (tokens, reasoning, ACP content, tool calls, segment done, turn end, canvas,
+   visual evidence, review and hook cards) re-stamp the row they patch, so a
+   streamed reply is kept too; a component test holds the patched rows
+   byte-identical to a fresh rebuild at the end of a turn. A thread switch, hydration,
    a pending backfill, a change to thread-wide row inputs (model, proposals,
    reviewer answers, artefact previews, interrupted-turn marker) and a reorder
    still rebuild the whole list (#3962).

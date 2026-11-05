@@ -14,6 +14,7 @@ import {
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '@shared/tools/tool-interruption.ts'
 import {
   humanPrompt,
   recordedTurn,
@@ -229,11 +230,13 @@ describe('conversation keyed row reconcile (component)', () => {
       type: 'tool_call',
       toolCall: { id: 'call-wait', name: 'run_shell', args: { command: 'sleep 5' } },
     })
+    // The Stop cancels the running command: the host records it as a cancelled
+    // error, which the turn's user-cancel outcome relabels as interrupted.
     reducer.apply('t1', {
       type: 'tool_result',
       toolCallId: 'call-wait',
-      result: 'waited',
-      isError: false,
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+      isError: true,
     })
     reducer.apply('t1', { type: 'text', text: 'This must be interrupted' })
     store.emit('threads_changed')
@@ -264,10 +267,68 @@ describe('conversation keyed row reconcile (component)', () => {
         host.querySelectorAll('.messages-list > :not(.agent-activity)'),
         (child) => child.outerHTML,
       )
+    // The outcome lands on the reply bubble, but the interrupted command's card
+    // lives on the bubble before it, which the Stop relabels all the same.
+    const card = live.querySelector('[data-tool-id="call-wait"]')
+    assert.equal(card?.getAttribute('data-status'), 'interrupted')
     const reconciled = rows(live)
     const rebuilt = rows(fresh)
     assert.equal(reconciled.length, rebuilt.length)
     const firstDifference = reconciled.findIndex((html, i) => html !== rebuilt[i])
     assert.equal(firstDifference, -1, `row ${String(firstDifference)} differs from a rebuild`)
+  })
+
+  it('keeps a streamed reply, with its resolved link, once the turn ends', async () => {
+    // The reply is built empty when the turn starts and filled in place by the
+    // streaming handlers. Each re-stamps the row, so the reconcile that the
+    // next turn triggers keeps it rather than rebuilding it from scratch.
+    const resolveCalls = { count: 0 }
+    const store = createStore({
+      threads: [threadWith('t1', [humanPrompt('u1', 'Where are palette entries built?')])],
+      activeThreadId: 't1',
+      activeProjectId: 'project-1',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    unmounts.push(mountConversation(host, store, fakeApi(resolveCalls)))
+    const reducer = createTranscriptReducer(store)
+    reducer.apply('t1', { type: 'reasoning', text: 'Look for the builder.' })
+    // The bubble as the turn started it: built once, then only patched.
+    const built = host.querySelector<HTMLElement>('.messages-list > .msg-assistant')
+    assert.ok(built)
+    reducer.apply('t1', { type: 'text', text: 'The palette builds entries in ' })
+    reducer.apply('t1', { type: 'text', text: '`src/renderer/views/command-palette.ts`.' })
+    reducer.apply('t1', {
+      type: 'turn_outcome',
+      outcome: {
+        status: 'completed',
+        stopReason: 'end_turn',
+        source: 'provider',
+        executor: 'local',
+        provider: 'openai',
+        model: 'openai:gpt-5.5',
+        endedAt: 50,
+      },
+    })
+    reducer.apply('t1', { type: 'done' })
+    markThreadRead(store, 't1')
+    await delay(0)
+
+    const reply = host.querySelector<HTMLElement>('.messages-list > .msg-assistant')
+    const link = reply?.querySelector('a.file-reference-link')
+    assert.ok(reply && link, 'expected the streamed reply with its resolved file link')
+    assert.ok(reply === built, 'the turn itself rebuilt the reply')
+    const resolvesBefore = resolveCalls.count
+
+    addMessage(store, 't1', 'user', 'And the tests?')
+    store.emit('threads_changed')
+    await delay(0)
+
+    assert.ok(
+      host.querySelector('.messages-list > .msg-assistant') === reply,
+      'the streamed reply was rebuilt by the next reconcile',
+    )
+    assert.ok(reply.querySelector('a.file-reference-link') === link, 'the resolved link was lost')
+    assert.equal(resolveCalls.count, resolvesBefore, 'the kept reply resolved its paths again')
   })
 })

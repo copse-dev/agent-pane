@@ -26,7 +26,9 @@ import { renderSignature } from './render-signature.ts'
 import {
   isReasoningDisclosureLive,
   liveStepMessageId,
+  markUserInterruptedCalls,
   multiStepRunFor,
+  userInterruption,
 } from './tool-card-refresh.ts'
 import type { ReadingAnchor } from './transcript-scroll.ts'
 
@@ -193,25 +195,39 @@ export function applyTranscriptRowPlan(
  * (concise classes, model labels, user actions, side-chat chips, hook-card
  * visibility) has its own sync pass that patches the row in place.
  *
- * - The message itself, in full: streamed tokens, tool calls and turn outcomes
- *   all mutate it in place.
+ * - The message itself: streamed tokens and tool calls mutate it in place.
+ *   Its turn outcome is left out and signed by what it draws instead (the
+ *   interruption labels and recovery below; concise classes are synced on
+ *   every reconcile), so the outcome landing at the end of a turn does not
+ *   rebuild a reply that draws the same.
  * - Its multi-message run, whose rollup the anchor draws from every member.
  * - For a machine-origin prompt, the command whose wake it reports.
+ * - Each tool call's user-interruption cause. A Stop marks the interrupted
+ *   calls of every bubble in its turn, not only the bubble that carries the
+ *   outcome, so an earlier bubble's cards change without its message moving.
  * - What the thread status and the message's place in it change: whether its
  *   reasoning is live, the live step of its run, and the failed-turn recovery
  *   the last message offers.
+ *
+ * A build that starts reading another field of the message or thread must be
+ * signed here too, or a row drawn from it will be kept when it changes.
  */
 export function transcriptRowSignature(thread: Thread, message: Message): string {
   const run = multiStepRunFor(thread, message.id)
   const liveStep = liveStepMessageId(thread)
   const origin = message.role === 'user' ? message.origin : undefined
+  markUserInterruptedCalls(thread)
   return renderSignature({
-    message,
+    message: { ...message, turnOutcome: undefined },
     run: run ?? null,
     wake:
       origin?.kind === 'machine'
         ? (backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null)
         : null,
+    // A run's anchor draws every member's calls.
+    interrupted: [...message.toolCalls, ...(run?.toolCalls ?? [])].map(
+      (call) => userInterruption(call) ?? null,
+    ),
     // What the thread status and the message's place at the end mean for this
     // row, rather than the raw facts: a finished reply that stops being the
     // last message draws exactly what it drew before, and keeps its row.

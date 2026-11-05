@@ -3,6 +3,7 @@ import {
   applyTranscriptRowPlan,
   planTranscriptRows,
   relinkReadingAnchor,
+  transcriptRowElement,
   transcriptRowSignature,
   wantedTranscriptRows,
 } from './transcript-rows.ts'
@@ -3612,6 +3613,31 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * backfilling a long thread doesn't redo O(n) work per message, and calling
    * scrollToBottom here would fight the scroll-anchoring the caller performs.
    */
+  /**
+   * An incremental handler has just brought message `msgId`'s row up to date in
+   * place: record what it now draws, so the next reconcile keeps the row (and
+   * the link resolutions and open disclosures on it) instead of rebuilding it.
+   * Covers the run the message belongs to, whose anchor the same handlers
+   * patch. Only for handlers whose patched DOM equals a fresh build; the
+   * reconcile-vs-rebuild component test holds them to that.
+   */
+  function restampRow(msgId: string): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const run = multiStepRunFor(thread, msgId)
+    for (const id of run ? run.memberIds : [msgId]) {
+      const message = thread.messages.find((candidate) => candidate.id === id)
+      const element = transcriptRowElement(list, id)
+      if (message && element && rowSignatures.has(element)) {
+        // A fresh build registers every reasoning trail with the disclosure
+        // model; a reply bubble that text started after tools carries one the
+        // live path never registered. Idempotent for trails already bound.
+        registerReasoningDisclosures(element)
+        rowSignatures.set(element, transcriptRowSignature(thread, message))
+      }
+    }
+  }
+
   function prependMessageEl(threadId: string, msgId: string, before: Node | null): void {
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
@@ -4393,6 +4419,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncModelLabels()
       syncUserActions()
     }
+    // A kept row's concise classes read its turn outcome, which the row
+    // signature leaves to this pass (see transcriptRowSignature).
+    syncConciseThreadClasses(false)
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     return true
@@ -4572,6 +4601,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         }
         // The text itself lands a frame later, through the input smoother; its
         // STREAM_PAINT_EVENT keeps the transcript following it.
+        restampRow(mid)
       }
     }),
     store.on('message_canvas_artefacts_changed', (mid) => {
@@ -4580,6 +4610,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
+        restampRow(mid)
         scrollToBottom()
       }
     }),
@@ -4589,6 +4620,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
         syncMessageVisualEvidence(msgEl, msg)
+        restampRow(mid)
         scrollToBottom()
       }
     }),
@@ -4611,6 +4643,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // Rebuilt content blocks start visible and unloaded; re-cite them.
         syncAcpResourceReferences(list, api, store)
         syncToolRunMemberVisibility(msgEl)
+        restampRow(mid)
         scrollToBottom()
       }
     }),
@@ -4634,6 +4667,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         hydrateAcpResourceImages(msgEl, api, store)
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
+        restampRow(mid)
         scrollToBottom()
       }
     }),
@@ -4670,12 +4704,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const reasoning = body?.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
         if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
+      if (msg?.role === 'assistant' && msgEl) restampRow(mid)
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
+      restampRow(mid)
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
+      restampRow(mid)
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
@@ -4690,10 +4727,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('review_changed', (tid, mid) => {
       renderMessageReview(tid, mid)
+      if (tid === store.getState().activeThreadId) restampRow(mid)
       scrollToBottom()
     }),
     store.on('hook_card_added', (tid, mid) => {
       renderMessageHookCards(tid, mid)
+      if (tid === store.getState().activeThreadId) restampRow(mid)
       scrollToBottom()
     }),
     store.on('comparison_changed', () => {
@@ -4739,7 +4778,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           setReasoningDisclosureTitle(details, false)
         })
         const last = getThreadById(store, tid)?.messages.at(-1)
-        if (last) renderMessageTurnRecovery(tid, last.id)
+        if (last) {
+          renderMessageTurnRecovery(tid, last.id)
+          restampRow(last.id)
+        }
       }
       syncAvatarMotion()
     }),
