@@ -3,11 +3,21 @@ import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-d
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { AutomationSchedule, BranchCiAutomation, Thread } from '@shared/types'
+import type {
+  AutomationSchedule,
+  AutomationTriggerEvent,
+  BranchCiAutomation,
+  Thread,
+} from '@shared/types'
 import type { PluginSummary } from '@shared/types/plugins.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
-import { resetProjectSwitchStateForTest, setThreadCacheForTest } from '../controller/projects.ts'
+import {
+  preloadSidebarThreads,
+  resetProjectSwitchStateForTest,
+  setThreadCacheForTest,
+} from '../controller/projects.ts'
+import { __resetPersistenceForTest } from '../controller/persistence.ts'
 import {
   resetAutomationScheduleCacheForTest,
   setAutomationScheduleCacheForTest,
@@ -929,6 +939,79 @@ describe('workspace-level automations section (#2511)', () => {
     // user off the project they were on (mirrors the project-menu behaviour
     // below).
     assert.equal(store.getState().activeProjectId, 'a')
+  })
+})
+
+describe('a scheduled run main starts in a background project', () => {
+  it('lists the run when that project opens after its threads were preloaded', async () => {
+    __resetPersistenceForTest()
+    const chat = thread('chat', 'Regular conversation')
+    const notes = thread('notes', 'Release planning')
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [chat],
+      activeThreadId: 'chat',
+    })
+    const disk = new Map<string, Thread[]>([
+      ['a', [chat]],
+      ['b', [notes]],
+    ])
+    const triggerHandlers = new Set<(event: AutomationTriggerEvent) => void>()
+    const api = createFakeApi()
+    api.threads.loadProject = (projectId: string): Promise<Thread[]> =>
+      Promise.resolve(disk.get(projectId) ?? [])
+    api.automations.onTriggered = (handler): (() => void) => {
+      triggerHandlers.add(handler)
+      return () => {
+        triggerHandlers.delete(handler)
+      }
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+    // Beta's list is resident from the launch preload, before its schedule fires.
+    await preloadSidebarThreads(store, api)
+
+    // Beta is not focused, so main creates the run and drives its turn itself;
+    // the renderer hears about it only through the trigger event.
+    const run: Thread = {
+      ...thread('run', 'CI review', 'schedule-ci', 30),
+      status: 'running',
+      createdAt: 30,
+      updatedAt: 30,
+    }
+    disk.set('b', [run, notes])
+    for (const handler of triggerHandlers) {
+      handler({
+        projectId: 'b',
+        scheduleId: 'schedule-ci',
+        threadId: 'run',
+        triggeredAt: 30,
+        disposition: 'started',
+      })
+    }
+
+    const betaRow = host.querySelector<HTMLElement>(
+      '.project-entry[data-project-id="b"] .project-row',
+    )
+    assert.ok(betaRow)
+    betaRow.click()
+    for (let tick = 0; tick < 20 && store.getState().activeProjectId !== 'b'; tick++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    assert.equal(store.getState().activeProjectId, 'b')
+    assert.deepEqual(
+      store.getState().threads.map((t) => t.id),
+      ['run', 'notes'],
+    )
+    // Let the rest of the switch settle before the next test resets its state.
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
   })
 })
 

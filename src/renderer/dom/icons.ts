@@ -34,6 +34,11 @@ export function clockIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Bent return arrow for conversation navigation. */
+export function cornerDownLeftIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('corner-down-left', ['m9 10-5 5 5 5', 'M20 4v7a4 4 0 0 1-4 4H4'], className)
+}
+
 export function chevronUpIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-up', ['m18 15-6-6-6 6'], className)
 }
@@ -44,10 +49,6 @@ export function arrowLeftIcon(className = DEFAULT): SVGSVGElement {
 
 export function arrowRightIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('arrow-right', ['M5 12h14', 'm12 5 7 7-7 7'], className)
-}
-
-export function arrowDownIcon(className = DEFAULT): SVGSVGElement {
-  return outlineIcon('arrow-down', ['M12 5v14', 'm19 12-7 7-7-7'], className)
 }
 
 export function refreshIcon(className = DEFAULT): SVGSVGElement {

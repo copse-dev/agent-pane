@@ -120,6 +120,33 @@ async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
   )
 }
 
+/**
+ * The seeded plan's three completed rows are painted at full height inside the
+ * TODO panel, none clipped by its row cap or the scroll area. The panel renders
+ * and caps its rows a frame after the thread mounts, so a capture taken on
+ * arrival can catch it mid-layout.
+ */
+async function waitForTodoRowsSettled(expected: number): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((count) => {
+        const list = document.querySelector('.conversation-todos-host .plugin-panel-list')
+        if (!(list instanceof HTMLElement)) return false
+        const rows = Array.from(list.querySelectorAll('.plugin-panel-row'))
+        if (rows.length !== count) return false
+        const box = list.getBoundingClientRect()
+        return (
+          list.scrollHeight <= list.clientHeight + 1 &&
+          rows.every((row) => {
+            const rect = row.getBoundingClientRect()
+            return rect.height >= 16 && rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5
+          })
+        )
+      }, expected),
+    { timeout: 10_000, timeoutMsg: `expected ${String(expected)} unclipped TODO rows` },
+  )
+}
+
 describe('selected text stays visible', () => {
   before(async () => {
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
@@ -155,6 +182,7 @@ describe('selected text stays visible', () => {
     expect(dark?.currentMatchContrast).toBeGreaterThanOrEqual(4.5)
     expect(darkText.length).toBeGreaterThan(0)
     expect(dark?.selectedText).toBe(darkText)
+    await waitForTodoRowsSettled(3)
     await saveAppScreenshot('selection-highlight-dark.png')
 
     await switchTheme('light')
@@ -168,6 +196,7 @@ describe('selected text stays visible', () => {
     // The light theme darkens --accent while --text-on-accent tracks the raw
     // accent, so the current search match must not be built from that pair.
     expect(light?.currentMatchContrast).toBeGreaterThanOrEqual(4.5)
+    await waitForTodoRowsSettled(3)
     await saveAppScreenshot('selection-highlight-light.png')
   })
 })

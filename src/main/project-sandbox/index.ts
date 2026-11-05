@@ -1,5 +1,10 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { baseSandboxConfig } from './config.ts'
+import {
+  baseSandboxConfig,
+  ensureWorkspaceTmpDir,
+  refreshGitConfigIncludeReadPaths,
+} from './config.ts'
+import { pinSandboxWrapTmpDir } from './tmp-env.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
@@ -53,6 +58,9 @@ export async function initProjectSandbox(): Promise<void> {
     console.log(`[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT network bridge(s)`)
   }
 
+  // ASRT bakes TMPDIR into every wrapped command from this process's env (#4149).
+  pinSandboxWrapTmpDir(ensureWorkspaceTmpDir())
+
   try {
     // The ask-callback fires for each connection that misses the allowlist.
     // We never grant from it (return false keeps the deny) — it exists to
@@ -67,6 +75,7 @@ export async function initProjectSandbox(): Promise<void> {
       },
       false,
     )
+    await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)
     setProjectSandboxInitFailure(undefined)
     console.log(

@@ -768,6 +768,38 @@ sticky behavior above that threshold. The paired regression states live in
 [`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts): one wide reference
 and one narrow reference that proves the response reaches the composer unobscured.
 
+A pinned prompt covers the top of its own scrollport, the mirror of a sticky footer, so its band is
+not landing space either. While the latest prompt is stuck, `conversation.ts` publishes its height
+(plus the list's row gap) as `--sticky-prompt-band`, and `scrollIntoTranscriptView`
+(`transcript-scroll.ts`) applies it as `scroll-padding-top` for each of the app's own scroll calls:
+conversation search, opened disclosures and the reviewer-input jump land below the prompt, not
+under it. Three limits keep that from moving anything else:
+
+- Never standing padding. Scroll padding also narrows the region Chrome picks its scroll anchor
+  from; padding left on the list lets an anchor below a prompt still in the flow scroll that prompt
+  into sticking as its previews grow, and they then shrink and grow without end.
+- Only for its reply. For the same call, the prompt and every row before it cancel the band with a
+  negative `scroll-margin-top` (`--sticky-prompt-scroll-band`, `conversation.css`): scrolling to one
+  of them leaves the prompt at or below the target, so the target lands flush.
+- The reading anchor skips rows ending inside the band only while the prompt covers it.
+
+Focused proof: `stickyPromptCollisions()` in
+[`tests/e2e/helpers/sticky-prompt.ts`](../tests/e2e/helpers/sticky-prompt.ts), asserted by the
+explainer specs before their captures; the settled-preview wait in `user-prompt-sticky.e2e.ts`;
+`tests/demo/concise-thread-toggle.demo.ts` for the anchor.
+
+## Conversation navigation stays out of the transcript
+
+First prompt and Back to latest / Back to where you were share one reserved 40px row between the
+transcript and the composer. Never float either over the scrollport: a corner overlay covered the
+TODO counter, a prompt's last word and narrow-chat text in turn. The row is always reserved, so
+showing or hiding a control never moves the transcript. First prompt sits before the return action
+in the right-aligned row, so revealing its label grows leftwards. Focused proof:
+`navigationTextOverlaps()` in
+[`tests/e2e/helpers/scroll-to-bottom.ts`](../tests/e2e/helpers/scroll-to-bottom.ts), asserted at
+default, narrow and scaled widths in
+[`tests/e2e/scroll-to-bottom.e2e.ts`](../tests/e2e/scroll-to-bottom.e2e.ts).
+
 ## Markdown prose spacing in chat
 
 Symptom: assistant messages look “double spaced” — extra blank lines between headings, paragraphs,

@@ -16,6 +16,10 @@ import {
 } from '../services/exec/background-completion-wake.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
+import {
+  captureLateCommandPhaseReport,
+  reportCommandPhase,
+} from '../services/exec/command-phase.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {
   const containment = info.unsandboxed ? ' · unsandboxed' : ''
@@ -101,29 +105,44 @@ export const runBackgroundTool = defineTool({
     }
     // Capture before spawn: process `exit` is delivered outside this ALS scope.
     const armedWakeHandler = turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
+    // The task ends after this call returns, often in a later turn: record its
+    // end on the card that started it before any wake reads that card (#3956).
+    const reportEnd = captureLateCommandPhaseReport(owner)
+    reportCommandPhase('starting')
     const info = await startSupervisedBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,
       owner,
       ...(timeout_ms !== undefined ? { timeoutMs: timeout_ms } : {}),
-      ...(turnTreeId
-        ? {
-            onCompletion: async ({ info: completed }): Promise<void> => {
-              await requestBackgroundCompletionWake(
-                {
-                  operationId: completed.id,
-                  owner,
-                  turnTreeId,
-                  exitCode: completed.exitCode,
-                  timedOut: completed.timedOut,
-                  alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
-                },
-                armedWakeHandler,
-              )
-            },
-          }
-        : {}),
+      onCancelled: ({ id: taskId }) => {
+        void reportEnd('cancelled', { backgroundTaskId: taskId })
+      },
+      onCompletion: async ({ info: completed }): Promise<void> => {
+        await reportEnd(completed.timedOut ? 'timed_out' : 'exited', {
+          backgroundTaskId: completed.id,
+          ...(completed.exitCode !== null ? { exitCode: completed.exitCode } : {}),
+        })
+        if (!turnTreeId) return
+        await requestBackgroundCompletionWake(
+          {
+            operationId: completed.id,
+            owner,
+            turnTreeId,
+            exitCode: completed.exitCode,
+            timedOut: completed.timedOut,
+            alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
+          },
+          armedWakeHandler,
+        )
+      },
     })
+    reportCommandPhase('running', { backgroundTaskId: info.id })
+    if (!info.running) {
+      reportCommandPhase(info.timedOut ? 'timed_out' : 'exited', {
+        backgroundTaskId: info.id,
+        ...(info.exitCode !== null ? { exitCode: info.exitCode } : {}),
+      })
+    }
     const lines = [formatInfo(info)]
     if (!info.running) {
       const logs = getBackgroundProcessLogs(info.id)

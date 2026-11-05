@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
+import type { WebviewTag } from 'electron'
 import { $, browser } from '@wdio/globals'
 import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
@@ -13,6 +14,7 @@ import {
 } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -213,6 +215,44 @@ async function waitForRecordingChip(): Promise<void> {
   })
 }
 
+/** Keep real clock/codec checks outside the brief, reversible capture pins. */
+async function captureRecordingState(
+  capture: () => Promise<void>,
+  indicatorClock?: string,
+): Promise<void> {
+  const restore: Array<() => Promise<void>> = []
+  try {
+    if (indicatorClock) {
+      assert.match(await $('.recording-chip-clock').getText(), /^\d+:\d{2}$/)
+      assert.match(await $(indicatorClock).getText(), /^\d+:\d{2} \/ 5:00$/)
+      restore.push(await pinTextForCapture('.recording-chip-clock', /^\d+:\d{2}$/, '0:01'))
+      restore.push(await pinTextForCapture(indicatorClock, /^\d+:\d{2}/, '0:01'))
+    }
+    const sizes = await browser.execute(() =>
+      [...document.querySelectorAll('.attachment-chips .video-chip .attachment-chip-meta')].map(
+        (element) => element.textContent,
+      ),
+    )
+    if (sizes.length > 0) {
+      for (const size of sizes) {
+        assert.match(size, /^\d+(?:\.\d+)? (?:B|KB|MB)$/)
+        assert.ok(Number.parseFloat(size) > 0, 'recorded attachments must have real bytes')
+      }
+      // Encoder output and the start time are runtime facts, not fixture inputs.
+      // Their real values have already been asserted; preserve the actual files.
+      restore.push(
+        await pinTextForCapture('.attachment-chips', /\b\d+(?:\.\d+)? (?:B|KB|MB)\b/g, '42 KB'),
+      )
+      restore.push(
+        await pinTextForCapture('.attachment-chips', /\d{2}-\d{2}-\d{2}\.webm/g, '12-34-56.webm'),
+      )
+    }
+    await capture()
+  } finally {
+    for (const reset of restore.reverse()) await reset()
+  }
+}
+
 describe('Recording a pane into the chat', function () {
   this.timeout(120_000)
   let pageServer: HttpServer | null = null
@@ -246,8 +286,9 @@ describe('Recording a pane into the chat', function () {
             </main>
             <script>
               let n = 0
-              setInterval(() => {
+              const retry = setInterval(() => {
                 document.getElementById('status').textContent = 'Retry ' + (++n)
+                if (n === 6) clearInterval(retry)
               }, 250)
             </script>
           </body>
@@ -334,7 +375,24 @@ describe('Recording a pane into the chat', function () {
       await $('.recording-chip .attachment-chip-label').getText(),
       /^Recording Tab — 127\.0\.0\.1:43119$/,
     )
-    await saveAppScreenshot('pane-recording-browser-live.png')
+    // Keep the real changing page, then capture its explicit terminal state.
+    await browser.waitUntil(
+      () =>
+        browser.execute(async () => {
+          const view = document.querySelector<WebviewTag>(
+            '.browser-tab-panel:not([hidden]) webview',
+          )
+          return (
+            (await view?.executeJavaScript('document.getElementById("status").textContent')) ===
+            'Retry 6'
+          )
+        }),
+      { timeout: 5_000, timeoutMsg: 'expected the checkout fixture to finish its retries' },
+    )
+    await captureRecordingState(
+      () => saveAppScreenshot('pane-recording-browser-live.png'),
+      '.browser-tab-panel:not([hidden]) .recording-indicator-clock',
+    )
 
     await browser.pause(1_500)
     await pill.$('.recording-indicator-stop').click()
@@ -346,10 +404,11 @@ describe('Recording a pane into the chat', function () {
     assert.equal(await $('.recording-chips .recording-chip').isExisting(), false)
     assert.equal(await pill.isDisplayed(), false)
     assert.equal(await recordButton.getAttribute('aria-pressed'), 'false')
-    await saveElementScreenshot('#input-bar', 'pane-recording-browser-attached.png')
-
     const size = await decodedPreviewSize(name)
     assert.ok(size.width > 0 && size.height > 0, 'the tab recording must decode with real frames')
+    await captureRecordingState(() =>
+      saveElementScreenshot('#input-bar', 'pane-recording-browser-attached.png'),
+    )
   })
 
   it('records the Desktop pane framebuffer and attaches a playable video', async () => {
@@ -401,7 +460,10 @@ describe('Recording a pane into the chat', function () {
       await $('.recording-chip .attachment-chip-label').getText(),
       /^Recording Desktop — /,
     )
-    await saveAppScreenshot('pane-recording-desktop-live.png')
+    await captureRecordingState(
+      () => saveAppScreenshot('pane-recording-desktop-live.png'),
+      '.vnc-controls-panel:not([hidden]) .recording-indicator-clock',
+    )
 
     await browser.pause(1_500)
     await pill.$('.recording-indicator-stop').click()
@@ -436,9 +498,10 @@ describe('Recording a pane into the chat', function () {
     const name = (await desktopChipName()) ?? ''
     assert.match(name, /^Recording — Desktop — localhost — \d\d-\d\d-\d\d\.webm$/)
     assert.equal(await recordButton.isDisplayed(), true)
-    await saveElementScreenshot('#input-bar', 'pane-recording-desktop-attached.png')
-
     const size = await decodedPreviewSize(name)
     assert.deepEqual(size, { width: WIDTH, height: HEIGHT })
+    await captureRecordingState(() =>
+      saveElementScreenshot('#input-bar', 'pane-recording-desktop-attached.png'),
+    )
   })
 })

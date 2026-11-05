@@ -21,13 +21,18 @@
  *
  * The prompt text steers it:
  *
- * | prompt contains | behaviour                                                  |
- * | --------------- | ---------------------------------------------------------- |
- * | `ask-execute`   | request an `execute` permission with no command or title    |
- * | `run-kindless`  | request permission for `rm -rf build` with no tool `kind`  |
- * | `ask`           | request permission, then report the client's answer         |
- * | `crash`         | write to stderr and exit non-zero **mid-turn**              |
- * | anything else   | echo it back as an agent message chunk                      |
+ * | prompt contains  | behaviour                                                      |
+ * | ---------------- | -------------------------------------------------------------- |
+ * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
+ * | `ask-execute`    | request an `execute` permission with no command or title       |
+ * | `run-kindless`   | request permission for `rm -rf build` with no tool `kind`      |
+ * | `ask`            | request permission, then report the client's answer            |
+ * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
+ * | anything else    | echo it back as an agent message chunk                         |
+ *
+ * `report-env:` is checked first: a turn driven through Copse's own prompt
+ * builder carries a preamble whose words (`task`, …) would otherwise trip the
+ * substring branches below.
  *
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
@@ -79,6 +84,15 @@ agent({ name: 'mock-acp-agent' })
         sessionId,
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: chunk } },
       })
+
+    // A null value means the var was absent, distinct from an empty string.
+    const reportEnv = /report-env:([A-Za-z0-9_,]+)/.exec(text)
+    if (reportEnv) {
+      const names = reportEnv[1].split(',').filter(Boolean)
+      const received = Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))
+      await say(`env:${JSON.stringify(received)}`)
+      return { stopReason: 'end_turn' }
+    }
 
     if (text.includes('crash')) {
       await say('about to fall over')

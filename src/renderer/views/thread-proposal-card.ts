@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { arrowRightIcon, checkIcon, closeIcon, gitBranchIcon } from '../dom/icons.ts'
 import {
   threadProposalFileSummary,
@@ -133,10 +134,12 @@ function buildPendingActions(
       start.disabled = false
       dismiss.disabled = false
       start.textContent = 'Start this thread'
-      error.textContent =
-        cause instanceof Error
-          ? `Could not start the thread: ${cause.message}`
-          : 'Could not start the thread.'
+      // A checkout failure arrives wrapped by Electron's IPC bridge; the
+      // channel name means nothing to the user.
+      const message = ipcErrorMessage(cause, '')
+      error.textContent = message
+        ? `Could not start the thread: ${message}`
+        : 'Could not start the thread.'
       error.hidden = false
     })
   })
