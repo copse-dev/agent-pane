@@ -24,7 +24,6 @@ import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
-import { getAgentExecutionRoot } from '../execution-root.ts'
 import {
   DEFAULT_GIT_BRANCH,
   type GitBranchInfo,
@@ -65,7 +64,7 @@ type RunGitOptions = Pick<RunCommandOptions, 'env' | 'sandboxConfig'>
 
 async function runGit(
   args: string[],
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   options: RunGitOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
@@ -85,7 +84,7 @@ async function runGit(
  */
 async function runGitRead(
   args: string[],
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
@@ -337,22 +336,18 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
  */
 export async function resolveWorkspaceRelativeGitPath(
   path: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<string> {
   if (!root) throw new Error('No workspace open.')
   return toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
 }
 
-async function gitObjectSpec(ref: string, path: string, root?: string | null): Promise<string> {
+async function gitObjectSpec(ref: string, path: string, root: string | null): Promise<string> {
   const gitPath = toGitShowPath(await resolveWorkspaceRelativeGitPath(path, root))
   return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
 }
 
-async function readGitBlob(
-  ref: string,
-  path: string,
-  root?: string | null,
-): Promise<GitBlobResult> {
+async function readGitBlob(ref: string, path: string, root: string | null): Promise<GitBlobResult> {
   const { stdout, code } = await runGitRead(['show', await gitObjectSpec(ref, path, root)], root)
   return classifyGitBlob(stdout, code)
 }
@@ -508,7 +503,7 @@ async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex>
 
 async function runGitBuffer(
   args: string[],
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<{ stdout: Buffer; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
@@ -621,9 +616,7 @@ async function getGitImageDiff(
   }
 }
 
-export async function isInsideGitWorkTree(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<boolean> {
+export async function isInsideGitWorkTree(root: string | null): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root) return false
   // Deliberately uncached: callers gate real work on this answer, and a checkout
   // that vanished under the app has to say so (#1686).
@@ -631,9 +624,7 @@ export async function isInsideGitWorkTree(
 }
 
 /** `org/repo` from `origin` when the workspace remote is GitHub. */
-export async function getGithubRepoSlug(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string | null> {
+export async function getGithubRepoSlug(root: string | null): Promise<string | null> {
   if (!(await isGitAvailableForTarget()) || !root) return null
   const inside = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
@@ -670,7 +661,7 @@ export interface CreateWorktreeBackupOptions {
  */
 export async function createWorktreeBackup(
   label: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   options: CreateWorktreeBackupOptions = {},
 ): Promise<string | null> {
   if (!(await isGitAvailableForTarget()) || !root) return null
@@ -740,7 +731,7 @@ export async function createWorktreeBackup(
 export async function restoreWorktreeBackup(
   ref: string,
   paths: string[],
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<boolean> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root)))
     return false
@@ -788,10 +779,7 @@ export async function restoreWorktreeBackup(
  * (their now-unreferenced commits become eligible for git's own GC). No-op when
  * git is unavailable or there is nothing to prune.
  */
-export async function pruneWorktreeBackups(
-  keep: number,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<void> {
+export async function pruneWorktreeBackups(keep: number, root: string | null): Promise<void> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return
   const { stdout, code } = await runGitRead(
     ['for-each-ref', '--format=%(refname)', 'refs/copse/backups'],
@@ -827,7 +815,7 @@ export async function pruneWorktreeBackups(
  * untracked directories, which is the price of telling those two apart.
  */
 export async function getGitStatus(
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   opts: { untrackedFiles?: 'normal' | 'all' } = {},
 ): Promise<GitStatusResult | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
@@ -912,6 +900,12 @@ async function commitRefExists(ref: string, root: string): Promise<boolean> {
   return code === 0
 }
 
+/** True when `ancestor` is a real ancestor of (or equal to) `ref`. */
+async function isAncestor(ancestor: string, ref: string, root: string): Promise<boolean> {
+  const { code } = await runGitRead(['merge-base', '--is-ancestor', ancestor, ref], root)
+  return code === 0
+}
+
 export interface CommittedChangesOptions {
   /**
    * Whether an open pull request already carries `branch`. Injected by the
@@ -921,6 +915,19 @@ export interface CommittedChangesOptions {
    * comparison to the default branch rather than hiding committed work.
    */
   hasOpenPr?: (branch: string) => Promise<boolean>
+  /**
+   * The branch's own HEAD at the moment a pull request carrying it merged, when
+   * one did. Injected the same way as `hasOpenPr`, for the same reason. A merged
+   * PR's commits are not necessarily ancestors of the default branch — GitHub's
+   * squash and rebase merges create a new commit on the base rather than
+   * replaying the branch's own — so once `hasOpenPr` goes false on merge, the
+   * default-branch fallback below would otherwise keep reporting the same
+   * already-landed files as "committed" forever. The branch's pre-merge HEAD
+   * does not have that problem: it is a real ancestor of HEAD by construction
+   * (barring a rebase after the merge, guarded for below), so diffing against it
+   * shows only the empty set, or commits truly made after the merge.
+   */
+  mergedThrough?: (branch: string) => Promise<{ sha: string; label: string } | null>
 }
 
 /**
@@ -929,9 +936,12 @@ export interface CommittedChangesOptions {
  *
  * A branch whose commits are already published *and* carried by an open PR is
  * reviewed in the PR panel, so only what is local to this checkout is still
- * "not in a PR" — compare against `origin/<branch>`. Anything else (never
- * pushed, or pushed with no PR opened) compares against the default branch, so
- * work that has no PR to appear in stays visible.
+ * "not in a PR" — compare against `origin/<branch>`. A branch whose PR has
+ * since merged compares against that PR's recorded head instead — see
+ * `mergedThrough` on {@link CommittedChangesOptions}. Anything else (never
+ * pushed, pushed with no PR opened, or rebased since the merge) compares
+ * against the default branch, so work that has no PR to appear in stays
+ * visible.
  */
 async function resolveCommittedBase(
   root: string,
@@ -939,6 +949,7 @@ async function resolveCommittedBase(
 ): Promise<{ label: string; commit: string } | null> {
   const branch = await getCurrentBranchName(root)
   let ref: string | null = null
+  let label: string | null = null
   if (branch) {
     const remoteBranch = `origin/${branch}`
     // Probe the local ref first: it costs one `rev-parse` and rules out every
@@ -949,6 +960,17 @@ async function resolveCommittedBase(
       (await (options.hasOpenPr?.(branch) ?? Promise.resolve(false)))
     ) {
       ref = remoteBranch
+      label = remoteBranch
+    } else {
+      const merged = await (options.mergedThrough?.(branch) ?? Promise.resolve(null))
+      if (
+        merged &&
+        (await commitRefExists(merged.sha, root)) &&
+        (await isAncestor(merged.sha, 'HEAD', root))
+      ) {
+        ref = merged.sha
+        label = merged.label
+      }
     }
   }
   if (!ref) {
@@ -956,17 +978,18 @@ async function resolveCommittedBase(
     for (const candidate of [`origin/${defaultBranch}`, defaultBranch]) {
       if (await commitRefExists(candidate, root)) {
         ref = candidate
+        label = candidate
         break
       }
     }
   }
-  if (!ref) return null
+  if (!ref || !label) return null
   // Three-dot semantics: a branch that is behind its base must not report the
   // base's own commits as this branch's work.
   const { stdout, code } = await runGitRead(['merge-base', ref, 'HEAD'], root)
   const commit = stdout.trim()
   if (code !== 0 || !commit) return null
-  return { label: ref, commit }
+  return { label, commit }
 }
 
 /**
@@ -979,7 +1002,7 @@ async function resolveCommittedBase(
  * distinguishes landed work from unlanded work).
  */
 export async function getCommittedChanges(
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   options: CommittedChangesOptions = {},
 ): Promise<GitCommittedChanges | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
@@ -1009,7 +1032,7 @@ export async function getCommittedChanges(
  */
 export async function getCommittedFileDiff(
   path: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   options: CommittedChangesOptions = {},
 ): Promise<GitFileDiff | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
@@ -1103,7 +1126,7 @@ async function sumUntrackedAdditions(root: string): Promise<number> {
  * totals sum the separate layers rather than a single net diff.
  */
 export async function getGitChangeStats(
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   options: CommittedChangesOptions & { includeCommitted?: boolean } = {},
 ): Promise<{
   additions: number
@@ -1126,10 +1149,7 @@ export async function getGitChangeStats(
   return additions + deletions > 0 ? { additions, deletions } : null
 }
 
-export async function checkoutGitBranch(
-  branch: string,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<void> {
+export async function checkoutGitBranch(branch: string, root: string | null): Promise<void> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) {
     throw new Error('No git repository is open.')
   }
@@ -1154,9 +1174,7 @@ function e2eBranchOverride(): string | null {
   return name && name.length > 0 ? name : null
 }
 
-export async function getBranches(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<GitBranchInfo[]> {
+export async function getBranches(root: string | null): Promise<GitBranchInfo[]> {
   if (!root) return []
   const override = e2eBranchOverride()
   if (override) {
@@ -1214,7 +1232,7 @@ export function parseAheadBehind(raw: string): { ahead: number; behind: number }
  */
 export async function getAheadBehind(
   base: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<{ ahead: number; behind: number } | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
   for (const ref of [`origin/${base}`, base]) {
@@ -1245,7 +1263,7 @@ export interface GitPushResult {
  */
 export async function pushBranchToOrigin(
   branch: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
   expectedRemoteSha?: string,
 ): Promise<GitPushResult> {
   if (!root) return { ok: false, message: 'No workspace open.' }
@@ -1279,9 +1297,7 @@ export async function pushBranchToOrigin(
 }
 
 /** Current checked-out branch, or null when detached / outside a repo. */
-export async function getCurrentBranchName(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string | null> {
+export async function getCurrentBranchName(root: string | null): Promise<string | null> {
   if (!root) return null
   const override = e2eBranchOverride()
   if (override) return override
@@ -1292,9 +1308,7 @@ export async function getCurrentBranchName(
 }
 
 /** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */
-export async function getCurrentCommitHash(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string | null> {
+export async function getCurrentCommitHash(root: string | null): Promise<string | null> {
   if (!root) return null
   const { stdout, code } = await runGitRead(['rev-parse', 'HEAD'], root)
   if (code !== 0) return null
@@ -1318,9 +1332,7 @@ export async function getChangedPathsBetween(
  * commit it starts from and whether the working tree is dirty. Captured once per
  * submit so the spine can record what state a turn started from.
  */
-export async function getGitPromptState(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<GitPromptState> {
+export async function getGitPromptState(root: string | null): Promise<GitPromptState> {
   const [startingCommit, status] = await Promise.all([
     getCurrentCommitHash(root),
     getGitStatus(root),
@@ -1371,9 +1383,7 @@ export function resetDefaultBranchCache(): void {
 }
 
 /** Return the default branch name for the current repository. */
-export async function getDefaultBranch(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string | null> {
+export async function getDefaultBranch(root: string | null): Promise<string | null> {
   if (!root) return null
   if (e2eBranchOverride()) return DEFAULT_GIT_BRANCH
 
@@ -1474,7 +1484,7 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
 export async function getGitFileDiff(
   path: string,
   staged: boolean,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<GitFileDiff | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
 
@@ -1560,7 +1570,7 @@ function normalizeGitDiffText(text: string): string {
  */
 export async function getGitWorkingFileDiff(
   path: string,
-  root: string | null = getAgentExecutionRoot(),
+  root: string | null,
 ): Promise<GitFileDiff | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
   if (imageMimeType(path)) return null
@@ -1577,9 +1587,7 @@ export async function getGitWorkingFileDiff(
   }
 }
 
-export async function getGitStatusText(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string> {
+export async function getGitStatusText(root: string | null): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
   const { stdout, stderr, code } = await runGitRead(['status', '--short'], root)
@@ -1600,9 +1608,9 @@ async function getUntrackedDiff(paths: string[], root: string): Promise<string> 
 }
 
 export async function getGitDiffText(
-  path?: string,
-  staged = false,
-  root: string | null = getAgentExecutionRoot(),
+  path: string | undefined,
+  staged: boolean,
+  root: string | null,
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
@@ -1641,8 +1649,8 @@ export async function getGitDiffText(
  */
 export async function getGitShowText(
   ref: string,
-  path?: string,
-  root: string | null = getAgentExecutionRoot(),
+  path: string | undefined,
+  root: string | null,
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
@@ -1681,8 +1689,8 @@ export async function getGitShowText(
 
 export async function getGitLogText(
   maxCount: number,
-  path?: string,
-  root: string | null = getAgentExecutionRoot(),
+  path: string | undefined,
+  root: string | null,
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
@@ -1702,13 +1710,15 @@ export async function getGitLogText(
 export async function getGitLogSinceText(
   since: string | null,
   maxCount: number,
+  root: string | null,
   path?: string,
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
+  if (!root) return 'No workspace open.'
   const args = ['log', `--max-count=${String(maxCount)}`, '--oneline']
   if (since) args.push(`--since=${since}`)
   args.push('--', ...(path ? [path] : []))
-  const { stdout, stderr, code } = await runGitRead(args)
+  const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no commits in this window)'
 }

@@ -257,6 +257,25 @@ export function attentionThreadId(store: AppStore, threadId: string): string {
   return threadId
 }
 
+/**
+ * The thread whose `propose_thread` offer started `threadId`, while both are
+ * listed in the active project; otherwise null. Accepting an offer starts the
+ * new thread in the background and leaves the user on the offering thread
+ * (#4112), so that is where the new thread's prompts can reach them. Unlike a
+ * side chat, a proposed thread keeps its own sidebar row, so this never
+ * redirects its attention bell. Only the active project is searched: the
+ * offering thread can only host a prompt while it is the one on screen.
+ */
+export function proposingThreadId(store: AppStore, threadId: string): string | null {
+  const threads = store.getState().threads
+  const proposerId = threads.find((t) => t.id === threadId)?.proposedBy?.threadId
+  return proposerId !== undefined &&
+    proposerId !== threadId &&
+    threads.some((t) => t.id === proposerId)
+    ? proposerId
+    : null
+}
+
 /** An archive completed after the user switched to another project. */
 export function archiveCachedSidebarThread(
   projectId: string,

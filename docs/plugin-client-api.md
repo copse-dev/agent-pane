@@ -95,7 +95,7 @@ store. Mobile retains its existing device access levels. The transport's approve
 not acquire mobile chat/run control. A future AHP adapter can reuse this core without replacing
 the transport protections or claiming AHP compliance today.
 
-This preview supplies only standard `run_shell` approvals with host-verified approve-once semantics. Other approval kinds, including persistent provider-host consent, remain on desktop/mobile and cannot be submitted through this API. Theme, general provider registration,
+This preview supplies standard `run_shell` approvals and web-origin requests with host-verified approve-once semantics. Approving a web-origin request from a paired client permits that request only; it does not save the origin. Other approval kinds, including persistent provider-host consent, remain on desktop/mobile and cannot be submitted through this API. Theme, general provider registration,
 per-project grants, durable pairing and per-client management remain stages of
 [the generic capability plan](plans/plugin-capability-api.md). Questions stay on existing desktop
 and mobile surfaces. The service is not exposed to agent-invoked plugin runtimes or model tools.

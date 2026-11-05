@@ -93,7 +93,10 @@ The harm gate prompted on two apparent false positives:
 - `./node_modules/.bin/<tool>`, because the gate could not follow the shim's
   `$(echo "$0" | sed …)`, while the same tool through `npx` was allowed. The gate now reads a
   workspace pnpm shim as the package it runs. Replaying the same rows, 239 candidate commands move
-  from `prompt` to `allow`, and 57 prompts lose every reason to ask.
+  from `prompt` to `allow`, and 57 prompts lose every reason to ask. That fix trusted a target
+  under `node_modules` unread, which let an agent stage a shim and payload there; the gate has
+  since read the file every shim and `npx` binary runs instead (`docs/shell-permissions.md`). This
+  replay predates that change.
 - `node scripts/run-tests.mts …`, with "dynamic path or command expansion". That shell rule was
   matching JavaScript template literals plus the word `rm`. It was also the only thing catching
   `rm(dir, { recursive: true })` imported from `fs/promises`; inline, that call was allowed. Code

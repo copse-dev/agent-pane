@@ -1273,8 +1273,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
 async function respondToPermission(
   agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
   signal?: AbortSignal,
   context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
@@ -1736,7 +1736,9 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
   'elsewhere in /tmp and the rest of the home directory, and most network ' +
   'destinations are blocked. Approval ' +
-  'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
+  'cannot unsandbox your own shell, and neither can a sandbox escape your own ' +
+  "tools offer (such as Claude Code's dangerouslyDisableSandbox): this whole " +
+  'process runs inside the sandbox. When the "copse" MCP server is available, ' +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +

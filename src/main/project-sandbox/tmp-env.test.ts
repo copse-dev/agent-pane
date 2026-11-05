@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, it } from 'node:test'
-import { withSandboxTmpEnv } from './tmp-env.ts'
+import { afterEach, describe, it } from 'node:test'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { baseSandboxConfig, workspaceSandboxOverlay } from './config.ts'
+import { pinSandboxWrapTmpDir, withSandboxTmpEnv } from './tmp-env.ts'
 
 describe('sandbox temporary files', () => {
   it('replaces inherited temp locations without mutating the caller environment', () => {
@@ -55,4 +57,57 @@ describe('sandbox temporary files', () => {
       }
     },
   )
+
+  describe('ASRT wrap (#4149)', () => {
+    const savedCodeTmp = process.env['CLAUDE_CODE_TMPDIR']
+    const savedLegacyTmp = process.env['CLAUDE_TMPDIR']
+    afterEach(() => {
+      if (savedCodeTmp === undefined) delete process.env['CLAUDE_CODE_TMPDIR']
+      else process.env['CLAUDE_CODE_TMPDIR'] = savedCodeTmp
+      if (savedLegacyTmp === undefined) delete process.env['CLAUDE_TMPDIR']
+      else process.env['CLAUDE_TMPDIR'] = savedLegacyTmp
+    })
+
+    it('pins the wrapping process so ASRT stops defaulting TMPDIR to /tmp/claude', () => {
+      process.env['CLAUDE_CODE_TMPDIR'] = '/stale'
+      process.env['CLAUDE_TMPDIR'] = '/legacy'
+      pinSandboxWrapTmpDir('/workspace/scratch')
+      assert.equal(process.env['CLAUDE_CODE_TMPDIR'], '/workspace/scratch')
+      assert.equal(process.env['CLAUDE_TMPDIR'], undefined)
+    })
+
+    it(
+      'gives the sandboxed shell one scratch directory in every temp variable',
+      { skip: process.platform !== 'darwin' && process.platform !== 'linux', timeout: 60_000 },
+      async () => {
+        const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'copse tmp agree ')))
+        const scratch = join(workspace, 'scratch')
+        try {
+          pinSandboxWrapTmpDir(scratch)
+          await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
+          try {
+            const { argv } = await SandboxManager.wrapWithSandboxArgv(
+              'printf "%s\\n" "$TMPDIR" "$TMP" "$TEMP" "$CLAUDE_CODE_TMPDIR"',
+              '/bin/sh',
+              workspaceSandboxOverlay(workspace),
+            )
+            const [file = '', ...args] = argv
+            // Copse's own spawn env, as acp-client.ts builds it. ASRT's baked
+            // `env TMPDIR=…` runs inside this child and decides the final value.
+            const result = spawnSync(file, args, {
+              cwd: workspace,
+              encoding: 'utf8',
+              env: withSandboxTmpEnv(process.env, scratch),
+            })
+            assert.equal(result.status, 0, result.stderr)
+            assert.deepEqual(result.stdout.trim().split('\n'), [scratch, scratch, scratch, scratch])
+          } finally {
+            await SandboxManager.reset()
+          }
+        } finally {
+          rmSync(workspace, { recursive: true, force: true })
+        }
+      },
+    )
+  })
 })

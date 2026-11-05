@@ -2,8 +2,12 @@
 // CPU-profile a running Copse main process (or any Node process) through its
 // inspector, then close that inspector again.
 //
-// SIGUSR1 opens the inspector on 127.0.0.1:9229; it stays open until something
-// in the target closes it. Closing it is the risky step. `Runtime.evaluate`
+// SIGUSR1 opens the inspector at the target's configured address (by default
+// 127.0.0.1:9229); it stays open until something in the target closes it.
+// Automatic activation requires Unix lsof with permission to inspect the PID;
+// otherwise open the inspector manually before running this script. The script
+// itself is a developer CLI, not part of the packaged application.
+// Closing the inspector is the risky step. `Runtime.evaluate`
 // compiles in the target's global scope, where `require` does not exist in
 // either module format, and work deferred with `setImmediate` runs after the
 // evaluate call has returned, so its errors are not reported back to us: they
@@ -15,12 +19,14 @@
 //
 // Run:  node scripts/profile-main-process.mts --pid <pid> [--seconds 5] [--out file]
 
+import childProcess from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
-import { decodeWithSchema, safeJsonParse } from '../packages/std/src/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { isDirectExecution } from './lib/direct-execution.mts'
 
 /**
@@ -40,6 +46,9 @@ const replySchema = z.object({
 const evaluateResultSchema = z.object({
   exceptionDetails: z.object({ text: z.string() }).optional(),
 })
+const processIdentitySchema = z.object({
+  result: z.object({ type: z.literal('number'), value: z.number().int().positive() }),
+})
 const profileSchema = z.object({
   nodes: z.array(
     z.object({
@@ -52,18 +61,41 @@ const profileSchema = z.object({
 })
 export type CpuProfile = z.infer<typeof profileSchema>
 
+async function inspectorUrlAt(origin: string): Promise<string | null> {
+  let response: Response
+  try {
+    response = await fetch(`${origin}/json/list`, {
+      signal: AbortSignal.timeout(1000),
+      redirect: 'error',
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.cause instanceof Error &&
+      'code' in error.cause &&
+      error.cause.code === 'ECONNREFUSED'
+    )
+      return null
+    throw error
+  }
+  const url = safeJsonParse(await response.text(), decodeWithSchema(targetsSchema))?.find(
+    (target) => target.webSocketDebuggerUrl,
+  )?.webSocketDebuggerUrl
+  if (!response.ok || !url) throw new Error(`${origin} does not serve a Node inspector`)
+  const target = new URL(url)
+  if (target.protocol !== 'ws:' || target.host !== new URL(origin).host) {
+    throw new Error(`Inspector target does not belong to ${origin}`)
+  }
+  return url
+}
+
 /** Poll the inspector's target list until it names a debugger socket. */
 export async function waitForInspectorUrl(port: number, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs
   let detail = 'no inspector target'
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`, {
-        signal: AbortSignal.timeout(1000),
-      })
-      const url = safeJsonParse(await response.text(), decodeWithSchema(targetsSchema))?.find(
-        (target) => target.webSocketDebuggerUrl,
-      )?.webSocketDebuggerUrl
+      const url = await inspectorUrlAt(`http://127.0.0.1:${String(port)}`)
       if (url) return url
     } catch (error) {
       detail = error instanceof Error ? error.message : String(error)
@@ -71,6 +103,76 @@ export async function waitForInspectorUrl(port: number, timeoutMs: number): Prom
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error(`Inspector on port ${String(port)} did not become available: ${detail}`)
+}
+
+/** Read only TCP LISTEN records belonging to the PID, including a visible empty snapshot. */
+export function targetListenerOrigins(output: string, pid: number): Set<string> {
+  const origins = new Set<string>()
+  let currentPid = 0
+  let sawTargetFile = false
+  let file: { protocol?: string; address?: string; state?: string } = {}
+  const finishFile = (): void => {
+    if (currentPid !== pid || file.protocol !== 'TCP' || file.state !== 'LISTEN') return
+    const endpoint = /^(.*):(\d+)$/.exec(file.address ?? '')
+    const address = endpoint?.[1]?.replace(/^\[/, '').replace(/\]$/, '')
+    const port = Number(endpoint?.[2])
+    if (!address || !Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('Cannot parse a target TCP listener')
+    }
+    const addresses =
+      address === '*'
+        ? ['127.0.0.1', '::1']
+        : [address === '0.0.0.0' ? '127.0.0.1' : address === '::' ? '::1' : address]
+    for (const address of addresses) {
+      const family = isIP(address)
+      if (family === 0) throw new Error('Target listener address is not a numeric local address')
+      const host = family === 6 ? `[${address}]` : address
+      origins.add(new URL(`http://${host}:${String(port)}`).origin)
+    }
+  }
+  // NUL fields keep an open file's name from fabricating p/f/P/n/T records.
+  // lsof adds one newline between its process/file field sets even with -F0.
+  for (const field of output.split('\0')) {
+    const line = field.replace(/^\n/, '')
+    const tag = line[0]
+    const value = line.slice(1)
+    if (tag === 'p' || tag === 'f') {
+      finishFile()
+      file = {}
+      if (tag === 'p') {
+        currentPid = Number(value)
+      } else if (currentPid === pid) sawTargetFile = true
+    } else if (tag === 'P') file.protocol = value
+    else if (tag === 'n') file.address = value
+    else if (tag === 'T' && value.startsWith('ST=')) file.state = value.slice(3)
+  }
+  finishFile()
+  if (!sawTargetFile) throw new Error(`Cannot inspect requested process ${String(pid)}`)
+  return origins
+}
+
+function readTargetListenerOrigins(pid: number): Set<string> {
+  if (process.platform === 'win32') {
+    throw new Error(
+      'Automatic inspector activation requires Unix lsof; open the inspector manually',
+    )
+  }
+  try {
+    // Do not filter to sockets: an inspectable process with no listeners still
+    // has PID and file records. An empty/denied result must not authorize SIGUSR1.
+    const output = childProcess.execFileSync('lsof', ['-nP', '-p', String(pid), '-F0pfPnT'], {
+      encoding: 'utf8',
+      timeout: 2000,
+      maxBuffer: 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return targetListenerOrigins(output, pid)
+  } catch (cause) {
+    throw new Error(
+      `Cannot discover listeners for process ${String(pid)}; automatic activation requires readable Unix lsof output. Open its inspector manually`,
+      { cause },
+    )
+  }
 }
 
 interface InspectorSession {
@@ -81,9 +183,14 @@ interface InspectorSession {
 async function connectInspector(url: string): Promise<InspectorSession> {
   const socket = new WebSocket(url)
   await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.close()
+      reject(new Error(`Inspector connection timed out: ${url}`))
+    }, 1000)
     socket.addEventListener(
       'open',
       () => {
+        clearTimeout(timeout)
         resolve()
       },
       { once: true },
@@ -91,6 +198,8 @@ async function connectInspector(url: string): Promise<InspectorSession> {
     socket.addEventListener(
       'error',
       () => {
+        clearTimeout(timeout)
+        socket.close()
         reject(new Error(`Cannot connect to ${url}`))
       },
       {
@@ -101,7 +210,11 @@ async function connectInspector(url: string): Promise<InspectorSession> {
   let nextId = 0
   const pending = new Map<
     number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    {
+      resolve: (value: unknown) => void
+      reject: (error: Error) => void
+      timeout: ReturnType<typeof setTimeout>
+    }
   >()
   socket.addEventListener('message', (event) => {
     if (typeof event.data !== 'string') return
@@ -110,19 +223,35 @@ async function connectInspector(url: string): Promise<InspectorSession> {
     const waiter = pending.get(reply.id)
     if (!waiter) return
     pending.delete(reply.id)
+    clearTimeout(waiter.timeout)
     if (reply.error) waiter.reject(new Error(reply.error.message))
     else waiter.resolve(reply.result)
   })
   socket.addEventListener('close', () => {
-    for (const waiter of pending.values()) waiter.reject(new Error('Inspector session closed'))
+    for (const waiter of pending.values()) {
+      clearTimeout(waiter.timeout)
+      waiter.reject(new Error('Inspector session closed'))
+    }
     pending.clear()
   })
   return {
     call: (method, params = {}): Promise<unknown> =>
       new Promise((resolve, reject) => {
         const id = ++nextId
-        pending.set(id, { resolve, reject })
-        socket.send(JSON.stringify({ id, method, params }))
+        const timeout = setTimeout(() => {
+          pending.delete(id)
+          reject(new Error(`Inspector request timed out: ${method}`))
+        }, 1000)
+        pending.set(id, { resolve, reject, timeout })
+        try {
+          socket.send(JSON.stringify({ id, method, params }))
+        } catch (error) {
+          clearTimeout(timeout)
+          pending.delete(id)
+          reject(
+            error instanceof Error ? error : new Error('Inspector send failed', { cause: error }),
+          )
+        }
       }),
     close: (): void => {
       socket.close()
@@ -130,13 +259,36 @@ async function connectInspector(url: string): Promise<InspectorSession> {
   }
 }
 
+async function verifyInspectorPid(session: InspectorSession, expectedPid: number): Promise<void> {
+  const identity = processIdentitySchema.parse(
+    await session.call('Runtime.evaluate', { expression: 'process.pid', returnByValue: true }),
+  )
+  if (identity.result.value !== expectedPid) {
+    throw new Error(
+      `Inspector belongs to process ${String(identity.result.value)}, not requested process ${String(expectedPid)}`,
+    )
+  }
+}
+
 /**
- * Sample the target for `durationMs`, then close its inspector. The session is
- * always disconnected, and the close request is sent even if profiling fails.
+ * Sample the target for `durationMs`, then close its inspector. An optional PID
+ * must match before profiling or closing; an unverified endpoint is only
+ * disconnected. Verified targets are closed even if profiling fails.
  */
-export async function profileInspector(url: string, durationMs: number): Promise<CpuProfile> {
+export async function profileInspector(
+  url: string,
+  durationMs: number,
+  expectedPid?: number,
+): Promise<CpuProfile> {
   const session = await connectInspector(url)
+  // A port can belong to another Node process. Do not enable its profiler or
+  // close its inspector until the endpoint proves it is the requested target.
+  let canCloseInspector = expectedPid === undefined
   try {
+    if (expectedPid !== undefined) {
+      await verifyInspectorPid(session, expectedPid)
+      canCloseInspector = true
+    }
     await session.call('Profiler.enable')
     await session.call('Profiler.start')
     await new Promise((resolve) => setTimeout(resolve, durationMs))
@@ -144,22 +296,77 @@ export async function profileInspector(url: string, durationMs: number): Promise
     await session.call('Profiler.disable')
     return stopped.profile
   } finally {
-    await closeInspector(session)
+    if (canCloseInspector) await closeInspector(session)
+    else session.close()
   }
 }
 
-/** Ask the target to close its inspector, then disconnect. Reports rather than throws. */
+async function closeOpenedInspectors(pid: number, before: ReadonlySet<string>): Promise<void> {
+  const failures: unknown[] = []
+  for (const origin of readTargetListenerOrigins(pid)) {
+    if (before.has(origin)) continue
+    try {
+      const url = await inspectorUrlAt(origin)
+      if (!url) continue
+      const session = await connectInspector(url)
+      try {
+        await verifyInspectorPid(session, pid)
+        await closeInspector(session)
+      } finally {
+        session.close()
+      }
+      const deadline = Date.now() + 1000
+      while (await inspectorUrlAt(origin)) {
+        if (Date.now() >= deadline) throw new Error(`Inspector did not close: ${origin}`)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    } catch (error) {
+      // A different new server must not prevent cleanup of the inspector.
+      failures.push(error)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'Could not verify cleanup of every new target listener')
+  }
+}
+
+/** Profile a PID, cleaning any inspector our SIGUSR1 opens, even on another port. */
+export async function profileProcess(
+  pid: number,
+  port: number,
+  durationMs: number,
+): Promise<CpuProfile> {
+  // A live endpoint may belong to another process. Verify it without first
+  // opening an additional inspector on the requested PID.
+  const url = await inspectorUrlAt(`http://127.0.0.1:${String(port)}`)
+  if (url) return profileInspector(url, durationMs, pid)
+  const before = readTargetListenerOrigins(pid)
+  process.kill(pid, 'SIGUSR1')
+  try {
+    return await profileInspector(await waitForInspectorUrl(port, 5000), durationMs, pid)
+  } catch (error) {
+    try {
+      await closeOpenedInspectors(pid, before)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Inspector activation failed and cleanup could not be confirmed for process ${String(pid)}; its inspector may still be open`,
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
+
+/** Ask the target to close its inspector, then disconnect. */
 async function closeInspector(session: InspectorSession): Promise<void> {
   try {
     const evaluated = evaluateResultSchema.parse(
       await session.call('Runtime.evaluate', { expression: INSPECTOR_CLOSE_EXPRESSION }),
     )
     if (evaluated.exceptionDetails) {
-      console.warn(`Inspector close was not scheduled: ${evaluated.exceptionDetails.text}`)
+      throw new Error(`Inspector close was not scheduled: ${evaluated.exceptionDetails.text}`)
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`Inspector close was not requested: ${message}`)
   } finally {
     session.close()
   }
@@ -194,14 +401,20 @@ async function main(): Promise<void> {
     },
   })
   const pid = Number(values.pid)
+  const port = Number(values.port)
+  const durationMs = Number(values.seconds) * 1000
   if (!Number.isInteger(pid) || pid <= 0) {
     throw new Error(
       'Usage: node scripts/profile-main-process.mts --pid <pid> [--seconds 5] [--out file]',
     )
   }
-  process.kill(pid, 'SIGUSR1')
-  const url = await waitForInspectorUrl(Number(values.port), 5000)
-  const profile = await profileInspector(url, Number(values.seconds) * 1000)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Inspector port must be an integer between 1 and 65535')
+  }
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error('Profile duration must be a positive number of seconds')
+  }
+  const profile = await profileProcess(pid, port, durationMs)
   const out = values.out ?? join(tmpdir(), `copse-main-${String(pid)}.cpuprofile`)
   await writeFile(out, JSON.stringify(profile))
   console.log(`Profile: ${out}`)

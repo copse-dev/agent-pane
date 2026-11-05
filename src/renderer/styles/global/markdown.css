@@ -473,6 +473,34 @@ html.mark-external-links
   background: var(--bg-elevated);
   object-fit: contain;
 }
+/* A remote-artifact image that could not be hydrated: why, its alt text, and
+   Retry only when retrying can help (remote-artifact-images.ts). */
+.message-text .remote-artifact-unavailable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.message-text .remote-artifact-unavailable-alt {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.message-text .remote-artifact-unavailable-alt::before {
+  content: '“';
+}
+.message-text .remote-artifact-unavailable-alt::after {
+  content: '”';
+}
+.message-text .remote-artifact-retry {
+  margin-left: auto;
+}
 .message-text .code-block-shell {
   position: relative;
 }
