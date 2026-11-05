@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-HZHR2CRE.js";
+} from "./chunk-6YY6Y3HG.js";
 import {
   clear,
   el,
@@ -27907,6 +27907,11 @@ function attentionThreadId(store, threadId) {
   }
   return threadId;
 }
+function proposingThreadId(store, threadId) {
+  const threads = store.getState().threads;
+  const proposerId = threads.find((t2) => t2.id === threadId)?.proposedBy?.threadId;
+  return proposerId !== void 0 && proposerId !== threadId && threads.some((t2) => t2.id === proposerId) ? proposerId : null;
+}
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
@@ -28536,7 +28541,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-BE5HGUWH.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -33267,6 +33272,22 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "deepseek-v4-1-flash-1017-high": [
+        {
+          value: 28.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
+      "deepseek-v4-1-flash-1017-non-reasoning": [
+        {
+          value: 18.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-non-reasoning', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
       "deepseek-v4-1-flash-non-reasoning": [
         {
           value: 24.7,
@@ -34319,6 +34340,22 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "gemini-4-carbon-low": [
+        {
+          value: 53.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
+      "gemini-4-carbon-medium": [
+        {
+          value: 57.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
       "gemma-3-1b": [
         {
           value: 1,
@@ -34799,6 +34836,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 27.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3-flash', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "glm-5-3-low": [
@@ -36453,6 +36496,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'granite-4-2-3b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'granite-4-2-3b', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "granite-4-2-8b": [
@@ -36467,6 +36516,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 5.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'granite-4-2-8b', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "grok-1": [
@@ -36757,10 +36812,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 34.3,
+          value: 35.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "grok-4-7-high": [
@@ -37553,6 +37608,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 17.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -38883,6 +38944,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-small-4', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "mistral-small-4-non-reasoning": [
@@ -39171,6 +39238,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "nanbeige4-3-33b": [
+        {
+          value: 20.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nanbeige4-3-33b', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
       "nemotron-3-5-bolt-74b-a9b": [
         {
           value: 21.4,
@@ -39191,6 +39266,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 5.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nemotron-3-5-lightning', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "nemotron-3-5-super-vl": [
@@ -40743,6 +40824,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 15.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-27b-medium": [
@@ -40757,6 +40844,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 17.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-medium', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-27b-non-reasoning": [
@@ -40771,6 +40864,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 10,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-non-reasoning', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-flash-next": [
@@ -43345,12 +43444,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
+          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
+          // normally never sees it. The entry stays as a safety net for a wrap that
+          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -43444,12 +43544,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
+          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
+          // normally never sees it. The entry stays as a safety net for a wrap that
+          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -54744,10 +54845,7 @@ function createAppearanceSection(form, store, markDirty) {
   }
   function apply(value) {
     document.documentElement.dataset["theme"] = value.theme;
-    if (store.getState().theme !== value.theme) {
-      store.setState({ theme: value.theme });
-      store.emit("theme_changed", value.theme);
-    }
+    if (store.getState().theme !== value.theme) store.setState({ theme: value.theme });
     applyUiAccent(value.accentColor);
     applyUiTint(value.tintColor, value.tintStrength);
   }
@@ -71269,8 +71367,6 @@ function createStore(initial) {
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
     settings_changed: /* @__PURE__ */ new Set(),
-    theme_changed: /* @__PURE__ */ new Set(),
-    staged_diffs_changed: /* @__PURE__ */ new Set(),
     usage_updated: /* @__PURE__ */ new Set(),
     context_updated: /* @__PURE__ */ new Set(),
     todos_changed: /* @__PURE__ */ new Set(),
@@ -74180,6 +74276,7 @@ export {
   getSidebarThreads,
   getSideChatUnreadParents,
   attentionThreadId,
+  proposingThreadId,
   archiveCachedSidebarThread,
   isProjectSwitchInFlight,
   preloadSidebarThreads,
