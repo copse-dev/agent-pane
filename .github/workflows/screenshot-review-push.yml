@@ -1,0 +1,126 @@
+name: Screenshot review push
+
+# Screenshot evidence belongs to the head it was rendered for
+# (publish-screenshot-candidates.yml), but a push only replaces it once CI on
+# the new head finishes, most of an hour later, and never if that run fails
+# before rendering. Until then the evidence comment kept offering the previous
+# head's candidates, checkboxes and cherry-pick command as if they were current.
+# This replaces the comment with a notice naming the pushed head as soon as the
+# push lands, and drops `screenshots-need-review` until the new head's own
+# evidence asks for a decision again.
+#
+# It writes no `Screenshot review` status. A head without one reads as waiting,
+# and screenshot-review-labels.yml and screenshot-review-selection.yml refuse a
+# decision on a head with no status, so nobody can accept or decline before the
+# new head is rendered.
+#
+# Left alone:
+#   - a comment that already names the pushed head: the publisher got there
+#     first, or an accept or selection decision advanced the branch to this head
+#     and said so in the comment;
+#   - a lower layer of a declared screenshot stack: screenshot-stack.yml
+#     reconciles those comments on the same push (the tip keeps ordinary
+#     evidence, so it is retired here like any other PR);
+#   - a PR that moved past the pushed head or closed: a later event owns it;
+#   - fork PRs, which never get evidence (the publisher rejects them).
+#
+# `pull_request`, not `pull_request_target`, like screenshot-review-labels.yml:
+# same-repository PRs already carry a writable token, nothing is checked out,
+# and the script only calls the API.
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  # The publisher's and the decision workflows' group. A publication or decision
+  # for the old head either lands first and is retired here, or runs after and
+  # finds the PR moved past it.
+  group: screenshot-review-${{ github.event.pull_request.number }}
+  # Retain queued publications and decisions; the default replaces pending runs.
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Retire the previous head's screenshot evidence
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const head = process.env.HEAD_SHA || '';
+            if (!/^[0-9a-f]{40}$/.test(head)) {
+              core.setFailed('The push event reported an unexpected head SHA.');
+              return;
+            }
+            const sha12 = head.slice(0, 12);
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.state !== 'open' || pr.head.sha !== head || pr.head.repo?.full_name !== `${owner}/${repo}`) {
+              core.notice(`PR #${number} moved past ${sha12} or closed; a later event owns its screenshot review.`);
+              return;
+            }
+            const body = pr.body || '';
+            if (body.includes('<!-- copse-screenshot-stack:') && !body.includes(`tip=#${number} -->`)) {
+              core.notice('Lower stack layers are reconciled by screenshot-stack.yml.');
+              return;
+            }
+
+            const marker = '<!-- copse-e2e-screenshot-review -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: number,
+              per_page: 100,
+            });
+            const evidence = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (!evidence) {
+              core.info('No screenshot evidence has been published on this PR.');
+              return;
+            }
+            if (evidence.body.includes(sha12)) {
+              core.info(`The screenshot evidence comment already describes ${sha12}.`);
+              return;
+            }
+
+            await github.rest.issues.updateComment({
+              owner,
+              repo,
+              comment_id: evidence.id,
+              body: [
+                marker,
+                '### Screenshot evidence',
+                '',
+                '<!-- copse-screenshot-review-state -->',
+                `**Waiting for CI on \`${sha12}\`.** A push replaced the head the previous evidence was ` +
+                  'rendered for, so its candidates and any decision on them no longer apply. This head\'s ' +
+                  'evidence and `Screenshot review` check replace this notice when its CI run finishes.',
+                '<!-- /copse-screenshot-review-state -->',
+              ].join('\n'),
+            });
+            if (pr.labels.some((label) => label.name === 'screenshots-need-review')) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: number,
+                  name: 'screenshots-need-review',
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }

@@ -175,3 +175,26 @@ export function mobileCertificate(
   })
   return { root, cert: `${cert}${root}`, key: leaf.privateKey, rootPath }
 }
+
+/** A private pinned identity for Copse-to-Copse model calls; never installed as a trusted CA. */
+export function createMachineCertificate(): { cert: string; key: string } {
+  const pair = keyPair()
+  return {
+    key: pair.privateKey,
+    cert: certificate({
+      subject: 'Copse Machine',
+      issuer: 'Copse Machine',
+      publicKey: pair.publicKey,
+      issuerKey: pair.privateKey,
+      validDays: 3650,
+      extensions: [
+        extension([0x55, 0x1d, 0x13], sequence(), true),
+        extension([0x55, 0x1d, 0x0f], der(0x03, Buffer.from([7, 0x80])), true),
+        extension(
+          [0x55, 0x1d, 0x25],
+          sequence(oid(0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01)),
+        ),
+      ],
+    }),
+  }
+}

@@ -94,3 +94,40 @@ describe('titlebar branch status', () => {
     }
   })
 })
+
+describe('titlebar sidebar toggle', () => {
+  it('repaints from projectsPaneOpen alone, with no event emitted', () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    class TestResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = TestResizeObserver
+    const body = document.createElement('div')
+    body.id = 'body'
+    const root = document.createElement('div')
+    document.body.append(body, root)
+    const store = createStore()
+
+    let destroy: (() => void) | undefined
+    try {
+      destroy = mountTitlebar(root, store, createFakeApi())
+      const button = root.querySelector('.titlebar-sidebar-btn')
+      assert.ok(button)
+      assert.equal(button.getAttribute('aria-pressed'), 'true')
+      assert.equal(body.classList.contains('is-projects-collapsed'), false)
+
+      store.setState({ projectsPaneOpen: false })
+      assert.equal(button.getAttribute('aria-pressed'), 'false')
+      assert.equal(body.classList.contains('is-projects-collapsed'), true)
+
+      store.setState({ projectsPaneOpen: true })
+      assert.equal(button.getAttribute('aria-pressed'), 'true')
+      assert.equal(body.classList.contains('is-projects-collapsed'), false)
+    } finally {
+      destroy?.()
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+})

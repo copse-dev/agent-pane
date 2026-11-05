@@ -1,4 +1,4 @@
-import { RequestError } from '@agentclientprotocol/sdk'
+import { RequestError } from '@agentclientprotocol/sdk/unstable'
 import quote from 'shell-quote'
 import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { isContextOverflowMessage } from '@shared/context-window-advice.ts'

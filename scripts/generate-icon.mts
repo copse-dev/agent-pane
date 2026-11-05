@@ -157,6 +157,28 @@ function renderPng(svg: string, size: number): Buffer {
   return resvg.render().asPng()
 }
 
+const ICONSET_SIZES: ReadonlyArray<readonly [string, number]> = [
+  ['icon_16x16.png', 16],
+  ['icon_16x16@2x.png', 32],
+  ['icon_32x32.png', 32],
+  ['icon_32x32@2x.png', 64],
+  ['icon_128x128.png', 128],
+  ['icon_128x128@2x.png', 256],
+  ['icon_256x256.png', 256],
+  ['icon_256x256@2x.png', 512],
+  ['icon_512x512.png', 512],
+  ['icon_512x512@2x.png', 1024],
+]
+
+/** Fresh iconset for iconutil (the directory is gitignored). */
+function writeIconset(iconsetDir: string, pngForSize: (size: number) => Buffer): void {
+  rmSync(iconsetDir, { recursive: true, force: true })
+  mkdirSync(iconsetDir, { recursive: true })
+  for (const [name, size] of ICONSET_SIZES) {
+    writeFileSync(join(iconsetDir, name), withSrgbProfile(pngForSize(size)))
+  }
+}
+
 function generateVariant(variant: AppIconVariant): void {
   const scheme = ICON_SCHEMES[variant]
   const appMarkup = appSvg(scheme)
@@ -175,27 +197,7 @@ function generateVariant(variant: AppIconVariant): void {
   writeFileSync(join(outDir, 'icon-dock-512.png'), renderPng(dockMarkup, 512))
 
   const iconsetDir = join(outDir, 'app.iconset')
-  rmSync(iconsetDir, { recursive: true, force: true })
-  mkdirSync(iconsetDir, { recursive: true })
-
-  const iconsetMap: Array<[string, number]> = [
-    ['icon_16x16.png', 16],
-    ['icon_16x16@2x.png', 32],
-    ['icon_32x32.png', 32],
-    ['icon_32x32@2x.png', 64],
-    ['icon_128x128.png', 128],
-    ['icon_128x128@2x.png', 256],
-    ['icon_256x256.png', 256],
-    ['icon_256x256@2x.png', 512],
-    ['icon_512x512.png', 512],
-    ['icon_512x512@2x.png', 1024],
-  ]
-
-  for (const [name, size] of iconsetMap) {
-    const iconsetPng = join(iconsetDir, name)
-    cpSync(join(outDir, `icon-${String(size)}.png`), iconsetPng)
-    writeFileSync(iconsetPng, withSrgbProfile(readFileSync(iconsetPng)))
-  }
+  writeIconset(iconsetDir, (size) => readFileSync(join(outDir, `icon-${String(size)}.png`)))
 
   const icnsPath = join(outDir, 'app.icns')
   if (process.platform === 'darwin') {
@@ -217,20 +219,49 @@ function generateVariant(variant: AppIconVariant): void {
   cpSync(join(outDir, 'icon-dock-512.png'), join(previewDir, `${variant}.png`))
 }
 
-for (const variant of ICON_VARIANTS) {
-  generateVariant(variant)
-}
-
-const defaultIconsDir = join(root, 'assets/icons', RELEASE_ICON_VARIANT)
-writeFileSync(join(root, 'assets/icon.png'), readFileSync(join(defaultIconsDir, 'icon-256.png')))
-const defaultIcns = join(defaultIconsDir, 'app.icns')
 const releaseIcns = join(root, 'assets/icons/app.icns')
-if (existsSync(defaultIcns)) {
-  cpSync(defaultIcns, releaseIcns)
+
+/**
+ * `--icns-only` (install-time): build just the release variant's gitignored
+ * .icns that the dev bundle needs. It renders straight into the iconset and
+ * leaves the tracked PNG/SVG sources, previews and assets/icon.png untouched.
+ */
+function generateReleaseIcns(): void {
+  if (process.platform !== 'darwin') {
+    console.log('Skipping app.icns (iconutil is macOS-only).')
+    return
+  }
+  const appMarkup = appSvg(ICON_SCHEMES[RELEASE_ICON_VARIANT])
+  const outDir = join(root, 'assets/icons', RELEASE_ICON_VARIANT)
+  const iconsetDir = join(outDir, 'app.iconset')
+  writeIconset(iconsetDir, (size) => renderPng(appMarkup, size))
+  const icnsPath = join(outDir, 'app.icns')
+  execFileSync('iconutil', ['--convert', 'icns', '--output', icnsPath, iconsetDir])
+  cpSync(icnsPath, releaseIcns)
+  console.log(`Wrote ${releaseIcns}`)
 }
 
-const distAssets = join(root, 'dist', 'assets')
-if (existsSync(join(root, 'dist', 'main', 'index.js'))) {
-  cpSync(join(root, 'assets'), distAssets, { recursive: true })
-  console.log('Synced assets → dist/assets')
+function generateAll(): void {
+  for (const variant of ICON_VARIANTS) {
+    generateVariant(variant)
+  }
+
+  const defaultIconsDir = join(root, 'assets/icons', RELEASE_ICON_VARIANT)
+  writeFileSync(join(root, 'assets/icon.png'), readFileSync(join(defaultIconsDir, 'icon-256.png')))
+  const defaultIcns = join(defaultIconsDir, 'app.icns')
+  if (existsSync(defaultIcns)) {
+    cpSync(defaultIcns, releaseIcns)
+  }
+
+  const distAssets = join(root, 'dist', 'assets')
+  if (existsSync(join(root, 'dist', 'main', 'index.js'))) {
+    cpSync(join(root, 'assets'), distAssets, { recursive: true })
+    console.log('Synced assets → dist/assets')
+  }
+}
+
+if (process.argv.includes('--icns-only')) {
+  generateReleaseIcns()
+} else {
+  generateAll()
 }

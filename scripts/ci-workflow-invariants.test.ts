@@ -83,8 +83,8 @@ describe('ci.yml workflow invariants', () => {
     const expected = listed.stdout.trim().split('\n')
     assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
     assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
-    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
-    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.ok(expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 9 }, (_unused, index) => shardSpecs('full', index + 1, 9))
     assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
     // The 720s attempt watchdog needs headroom on every shard, not on average:
     // round-robin by count let the slowest shard run ~180s past the fastest.
@@ -327,6 +327,120 @@ describe('ci.yml workflow invariants', () => {
       /if: failure\(\)[\s\S]{0,400}?path: e2e-failure-artifacts\//,
       'failed shards must upload the runner diagnostics alongside browser artifacts',
     )
+  })
+
+  it('frees e2e disk only on a cramped hosted runner, behind setup, before the suite', () => {
+    const steps = z
+      .object({
+        jobs: z.object({
+          e2e: z.object({
+            steps: z.array(
+              z.object({
+                name: z.string().optional(),
+                uses: z.string().optional(),
+                if: z.string().optional(),
+                env: z
+                  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+                  .optional(),
+                run: z.string().optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(workflow)).jobs.e2e.steps
+    const at = (name: string): number => steps.findIndex((step) => step.name === name)
+    const freeAt = at('Free disk on a cramped hosted runner')
+    const joinAt = at('Join disk cleanup and log free space')
+    const free = steps[freeAt]
+    const joined = steps[joinAt]
+    assert.ok(free?.run && joined?.run, 'expected both disk steps in the e2e job')
+    // Deleting system directories is for GitHub-hosted runners only.
+    assert.equal(free.if, "runner.environment == 'github-hosted'")
+    assert.equal(joined.if, "runner.environment == 'github-hosted'")
+    // The deletion overlaps checkout and setup; the suite starts after the join.
+    const checkoutAt = steps.findIndex((step) => step.uses?.startsWith('actions/checkout@'))
+    const suiteAt = steps.findIndex((step) => step.name?.startsWith('e2e shard '))
+    assert.ok(freeAt >= 0 && freeAt < checkoutAt, 'the cleanup must start before checkout')
+    assert.ok(joinAt > checkoutAt && joinAt < suiteAt, 'the suite must start after the join')
+
+    const root = mkdtempSync(join(tmpdir(), 'ci-e2e-disk-'))
+    try {
+      // Fakes at the boundary: `df` reports a chosen free space (GNU or BSD
+      // host alike) and `sudo` records instead of deleting, slowly enough to
+      // show the step returns before the deletion finishes.
+      const bin = join(root, 'bin')
+      const calls = join(root, 'sudo.log')
+      mkdirSync(bin)
+      writeFileSync(
+        join(bin, 'df'),
+        '#!/bin/sh\ncase "$*" in\n  *--output=avail*) printf \'Avail\\n%s\\n\' "$FAKE_AVAIL_BYTES" ;;\n  *) echo "fake df $*" ;;\nesac\n',
+        { mode: 0o755 },
+      )
+      writeFileSync(join(bin, 'sudo'), `#!/bin/sh\nsleep 2\necho "$*" >> '${calls}'\n`, {
+        mode: 0o755,
+      })
+      const runner = join(root, 'runner-temp')
+      mkdirSync(runner)
+      const run = (
+        script: string,
+        availGb: number,
+        stepEnv: Readonly<Record<string, string | number | boolean>> | undefined,
+      ): SpawnSyncReturns<string> =>
+        spawnSync('bash', ['-c', script], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            ...Object.fromEntries(Object.entries(stepEnv ?? {}).map(([k, v]) => [k, String(v)])),
+            PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+            RUNNER_TEMP: runner,
+            FAKE_AVAIL_BYTES: String(availGb * 1e9),
+          },
+        })
+
+      // The ~75 GB-free layout: one `df`, no deletion, no wait, no warning.
+      const roomy = run(free.run, 75, free.env)
+      assert.equal(roomy.status, 0, roomy.stderr)
+      assert.match(roomy.stdout, /## disk before cleanup\nfake df/)
+      assert.match(roomy.stdout, /75 GB free at .*: no cleanup needed \(threshold 40 GB\)/)
+      assert.equal(existsSync(join(runner, 'disk-cleanup.started')), false)
+      const roomyJoin = run(joined.run, 75, joined.env)
+      assert.equal(roomyJoin.status, 0, roomyJoin.stderr)
+      assert.match(roomyJoin.stdout, /## disk after cleanup\nfake df/)
+      assert.doesNotMatch(roomyJoin.stdout, /disk cleanup ran|::warning/)
+      assert.equal(existsSync(calls), false)
+
+      // The cow-root layout that failed (11.7 GB free at the spec): the step
+      // hands the deletion to the background, and the join waits for it.
+      const cramped = run(free.run, 14, free.env)
+      assert.equal(cramped.status, 0, cramped.stderr)
+      assert.match(cramped.stdout, /14 GB free at .*, under 40 GB: removing unused toolchains/)
+      assert.equal(existsSync(join(runner, 'disk-cleanup.done')), false)
+      const crampedJoin = run(joined.run, 35, joined.env)
+      assert.equal(crampedJoin.status, 0, crampedJoin.stderr)
+      assert.match(crampedJoin.stdout, /disk cleanup ran \S+ to \S+; this step waited \d+s/)
+      assert.match(crampedJoin.stdout, /## disk after cleanup\nfake df/)
+      assert.doesNotMatch(crampedJoin.stdout, /::warning/)
+      // Only toolchains that no spec and no Linux product path uses.
+      assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n').sort(), [
+        'rm -rf /opt/ghc',
+        'rm -rf /opt/hostedtoolcache/CodeQL',
+        'rm -rf /usr/local/.ghcup',
+        'rm -rf /usr/local/lib/android',
+        'rm -rf /usr/share/dotnet',
+        'rm -rf /usr/share/swift',
+      ])
+
+      // Still short after cleanup: a warning names the classifier spec.
+      const short = run(joined.run, 12, joined.env)
+      assert.equal(short.status, 0, short.stderr)
+      assert.match(
+        short.stdout,
+        /::warning title=Too little free disk for the classifier e2e::12\.0 GB free at .*settings-classifiers-install\.e2e\.ts needs about 15\.6 GB/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps expensive post-merge repetitions off trunk pushes', () => {
@@ -764,7 +878,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
+    assert.equal(precheck.split(binding).length - 1, 5) // includes the advisory shadow comparison and the accessibility baseline
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
@@ -978,7 +1092,14 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
   it('separates the write-capable publisher from pull-request code execution', () => {
     assert.match(workflow, /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]$/m)
     assert.doesNotMatch(workflow, /pull_request_target/)
-    assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/)
+    // A red run publishes only what it rendered (discovery checks the job);
+    // a cancelled run was superseded or stopped and never publishes.
+    assert.match(
+      workflow,
+      /\(github\.event\.workflow_run\.conclusion == 'success' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'failure' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'timed_out'\) &&/,
+    )
+    assert.doesNotMatch(workflow, /conclusion (?:==|!=) 'cancelled'/)
+    assert.match(workflow, /job\.name === 'screenshot-artifacts' && job\.conclusion === 'success'/)
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
@@ -1414,6 +1535,22 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /prepare:gortex:mac/)
   })
 
+  it('packages the checksum-verified remote watcher target set', () => {
+    assert.match(workflow, /uses: \.\/\.github\/workflows\/remote-watcher-build\.yml/)
+    assert.match(workflow, /ref: \$\{\{ needs\.preflight\.outputs\.release_sha \}\}/)
+    assert.match(workflow, /name: remote-watcher-all/)
+    assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
+    for (const target of [
+      'aarch64-apple-darwin',
+      'x86_64-apple-darwin',
+      'aarch64-unknown-linux-musl',
+      'x86_64-unknown-linux-musl',
+    ]) {
+      assert.match(workflow, new RegExp(target))
+    }
+    assert.match(workflow, /app\.asar\.unpacked\/dist\/resources\/remote-watcher/)
+  })
+
   it('assembles portable checksums without recompressing the packages', () => {
     assert.match(workflow, /assemble-macos-release\.mts/)
     assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
@@ -1556,6 +1693,58 @@ describe('release-publish.yml workflow invariants', () => {
   })
 })
 
+describe('stable channel workflow invariants', () => {
+  const publish = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
+  const promote = readFileSync(resolve('.github/workflows/release-promote.yml'), 'utf8')
+  const halt = readFileSync(resolve('.github/workflows/release-halt.yml'), 'utf8')
+
+  it('publishes every release, stable included, as a prerelease the stable feed ignores', () => {
+    assert.match(publish, /release_flags=\(--prerelease --latest=false\)/)
+    assert.doesNotMatch(publish, /release_flags\+=\(--latest\)/)
+  })
+
+  it('promotes in place after verifying the published bytes, behind the approval environment', () => {
+    assert.match(promote, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(promote, /^ {2}(push|schedule):/m)
+    assert.match(promote, /environment: stable-release/)
+    assert.match(promote, /release-promotion\.mts check-promotion/)
+    assert.match(promote, /cd published\n {12}shasum -a 256 --check SHA256SUMS/)
+    assert.match(promote, /release-promotion\.mts check-feeds/)
+    assert.match(promote, /RELEASE_VALIDATION\.json/)
+    assert.match(
+      promote,
+      /gh release edit "\$TAG" --repo "\$RELEASE_REPOSITORY" --prerelease=false --latest/,
+    )
+    assert.match(promote, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" promoted/)
+    const verify = promote.indexOf('check-feeds')
+    const flip = promote.indexOf('--prerelease=false --latest')
+    assert.ok(verify >= 0 && flip > verify, 'verification must precede promotion')
+    for (const body of [promote, halt]) {
+      assert.doesNotMatch(
+        body,
+        /electron-builder|build:release|pnpm install|gh release (create|upload|delete)/,
+      )
+    }
+  })
+
+  it('halts by drafting, never deleting, and serialises with promotion', () => {
+    assert.match(halt, /options: \[halt, resume\]/)
+    assert.match(halt, /--draft=true/)
+    assert.match(halt, /release-promotion\.mts fallback-latest/)
+    assert.match(halt, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" "\$STATE"/)
+    assert.match(halt, /--label area:release/)
+    for (const body of [promote, halt]) {
+      assert.match(body, /group: release-channel-change/)
+      assert.match(body, /repositories: copse-releases/)
+      // Dispatch inputs reach shells only through env, never interpolated.
+      assert.doesNotMatch(body, /run: .*\$\{\{ inputs\./)
+      for (const block of body.split(/\n {8}run: \|\n/).slice(1)) {
+        assert.doesNotMatch(block.split(/\n {6}- /)[0] ?? '', /\$\{\{ inputs\./)
+      }
+    }
+  })
+})
+
 describe('runner-routing invariants across every workflow', () => {
   const dir = resolve('.github/workflows')
   const workflows = readdirSync(dir)
@@ -1645,6 +1834,75 @@ describe('acp-v2-watch.yml workflow invariants', () => {
     // call here would quietly reintroduce the multi-minute node_modules restore.
     assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
     assert.match(workflow, /run: pnpm run watch:acp-v2/)
+  })
+})
+
+describe('boundary-contracts.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/boundary-contracts.yml'), 'utf8')
+  const triggers = workflow.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1] ?? ''
+
+  it('runs on a schedule, on manual dispatch and for release candidates only', () => {
+    // These jobs hold provider keys. A pull_request or merge_group trigger would
+    // put candidate code next to them and make ordinary CI depend on vendors.
+    assert.match(triggers, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m)
+    assert.match(triggers, /^ {2}workflow_dispatch:$/m)
+    assert.match(triggers, /^ {2}push:\n {4}branches: \[release\]$/m)
+    assert.deepEqual(
+      [...triggers.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]),
+      ['schedule', 'push', 'workflow_dispatch'],
+    )
+  })
+
+  it('keeps the token read-only, the runner hosted and the checkout credential-free', () => {
+    assert.match(workflow, /^permissions:\n {2}contents: read\n\n/m)
+    assert.doesNotMatch(workflow, /: write\b/)
+    assert.match(workflow, /^ {4}runs-on: ubuntu-24\.04$/m)
+    assert.doesNotMatch(workflow, /vars\.SELF_HOSTED/)
+    assert.match(workflow, /persist-credentials: false/)
+  })
+
+  it('reads keys only through a branch-restricted environment', () => {
+    // workflow_dispatch runs the dispatched branch's copy of this file, so only
+    // environment secrets behind a main/release deployment-branch policy keep a
+    // writer's branch from reaching the keys. The ref guard is defence in depth.
+    assert.match(workflow, /^ {4}environment: boundary-contracts$/m)
+    assert.match(
+      workflow,
+      /^ {4}if: github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/release'$/m,
+    )
+    const doc = readFileSync(resolve('docs/boundary-contracts.md'), 'utf8')
+    assert.match(doc, /Never\s+store them as repository or organization secrets/)
+    assert.match(doc, /deployment branches are limited to `main` and `release`/)
+  })
+
+  it('binds provider secrets to the run step alone, never the dependency install', () => {
+    const secretLines = workflow
+      .split('\n')
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => line.includes('secrets.'))
+    assert.ok(secretLines.length >= 3)
+    const runStep = workflow.split('\n').findIndex((line) => line.includes('- name: Run contracts'))
+    const setupStep = workflow
+      .split('\n')
+      .findIndex((line) => line.includes('uses: ./.github/actions/setup'))
+    assert.ok(setupStep >= 0 && runStep > setupStep)
+    for (const { line, index } of secretLines) {
+      assert.ok(index > runStep, `secret bound outside the run step: ${line.trim()}`)
+      assert.match(
+        line,
+        /^ {10}CONTRACT_[A-Z_]+_API_KEY: \$\{\{ secrets\.CONTRACT_[A-Z_]+_API_KEY \}\}$/,
+      )
+    }
+    // The dispatch input reaches the shell through env, never inline expansion.
+    assert.doesNotMatch(workflow, /run: [^\n]*\$\{\{ inputs\./)
+    assert.match(workflow, /TARGETS: \$\{\{ inputs\.targets \}\}/)
+  })
+
+  it('runs the bundled runner and keeps its report as evidence', () => {
+    assert.match(workflow, /pnpm run contracts:boundary -- "\$\{args\[@\]\}"/)
+    assert.match(workflow, /uses: actions\/upload-artifact@v7/)
+    assert.match(workflow, /path: boundary-contracts\.json/)
+    assert.match(workflow, /cancel-in-progress: false/)
   })
 })
 

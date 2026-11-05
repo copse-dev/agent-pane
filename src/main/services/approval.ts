@@ -36,9 +36,9 @@ import {
   humanDecisionSource,
   type HumanDecisionPrincipal,
 } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { beginCommandApprovalWait } from './exec/command-phase.ts'
 
 /**
  * Abort reason a transport passes when the CALLER went away but the user's
@@ -108,6 +108,8 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
+  /** Host producer certifies that an approve-once response authorizes only this concrete request. */
+  interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
@@ -186,6 +188,14 @@ export interface ApprovalRequest {
   toolCallId?: string
   /** Exact host bridge request identity; audit-only, never an ACP card ID. */
   bridgeExecutionId?: string
+}
+
+/** Explicit host capabilities, never a display title or a client-supplied tool label. */
+export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
+  return (
+    (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
+    (req.interactiveClientApproval === 'once' && req.turnTreeLeaseDefault !== true)
+  )
 }
 
 export interface ApprovalResponse {
@@ -626,19 +636,26 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
+  projectId: string | null,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
   try {
-    const entry = await deferApproval({
-      threadId,
-      kind: req.type,
-      title: req.title,
-      subject: req.subject ?? req.title,
-      ...(req.cause !== undefined ? { cause: req.cause } : {}),
-      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
-      ...(req.scope !== undefined ? { scope: req.scope } : {}),
-    })
+    const entry = await deferApproval(
+      {
+        threadId,
+        kind: req.type,
+        title: req.title,
+        subject: req.subject ?? req.title,
+        ...(req.cause !== undefined ? { cause: req.cause } : {}),
+        ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+        ...(req.scope !== undefined ? { scope: req.scope } : {}),
+      },
+      // The run's own project, not whichever one the window has open: a
+      // schedule can fire in a background project, and Context and the status
+      // tool read the queue by the thread's project.
+      { projectId },
+    )
     entryId = entry.id
   } catch (error) {
     console.warn('[approval] could not queue a deferral; prompting instead:', error)
@@ -651,7 +668,43 @@ async function deferInsteadOfPrompting(
   )
 }
 
+type ApprovalResolution = NonNullable<ApprovalResponse['resolution']>
+
+/** How the last prompt opened inside {@link observeApprovalResolutions} settled. */
+interface ApprovalResolutionObserver {
+  last?: ApprovalResolution
+}
+
+const resolutionObserver = new AsyncLocalStorage<ApprovalResolutionObserver>()
+
+/**
+ * Run `fn` and report how the last approval prompt it opened settled, if any.
+ * Gates collapse a prompt to a boolean, so this is how a caller tells a user's
+ * "no" from a prompt that closed with no answer at all.
+ */
+export async function observeApprovalResolutions<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; lastResolution: ApprovalResolution | undefined }> {
+  const observer: ApprovalResolutionObserver = {}
+  const value = await resolutionObserver.run(observer, fn)
+  return { value, lastResolution: observer.last }
+}
+
 export function requestApproval(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  const observer = resolutionObserver.getStore()
+  const response = requestApprovalUnobserved(req, signal)
+  if (!observer) return response
+  return response.then((settled) => {
+    // An external handler that omits the resolution answered as the user.
+    observer.last = settled.resolution ?? 'user'
+    return settled
+  })
+}
+
+function requestApprovalUnobserved(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
@@ -662,25 +715,46 @@ export function requestApproval(
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
   }
-  const context = getThreadExecutionContext()
-  const projectId = context?.projectId ?? getActiveProjectId()
+  // The turn's own project. Outside a turn there is none: the request is
+  // audited only if a turn's thread later records it, and it can never defer
+  // (deferral needs a run thread, and every run thread runs inside a turn).
+  const projectId = getThreadExecutionContext()?.projectId ?? null
   const threadId = getActiveRunThread()
   approvalAuditIdentities.set(req, {
     ...(projectId ? { projectId } : {}),
     ...(threadId ? { threadId } : {}),
   })
   if (signal?.aborted) return Promise.resolve(DENIED)
+  // A command tool call shows that it is waiting on this answer (#3956).
+  const settleCommandWait = beginCommandApprovalWait()
+  const answered = (response: Promise<ApprovalResponse>): Promise<ApprovalResponse> =>
+    settleCommandWait === null
+      ? response
+      : response.then(
+          (value) => {
+            settleCommandWait(value.approved)
+            return value
+          },
+          (error: unknown) => {
+            settleCommandWait(false)
+            throw error
+          },
+        )
   // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
   // is the one choke point every gate already funnels through, so intercepting
   // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, () =>
-      requestApprovalInteractive(req, signal),
+    // The same project the audit identity above resolved: the turn's, else
+    // the no-project bucket. Never the window's active project.
+    return answered(
+      deferInsteadOfPrompting(req, deferringThread, projectId, () =>
+        requestApprovalInteractive(req, signal),
+      ),
     )
   }
-  return requestApprovalInteractive(req, signal)
+  return answered(requestApprovalInteractive(req, signal))
 }
 
 function requestApprovalInteractive(
@@ -976,7 +1050,7 @@ export function initApproval(
         // (`renderer-prompt-target.ts`).
         const dest = resolveRendererPromptTarget(win.webContents)
         if (dest.isDestroyed()) {
-          resolve(DENIED)
+          resolve({ ...DENIED, resolution: 'window-closed' })
           return
         }
         const send = (): void => {
@@ -998,7 +1072,9 @@ export function initApproval(
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })
-        const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+        // The asking turn's project; outside a turn the prompt stays on the
+        // desktop, never filed under whichever project the window shows.
+        const projectId = getThreadExecutionContext()?.projectId
         const removeDecision =
           projectId && threadId
             ? humanDecisions.register(
@@ -1026,8 +1102,7 @@ export function initApproval(
                   // Other prompts can grant persistent authority on approved alone
                   // (for example provider-host consent). Keep them desktop/mobile-only
                   // until their semantics have a complete interactive-client projection.
-                  interactiveClientSupported:
-                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                  interactiveClientSupported: supportsInteractiveClientApproval(req),
                 },
               )
             : (): void => {}

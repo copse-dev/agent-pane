@@ -17,6 +17,7 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { fillContrast } from '../e2e/helpers/fill-contrast.ts'
 
 /** WCAG 2.2 AA for body text. Code spans are small text, so this is the bar. */
 const AA_BODY_TEXT = 4.5
@@ -25,6 +26,39 @@ describe('browser-hosted light-theme contrast', () => {
   before(async () => {
     await browser.url('/?scenario=light-contrast-surfaces')
     await $('.streaming-markdown code.hljs').waitForDisplayed()
+  })
+
+  it('keeps the held badge readable with the automation palette in both themes', async () => {
+    for (const theme of ['dark', 'light']) {
+      await browser.execute((value) => {
+        document.documentElement.dataset['theme'] = value
+        document.documentElement.setAttribute('data-automation-active', '')
+        const row = document.createElement('div')
+        row.id = 'automation-held-contrast'
+        row.className = 'msg-queued msg-held'
+        row.style.cssText = 'position: fixed; top: 100px; left: 400px; z-index: 10000;'
+        const badge = document.createElement('span')
+        badge.className = 'message-queued-badge'
+        badge.textContent = 'HELD'
+        row.append(badge)
+        document.body.append(row)
+      }, theme)
+      try {
+        const measured = await fillContrast('#automation-held-contrast .message-queued-badge')
+        assert.ok(measured)
+        assert.ok(measured.ratio >= AA_BODY_TEXT, `${theme}: ${JSON.stringify(measured)}`)
+        await saveElementScreenshot(
+          '#automation-held-contrast .message-queued-badge',
+          `automation-held-contrast-${theme}.png`,
+        )
+      } finally {
+        await browser.execute(() => {
+          document.getElementById('automation-held-contrast')?.remove()
+          document.documentElement.removeAttribute('data-automation-active')
+          document.documentElement.dataset['theme'] = 'light'
+        })
+      }
+    }
   })
 
   it('keeps every highlighted token readable on the light code surface', async () => {

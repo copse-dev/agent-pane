@@ -1,8 +1,24 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
+import type { MachineSharing, SharedMachineModel } from './machines.ts'
 import type { ReleaseChannel } from './release-channel.mts'
 
 /** Validated, nonsecret persisted preferences. Host schemas verify this wire contract. */
 export interface SettingsValues {
+  remoteSystemOneModelsEnabled: boolean
+  machineConnections: {
+    version: 1
+    id: string
+    identity: { certificate: string; key: string } | null
+    sharing: MachineSharing
+    machines: Array<{
+      id: string
+      name: string
+      endpoint: { address: string; port: number; fingerprint: string }
+      token: string
+      models: SharedMachineModel[]
+    }>
+    clients: Array<{ id: string; name: string; token: string }>
+  }
   acknowledgedProductAnnouncements: Array<string>
   model: string
   chatGptPlanWelcomeSeen: boolean
@@ -118,6 +134,7 @@ export interface SettingsValues {
       | {
           allowedDomains: Array<string>
           allowMacOsTrustd?: boolean | undefined
+          allowMacOsKeychain?: boolean | undefined
           homeDirs?: Array<string> | undefined
           scratchPaths?: Array<string> | undefined
         }
@@ -144,6 +161,7 @@ export interface SettingsValues {
   conciseThreadsEnabled: boolean
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
+  planModeEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean
   orchestrationWorkerModel: string
@@ -156,6 +174,7 @@ export interface SettingsValues {
   sshStrictHostKeys: 'accept-new' | 'strict'
   sshWorkspaceEnabled: boolean
   acpOverSshEnabled: boolean
+  sshWatcherMode: 'auto' | 'poll' | 'off'
   sshWorkspaceHosts: Array<{
     id: string
     label: string
@@ -166,6 +185,8 @@ export interface SettingsValues {
     forwardAgent?: boolean | undefined
   }>
   trustedSshHosts: Array<string>
+  trustedPackageRegistries: Array<string>
+  productionTargets: Array<string>
   classifierProviders: { version: 1; profiles: ClassifierProfile[] }
   safetyScreeningClassifier: string
   backgroundClassifier: string
@@ -189,6 +210,7 @@ export interface SettingsValues {
   webAllowedOrigins: Array<string>
   webAllowUserApproval: boolean
   browserAllowUserApproval: boolean
+  desktopControlAllowedApps: Array<string>
   approvedProviderHosts: Array<string>
   providerAllowUserApproval: boolean
   extraProviders: Array<{
@@ -226,7 +248,10 @@ export type SettingsSnapshot = { [K in keyof SettingsValues]?: SettingsValues[K]
 
 /** Dedicated credential, security and host-owned values are never ordinary updates. */
 type DedicatedSettingKey =
+  | 'machineConnections'
   | 'trustedSshHosts'
+  | 'trustedPackageRegistries'
+  | 'productionTargets'
   | 'classifierProviders'
   | 'safetyScreeningClassifier'
   | 'backgroundClassifier'
@@ -250,6 +275,7 @@ type DedicatedSettingKey =
   | 'webAllowedOrigins'
   | 'webAllowUserApproval'
   | 'browserAllowUserApproval'
+  | 'desktopControlAllowedApps'
   | 'approvedProviderHosts'
   | 'providerAllowUserApproval'
   | 'extraProviders'

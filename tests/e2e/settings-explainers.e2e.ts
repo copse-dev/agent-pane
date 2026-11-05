@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../packages/agent/src/plugins/first-party-plugins.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID } from '../../packages/agent/src/plugins/mcp-ui-canvas-plugin.ts'
 
+const DISABLED_PROJECT_ID = 'e2e-settings-explainers-disabled'
 const rowSelector = '.plugin-row[data-plugin-id="copse.mcp-ui-canvas"]'
 const toggleSelector = `${rowSelector} input[data-setting-key="animatedExplainers"]`
 
@@ -49,9 +52,6 @@ describe('experimental explainer setting', function () {
   it('defaults off, applies immediately, persists, and leaves Canvas usable when switched off', async () => {
     await openSettings(true)
     await expect($(`${rowSelector} .plugin-name`)).toHaveText('Canvas and explainers')
-    await expect($(`${rowSelector} .plugin-badge-experimental`)).toHaveText('Experimental', {
-      ignoreCase: true,
-    })
     assert.equal(await $(toggleSelector).isSelected(), false)
     await expectTools(false)
     await saveElementScreenshot(rowSelector, 'settings-explainers-experimental.png')
@@ -70,7 +70,19 @@ describe('experimental explainer setting', function () {
 
   it('finds the controls from search even when Canvas is disabled', async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-explainers-disabled')
+    // Canvas is stable/default-on now, so this scenario needs it disabled
+    // explicitly; every other plugin keeps the host's own default. The
+    // graduation marker says the profile has already upgraded: without it the
+    // one-time `migrateMcpUiCanvasStable()` removes this disable at launch.
+    const pluginDisabled = [...EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS, MCP_UI_CANVAS_PLUGIN_ID]
+    seedEmptyProject(process.cwd(), DISABLED_PROJECT_ID, { pluginDisabled })
+    writeSeedConfig({
+      projects: [{ id: DISABLED_PROJECT_ID, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: DISABLED_PROJECT_ID,
+      [`threads:${DISABLED_PROJECT_ID}`]: [],
+      pluginDisabled,
+      pluginMigration: { mcpUiCanvasStable: true },
+    })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()

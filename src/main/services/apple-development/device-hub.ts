@@ -189,6 +189,37 @@ export class DeviceHubService {
     return JSON.stringify(result.result)
   }
 
+  /** Exact UUID only. Shutdown/erase is never treated as deletion evidence. */
+  async deleteSimulator(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<{ simulatorId: string; deleted: boolean; verifiedAbsent: true }> {
+    z.uuid().parse(id)
+    const schema = z.object({
+      devices: z.record(z.string(), z.array(z.object({ udid: z.uuid(), state: z.string() }))),
+    })
+    const list = async (): Promise<{ udid: string; state: string }[]> => {
+      const raw = await this.execute(
+        '/usr/bin/xcrun',
+        ['simctl', 'list', 'devices', '--json'],
+        signal,
+      )
+      const parsed = safeJsonParse(raw, decodeWithSchema(schema))
+      if (!parsed) throw new Error('CoreSimulator device query failed; cleanup is unverified.')
+      return Object.values(parsed.devices).flat()
+    }
+    const device = (await list()).find(
+      (candidate) => candidate.udid.toLowerCase() === id.toLowerCase(),
+    )
+    if (!device) return { simulatorId: id, deleted: false, verifiedAbsent: true }
+    if (device.state === 'Booted')
+      await this.execute('/usr/bin/xcrun', ['simctl', 'shutdown', device.udid], signal)
+    await this.execute('/usr/bin/xcrun', ['simctl', 'delete', device.udid], signal)
+    if ((await list()).some((candidate) => candidate.udid.toLowerCase() === id.toLowerCase()))
+      throw new Error(`Simulator ${id} still exists; cleanup is unverified.`)
+    return { simulatorId: id, deleted: true, verifiedAbsent: true }
+  }
+
   async screenshot(id: string, signal: AbortSignal): Promise<Buffer> {
     const device = await this.device(id, signal)
     return this.scratch(async (directory) => {
@@ -220,7 +251,14 @@ export class DeviceHubService {
       if ((await stat(destination)).size > MAX_BYTES)
         throw new Error('Device screenshot exceeds 20 MiB.')
       const bytes = await readFile(destination)
-      if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      if (
+        bytes.length < 33 ||
+        !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+        bytes.readUInt32BE(8) !== 13 ||
+        bytes.toString('ascii', 12, 16) !== 'IHDR' ||
+        bytes.readUInt32BE(16) === 0 ||
+        bytes.readUInt32BE(20) === 0
+      ) {
         throw new Error('Device Hub returned an invalid PNG screenshot.')
       }
       return bytes

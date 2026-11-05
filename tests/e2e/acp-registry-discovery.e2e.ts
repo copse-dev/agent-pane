@@ -19,7 +19,7 @@ import { waitForAgentIdle } from './helpers.ts'
 const AGENT = `
 import { writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 writeFileSync(new URL('./launched', import.meta.url), 'yes')
 agent({ name: 'registry-entry-fixture' })
   .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }))

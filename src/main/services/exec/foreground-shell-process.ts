@@ -1,20 +1,45 @@
 import { errorMessage } from '@shared/errors.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
-import { CappedOutputAccumulator, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
+import {
+  CappedOutputAccumulator,
+  COMMAND_OUTPUT_MAX_BYTES,
+  stripTerminalControlSequences,
+} from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
-import { emitShellOutput } from './shell-output-context.ts'
+import { currentShellRunObserver, mirrorShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
 
 /** Tells the model how to reach output dropped from the middle of an over-cap run. */
 const RUN_SHELL_TRUNCATION_HINT =
   'Re-run with a narrower command (grep -n, sed -n, head/tail, or redirect to a file) to see the dropped part.'
+
+/** Steers a timed-out run toward the background path instead of a blind rerun. */
+const RUN_SHELL_TIMEOUT_HINT =
+  'For long builds, test suites, or other slow work, use run_background with wake_on_completion instead of rerunning in the foreground.'
+
+/** Keep what the command printed before the deadline so the model is not left rerunning it blind. */
+function timeoutError(timeoutMs: number, output: string): Error {
+  const clean = stripTerminalControlSequences(output).trim()
+  const captured = clean ? `Output before the timeout:\n${clean}` : '(no output before the timeout)'
+  return new Error(
+    `Command timed out after ${String(timeoutMs)}ms.\n${captured}\n\n${RUN_SHELL_TIMEOUT_HINT}`,
+  )
+}
+
+/** Shell convention for a signal death (128 + signal number), so it never reads as success. */
+function exitCodeFor(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code
+  return signal ? 128 + constants.signals[signal] : 1
+}
 
 export interface ShellRunResult {
   output: string
@@ -56,6 +81,9 @@ export async function runShellOnce(
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   const owner = getThreadExecutionContext()
+  const reportPhase = captureCommandPhaseReport()
+  // Captured once: child stream callbacks need not run in the caller's context.
+  const observer = currentShellRunObserver()
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
       const spawnController = new AbortController()
@@ -63,12 +91,16 @@ export async function runShellOnce(
         if (signal.reason !== 'send_now') spawnController.abort(signal.reason)
       }
       signal.addEventListener('abort', cancelSpawn, { once: true })
+      reportPhase('starting')
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
           cwd,
           env,
-          stdio: 'pipe',
+          // Nothing writes to the child's stdin, so a command that reads it
+          // (`read`, a confirmation prompt, an editor) gets EOF instead of
+          // hanging until the timeout.
+          stdio: ['ignore', 'pipe', 'pipe'],
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
@@ -78,6 +110,7 @@ export async function runShellOnce(
         // Wrapping the command in the sandbox failed (runner-side, not command
         // output). For a sandboxed run, surface it as spawnFailed so an unsandboxed
         // retry can be offered (issue #104); for an unsandboxed run it's a real error.
+        reportPhase('not_started', { reason: errorMessage(err) })
         if (!unsandboxed) {
           const message = errorMessage(err)
           resolve({ output: message, exitCode: -1, spawnFailed: true })
@@ -95,6 +128,18 @@ export async function runShellOnce(
           : null
       if (live) liveForegroundShells.add(live)
 
+      // A pid means the OS created the process; without one, wait for `spawn`
+      // so a binary that fails to exec reports `not_started`, never `running`.
+      let launched = false
+      const markLaunched = (): void => {
+        if (launched) return
+        launched = true
+        reportPhase('running')
+      }
+      if (proc.pid !== undefined) markLaunched()
+      else proc.once('spawn', markLaunched)
+      let stopped = false
+
       const startedAt = Date.now()
       const ranUnsandboxed = unsandboxed || !isProjectSandboxEnabled()
       const outputAcc = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, {
@@ -106,8 +151,10 @@ export async function runShellOnce(
       let releaseDetached: (() => Promise<void>) | undefined
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer): void => {
-        const toStream = outputAcc.append(data.toString())
-        if (toStream) emitShellOutput(toStream)
+        const text = data.toString()
+        observer?.output(text)
+        const toStream = outputAcc.append(text)
+        if (toStream) mirrorShellOutput(toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -121,6 +168,9 @@ export async function runShellOnce(
           proc.stdout?.removeListener('data', stream)
           proc.stderr?.removeListener('data', stream)
           releaseDetached = onDetach?.()
+          // The detached task now ends on its own schedule: that ending lands on
+          // this command's card, as a `run_background` task's does (#3956).
+          const reportEnd = captureLateCommandPhaseReport(owner)
           void adoptSupervisedBackgroundProcess({
             command,
             cwd,
@@ -130,11 +180,22 @@ export async function runShellOnce(
             startedAt,
             output: outputAcc.toString(),
             timeoutMs: Math.max(1, timeout_ms - (Date.now() - startedAt)),
+            onCancelled: ({ id }) => {
+              void reportEnd('cancelled', { backgroundTaskId: id })
+            },
+            onCompletion: async ({ info: completed }) => {
+              await reportEnd(completed.timedOut ? 'timed_out' : 'exited', {
+                backgroundTaskId: completed.id,
+                ...(completed.exitCode !== null ? { exitCode: completed.exitCode } : {}),
+              })
+            },
           }).then(
             (info) => {
+              reportPhase('running', { backgroundTaskId: info.id })
               resolve({ output: outputAcc.toString(), exitCode: 0, backgroundId: info.id })
             },
             (error: unknown) => {
+              reportPhase('cancelled')
               cancelKill = terminateProcessTree(proc)
               reject(error instanceof Error ? error : new Error(String(error)))
             },
@@ -142,6 +203,7 @@ export async function runShellOnce(
           return
         }
         clearTimeout(timer)
+        stopped = true
         cancelKill = terminateProcessTree(proc)
       })
 
@@ -157,7 +219,8 @@ export async function runShellOnce(
         if (!settled) {
           settled = true
           signal.removeEventListener('abort', onAbort)
-          reject(new Error(`Command timed out after ${String(timeout_ms)}ms`))
+          reportPhase('timed_out')
+          reject(timeoutError(timeout_ms, outputAcc.toString()))
         }
       }, timeout_ms)
 
@@ -181,6 +244,7 @@ export async function runShellOnce(
         finish()
         if (settled) return
         settled = true
+        if (!launched) reportPhase('not_started', { reason: errorMessage(err) })
         // A child 'error' (e.g. the sandbox wrapper binary failed to launch) is a
         // runner-side failure, not command-controlled output. Surface it as a result
         // with spawnFailed so an unsandboxed retry can be offered (issue #104), but
@@ -198,15 +262,21 @@ export async function runShellOnce(
         reject(err instanceof Error ? err : new Error(String(err)))
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', (code, closeSignal) => {
+        // Reported even after a timeout settled the promise: the observer's
+        // terminal is still waiting for the process to actually exit.
+        if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
         cleanup()
         const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
         settled = true
+        const exitCode = exitCodeFor(code, closeSignal)
+        if (stopped) reportPhase('cancelled')
+        else reportPhase('exited', { exitCode })
         resolve({
           output: outputAcc.toString(),
-          exitCode: code ?? 0,
+          exitCode,
           sandboxViolationCount: violationCount,
         })
       })

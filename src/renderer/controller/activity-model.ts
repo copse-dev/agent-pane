@@ -3,7 +3,7 @@ import type { AutomationFailureCode, Thread, ThreadStatus } from '@shared/types'
 import { isAutomationFailureCode } from '@shared/types'
 import { describeAutomationFailure, isApprovalStalled } from '@shared/automation-failure.ts'
 import { getSidebarThreads, projectDisplayName } from './projects.ts'
-import { sidebarHasRun, type RunSignals } from './sidebar-thread.ts'
+import { isAutomationPendingStart, sidebarHasRun, type RunSignals } from './sidebar-thread.ts'
 import type { PendingApprovalSummary } from '../views/approval-dialog.ts'
 import type { PendingQuestionSummary } from '../views/ask-user-dialog.ts'
 
@@ -41,6 +41,8 @@ export interface ActivityThread {
   schedule?: { id: string; name: string }
   /** Why the automation run failed to start or ended in error, when the renderer recorded it. */
   failure?: { code: AutomationFailureCode; message: string; at: number; startFailed: boolean }
+  /** The run's thread exists with a prompt queued, but the agent hasn't started yet. */
+  pendingStart?: boolean
 }
 
 /** What the renderer observed of a thread's runs this session. */
@@ -262,12 +264,12 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
   for (const thread of input.threads) {
     if (waitingThreads.has(thread.id)) continue
     const run = input.runs.get(thread.id)
-    if (thread.status === 'running') {
+    if (thread.status === 'running' || thread.pendingStart === true) {
       working.push(
         threadRow(
           thread,
           'working',
-          truncateText(run?.activity ?? 'Working…'),
+          truncateText(run?.activity ?? (thread.status === 'running' ? 'Working…' : 'Starting…')),
           run?.startedAt ?? null,
         ),
       )
@@ -440,6 +442,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
                 name: thread.automation.scheduleName,
               },
               ...failureField(thread.automation),
+              ...(isAutomationPendingStart(thread) ? { pendingStart: true } : {}),
             }
           : {}),
       })
@@ -464,6 +467,7 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
               name: carried.thread.automation.scheduleName,
             },
             ...failureField(carried.thread.automation),
+            ...(isAutomationPendingStart(carried.thread) ? { pendingStart: true } : {}),
           }
         : {}),
     })

@@ -1,3 +1,4 @@
+import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -9,6 +10,7 @@ import {
 import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
+import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -100,7 +102,7 @@ import {
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
-import { initApproval } from './services/approval.ts'
+import { initApproval, requestApproval } from './services/approval.ts'
 import {
   setSimulatorDesktopPanelPresenter,
   SIMULATOR_DESKTOP_SHOW_CHANNEL,
@@ -113,7 +115,9 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
+import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -125,6 +129,7 @@ import { stopLocalClassifierServers } from './services/classifiers/local-classif
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
+import { disposeDesktopControlService } from './services/desktop-control/desktop-control-service.ts'
 import { initAppRun } from './ipc/app-run.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
@@ -218,6 +223,8 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
+import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
   cancelAllSupervisedBackgroundProcesses,
   installBackgroundProcessSupervisor,
@@ -226,9 +233,11 @@ import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
+import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   getThreadExecutionContext,
+  inspectThreadCheckoutRoot,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -254,7 +263,7 @@ import {
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
 import { rememberCanvasArtefact } from './services/canvas-store.ts'
-import { getActiveProjectId } from './services/workspace.ts'
+import { getActiveProjectId, getProjectRoot } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
@@ -510,6 +519,9 @@ app
   .whenReady()
   .then(async () => {
     await appRuntimeReady
+    await recoverIsolatedDesktops().catch((error: unknown) => {
+      console.error('[isolated-desktop] Orphan VM recovery failed:', error)
+    })
     // Ahead of the mode branches below: every mode, headless included, should
     // stop when its terminal does. See `installSignalHandlers` for why this
     // cannot be done at module scope.
@@ -539,6 +551,12 @@ app
     // Watch the main event loop for stalls from here on. Startup is exactly when
     // a synchronous hang (migrations, sandbox init, indexing) is most likely and
     // most expensive to diagnose after the fact (issue #995).
+    void startMachineService().catch((error: unknown) => {
+      console.warn(
+        '[machines] Sharing could not start:',
+        error instanceof Error ? error.message : 'unavailable',
+      )
+    })
     startEventLoopWatchdog()
     recordStartupPhase('app-ready')
     perfMark('main:app-ready')
@@ -691,6 +709,15 @@ app
       },
     })
 
+    // A background task's exit lands on the card that started it (#3956).
+    setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
+      transcriptWriter
+        .updateCommandPhase(owner.projectId, owner.threadId, toolCallId, phase)
+        .catch((error: unknown) => {
+          console.error('[threads] could not record a command stage:', error)
+        }),
+    )
+
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.
     setHookQueueMessageSender((payload) => {
@@ -709,6 +736,7 @@ app
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
     initThreadPrompts(win, ipcMain)
+    initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
@@ -720,6 +748,20 @@ app
     initSshWorkspaceIpc(win)
     initDiffQueue(win, ipcMain)
     initFsWatcher(win)
+    // Remote watcher install prompts route through the real approval dialog.
+    // Injected (rather than imported by the ssh-workspace module) for the same
+    // worker-bundle reason as setRemoteAcpInstallApprover; fails closed to the
+    // polling fallback when never wired.
+    setRemoteWatcherInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
     const disposeAppRunHandlers = initAppRun(win)
@@ -729,6 +771,25 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     setAgentInitiatedTurnAuthority(agentDispatcher)
+    setDiffAcceptanceHandler({
+      waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
+      wake: (acceptance) =>
+        agentDispatcher.dispatchMachine({
+          projectId: acceptance.owner.projectId,
+          threadId: acceptance.owner.threadId,
+          operationId: acceptance.operationId,
+          turnTreeId: acceptance.turnTreeId,
+          display: 'hidden',
+          payload: {
+            userContent: diffAcceptancePrompt(acceptance),
+            invokedSkills: [],
+            priorTodos: [],
+          },
+        }),
+    })
+    win.once('closed', () => {
+      setDiffAcceptanceHandler(null)
+    })
     registerAllHandlers(
       win,
       registry,
@@ -1012,8 +1073,13 @@ app
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
         const meta = await getThreadMeta(projectId, threadId)
+        // Estimate against this thread's own checkout, read without restoring
+        // anything; never the window's workspace (#3958).
+        const projectRoot = getProjectRoot(projectId)
+        const executionRoot = (await inspectThreadCheckoutRoot(projectId, threadId)) ?? projectRoot
         return estimateContextBreakdown(registry, {
           projectId,
+          roots: { projectRoot, executionRoot },
           draftText,
           invokedSkills,
           imageCount,
@@ -1358,6 +1424,10 @@ let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
+  await stopAllIsolatedDesktops().catch((error: unknown) => {
+    console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+  })
   stopEventLoopWatchdog()
   perfMark('main:quit')
   perfDumpCounters('quit')
@@ -1390,10 +1460,12 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeVnc = undefined
   await disposeSimulatorDesktop?.()
   disposeSimulatorDesktop = undefined
+  disposeDesktopControlService()
   closeAllWatchers()
   stopWorkspaceIndexWatcher()
   await clearSshWorkspaceFsCache()
   shutdownBrowserSession()
+  await stopMachineService()
   await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB

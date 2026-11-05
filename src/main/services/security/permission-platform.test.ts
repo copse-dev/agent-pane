@@ -29,6 +29,16 @@ const EXTERNAL = 'curl https://example.com' // network access
 const OUTSIDE_FS = 'ls ~/.ssh'
 const AMBIGUOUS = 'gh pr create' // writes to GitHub, but auto-runs inside seatbelt (read-only gh is sandbox-safe, #500)
 
+describe('CoreSimulator host routing', () => {
+  it('prompts and runs device cleanup outside the project sandbox', () => {
+    const command = 'xcrun simctl delete OWNED_UUID || echo DELETE_FAILED'
+    const opts = { workspaceRoot: root, sandboxEnabled: true, autoRun: true, classification: null }
+    assert.equal(decideShellPermission(command, opts).action, 'prompt')
+    assert.equal(shellRequiresOutsideSandbox(command, root, true), true)
+    assert.equal(shellExpectedBlockEscalation(command, root, true).eligible, false)
+  })
+})
+
 describe('local pnpm exec containment', () => {
   it('requires containment and auto-run, and cannot request an unverified escape', () => {
     const command = 'pnpm exec tsc --noEmit'

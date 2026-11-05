@@ -1,3 +1,5 @@
+import { ClientActions } from '../clients/client-actions.ts'
+import { clientActionSnapshotSchema } from '@shared/client-actions.ts'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { request } from 'node:http'
@@ -13,6 +15,8 @@ import {
 import { startPluginClientServer } from './plugin-client-server.ts'
 import {
   clientSnapshotSchema,
+  clientQuestionSnapshotSchema,
+  clientAttentionSnapshotSchema,
   clientActivitySnapshotSchema,
   clientThreadContentSchema,
 } from '../../../shared/plugin-client-protocol.ts'
@@ -577,4 +581,361 @@ it('reads only exact recent completions and rechecks revocation and eligibility 
       await server.close()
     }
   }
+})
+
+describe('interactive client desktop actions', () => {
+  it('authenticates exact offered actions, blocks approvals, and deduplicates submissions', async () => {
+    const decisions = new HumanDecisions(),
+      actions = new ClientActions()
+    let enabled = true,
+      calls = 0
+    const revision = randomUUID()
+    const offer = {
+      projectId: 'p',
+      threadId: 't',
+      revision,
+      actions: [{ id: 'next-step', label: 'Run tests', kind: 'next-step' }],
+    } satisfies import('@shared/client-actions.ts').ClientActionOffer
+    actions.publish(1, offer, async (_ref, authorized) => {
+      if (!authorized()) return false
+      calls++
+      return true
+    })
+    const server = await startPluginClientServer({
+      decisions,
+      actions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/actions')).status, 401)
+      const token = await pair(server.origin),
+        headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      const state = await read(
+        await fetch(server.origin + '/v1/actions', { headers }),
+        clientActionSnapshotSchema,
+      )
+      assert.deepEqual(state.offer, offer)
+      const input = {
+        version: 1,
+        sessionId: state.sessionId,
+        submissionId: randomUUID(),
+        projectId: 'p',
+        threadId: 't',
+        revision,
+        actionId: 'next-step',
+      }
+      const post = (data: unknown): Promise<Response> =>
+        fetch(server.origin + '/v1/actions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data),
+        })
+      assert.equal((await post({ ...input, prompt: 'unoffered prompt' })).status, 400)
+      assert.equal((await post({ ...input, sessionId: randomUUID() })).status, 403)
+      const cancel = decisions.register(
+        'p',
+        't',
+        { id: randomUUID(), kind: 'approval', title: 'Wait', body: 'command' },
+        () => {},
+      )
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/actions', { headers }),
+            clientActionSnapshotSchema,
+          )
+        ).offer,
+        null,
+      )
+      assert.equal((await post(input)).status, 403)
+      assert.equal(calls, 0)
+      cancel()
+      assert.equal(
+        (await read(await post({ ...input, actionId: 'stale' }), resultSchema)).ok,
+        false,
+      )
+      // Rejected stale references must not exhaust the session's 4096-entry delivery budget.
+      for (let attempt = 0; attempt < 4096; attempt++) {
+        assert.equal(
+          (
+            await read(
+              await post({ ...input, actionId: 'stale', submissionId: randomUUID() }),
+              resultSchema,
+            )
+          ).ok,
+          false,
+        )
+      }
+      const valid = { ...input, submissionId: randomUUID() }
+      assert.equal((await read(await post(valid), resultSchema)).ok, true)
+      assert.equal((await read(await post(valid), resultSchema)).ok, true)
+      assert.equal(calls, 1)
+      assert.equal((await post({ ...valid, actionId: 'conflict' })).status, 409)
+      actions.publish(1, offer, async () => {
+        calls++
+        return true
+      })
+      enabled = false
+      assert.equal((await post({ ...input, submissionId: randomUUID() })).status, 403)
+      assert.equal(calls, 1)
+    } finally {
+      await server.close()
+    }
+  })
+})
+
+describe('interactive client questions', () => {
+  it('shows pending questions outside recent completions, opens them, settles exact answers once, and withdraws on timeout', async () => {
+    const decisions = new HumanDecisions()
+    const id = randomUUID()
+    const answers: unknown[] = []
+    const opened: string[] = []
+    const withdraw = decisions.register(
+      'p',
+      'new-chat',
+      {
+        id,
+        kind: 'question',
+        questions: [
+          {
+            question: 'Which database?',
+            options: ['SQLite', 'Postgres', 'Other'],
+            recommendedOption: 'SQLite',
+            recommendationReason: 'Local data',
+          },
+          { question: 'Anything else?' },
+        ],
+      },
+      (answer, principal) => answers.push({ answer, principal }),
+    )
+    let enabled = true
+    const server = await startPluginClientServer({
+      decisions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+      activity: { read: async () => ({ recentThreads: [], runningCount: 0, waitingCount: 1 }) },
+      openThread: (p, t) => {
+        opened.push(p + '/' + t)
+        return true
+      },
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/questions')).status, 401)
+      const token = await pair(server.origin)
+      const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
+      const snapshot = await read(
+        await fetch(server.origin + '/v1/questions', { headers }),
+        clientQuestionSnapshotSchema,
+      )
+      const row = snapshot.requests[0]
+      assert.ok(row)
+      assert.equal(row.threadId, 'new-chat')
+      assert.equal(row.questions[0]?.recommendedOption, 'SQLite')
+      const open = await fetch(server.origin + '/v1/threads/open', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ version: 1, projectId: 'p', threadId: 'new-chat' }),
+      })
+      assert.equal(open.status, 200)
+      assert.deepEqual(opened, ['p/new-chat'])
+      const input = {
+        version: 1,
+        sessionId: snapshot.sessionId,
+        submissionId: randomUUID(),
+        projectId: row.projectId,
+        threadId: row.threadId,
+        requestId: row.requestId,
+        revision: row.revision,
+        answers: ['SQLite', 'Typed answer'],
+      }
+      const post = (value: unknown): Promise<Response> =>
+        fetch(server.origin + '/v1/questions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(value),
+        })
+      for (const patch of [
+        { sessionId: randomUUID() },
+        { projectId: 'other' },
+        { threadId: 'other' },
+        { revision: row.revision + 1 },
+        { requestId: randomUUID() },
+        { answers: [] },
+      ]) {
+        const response = await post({ ...input, ...patch, submissionId: randomUUID() })
+        if (response.status === 200) assert.equal((await read(response, resultSchema)).ok, false)
+        else assert.equal(response.status, 400)
+        assert.equal(answers.length, 0)
+      }
+      assert.equal((await post({ ...input, answers: ['x'.repeat(8193), ''] })).status, 400)
+      assert.equal((await read(await post(input), resultSchema)).ok, true)
+      assert.equal((await read(await post(input), resultSchema)).ok, true)
+      assert.equal(
+        (await read(await post({ ...input, submissionId: randomUUID() }), resultSchema)).ok,
+        false,
+      )
+      assert.equal((await post({ ...input, answers: ['Postgres', ''] })).status, 409)
+      assert.equal(answers.length, 1)
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/questions', { headers }),
+            clientQuestionSnapshotSchema,
+          )
+        ).requests.length,
+        0,
+      )
+      withdraw()
+      const expired = randomUUID()
+      const stop = decisions.register(
+        'p',
+        'new-chat',
+        { id: expired, kind: 'question', questions: [{ question: 'Expired?', options: ['Yes'] }] },
+        () => answers.push('unexpected'),
+      )
+      const pending = await read(
+        await fetch(server.origin + '/v1/questions', { headers }),
+        clientQuestionSnapshotSchema,
+      )
+      stop()
+      assert.equal(
+        (
+          await read(
+            await post({
+              ...input,
+              requestId: expired,
+              revision: pending.requests[0]?.revision,
+              answers: ['Yes'],
+              submissionId: randomUUID(),
+            }),
+            resultSchema,
+          )
+        ).ok,
+        false,
+      )
+      enabled = false
+      assert.equal((await post({ ...input, submissionId: randomUUID() })).status, 403)
+      assert.equal(answers.length, 1)
+    } finally {
+      withdraw()
+      await server.close()
+    }
+  })
+})
+
+describe('interactive client attention', () => {
+  it('lists all live pings beyond recent completions and opens desktop-only permissions without allowing decisions', async () => {
+    const decisions = new HumanDecisions(),
+      stops: Array<() => void> = [],
+      opened: string[] = [],
+      answers: unknown[] = []
+    for (let i = 0; i < 25; i++)
+      stops.push(
+        decisions.register(
+          'p',
+          'waiting-' + String(i),
+          {
+            id: randomUUID(),
+            kind: 'approval',
+            title: 'Permission ' + String(i),
+            body: 'PRIVATE BODY',
+          },
+          (answer) => answers.push(answer),
+        ),
+      )
+    stops.push(
+      decisions.register(
+        'p',
+        'asking',
+        {
+          id: randomUUID(),
+          kind: 'question',
+          questions: [{ question: 'Which option?', options: ['One', 'Two'] }],
+        },
+        (answer) => answers.push(answer),
+      ),
+    )
+    let enabled = true
+    const server = await startPluginClientServer({
+      decisions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+      openThread: (p, t) => {
+        opened.push(p + '/' + t)
+        return true
+      },
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/attention')).status, 401)
+      const token = await pair(server.origin),
+        headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
+      assert.equal(
+        (
+          await fetch(server.origin + '/v1/attention', {
+            headers: { ...headers, Origin: 'http://127.0.0.1:9999' },
+          })
+        ).status,
+        401,
+      )
+      const state = await read(
+        await fetch(server.origin + '/v1/attention', { headers }),
+        clientAttentionSnapshotSchema,
+      )
+      assert.equal(state.requests.length, 26)
+      assert.equal(JSON.stringify(state).includes('PRIVATE BODY'), false)
+      const row = state.requests[24]
+      assert.ok(row)
+      assert.equal(row.canRespond, false)
+      assert.equal(state.requests[25]?.canRespond, true)
+      const input = {
+        version: 1,
+        sessionId: state.sessionId,
+        submissionId: randomUUID(),
+        projectId: row.projectId,
+        threadId: row.threadId,
+        requestId: row.requestId,
+        revision: row.revision,
+        approved: true,
+      }
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/decisions', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(input),
+            }),
+            resultSchema,
+          )
+        ).ok,
+        false,
+      )
+      assert.equal(answers.length, 0)
+      const open = (): Promise<Response> =>
+        fetch(server.origin + '/v1/threads/open', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ version: 1, projectId: row.projectId, threadId: row.threadId }),
+        })
+      assert.equal((await open()).status, 200)
+      assert.deepEqual(opened, ['p/waiting-24'])
+      stops[24]?.()
+      assert.equal((await open()).status, 404)
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/attention', { headers }),
+            clientAttentionSnapshotSchema,
+          )
+        ).requests.length,
+        25,
+      )
+      enabled = false
+      assert.equal((await fetch(server.origin + '/v1/attention', { headers })).status, 403)
+    } finally {
+      for (const stop of stops) stop()
+      await server.close()
+    }
+  })
 })

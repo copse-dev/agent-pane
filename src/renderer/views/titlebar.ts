@@ -230,7 +230,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   syncName()
   syncBranch()
   const unsubs = [
-    store.on('projects_pane_changed', syncSidebar),
+    store.select((s) => s.projectsPaneOpen, syncSidebar),
     store.on('workspace_changed', () => {
       syncName()
       syncBranchNow()

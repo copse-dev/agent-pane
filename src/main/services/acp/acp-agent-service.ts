@@ -14,7 +14,7 @@ import type {
   Usage,
   WriteTextFileRequest,
   WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -39,13 +39,21 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
+  ACP_CANCEL_GRACE_MS,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
+  type AcpPermissionRequestContext,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import {
+  getAcpAgent,
+  resolveAcpConfigDirEnvVar,
+  resolveAcpPermissionMode,
+  resolveAcpSandbox,
+} from './acp-agent-registry.ts'
+import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
@@ -53,6 +61,8 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
+import { skillPreflightEnvironment } from '../skills/skills-registry.ts'
+import { createAcpSkillRun } from './acp-skill-context.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -63,10 +73,16 @@ import {
 } from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
+  acpShellCommandText,
   permissionKindLabel,
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
-import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
+import {
+  bridgedNativeToolsOffered,
+  dropAcpBridgeDelegation,
+  noteAcpBridgeDelegation,
+} from './acp-native-bridge.ts'
+import { describeAcpToolProvenance, resolveAcpToolProvenance } from './acp-tool-provenance.ts'
 import {
   requestApproval,
   trackAcpPermissionToolCall,
@@ -74,6 +90,7 @@ import {
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
 import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
+import { withRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -188,9 +205,8 @@ export interface RunAcpAgentOptions {
   /**
    * Skills the user invoked this turn via `/skill-name`. Their SKILL.md bodies
    * are resolved against Copse's local registry and inlined into the forwarded
-   * prompt: an external ACP agent keeps its own separate skill catalog and never
-   * sees Copse's, so the instructions must travel with the turn rather than
-   * relying on the agent to already know the skill.
+   * prompt. Supporting files and model-selected skills use the run-scoped
+   * read_skill bridge when the executor supports HTTP MCP.
    */
   invokedSkills?: string[]
   /**
@@ -484,8 +500,11 @@ function installAgentInitiatedTurnLease(
     resolveContext: resolveThreadExecutionContext,
     beginWriter: () => beginWorktreeWriter(cwd),
     confirmContinue: async () => {
+      // Outside any turn: name the thread's project so the question is filed
+      // with it, not with whichever project the window shows.
       const result = await runWithActiveRunIdentity(threadId, () =>
         requestUserAnswers({
+          projectId,
           questions: [
             {
               question:
@@ -503,8 +522,9 @@ function installAgentInitiatedTurnLease(
 }
 
 export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
+  const prepareSkills = createAcpSkillRun()
   return runAcpTurnWithContinuation(options, {
-    runTurn: runAcpAgentTurn,
+    runTurn: (turnOptions) => runAcpAgentTurn(turnOptions, prepareSkills),
     isCheckoutDeferred: isThreadCheckoutDeferred,
     executionRoot: getAgentExecutionRoot,
     allocateCheckout: ensureWritableThreadCheckout,
@@ -597,6 +617,7 @@ export async function runAcpTurnWithContinuation(
 
 async function runAcpAgentTurn(
   options: RunAcpAgentOptions,
+  prepareSkills: ReturnType<typeof createAcpSkillRun>,
 ): Promise<RunAcpAgentResult & { startedReadonly: boolean }> {
   perfMark('ttft:acp-preflight-start')
   // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
@@ -689,15 +710,29 @@ async function runAcpAgentTurn(
     agent.configOptions && Object.keys(agent.configOptions).length > 0
       ? agent.configOptions
       : undefined
+  // The agent's configured env, plus a thread-scoped `CLAUDE_CONFIG_DIR` for a
+  // local Claude agent whose CLI keeps the account login, so a Copse thread
+  // never inherits the user's personal synced skills, plugins, or MCP servers
+  // into an unrelated project (see `acp-agent-config-dir.ts`).
+  const env = await perfSpan('ttft:acp-config-dir', () =>
+    resolveAcpAgentTurnEnv({
+      agent,
+      projectId: executionContext?.projectId,
+      threadId: options.threadId,
+      sshTarget,
+    }),
+  )
+  const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
     cwd,
     sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
+    ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(sandbox && stateDir ? { stateDir } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
     ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
@@ -736,6 +771,8 @@ async function runAcpAgentTurn(
       // Agent finished/failed this tool without waiting for our permission answer
       // — dismiss that specific modal now, not at turn end.
       cancelApprovalsForAcpToolCall(chunk.toolCallId)
+      // A delegation still waiting now was never executed through the bridge.
+      dropAcpBridgeDelegation(options.threadId, chunk.toolCallId)
     }
     if (chunk.type === 'text') {
       assistantText += chunk.text
@@ -754,9 +791,13 @@ async function runAcpAgentTurn(
   // path shape). Anything else that changed on disk bypassed user approval and
   // is surfaced by the post-turn audit (issue #591).
   const queueWrites = new Set<string>()
+  // Set per attempt once the session is acquired: the tools this session's own
+  // bridge serves, or none when its agent did not mount one (remote, no HTTP
+  // MCP, bridge not started).
+  let bridgeToolNames: readonly string[] = []
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req, rpcSignal) =>
+    requestPermission: (req, rpcSignal, context) =>
       respondToPermission(
         {
           id: agent.id,
@@ -766,11 +807,15 @@ async function runAcpAgentTurn(
           remote,
           ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
+          bridgeToolNames,
+          threadId: options.threadId,
+          ...(executionContext ? { projectId: executionContext.projectId } : {}),
         },
         req,
         cwd,
         projectRoot,
         mergeAcpPermissionAbortSignals(options.signal, rpcSignal),
+        context,
       ),
     readTextFile: (req) => readTextFile(req, cwd),
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
@@ -781,22 +826,21 @@ async function runAcpAgentTurn(
   const baseline = await perfSpan('ttft:acp-worktree-baseline', captureWorktreeBaseline)
   const denialMark = networkDenialMarker()
 
-  // Resolve the invoked skills' full instructions here, in the GUI process,
-  // against the same local registry the `/` picker used — so a skill the user
-  // could pick is guaranteed to resolve — then inline it into the forwarded
-  // prompt. The external ACP agent has its own separate skill catalog and never
-  // receives Copse's, so shipping the SKILL.md body with the turn is the only
-  // way the agent gets the instructions. Sent every turn a skill is invoked
-  // (not gated on session freshness): the agent does not retain it across turns.
-  const skillsBlock = await perfSpan('ttft:acp-skills', () =>
-    buildInvokedSkillsBlock(options.invokedSkills ?? [], {
-      sandboxActive: sandboxed,
-      // Also grants this thread read-only run_shell access to the skill's
-      // directory: bridged run_shell is the ACP agent's only route into Copse's
-      // tools, and read_skill is not bridged.
-      threadId: options.threadId,
-    }),
-  )
+  // Snapshot explicit instructions only after negotiation supplies the actual
+  // bridge tools. Retries reuse the same bytes and authorization identities.
+  let invokedSkillsBlock: string | undefined
+
+  // The thread's model has dropped off the agent's list: say so in the thread.
+  // Like the handover note, straight to the caller's sink rather than
+  // `onChunk`, so it is not replayed to the agent as its own words and does
+  // not count as progress that blocks a retry. A retry runs on a fresh
+  // session, which would notice again; once per turn is enough.
+  let staleModelNoticed = false
+  const onStaleModel = (notice: string): void => {
+    if (staleModelNoticed) return
+    staleModelNoticed = true
+    options.onChunk({ type: 'text', text: notice })
+  }
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
@@ -805,15 +849,28 @@ async function runAcpAgentTurn(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
+    let reportedSetup = false
     const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
-        acquireAcpSession({
-          ...(executionContext ? { projectId: executionContext.projectId } : {}),
-          threadId: options.threadId,
-          config: spawnConfig,
-          registry: options.registry,
-          signal: options.signal,
+        // Reaching an agent on an SSH host can take a while (probes, a first-run
+        // install); name each stage in the activity row. Straight to the caller's
+        // sink, like the handover note: it is status, not assistant progress.
+        withRemoteAcpSetupProgress(
+          (progress) => {
+            reportedSetup = true
+            options.onChunk({ type: 'agent_setup_progress', ...progress })
+          },
+          () =>
+            acquireAcpSession({
+              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              threadId: options.threadId,
+              config: spawnConfig,
+              registry: options.registry,
+              signal: options.signal,
+            }),
+        ).finally(() => {
+          if (reportedSetup) options.onChunk({ type: 'agent_setup_progress', phase: 'ready' })
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
@@ -825,10 +882,32 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    bridgeToolNames =
+      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
+        ? entry.bridge.toolNames
+        : []
+    const skillToolNames =
+      entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
+    const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
+      buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+        sandboxActive: sandboxed,
+        // Explicit user invocation retains its existing thread read-only grants.
+        threadId: options.threadId,
+        preflight: skillPreflightEnvironment(skillToolNames, 'acp'),
+      }),
+    ))
+    const skillContext = prepareSkills({
+      toolNames: skillToolNames,
+      freshSession: fresh,
+      invokedSkills: options.invokedSkills ?? [],
+      skillsBlock,
+      includeCatalog: options.executionMode !== 'agent',
+    })
     // A turn the agent started on its own ends here: this prompt binds its own
     // context below, and must not have it cleared by the earlier lease.
     entry.open.agentInitiated?.end()
     installAgentInitiatedTurnLease(entry, options.threadId, executionContext?.projectId, cwd)
+    entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -855,19 +934,27 @@ async function runAcpAgentTurn(
         ...(options.executionMode !== 'agent' && options.operatorInstructions
           ? { operatorInstructions: options.operatorInstructions }
           : {}),
-        ...(skillsBlock ? { skills: skillsBlock } : {}),
+        ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
       },
     )
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
+      return await runAcpSessionPrompt(
+        entry.open,
+        promptBlocks,
+        model,
+        options.signal,
+        ACP_CANCEL_GRACE_MS,
+        { onStaleModel },
+      )
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })
       throw err
     } finally {
+      entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
       entry.bridge?.setTurnSignal(null)
@@ -959,16 +1046,17 @@ async function runAcpAgentTurn(
 /**
  * Probe a configured ACP agent for the models and session modes it offers (for
  * the settings picker, issue #607). Resolves the agent + workspace, then probes
- * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
- * agent is unknown/disabled; otherwise each selector is `null` when the agent
- * exposes none of that kind.
+ * it via {@link probeAcpAgent}. Rejects unknown/disabled agents so connection
+ * verification cannot mistake an unattempted probe for success. Each selector
+ * is `null` when a connected agent exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
   if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
-  if (!agent) return { models: null, modes: null }
+  if (!agent)
+    throw new Error('Enable this coding agent in Options before verifying its connection.')
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting a coding agent’s models.')
@@ -986,6 +1074,22 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
+}
+
+/**
+ * The thread-scoped config directory a sandboxed agent may be granted: the one
+ * Copse set in the spawn env. A dir the agent's own configured env names can
+ * be any path, home included, so it is never granted; Copse only scopes the
+ * variable when that env leaves it unset.
+ */
+export function grantableAcpStateDir(
+  envVar: string | undefined,
+  env: Record<string, string> | undefined,
+  configured: Record<string, string> | undefined,
+): string | undefined {
+  if (!envVar || (configured && Object.hasOwn(configured, envVar))) return undefined
+  const dir = env?.[envVar]
+  return dir === '' ? undefined : dir
 }
 
 /** How far a turn's ACP agent process is contained, resolved once per turn. */
@@ -1082,14 +1186,19 @@ export function mergeAcpPermissionAbortSignals(
   return AbortSignal.any([turnSignal, rpcSignal])
 }
 
+/**
+ * Answer a request that runs `command` (see `acpShellCommandText`) through the
+ * shell gate, as native `run_shell` is. Null when there is no command text to
+ * classify, which leaves the request to the generic prompt.
+ */
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean; contained?: boolean },
   req: RequestPermissionRequest,
+  command: string | null,
   root: string | null,
   projectRoot: string | null,
   signal?: AbortSignal,
 ): Promise<RequestPermissionResponse | null> {
-  const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
@@ -1128,6 +1237,16 @@ interface AcpPermissionAgent {
   remote?: boolean
   /** The SSH host a remote agent runs on; remembered grants are scoped to it. */
   remoteHostId?: string
+  /**
+   * The tools this session's own native-tool bridge serves, so a call proven to
+   * target one is re-gated by the bridge on execution. Empty for remote agents,
+   * agents without HTTP MCP, and sessions whose bridge did not start.
+   */
+  bridgeToolNames?: readonly string[]
+  /** Owning thread, for attributing a delegated call to the bridge's record. */
+  threadId?: string
+  /** Owning project, so audit records land beside the thread whatever project is open. */
+  projectId?: string
 }
 
 /**
@@ -1148,14 +1267,16 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
  * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
  * approved without prompting; checking the dialog's remember box persists such
  * a grant and also answers with the agent's own `allow_always` option so the
- * agent-side session stops asking within the turn.
+ * agent-side session stops asking within the turn. A request that runs a
+ * command is never remembered: each command must reach the shell gate.
  */
 async function respondToPermission(
   agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
   signal?: AbortSignal,
+  context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   if (agent.executionMode === 'agent') {
@@ -1182,7 +1303,16 @@ async function respondToPermission(
   }
   const kind = req.toolCall.kind ?? 'other'
   const grantLocation = acpGrantLocationFor(agent)
-  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
+  // A grant is keyed by kind alone, so one remembered answer for a request
+  // that runs a command would wave every later command of that kind past the
+  // shell gate below. Such requests — `execute`, or an unclassified request
+  // carrying `rawInput.command` — are never rememberable, and a stored grant
+  // never answers them. The grant store also ignores stored execute grants;
+  // a stored `other` grant still covers `other` requests without a command.
+  const shellCommand = acpShellCommandText(req.toolCall)
+  const runsCommand = kind === 'execute' || shellCommand !== null
+  const rememberable = !runsCommand
+  if (rememberable && grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -1194,22 +1324,67 @@ async function respondToPermission(
   if (shouldAutoApproveSandboxedCodexCodeMode(agent, req)) {
     return permissionResponseFor(req.options, true)
   }
-  // Copse's own bridged tools (gh_*/CI, semantic search, staged diffs, browser,
-  // web fetch) reach the agent as an MCP server Copse mounts and *re-gates on
-  // execution* — so this ACP prompt only duplicates that gate. Auto-approve when
-  // the request is identifiably one of ours, so they sail through like the
-  // native tools do. See isBridgedNativeToolTitle for why the title is a sound
-  // (if best-effort) signal and why forgery isn't in scope. A remote agent is
-  // never offered the bridge (acp-session-pool.ts), so nothing would re-gate a
-  // call that merely claims a bridged title: it keeps the ordinary prompt.
+  // Copse's own bridged tools reach the agent as an MCP server Copse mounts and
+  // *re-gate on execution*, so this ACP prompt only duplicates that gate:
+  // reads run, edits take the diff queue, shell takes scope and harm policy,
+  // and network or external mutations still prompt there. Delegate only on
+  // adapter-authored provenance that agrees across the request and the
+  // agent's earlier reports of the same call (#1446), and only when this
+  // session really mounted the bridge — a remote agent, or one without HTTP
+  // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // This session's bridge, narrowed to what is still offered now (a plugin can
+  // be disabled mid-session).
+  const stillOffered = new Set(bridgedNativeToolsOffered())
+  const provenance = resolveAcpToolProvenance(
+    req.toolCall,
+    context?.observedToolCall ?? [],
+    agent.remote === true
+      ? []
+      : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+    { runsCommand },
+  )
+  const auditOwner = {
+    ...(agent.threadId ? { threadId: agent.threadId } : {}),
+    ...(agent.projectId ? { projectId: agent.projectId } : {}),
+  }
   if (
-    agent.remote !== true &&
-    getSetting<boolean>('acpAutoApproveNativeBridgeTools', true) &&
-    isBridgedNativeToolTitle(req.toolCall.title)
+    provenance.status === 'bridged' &&
+    getSetting<boolean>('acpAutoApproveNativeBridgeTools', true)
   ) {
+    const toolCallId = req.toolCall.toolCallId
+    if (agent.threadId && toolCallId) {
+      noteAcpBridgeDelegation(agent.threadId, provenance.tool, toolCallId, req.toolCall.rawInput)
+    }
+    recordDecision({
+      kind: 'acp',
+      actor: 'system',
+      verdict: 'allowed',
+      subject: `${agent.title}: ${provenance.server}/${provenance.tool}`,
+      scope: 'native-bridge',
+      reasons: [describeAcpToolProvenance(provenance)],
+      source: 'acp-bridge-provenance',
+      ...auditOwner,
+      ...(toolCallId ? { toolCallId } : {}),
+    })
     return permissionResponseFor(req.options, true)
   }
-  if (kind === 'execute') {
+  if (provenance.status === 'conflicting') {
+    // The agent's own reports of this call disagree about which tool it is.
+    // Keep the ordinary path, and leave the reason in the audit so an export can
+    // say why the prompt that follows was not delegated to the bridge.
+    recordDecision({
+      kind: 'acp',
+      actor: 'system',
+      verdict: 'classified',
+      // The kind, not the title: a title can hold a whole command line.
+      subject: `${agent.title}: ${permissionKindLabel(kind)}`,
+      reasons: [describeAcpToolProvenance(provenance)],
+      source: 'acp-bridge-provenance',
+      ...auditOwner,
+      ...(req.toolCall.toolCallId ? { toolCallId: req.toolCall.toolCallId } : {}),
+    })
+  }
+  if (runsCommand) {
     const toolCallId = req.toolCall.toolCallId
     const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
     const approvalSignal = tracked
@@ -1219,8 +1394,13 @@ async function respondToPermission(
       : signal
     try {
       const executeResponse = await respondToAcpExecutePermission(
-        agent,
+        // Only an `execute` request runs in the agent's own shell. An
+        // unclassified call's `command` may be an MCP tool argument (a Redis or
+        // SQL command) that runs outside that sandbox, so it is judged without
+        // the sandbox's containment claim: gated, never auto-run on it.
+        kind === 'execute' ? agent : { ...agent, sandboxed: false },
         req,
+        shellCommand,
         root,
         projectRoot,
         approvalSignal,
@@ -1278,8 +1458,10 @@ async function respondToPermission(
       {
         ...presentation,
         cause: 'acp-permission',
-        allowRemember: true,
-        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+        allowRemember: rememberable,
+        ...(rememberable
+          ? { rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}` }
+          : {}),
         // Lets turn bookkeeping leave this tool call open while its prompt
         // outlives the turn (approval parking), instead of stamping it
         // "interrupted" underneath a question the user can still answer.
@@ -1288,10 +1470,11 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember && grantLocation) {
+    const remembered = approved && remember && rememberable
+    if (remembered && grantLocation) {
       void rememberAcpPermission(agent.id, kind, grantLocation)
     }
-    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+    return permissionResponseFor(req.options, approved, { preferAlways: remembered })
   } finally {
     tracked?.unregister()
   }
@@ -1299,10 +1482,13 @@ async function respondToPermission(
 
 /**
  * Translate the user's approve/deny into one of the agent-provided option ids.
- * By default a one-shot option (`*_once`) wins over a remembered one
- * (`*_always`) since Copse asks per call; `preferAlways` flips that for grants
- * the user chose to remember. Falls back to `cancelled` when the agent offered
- * no option of the needed polarity.
+ * Copse asks per call, so an approval selects the agent's one-shot
+ * `allow_once`. Only `preferAlways`, for grants the user chose to remember,
+ * selects `allow_always` (falling back to `allow_once`). A one-shot approval
+ * never falls back to `allow_always`: the agent would remember an answer given
+ * once, and its later requests of that kind would never reach Copse's gate. A
+ * denial prefers `reject_once`. Falls back to `cancelled` when the agent
+ * offered no option that matches the answer.
  */
 export function permissionResponseFor(
   options: PermissionOption[],
@@ -1312,7 +1498,7 @@ export function permissionResponseFor(
   const wanted: PermissionOptionKind[] = approved
     ? opts?.preferAlways
       ? ['allow_always', 'allow_once']
-      : ['allow_once', 'allow_always']
+      : ['allow_once']
     : ['reject_once', 'reject_always']
   const option = pickPermissionOption(options, wanted)
   return option
@@ -1550,7 +1736,9 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
   'elsewhere in /tmp and the rest of the home directory, and most network ' +
   'destinations are blocked. Approval ' +
-  'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
+  'cannot unsandbox your own shell, and neither can a sandbox escape your own ' +
+  "tools offer (such as Claude Code's dangerouslyDisableSandbox): this whole " +
+  'process runs inside the sandbox. When the "copse" MCP server is available, ' +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
@@ -1669,6 +1857,7 @@ export function respondToPermissionForTest(
   root: string | null,
   projectRoot: string | null,
   signal?: AbortSignal,
+  context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
-  return respondToPermission(agent, req, root, projectRoot, signal)
+  return respondToPermission(agent, req, root, projectRoot, signal, context)
 }

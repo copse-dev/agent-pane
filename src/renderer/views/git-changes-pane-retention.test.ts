@@ -135,7 +135,6 @@ describe('Changes pane retains known thread state', () => {
     await settle()
 
     store.setState({ activeThreadId: 'b' })
-    store.emit('panel_changed')
     store.emit('threads_changed')
     await settle()
     assert.deepEqual(paths(listRoot), ['b-first.ts', 'b-second.ts'])
@@ -217,7 +216,6 @@ describe('Changes pane retains known thread state', () => {
     store.emit('git_change_navigate', 'shared-second.ts')
 
     store.setState({ activeThreadId: 'b', filesPaneOpen: true })
-    store.emit('panel_changed')
     store.emit('threads_changed')
     await settle()
     assert.match(listRoot.querySelector('.is-selected')?.textContent ?? '', /shared-first.ts/)

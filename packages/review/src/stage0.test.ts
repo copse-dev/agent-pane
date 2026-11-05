@@ -42,6 +42,7 @@ if (Array.isArray(entry)) {
 }
 if (entry.stdout) process.stdout.write(entry.stdout)
 if (entry.env) process.stdout.write(JSON.stringify(process.env))
+if (entry.signal) process.kill(process.pid, entry.signal)
 if (entry.sleepMs) setTimeout(() => process.exit(entry.exit ?? 0), entry.sleepMs)
 else process.exit(entry.exit ?? 0)
 `
@@ -387,6 +388,57 @@ describe('runStage0', () => {
     assert.match(renderStage0Report(report), /1 finding\(s\):\n1\. \[test\] package\.json:\d+ —/)
   })
 
+  it('does not turn checker aborts, missing tools or diagnostic-free typechecks into findings', async () => {
+    const failures = [
+      { typecheck: { exit: 134 } },
+      { typecheck: { exit: 1, stdout: 'checker exited without diagnostics' } },
+      { build: { signal: 'SIGTERM' } },
+      {
+        build: {
+          exit: 1,
+          stdout:
+            'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
+        },
+      },
+      { test: { exit: 137 } },
+      { test: { exit: 127, stdout: 'command not found' } },
+    ]
+    for (const failure of failures) {
+      const repo = await scenario({}, failure)
+      const report = await run(repo)
+      const incomplete = report.checks.find((check) => check.verdict === 'undetermined')
+      assert.ok(incomplete)
+      assert.equal(incomplete.base, null, 'an incomplete head check needs no base execution')
+      assert.equal(incomplete.headConfirmation, undefined)
+      assert.deepEqual(report.findings, [])
+      assert.match(
+        report.coverage.notChecked[0]?.reason ?? '',
+        /a code regression was not established/,
+      )
+      assert.ok(!report.coverage.checked.includes(incomplete.kind))
+      if (incomplete.head?.exitCode === null) assert.equal(incomplete.head.signal, 'SIGTERM')
+      assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
+    }
+  })
+
+  it('keeps a genuine head failure inconclusive when the base checker crashes', async () => {
+    const repo = await scenario(
+      { typecheck: { exit: 134 } },
+      {
+        typecheck: {
+          exit: 2,
+          stdout:
+            "src/a.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+        },
+      },
+      { kinds: ['typecheck'] },
+    )
+    const report = await run(repo)
+    assert.equal(report.checks[0]?.verdict, 'undetermined')
+    assert.match(report.coverage.notChecked[0]?.reason ?? '', /on base/)
+    assert.deepEqual(report.findings, [])
+  })
+
   it('keeps intermittent test failures unverified and skips the base run', async () => {
     for (const confirmation of [{ exit: 0 }, { exit: 1, sleepMs: 2_000 }]) {
       const repo = await scenario(
@@ -406,7 +458,7 @@ describe('runStage0', () => {
         confirmation.exit === 0 ? 'passed' : 'timed-out',
       )
       assert.equal(report.checks[0].base, null)
-      assert.match(report.coverage.notChecked[0]?.reason ?? '', /on confirmation/)
+      assert.match(report.coverage.notChecked[0]?.reason ?? '', /confirmation/)
       assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
     }
   })
@@ -555,7 +607,7 @@ describe('runStage0', () => {
     assert.deepEqual(report.coverage.checked, ['build', 'typecheck', 'lint'])
     assert.match(
       report.coverage.notChecked.map((note) => note.reason).join('\n'),
-      /timed out on head/,
+      /timed out.*on head/,
     )
     assert.match(renderStage0Report(report), /not checked: test — timed out/)
   })

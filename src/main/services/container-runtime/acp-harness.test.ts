@@ -161,7 +161,10 @@ describe('a thread under an ACP agent, contained', () => {
         assert.match(readFileSync(join(workspace, 'README.md'), 'utf8'), /edited by the agent/)
         // Nothing reached a handler, and nothing was queued for a replay.
         assert.equal(promptsAttempted, 0)
-        assert.equal((await readPendingDeferrals({ threadId: THREAD })).length, 0)
+        assert.equal(
+          (await readPendingDeferrals({ projectId: PROJECT, threadId: THREAD })).length,
+          0,
+        )
         // The two refusals are in the log the worker reads `denials` from.
         const denials = (await readDecisionLog(PROJECT)).filter(
           (event) => event.verdict === 'blocked' && event.scope === 'container',

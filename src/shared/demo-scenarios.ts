@@ -17,6 +17,8 @@ import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-stat
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
+  desktopAppApproval,
+  gitPushApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -46,6 +48,11 @@ export interface DemoScenario {
   id: string
   label: string
   chatGptPlan?: ChatGptPlanStatus
+  /**
+   * Makes "Refresh connection" fail: the refresh rejects with `error`, as the
+   * IPC bridge delivers it, and later status reads return `status`.
+   */
+  chatGptPlanRefreshFailure?: { error: string; status: ChatGptPlanStatus }
   project: Project
   threads: Thread[]
   /**
@@ -757,8 +764,14 @@ const SIDE_CHATS_THREADS: Thread[] = [
       {
         id: 'sc-side1-assistant',
         role: 'assistant',
-        content:
-          '`waitForExist` only checks that the node is in the DOM. `waitForDisplayed` also needs a non-zero size and no `display: none`. Mermaid inserts an empty svg first, so the first one passes too early.',
+        content: [
+          'They wait for different things:',
+          '',
+          '- **`waitForExist`** only checks that the node is in the DOM.',
+          '- **`waitForDisplayed`** also needs a non-zero size and no `display: none`.',
+          '',
+          'Mermaid inserts an empty svg first, so the first one passes too early.',
+        ].join('\n'),
         toolCalls: [],
         createdAt: FIXED_TIME + 3_900,
       },
@@ -804,6 +817,53 @@ const SIDE_CHATS_THREADS: Thread[] = [
     updatedAt: FIXED_TIME + 1_000,
   },
 ]
+
+/**
+ * The side-chats fixture with a reply that uses what the main transcript renders
+ * (a Mermaid diagram, a table, highlighted code) and a multi-line prompt, so a
+ * side chat can be checked against the shared message markdown.
+ */
+const SIDE_CHAT_RICH_THREADS: Thread[] = SIDE_CHATS_THREADS.map((thread) =>
+  thread.id === 'sc-side-1'
+    ? {
+        ...thread,
+        title: 'Why does the wait matter?',
+        messages: [
+          {
+            id: 'sc-rich-user',
+            role: 'user',
+            content: 'Why does the wait matter?\nDraw the sequence.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_100,
+          },
+          {
+            id: 'sc-rich-assistant',
+            role: 'assistant',
+            content: [
+              'The svg only exists after Mermaid finishes:',
+              '',
+              '```mermaid',
+              'graph TD',
+              '  A[Navigate] --> B[Empty svg]',
+              '  B --> C[Rendered diagram]',
+              '```',
+              '',
+              '| Wait | Passes on |',
+              '| --- | --- |',
+              '| waitForExist | Empty svg |',
+              '| waitForDisplayed | Rendered diagram |',
+              '',
+              '```ts',
+              "await $('.mermaid svg').waitForDisplayed()",
+              '```',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_900,
+          },
+        ],
+      }
+    : thread,
+)
 
 function approvalRiskScenario(
   id: string,
@@ -1328,6 +1388,131 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
                     },
                   ],
                 },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    // #1433 Fix 0: an explore result is the summary plus harness-copied
+    // verbatim excerpts. The card shows the summary once (in the timeline) and
+    // only the excerpts below it.
+    id: 'explore-excerpts',
+    label: 'Explore result with verbatim excerpts',
+    project: project('demo-explore-excerpts-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-explore-excerpts-thread',
+        title: 'Explore excerpts',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-explore-excerpts-assistant',
+            role: 'assistant',
+            content: 'The Enter handler is in wireToolbar.',
+            toolCalls: [
+              {
+                id: 'demo-explore-excerpts-call',
+                name: 'explore',
+                args: { query: 'How does wireToolbar submit the URL?' },
+                status: 'done',
+                result: [
+                  'wireToolbar submits the URL on Enter in browser-pane.ts.',
+                  '',
+                  '---',
+                  '',
+                  'Verbatim excerpts — copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.',
+                  '',
+                  '`src/renderer/browser-pane.ts` lines 291–295:',
+                  '```',
+                  "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                  '```',
+                ].join('\n'),
+                subagent: {
+                  id: 'demo-explore-excerpts-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'How does wireToolbar submit the URL?',
+                  summary: 'wireToolbar submits the URL on Enter in browser-pane.ts.',
+                  messages: [
+                    {
+                      id: 'demo-explore-excerpts-message-1',
+                      role: 'assistant',
+                      content: 'Reading **browser-pane.ts** around wireToolbar.',
+                      toolCalls: [
+                        {
+                          id: 'demo-explore-excerpts-read',
+                          name: 'read_file',
+                          args: {
+                            path: 'src/renderer/browser-pane.ts',
+                            start_line: 291,
+                            end_line: 295,
+                          },
+                          status: 'done',
+                          result:
+                            "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                        },
+                      ],
+                    },
+                    {
+                      id: 'demo-explore-excerpts-message-2',
+                      role: 'assistant',
+                      content: 'wireToolbar submits the URL on Enter in browser-pane.ts.',
+                      toolCalls: [],
+                    },
+                  ],
+                },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+    id: 'read-explored',
+    label: 'Quote explored lines',
+    project: project('demo-read-explored-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-read-explored-thread',
+        title: 'Read explored',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-read-explored-assistant',
+            role: 'assistant',
+            content: 'Quoting the whole function before editing it.',
+            toolCalls: [
+              {
+                id: 'demo-read-explored-call',
+                name: 'read_explored',
+                args: { path: 'src/renderer/browser-pane.ts', start_line: 289, end_line: 296 },
+                status: 'done',
+                resultFormat: 'markdown',
+                result:
+                  "`src/renderer/browser-pane.ts` lines 289–296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```",
               },
             ],
             createdAt: FIXED_TIME,
@@ -3291,6 +3476,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: SIDE_CHATS_THREADS,
   },
   {
+    id: 'side-chat-rich-markdown',
+    label: 'A side chat reply with a diagram, a table and code',
+    project: project('demo-side-chat-rich', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: SIDE_CHAT_RICH_THREADS,
+  },
+  {
     id: 'side-chats-restored',
     label: 'Side chats after an app restart',
     project: project('demo-side-chats-restored', 'Widgets', '/demo/widgets'),
@@ -3726,6 +3928,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  {
+    id: 'chatgpt-plan-expired',
+    label: 'ChatGPT plan whose sign-in has expired',
+    project: project('demo-chatgpt-plan-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      chatGptPlanWelcomeSeen: true,
+    },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    chatGptPlanRefreshFailure: {
+      error:
+        "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+      status: {
+        activeClientId: 'demo-plan-account',
+        accounts: [
+          {
+            clientId: 'demo-plan-account',
+            label: 'you@example.com',
+            connected: false,
+            planEnabled: false,
+          },
+        ],
+      },
+    },
+    threads: [],
+  },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -3735,6 +3975,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       id: `thread-${access}`,
       type: 'mcp',
       ...threadAccessApproval(access),
+    }),
+  ),
+  ...[undefined, '0123456789abcdef0123456789abcdef01234567'].map((sha) =>
+    approvalRiskScenario(sha ? 'approval-git-push-lease' : 'approval-git-push', {
+      id: 'git-push',
+      type: 'mcp',
+      ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
   approvalRiskScenario('approval-web-url', {
@@ -3770,5 +4017,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
     allowRemember: false,
     approveLabel: 'Always allow host',
+  }),
+  approvalRiskScenario('approval-desktop-app', {
+    id: 'desktop-app',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.Notes',
+      action: 'read its window contents',
+      allowRemember: true,
+      threadScoped: true,
+    }),
+  }),
+  approvalRiskScenario('approval-desktop-finder', {
+    id: 'desktop-finder',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.finder',
+      action: 'activate element e12',
+      caution:
+        'Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.',
+      allowRemember: true,
+      threadScoped: true,
+    }),
   }),
 ]

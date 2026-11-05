@@ -1,3 +1,4 @@
+import type { OfferedClientAction } from './client-action-offers.ts'
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -18,8 +19,6 @@ import { showErrorToast, showToast } from './toast.ts'
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
   store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 /**
@@ -122,6 +121,7 @@ function settlePrCard(
 
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
+  available: () => readonly OfferedClientAction[]
   clearSuggestions: () => void
   destroy: () => void
 }
@@ -135,6 +135,7 @@ export function mountFollowUpSuggestions(
   store: AppStore,
   api: ApiClient,
   onSelect: (prompt: string) => void,
+  onChanged: () => void = () => {},
 ): FollowUpSuggestionsMount {
   const root = el('div', {
     class: 'follow-up-suggestions',
@@ -146,6 +147,7 @@ export function mountFollowUpSuggestions(
   // Per-thread fetch tokens: a shared counter let a completion in thread B
   // invalidate an in-flight fetch for thread A (they interleave when several
   // threads go idle), so A's suggestions were silently dropped and never cached.
+  let offered: OfferedClientAction[] = []
   const fetchTokens = new Map<string, number>()
   const nextFetchToken = (threadId: string): number => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1
@@ -176,16 +178,20 @@ export function mountFollowUpSuggestions(
   }
 
   function clearSuggestions(): void {
+    offered = []
     clear(root)
     root.hidden = true
     displayedThreadId = null
+    onChanged()
   }
 
   function renderSuggestions(threadId: string, suggestions: FollowUpSuggestion[]): void {
     clear(root)
+    offered = []
     if (suggestions.length === 0) {
       root.hidden = true
       displayedThreadId = null
+      onChanged()
       return
     }
 
@@ -219,7 +225,7 @@ export function mountFollowUpSuggestions(
       // machine, so it reads as the accented offer rather than another chip.
       if (suggestion.action === 'create-pr') btn.classList.add('follow-up-bubble-create-pr')
 
-      btn.addEventListener('click', () => {
+      const run = (): void => {
         // The changeset chip is a shortcut into the reviewer pane, not a prompt:
         // dropping a canned "review my changes" message into the chat was
         // surprising, and the reviewer is where accept/reject actions live.
@@ -252,11 +258,19 @@ export function mountFollowUpSuggestions(
         }
         clearSuggestions()
         if (suggestion.prompt) onSelect(suggestion.prompt)
+      }
+      btn.addEventListener('click', run)
+      offered.push({
+        id: `follow-up-${String(offered.length)}`,
+        label: suggestion.label,
+        kind: 'follow-up',
+        run,
       })
       root.append(btn)
     }
     root.hidden = false
     displayedThreadId = threadId
+    onChanged()
   }
 
   async function maybeFetchSuggestions(threadId: string): Promise<void> {
@@ -395,6 +409,7 @@ export function mountFollowUpSuggestions(
 
   return {
     root,
+    available: () => offered,
     clearSuggestions,
     destroy: (): void => {
       // Invalidate every in-flight fetch: after clear(), get() returns undefined

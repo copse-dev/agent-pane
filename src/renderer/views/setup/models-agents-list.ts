@@ -129,6 +129,12 @@ export function createModelsAgentsList(
   let configured: AcpAgentConfig[] = []
   let detected = new Map<string, DetectedAcpAgent>()
   let auth = new Map<string, AcpAuthState>()
+  // Session probes are explicit: opening Settings never starts an agent loop.
+  // Each verified agent maps to the CLI's sign-in status when it was verified;
+  // `auth` keeps what the CLI reports, which an API-key user may see as signed out.
+  const verified = new Map<string, AcpAuthState | undefined>()
+  const verifying = new Map<string, symbol>()
+  const verificationErrors = new Set<string>()
   /** Providers with a key stored in Settings. */
   const storedKeys = new Set<string>()
   /** At-rest encryption per stored key: true = OS keychain, false = plaintext. */
@@ -380,6 +386,8 @@ export function createModelsAgentsList(
     b.addEventListener('click', () => {
       launched.add(command)
       if (opts.runInTerminal) {
+        verified.clear()
+        verifying.clear()
         b.textContent = pendingLabel
         opts.runInTerminal(command)
       } else {
@@ -405,6 +413,38 @@ export function createModelsAgentsList(
       }
     })
     const actions: HTMLElement[] = []
+    const verify = el(
+      'button',
+      {
+        type: 'button',
+        class: 'ui-btn',
+        title: 'Open a temporary agent session without sending a prompt.',
+      },
+      verifying.has(model.id) ? 'Verifying…' : 'Verify connection',
+    )
+    verify.disabled = verifying.has(model.id)
+    verify.addEventListener('click', () => {
+      const request = Symbol()
+      verifying.set(model.id, request)
+      verified.delete(model.id)
+      verificationErrors.delete(model.id)
+      render()
+      void api.acp.probeAgent(model.id).then(
+        () => {
+          if (verifying.get(model.id) !== request || activeSignal?.aborted) return
+          verified.set(model.id, auth.get(model.id))
+          verifying.delete(model.id)
+          repaint()
+        },
+        () => {
+          if (verifying.get(model.id) !== request || activeSignal?.aborted) return
+          verificationErrors.add(model.id)
+          verifying.delete(model.id)
+          repaint()
+        },
+      )
+    })
+    actions.push(verify)
     if (model.signInCommand) {
       actions.push(
         commandButton(
@@ -422,7 +462,7 @@ export function createModelsAgentsList(
         ? [chip('Ready', 'ok')]
         : model.chip === 'needs-sign-in'
           ? [chip('Needs sign-in', 'warn')]
-          : []
+          : [chip('Not verified', 'warn')]
     const r = row(
       rowId,
       logoTile(model.id, model.title),
@@ -436,6 +476,15 @@ export function createModelsAgentsList(
       },
     )
     r.dataset['agent'] = model.id
+    if (verificationErrors.has(model.id)) {
+      r.append(
+        el(
+          'p',
+          { class: 'field-hint', role: 'status' },
+          'Connection could not be verified. Check that the agent is enabled, signed in and able to reach its provider, then try again.',
+        ),
+      )
+    }
     return r
   }
 
@@ -772,7 +821,13 @@ export function createModelsAgentsList(
       renderMenu(new Set())
       return
     }
-    const agents = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth)
+    const agents = listedAgents(
+      KNOWN_ACP_AGENTS,
+      detected,
+      configured,
+      auth,
+      new Set(verified.keys()),
+    )
     const agentById = new Map(agents.map((model) => [model.id, model]))
     const servers = serverIds()
     for (const entry of connectionRows(
@@ -797,16 +852,32 @@ export function createModelsAgentsList(
   async function scanDevice(): Promise<void> {
     try {
       const found = await api.acp.detectAgents()
+      for (const id of new Set([...verified.keys(), ...verifying.keys()])) {
+        const next = found.find((agent) => agent.id === id)
+        const prev = detected.get(id)
+        // Only a change invalidates: custom agents are never in the device scan.
+        if (next?.installed !== prev?.installed || next?.path !== prev?.path) {
+          verified.delete(id)
+          verifying.delete(id)
+        }
+      }
       detected = new Map(found.map((d) => [d.id, d]))
     } catch {
       detected = new Map()
+      verified.clear()
+      verifying.clear()
     }
     const ids = KNOWN_ACP_AGENTS.filter((k) => detected.get(k.id)?.installed).map((k) => k.id)
     try {
       const statuses = ids.length ? await api.acp.authStatus(ids) : []
-      auth = new Map(statuses.map((s) => [s.id, s.state]))
+      const next = new Map(statuses.map((s) => [s.id, s.state]))
+      for (const [id, seen] of verified) {
+        if (next.get(id) !== seen) verified.delete(id)
+      }
+      auth = next
     } catch {
       auth = new Map()
+      verified.clear()
     }
   }
 
@@ -878,6 +949,9 @@ export function createModelsAgentsList(
   }
 
   async function refresh(snapshot?: SettingsSnapshot, signal?: AbortSignal): Promise<void> {
+    verified.clear()
+    verifying.clear()
+    verificationErrors.clear()
     activeSignal = signal
     const mine = ++generation
     if (signal?.aborted) return
@@ -906,8 +980,9 @@ export function createModelsAgentsList(
 
   function signature(): string {
     return JSON.stringify([
-      [...detected.values()].map((d) => [d.id, d.installed]),
+      [...detected.values()].map((d) => [d.id, d.installed, d.path]),
       [...auth.entries()],
+      [...verified],
     ])
   }
 
@@ -963,6 +1038,9 @@ export function createModelsAgentsList(
   window.addEventListener('focus', onFocus)
 
   function reset(): void {
+    verified.clear()
+    verifying.clear()
+    verificationErrors.clear()
     generation += 1
     activeSignal = undefined
     loaded = false

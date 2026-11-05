@@ -1,3 +1,4 @@
+import { emptyContainerStorage } from '@shared/types/storage-cleanup.ts'
 import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 function state(busy = false): StorageMaintenanceState {
   return {
+    containers: emptyContainerStorage(),
     retention: { enabled: true, days: 30 },
     areas: [
       { area: 'runs', bytes: 1024, entries: 1, busy },
@@ -30,6 +32,44 @@ function state(busy = false): StorageMaintenanceState {
 async function settle(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
+
+test('refresh and retention work while settings search lifts both fieldsets', async () => {
+  const base = createFakeApi()
+  const next = state()
+  next.containers.available = true
+  const policies: StorageRetention[] = []
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: {
+      ...base.storage,
+      maintenance: async () => next,
+      retention: async (policy) => {
+        policies.push(policy)
+      },
+    },
+  })
+  const results = document.createElement('div')
+  document.body.append(panel.element, results)
+  const saved = panel.element.querySelector('#storage-saved-data')
+  const containers = panel.element.querySelector('#storage-containers')
+  assert.ok(saved)
+  assert.ok(containers)
+  const pending = panel.refresh()
+  results.append(saved, containers)
+  await pending
+  await panel.refresh()
+  assert.equal(saved.querySelector('#storage-runs-size')?.textContent, '1.0 KB · 1 item')
+  assert.match(containers.querySelector('#storage-containers-status')?.textContent ?? '', /ready/)
+  const enabled = saved.querySelector<HTMLInputElement>('#storage-expiry-enabled')
+  assert.ok(enabled)
+  enabled.checked = false
+  enabled.dispatchEvent(new Event('change'))
+  await settle()
+  assert.deepEqual(policies, [{ enabled: false, days: 30 }])
+  panel.element.append(saved, containers)
+  await panel.refresh()
+  assert.equal(enabled.disabled, false)
+})
 
 test('cleanup requires confirmation, respects cancellation and refreshes after removal', async () => {
   const base = createFakeApi()
@@ -96,4 +136,89 @@ test('busy categories are disabled; retention persists independently of the sett
   input.dispatchEvent(new Event('change'))
   await settle()
   assert.deepEqual(policies, [{ enabled: false, days: 30 }])
+})
+
+test('Apple storage shows all categories and image names as text; shared cleanup requires confirmation', async () => {
+  const base = createFakeApi()
+  const calls: string[] = []
+  const next = state()
+  next.containers = {
+    ...emptyContainerStorage(),
+    available: true,
+    builderRunning: true,
+    totalBytes: 70 * 1024 ** 3,
+    snapshotsBytes: 53 * 1024 ** 3,
+    containersBytes: 15 * 1024 ** 3,
+    blobsBytes: 1024 ** 3,
+    volumesBytes: 100,
+    snapshotCount: 22,
+    unmatchedSnapshots: 15,
+    images: [
+      {
+        name: '<img src=x onerror=alert(1)>',
+        bytes: 598000000,
+        snapshotBytes: 3 * 1024 ** 3,
+        eligible: true,
+      },
+    ],
+  }
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: {
+      ...base.storage,
+      maintenance: async () => next,
+      containerCleanup: async (action) => {
+        calls.push(action)
+        return { removed: 1, bytes: 0, skipped: 0 }
+      },
+    },
+  })
+  document.body.append(panel.element)
+  await panel.refresh()
+  assert.match(
+    panel.element.querySelector('#storage-container-breakdown')?.textContent ?? '',
+    /22; 15 not matched to listed images/,
+  )
+  assert.equal(panel.element.querySelectorAll('#storage-container-breakdown dt').length, 9)
+  assert.equal(panel.element.querySelector('#storage-container-images img'), null)
+  assert.match(
+    panel.element.querySelector('#storage-container-images')?.textContent ?? '',
+    /<img src=x/,
+  )
+  const button = panel.element.querySelector<HTMLButtonElement>('#storage-apple-images-clean')
+  assert.ok(button)
+  button.click()
+  await settle()
+  assert.deepEqual(calls, [])
+  assert.match(document.querySelector('#confirm-dialog')?.textContent ?? '', /other applications/)
+  clickActiveConfirmDialogConfirm()
+  await settle()
+  assert.deepEqual(calls, ['apple-images'])
+  next.containers.busy = true
+  await panel.refresh()
+  assert.equal(button.disabled, true)
+})
+
+test('Apple storage is hidden when there is nothing to manage, and shown with an inventory error', async () => {
+  const base = createFakeApi()
+  const next = state()
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: { ...base.storage, maintenance: async () => next },
+  })
+  document.body.append(panel.element)
+  const section = panel.element.querySelector<HTMLFieldSetElement>('#storage-containers')
+  assert.ok(section)
+  assert.equal(section.hidden, true)
+  await panel.refresh()
+  assert.equal(section.hidden, true)
+  next.containers = emptyContainerStorage(
+    'Apple container returned an unsupported storage inventory',
+  )
+  await panel.refresh()
+  assert.equal(section.hidden, false)
+  assert.match(
+    panel.element.querySelector('#storage-containers-status')?.textContent ?? '',
+    /Inventory unavailable: Apple container returned/,
+  )
 })

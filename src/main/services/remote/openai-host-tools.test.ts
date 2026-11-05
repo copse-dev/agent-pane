@@ -34,7 +34,7 @@ describe('OpenAI host registry boundary', () => {
     )
     assert.deepEqual(
       bridge.definitions.map((t) => t.name),
-      ['gh_pr_create', 'gh_pr_list'],
+      ['gh_pr_create', 'gh_pr_list', 'gh_pr_merge'],
     )
     const result = await runWithThreadExecutionContext({ ...context, threadId: 'other' }, () =>
       bridge.execute('gh_pr_list', {}, 'call', new AbortController().signal),

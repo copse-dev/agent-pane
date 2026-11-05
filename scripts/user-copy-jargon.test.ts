@@ -264,6 +264,18 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.identifier,
   },
   { file: 'src/shared/acp-known-agents.ts', term: 'stdio', count: 1, reason: REASON.identifier },
+  {
+    file: 'packages/llm/src/classifiers/validated.ts',
+    term: 'capability',
+    count: 1,
+    reason: REASON.identifier,
+  },
+  {
+    file: 'src/main/services/machines/machine-manager.ts',
+    term: 'capability',
+    count: 1,
+    reason: REASON.identifier,
+  },
   { file: 'src/renderer/demo/demo-api.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   {
     file: 'src/renderer/perf-autopilot.ts',
@@ -317,6 +329,12 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.mcpTransport,
   },
   {
+    file: 'src/main/services/mcp/mcp-user-config.ts',
+    term: 'stdio',
+    count: 4,
+    reason: REASON.mcpTransport,
+  },
+  {
     file: 'src/main/services/plugins/agent-plugin-mcp-runtime.ts',
     term: 'stdio',
     count: 2,
@@ -332,6 +350,12 @@ const ALLOWED: readonly Allowance[] = [
     file: 'src/main/services/plugins/plugin-service.ts',
     term: 'stdio',
     count: 2,
+    reason: REASON.mcpTransport,
+  },
+  {
+    file: 'src/renderer/views/settings/mcp-server-editor.ts',
+    term: 'stdio',
+    count: 8,
     reason: REASON.mcpTransport,
   },
   {

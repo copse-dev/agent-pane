@@ -65,6 +65,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
 import { githubSamlAuthorizationUrl, isGithubSamlError } from './pr-auth-error.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -1562,13 +1563,9 @@ export function mountPrPane(
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
+    selectRightPanelMode(store, 'prs', (active) => {
       syncWatch()
-      if (prsModeActive(store)) void refresh()
-    }),
-    store.on('files_pane_changed', () => {
-      syncWatch()
-      if (prsModeActive(store)) void refresh()
+      if (active) void refresh()
     }),
     store.on('workspace_changed', () => {
       threadRelationshipRequest++

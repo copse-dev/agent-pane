@@ -13,6 +13,33 @@ import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 const header = (extra = ''): string => `name: demo-skill\ndescription: Demo\n${extra}`
 
 describe('Agent Skills frontmatter conformance', () => {
+  it('decodes bounded explicit requirements and rejects ambiguous/unknown declarations', () => {
+    const result = validateSkillFrontmatter(
+      header(
+        'copse-requirements:\n  tools: [read_skill, image_gen]\n  agents: [reviewer]\n  executors: [native, subagent]',
+      ),
+    )
+    assert.deepEqual(result.skill?.requirements, {
+      tools: ['read_skill', 'image_gen'],
+      agents: ['reviewer'],
+      executors: ['native', 'subagent'],
+    })
+    assert.deepEqual(result.warnings, [])
+    for (const value of [
+      '{tools: shell}',
+      '{tools: ["Bash(*)"]}',
+      '{executors: [cursor]}',
+      '{executors: []}',
+      '{permissions: [shell]}',
+      `{tools: [${Array.from({ length: 33 }, () => 'read_file').join(',')}]}`,
+    ]) {
+      assert.equal(
+        validateSkillFrontmatter(header(`copse-requirements: ${value}`)).skill,
+        null,
+        value,
+      )
+    }
+  })
   it('loads the standard metadata fixture and round-trips descriptive values', () => {
     const result = validateSkillFrontmatter(
       `name: pdf-processing\ndescription: Process PDF files.\nlicense: Apache-2.0\ncompatibility: Requires Python 3.11\nmetadata:\n  author: Example\n  version: "1.0"\nallowed-tools: Bash(python:*) Read\nuser-invocable: false\ndisable-model-invocation: false`,
@@ -35,6 +62,35 @@ describe('Agent Skills frontmatter conformance', () => {
       missingReferences: [],
     })
     assert.deepEqual(result.warnings, [])
+  })
+
+  it('validates bounded explicit dependency names and deduplicates without interpreting body mentions', () => {
+    assert.deepEqual(
+      parseSkillFrontmatter(header('copse-dependencies: [leaf, helper, leaf]'))?.dependencies,
+      ['leaf', 'helper'],
+    )
+    assert.ok(
+      parseSkillFrontmatter(
+        header(
+          `copse-dependencies: [${Array.from({ length: 16 }, (_, i) => `leaf-${String(i)}`).join(', ')}]`,
+        ),
+      ),
+    )
+    for (const declaration of [
+      'leaf',
+      '[42]',
+      '[plugin/leaf]',
+      '[plugin:leaf]',
+      '[../leaf]',
+      '[Leaf]',
+      '[" leaf"]',
+      '[null]',
+      `[${Array(17).fill('leaf').join(',')}]`,
+    ]) {
+      const result = validateSkillFrontmatter(header(`copse-dependencies: ${declaration}`))
+      assert.equal(result.skill, null, declaration)
+    }
+    assert.equal(parseSkillFrontmatter(header())?.dependencies, undefined)
   })
 
   it('decodes YAML comments, quoted strings, folded/literal blocks and flow maps', () => {

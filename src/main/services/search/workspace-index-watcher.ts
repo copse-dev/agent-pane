@@ -1,7 +1,6 @@
 import * as fs from 'node:fs'
-import { resolve } from 'node:path'
-import { buildIndex } from './file-index.ts'
-import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { buildIndex, fileIndexKey, resolveFileIndexTarget } from './file-index.ts'
+import { isSshExecutionTarget, type ExecutionTarget } from '../ssh-workspace/execution-target.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import { updateSemanticIndex } from './semantic-index.ts'
 import {
@@ -29,6 +28,8 @@ const WORKING_TREE_RECONCILE_INTERVAL_MS = 5_000
 const MAX_WATCH_ONLY_ROOTS = 8
 
 interface RootWatchState {
+  root: string
+  target: ExecutionTarget
   watcher: fs.FSWatcher | null
   /** Whether git consumers need periodic reconciliation even without a live native watcher. */
   withGitReconciliation: boolean
@@ -53,8 +54,8 @@ const states = new Map<string, RootWatchState>()
 let workingTreeReconcileTimer: ReturnType<typeof setInterval> | null = null
 
 function reconcileWorkingTreeWatchers(): void {
-  for (const [root, state] of states) {
-    if (state.withGitReconciliation) notifyWorkspaceChanged(root)
+  for (const state of states.values()) {
+    if (state.withGitReconciliation) notifyWorkspaceChanged(state.root)
   }
 }
 
@@ -82,12 +83,18 @@ function stopWorkingTreeReconcileTimerIfIdle(): void {
   workingTreeReconcileTimer = null
 }
 
-function emptyState(opts: {
-  withSemantic: boolean
-  withIndexRebuild: boolean
-  withGitReconciliation?: boolean
-}): RootWatchState {
+function emptyState(
+  root: string,
+  target: ExecutionTarget,
+  opts: {
+    withSemantic: boolean
+    withIndexRebuild: boolean
+    withGitReconciliation?: boolean
+  },
+): RootWatchState {
   return {
+    root,
+    target,
     watcher: null,
     withGitReconciliation: opts.withGitReconciliation ?? false,
     debounceTimer: null,
@@ -109,12 +116,13 @@ function pruneWatchOnlyRoots(keepKey: string): void {
 
 function armWatcher(
   root: string,
-  opts: { withSemantic: boolean; withIndexRebuild: boolean },
+  opts: { withSemantic: boolean; withIndexRebuild: boolean; executionTarget?: ExecutionTarget },
 ): void {
-  const key = resolve(root)
+  const target = opts.executionTarget ?? resolveFileIndexTarget()
+  const key = fileIndexKey(root, target)
   // fs.watch observes only local files. Remote indexing is refreshed when
   // Copse writes, and external remote edits require a future SSH watcher.
-  if (isActiveSshWorkspace()) return
+  if (isSshExecutionTarget(target)) return
 
   const existing = states.get(key)
   if (existing?.watcher) {
@@ -123,13 +131,13 @@ function armWatcher(
     if (opts.withIndexRebuild) existing.withIndexRebuild = true
     // Events during the git-only window did not rebuild the listing. Catch up
     // the moment search indexing claims this watcher.
-    if (upgradedToIndex) scheduleIndexRebuild(key)
+    if (upgradedToIndex) scheduleIndexRebuild(root, target)
     return
   }
 
   if (!opts.withIndexRebuild) pruneWatchOnlyRoots(key)
 
-  const state = existing ?? emptyState({ ...opts, withGitReconciliation: true })
+  const state = existing ?? emptyState(root, target, { ...opts, withGitReconciliation: true })
   state.withGitReconciliation = true
   if (opts.withSemantic) state.withSemantic = true
   if (opts.withIndexRebuild) state.withIndexRebuild = true
@@ -140,13 +148,13 @@ function armWatcher(
 
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
-      handleWorkspaceWatchEvent(key, filename)
+      handleWorkspaceWatchEvent(root, filename, target)
     })
     // Same contract as execution-root-watcher: an `error` with no listener is an
     // uncaught exception that kills the main process. A deleted, renamed, or
     // unmounted workspace root must drop the watcher, not take the app down.
     watcher.on('error', (err: unknown) => {
-      console.warn('[copse-panel] workspace index watcher failed for', key, err)
+      console.warn('[copse-panel] workspace index watcher failed for', root, err)
       const current = states.get(key)
       if (current?.watcher === watcher) {
         watcher.close()
@@ -173,21 +181,25 @@ export function ensureWorkingTreeWatched(root: string): void {
 
 export function startWorkspaceIndexWatcher(
   root: string,
-  opts: { withSemantic?: boolean } = {},
+  opts: { withSemantic?: boolean; executionTarget?: ExecutionTarget } = {},
 ): void {
-  armWatcher(root, { withSemantic: opts.withSemantic ?? true, withIndexRebuild: true })
+  armWatcher(root, { ...opts, withSemantic: opts.withSemantic ?? true, withIndexRebuild: true })
 }
 
 /** Route one recursive watcher event to git consumers and the narrower index rebuild path. */
-export function handleWorkspaceWatchEvent(root: string, filename: string | null): void {
+export function handleWorkspaceWatchEvent(
+  root: string,
+  filename: string | null,
+  target = resolveFileIndexTarget(),
+): void {
   if (shouldPublishWorkingTreeChange(filename)) notifyWorkspaceChanged(root)
-  const state = states.get(resolve(root))
+  const state = states.get(fileIndexKey(root, target))
   if (!state?.withIndexRebuild) return
   // Ignore churn under build output / deps / .git / agent worktrees — none of
   // it is indexed, and a burst there (e.g. a `dist/` rebuild or git op) would
   // otherwise keep re-arming the semantic index treadmill (#517 follow-up).
   if (filename !== null && isIgnoredWorkspacePath(filename)) return
-  scheduleIndexRebuild(root)
+  scheduleIndexRebuild(root, target)
 }
 
 /**
@@ -200,31 +212,35 @@ export function handleWorkspaceWatchEvent(root: string, filename: string | null)
  * that refused the recursive watch — and those roots fall back to an age check
  * instead.
  */
-export function isRootWatched(root: string): boolean {
-  const state = states.get(resolve(root))
+export function isRootWatched(root: string, target = resolveFileIndexTarget()): boolean {
+  const state = states.get(fileIndexKey(root, target))
   return state?.watcher != null && state.withIndexRebuild
 }
 
 /** Whether any recursive watcher (git-only or index-rebuild) is armed for `root`. */
-export function isWorkingTreeWatched(root: string): boolean {
-  return states.get(resolve(root))?.watcher != null
+export function isWorkingTreeWatched(root: string, target = resolveFileIndexTarget()): boolean {
+  return states.get(fileIndexKey(root, target))?.watcher != null
 }
 
 /** Test hook — fire the watcher's `error` path without deleting the directory. */
-export function emitWorkspaceIndexWatcherErrorForTest(root: string, err: Error): boolean {
-  const watcher = states.get(resolve(root))?.watcher
+export function emitWorkspaceIndexWatcherErrorForTest(
+  root: string,
+  err: Error,
+  target = resolveFileIndexTarget(),
+): boolean {
+  const watcher = states.get(fileIndexKey(root, target))?.watcher
   if (!watcher) return false
   watcher.emit('error', err)
   return true
 }
 
 /** Stop watching one root, or every watched root when called with none (app quit / workspace switch). */
-export function stopWorkspaceIndexWatcher(root?: string): void {
+export function stopWorkspaceIndexWatcher(root?: string, target?: ExecutionTarget): void {
   if (root === undefined) {
     for (const key of [...states.keys()]) stopOne(key)
     return
   }
-  stopOne(resolve(root))
+  stopOne(fileIndexKey(root, target))
 }
 
 function stopOne(key: string): void {
@@ -251,8 +267,10 @@ function startRebuild(key: string, root: string, state: RootWatchState): void {
     return
   }
   state.rebuildInFlight = Promise.all([
-    buildIndex(root),
-    ...(state.withSemantic && !isActiveSshWorkspace() ? [updateSemanticIndex(root)] : []),
+    buildIndex(root, state.target),
+    ...(state.withSemantic && !isSshExecutionTarget(state.target)
+      ? [updateSemanticIndex(root)]
+      : []),
   ])
     .then(() => undefined)
     .catch((err: unknown) => {
@@ -270,11 +288,11 @@ function startRebuild(key: string, root: string, state: RootWatchState): void {
     })
 }
 
-export function scheduleIndexRebuild(root: string): void {
-  const key = resolve(root)
+export function scheduleIndexRebuild(root: string, target = resolveFileIndexTarget()): void {
+  const key = fileIndexKey(root, target)
   let state = states.get(key)
   if (!state) {
-    state = emptyState({ withSemantic: true, withIndexRebuild: true })
+    state = emptyState(root, target, { withSemantic: true, withIndexRebuild: true })
     states.set(key, state)
   }
 
@@ -288,8 +306,11 @@ export function scheduleIndexRebuild(root: string): void {
 }
 
 /** Test hook — await any in-flight or debounced rebuild for one root, including a trailing pass. */
-export async function flushScheduledIndexRebuild(root: string): Promise<void> {
-  const key = resolve(root)
+export async function flushScheduledIndexRebuild(
+  root: string,
+  target = resolveFileIndexTarget(),
+): Promise<void> {
+  const key = fileIndexKey(root, target)
   const state = states.get(key)
   if (!state) return
   if (state.debounceTimer) {

@@ -156,7 +156,8 @@ Read the **confidence line** before trusting the subset:
 - **LOW** — some changed source has no importing test and no selector match.
   The subset can't cover it; the listed unmapped files are your blind spot.
 - **broad** — a cross-cutting file changed (build scripts, store, preload,
-  `index.html`). The oracle recommends everything, and means it.
+  `index.html`, the dependency manifest or lockfile). The oracle recommends
+  everything, and means it.
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
@@ -180,6 +181,14 @@ dependency/lockfile, release/update/packaging, CI/test/oracle, cross-cutting, or
 Those categories are mandatory because the oracle only knows imports and selectors: behavior
 reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
 be invisible to it. When classification is unclear, take the full path.
+
+For slow suites, the [draft/cloud-validation exception](../AGENTS.md#before-committing) allows
+committing and opening a draft PR after focused investigation and checks, with suitable suites run
+on available cloud CI resources. Explicitly cite this route and its reason in the PR's Validation
+section, including local results, deferred commands, cloud run links, and on-device evidence or
+remaining work. Run focused on-device checks wherever CI is insufficient or additional evidence is
+needed. Inspect cloud results and resolve failures; keep the PR draft until required gates and
+device evidence pass. A pending cloud run is not passing evidence.
 
 That mandate is about catching failures the oracle would have missed, not about clearing a
 locally-unachievable zero-failure bar. Some unit tests fail for reasons that have nothing to do
@@ -215,6 +224,9 @@ list rather than adding e2e specs for DOM-only behavior.
 > changes require evals"). That eval is usually a small browser or Electron spec that seeds a state
 > and saves a screenshot — exactly the sizing/rendering job those tiers are for. Pushing
 > _logic_ down doesn't waive the visual check.
+
+Accessibility has its own lane in this tier: axe-core scans of representative surfaces against a
+shrink-only baseline plus keyboard-only journeys. See [accessibility acceptance](accessibility.md).
 
 ## CI cost is a design input
 
@@ -474,12 +486,32 @@ Rules for anything that lands in a captured frame:
   offsets and the subject's box to hold still (`waitForSettledLayout`) so a
   smooth scroll is never captured mid-flight; a sidebar that shows a thread the
   spec just created needs `waitForActiveThreadTitle()` first, because the
-  auto-title lands a round trip after the turn settles.
-- **Last resort.** When a value in frame comes from the wall clock and no
-  fixture can reach it — the trigger time of a run the real scheduler just
-  fired — `pinTextForCapture` swaps that one text node for a fixed string for
-  the duration of the capture and restores it. Keep the DOM assertion on the
-  real text alongside it; this is not a substitute for seeding.
+  auto-title lands a round trip after the turn settles. The sidebar's changes
+  glyph caches each read for 30s, and on Linux a write-sandboxed command (such as
+  creating a worker checkout) briefly leaves bubblewrap mount-point stubs in the
+  checkout, so read `threadChangeSummary` with `fresh: true` and wait for the
+  glyph to match it before capturing an idle thread. A capture in the middle of
+  a demo trace holds the trace at a checkpoint instead of racing its pacing:
+  bundle an entry that injects the trace player's `sleep` with
+  `buildDemoFixturePage` (`tests/demo/helpers/demo-fixture-page.ts`).
+- **Index builds.** The workspace watcher rebuilds the file index after every
+  write, including the PNGs e2e saves into the checkout, and the footer shows
+  `Indexing… <elapsed>` for a build that outlives its show delay. The capture
+  helpers hold each screenshot until `index.status()` reports nothing building
+  (`withSettledIndex` in `tests/e2e/helpers/screenshot.ts`); a build that
+  outlasts the bounded wait stays in frame with its seconds pinned. A spec that
+  calls WebDriver's `saveScreenshot` directly on a frame holding the footer gets
+  neither, so go through a helper.
+- **Synced data.** Scheduled bot PRs rewrite data the app prints, such as the
+  intellect scores `sync-intellect.yml` writes into `packages/llm`. A capture
+  that shows one of those numbers changes every time the sync lands, so assert
+  the real text and pin the number for the capture (below), as
+  `model-intellect-equating.e2e.ts` does.
+- **Last resort.** When a value in frame comes from the wall clock or a
+  scheduled sync and no fixture can reach it — the trigger time of a run the
+  real scheduler just fired — `pinTextForCapture` swaps that one text node for
+  a fixed string for the duration of the capture and restores it. Keep the DOM
+  assertion on the real text alongside it; this is not a substitute for seeding.
 
 When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin

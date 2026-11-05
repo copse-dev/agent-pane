@@ -33,7 +33,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDefinition[] = [
   { id: 'customise', label: 'Customise', markup: customiseMarkup, fields: customiseFields },
   { id: 'storage', label: 'Storage', markup: storageMarkup, fields: storageFields },
   { id: 'appearance', label: 'Appearance', markup: appearanceMarkup, fields: appearanceFields },
-  { id: 'ssh', label: 'SSH', markup: sshMarkup, fields: sshFields },
+  { id: 'ssh', label: 'Machines', markup: sshMarkup, fields: sshFields },
   {
     id: 'experimental',
     label: 'Experimental',

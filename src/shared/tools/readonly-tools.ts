@@ -28,6 +28,8 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'preflight_worktree',
   'deferred_approval_status',
   'explore',
+  // Quotes lines explore subagents already read this run; reads nothing new.
+  'read_explored',
   // Delegating to a user-authored subagent is itself non-mutating, and the
   // subagent cannot escape the run's read-only scope: that scope is ALS-based
   // and covers everything the run awaits, so each of the subagent's own tool
@@ -35,6 +37,7 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   // instead block a read-only reviewer agent for no safety gain — unlike
   // `delegate_step`, whose whole purpose is to write files.
   'task',
+  'run_readonly_workers',
   'ask_user',
   // Thread-owned review artifacts change no workspace or external state.
   'update_thread_plan',

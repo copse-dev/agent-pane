@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createThread, deleteProjectThread } from '../services/thread-store.ts'
 import { runWithApprovalHandler } from '../services/approval.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
-import { setSetting } from '../services/storage/settings.test-shim.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import { listThreadsTool, sendThreadPromptTool } from './thread-tools.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { hasThreadAccess } from '../services/security/thread-access.ts'
@@ -34,8 +34,8 @@ describe('conversation tools', () => {
     })
   })
   afterEach(async () => {
-    setSetting('threadReadAccess', [])
-    setSetting('threadSendAccess', [])
+    await setSetting('threadReadAccess', [])
+    await setSetting('threadSendAccess', [])
     storageSet('projects', projects)
     if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previous
@@ -64,7 +64,7 @@ describe('conversation tools', () => {
   })
 
   it('asks separately to send and leaves the destination untouched on denial', async () => {
-    setSetting('threadReadAccess', ['thread-tools-source'])
+    await setSetting('threadReadAccess', ['thread-tools-source'])
     let title = ''
     const result = await runWithApprovalHandler(
       async (request) => {

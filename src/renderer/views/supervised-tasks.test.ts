@@ -72,7 +72,24 @@ describe('supervised tasks', () => {
       supervisor: {
         ...base.supervisor,
         list: async () => ({
-          tasks: [task, { ...task, taskId: 'shell', handler: 'shell_process', state: 'failed' }],
+          tasks: [
+            task,
+            { ...task, taskId: 'shell', handler: 'shell_process', state: 'failed' },
+            {
+              ...task,
+              taskId: 'worker',
+              handler: 'native_readonly_worker:live-parent',
+              agentId: 'alpha',
+              state: 'failed',
+            },
+            {
+              ...task,
+              taskId: 'isolated',
+              handler: 'native_isolated_worker:live-parent',
+              agentId: 'beta',
+              state: 'blocked',
+            },
+          ],
         }),
         resume: async () => {
           throw new Error('Permissions changed; schedule new work')
@@ -83,6 +100,14 @@ describe('supervised tasks', () => {
     const dispose = mountSupervisedTasks(root, createStore({ activeProjectId: 'project-1' }), api)
     await flush()
     assert.equal(root.querySelectorAll('.supervised-task-resume').length, 1)
+    assert.equal(
+      root.querySelector('[data-task-id=worker] .supervised-task-label')?.textContent,
+      'alpha (read-only)',
+    )
+    assert.equal(
+      root.querySelector('[data-task-id=isolated] .supervised-task-label')?.textContent,
+      'beta (isolated)',
+    )
     root.querySelector<HTMLButtonElement>('.supervised-task-resume')?.click()
     await flush()
     assert.match(root.querySelector('[role="status"]')?.textContent ?? '', /Permissions changed/)

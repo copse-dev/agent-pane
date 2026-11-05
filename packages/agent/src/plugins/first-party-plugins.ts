@@ -79,12 +79,12 @@
 //    only grants the loopback port-binding relaxation while the plugin declares it
 //    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
 //    Default ENABLED; users can still disable it through the plugin toggle.
-//  - `parallelSearchPlugin` — direct, credential-gated access to Parallel's
-//    hosted Search API. It declares the native `parallel_search` tool, search
-//    mode setting, and first-party credential detail. Default DISABLED.
 //  - `artifactCheckpointPlugin` — experimental delayed artifact-preservation
 //    steering. Contributes one `stepBoundary` hook and a scoped delay setting;
 //    default DISABLED.
+//  - `computerUsePlugin` — experimental macOS computer use: the `desktop_*`
+//    tools drive approved apps through the native desktop-control helper.
+//    Default DISABLED.
 //  - `siteBuildingPlugin` — stable, default-on website creative-engineering
 //    steering. Contributes one conditional turn-start hook shared by the local
 //    loop and ACP; no customer- or demo-specific art direction is embedded.
@@ -104,12 +104,12 @@ import { mcpUiCanvasPlugin } from './mcp-ui-canvas-plugin.ts'
 import { devtoolsShortcutPlugin } from './devtools-shortcut-plugin.ts'
 import { backgroundTasksPlugin } from './background-tasks-plugin.ts'
 import { automationsPlugin } from './automations-plugin.ts'
-import { parallelSearchPlugin } from './parallel-search-plugin.ts'
 import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 import { reviewerInputPlugin } from './reviewer-input-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
+import { computerUsePlugin } from './computer-use-plugin.ts'
 import { claudeMdPlugin } from './claude-md-plugin.ts'
 import { agentsMdPlugin } from './agents-md-plugin.ts'
 import { cursorRulesPlugin } from './cursor-rules-plugin.ts'
@@ -124,7 +124,7 @@ import { engineeringPlugin } from './engineering-plugin.ts'
  * the CI investigator, then PII redaction, then forced planning, then the two
  * capability-only plugins (MCP-UI canvas + DevTools shortcut), then the
  * background-tasks plugin (which declares a permission / sandbox relaxation,
- * issue #1190), then the automations prototype, Parallel Search, dark factory,
+ * issue #1190), then the automations prototype, dark factory,
  * the artifact-checkpoint experiment, and the stable site-building steering plugin.
  */
 export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
@@ -133,6 +133,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   cursorRulesPlugin,
   todosPlugin,
   appleDevelopmentPlugin,
+  computerUsePlugin,
   postTurnReviewPlugin,
   reviewPlugin,
   longHorizonTasksPlugin,
@@ -146,7 +147,6 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   devtoolsShortcutPlugin,
   backgroundTasksPlugin,
   automationsPlugin,
-  parallelSearchPlugin,
   darkFactoryPlugin,
   artifactCheckpointPlugin,
   reviewerInputPlugin,

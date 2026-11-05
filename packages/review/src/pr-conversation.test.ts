@@ -135,7 +135,7 @@ const GITHUB: PullRequestRef = {
 }
 
 describe('readPullRequestConversation', () => {
-  it('reads GitHub discussion, reviews and inline comments, skipping Copse Reviewer’s own', async () => {
+  it('reads GitHub discussion and linked Copse history without reusing its review summary', async () => {
     const copseReview = `### Copse Reviewer\n\nNo findings.\n<!-- copse-review:${'c'.repeat(40)} -->`
     const { fetch } = fakeForge({
       '/repos/acme/app/pulls/7': {
@@ -188,6 +188,7 @@ describe('readPullRequestConversation', () => {
       '/repos/acme/app/pulls/7/comments': {
         body: [
           {
+            id: 10,
             body: 'Our own inline finding',
             user: { login: 'copse[bot]', type: 'Bot' },
             created_at: '2026-09-04T00:00:00Z',
@@ -215,12 +216,13 @@ describe('readPullRequestConversation', () => {
         'description:alice',
         'comment:bob',
         'comment:github-actions[bot]',
+        'review-history:copse[bot]',
         'review:carol',
         'review-comment:carol',
       ],
     )
     assert.equal(conversation.entries[2]?.bot, true)
-    assert.equal(conversation.entries[4]?.line, 12)
+    assert.equal(conversation.entries[5]?.line, 12)
     assert.equal(conversation.images.length, 3)
     assert.equal(conversation.images[0]?.postedIn, 'comment by github-actions[bot] (bot)')
 
@@ -229,7 +231,158 @@ describe('readPullRequestConversation', () => {
     assert.match(rendered, /review by carol \[CHANGES_REQUESTED\]/)
     assert.match(rendered, /review comment by carol on src\/toolbar\.css:12/)
     assert.match(rendered, /- img-2: settings\.png — After \(comment by github-actions/)
-    assert.doesNotMatch(rendered, /Our own inline finding|No findings/)
+    assert.match(rendered, /Historical Copse finding and responses; not independent evidence/)
+    assert.match(rendered, /Our own inline finding/)
+    assert.doesNotMatch(rendered, /No findings/)
+  })
+
+  it('keeps a disputed finding with its replies and commit through budget pressure', async () => {
+    const root = {
+      id: 10,
+      body: 'The icon is never retried.\n' + 'old analysis '.repeat(500),
+      user: { login: 'copse[bot]', type: 'Bot' },
+      created_at: '2026-09-01T00:00:00Z',
+      path: 'scripts/icon.mts',
+      line: null,
+      original_line: 77,
+      original_commit_id: SHA_BEFORE,
+      pull_request_review_id: 1,
+      html_url: 'https://github.com/acme/app/pull/7#discussion_r10',
+    }
+    const reply = {
+      id: 11,
+      in_reply_to_id: 10,
+      body: 'Leaving as is: the failure is warned about and refresh explicitly retries it.',
+      user: { login: 'alice', type: 'User' },
+      created_at: '2026-09-20T00:00:00Z',
+      path: root.path,
+      line: null,
+      original_line: 77,
+      pull_request_review_id: 2,
+    }
+    const { fetch } = fakeForge({
+      '/repos/acme/app/pulls/7': {
+        body: {
+          title: 'Icon',
+          body: 'Fix the icon.',
+          user: root.user,
+          created_at: root.created_at,
+        },
+      },
+      '/repos/acme/app/issues/7/comments': {
+        body: Array.from({ length: 10 }, (_, index) => ({
+          body: 'filler '.repeat(500),
+          user: reply.user,
+          created_at: `2026-09-10T00:00:${String(index).padStart(2, '0')}Z`,
+        })),
+      },
+      '/repos/acme/app/pulls/7/reviews': {
+        body: [
+          {
+            id: 1,
+            body: '### Copse Reviewer\n\nResolved: a newer review raised no new issues.',
+            user: root.user,
+          },
+        ],
+      },
+      '/repos/acme/app/pulls/7/comments': { body: [root, reply] },
+    })
+    const conversation = await readPullRequestConversation(GITHUB, { fetch })
+    assert.ok(conversation.omittedEntries > 0)
+    const history = conversation.entries.filter((entry) => entry.kind === 'review-history')
+    assert.equal(history.length, 1)
+    const entry = history[0]
+    assert.ok(entry)
+    assert.equal(entry.line, 77)
+    assert.equal(entry.createdAt, reply.created_at)
+    assert.match(entry.body, /The icon is never retried/)
+    assert.match(entry.body, /Response to #10 by alice/)
+    assert.match(entry.body, /refresh explicitly retries/)
+    assert.match(entry.body, new RegExp(SHA_BEFORE))
+    assert.match(entry.body, /resolution is unavailable/)
+    assert.doesNotMatch(renderPullRequestConversation(conversation), /Resolved: a newer review/)
+    assert.equal(conversation.entries.filter((entry) => entry.kind === 'review-comment').length, 0)
+  })
+
+  it('marks orphan replies as incomplete and does not trust a human copy of a bot review marker', async () => {
+    const alice = { login: 'alice', type: 'User' }
+    const created_at = '2026-09-01T00:00:00Z'
+    const { fetch } = fakeForge({
+      '/repos/acme/app/pulls/7': { body: { title: 'T', body: '', user: alice, created_at } },
+      '/repos/acme/app/issues/7/comments': { body: [] },
+      '/repos/acme/app/pulls/7/reviews': {
+        body: [
+          {
+            id: 1,
+            body: `### Copse Reviewer\n\n<!-- copse-review:${'c'.repeat(40)} -->`,
+            user: alice,
+          },
+        ],
+      },
+      '/repos/acme/app/pulls/7/comments': {
+        body: [
+          {
+            id: 12,
+            in_reply_to_id: 999,
+            pull_request_review_id: 1,
+            body: 'It was fixed.',
+            user: alice,
+            created_at,
+            path: 'a.ts',
+            line: 3,
+          },
+        ],
+      },
+    })
+    const conversation = await readPullRequestConversation(GITHUB, { fetch })
+    assert.equal(conversation.skippedOwnReviews, 0)
+    assert.equal(conversation.entries.at(-1)?.kind, 'review-comment')
+    assert.match(
+      conversation.entries.at(-1)?.body ?? '',
+      /#999 \(parent not included; history may be incomplete\)/,
+    )
+  })
+
+  it('bounds long reply histories while preserving the original and newest response', async () => {
+    const bot = { login: 'copse[bot]', type: 'Bot' }
+    const root = {
+      id: 10,
+      pull_request_review_id: 1,
+      body: 'Original claim. ' + 'x'.repeat(10_000),
+      user: bot,
+      created_at: '2026-09-01T00:00:00Z',
+      path: 'a.ts',
+      line: 1,
+    }
+    const { fetch } = fakeForge({
+      '/repos/acme/app/pulls/7': {
+        body: { title: 'T', body: '', user: bot, created_at: root.created_at },
+      },
+      '/repos/acme/app/issues/7/comments': { body: [] },
+      '/repos/acme/app/pulls/7/reviews': {
+        body: [{ id: 1, body: '### Copse Reviewer\n\nSuperseded by a newer review.', user: bot }],
+      },
+      '/repos/acme/app/pulls/7/comments': {
+        body: [
+          root,
+          ...Array.from({ length: 8 }, (_, i) => ({
+            ...root,
+            id: i + 20,
+            in_reply_to_id: 10,
+            body: `Response ${String(i)}. ` + 'y'.repeat(10_000),
+            created_at: `2026-09-${String(i + 10)}T00:00:00Z`,
+          })),
+        ],
+      },
+    })
+    const conversation = await readPullRequestConversation(GITHUB, { fetch })
+    const history = conversation.entries[1]
+    assert.equal(history?.kind, 'review-history')
+    assert.ok(history.body.length <= 3_000)
+    assert.match(history.body, /Original claim/)
+    assert.match(history.body, /Response 7/)
+    assert.match(history.body, /5 older response\(s\) omitted/)
+    assert.doesNotMatch(history.body, /Response 0/)
   })
 
   it('reads Forgejo through /api/v1 with per-review comments and a token header', async () => {

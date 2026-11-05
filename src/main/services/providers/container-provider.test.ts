@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
 import { ChatGptPlanService, getChatGptPlanService } from './chatgpt-plan-service.ts'
 import type { ChatGptPlanState } from './chatgpt-plan-store.ts'
@@ -11,6 +11,9 @@ import {
   guestFacingEndpoint,
   resolveContainerProvider,
 } from './container-provider.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const CLAUDE_AGENT: AcpAgentConfig = {
   id: 'claude-acp',
@@ -164,6 +167,7 @@ describe('resolveContainerProvider', () => {
       },
       {
         openBrowser: async (): Promise<void> => {},
+        focusApp: (): void => {},
         fetch: async (_input, init): Promise<Response> => {
           refreshes++
           assert.ok(init?.body instanceof URLSearchParams)

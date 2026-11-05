@@ -7,6 +7,7 @@ import type {
   PromptVideoAttachment,
 } from './prompt-attachments.ts'
 import {
+  UNSUPPORTED_IMAGE_MESSAGE,
   WORKSPACE_PATH_MIME,
   attachFiles,
   handleFileDrop,
@@ -245,5 +246,55 @@ describe('attaching dropped files', () => {
     await handleFileDrop(workspacePathDrop('/repo/fixtures/bundle.zip'), handlers, api, '/repo')
     assert.deepEqual(recorded.archives, [{ name: 'bundle.zip', path: '/repo/fixtures/bundle.zip' }])
     assert.equal(recorded.files.length, 0)
+  })
+
+  it('refuses an image the composer cannot render instead of attaching a broken chip', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([fakeFile('IMG_0412.HEIC', 'image/heic')], handlers, api, null)
+    assert.deepEqual(recorded.images, [])
+    assert.deepEqual(recorded.files, [])
+    assert.equal(document.querySelector('.toast')?.textContent, UNSUPPORTED_IMAGE_MESSAGE)
+    document.querySelector('.toast')?.remove()
+  })
+
+  it('refuses an unrenderable image by extension when the browser reports no MIME type', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([fakeFile('IMG_0412.HEIC', '')], handlers, api, null)
+    assert.deepEqual(recorded.images, [])
+    assert.deepEqual(recorded.files, [])
+    assert.equal(document.querySelector('.toast')?.textContent, UNSUPPORTED_IMAGE_MESSAGE)
+    document.querySelector('.toast')?.remove()
+  })
+
+  it('refuses a workspace image the composer cannot render instead of reading it as text', async () => {
+    const { handlers, recorded } = recordingHandlers()
+    let reads = 0
+    const countingApi: FileDropApi = {
+      fs: {
+        readFile: async (): Promise<string> => {
+          reads += 1
+          return 'binary garbage'
+        },
+        readImage: async (): Promise<string> => {
+          reads += 1
+          return 'data:image/png;base64,iVBORw0KGgo='
+        },
+      },
+    }
+    await handleFileDrop(
+      workspacePathDrop('/repo/photos/scan.tiff'),
+      handlers,
+      countingApi,
+      '/repo',
+      {
+        projectId: 'project-1',
+        threadId: 'thread-1',
+      },
+    )
+    assert.equal(reads, 0)
+    assert.deepEqual(recorded.files, [])
+    assert.deepEqual(recorded.images, [])
+    assert.equal(document.querySelector('.toast')?.textContent, UNSUPPORTED_IMAGE_MESSAGE)
+    document.querySelector('.toast')?.remove()
   })
 })

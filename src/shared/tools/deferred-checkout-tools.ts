@@ -15,7 +15,6 @@ import {
 export const CHECKOUT_NEUTRAL_TOOLS = new Set<string>([
   'web_search',
   'fetch_url',
-  'parallel_search',
   'gh_pr_view',
   'gh_pr_list',
   'gh_pr_files',

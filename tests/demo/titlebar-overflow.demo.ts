@@ -6,7 +6,10 @@ describe('titlebar panel overflow', () => {
     it(`keeps every panel action reachable at ${String(width)}px`, async () => {
       await browser.setWindowSize(width, 720)
       await browser.url('/?scenario=footer-compact')
-      await $('#titlebar').waitForDisplayed()
+      // #titlebar is an empty placeholder in index.html; the app mounts its
+      // controls, including the hidden editor control, after the code-split
+      // renderer chunks load.
+      await $('#titlebar .open-in-editor').waitForExist({ timeout: 30_000 })
       await browser.execute(() => {
         const editor = document.querySelector<HTMLElement>('#titlebar .open-in-editor')
         const label = document.querySelector('#titlebar .open-in-editor-label')

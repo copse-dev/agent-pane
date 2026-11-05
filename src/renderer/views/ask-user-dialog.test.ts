@@ -322,12 +322,10 @@ describe('ask_user dialog (component)', () => {
       'The project already uses SQLite.',
     )
     button.click()
-    assert.equal(at(inputs(), 0).value, 'SQLite')
-    submitForm()
     assert.deepEqual(harness.responses, [{ id: 'recommendation', answers: ['SQLite'] }])
   })
 
-  it('fills the input when a suggested option is clicked', () => {
+  it('sends a single question’s suggested option as soon as it is clicked', () => {
     const { api, harness } = stubApi()
     mount(api)
     harness.emit({
@@ -341,10 +339,68 @@ describe('ask_user dialog (component)', () => {
     assert.equal(optionButtons.length, 2)
     at(optionButtons, 1).click()
 
-    assert.equal(at(inputs(), 0).value, 'SQLite')
-
-    submitForm()
     assert.deepEqual(harness.responses, [{ id: 'q2', answers: ['SQLite'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('keeps the free-text field behind "Something else…" for a single question with options', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-other',
+      questions: [{ question: 'Which DB?', options: ['Postgres', 'SQLite'] }],
+    })
+
+    const toggle = document.querySelector<HTMLButtonElement>('.ask-user-other')
+    const submit = document.querySelector<HTMLButtonElement>('.ask-user-submit')
+    assert.ok(toggle)
+    assert.ok(submit)
+    assert.equal(toggle.textContent, 'Something else…')
+    assert.equal(at(inputs(), 0).hidden, true)
+    assert.equal(submit.hidden, true)
+    // A stray Enter or Space must land on the harmless control, not on an answer.
+    assert.equal(document.activeElement, toggle)
+    // Nothing is typed yet, so the shortcut must not send an empty answer.
+    pressEnter({ metaKey: true })
+    assert.deepEqual(harness.responses, [])
+
+    toggle.click()
+    assert.equal(toggle.hidden, true)
+    assert.equal(at(inputs(), 0).hidden, false)
+    assert.equal(submit.hidden, false)
+    assert.equal(document.activeElement, at(inputs(), 0))
+
+    at(inputs(), 0).value = 'MySQL'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'q-other', answers: ['MySQL'] }])
+  })
+
+  it('still collects every answer before sending when several questions have options', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-multi-options',
+      questions: [
+        { question: 'Which DB?', options: ['Postgres', 'SQLite'] },
+        { question: 'Async?', options: ['Yes', 'No'] },
+      ],
+    })
+
+    assert.equal(document.querySelector('.ask-user-other'), null)
+    const [db, , asyncYes] = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.ask-user-option'),
+    )
+    assert.ok(db)
+    assert.ok(asyncYes)
+    db.click()
+    asyncYes.click()
+    assert.deepEqual(harness.responses, [])
+    assert.deepEqual(
+      inputs().map((input) => input.value),
+      ['Postgres', 'Yes'],
+    )
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'q-multi-options', answers: ['Postgres', 'Yes'] }])
   })
 
   it('renders commands as sanitized Markdown in questions and quick picks', () => {
@@ -369,7 +425,7 @@ describe('ask_user dialog (component)', () => {
     assert.equal(option.querySelector('code')?.textContent, 'claude /login')
     assert.equal(option.textContent.includes('`'), false)
     option.click()
-    assert.equal(at(inputs(), 0).value, 'Run claude /login')
+    assert.deepEqual(harness.responses, [{ id: 'q-markdown', answers: ['Run claude /login'] }])
   })
 
   it('collects one answer per question for a multi-question ask', () => {

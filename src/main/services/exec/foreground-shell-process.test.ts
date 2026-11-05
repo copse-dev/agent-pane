@@ -17,6 +17,8 @@ import {
   stopSupervisedBackgroundProcess,
 } from './supervised-background-process.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
+import { runWithCommandPhaseReporter, setLateCommandPhaseRecorder } from './command-phase.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
 
@@ -97,6 +99,43 @@ describe('foreground shell interruption', () => {
     await waitUntil(() => supervisor.get(OWNER.projectId, task.taskId)?.state === 'completed')
     assert.match(getBackgroundProcessLogs(result.backgroundId, OWNER) ?? '', /finished/)
     assert.equal(listBackgroundProcesses(OWNER)[0]?.exitCode, 0)
+  })
+
+  it('records a detached command ending on its own card after the call returned (#3956)', async () => {
+    const inCall: CommandPhase[] = []
+    const late: { toolCallId: string; phase: CommandPhase }[] = []
+    setLateCommandPhaseRecorder((_owner, toolCallId, phase) => {
+      late.push({ toolCallId, phase })
+      return Promise.resolve()
+    })
+    try {
+      let run: ReturnType<typeof start> | undefined
+      const result = await runWithCommandPhaseReporter(
+        (phase) => inCall.push(phase),
+        { state: 'queued', since: 0, launched: false },
+        async () => {
+          run = start(`echo ready $$; sleep 0.5; exit 4`)
+          await run.ready
+          run.controller.abort('send_now')
+          return run.result
+        },
+        () => 'unused',
+        'tc-detached',
+      )
+      assert.ok(result.backgroundId)
+      assert.equal(inCall.at(-1)?.state, 'running')
+      assert.equal(inCall.at(-1)?.backgroundTaskId, result.backgroundId)
+      await waitUntil(() => late.length > 0)
+      const [ending] = late
+      assert.ok(ending)
+      assert.equal(ending.toolCallId, 'tc-detached')
+      assert.equal(ending.phase.state, 'exited')
+      assert.equal(ending.phase.exitCode, 4)
+      assert.equal(ending.phase.backgroundTaskId, result.backgroundId)
+      assert.equal(ending.phase.launched, true)
+    } finally {
+      setLateCommandPhaseRecorder(null)
+    }
   })
 
   it('keeps error evidence when transferred work emits more than the background output cap', async () => {
@@ -202,5 +241,41 @@ describe('foreground shell interruption', () => {
       runShellOnce('echo unexpected', root, 5_000, controller.signal, true, process.env),
     )
     assert.deepEqual(listBackgroundProcesses(OWNER), [])
+  })
+})
+
+describe('foreground shell completion', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'copse-foreground-'))
+  })
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const run = (command: string, timeout: number): ReturnType<typeof runShellOnce> =>
+    runShellOnce(command, root, timeout, new AbortController().signal, true, process.env)
+
+  it('gives a command that reads stdin EOF instead of hanging until the timeout', async () => {
+    const startedAt = Date.now()
+    const result = await run('read x; echo got:$x', 5_000)
+    assert.match(result.output, /got:/)
+    assert.ok(Date.now() - startedAt < 4_000)
+  })
+
+  it('keeps the output captured before a timeout and points at run_background', async () => {
+    await assert.rejects(run('echo started; sleep 5', 1_000), (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.match(error.message, /timed out after 1000ms/)
+      assert.match(error.message, /started/)
+      assert.match(error.message, /run_background with wake_on_completion/)
+      return true
+    })
+  })
+
+  it('reports a signal-killed command as a failure', async () => {
+    const result = await run('kill -9 $$', 5_000)
+    assert.equal(result.exitCode, 137)
   })
 })

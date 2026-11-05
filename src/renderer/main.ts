@@ -2,7 +2,7 @@ import { attachMobileChat } from './controller/mobile-chat.ts'
 import './styles/tokens.css'
 // Shared markdown styling lives in the renderer package; agent-pane maps its
 // theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
-// styles/global/conversation.css). Imported before global.css so app rules win
+// styles/global/markdown.css). Imported before global.css so app rules win
 // ties. The `.streaming-markdown` scope class is added to each render sink.
 import '@copse/streaming-markdown/styles/default.css'
 import './styles/global.css'
@@ -249,6 +249,9 @@ let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter', target: EventTarget | null) => boolean) | null =
   null
+// Set once the full layout mounts; the invalidation warning can be wired up
+// before the input bar (and its model picker) exist.
+let focusThreadModelPicker: (() => void) | null = null
 let openProcessManager: (() => void) | null = null
 // The two request queues the Activity views read; set once the dialogs are mounted.
 let activitySources: ActivitySources | null = null
@@ -330,7 +333,6 @@ async function boot(): Promise<void> {
     (nextTheme) => {
       applyThemeToDocument(nextTheme)
       store.setState({ theme: nextTheme })
-      store.emit('theme_changed', nextTheme)
     },
   )
   // Restore the interaction accent and whole-app tint before the layout paints
@@ -382,6 +384,9 @@ async function boot(): Promise<void> {
   const mobileReady = new Promise<void>((resolve) => {
     mobileRestored = resolve
   })
+  // The preload exposes this bridge only in test-enabled E2E sessions.
+  // Keep harness state out of the product ApiClient/protocol.
+  attachAutomationAppearance(Object.hasOwn(window, '__copseE2e'))
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
@@ -392,9 +397,9 @@ async function boot(): Promise<void> {
     attachProviderInvalidationWarning(store, api, {
       warn: showConfirmDialog,
       openSettings: openModelSettings,
+      openThreadModelPicker: () => focusThreadModelPicker?.(),
     })
     attachAutomationController(store, api)
-    attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
     // Changes panel on to it. Only the main window: a pop-out is pinned to the
     // one pane it was opened for.
@@ -643,6 +648,9 @@ if (popoutMode) {
 }
 
 function mountFullLayout(): void {
+  // Subscribe before any pane: selections run in subscription order inside
+  // `setState`, so `#pane-files` is shown before a pane measures or fills it.
+  store.select((s) => s.filesPaneOpen, updateFilesPane)
   // Kick off the Monaco bundle immediately so it loads in parallel with the rest
   // of the layout, but mount the editor-backed panes only once it resolves — the
   // editor library is no longer part of the initial app.js.
@@ -653,6 +661,7 @@ function mountFullLayout(): void {
     portraitPanelHost: requireElement('pane-chat'),
   })
   handleStopShortcut = inputBar.handleStopShortcut
+  focusThreadModelPicker = inputBar.openModelPicker
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
@@ -740,7 +749,6 @@ function mountFullLayout(): void {
     mountPaneResizers(body, store, api)
   }
 
-  store.on('files_pane_changed', updateFilesPane)
   updateFilesPane()
 }
 
@@ -878,7 +886,6 @@ async function confirmDeleteThread(): Promise<void> {
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
 }
 
 function switchToPrevThread(): void {

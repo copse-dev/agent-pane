@@ -26,6 +26,7 @@ import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { PrCreateRequest, PrCreateResult } from '@shared/types/git.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 
 /**
  * The lookups this service steers by. Injectable (mirroring
@@ -35,14 +36,14 @@ import type { ThreadExecutionContext } from '../thread-execution-context.ts'
  * observable from the outside once the real git calls are involved.
  */
 export interface PrCreateDependencies {
-  getGithubRepoSlug: (root: string | null | undefined) => Promise<string | null>
-  getCurrentBranchName: (root: string | null | undefined) => Promise<string | null>
-  getDefaultBranch: (root: string | null | undefined) => Promise<string | null>
+  getGithubRepoSlug: (root: string | null) => Promise<string | null>
+  getCurrentBranchName: (root: string | null) => Promise<string | null>
+  getDefaultBranch: (root: string | null) => Promise<string | null>
   getAheadBehind: (
     base: string,
-    root: string | null | undefined,
+    root: string | null,
   ) => Promise<{ ahead: number; behind: number } | null>
-  pushBranchToOrigin: (branch: string, root: string | null | undefined) => Promise<GitPushResult>
+  pushBranchToOrigin: (branch: string, root: string | null) => Promise<GitPushResult>
   createPullRequest: typeof createPullRequest
   getThreadModels: (threadId: string) => string[]
   isAttributionEnabled: () => boolean
@@ -59,13 +60,11 @@ export interface PrCreateDependencies {
 }
 
 const defaultDependencies: PrCreateDependencies = {
-  // The real helpers default their own root when handed undefined, which is
-  // what "no thread context" should mean — so pass it straight through.
-  getGithubRepoSlug: (root) => getGithubRepoSlug(root ?? undefined),
-  getCurrentBranchName: (root) => getCurrentBranchName(root ?? undefined),
-  getDefaultBranch: (root) => getDefaultBranch(root ?? undefined),
-  getAheadBehind: (base, root) => getAheadBehind(base, root ?? undefined),
-  pushBranchToOrigin: (branch, root) => pushBranchToOrigin(branch, root ?? undefined),
+  getGithubRepoSlug,
+  getCurrentBranchName,
+  getDefaultBranch,
+  getAheadBehind,
+  pushBranchToOrigin: (branch, root) => pushBranchToOrigin(branch, root),
   createPullRequest,
   getThreadModels,
   isAttributionEnabled: () =>
@@ -91,15 +90,15 @@ const defaultDependencies: PrCreateDependencies = {
  *
  * `context` supplies the checkout to read branches from (a worktree thread must
  * not inherit the shared tree's branch) and the thread to link the PR to. Null
- * falls back to the ambient execution root and skips linking, which is what a
- * tool call outside any thread already did.
+ * means a tool call outside any thread (a headless run): it reads the run's own
+ * root and skips linking. Neither ever reads the window's workspace (#3958).
  */
 export async function createPrForThread(
   request: PrCreateRequest,
   context: ThreadExecutionContext | null,
   deps: PrCreateDependencies = defaultDependencies,
 ): Promise<PrCreateResult> {
-  const root = context?.root
+  const root = context ? context.root : getAgentExecutionRoot()
   const { owner, repo, head, base, draft } = request
   // A pre-flight rejection never reaches a backend, but `PrCreateResult` is the
   // one shape all four consumers read and it names which backend served the
@@ -189,13 +188,13 @@ export async function createPrForThread(
     body,
     ...(draft === undefined ? {} : { draft }),
   }
-  let result = await deps.createPullRequest(input)
+  let result = await deps.createPullRequest(root, input)
   // A newly-created Git ref can briefly be visible to git while GitHub's PR
   // mutation still reports a blank/unresolved head SHA. One bounded retry keeps
   // that propagation window from leaking out as four misleading GraphQL errors.
   if (publishesCurrentBranch && !result.ok && isUnresolvedHeadError(result.message)) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 500))
-    result = await deps.createPullRequest(input)
+    result = await deps.createPullRequest(root, input)
     if (!result.ok && isUnresolvedHeadError(result.message)) {
       result = {
         ...result,

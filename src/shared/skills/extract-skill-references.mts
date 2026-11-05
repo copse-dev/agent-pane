@@ -25,10 +25,33 @@ function isTemplateReference(path: string): boolean {
   return /[*?{}<>|]/.test(path)
 }
 
+/** Fenced TSV audit records describe evidence; operational tables still name bundle files. */
+export function skillSupportingReferenceText(text: string): string {
+  return text
+    .replaceAll('\r\n', '\n')
+    .replace(
+      /(^|\n)(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\2(?=\n|$)/g,
+      (block: string, _start: string, _fence: string, body: string) => {
+        const rows = body.split(/\r?\n/).filter((row) => row.trim().length > 0)
+        const header = rows[0]?.split('\t') ?? []
+        const columns = header.map((field) => field.toLowerCase())
+        const auditLog =
+          header.length >= 3 &&
+          header.every((field) => /^[a-z][\w -]*$/i.test(field)) &&
+          (columns.includes('ts') || columns.includes('timestamp')) &&
+          columns.includes('evidence') &&
+          columns.includes('result') &&
+          rows.length > 1 &&
+          rows.slice(1).every((row) => row.split('\t').length === header.length)
+        return auditLog ? '\n' : block
+      },
+    )
+}
+
 /** Unique bundle-relative file paths referenced in the text, sorted. */
 export function extractSkillFileReferences(text: string): string[] {
   const paths = new Set<string>()
-  for (const match of text.matchAll(REFERENCE_RE)) {
+  for (const match of skillSupportingReferenceText(text).matchAll(REFERENCE_RE)) {
     const raw = match[1]
     if (!raw) continue
     const trimmed = trimTrailingPunctuation(raw)

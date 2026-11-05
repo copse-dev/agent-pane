@@ -17,7 +17,7 @@ export const experimentalMarkup = `
                 creation can take a few minutes.
               </p>
               <p class="field-hint">
-                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+                Enable Animated explainers in Canvas and explainers' plugin settings below.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
@@ -26,6 +26,18 @@ export const experimentalMarkup = `
               </div>
             </fieldset>
 
+            <fieldset>
+              <legend>Remote System One models</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteSystemOneModelsEnabled" />
+                Connect Copse computers to share local models
+              </label>
+              <p class="field-hint">
+                After saving, open Machines to pair computers on the same network and choose which
+                models to share. No SSH is needed. Turning this off stops sharing and remote calls;
+                saved pairings stay available to reconnect or remove.
+              </p>
+            </fieldset>
             <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
@@ -70,6 +82,20 @@ export const experimentalMarkup = `
                 Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
                 External coding agents run in the container with their selected API key, or, if you opt in
                 per run, your Codex or Gemini sign-in copied into the container.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="planModeEnabled" />
+                Show "Start planning" in the message box
+              </label>
+              <p class="field-hint">
+                Breaks a task into a living plan with explicit steps and acceptance criteria before
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
               </p>
             </fieldset>
 
@@ -136,10 +162,12 @@ export const experimentalMarkup = `
 `
 
 export const experimentalFields: readonly SettingField[] = [
+  { name: 'remoteSystemOneModelsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
 ]

@@ -65,6 +65,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
 // the IPC surface so this view never imports main-process types directly.
@@ -2569,11 +2570,8 @@ export function mountRoadmapPane(
   cancelBtn.addEventListener('click', cancel)
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
-      if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
-    }),
-    store.on('files_pane_changed', () => {
-      if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
+    selectRightPanelMode(store, 'roadmap', (active) => {
+      if (active) void refresh({ preserveDirty: true })
     }),
     // Saves return before their complexity stamp lands (roadmap-complexity.ts);
     // pick the badge up when main says the stamp arrived.

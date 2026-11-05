@@ -20,6 +20,24 @@ describe('native helper screenshot ownership', () => {
   })
 })
 
+describe('workspace package screenshot ownership', () => {
+  it('owns the shots of the specs a package change selects', () => {
+    // The weekly intellect sync only touches packages/llm, and the oracle runs
+    // the model-picker specs for it. Their re-render is that PR's to review, not
+    // drift held out of scope for every later PR to show.
+    const gate = computeScreenshotGate(['packages/llm/src/model-intellect.generated.ts'], false)
+    assert.ok(gate.affected.includes('model-intellect-equating.png'))
+  })
+
+  it('owns nothing for a package test or manifest', () => {
+    const gate = computeScreenshotGate(
+      ['packages/llm/src/classifiers/http.test.ts', 'packages/llm/package.json'],
+      false,
+    )
+    assert.deepEqual(gate.affected, [])
+  })
+})
+
 describe('screenshotName', () => {
   it('reduces a repo-relative path to its basename', () => {
     assert.equal(

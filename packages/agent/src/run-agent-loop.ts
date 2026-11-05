@@ -24,7 +24,10 @@ import {
 import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
-  EXPLORE_TOOL_NAMES,
+  DUPLICATE_GUARDED_TOOL_NAMES,
+  planClosedByVerifiedChecks,
+  RepeatVerificationTracker,
+  REPEAT_VERIFICATION_RESULT_PREFIX,
   isDuplicateExploreCall,
   nextConsecutiveExploreWithoutRead,
   normalizeExploreArgs,
@@ -66,6 +69,7 @@ import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.
 import {
   LOOP_NUDGE_HOOK_ID,
   MALFORMED_TOOL_CALL_HOOK_ID,
+  PLAN_VERIFIED_FINALIZE_HOOK_ID,
   REASONING_RUNAWAY_HOOK_ID,
   STUCK_FINALIZE_NUDGE_HOOK_ID,
   TRUNCATION_CONTINUE_HOOK_ID,
@@ -137,6 +141,7 @@ interface StepBoundaryNudges {
   reasoningRunaway: string | undefined
   malformedToolCall: string | undefined
   artifactCheckpoint: string | undefined
+  planVerifiedFinalize: string | undefined
 }
 
 /** Pull one step-boundary hook's selected nudge text (its `injectContext`) by id. */
@@ -864,6 +869,12 @@ type ToolBatchContext = {
    * tracks it — nudge/closeout turns leave it untouched.
    */
   consecutiveExploreWithoutRead?: { value: number }
+  /**
+   * Verification commands already run with nothing changed since (#1433,
+   * Fix 4). Optional like the streak above: only the primary loop damps
+   * repeated suite runs.
+   */
+  repeatVerification?: RepeatVerificationTracker
 }
 
 const FINALIZE_TOOL_BUDGET_RESULT =
@@ -993,6 +1004,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     recentToolProgress,
     budget,
     consecutiveExploreWithoutRead,
+    repeatVerification,
   } = ctx
   const measuredInputBeforeTools = getLastMeasuredInputTokens()
   const toolResults: ToolResult[] = []
@@ -1034,7 +1046,9 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
       }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
       const fp = toolCallFingerprint(tc.name, normalizedArgs)
-      const duplicate = isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
+      const repeatedVerification = repeatVerification?.isRepeat(tc.name, normalizedArgs) === true
+      const duplicate =
+        repeatedVerification || isDuplicateExploreCall(tc.name, normalizedArgs, recentFingerprints)
       recentFingerprints.push(fp)
       if (recentFingerprints.length > RECENT_FINGERPRINT_WINDOW) {
         recentFingerprints.shift()
@@ -1042,7 +1056,9 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
 
       try {
         let raw: string | ToolExecuteResult
-        if (duplicate) {
+        if (repeatedVerification) {
+          raw = REPEAT_VERIFICATION_RESULT_PREFIX
+        } else if (duplicate) {
           raw = DUPLICATE_TOOL_RESULT_PREFIX
         } else {
           const preStarted = startedExplores.get(tc.id)
@@ -1065,7 +1081,8 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         // what an earlier read returned, so re-reading after it is fresh work,
         // not a repeat: without this, `read_file` of a range just edited with
         // `str_replace` was refused as a duplicate for the whole window.
-        if (!EXPLORE_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
+        if (!DUPLICATE_GUARDED_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
+        if (!duplicate) repeatVerification?.observe(tc.name, normalizedArgs)
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()
@@ -1097,6 +1114,8 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           ...(images && images.length > 0 ? { images } : {}),
         })
       } catch (err) {
+        // A tool that threw may have done part of its work; re-arm verification.
+        repeatVerification?.reset()
         recentToolProgress.push(null)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()
@@ -1158,7 +1177,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxSteps = 20,
     maxContextTokens,
     toolSchemaReserveTokens = 0,
-    onHistoryTrimmed,
+    onHistoryTrimmed: hostOnHistoryTrimmed,
     getLastUsage,
     usageModel,
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
@@ -1244,6 +1263,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // Explore-without-read streak (#1433) driving the `loop-nudge` hook's
   // read-specific condition; see `nextConsecutiveExploreWithoutRead`.
   const consecutiveExploreWithoutRead = { value: 0 }
+  // Repeat-verification damping (#1433, Fix 4): a suite re-run with nothing
+  // changed is skipped. Trimming may drop the earlier output from history, so
+  // every trim forgets what ran.
+  const repeatVerification = new RepeatVerificationTracker()
+  const onHistoryTrimmed = (): void => {
+    repeatVerification.reset()
+    hostOnHistoryTrimmed?.()
+  }
+  // Set after a step whose todo update closed the plan on checks; read once by
+  // the `plan-verified-finalize` step-boundary hook (#1433, Fix 4).
+  let planClosedSignal = false
+  // In explore mode the parent has no read_file; the explore-without-read
+  // nudge then points at explore's verbatim excerpts instead (#1433, Fix 0).
+  const readFileOffered = tools.some((t) => t.name === 'read_file')
   // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
   const recentReasoningTexts: string[] = []
 
@@ -1273,6 +1306,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       reasoningRunaway: nudgeFrom(result, REASONING_RUNAWAY_HOOK_ID),
       malformedToolCall: nudgeFrom(result, MALFORMED_TOOL_CALL_HOOK_ID),
       artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
+      planVerifiedFinalize: nudgeFrom(result, PLAN_VERIFIED_FINALIZE_HOOK_ID),
     }
   }
   const applyArtifactCheckpointNudge = (text: string | undefined): boolean => {
@@ -1304,6 +1338,69 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ...(stopReason !== undefined ? { stopReason } : {}),
     })
     return nudges.truncation
+  }
+  // A tool-free turn driven by a step-boundary nudge (stuck-finalize, and
+  // plan-verified-finalize). `'tools'` means the model emitted tool calls
+  // anyway and they ran; `'empty'` means no answer came back.
+  const runForcedTextTurn = async (nudge: string): Promise<'answered' | 'tools' | 'empty'> => {
+    let forced = await streamTextOnlyTurn(
+      provider,
+      messages,
+      onChunk,
+      budget,
+      [],
+      nudge,
+      getLastUsage,
+      usageModel,
+      coerceTextToolCallArgs,
+      maxStreamOutputTokens,
+      resolveTruncationNudge,
+    )
+    while (forced.retryAfterTruncation && !runBudgetExhausted(budget)) {
+      forced = await streamTextOnlyTurn(
+        provider,
+        messages,
+        onChunk,
+        budget,
+        [],
+        null,
+        getLastUsage,
+        usageModel,
+        coerceTextToolCallArgs,
+        maxStreamOutputTokens,
+        resolveTruncationNudge,
+      )
+    }
+    if (forced.pendingToolCalls.length > 0) {
+      await executeToolBatch({
+        pendingToolCalls: forced.pendingToolCalls,
+        messages,
+        executeTool: opts.executeTool,
+        signal,
+        onChunk,
+        recentFingerprints,
+        recentToolProgress,
+        budget,
+      })
+      toolOnlySteps++
+      return 'tools'
+    }
+    return forced.answerText.trim() ? 'answered' : 'empty'
+  }
+  // The plan closed on checks at the last step: end with a tool-free answer
+  // rather than another verification lap. Once per run by construction — the
+  // signal is consumed at the boundary that reads it.
+  const applyPlanVerifiedFinalize = async (
+    text: string | undefined,
+  ): Promise<'answered' | 'tools' | 'empty' | 'none'> => {
+    if (text === undefined) return 'none'
+    recordAppliedNudge(appliedNudgeSink, {
+      step: budget.llmCalls,
+      hookId: PLAN_VERIFIED_FINALIZE_HOOK_ID,
+      mechanism: 'text-only-turn',
+      text,
+    })
+    return runForcedTextTurn(text)
   }
 
   for (;;) {
@@ -1348,6 +1445,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       if (
         !forceTextAttempted ||
         !loopNudgeSent ||
+        planClosedSignal ||
         (hasArtifactCheckpointHook && !artifactCheckpointSent)
       ) {
         const preNudges = await selectStepBoundaryNudges({
@@ -1361,7 +1459,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
           streamCappedAsRunaway: false,
           consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+          readFileOffered,
+          planClosedByVerifiedChecks: planClosedSignal,
         })
+        planClosedSignal = false
+
+        const planFinalize = await applyPlanVerifiedFinalize(preNudges.planVerifiedFinalize)
+        if (planFinalize === 'tools') continue
+        if (planFinalize === 'answered') {
+          finishedWithAnswer = true
+          break
+        }
 
         if (preNudges.stuckFinalize !== undefined) {
           forceTextAttempted = true
@@ -1382,49 +1490,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               mechanism: 'text-only-turn',
               text: preNudges.stuckFinalize,
             })
-            let forced = await streamTextOnlyTurn(
-              provider,
-              messages,
-              onChunk,
-              budget,
-              [],
-              preNudges.stuckFinalize,
-              getLastUsage,
-              usageModel,
-              coerceTextToolCallArgs,
-              maxStreamOutputTokens,
-              resolveTruncationNudge,
-            )
-            while (forced.retryAfterTruncation && !runBudgetExhausted(budget)) {
-              forced = await streamTextOnlyTurn(
-                provider,
-                messages,
-                onChunk,
-                budget,
-                [],
-                null,
-                getLastUsage,
-                usageModel,
-                coerceTextToolCallArgs,
-                maxStreamOutputTokens,
-                resolveTruncationNudge,
-              )
-            }
-            if (forced.pendingToolCalls.length > 0) {
-              await executeToolBatch({
-                pendingToolCalls: forced.pendingToolCalls,
-                messages,
-                executeTool: opts.executeTool,
-                signal,
-                onChunk,
-                recentFingerprints,
-                recentToolProgress,
-                budget,
-              })
-              toolOnlySteps++
-              continue
-            }
-            if (forced.answerText.trim()) {
+            const forced = await runForcedTextTurn(preNudges.stuckFinalize)
+            if (forced === 'tools') continue
+            if (forced === 'answered') {
               finishedWithAnswer = true
               break
             }
@@ -1457,9 +1525,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         })
       ) {
         trimEvents++
-        onHistoryTrimmed?.()
+        onHistoryTrimmed()
       }
-    } else if (!loopNudgeSent || (hasArtifactCheckpointHook && !artifactCheckpointSent)) {
+    } else if (
+      !loopNudgeSent ||
+      planClosedSignal ||
+      (hasArtifactCheckpointHook && !artifactCheckpointSent)
+    ) {
       // Neither the explore-without-read signal nor the delayed checkpoint
       // requires a context-window estimate, so hosts without one still fire
       // the step-boundary hooks that can act on those inputs.
@@ -1473,7 +1545,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
         streamCappedAsRunaway: false,
         consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+        readFileOffered,
+        planClosedByVerifiedChecks: planClosedSignal,
       })
+      planClosedSignal = false
+      const planFinalize = await applyPlanVerifiedFinalize(preNudges.planVerifiedFinalize)
+      if (planFinalize === 'tools') continue
+      if (planFinalize === 'answered') {
+        finishedWithAnswer = true
+        break
+      }
       if (preNudges.loop !== undefined) {
         messages.push({ role: 'user', content: preNudges.loop })
         recordAppliedNudge(appliedNudgeSink, {
@@ -1922,6 +2003,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           recentToolProgress,
           budget,
           consecutiveExploreWithoutRead,
+          repeatVerification,
         })
         toolOnlySteps++
         if (signal?.aborted) break
@@ -2086,6 +2168,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // own stream sizes. Snapshot this loop's measured input here and restore it
     // after the tools finish so the next iteration's trim/escalation sizing
     // reflects the parent conversation, not the subagent's (#112).
+    // Copies, not references: the todo tool may update items in place.
+    const todosBeforeStep =
+      getOpenTodos && pendingToolCalls.some((tc) => tc.name === 'update_todos')
+        ? getOpenTodos().map((t) => ({ ...t }))
+        : null
     await executeToolBatch({
       pendingToolCalls,
       messages,
@@ -2096,7 +2183,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       recentToolProgress,
       budget,
       consecutiveExploreWithoutRead,
+      repeatVerification,
     })
+    if (todosBeforeStep && getOpenTodos) {
+      planClosedSignal = planClosedByVerifiedChecks(todosBeforeStep, getOpenTodos())
+    }
 
     toolOnlySteps++
 
@@ -2124,7 +2215,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ...(coerceTextToolCallArgs !== undefined ? { coerceTextToolCallArgs } : {}),
       ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
       toolSchemaReserveTokens,
-      ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
+      onHistoryTrimmed,
       ...(recordHookRun !== undefined ? { recordHookRun } : {}),
       ...(appliedNudgeSink !== undefined ? { recordAppliedNudge: appliedNudgeSink } : {}),
       ...(opts.continuationBudget !== undefined

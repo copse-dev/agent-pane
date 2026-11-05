@@ -69,6 +69,29 @@ OS sandbox does not revoke a binary you explicitly trusted: this grant is
 separate from the shape-based dropdown. Remove the binary from the list to
 withdraw the grant.
 
+## Suggestions from your prompts
+
+When Copse keeps asking about things you always approve, a line appears at the
+top of the thread: _Copse asked you N times this week about things you always
+approve._ **Review** opens a list of setting changes that would have removed
+those prompts. You can also open it from Settings → Permissions → Shell commands
+→ **Review suggestions**.
+
+- Each item says how many times you approved, in how many threads, and shows
+  recent commands behind a disclosure.
+- Suggestions come only from prompts you answered in this project over the last
+  30 days. Nothing in the repository can create one.
+- Raising the auto-approval level and allowing a web origin start ticked once you
+  have approved them five times. Trusted commands, SSH hosts and package
+  registries never start ticked, because they reach past the sandbox.
+- If you refused a prompt a change would also have allowed, the item is shown
+  but cannot be ticked.
+- Applying changes the same settings you would edit by hand, for every project.
+  The toast's **Undo** removes exactly what was added.
+
+**Not now** hides the line for two weeks; **Don’t suggest again** hides it for
+good. The Settings button keeps working either way.
+
 ## Per-tool policies
 
 Settings → Permissions also lists Copse, custom and connected MCP tools.
@@ -96,7 +119,11 @@ still pass their normal approval gate.
 disabled or the app restarts. Routine shell commands skip scope prompts, while
 the harm gate can still ask once or deny. Commands that fit the project sandbox
 stay contained; external commands can run with host access. Dedicated GitHub
-writes and operation-specific consent still have their own rules.
+writes and operation-specific consent still have their own rules. Three lists in
+Settings → Permissions tune it: **Trusted SSH hosts** and **Trusted package
+registries** stop it asking about `ssh` to those hosts and installs from those
+registries; **Production targets** makes it ask about any `kubectl`, cloud,
+`ssh` or database command that names one of them, reads included.
 
 **Deferred approvals** queue work needing approval instead of opening a modal.
 Queued work has not been authorized or executed. An automation can have exact

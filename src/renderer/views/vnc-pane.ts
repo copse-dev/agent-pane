@@ -1,5 +1,6 @@
+import { SIMULATOR_REMOVED_DETAIL } from '@shared/types/simulator-desktop.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
-import RFB from '@novnc/novnc'
+import type RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
@@ -23,7 +24,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 
@@ -1438,6 +1439,13 @@ function mountVncSession(
       submittedPassword = rememberedPassword === null && enteredPassword ? enteredPassword : null
       usedRememberedPassword = false
       forgetLoginButton.hidden = rememberedPassword === null
+      // noVNC is loaded on the first connect, not at app start: its module
+      // body runs a WebCodecs H.264 decode probe behind a top-level `await`,
+      // which in the eager bundle stalled every module after it until the
+      // probe settled. Loaded before the connection opens so a load failure
+      // leaves nothing to close.
+      const { default: NoVncRfb } = await import('@novnc/novnc')
+      if (generation !== connectGeneration) return
       const connection = await api.vnc.open(target)
       if (generation !== connectGeneration) {
         await api.vnc.close(connection.id)
@@ -1445,7 +1453,7 @@ function mountVncSession(
       }
       const nextChannel = new VncIpcChannel(connection.id, api)
       channel = nextChannel
-      const nextRfb = new RFB(screen, nextChannel, { shared: true })
+      const nextRfb = new NoVncRfb(screen, nextChannel, { shared: true })
       rfb = nextRfb
       activeTarget = target
       connectedAtLeastOnce = false
@@ -1792,6 +1800,7 @@ function mountVncSession(
     simulatorView?.frame(frame)
   })
   const stopSimulatorStatus = api.simulatorDesktop.onStatus((event) => {
+    if (event.status === 'closed' && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines()
     if (event.id !== simulatorSessionId) return
     if (event.status === 'error') {
       clearViewer(
@@ -1812,8 +1821,8 @@ function mountVncSession(
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value,
     )
   })
-  const stopMode = store.on('right_panel_mode_changed', () => {
-    if (!vncModeActive(store)) return
+  const stopMode = selectRightPanelMode(store, 'vnc', (active) => {
+    if (!active) return
     void loadMachines()
     if (options.isActive()) {
       if (rfb) rfb.focus()

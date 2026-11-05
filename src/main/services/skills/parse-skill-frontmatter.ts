@@ -4,6 +4,10 @@ import type { SkillMetadata, SkillSource } from '@shared/types/skills.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { splitMarkdownFrontmatter } from '../discovery/yaml-frontmatter.ts'
 import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
+import {
+  skillRequirementsSchema,
+  type SkillRequirements,
+} from '@shared/skills/skill-requirements.ts'
 
 const stringMetadata = z.unknown().transform((value, ctx): Record<string, string> => {
   if (!isRecord(value)) {
@@ -44,8 +48,18 @@ const skillSchema = z.object({
     .optional(),
   metadata: stringMetadata.optional(),
   'allowed-tools': z.string().optional(),
+  'copse-requirements': skillRequirementsSchema.optional(),
   'user-invocable': z.boolean().default(true),
   'disable-model-invocation': z.boolean().default(false),
+  'copse-dependencies': z
+    .array(
+      z
+        .string()
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    )
+    .max(16)
+    .optional(),
   paths: z
     .union([
       z.array(z.string()),
@@ -60,11 +74,13 @@ const skillSchema = z.object({
 })
 
 export interface ParsedSkillFile {
+  requirements?: SkillRequirements
   name: string
   description: string
   userInvocable: boolean
   disableModelInvocation: boolean
   paths: string[]
+  dependencies?: string[]
   license?: string
   compatibility?: string
   metadata?: Record<string, string>
@@ -138,10 +154,16 @@ export function validateSkillFrontmatter(yaml: string): SkillFrontmatterResult {
       userInvocable: fields['user-invocable'],
       disableModelInvocation: fields['disable-model-invocation'],
       paths: fields.paths,
+      ...(fields['copse-dependencies'] !== undefined
+        ? { dependencies: [...new Set(fields['copse-dependencies'])] }
+        : {}),
       ...(fields.license !== undefined ? { license: fields.license } : {}),
       ...(fields.compatibility !== undefined ? { compatibility: fields.compatibility } : {}),
       ...(fields.metadata !== undefined ? { metadata: fields.metadata } : {}),
       ...(fields['allowed-tools'] !== undefined ? { allowedTools: fields['allowed-tools'] } : {}),
+      ...(fields['copse-requirements'] !== undefined
+        ? { requirements: fields['copse-requirements'] }
+        : {}),
     },
     reason: null,
     warnings,

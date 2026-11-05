@@ -6,6 +6,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ClientCapabilities,
   type ContentBlock,
   type LoadSessionResponse,
   type AvailableCommand,
@@ -24,7 +25,7 @@ import {
   type Usage,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -39,10 +40,11 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
-import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
+import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
@@ -57,6 +59,8 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { claudeSandboxEscapeSessionMeta } from './acp-claude-sandbox-escape.ts'
+import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
   acpReattachMethods,
   noReattachMethodFailure,
@@ -66,7 +70,27 @@ import {
   type AcpSessionCarryOver,
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import {
+  acpAgentSandboxOverlay,
+  ensureWorkspaceTmpDir,
+  refreshGitConfigIncludeReadPaths,
+} from '../../project-sandbox/config.ts'
+
+/**
+ * Copse intentionally advertises no notice or compaction session capability.
+ * SDK 2.2 stabilizes those updates, but both remain opt-in until Copse has a
+ * durable host-owned persistence and presentation model for them.
+ *
+ * `terminal` is advertised only when this connection can back `terminal/*`
+ * with Copse's own run_shell path (#623).
+ */
+export function acpClientCapabilities(
+  readTextFile: boolean,
+  writeTextFile: boolean,
+  terminal = false,
+): ClientCapabilities {
+  return { fs: { readTextFile, writeTextFile }, terminal }
+}
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   detachForGroupKill,
@@ -81,6 +105,7 @@ import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
+import type { AcpTerminalHost } from './acp-terminals.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -94,6 +119,15 @@ export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, Acp
  * approval UX even though the external agent runs the model loop.
  */
 
+/** Host-owned facts about a permission request, beyond what the request itself says. */
+export interface AcpPermissionRequestContext {
+  /**
+   * Identity fields of the agent's earlier `tool_call`/`tool_call_update`
+   * notifications for the same `toolCallId` (#1446 provenance).
+   */
+  observedToolCall: readonly AcpToolIdentity[]
+}
+
 export interface AcpClientHandlers {
   /** Forward a translated update to the UI (`agent:chunk`). */
   onChunk: (chunk: StreamChunk) => void
@@ -101,6 +135,7 @@ export interface AcpClientHandlers {
   requestPermission: (
     req: RequestPermissionRequest,
     signal: AbortSignal,
+    context?: AcpPermissionRequestContext,
   ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
@@ -169,6 +204,14 @@ export interface AcpAgentSpawnConfig {
    * platform; otherwise the agent spawns unsandboxed as before.
    */
   sandbox?: AcpAgentSandboxConfig
+  /**
+   * The thread-scoped config directory Copse created for this agent (for
+   * Claude, the `CLAUDE_CONFIG_DIR` it was given). It sits in the chat store,
+   * which is read-only to a sandboxed agent, so the seatbelt grants it read and
+   * write. Unset when the user's own env override names the directory: that
+   * path could be anywhere, home included, so it is never granted.
+   */
+  stateDir?: string
   /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
@@ -443,6 +486,25 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
   return Boolean(sandbox) && process.platform !== 'win32' && isProjectSandboxEnabled()
 }
 
+/**
+ * `_meta` Copse sends with `session/new`, `session/resume` and `session/load`,
+ * or `undefined` for none. Today that is only for a Claude agent that runs
+ * under Copse's sandbox on this machine: Claude Code flag settings whose hook
+ * refuses its `dangerouslyDisableSandbox` escape with an explanation, since
+ * Copse's sandbox wraps the whole process and the escape cannot lift it
+ * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeMounted` says whether this
+ * session offered Copse's native-tool bridge, which the refusal points to.
+ */
+export function acpSessionMeta(
+  config: Pick<AcpAgentSpawnConfig, 'command' | 'args' | 'sandbox' | 'executionMode'>,
+  opts: { remote: boolean; bridgeMounted: boolean },
+): ReturnType<typeof claudeSandboxEscapeSessionMeta> | undefined {
+  if (opts.remote || config.executionMode === 'agent') return undefined
+  if (!config.sandbox || !willSandboxAcpAgent(config.sandbox)) return undefined
+  if (!isClaudeAcpAgent(config)) return undefined
+  return claudeSandboxEscapeSessionMeta(opts.bridgeMounted)
+}
+
 const ACP_STDERR_TAIL_LIMIT = 8_000
 
 function appendStderrTail(current: string, text: string): string {
@@ -536,9 +598,12 @@ export async function spawnAcpAgentProcess(
     throw new Error('A read-only checkout cannot run a coding agent outside the project sandbox')
   }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    // The agent runs git with the user's config; pick up its current includes.
+    await refreshGitConfigIncludeReadPaths()
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+      ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -718,6 +783,14 @@ export function toAcpMcpServers(
  */
 export interface MutableAcpHandlers {
   current: AcpClientHandlers | null
+  /**
+   * Connection-lifetime backing for ACP client terminals (#623). Present only
+   * when Copse can run the agent's commands itself (the session pool supplies
+   * it alongside the native bridge); `clientCapabilities.terminal` is
+   * advertised exactly when it is. Terminals outlive a turn, so this is not
+   * part of the per-turn handlers above.
+   */
+  terminals?: AcpTerminalHost
 }
 
 /** How a settled prompt turn reports back: ACP's `PromptResponse` essentials. */
@@ -1224,6 +1297,7 @@ export async function openAcpSession(
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
   const pendingUpdates = new Map<string, SessionUpdate[]>()
+  const observedToolCalls = new AcpToolCallObservations()
 
   const enqueueUpdate = (sessionId: string, update: SessionUpdate): void => {
     if (activeUpdates?.sessionId === sessionId) {
@@ -1235,9 +1309,25 @@ export async function openAcpSession(
     pendingUpdates.set(sessionId, pending)
   }
 
+  // Client terminals run on this machine (#623): never offered to an agent on
+  // an SSH host, whose cwd names a remote tree, nor on Windows, where Copse has
+  // no project sandbox and run_shell uses cmd quoting.
+  const terminals =
+    handlers.terminals && spawnConfigSshTarget(config) === null && process.platform !== 'win32'
+      ? handlers.terminals
+      : undefined
+
   const app = client({ name: 'copse' })
     .onNotification(methods.client.session.update, (ctx) => {
-      enqueueUpdate(ctx.params.sessionId, ctx.params.update)
+      const { sessionId, update } = ctx.params
+      if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+        observedToolCalls.record(sessionId, update.toolCallId, {
+          ...(update.title !== undefined ? { title: update.title } : {}),
+          ...(update.name !== undefined ? { name: update.name } : {}),
+          ...(update._meta !== undefined ? { _meta: update._meta } : {}),
+        })
+      }
+      enqueueUpdate(sessionId, update)
     })
     .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const { sessionId, toolCall } = ctx.params
@@ -1276,7 +1366,9 @@ export async function openAcpSession(
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
       try {
-        return await current.requestPermission(ctx.params, ctx.signal)
+        return await current.requestPermission(ctx.params, ctx.signal, {
+          observedToolCall: observedToolCalls.get(sessionId, toolCall.toolCallId),
+        })
       } catch (err) {
         if (ctx.signal.aborted) return { outcome: { outcome: 'cancelled' as const } }
         throw err
@@ -1290,6 +1382,21 @@ export async function openAcpSession(
       const writeTextFile = handlers.current?.writeTextFile
       return writeTextFile ? writeTextFile(ctx.params) : UNSUPPORTED('fs/write_text_file')()
     })
+    .onRequest(methods.client.terminal.create, (ctx) =>
+      terminals ? terminals.create(ctx.params) : UNSUPPORTED('terminal/create')(),
+    )
+    .onRequest(methods.client.terminal.output, (ctx) =>
+      terminals ? terminals.output(ctx.params) : UNSUPPORTED('terminal/output')(),
+    )
+    .onRequest(methods.client.terminal.waitForExit, (ctx) =>
+      terminals ? terminals.waitForExit(ctx.params) : UNSUPPORTED('terminal/wait_for_exit')(),
+    )
+    .onRequest(methods.client.terminal.kill, (ctx) =>
+      terminals ? terminals.kill(ctx.params) : UNSUPPORTED('terminal/kill')(),
+    )
+    .onRequest(methods.client.terminal.release, (ctx) =>
+      terminals ? terminals.release(ctx.params) : UNSUPPORTED('terminal/release')(),
+    )
 
   const connection = app.connect(stream)
   let disposed = false
@@ -1297,6 +1404,7 @@ export async function openAcpSession(
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
     disposed = true
+    terminals?.dispose()
     connection.close()
     disposal = Promise.resolve(transport.dispose())
     return disposal
@@ -1333,7 +1441,7 @@ export async function openAcpSession(
     const initResponse = await perfSpan('ttft:acp-initialize', () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+        clientCapabilities: acpClientCapabilities(true, true, terminals !== undefined),
       }),
     )
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
@@ -1347,9 +1455,11 @@ export async function openAcpSession(
     // loopback, and the bearer token must not leave it (the pool already skips
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
     const remote = spawnConfigSshTarget(config) !== null
+    let bridgeMounted = false
     if (config.nativeBridge && remote) {
       console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
     } else if (config.nativeBridge && mcpCapabilities?.http === true) {
+      bridgeMounted = true
       mcpServers.push({
         type: 'http',
         name: BRIDGE_MCP_SERVER_NAME,
@@ -1364,6 +1474,7 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
+    const sessionMeta = acpSessionMeta(config, { remote, bridgeMounted })
     const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
     let restoredBy: AcpReattachMethod | null = null
@@ -1382,6 +1493,7 @@ export async function openAcpSession(
                 sessionId,
                 cwd: config.cwd,
                 mcpServers,
+                ...(sessionMeta ? { _meta: sessionMeta } : {}),
               }),
             )
             session = { sessionId, response }
@@ -1391,6 +1503,7 @@ export async function openAcpSession(
                 sessionId,
                 cwd: config.cwd,
                 mcpServers,
+                ...(sessionMeta ? { _meta: sessionMeta } : {}),
               }),
             )
             // The agent replays the conversation before answering. Copse's own
@@ -1432,6 +1545,7 @@ export async function openAcpSession(
         connection.agent.request(methods.agent.session.new, {
           cwd: config.cwd,
           mcpServers,
+          ...(sessionMeta ? { _meta: sessionMeta } : {}),
         }),
       )
       session = { sessionId: response.sessionId, response }
@@ -1533,6 +1647,18 @@ export function toAcpPromptBlocks(prompt: string | ContentBlock[]): ContentBlock
   return typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt
 }
 
+/** What a caller of {@link runAcpSessionPrompt} opts into beyond the turn itself. */
+export interface AcpSessionPromptOptions {
+  /**
+   * Receives {@link acpStaleModelNotice} when the per-turn model is one the
+   * agent no longer offers, once per session for that model. The notice is
+   * copy for the person reading the thread, so only a user-facing turn asks
+   * for it: a caller that uses the turn's text as data (the advisor, whose
+   * advice is a tool result) leaves this unset and the notice is never sent.
+   */
+  onStaleModel?: (notice: string) => void
+}
+
 /**
  * Run one prompt turn on a persistent session: apply a model change if the
  * picker's selection moved, send the prompt, and wait for the turn's stop. The
@@ -1558,6 +1684,7 @@ export async function runAcpSessionPrompt(
   model: string | undefined,
   signal?: AbortSignal,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
+  options: AcpSessionPromptOptions = {},
 ): Promise<AcpTurnStop> {
   const { session, connection } = open
   const promptBlocks = toAcpPromptBlocks(prompt)
@@ -1605,22 +1732,29 @@ export async function runAcpSessionPrompt(
       const selector = modelSelectorFrom(session.response)
       // Only switch when the value is a model the agent still offers and it
       // isn't already current. A stale/removed value (e.g. after an agent
-      // version bump) is skipped, and a rejected set is swallowed, so a bad
-      // model selection degrades to the agent's default instead of failing
-      // the whole turn.
+      // version bump) is skipped, with a notice for a caller that asked for
+      // one, and a rejected set is swallowed, so a bad model selection
+      // degrades to the agent's default instead of failing the whole turn.
       const isKnown = selector?.choices.some((choice) => choice.value === model) ?? false
       if (selector && isKnown && model !== selector.currentValue) {
         try {
-          await connection.agent.request(methods.agent.session.setConfigOption, {
+          const applied = await connection.agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
             configId: selector.configId,
             value: model,
           })
           open.appliedModel = model
+          // ACP has the agent echo its full, updated option set. Keep
+          // `response` current, as a `config_option_update` would, so a later
+          // stale-model notice names the model this session is really on.
+          if (Array.isArray(applied.configOptions)) {
+            session.response.configOptions = applied.configOptions
+          }
         } catch {
           // Fall back to the agent's current model for this turn.
         }
       } else {
+        if (selector && !isKnown) options.onStaleModel?.(acpStaleModelNotice(selector, model))
         open.appliedModel = model
       }
     }
@@ -1694,7 +1828,7 @@ export async function probeAcpAgent(
     return await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        clientCapabilities: acpClientCapabilities(false, false),
       })
       return ctx.buildSession(config.cwd).withSession((session) => {
         const configOptions = configOptionsFrom(session.newSessionResponse)

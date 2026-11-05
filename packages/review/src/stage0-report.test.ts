@@ -68,6 +68,52 @@ describe('Stage 0 report decoder', () => {
     }
   })
 
+  it('downgrades imported crash findings, including legacy reports without signals', () => {
+    const check = report.checks[0]
+    const finding = report.findings[0]
+    assert.ok(check?.head && check.base && finding)
+    const modelFinding = {
+      ...finding,
+      id: '0123456789abcdef',
+      provenance: {
+        raisedBy: [{ kind: 'model', id: 'reviewer' }],
+        corroboratedBy: [],
+        challengedBy: [],
+      },
+    }
+    for (const head of [
+      { ...check.head, exitCode: 134, signal: undefined },
+      { ...check.head, exitCode: null, signal: 'SIGTERM' },
+      {
+        ...check.head,
+        exitCode: 1,
+        output: 'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
+      },
+      { ...check.head, exitCode: 127 },
+    ]) {
+      const imported = {
+        ...report,
+        findings: [finding, modelFinding],
+        checks: [{ ...check, head }],
+      }
+      for (const value of [imported, { stage0: imported }]) {
+        const decoded = decodeStage0Report(value)
+        assert.ok(decoded)
+        assert.equal(decoded.checks[0]?.verdict, 'undetermined')
+        assert.deepEqual(
+          decoded.findings.map((item) => item.id),
+          [modelFinding.id],
+        )
+        assert.deepEqual(decoded.coverage.checked, [])
+        assert.match(
+          decoded.coverage.notChecked.at(-1)?.reason ?? '',
+          /a code regression was not established/,
+        )
+        assert.deepEqual(decodeStage0Report(decoded), decoded, 'normalization is idempotent')
+      }
+    }
+  })
+
   it('rejects a report that is not one', () => {
     assert.equal(decodeStage0Report(null), null)
     assert.equal(decodeStage0Report({ stage0: {} }), null)

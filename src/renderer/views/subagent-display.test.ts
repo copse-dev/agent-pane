@@ -412,6 +412,40 @@ describe('subagent display (component)', () => {
     assert.equal(copies.length, 1, 'the summary should render exactly once')
   })
 
+  it('renders only the verbatim excerpts when the parent result is the summary plus excerpts (#1433)', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
+    const withExcerpts = structuredClone(exploreCall)
+    const excerpt = '# Copse\n\n\tIndented setup line'
+    withExcerpts.result = [
+      'README describes Copse setup and dev workflow.',
+      '',
+      '---',
+      '',
+      'Verbatim excerpts — copied exactly from the files the explorer read, byte for byte.',
+      '',
+      '`README.md` lines 1–3:',
+      '```',
+      excerpt,
+      '```',
+    ].join('\n')
+    addToolCall(store, messageId, withExcerpts)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    const copies = [...card.querySelectorAll('.subagent-message-assistant')].filter((node) =>
+      node.textContent.includes('README describes Copse setup and dev workflow.'),
+    )
+    assert.equal(copies.length, 1, 'the summary should render exactly once')
+    const result = qsRequired(card, '.subagent-parent-result')
+    assert.match(result.textContent, /Verbatim excerpts/)
+    assert.equal(result.querySelector('hr'), null, 'the model-facing separator is not rendered')
+    assert.equal(result.querySelector('pre code')?.textContent.trimEnd(), excerpt)
+  })
+
   it('still renders a parent result the subagent never said in its timeline', () => {
     const store = createStore()
     const threadId = createThread(store)

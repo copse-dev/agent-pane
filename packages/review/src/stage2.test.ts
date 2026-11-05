@@ -12,6 +12,7 @@ import {
   CONTRACTS_LENS,
   CORRECTNESS_LENS,
   LENSES,
+  TESTS_LENS,
   lensSystemPrompt,
   resolveLenses,
 } from './lenses.ts'
@@ -265,9 +266,27 @@ describe('runStage2', () => {
     assert.match(prompt, /closest existing analogue/)
     assert.match(prompt, /passing producer-level test does not settle downstream behaviour/i)
     assert.match(prompt, /existence of a fallback.*predates the change.*proves.*intended/i)
-    assert.match(prompt, /require concrete repository evidence/)
+    assert.match(prompt, /only an established causal defect/)
+    assert.match(prompt, /Absence of an explanation alone is not a defect/)
     assert.match(prompt, /evidence for the producer finding, not a second defect/)
     assert.match(prompt, /do not file a separate missing-coverage finding/)
+  })
+
+  it('requires reachable regressions and new evidence for disputed history, not missing coverage alone', () => {
+    const prompt = lensSystemPrompt(TESTS_LENS, { canRun: true })
+    assert.match(
+      prompt,
+      /pre-existing weakness or deliberate fallback needs evidence of newly harmful/,
+    )
+    assert.match(prompt, /constructed counterexample from a supported execution path/)
+    assert.match(
+      prompt,
+      /Do not repeat a disputed finding without new evidence addressing the rebuttal/,
+    )
+    assert.match(prompt, /outdated line alone does not prove a fix/)
+    assert.match(prompt, /Missing coverage alone is not a finding/)
+    assert.match(prompt, /Checker crashes, missing tools and setup failures are uncertainty/)
+    assert.match(prompt, /consult installed manuals or authoritative/)
   })
 
   it('fails closed when the model ends without the completion attestation', async () => {

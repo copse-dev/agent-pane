@@ -7,6 +7,7 @@ import { qsRequired } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
+import { createMachinesSection } from './setup/machines-section.ts'
 import { createWebSearchSection } from './settings/web-search-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
@@ -65,7 +66,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -103,6 +104,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       </div>
     </div>
   `
+  // A <dialog> takes no name from its heading; screen readers announce this one.
+  overlay.setAttribute('aria-labelledby', 'settings-dialog-title')
   bindSettingsDialog(overlay)
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields)
   qsRequired(overlay, '#settings-close').append(closeIcon('ui-icon'))
@@ -114,6 +117,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
   const webSearchSection = createWebSearchSection(api)
   qsRequired(overlay, '#settings-web-search-host').append(webSearchSection.root)
+
+  const machinesSection = createMachinesSection(api)
+  qsRequired(overlay, '#settings-machines-host').append(machinesSection.root)
+  let machineRefreshTimer: ReturnType<typeof setInterval> | undefined
 
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     deferOrdinaryWrites: true,
@@ -242,7 +249,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         refresh: (_values, signal): Promise<void> => toolPermissionsPanel.refresh(signal),
       },
       ssh: {
-        refresh: (_values, signal): Promise<void> => sshWorkspaceSection.refresh(signal),
+        refresh: async (_values, signal): Promise<void> => {
+          await Promise.all([sshWorkspaceSection.refresh(signal), machinesSection.refresh(signal)])
+          if (signal.aborted) return
+          machineRefreshTimer = setInterval(() => {
+            if (!overlay.isConnected || !overlay.open || signal.aborted) {
+              clearInterval(machineRefreshTimer)
+              return
+            }
+            void machinesSection.refresh(signal)
+          }, 3000)
+        },
+        deactivate: (): void => {
+          clearInterval(machineRefreshTimer)
+        },
       },
       about: { refresh: (_values, signal): Promise<void> => aboutSection.refresh(signal) },
       customise: {

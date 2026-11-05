@@ -27,8 +27,13 @@ function fixture(): {
   store: ReturnType<typeof createStore>
   id: string
   api: ApiClient
-  ui: { warn: () => Promise<boolean>; openSettings: (target: ModelSettingsTarget) => void }
+  ui: {
+    warn: () => Promise<boolean>
+    openSettings: (target: ModelSettingsTarget) => void
+    openThreadModelPicker: () => void
+  }
   opened: ModelSettingsTarget[]
+  openedThreadPicker: () => number
   recovered: string[]
   warnings: () => number
 } {
@@ -65,6 +70,7 @@ function fixture(): {
     },
   }
   let warnings = 0
+  let threadPickerOpens = 0
   const opened: ModelSettingsTarget[] = []
   const ui = {
     warn: async (): Promise<boolean> => {
@@ -74,8 +80,20 @@ function fixture(): {
     openSettings: (target: ModelSettingsTarget): void => {
       opened.push(target)
     },
+    openThreadModelPicker: (): void => {
+      threadPickerOpens++
+    },
   }
-  return { store, id, api, ui, opened, recovered, warnings: () => warnings }
+  return {
+    store,
+    id,
+    api,
+    ui,
+    opened,
+    openedThreadPicker: () => threadPickerOpens,
+    recovered,
+    warnings: () => warnings,
+  }
 }
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 15))
 
@@ -100,6 +118,22 @@ describe('provider settings recovery', () => {
     await checkProviderInvalidation(f.store, f.api, { ...f.ui, warn: async () => true })
     assert.deepEqual(f.opened, ['subagentModel'])
     assert.equal(getActiveThread(f.store)?.model, 'removed:model')
+  })
+  it('opens this thread’s own model picker for an explicit per-thread override, not Settings', async () => {
+    const f = fixture()
+    await checkProviderInvalidation(f.store, f.api, { ...f.ui, warn: async () => true })
+    assert.equal(f.openedThreadPicker(), 1)
+    assert.deepEqual(f.opened, [])
+  })
+  it('still opens the Settings default for an inherited, unedited blank-thread route', async () => {
+    const f = fixture()
+    f.store.setState({ threads: [], activeThreadId: null, settings: { model: 'removed:model' } })
+    createThread(f.store)
+    f.api.models.invalidations = async (model): Promise<ModelInvalidationReport> =>
+      report(model ? [{ target: 'thread', label: 'Chat', model, reason: 'Provider removed.' }] : [])
+    await checkProviderInvalidation(f.store, f.api, { ...f.ui, warn: async () => true })
+    assert.deepEqual(f.opened, ['model'])
+    assert.equal(f.openedThreadPicker(), 0)
   })
   it('warns for persisted settings without any chat and recovers all eligible fields', async () => {
     const f = fixture()

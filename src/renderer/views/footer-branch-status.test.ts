@@ -615,6 +615,51 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, "the switch's own threads_changed adds no deferred read")
+  })
+
+  it('repaints a thread switch from the store alone, with no event emitted (#3928)', async () => {
+    const second = { ...thread(undefined, true), id: 'thread-2' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true), second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    let resolveSecond: (status: GitBranchStatus) => void = () => {
+      throw new Error('expected the second thread read to still be pending')
+    }
+    const base = createApi({ currentBranch: 'main', pr: null })
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (_projectId, threadId) => {
+          if (threadId === 'thread-1') return { currentBranch: 'main', pr: null }
+          return new Promise<GitBranchStatus>((resolve) => {
+            resolveSecond = resolve
+          })
+        },
+      },
+    })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+
+    store.setState({ activeThreadId: 'thread-2' })
+    assert.equal(
+      qsRequired(host, '.branch-picker').hidden,
+      true,
+      'the previous thread branch is dropped synchronously on the switch',
+    )
+    resolveSecond({ currentBranch: 'feature/second', pr: null })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
+    control.destroy()
   })
 
   it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
