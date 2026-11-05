@@ -514,6 +514,36 @@ describe('buildAcpPrompt', () => {
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
+  it("routes the sandbox note's GitHub steer by the bridged tools the session offered", () => {
+    const withTools = buildAcpPrompt('hello', [], {
+      sandboxed: true,
+      bridgeToolNames: ['run_shell', 'gh_api_read'],
+    })
+    assert.match(withTools, /Offered here: gh_api_read\./)
+    assert.match(withTools, /failed to read configuration: open ~\/\.config\/gh\/config\.yml/)
+    assert.match(withTools, /hello$/)
+
+    const noBridge = buildAcpPrompt('hello', [], { sandboxed: true, bridgeToolNames: [] })
+    assert.match(noBridge, /"copse" MCP server is not available in this session/)
+    assert.doesNotMatch(noBridge, /Use gh_api_read/)
+
+    // Unsandboxed turns keep their own gh login: no steer at all.
+    assert.doesNotMatch(
+      buildAcpPrompt('hello', [], { sandboxed: false, bridgeToolNames: [] }),
+      /config\.yml/,
+    )
+  })
+
+  it('passes the offered bridge tools through buildAcpPromptContent', () => {
+    const [block] = buildAcpPromptContent('hello', [], {
+      sandboxed: true,
+      bridgeToolNames: ['run_shell'],
+    })
+    assert.ok(block)
+    assert.equal(block.type, 'text')
+    assert.match(block.text, /offers no GitHub tools in this session/)
+  })
+
   it('places the notes ahead of the replayed transcript', () => {
     const prompt = buildAcpPrompt('next', [{ role: 'user', content: 'earlier' }], {
       sandboxed: true,

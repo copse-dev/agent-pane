@@ -534,6 +534,18 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
   there), `~/Library/Keychains`. It never gets the rest of the home directory:
   no `~/.ssh`, cloud credentials or other projects.
+- **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
+  the user's GitHub token, so it stays unreadable, and `gh` fails on its config
+  before it reaches the network (`failed to read configuration: open
+  ~/.config/gh/config.yml: operation not permitted`). Copse cannot add to the
+  agent's own shell output, so the sandbox note on a fresh session quotes that
+  error and gives the route that session actually has (issue #4145). If the bridge
+  offered GitHub tools, the note lists them, with `run_shell` for the rest. If it
+  offered only `run_shell`, the note points there, since `run_shell` can ask to
+  run `gh` outside the sandbox. If no bridge was mounted, the note tells the agent
+  to tell the user GitHub is unreachable instead of retrying. Serving `gh` reads
+  to the agent process through the host (#3873's per-thread `GH_CONFIG_DIR` and
+  socket) waits on that draft.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the
