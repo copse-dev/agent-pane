@@ -2,6 +2,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { ChatGptPlanStatus } from '@shared/types/chatgpt-plan.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { ipcErrorMessage } from '../../ipc-error-message.ts'
 
 const USAGE_URL = 'https://chatgpt.com/settings/usage'
 
@@ -29,7 +30,15 @@ export function createChatGptPlanSection(
     try {
       await work()
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Could not connect ChatGPT.'
+      message = ipcErrorMessage(error, 'Could not connect ChatGPT.')
+      // A failed refresh/credentials call may have cleared the stored
+      // credentials on the main side (a dead refresh token); resync so the
+      // UI stops claiming the account is still connected.
+      try {
+        status = await api.chatGptPlan.status()
+      } catch {
+        // Keep the last known status; `message` above already explains the failure.
+      }
     } finally {
       busy = false
       render()
@@ -212,7 +221,7 @@ export function createChatGptPlanSection(
     try {
       status = await api.chatGptPlan.status()
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Could not read the ChatGPT connection.'
+      message = ipcErrorMessage(error, 'Could not read the ChatGPT connection.')
     }
     render()
     await welcome()

@@ -150,7 +150,7 @@ describe('automation scheduler on the real supervisor', () => {
         triggered.push(thread.title)
         return hang.has(thread.title) ? new Promise<void>(() => {}) : Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       recoveryDelayMs: 0,

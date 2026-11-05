@@ -33,9 +33,19 @@ runtime/visual evidence are required.
   project-unavailable or read-only-incompatible tools reject the whole request.
   Every execution rechecks membership and uses the ordinary registry gate.
 - No recursive delegation, commits, parent-plan updates, user questions, thread
-  prompt sending or detached background tool. Ordinary selected tools retain the
+  prompt sending or detached background tool. This includes `update_todos`, whose
+  parent plan post-processor can start a worker, and `track_long_task`, which can
+  schedule a later parent turn. The same exclusion applies to named workers;
+  an explicit tool list never grants those parent-only capabilities. Preflight
+  and the execution boundary both enforce it. Ordinary selected tools retain the
   parent thread's permissions and sandbox. File edits use the owning checkout;
   the parent must avoid overlapping writes.
+- Standard global and trusted-workspace instruction layers accompany the supplied
+  task, without forwarding parent conversation history. A child's file tools use
+  the same scoped-path extraction and nested-instruction loader as the parent,
+  with independent activation state. Its first edit under newly discovered rules
+  is deferred until those rules reach the child; reads carry the guidance with
+  their result. Workspace text keeps its untrusted-source framing.
 - Shares the two-worker per-parent-turn allowance and supervisor with named
   workers. Twelve loop steps, two-minute deadline, one attempt, no restart.
   Stop cancels owned work; late chunks are discarded. Reports identify routing,
@@ -49,12 +59,17 @@ runtime/visual evidence are required.
 2. The child provider receives only supplied context and selected tool schemas;
    invoking an unselected tool cannot reach its handler.
 3. Read-only scope survives delegation, and recursive/detached tools are rejected.
+   Parent-plan mutation and future-turn scheduling are rejected before a provider
+   starts. First child edits wait for newly applicable nested workspace guidance.
 4. Explicit roles use Settings; match infers the child role; unavailable routes
    fail and capability mismatches are reported.
 5. Generic and named workers share admission limits and cancellation ownership.
 6. A focused Electron scenario invokes the real native tool with scripted
    providers, asserts the child model/report and captures the subagent card.
    This demonstrates wiring, not real-model routing quality.
+7. Registry-appended reminders do not corrupt the report decoder: routing warnings
+   remain visible, raw JSON stays in collapsed Technical details, and appended
+   notes remain separate from the tool's own output.
 
 ## Validation status
 

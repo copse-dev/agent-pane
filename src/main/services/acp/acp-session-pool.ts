@@ -8,6 +8,7 @@ import {
 } from './acp-client.ts'
 import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reattach.ts'
 import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
+import { AcpTerminalHost } from './acp-terminals.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
 import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
@@ -155,6 +156,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     cwd: config.cwd,
     host: spawnConfigSshTarget(config)?.hostId ?? null,
     sandbox: config.sandbox ?? null,
+    stateDir: config.stateDir ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
     readonlyCheckout: config.readonlyCheckout === true,
@@ -434,7 +436,11 @@ async function acquireAcpSessionUnlocked(
       () =>
         openAcpSession(
           config,
-          { current: null },
+          // Client terminals (#623) run through the bridge's run_shell binding,
+          // so they exist exactly when the bridge does: local agents only.
+          bridge
+            ? { current: null, terminals: new AcpTerminalHost(bridge.runShellCommand) }
+            : { current: null },
           opts.createTransport,
           carryOver,
           trace,

@@ -5,6 +5,7 @@ import {
   applyTodoUpdate,
   gateCompletedStatus,
   holdChecksAttachedAtCompletion,
+  refuseUncheckedRevivalOfCancelled,
   findNewlyInProgressLocal,
   findNewlyCompleted,
 } from '@shared/todos/todo-logic.ts'
@@ -43,8 +44,9 @@ async function applyAndGate(
 ): Promise<{ todos: TodoItem[]; messages: string[] }> {
   const before = getAgentRunTodos()
   const held = holdChecksAttachedAtCompletion(before, applyTodoUpdate(before, incoming, merge))
-  let todos = held.todos
-  const messages: string[] = [...held.messages]
+  const revived = refuseUncheckedRevivalOfCancelled(before, held.todos)
+  let todos = revived.todos
+  const messages: string[] = [...held.messages, ...revived.messages]
 
   todos = await Promise.all(
     todos.map(async (item) => {

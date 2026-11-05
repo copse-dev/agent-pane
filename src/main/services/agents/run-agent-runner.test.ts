@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, it } from 'node:test'
 import { z } from 'zod'
 import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { defineTool } from '@shared/types'
 import { runAgentParameters, runAgentTool, runWithAgentRunner } from '../../tools/run-agent-tool.ts'
-import { ToolRegistry } from '../tool-registry.ts'
+import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
   buildRunAgentTask,
   prepareRunAgent,
@@ -12,6 +15,13 @@ import {
   selectRunAgentTools,
 } from './run-agent-runner.ts'
 import { setSetting, getSetting } from '../storage/settings.ts'
+import { getAgentRunTodos, runWithAgentRunTodoContext } from '../agent-run-todos.ts'
+import { updateTodosTool } from '../../tools/todo-tool.ts'
+import { trackLongTaskTool } from '../../tools/long-task-tool.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { runWithWorkspaceTrust } from '../security/workspace-trust.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
   setMockScenario,
   assertMockScenarioComplete,
@@ -52,8 +62,19 @@ describe('generic subagent', () => {
       'run_agent',
       'run_background',
       'send_thread_prompt',
+      'update_todos',
+      'track_long_task',
+      'subthreads',
     ].map((name) => ({ name, description: '', parameters: {} }))
-    for (const name of ['missing', 'run_agent', 'run_background', 'send_thread_prompt']) {
+    for (const name of [
+      'missing',
+      'run_agent',
+      'run_background',
+      'send_thread_prompt',
+      'update_todos',
+      'track_long_task',
+      'subthreads',
+    ]) {
       assert.throws(() => selectRunAgentTools(available, [name], false), /Tool unavailable/)
     }
     assert.throws(() => selectRunAgentTools(available, ['write_file'], true), /Tool unavailable/)
@@ -62,6 +83,88 @@ describe('generic subagent', () => {
       ['read_file'],
     )
     assert.deepEqual(selectRunAgentTools(available, [], false), [])
+  })
+
+  it('rejects real parent-plan and continuation tools during preflight', async () => {
+    const registry = registryWithReads()
+    registry.register(updateTodosTool)
+    registry.register(trackLongTaskTool)
+    for (const tool of [updateTodosTool, trackLongTaskTool]) {
+      await assert.rejects(
+        prepareRunAgent({ ...request, tools: ['read_file', tool.name] }, registry),
+        /Tool unavailable.*No worker was started/,
+      )
+    }
+  })
+
+  it('revalidates prepared tools before a child can mutate or delegate through the parent plan', async () => {
+    const registry = registryWithReads()
+    registry.register(updateTodosTool)
+    let providerCalls = 0
+    let parentUpdates = 0
+    let routedWorkers = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        if (providerCalls++ === 0) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'replace-parent-plan',
+              name: 'update_todos',
+              args: {
+                todos: [{ content: 'Child work', status: 'in_progress', assignedModel: 'local' }],
+              },
+            },
+          }
+        } else {
+          yield { type: 'text', text: 'Finished' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runWithAgentRunTodoContext(
+      {
+        initial: [{ id: 'parent-plan', content: 'Parent work', status: 'in_progress' }],
+        onUpdate: () => {
+          parentUpdates += 1
+        },
+        postProcess: async (_before, todos) => {
+          routedWorkers += 1
+          return { todos }
+        },
+      },
+      async () => {
+        await assert.rejects(
+          runPreparedAgent({
+            request: { ...request, tools: ['update_todos'] },
+            prepared: {
+              tools: registry.toLLMTools(),
+              provider,
+              contextWindow: 100_000,
+              route: {
+                role: 'research',
+                requestedIntelligence: 'match',
+                intelligence: 'mid',
+                model: 'fixture',
+                actualIntelligence: null,
+                source: 'settings',
+              },
+            },
+            registry,
+            parentToolCallId: 'parent-call',
+            signal: new AbortController().signal,
+            onChunk: () => undefined,
+          }),
+          /Tool unavailable/,
+        )
+        assert.deepEqual(getAgentRunTodos(), [
+          { id: 'parent-plan', content: 'Parent work', status: 'in_progress' },
+        ])
+      },
+    )
+    assert.equal(providerCalls, 0)
+    assert.equal(parentUpdates, 0)
+    assert.equal(routedWorkers, 0)
   })
 
   it('requires a scoped parent runner and keeps concurrent calls separate', async () => {
@@ -76,6 +179,106 @@ describe('generic subagent', () => {
       ),
     )
     assert.deepEqual(results, ['A', 'B'])
+  })
+
+  it('defers every same-response edit until the child receives its scoped instructions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-child-instructions-'))
+    let writes = 0
+    let calls = 0
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Write the fixture',
+        parameters: z.object({ path: z.string(), content: z.string() }),
+        execute: () => {
+          writes += 1
+          return 'Wrote the requested file'
+        },
+      }),
+    )
+    const childRequest = { ...request, tools: ['write_file'] }
+    const provider: LLMProvider = {
+      async *stream(messages): AsyncGenerator<ProviderStreamChunk> {
+        const text = JSON.stringify(messages)
+        if (calls === 1) {
+          assert.equal(writes, 0, 'the first edit must wait for its directory instructions')
+          assert.match(text, /NESTED_CHILD_GUIDANCE/)
+          assert.match(text, /trust=\\"untrusted\\"/)
+        }
+        if (calls++ < 2) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: `child-edit-${String(calls)}`,
+              name: 'write_file',
+              args: { path: 'nested/file.txt', content: 'updated' },
+            },
+          }
+          if (calls === 1) {
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: 'child-edit-in-same-response',
+                name: 'write_file',
+                args: { path: 'nested/another.txt', content: 'also updated' },
+              },
+            }
+          }
+        } else {
+          assert.equal(writes, 1)
+          assert.match(text, /ROOT_CHILD_GUIDANCE/)
+          yield { type: 'text', text: 'Edited after reading the instructions' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    try {
+      await mkdir(join(root, 'nested'))
+      await writeFile(join(root, 'AGENTS.md'), 'ROOT_CHILD_GUIDANCE')
+      await writeFile(join(root, 'nested/AGENTS.md'), 'NESTED_CHILD_GUIDANCE')
+      setPermissionGateForTests(async () => true)
+      const report = await runWithThreadExecutionContext(
+        {
+          projectId: 'child-instructions-project',
+          threadId: 'parent-thread',
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithWorkspaceTrust(root, true, () =>
+            runWithDefaultPluginRegistry(createFirstPartyPluginRegistry(), () =>
+              runPreparedAgent({
+                request: childRequest,
+                prepared: {
+                  tools: registry.toLLMTools(),
+                  provider,
+                  contextWindow: 100_000,
+                  route: {
+                    role: 'research',
+                    requestedIntelligence: 'match',
+                    intelligence: 'mid',
+                    model: 'fixture',
+                    actualIntelligence: null,
+                    source: 'settings',
+                  },
+                },
+                registry,
+                parentToolCallId: 'child-instructions',
+                signal: new AbortController().signal,
+                onChunk: () => undefined,
+              }),
+            ),
+          ),
+      )
+      assert.equal(report, 'Edited after reading the instructions')
+      assert.equal(writes, 1)
+    } finally {
+      setPermissionGateForTests(null)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('gives prepared child providers independent conversation scopes', async () => {

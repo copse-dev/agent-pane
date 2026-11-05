@@ -1,6 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
+import { navigationTextOverlaps } from './helpers/scroll-to-bottom.ts'
 
 describe('conversation visual hierarchy', () => {
   before(async () => {
@@ -200,6 +201,10 @@ describe('conversation visual hierarchy', () => {
     })
     expect(scrollTop).toBeGreaterThanOrEqual(150)
     await browser.pause(100)
+    // Scrolled past the top, First prompt shows; docked below the transcript,
+    // it covers neither the TODO counter nor any prompt line.
+    await expect($('.conversation-first-prompt')).toBeDisplayed()
+    expect(await navigationTextOverlaps()).toEqual([])
     await saveAppScreenshot('conversation-top-fade-scrolled.png', scrolledFrame)
   })
 })

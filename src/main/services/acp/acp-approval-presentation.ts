@@ -104,17 +104,47 @@ export function permissionKindLabel(kind: string): string {
 export function acpExecuteCommandText(
   toolCall: RequestPermissionRequest['toolCall'],
 ): string | null {
-  const input = toolCall.rawInput
+  return (
+    rawInputCommandText(toolCall.rawInput) ??
+    (toolCall.title ? unwrapInlineCode(toolCall.title) : null)
+  )
+}
+
+/**
+ * The command line a permission request asks to run, or null when it asks for
+ * something else. An `execute` request reads it as {@link acpExecuteCommandText}
+ * does. A request with no kind, or ACP's catch-all `other`, has no
+ * classification of its own, so it counts as a command when `rawInput.command`
+ * is a command line (a string or argv) — but not for its title alone, which for
+ * such a call is a label (an MCP tool name, "Delete everything"), and not for a
+ * structured `command` object, which is some tool's argument. Every other kind
+ * is the agent's own classification and keeps its own handling.
+ */
+export function acpShellCommandText(toolCall: RequestPermissionRequest['toolCall']): string | null {
+  const kind = toolCall.kind ?? 'other'
+  if (kind === 'execute') return acpExecuteCommandText(toolCall)
+  if (kind === 'other') return commandLineText(toolCall.rawInput)
+  return null
+}
+
+function commandLineText(input: unknown): string | null {
   const record = isRecord(input) ? input : null
   const rawCommand = record?.['command']
   if (typeof rawCommand === 'string') return unwrapInlineCode(rawCommand)
   if (Array.isArray(rawCommand) && rawCommand.every((part) => typeof part === 'string')) {
     return rawCommand.join(' ')
   }
+  return null
+}
+
+function rawInputCommandText(input: unknown): string | null {
+  const commandLine = commandLineText(input)
+  if (commandLine !== null) return commandLine
+  const rawCommand = isRecord(input) ? input['command'] : undefined
   if (rawCommand !== undefined && rawCommand !== null) {
     return stringifyUnknownForDisplay(rawCommand)
   }
-  return toolCall.title ? unwrapInlineCode(toolCall.title) : null
+  return null
 }
 
 function stringifyUnknownForDisplay(value: unknown): string {

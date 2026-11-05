@@ -30,12 +30,20 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'delegate_step',
   'advisor',
   'review_changes',
+  // These native tools launch detached/future work or mutate the parent's
+  // plan (whose post-processor may start another worker). The child cannot
+  // inherit their owner or escape the parent's worker admission/cancellation.
+  'run_background',
+  'send_thread_prompt',
+  'track_long_task',
+  'subthreads',
   'ask_user',
   'request_review_input',
   'git_commit',
   // A worker reports findings; the parent owns the shared thread plan.
   'update_thread_plan',
   'report_plan_completion',
+  'update_todos',
 ]
 
 /** Steps a custom agent may take when its definition sets no `maxTurns`. */

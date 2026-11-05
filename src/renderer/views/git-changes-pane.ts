@@ -127,6 +127,12 @@ function getFirstGitChange(status: GitStatusResult): { path: string; staged: boo
   return null
 }
 
+/** Whether a staged or unstaged path in `prev` is missing from `next`. */
+function workingTreePathLeft(prev: GitStatusResult, next: GitStatusResult): boolean {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path))
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path))
+}
+
 function defaultProposedPath(
   queue: { path: string }[],
   activeDiff: ActiveDiff | null,
@@ -352,6 +358,8 @@ export function mountGitChangesPane(
   // they see, because this pane mounts behind the Monaco bundle.
   let loaded = false
   let committedPending = false
+  let hasSettledGitRead = false
+  let renderedListKey: string | null = null
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
@@ -423,7 +431,7 @@ export function mountGitChangesPane(
   function adoptActiveOwner(): boolean {
     const nextKey = activeOwnerKey()
     if (nextKey === displayedOwnerKey) return false
-    if (displayedOwnerKey && loaded && gitAvailable) {
+    if (displayedOwnerKey && hasSettledGitRead && gitAvailable) {
       snapshotsByOwner.delete(displayedOwnerKey)
       snapshotsByOwner.set(displayedOwnerKey, {
         status,
@@ -443,6 +451,7 @@ export function mountGitChangesPane(
     selectRequestId++
     const known = nextKey ? snapshotsByOwner.get(nextKey) : undefined
     loaded = known !== undefined
+    hasSettledGitRead = loaded
     committedPending = false
     gitAvailable = loaded
     status = known?.status ?? null
@@ -637,6 +646,20 @@ export function mountGitChangesPane(
   function renderList(): void {
     const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
+    // Compare the list's inputs by value: IPC returns fresh objects even when
+    // nothing changed. Keep row identity, focus and the empty state intact.
+    const key = JSON.stringify([
+      displayedOwnerKey,
+      loaded,
+      gitAvailable,
+      committedPending,
+      status,
+      committed,
+      queue.map((entry) => entry.path),
+      selection,
+    ])
+    if (key === renderedListKey) return
+    renderedListKey = key
     clear(listBody)
 
     renderProposedSection(queue)
@@ -1037,7 +1060,9 @@ export function mountGitChangesPane(
     emptyState.hidden = false
     if (!loaded) setInlineStatus(emptyState, 'pending', 'Loading changes…')
     else if (committedPending) setInlineStatus(emptyState, 'pending', 'Checking committed changes…')
-    else emptyState.textContent = 'Select a changed file'
+    else if (emptyState.textContent !== 'Select a changed file') {
+      emptyState.textContent = 'Select a changed file'
+    }
     diffWrap.hidden = true
     imageWrap.hidden = true
     dirWrap.hidden = true
@@ -1164,6 +1189,7 @@ export function mountGitChangesPane(
       // state; the `threads_changed` that selects a thread refreshes again.
       gitAvailable = false
       loaded = false
+      hasSettledGitRead = false
       renderList()
       return
     }
@@ -1188,6 +1214,7 @@ export function mountGitChangesPane(
       if (!availabilityFailed) gitFailureLogged = false
       loaded = true
       committedPending = false
+      hasSettledGitRead = false
       status = null
       committed = null
       sessionBackup = null
@@ -1202,23 +1229,32 @@ export function mountGitChangesPane(
     const backupRead = settleRead(api.git.sessionBackup(owner.projectId, owner.threadId))
     let nextStatus
     let nextCommitted
-    let selectedEarly: boolean
+    let selectedEarly = false
     try {
       nextStatus = await api.git.status(owner.projectId, owner.threadId)
       if (requestId !== refreshRequestId) return
-      status = nextStatus
-      loaded = true
-      committedPending = true
-      renderList()
-      if (!selection) clearViewer()
-      // A committed-file navigation must wait for that section to arrive;
-      // syncing it now would consume pendingNavigate before it can match.
-      selectedEarly =
-        !pendingNavigate &&
-        selection?.kind !== 'committed' &&
-        nextStatus !== null &&
-        getFirstGitChange(nextStatus) !== null
-      if (selectedEarly) void syncSelection()
+      // First load can show working-tree rows early. Once settled, retain the
+      // complete view while revalidating rather than flashing a loading row or
+      // briefly losing a file that moved from working-tree to committed work.
+      if (!hasSettledGitRead) {
+        status = nextStatus
+        loaded = true
+        committedPending = true
+        renderList()
+        if (!selection) clearViewer()
+        // A committed-file navigation must wait for that section to arrive.
+        selectedEarly =
+          !pendingNavigate &&
+          selection?.kind !== 'committed' &&
+          nextStatus !== null &&
+          getFirstGitChange(nextStatus) !== null
+        if (selectedEarly) void syncSelection()
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        // Nothing left the working tree, so no row can be on its way into
+        // committed changes: show new rows now, not behind the PR lookup.
+        status = nextStatus
+        renderList()
+      }
       const committedResult = await committedRead
       if (requestId !== refreshRequestId) return
       if (!committedResult.ok) throw committedResult.error
@@ -1233,6 +1269,7 @@ export function mountGitChangesPane(
       gitAvailable = false
       loaded = true
       committedPending = false
+      hasSettledGitRead = false
       renderRestoreBanner()
       renderList()
       clearViewer()
@@ -1242,6 +1279,7 @@ export function mountGitChangesPane(
     // A clean working tree is only "No changes" once committed work is known.
     loaded = true
     committedPending = false
+    hasSettledGitRead = true
     status = nextStatus
     committed = nextCommitted
     renderList()
@@ -1262,7 +1300,12 @@ export function mountGitChangesPane(
     a: readonly [ActiveDiff | null, StagedDiffEntry[]],
     b: readonly [ActiveDiff | null, StagedDiffEntry[]],
   ): boolean {
-    return a[0] === b[0] && (a[1] === b[1] || (a[1].length === 0 && b[1].length === 0))
+    return a[0] === b[0] && sameQueue(a[1], b[1])
+  }
+
+  /** The same queue; a fresh empty queue is no change. */
+  function sameQueue(a: StagedDiffEntry[], b: StagedDiffEntry[]): boolean {
+    return a === b || (a.length === 0 && b.length === 0)
   }
 
   async function syncFromStore(): Promise<void> {
@@ -1320,18 +1363,22 @@ export function mountGitChangesPane(
       // while showing their last known rows, rather than flashing Loading.
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('staged_diffs_changed', () => {
-      const queue = store.getState().stagedDiffs
-      if (queue.length === 0) conflictBanner.hidden = true
-      if (changesModeActive(store)) void syncFromStore()
-      else renderList()
-      // Approving or rejecting a diff writes (or restores) the file, so the git
-      // sections below are now stale. The main window usually catches this via
-      // the `fs:changed` watcher on the open file; nothing did in a second
-      // window, which is half of "the changes don't align between the 2
-      // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
-      scheduleRefresh()
-    }),
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true
+        if (!changesModeActive(store)) renderList()
+        // Approving or rejecting a diff writes (or restores) the file, so the
+        // git sections below are now stale. The main window usually catches
+        // this via the `fs:changed` watcher on the open file; nothing did in a
+        // second window, which is half of "the changes don't align between the
+        // 2 windows" (#1704). Debounced, so a multi-file approve-all coalesces.
+        scheduleRefresh()
+      },
+      sameQueue,
+    ),
     // Only the diff state: an ordinary thread switch is threads_changed's job.
     store.select(
       (s) => [s.activeDiff, s.stagedDiffs] as const,

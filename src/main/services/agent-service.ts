@@ -11,7 +11,6 @@ import {
   threadPlanInstructions,
 } from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
-import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import {
@@ -45,6 +44,7 @@ import {
   type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
@@ -66,6 +66,7 @@ import {
   createNestedInstructionTurn,
   invalidateNestedInstructionDiscoveryForWrite,
 } from './project-instructions.ts'
+import { instructionContextPathsForTool } from './instruction-context-paths.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import {
   clearActiveRunThread,
@@ -152,6 +153,7 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
+import { SUBAGENT_ONLY_TOOLS } from './subagent-only-tools.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -179,6 +181,11 @@ import {
 } from './agents/agents-registry.ts'
 import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import {
+  isPhasedCommandCall,
+  queuedCommandPhase,
+  runWithCommandPhaseReporter,
+} from './exec/command-phase.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
 import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
@@ -340,14 +347,14 @@ function toolSchemaReserveForModel(model: string): number {
  * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
  * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
  * and a larger threshold additionally skips trivial edits. Measures the exact diff
- * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * the review sees — `getGitDiffText` (unstaged tracked changes + untracked new
  * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
  * additions live in that diff even though `git diff --numstat` omits them). An
  * unmeasurable diff (git unavailable) falls through to running the review.
  */
 async function changedLinesBelow(min: number): Promise<boolean> {
   if (!isGitAvailable()) return false
-  const diff = await getGitDiffText()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   return countDiffChangedLines(diff) < min
 }
 
@@ -398,9 +405,6 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-/** Tools that only function as subagent entry points; hidden when subagents are off. */
-const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
-
 /**
  * Only a thread still reading the user's checkout has write access to ask for,
  * so `request_write_access` is offered to deferred threads alone. Shared with
@@ -442,7 +446,7 @@ function parentTools(
   }
   if (!subagentsEnabled) {
     tools = tools
-      .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
+      .filter((t) => !SUBAGENT_ONLY_TOOLS.has(t.name))
       .map((t) =>
         t.name === 'read_file'
           ? {
@@ -489,30 +493,6 @@ function promptTextForSubmit(userPrompt: UserContent): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
-}
-
-/** Built-in file tools whose path establishes directory-scoped instruction context. */
-const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  read_file: ['path'],
-  list_dir: ['path'],
-  search_code: ['path'],
-  search_codebase: ['path'],
-  read_staged_diff: ['path'],
-  write_file: ['path'],
-  str_replace: ['path'],
-  delete_file: ['path'],
-  rename_file: ['from', 'to'],
-  make_directory: ['path'],
-}
-
-function instructionContextPathsForTool(name: string, args: unknown): string[] {
-  if (name === 'apply_patch') return isRecord(args) ? patchTouchedPaths(args['input']) : []
-  const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
-  if (!fields || !isRecord(args)) return []
-  return fields.flatMap((field) => {
-    const value = args[field]
-    return typeof value === 'string' && value.trim() ? [value] : []
-  })
 }
 
 /**
@@ -1393,7 +1373,7 @@ async function runAgentWithInlineCanvas(
                 model: executorModel,
                 registry,
                 signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
                 resolvePluginSetting,
                 recordHookRun: recordFunctionHookRun,
               }),
@@ -2023,7 +2003,7 @@ async function runAgentWithInlineCanvas(
       },
       {
         signal: controller.signal,
-        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
         resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },
@@ -2285,6 +2265,19 @@ async function runAgentWithInlineCanvas(
         // continuation turns (pre-review todo gate, review remediation) so both route
         // subagents, advisor, review, and shell tagging identically.
         const readonlyWorkerTurn = createReadonlyWorkerTurn(getTaskSupervisor())
+        // Each command call's last reported stage (#3956), so execution picks up
+        // from the `queued` stage the card already shows.
+        const commandPhases = new Map<string, CommandPhase>()
+        const sendCommandPhase = (toolCallId: string, phase: CommandPhase): void => {
+          commandPhases.set(toolCallId, phase)
+          sendChunk({ type: 'tool_call_update', toolCallId, commandPhase: phase })
+        }
+        const sendLoopChunk = (chunk: StreamChunk): void => {
+          sendChunk(chunk)
+          if (chunk.type !== 'tool_call') return
+          const queued = queuedCommandPhase(chunk.toolCall)
+          if (queued) sendCommandPhase(chunk.toolCall.id, queued)
+        }
         const runParentTool = async (
           name: string,
           args: unknown,
@@ -2605,15 +2598,33 @@ async function runAgentWithInlineCanvas(
               () => registry.executeNormalized(name, args, signal),
             )
           }
-          if (name === 'run_shell') {
-            // Tag the command's streamed output with this tool-call id so the
-            // terminal pane can route it into the matching "Agent tasks" card.
-            setCurrentShellTaskId(toolCallId)
-            try {
-              return await registry.executeNormalized(name, args, signal)
-            } finally {
-              setCurrentShellTaskId(null)
-            }
+          if (isPhasedCommandCall(name, args)) {
+            return runWithCommandPhaseReporter(
+              (phase) => {
+                sendCommandPhase(toolCallId, phase)
+              },
+              commandPhases.get(toolCallId) ?? {
+                state: 'queued',
+                since: Date.now(),
+                launched: false,
+              },
+              async () => {
+                if (name !== 'run_shell') return registry.executeNormalized(name, args, signal)
+                // Tag the command's streamed output with this tool-call id so the
+                // terminal pane can route it into the matching "Agent tasks" card.
+                setCurrentShellTaskId(toolCallId)
+                try {
+                  return await registry.executeNormalized(name, args, signal)
+                } finally {
+                  setCurrentShellTaskId(null)
+                }
+              },
+              (outcome) =>
+                'value' in outcome
+                  ? normalizeToolExecuteResult(outcome.value).result
+                  : errorMessage(outcome.error),
+              toolCallId,
+            )
           }
           return registry.executeNormalized(name, args, signal)
         }
@@ -2735,7 +2746,7 @@ async function runAgentWithInlineCanvas(
                       loopStopReason = chunk.stopReason
                       return
                     }
-                    sendChunk(chunk)
+                    sendLoopChunk(chunk)
                     if (chunk.type === 'context_compacted' && runContext) {
                       // The boundary is canonical; the opaque item stays in the
                       // provider-history projection. Best effort like the other
@@ -2795,7 +2806,7 @@ async function runAgentWithInlineCanvas(
           executeTool: executeParentTool,
           onChunk: (chunk: StreamChunk): void => {
             if (chunk.type === 'done') return
-            sendChunk(chunk)
+            sendLoopChunk(chunk)
             if (chunk.type === 'usage') {
               inputTokens += chunk.inputTokens
               outputTokens += chunk.outputTokens
