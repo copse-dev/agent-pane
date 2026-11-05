@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-EFYF4CLQ.js";
+} from "./chunks/chunk-YFZ7CF3Z.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -44,7 +44,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-HZHR2CRE.js";
+} from "./chunks/chunk-6YY6Y3HG.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -1817,6 +1817,20 @@ function threadAccessApproval(access) {
     allowRemember: false
   };
 }
+function gitPushApproval(branch, expectedRemoteSha) {
+  return {
+    title: "Push branch to origin?",
+    approveLabel: "Push branch",
+    body: [
+      `Branch: ${branch}`,
+      "Remote: origin",
+      expectedRemoteSha ? `Push mode: Force with lease
+Expected remote commit: ${expectedRemoteSha}` : "Push mode: Fast-forward only"
+    ].join("\n"),
+    bodyAdvice: expectedRemoteSha ? "This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit." : "This publishes the branch to origin without replacing existing remote history.",
+    bodyFooter: "Approval covers this push once."
+  };
+}
 function webApprovalDetails(origin, url, allowRemember, context) {
   return {
     body: url,
@@ -1838,6 +1852,22 @@ function providerApprovalDetails(host, baseUrl) {
     body: baseUrl.trim(),
     bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
     bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+function desktopAppApproval(input) {
+  const { bundleId, caution, threadScoped } = input;
+  const allowRemember = input.allowRemember && !caution;
+  const scope = threadScoped ? "Applies to this thread." : "Applies to this request only.";
+  return {
+    title: `Let the agent use ${bundleId}?`,
+    body: bundleId,
+    bodyAdvice: `The agent wants to ${input.action}. Allowing lets it read and operate this app (click, type and choose menu items) ${threadScoped ? "for the rest of this thread" : "for this request"}, not just this step. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` + (caution ? `
+
+${caution}` : ""),
+    bodyFooter: allowRemember ? `${scope} \u201CAlways allow\u201D lets every thread use this app without asking and is saved in Settings.` : caution ? `${scope} This app is asked about in every thread and cannot be always allowed.` : scope,
+    approveLabel: threadScoped ? "Allow for this thread" : "Allow once",
+    allowRemember,
+    rememberLabel: `Always allow ${bundleId}`
   };
 }
 var init_approval_copy = __esm({
@@ -3070,6 +3100,45 @@ var init_demo_scenarios = __esm({
                         }
                       ]
                     }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+        id: "read-explored",
+        label: "Quote explored lines",
+        project: project("demo-read-explored-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-read-explored-thread",
+            title: "Read explored",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-read-explored-assistant",
+                role: "assistant",
+                content: "Quoting the whole function before editing it.",
+                toolCalls: [
+                  {
+                    id: "demo-read-explored-call",
+                    name: "read_explored",
+                    args: { path: "src/renderer/browser-pane.ts", start_line: 289, end_line: 296 },
+                    status: "done",
+                    resultFormat: "markdown",
+                    result: "`src/renderer/browser-pane.ts` lines 289\u2013296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```"
                   }
                 ],
                 createdAt: FIXED_TIME
@@ -5447,6 +5516,43 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-expired",
+        label: "ChatGPT plan whose sign-in has expired",
+        project: project("demo-chatgpt-plan-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          chatGptPlanWelcomeSeen: true
+        },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        chatGptPlanRefreshFailure: {
+          error: "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+          status: {
+            activeClientId: "demo-plan-account",
+            accounts: [
+              {
+                clientId: "demo-plan-account",
+                label: "you@example.com",
+                connected: false,
+                planEnabled: false
+              }
+            ]
+          }
+        },
+        threads: []
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -5456,6 +5562,13 @@ var init_demo_scenarios = __esm({
           id: `thread-${access}`,
           type: "mcp",
           ...threadAccessApproval(access)
+        })
+      ),
+      ...[void 0, "0123456789abcdef0123456789abcdef01234567"].map(
+        (sha) => approvalRiskScenario(sha ? "approval-git-push-lease" : "approval-git-push", {
+          id: "git-push",
+          type: "mcp",
+          ...gitPushApproval("copse/friendly-action-names-213c32", sha)
         })
       ),
       approvalRiskScenario("approval-web-url", {
@@ -5491,6 +5604,27 @@ var init_demo_scenarios = __esm({
         ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
         allowRemember: false,
         approveLabel: "Always allow host"
+      }),
+      approvalRiskScenario("approval-desktop-app", {
+        id: "desktop-app",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.Notes",
+          action: "read its window contents",
+          allowRemember: true,
+          threadScoped: true
+        })
+      }),
+      approvalRiskScenario("approval-desktop-finder", {
+        id: "desktop-finder",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.finder",
+          action: "activate element e12",
+          caution: "Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.",
+          allowRemember: true,
+          threadScoped: true
+        })
       })
     ];
   }
@@ -5549,6 +5683,10 @@ function unsupported() {
 }
 function createDemoApi(scenario2, options = {}) {
   const settings = new Map(Object.entries(scenario2.settings));
+  let chatGptPlan = scenario2.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null
+  };
   const guardedYoloPhases = new Map(
     scenario2.guardedYoloPhase && scenario2.threads[0] ? [[scenario2.threads[0].id, scenario2.guardedYoloPhase]] : []
   );
@@ -6141,6 +6279,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -6360,9 +6507,14 @@ function createDemoApi(scenario2, options = {}) {
       dismiss: resolvedVoid
     },
     chatGptPlan: {
-      status: () => resolved(scenario2.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported(),
+      refreshAccount: () => {
+        const failure = scenario2.chatGptPlanRefreshFailure;
+        if (!failure) return scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported();
+        chatGptPlan = failure.status;
+        return Promise.reject(new Error(failure.error));
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -6556,6 +6708,9 @@ function createDemoApi(scenario2, options = {}) {
       onChanged: subscribe,
       setThread: () => resolved(null),
       findByThread: () => resolved(null)
+    },
+    backgroundTasks: {
+      logs: () => resolved(null)
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),
@@ -7310,7 +7465,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-I7VPZN4O.js").then(async (main) => {
+    void import("./chunks/main-CZ3VGKGZ.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
