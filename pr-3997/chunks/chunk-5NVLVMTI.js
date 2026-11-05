@@ -27907,6 +27907,11 @@ function attentionThreadId(store, threadId) {
   }
   return threadId;
 }
+function proposingThreadId(store, threadId) {
+  const threads = store.getState().threads;
+  const proposerId = threads.find((t2) => t2.id === threadId)?.proposedBy?.threadId;
+  return proposerId !== void 0 && proposerId !== threadId && threads.some((t2) => t2.id === proposerId) ? proposerId : null;
+}
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
@@ -74271,6 +74276,7 @@ export {
   getSidebarThreads,
   getSideChatUnreadParents,
   attentionThreadId,
+  proposingThreadId,
   archiveCachedSidebarThread,
   isProjectSwitchInFlight,
   preloadSidebarThreads,
