@@ -90,15 +90,15 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel({ ...call, status: 'error' }), 'Skill style-guide')
   })
   it('identifies which MCP server failed to start', () => {
-    assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
-    assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')
+    assert.equal(getToolDisplayName('mcp__docs__startup'), 'Docs startup')
+    assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'Issue tracker startup')
     assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read page')
     assert.equal(
       getToolCallLabel({
         ...tc('startup', 'mcp__copse__startup', 'error'),
         title: 'mcp.copse.startup',
       }),
-      'copse startup',
+      'Copse startup',
     )
   })
 
@@ -414,7 +414,7 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    assert.equal(items[0].label, 'mdn')
+    assert.equal(items[0].label, 'MDN')
     assert.equal(items[0].toolCalls.length, 3)
     assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
   })
@@ -602,7 +602,7 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Ran command')
     assert.equal(getToolDisplayName('mcp.copse.run_shell', 'running'), 'Running command')
     assert.equal(getToolDisplayName('mcp.copse.custom_tool'), 'Custom tool')
-    assert.equal(getToolDisplayName('mcp.docs.startup'), 'docs startup')
+    assert.equal(getToolDisplayName('mcp.docs.startup'), 'Docs startup')
   })
 
   it('formats raw ACP titles like native Copse tools in every status', () => {
@@ -680,13 +680,14 @@ describe('tool-display', () => {
 
   it('groups MCP tools by server without exposing an internal MCP marker', () => {
     assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
-    assert.equal(getToolGroupLabel('mcp:github'), 'github')
+    assert.equal(getToolGroupLabel('mcp:github'), 'GitHub')
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__github__create_issue'),
       tc('2', 'mcp__github__list_issues'),
     ])
     assert.equal(items[0]?.type, 'rollup')
-    assert.equal(items[0].label, 'github')
+    assert.equal(items[0].label, 'GitHub')
+    assert.equal(getToolGroupLabel('mcp:issue_tracker'), 'Issue tracker')
   })
 
   it('groups Copse MCP wrappers like their built-in tools', () => {

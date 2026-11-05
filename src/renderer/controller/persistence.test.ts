@@ -430,6 +430,36 @@ test('an identical navigation save waits for the outstanding IPC write', async (
   assert.equal(duplicateFinished, true)
 })
 
+test('a navigation change is sent while an earlier navigation write is still in flight', async () => {
+  __resetPersistenceForTest()
+  const { api } = fakeApi()
+  let release = (): void => {}
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const sent: Array<string | null> = []
+  api.windowState.setNavigation = async (navigation): Promise<void> => {
+    sent.push(navigation.activeProjectId)
+    if (sent.length === 1) await pending
+  }
+  const first = saveNavigation(api, 'p2', null)
+  let secondFinished = false
+  const second = saveNavigation(api, 'p3', null).then(() => {
+    secondFinished = true
+  })
+  try {
+    // Preload's navigation barrier only sees writes that reached it, so the
+    // newer write must not wait in the renderer for the first to settle.
+    assert.deepEqual(sent, ['p2', 'p3'])
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(secondFinished, false, 'callers still wait for every outstanding write')
+  } finally {
+    release()
+    await Promise.all([first, second])
+  }
+  assert.equal(secondFinished, true)
+})
+
 test('a metadata change on a known thread emits updateMeta, not create', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()

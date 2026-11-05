@@ -214,12 +214,16 @@ describe('diff-apply Copse-native events (F2)', () => {
       await writeUserCopseHooks({ hooks: { beforeDiffApply: [{ command: script }] } })
       await setSetting('cursorHooksEnabled', true)
 
-      const result = await applyDiffEntry({
-        path: 'src/app.ts',
-        before: '',
-        after: 'export const x = 1\n',
-        language: 'typescript',
-      })
+      const result = await applyDiffEntry(
+        {
+          path: 'src/app.ts',
+          before: '',
+          after: 'export const x = 1\n',
+          language: 'typescript',
+        },
+        workspaceRoot,
+        workspaceRoot,
+      )
       assert.equal(result.status, 'error')
       assert.equal(existsSync(join(workspaceRoot, 'src/app.ts')), false)
     })
@@ -229,12 +233,16 @@ describe('diff-apply Copse-native events (F2)', () => {
       await writeUserCopseHooks({ hooks: { beforeDiffApply: [{ command: script }] } })
       // Setting left at its default (off).
 
-      const result = await applyDiffEntry({
-        path: 'src/app.ts',
-        before: '',
-        after: 'export const x = 1\n',
-        language: 'typescript',
-      })
+      const result = await applyDiffEntry(
+        {
+          path: 'src/app.ts',
+          before: '',
+          after: 'export const x = 1\n',
+          language: 'typescript',
+        },
+        workspaceRoot,
+        workspaceRoot,
+      )
       assert.deepEqual(result, { status: 'written' })
     })
 

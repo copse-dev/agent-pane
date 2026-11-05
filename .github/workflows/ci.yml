@@ -1609,6 +1609,58 @@ jobs:
       # e2e wall minutes without an Actions API token.
       - name: Record shard start
         run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-job-started"
+      # Disk headroom on a cramped hosted runner. Hosted `ubuntu-24.04` jobs do
+      # not all get the same disk. Most get a 145 GB root with ~75 GB free, which
+      # is why an unconditional cleanup that cost ~1.6 minutes a shard was
+      # dropped (#3180). Some get a 72 GB copy-on-write root
+      # (`/dev/mapper/cow-root`) with ~11 GB free by the time specs run: e2e 5
+      # of runs 41920013687 and 41943898797. settings-classifiers-install needs
+      # more. It drives the real "Download and run" flow with fake tools that
+      # download nothing, but the product's preflight (`assertDiskSpace`,
+      # src/main/services/classifiers/local-classifier-manager.ts) still reads
+      # the cache volume, /tmp here, and refuses below downloadGb x
+      # DISK_HEADROOM: about 15.6 GB for Winnow-12B. Moving the spec's cache to
+      # `/mnt` would only help if the cramped layout has a second disk there;
+      # deleting works on either layout. Both `df` logs include `/mnt`, so a
+      # shard's log shows which layout it got.
+      #
+      # So, only below E2E_MIN_FREE_GB, delete preinstalled toolchains that no
+      # spec and no Linux product path uses. The deletion runs in the background
+      # and overlaps checkout and setup; "Join disk cleanup" waits for it before
+      # the suite and logs `df -h` again. A roomy runner pays one `df`.
+      # Hosted-only: never delete system directories on a self-hosted box.
+      - name: Free disk on a cramped hosted runner
+        if: runner.environment == 'github-hosted'
+        env:
+          # The classifier spec needs ~15.6 GB free when it runs, and setup plus
+          # the specs before it use several GB first. 40 GB clears both with
+          # margin and still skips the ~75 GB-free layout.
+          E2E_MIN_FREE_GB: '40'
+        run: |
+          set -euo pipefail
+          tmp="${TMPDIR:-/tmp}"
+          echo "## disk before cleanup"
+          df -h / "$tmp" /mnt || true
+          # Decimal GB, the unit the product's preflight reports.
+          free_gb=$(( $(df --output=avail -B1 "$tmp" | tail -n 1) / 1000000000 ))
+          if [ "$free_gb" -ge "$E2E_MIN_FREE_GB" ]; then
+            echo "${free_gb} GB free at ${tmp}: no cleanup needed (threshold ${E2E_MIN_FREE_GB} GB)"
+            exit 0
+          fi
+          echo "${free_gb} GB free at ${tmp}, under ${E2E_MIN_FREE_GB} GB: removing unused toolchains in the background"
+          cleanup="$RUNNER_TEMP/disk-cleanup"
+          date -u +%FT%TZ > "$cleanup.started"
+          # Every stream is redirected, so the step ends now rather than when
+          # the deletion does. `wait` with no operand always succeeds: a
+          # directory that could not be removed shows up in the `df` after.
+          (
+            for dir in /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+              /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift; do
+              sudo rm -rf "$dir" &
+            done
+            wait
+            date -u +%FT%TZ > "$cleanup.done"
+          ) </dev/null >"$cleanup.log" 2>&1 &
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
@@ -1619,13 +1671,6 @@ jobs:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
           restore-keys: screenshot-r2-v1-
-      # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
-      # and prune Docker images because shards hit "No space left on device" on
-      # the private-repo hosted runner (14 GB SSD). The public-repo runner's root
-      # is 145 GB: 107 GB free after that cleanup, so ~75 GB without it. The
-      # cleanup cost ~1.6 minutes per shard, about a quarter of e2e minutes. The
-      # run step still logs `df -h` in its diagnostics if space becomes a
-      # question again.
       # Outer retry: actions/download-artifact marks intermittent CDN 403s
       # ("Error from intermediary") as non-retryable, and with fail-fast:true a
       # single shard's download flake cancels the whole e2e matrix (see
@@ -1715,6 +1760,39 @@ jobs:
           needs.precheck.outputs.mode == 'subset'
         continue-on-error: true
         run: node scripts/screenshot-identity.mts prepare
+      # Joins "Free disk on a cramped hosted runner" and logs the space the
+      # suite starts with, on every hosted shard, cleaned or not.
+      - name: Join disk cleanup and log free space
+        if: runner.environment == 'github-hosted'
+        env:
+          # Winnow-12B's preflight: downloadGb 12.5 x DISK_HEADROOM 1.25.
+          E2E_CLASSIFIER_NEEDS_GB: '15.6'
+        run: |
+          set -euo pipefail
+          tmp="${TMPDIR:-/tmp}"
+          cleanup="$RUNNER_TEMP/disk-cleanup"
+          if [ -e "$cleanup.started" ]; then
+            # Bounded, so a stuck deletion cannot eat the job's budget. It keeps
+            # running if this gives up, and the warning below names any shortfall.
+            waited=0
+            while [ ! -e "$cleanup.done" ] && [ "$waited" -lt 300 ]; do
+              sleep 1
+              waited=$((waited + 1))
+            done
+            if [ -e "$cleanup.done" ]; then
+              echo "disk cleanup ran $(cat "$cleanup.started") to $(cat "$cleanup.done"); this step waited ${waited}s"
+            else
+              echo "::warning title=e2e disk cleanup still running::Stopped waiting after ${waited}s; the suite starts while toolchains are still being deleted."
+            fi
+            if [ -s "$cleanup.log" ]; then cat "$cleanup.log"; fi
+          fi
+          echo "## disk after cleanup"
+          df -h / "$tmp" /mnt || true
+          free_bytes=$(df --output=avail -B1 "$tmp" | tail -n 1)
+          if awk -v free="$free_bytes" -v need="$E2E_CLASSIFIER_NEEDS_GB" \
+            'BEGIN { exit !(free < need * 1000000000) }'; then
+            echo "::warning title=Too little free disk for the classifier e2e::$(awk -v f="$free_bytes" 'BEGIN { printf "%.1f", f / 1e9 }') GB free at ${tmp}; settings-classifiers-install.e2e.ts needs about ${E2E_CLASSIFIER_NEEDS_GB} GB there for the product's install preflight."
+          fi
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —

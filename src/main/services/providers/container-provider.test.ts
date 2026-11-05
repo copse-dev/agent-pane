@@ -167,6 +167,7 @@ describe('resolveContainerProvider', () => {
       },
       {
         openBrowser: async (): Promise<void> => {},
+        focusApp: (): void => {},
         fetch: async (_input, init): Promise<Response> => {
           refreshes++
           assert.ok(init?.body instanceof URLSearchParams)

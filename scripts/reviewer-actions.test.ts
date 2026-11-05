@@ -256,14 +256,14 @@ describe('grounding artifact handoff', () => {
     [1, 2],
     [2, 2],
   ] as const) {
-    it(`downloads the producer's report for grounding attempt ${producerAttempt}, findings attempt ${consumerAttempt}`, () => {
+    it(`downloads the producer's report for grounding attempt ${String(producerAttempt)}, findings attempt ${String(consumerAttempt)}`, () => {
       const upload = ground.runs.steps.find((step) => step.uses === 'actions/upload-artifact@v7')
       assert.ok(upload?.id)
-      const artifactId = `900${producerAttempt}`
+      const artifactId = `900${String(producerAttempt)}`
       const name = evaluate(upload.with?.['name'], {
         github: { run_id: 123, run_attempt: producerAttempt },
       })
-      assert.equal(name, `copse-review-ground-123-${producerAttempt}`)
+      assert.equal(name, `copse-review-ground-123-${String(producerAttempt)}`)
       const output = evaluate(ground.outputs?.['artifact-id']?.value, {
         steps: { [upload.id]: { outputs: { 'artifact-id': artifactId } } },
       })

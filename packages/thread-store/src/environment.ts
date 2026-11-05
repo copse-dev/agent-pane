@@ -34,6 +34,8 @@ export interface ThreadStoreEnvironment {
   workspaceRoot: () => string
   listProjectIds: () => string[]
   perf: ThreadStorePerf
+  /** Schedule derived background projections after a native write settles. */
+  onProjectWrite?: (projectId: string) => void
 }
 
 export function defaultWorkspaceRoot(env: NodeJS.ProcessEnv = process.env): string {
