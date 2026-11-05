@@ -345,14 +345,14 @@ function toolSchemaReserveForModel(model: string): number {
  * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
  * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
  * and a larger threshold additionally skips trivial edits. Measures the exact diff
- * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * the review sees — `getGitDiffText` (unstaged tracked changes + untracked new
  * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
  * additions live in that diff even though `git diff --numstat` omits them). An
  * unmeasurable diff (git unavailable) falls through to running the review.
  */
 async function changedLinesBelow(min: number): Promise<boolean> {
   if (!isGitAvailable()) return false
-  const diff = await getGitDiffText()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   return countDiffChangedLines(diff) < min
 }
 
@@ -1395,7 +1395,7 @@ async function runAgentWithInlineCanvas(
                 model: executorModel,
                 registry,
                 signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
                 resolvePluginSetting,
                 recordHookRun: recordFunctionHookRun,
               }),
@@ -2025,7 +2025,7 @@ async function runAgentWithInlineCanvas(
       },
       {
         signal: controller.signal,
-        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
         resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },

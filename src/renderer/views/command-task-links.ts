@@ -4,6 +4,7 @@
 // card and get back to the card from the wake.
 import type { ToolCall } from '@shared/types'
 import { el } from '../dom/helpers.ts'
+import { scrollIntoTranscriptView } from './transcript-scroll.ts'
 
 export interface BackgroundTaskLogs {
   logs: string
@@ -118,7 +119,8 @@ export function revealToolCard(root: ParentNode, toolCallId: string): boolean {
   for (let node = card.parentElement; node; node = node.parentElement) {
     if (node instanceof HTMLDetailsElement && !node.open) node.open = true
   }
-  card.scrollIntoView({ block: 'center' })
+  // Centre it in the space below the pinned prompt, not under it.
+  scrollIntoTranscriptView(card, { block: 'center' })
   card.classList.add('tool-card-revealed')
   setTimeout(() => {
     card.classList.remove('tool-card-revealed')

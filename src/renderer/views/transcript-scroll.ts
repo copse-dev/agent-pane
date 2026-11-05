@@ -1,8 +1,9 @@
 /**
  * Scroll following and reading-position preservation for the transcript: the
  * pin to the live end, telling our own scroll writes apart from the reader's,
- * the stream-follow glide, the jump-to-bottom button, and holding the first
- * visible item in place while content above it changes height.
+ * the stream-follow glide, the navigation row (First prompt, and Back to
+ * latest / Back to where you were), and holding the first visible item in
+ * place while content above it changes height.
  *
  * Extracted from `mountConversation` (#3962). The view owns the list and
  * what it renders; it calls in here for every scroll write, and the hooks in
@@ -27,16 +28,78 @@ export interface ReadingAnchor {
   viewportTop: number
 }
 
+/**
+ * Scroll `target` into the transcript's view clear of the stuck latest prompt.
+ * The prompt's band is applied as scroll padding only for this call: padding
+ * left on the list also narrows where Chrome picks its scroll anchor, and an
+ * anchor chosen below a prompt still in the flow lets the prompt's own growth
+ * scroll it into sticking (its previews then shrink and grow without end).
+ * The prompt and the rows before it cancel the band (conversation.css), so
+ * only targets in its reply land below it.
+ */
+export function scrollIntoTranscriptView(target: Element, options: ScrollIntoViewOptions): void {
+  const list = target.closest<HTMLElement>('.messages-list')
+  const band = list?.style.getPropertyValue('--sticky-prompt-band') ?? ''
+  if (!list || !band) {
+    target.scrollIntoView(options)
+    return
+  }
+  const previous = list.style.scrollPaddingTop
+  list.style.scrollPaddingTop = band
+  // The rows the band must not push down cancel it only while it applies.
+  list.style.setProperty('--sticky-prompt-scroll-band', band)
+  try {
+    target.scrollIntoView(options)
+  } finally {
+    list.style.scrollPaddingTop = previous
+    list.style.removeProperty('--sticky-prompt-scroll-band')
+  }
+}
+
+/** Where the reader was when they jumped to the first prompt. */
+interface ReturnPosition {
+  anchor: ReadingAnchor | null
+  scrollTop: number
+  pinned: boolean
+}
+
+/**
+ * Where `row`'s top would be without a sticky offset, in viewport pixels. The
+ * previous row stays in normal flow while this one sticks, so its bottom tells
+ * us where this row would be.
+ */
+export function naturalRowTop(list: HTMLElement, row: HTMLElement): number {
+  const listStyle = window.getComputedStyle(list)
+  const previous = row.previousElementSibling
+  return previous
+    ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
+    : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
+}
+
 export interface TranscriptScrollHost {
   /** The scrollable messages list. */
   list: HTMLElement
-  /** The jump-to-bottom button, hidden while the view is near the bottom. */
+  /**
+   * Back to latest, or Back to where you were after a First prompt jump.
+   * Hidden near the bottom unless a reading position is saved.
+   */
   scrollToBottomBtn: HTMLElement
+  /** The text inside `scrollToBottomBtn`, which names where it goes. */
+  scrollToBottomLabel: HTMLElement
+  /** Jumps to the first human prompt, saving the reading position to return to. */
+  firstPromptBtn: HTMLElement
+  /** The active thread's first human prompt, or null when it has none. */
+  firstPromptId: () => string | null
   /**
    * Runs after every scroll write and every reader scroll. `releaseOnScrollUp`
    * is true only for a genuine upward scroll by the reader.
    */
   syncStickyImagePreview: (releaseOnScrollUp: boolean) => void
+  /**
+   * Height of the band the stuck latest prompt covers at the top of the list
+   * (0 while it is not stuck). Rows ending inside it never anchor reading.
+   */
+  stickyPromptBand: () => number
   /** The reader is back at the live end (scrolled there, or forced there). */
   onReturnToLiveEnd: () => void
 }
@@ -61,7 +124,10 @@ export interface TranscriptScroll {
 }
 
 export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptScroll {
-  const { list, scrollToBottomBtn } = host
+  const { list, scrollToBottomBtn, scrollToBottomLabel, firstPromptBtn } = host
+  let returnPosition: ReturnPosition | null = null
+  // A First prompt jump waits for its row: long threads backfill in frames.
+  let pendingFirstPromptId: string | null = null
   let pinnedToBottom = true
   let lastScrollTop = 0
   // The scrollTop our own scrollToBottom() last landed on. Used to tell our
@@ -80,7 +146,33 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
   }
 
   function updateScrollButton(): void {
-    scrollToBottomBtn.hidden = isNearBottom()
+    // Long threads backfill in frames. Finish the jump only when its prompt is
+    // mounted, keeping the saved reading anchor while older rows arrive above it.
+    if (pendingFirstPromptId) {
+      const target = Array.from(list.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (element) => element.dataset['messageId'] === pendingFirstPromptId,
+      )
+      if (target) {
+        pendingFirstPromptId = null
+        // The latest prompt sticks while read past, so when the first prompt is
+        // also the latest its box is already at the top: use its place in the flow.
+        const top =
+          window.getComputedStyle(target).position === 'sticky'
+            ? naturalRowTop(list, target)
+            : target.getBoundingClientRect().top
+        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top)
+      }
+    }
+    firstPromptBtn.hidden =
+      host.firstPromptId() === null ||
+      list.scrollTop <= SCROLL_PIN_THRESHOLD_PX ||
+      returnPosition !== null
+    const label = returnPosition ? 'Back to where you were' : 'Back to latest'
+    if (scrollToBottomLabel.textContent !== label) {
+      scrollToBottomLabel.textContent = label
+      scrollToBottomBtn.setAttribute('aria-label', label)
+    }
+    scrollToBottomBtn.hidden = returnPosition === null && isNearBottom()
   }
 
   function handleUserScroll(): void {
@@ -150,6 +242,8 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
     // The scrollable element is the messages list, not the mount root.
     setScrollTopProgrammatically(list.scrollHeight)
     if (force) {
+      returnPosition = null
+      pendingFirstPromptId = null
       userScrolledUpAt = 0
       pinnedToBottom = true
       host.onReturnToLiveEnd()
@@ -196,11 +290,15 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
   }
 
   function captureReadingAnchor(): ReadingAnchor | null {
-    const listRect = list.getBoundingClientRect()
+    // Reading starts below the pinned prompt's reserved band: a row ending in
+    // that band is either under the prompt or the tail of the turn before a
+    // scrolled-to target, and the stuck prompt itself never moves with the
+    // scroll, so none of them can anchor what the reader is looking at.
+    const readingTop = list.getBoundingClientRect().top + host.stickyPromptBand()
     const candidates = list.querySelectorAll<HTMLElement>(READING_ANCHOR_CANDIDATES)
     for (const element of candidates) {
       const rect = element.getBoundingClientRect()
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top }
+      if (rect.bottom > readingTop) return { element, viewportTop: rect.top }
     }
     return null
   }
@@ -254,9 +352,43 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
     },
     { passive: true },
   )
+  firstPromptBtn.addEventListener('click', () => {
+    const firstPromptId = host.firstPromptId()
+    if (firstPromptId === null || returnPosition) return
+    returnPosition = {
+      anchor: captureReadingAnchor(),
+      scrollTop: list.scrollTop,
+      pinned: pinnedToBottom,
+    }
+    pinnedToBottom = false
+    userScrolledUpAt = Date.now()
+    pendingFirstPromptId = firstPromptId
+    updateScrollButton()
+    scrollToBottomBtn.focus({ preventScroll: true })
+  })
   scrollToBottomBtn.addEventListener('click', () => {
-    userScrolledUpAt = 0
-    scrollToBottom(true)
+    const previous = returnPosition
+    returnPosition = null
+    pendingFirstPromptId = null
+    if (previous) {
+      pinnedToBottom = previous.pinned
+      userScrolledUpAt = previous.pinned ? 0 : Date.now()
+      restoreReadingAnchor(previous.anchor, previous.scrollTop)
+      updateScrollButton()
+      // The return button may disappear at the bottom; keep keyboard navigation
+      // in the conversation without moving the restored reading position. A
+      // position clamped near the top hides First prompt too: fall back to
+      // Back to latest, then the transcript itself.
+      const focusTarget = [firstPromptBtn, scrollToBottomBtn].find((control) => !control.hidden)
+      if (focusTarget) focusTarget.focus({ preventScroll: true })
+      else {
+        if (!list.hasAttribute('tabindex')) list.tabIndex = -1
+        list.focus({ preventScroll: true })
+      }
+    } else {
+      userScrolledUpAt = 0
+      scrollToBottom(true)
+    }
   })
 
   // Streamed prose grows a line at a time. Snapping to the bottom on every
@@ -273,7 +405,8 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
       list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
     )
     // Still following: the view is pinned, only a few pixels short mid-glide.
-    scrollToBottomBtn.hidden = true
+    // A saved reading position keeps its return button, as updateScrollButton does.
+    if (returnPosition === null) scrollToBottomBtn.hidden = true
     return true
   })
   list.addEventListener(STREAM_PAINT_EVENT, () => {
@@ -294,6 +427,8 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
       userScrolledUpAt = Date.now()
     },
     resetForThread: (): void => {
+      returnPosition = null
+      pendingFirstPromptId = null
       pinnedToBottom = true
       userScrolledUpAt = 0
       lastScrollTop = 0
