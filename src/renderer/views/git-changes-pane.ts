@@ -1300,7 +1300,12 @@ export function mountGitChangesPane(
     a: readonly [ActiveDiff | null, StagedDiffEntry[]],
     b: readonly [ActiveDiff | null, StagedDiffEntry[]],
   ): boolean {
-    return a[0] === b[0] && (a[1] === b[1] || (a[1].length === 0 && b[1].length === 0))
+    return a[0] === b[0] && sameQueue(a[1], b[1])
+  }
+
+  /** The same queue; a fresh empty queue is no change. */
+  function sameQueue(a: StagedDiffEntry[], b: StagedDiffEntry[]): boolean {
+    return a === b || (a.length === 0 && b.length === 0)
   }
 
   async function syncFromStore(): Promise<void> {
@@ -1358,18 +1363,22 @@ export function mountGitChangesPane(
       // while showing their last known rows, rather than flashing Loading.
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('staged_diffs_changed', () => {
-      const queue = store.getState().stagedDiffs
-      if (queue.length === 0) conflictBanner.hidden = true
-      if (changesModeActive(store)) void syncFromStore()
-      else renderList()
-      // Approving or rejecting a diff writes (or restores) the file, so the git
-      // sections below are now stale. The main window usually catches this via
-      // the `fs:changed` watcher on the open file; nothing did in a second
-      // window, which is half of "the changes don't align between the 2
-      // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
-      scheduleRefresh()
-    }),
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true
+        if (!changesModeActive(store)) renderList()
+        // Approving or rejecting a diff writes (or restores) the file, so the
+        // git sections below are now stale. The main window usually catches
+        // this via the `fs:changed` watcher on the open file; nothing did in a
+        // second window, which is half of "the changes don't align between the
+        // 2 windows" (#1704). Debounced, so a multi-file approve-all coalesces.
+        scheduleRefresh()
+      },
+      sameQueue,
+    ),
     // Only the diff state: an ordinary thread switch is threads_changed's job.
     store.select(
       (s) => [s.activeDiff, s.stagedDiffs] as const,

@@ -1,5 +1,5 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { baseSandboxConfig } from './config.ts'
+import { baseSandboxConfig, refreshGitConfigIncludeReadPaths } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
@@ -67,6 +67,7 @@ export async function initProjectSandbox(): Promise<void> {
       },
       false,
     )
+    await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)
     setProjectSandboxInitFailure(undefined)
     console.log(

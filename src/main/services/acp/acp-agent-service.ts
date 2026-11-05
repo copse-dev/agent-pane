@@ -47,7 +47,12 @@ import {
   type AcpClientHandlers,
   type AcpPermissionRequestContext,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import {
+  getAcpAgent,
+  resolveAcpConfigDirEnvVar,
+  resolveAcpPermissionMode,
+  resolveAcpSandbox,
+} from './acp-agent-registry.ts'
 import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
@@ -495,8 +500,11 @@ function installAgentInitiatedTurnLease(
     resolveContext: resolveThreadExecutionContext,
     beginWriter: () => beginWorktreeWriter(cwd),
     confirmContinue: async () => {
+      // Outside any turn: name the thread's project so the question is filed
+      // with it, not with whichever project the window shows.
       const result = await runWithActiveRunIdentity(threadId, () =>
         requestUserAnswers({
+          projectId,
           questions: [
             {
               question:
@@ -714,6 +722,7 @@ async function runAcpAgentTurn(
       sshTarget,
     }),
   )
+  const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
@@ -723,6 +732,7 @@ async function runAcpAgentTurn(
     ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(sandbox && stateDir ? { stateDir } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
     ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
@@ -1064,6 +1074,22 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
+}
+
+/**
+ * The thread-scoped config directory a sandboxed agent may be granted: the one
+ * Copse set in the spawn env. A dir the agent's own configured env names can
+ * be any path, home included, so it is never granted; Copse only scopes the
+ * variable when that env leaves it unset.
+ */
+export function grantableAcpStateDir(
+  envVar: string | undefined,
+  env: Record<string, string> | undefined,
+  configured: Record<string, string> | undefined,
+): string | undefined {
+  if (!envVar || (configured && Object.hasOwn(configured, envVar))) return undefined
+  const dir = env?.[envVar]
+  return dir === '' ? undefined : dir
 }
 
 /** How far a turn's ACP agent process is contained, resolved once per turn. */

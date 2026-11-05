@@ -36,7 +36,10 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
+import {
+  hasBackgroundProcessesForThread,
+  peekBackgroundProcessLogs,
+} from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
 import micromatch from 'micromatch'
@@ -244,6 +247,9 @@ import {
   runAcpAutoSetup,
   type AcpPackageChange,
 } from '../services/acp/acp-auto-setup.ts'
+import { getSshConnectionManager } from '../services/ssh-workspace/connection-manager.ts'
+import { WorkspaceActivation } from '../services/workspace-activation.ts'
+import { prepareWorkspaceConnection } from '../services/workspace-connection.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
 import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
@@ -286,6 +292,7 @@ import { loadProjectInstructionSources } from '../services/project-instructions.
 import {
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
@@ -318,6 +325,8 @@ import {
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
+import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
@@ -835,10 +844,17 @@ export function registerAllHandlers(
     )
   })
 
+  const workspaceActivations = new WeakMap<WebContents, WorkspaceActivation>()
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
+    let activation = workspaceActivations.get(event.sender)
+    if (!activation) {
+      activation = new WorkspaceActivation()
+      workspaceActivations.set(event.sender, activation)
+    }
+    const assertCurrentSelection = activation.begin()
     // Each phase is timed separately (COPSE_PERF=1) so a slow switch names the
     // phase, and `loop:stall` records show which of them held the event loop.
     const projects = perfSyncSpan('workspace-set:read-projects', storedWorkspaceProjects)
@@ -850,9 +866,20 @@ export function registerAllHandlers(
       () => seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, parsedRoot, sshHost)),
       { projects: projects.length },
     )
+    assertCurrentSelection()
     const canonical = await perfSpan('workspace-set:assert', () =>
       assertAllowedWorkspaceRoot(parsedRoot, sshHost),
     )
+    assertCurrentSelection()
+    if (sshHost) {
+      const connections = getSshConnectionManager()
+      await prepareWorkspaceConnection({
+        enabled: getSetting('sshWorkspaceEnabled', false),
+        connected: connections.getConnection(sshHost) !== null,
+        connect: () => connections.connect(sshHost),
+      })
+    }
+    assertCurrentSelection()
     perfSyncSpan('workspace-set:set-root', () => {
       setWorkspaceRoot(canonical)
     })
@@ -2425,6 +2452,19 @@ export function registerAllHandlers(
       return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
     },
   )
+  // A command card's "Logs" (#3956): one task's retained output, scoped to the
+  // thread that started it. Reading here is not the agent observing the exit.
+  ipcMain.handle(
+    'background-tasks:logs',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, taskId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawTaskId],
+      )
+      return peekBackgroundProcessLogs(taskId, { projectId, threadId })
+    },
+  )
   ipcMain.handle(
     'supervisor:resume',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
@@ -2527,6 +2567,10 @@ export function registerAllHandlers(
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
       await getBranchCiAutomationService().sync()
+    }
+    if (id === COMPUTER_USE_PLUGIN_ID) {
+      syncComputerUseTools(registry)
+      if (!enabled) disposeDesktopControlService()
     }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)

@@ -100,7 +100,13 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { isolatedDesktopTool } from '../tools/isolated-desktop-tool.ts'
 import { deviceHubTool } from '../tools/device-hub-tool.ts'
+import {
+  registerDesktopControlTools,
+  unregisterDesktopControlTools,
+} from '../tools/desktop-control-tools.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 import { resolveWebSearchProvider } from '@shared/web-search.ts'
 
@@ -131,6 +137,7 @@ export function createRegistry(): ToolRegistry {
   // Host GUI launch (macOS Launch Services). Always approval-gated; not a
   // substitute for run_shell — see gui-app-launch-tool.ts.
   registry.register(launchGuiAppTool)
+  registry.register(isolatedDesktopTool)
   registry.register(preflightWorktreeTool)
   registry.register(prepareWorktreeTool)
   // Offered only while a deferred-worktree thread is still read-only (parentTools).
@@ -213,6 +220,9 @@ export function createRegistry(): ToolRegistry {
   // tool brings the resulting booted Simulator into Copse's visible Desktop
   // panel, keeping display integration out of the third-party MCP server.
   syncAppleDevelopmentTools(registry)
+  // Experimental computer use: the desktop_* tools drive approved Mac apps
+  // through the native helper. Off unless `copse.computer-use` is enabled.
+  syncComputerUseTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
   // be attached to any thread at any time, but withheld per turn from threads
   // that have never had one (see `parentTools`) — most threads never will, and
@@ -277,6 +287,21 @@ export function syncAppleDevelopmentTools(
   } else {
     registry.unregister(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)
     registry.unregister(deviceHubTool.name)
+  }
+}
+
+/**
+ * Keep the computer-use tools aligned with the experimental `copse.computer-use`
+ * plugin. macOS only: the helper is Accessibility + ScreenCaptureKit.
+ */
+export function syncComputerUseTools(
+  registry: ToolRegistry,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === 'darwin' && getDefaultPluginRegistry().isEnabled(COMPUTER_USE_PLUGIN_ID)) {
+    registerDesktopControlTools(registry)
+  } else {
+    unregisterDesktopControlTools(registry)
   }
 }
 

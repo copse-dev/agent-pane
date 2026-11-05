@@ -831,7 +831,7 @@ export function mountTerminalsPane(
   }
 
   // Theme, tint and accent all land on <html>; follow them there rather than on
-  // `theme_changed`, which tint and accent changes never emit.
+  // the store's `theme`, which tint and accent changes never touch.
   const unwatchTheme = watchEditorTheme((tokens) => {
     const theme = xtermThemeFromTokens(tokens)
     for (const tab of tabs.values()) {

@@ -52,6 +52,7 @@ import { decideContainedShellEffect } from '@copse/shell-guard/container-effects
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
+import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
@@ -864,6 +865,7 @@ async function promptWebOrigin(
       approveLabel: 'Allow request',
       type: 'web',
       cause: 'web-origin',
+      interactiveClientApproval: 'once',
       subject: origin,
       scope: 'external',
       allowRemember,
@@ -2275,12 +2277,20 @@ async function decideToolPermitted(
       signal,
       explicitPolicy,
     )
+  } else if (isDesktopControlTool(toolName)) {
+    permitted = await checkDesktopAppPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
     const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'
     permitted =
       (!deletingSimulator && explicitPolicy === 'allow') ||
       (await promptExplicitToolAsk(toolName, args, signal))
+  } else if (toolName === 'isolated_copse') {
+    // The handler requires fresh, non-rememberable consent before creating a
+    // thread-owned VM. Later input still requires that live grant. Explicit Ask
+    // remains an additional per-call requirement; Blocked is handled above.
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;

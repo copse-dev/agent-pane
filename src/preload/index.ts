@@ -7,11 +7,13 @@ import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
+import { createWorkspaceNavigation } from './workspace-navigation.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
 installPreloadPerfTracing()
 exposePerfBridge()
+ipcRenderer.invoke = createWorkspaceNavigation(ipcRenderer.invoke.bind(ipcRenderer))
 
 // Typed against the contract so the facade cannot drift from `ApiClient`: a
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
@@ -1540,6 +1542,10 @@ const api: ApiClient = {
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
     findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
+  },
+  backgroundTasks: {
+    logs: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('background-tasks:logs', projectId, threadId, taskId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),

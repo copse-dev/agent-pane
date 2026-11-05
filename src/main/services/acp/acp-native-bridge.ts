@@ -3,6 +3,7 @@ import {
   runWithSkillActivationTurn,
   type SkillActivationTurn,
 } from '../skills/skill-activation.ts'
+import { runWithIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -126,6 +127,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
   'launch_gui_app',
+  // A desktop grant is thread-owned; its lifetime is bound to the ACP turn below.
+  'isolated_copse',
   // GitHub / CI — run with Copse's gh auth and network access.
   'gh_pr_list',
   'gh_pr_view',
@@ -188,6 +191,15 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
   // Only promotes an already-open page or this thread's rendered artefact.
   'browser_show',
+  // Computer use (`copse.computer-use`). Registered only while the plugin is
+  // enabled; every call re-enters the per-app permission gate.
+  'desktop_apps',
+  'desktop_snapshot',
+  'desktop_screenshot',
+  'desktop_click',
+  'desktop_type',
+  'desktop_key',
+  'desktop_menu',
 ]
 
 /**
@@ -688,9 +700,10 @@ function buildMcpServer(
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
     try {
+      const capturedTurnSignal = ctx.getTurnSignal()
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
-        ctx.getTurnSignal(),
+        capturedTurnSignal,
         ctx.getCallSignal(),
       )
       // The client's idle timeout can be shorter than run_shell's foreground
@@ -743,6 +756,14 @@ function buildMcpServer(
           // arguments, never the redacted decision summary shown in the UI.
           detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
         })
+        if (name === 'isolated_copse') {
+          if (!capturedTurnSignal)
+            throw new Error('Isolated desktop control requires an active agent turn')
+          return runWithIsolatedDesktopLifetime(
+            mergeBridgeExecuteSignal(ctx.sessionSignal, capturedTurnSignal),
+            () => registry.executeNormalized(name, request.params.arguments, executeSignal),
+          )
+        }
         return registry.executeNormalized(name, request.params.arguments, executeSignal)
       }
       // Rebind the thread identity so approval prompts / idle-deadline pauses

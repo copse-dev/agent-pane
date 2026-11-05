@@ -7,6 +7,7 @@ import {
   createRegistry,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
@@ -19,6 +20,10 @@ import {
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
+import {
+  COMPUTER_USE_PLUGIN_ID,
+  COMPUTER_USE_TOOL_NAMES,
+} from '@copse/agent/plugins/computer-use-plugin.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -238,6 +243,38 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
+  })
+})
+
+describe('syncComputerUseTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers every declared desktop tool only while the plugin is on, on macOS', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
+
+    plugins.enable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => !registry.has(name)),
+      [],
+    )
+
+    syncComputerUseTools(registry, 'linux')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
   })
 })
 

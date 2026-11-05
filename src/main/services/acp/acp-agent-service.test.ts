@@ -29,6 +29,7 @@ import {
   acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
+  grantableAcpStateDir,
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
@@ -1696,5 +1697,30 @@ describe('continuing into a granted worktree', () => {
         err.partial.assistantText === 'Going to edit. half' &&
         err.partial.usage.inputTokens === 15,
     )
+  })
+})
+
+describe('grantableAcpStateDir', () => {
+  const dir = '/profile/workspace/p/t/acp-agent-config/claude'
+  const scoped = { CLAUDE_CONFIG_DIR: dir, CLAUDE_SECURESTORAGE_CONFIG_DIR: '' }
+
+  it('grants the scoped config directory Copse set in the spawn env', () => {
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, undefined), dir)
+    // The agent's own env can carry other variables without claiming the dir.
+    assert.equal(
+      grantableAcpStateDir('CLAUDE_CONFIG_DIR', { ...scoped, FOO: '1' }, { FOO: '1' }),
+      dir,
+    )
+  })
+
+  it("never grants a directory the agent's own configured env names", () => {
+    const own = { CLAUDE_CONFIG_DIR: '/Users/me' }
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', own, own), undefined)
+  })
+
+  it('grants nothing when the agent has no scoped config directory', () => {
+    assert.equal(grantableAcpStateDir(undefined, scoped, undefined), undefined)
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', undefined, undefined), undefined)
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', { FOO: '1' }, { FOO: '1' }), undefined)
   })
 })
