@@ -54838,10 +54838,7 @@ function createAppearanceSection(form, store, markDirty) {
   }
   function apply(value) {
     document.documentElement.dataset["theme"] = value.theme;
-    if (store.getState().theme !== value.theme) {
-      store.setState({ theme: value.theme });
-      store.emit("theme_changed", value.theme);
-    }
+    if (store.getState().theme !== value.theme) store.setState({ theme: value.theme });
     applyUiAccent(value.accentColor);
     applyUiTint(value.tintColor, value.tintStrength);
   }
@@ -71363,8 +71360,6 @@ function createStore(initial) {
     canvas_artefact_requested: /* @__PURE__ */ new Set(),
     canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
     settings_changed: /* @__PURE__ */ new Set(),
-    theme_changed: /* @__PURE__ */ new Set(),
-    staged_diffs_changed: /* @__PURE__ */ new Set(),
     usage_updated: /* @__PURE__ */ new Set(),
     context_updated: /* @__PURE__ */ new Set(),
     todos_changed: /* @__PURE__ */ new Set(),
