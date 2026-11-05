@@ -7,11 +7,18 @@ import {
   addMessage,
   addToolCall,
   createThread,
+  markThreadRead,
   patchThreadAnywhere,
   setMessageTurnOutcome,
   setThreadStatus,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
+import {
+  humanPrompt,
+  recordedTurn,
+  threadWith,
+} from '@shared/store/transcript-stream.test-support.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -194,5 +201,73 @@ describe('conversation keyed row reconcile (component)', () => {
     assert.equal(document.querySelectorAll(`[data-turn-recovery-for="${answer}"]`).length, 1)
     const recovery = document.querySelector(`[data-turn-recovery-for="${answer}"]`)
     assert.ok(recovery?.previousElementSibling === row(answer), 'recovery follows its message')
+  })
+
+  it('leaves the transcript exactly as a fresh rebuild would draw it', async () => {
+    // Drive the real stream reducer through a finished turn and a turn the
+    // user stops mid-tool, with the coarse threads_changed between steps, then
+    // compare every row with a second view mounted fresh on the same store.
+    const store = createStore({
+      threads: [threadWith('t1', [humanPrompt('u1', 'What does the plan say?')])],
+      activeThreadId: 't1',
+      activeProjectId: 'project-1',
+    })
+    const live = document.createElement('div')
+    document.body.append(live)
+    unmounts.push(mountConversation(live, store, fakeApi({ count: 0 })))
+    const reducer = createTranscriptReducer(store)
+    for (const chunk of recordedTurn()) {
+      reducer.apply('t1', chunk)
+      store.emit('threads_changed')
+    }
+    markThreadRead(store, 't1')
+    addMessage(store, 't1', 'user', 'Wait for my phone to stop this run.')
+    setThreadStatus(store, 't1', 'running')
+    store.emit('threads_changed')
+    reducer.apply('t1', { type: 'reasoning', text: 'Waiting.' })
+    reducer.apply('t1', {
+      type: 'tool_call',
+      toolCall: { id: 'call-wait', name: 'run_shell', args: { command: 'sleep 5' } },
+    })
+    reducer.apply('t1', {
+      type: 'tool_result',
+      toolCallId: 'call-wait',
+      result: 'waited',
+      isError: false,
+    })
+    reducer.apply('t1', { type: 'text', text: 'This must be interrupted' })
+    store.emit('threads_changed')
+    reducer.apply('t1', {
+      type: 'turn_outcome',
+      outcome: {
+        status: 'cancelled',
+        stopReason: 'cancelled',
+        source: 'user',
+        executor: 'local',
+        provider: 'openai',
+        model: 'openai:gpt-5.5',
+        endedAt: 99,
+        userAbort: 'stop',
+      },
+    })
+    reducer.apply('t1', { type: 'done' })
+    markThreadRead(store, 't1')
+    await delay(0)
+
+    const fresh = document.createElement('div')
+    document.body.append(fresh)
+    unmounts.push(mountConversation(fresh, store, fakeApi({ count: 0 })))
+    await delay(0)
+    // The activity row outlives every rebuild, so it is the view's, not a row.
+    const rows = (host: HTMLElement): string[] =>
+      Array.from(
+        host.querySelectorAll('.messages-list > :not(.agent-activity)'),
+        (child) => child.outerHTML,
+      )
+    const reconciled = rows(live)
+    const rebuilt = rows(fresh)
+    assert.equal(reconciled.length, rebuilt.length)
+    const firstDifference = reconciled.findIndex((html, i) => html !== rebuilt[i])
+    assert.equal(firstDifference, -1, `row ${String(firstDifference)} differs from a rebuild`)
   })
 })
