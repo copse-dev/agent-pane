@@ -122,7 +122,12 @@ async function readExternalTool(
   signal?.throwIfAborted()
   if (resolveToolPermission(toolName)?.policy === 'block') throw new Error('This tool is blocked.')
   const after = await stat(canonical, { bigint: true })
-  if ((await realpath(path)) !== canonical || before.dev !== after.dev || before.ino !== after.ino)
+  // Linux reuses a freed inode at once, so a target deleted and recreated
+  // while the prompt was open can keep its dev and ino; its birth time cannot.
+  // (A filesystem without birth times reports 0 for both, adding nothing.)
+  const sameTarget =
+    before.dev === after.dev && before.ino === after.ino && before.birthtimeNs === after.birthtimeNs
+  if ((await realpath(path)) !== canonical || !sameTarget)
     throw new Error(
       'External read target changed while permission was being checked. Retry the read.',
     )
