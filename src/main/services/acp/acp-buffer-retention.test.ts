@@ -125,7 +125,7 @@ describe('ACP startup buffering', () => {
         transport,
       )
       await open.dispose()
-    }, /ACP.*buffer.*limit/i)
+    }, /The coding agent sent too much data before it finished starting\. Try again\./)
     assert.equal(disposed, true)
   })
 })

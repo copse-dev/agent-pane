@@ -30,7 +30,9 @@ export class AcpStartupBuffer {
       this.bytes + bytes > ACP_STARTUP_BUFFER_MAX_BYTES
     ) {
       this.clear()
-      return new Error('ACP startup buffer limit exceeded')
+      return new Error(
+        'The coding agent sent too much data before it finished starting. Try again.',
+      )
     }
     const pending = this.pending.get(sessionId) ?? []
     pending.push(update)

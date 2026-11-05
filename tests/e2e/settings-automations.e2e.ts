@@ -282,14 +282,18 @@ describe('settings automations plugin', function () {
       'Every weekday at 09:00 · local time',
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
-    await expect(detail.$('.automation-permission-row[title="gh_pr_approve"] input')).toBeChecked()
     await expect(
-      detail.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"] input'),
     ).toBeChecked()
     await expect(
-      detail.$('.automation-permission-row[title="gh_pr_approve"] .toggle-switch-track'),
+      detail.$(
+        '.automation-permission-unavailable[data-tool-name="mcp__reports__publish_weekly"] input',
+      ),
+    ).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"] .toggle-switch-track'),
     ).toBeDisplayed()
-    const approveRow = detail.$('.automation-permission-row[title="gh_pr_approve"]')
+    const approveRow = detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"]')
     const headingPosition = await approveRow.$('.automation-permission-heading').getLocation()
     const switchPosition = await approveRow.$('.automation-permission-switch').getLocation()
     assert.ok(
@@ -306,20 +310,22 @@ describe('settings automations plugin', function () {
       'gh_pr_comment',
       'gh_pr_resolve_review_thread',
     ]) {
-      const row = detail.$(`.automation-permission-row[title="${tool}"]`)
+      const row = detail.$(`.automation-permission-row[data-tool-name="${tool}"]`)
       await expect(row).toExist()
       await expect(row.$('input')).not.toBeChecked()
     }
-    await filter.setValue('git_push')
+    await filter.setValue('push branches')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row')).length === 1,
     )
     await detail
-      .$('.automation-permission-row[title="git_push"] .automation-permission-switch')
+      .$('.automation-permission-row[data-tool-name="git_push"] .automation-permission-switch')
       .click()
-    await expect(detail.$('.automation-permission-row[title="git_push"] input')).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="git_push"] input'),
+    ).toBeChecked()
     await saveElementScreenshot('.automation-permissions', 'settings-automation-push-grant.png')
-    await filter.setValue('publish_weekly')
+    await filter.setValue('publish weekly')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row').getElements()).length === 1,
     )
@@ -358,9 +364,11 @@ describe('settings automations plugin', function () {
     if (!saved)
       assert.fail(`schedule save failed: ${await detail.$('.automation-status').getText()}`)
     await detail.$('.automation-row .automation-row-btn').click()
-    await expect(detail.$('.automation-permission-row[title="git_push"] input')).toBeChecked()
     await expect(
-      detail.$('.automation-permission-row[title="gh_pr_merge"] input'),
+      detail.$('.automation-permission-row[data-tool-name="git_push"] input'),
+    ).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_merge"] input'),
     ).not.toBeChecked()
     await detail.$('.automation-cancel-btn').click()
     await expect(dialog.$('.settings-buttons')).toBeDisplayed()

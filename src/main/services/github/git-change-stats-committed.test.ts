@@ -121,7 +121,7 @@ describe('Changes chip committed-work totals (#2318)', { skip: !gitAvailable }, 
     assert.equal(await getGitChangeStats(root), null)
     await writeFile(join(root, 'tracked.txt'), 'two\nlocal\n')
     assert.deepEqual(await getGitChangeStats(root), { additions: 1, deletions: 0 })
-    assert.match(await buildAdvisorRepoState(), /1 path\(s\) changed \(\+1 \/ -0\)/)
+    assert.match(await buildAdvisorRepoState(root), /1 path\(s\) changed \(\+1 \/ -0\)/)
   })
 
   it('uses the production follow-up context PR lookup to choose the committed base', async () => {
@@ -135,7 +135,7 @@ describe('Changes chip committed-work totals (#2318)', { skip: !gitAvailable }, 
             'pr',
             'view',
             '--json',
-            'state,mergeable,mergeStateStatus,statusCheckRollup',
+            'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number,baseRefName',
           ])
           assert.equal(options.cwd, root)
           return { stdout: JSON.stringify({ state }), stderr: '', code: 0 }

@@ -19,6 +19,7 @@ import {
   listBackgroundProcessPids,
   getBackgroundProcessLogs,
   isBackgroundExitObserved,
+  peekBackgroundProcessLogs,
   nextBackgroundOperationId,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
@@ -344,6 +345,53 @@ describe('background process manager', () => {
     assert.equal(exited, true, 'explicitly cancelled child must exit')
 
     assert.equal(notified, false)
+  })
+
+  it('tells the starter once when a running task is stopped, and never after it exited', async () => {
+    const cancelled: string[] = []
+    const running = await startBackgroundProcess({
+      command: 'sleep 30',
+      cwd: process.cwd(),
+      waitMs: 10,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    assert.equal(stopBackgroundProcess(running.id, OWNER), true)
+    assert.equal(stopBackgroundProcess(running.id, OWNER), false)
+    assert.deepEqual(cancelled, [running.id])
+
+    const finished = await startBackgroundProcess({
+      command: 'true',
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    await waitForBackgroundExit(finished.id)
+    stopBackgroundProcess(finished.id, OWNER)
+    assert.deepEqual(cancelled, [running.id], 'stopping an exited task is not a cancellation')
+  })
+
+  it('lets the user read logs without counting as the agent observing the exit', async () => {
+    const info = await startBackgroundProcess({
+      command: `node -e "console.log('peeked')"`,
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+    })
+    // Poll through the peek itself: the list helper would mark the exit observed.
+    const deadline = Date.now() + 10_000
+    let peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    while (peeked?.running === true && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    }
+    assert.deepEqual(peeked, { logs: 'peeked\n', running: false })
+    assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    assert.equal(
+      peekBackgroundProcessLogs(info.id, { projectId: 'other', threadId: 'other' }),
+      null,
+    )
   })
 
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {

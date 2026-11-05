@@ -110,6 +110,8 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    bookkeeping. Do not force scroll after a user disclosure click. Re-evaluate
    deferred compaction when the reader returns to the live end. Frame-level
    coalescing remains a follow-up if traces still show redundant scroll writes.
+   This bookkeeping lives in `src/renderer/views/transcript-scroll.ts`, extracted
+   from `conversation.ts` in #3962.
 
 6. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height

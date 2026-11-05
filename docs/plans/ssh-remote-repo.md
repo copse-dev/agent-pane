@@ -258,13 +258,16 @@ The transport everything else rides on.
   symlink-escape guards (`assertWorkspaceWriteTarget`) protect the _remote_
   account's files from a malicious repo — same semantics, different blast
   radius. Keep them.
-- **Watchers**: `fs.watch` (`ipc/fs-watcher.ts:18`,
-  `workspace-index-watcher.ts:20`) has no remote equivalent. v1: (a) piggyback
-  on our own write path (every Copse-originated write already triggers
-  `scheduleIndexRebuild` and `fs:changed`), (b) poll open-file mtimes over the
-  connection at a modest interval, (c) optionally use remote `inotifywait`
-  when the capability probe finds it. Degraded external-edit detection is an
-  acceptable v1 trade-off; say so in the UI.
+- **Watchers (implemented for open files)**: `fs:watch` subscriptions in an
+  SSH workspace start on a batched four-second `stat` polling floor while
+  Copse offers to install its bundled, checksum-verified native watcher under
+  `~/.copse/bin`. Once that watcher acknowledges the path, native
+  inotify/FSEvents/kqueue events replace the client poll; unsupported targets,
+  declined installs, registration failures, and dropped sessions stay on or
+  return to polling without a detection gap. Copse-originated writes still
+  refresh through the write path. Recursive workspace-index watching remains
+  a separate follow-up rather than turning the whole remote checkout into a
+  polling workload.
 - **What stays local, untouched**: the thread store (`~/.copse/workspace/…`),
   settings/secrets, skills _user_ roots (`~/.claude/skills` etc.), global MCP
   config. **Project-level** instruction files (`AGENTS.md`/`CLAUDE.md`),

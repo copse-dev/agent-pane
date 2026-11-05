@@ -18,15 +18,18 @@ describe('AcpStartupBuffer', () => {
     for (let index = 0; index < ACP_STARTUP_BUFFER_MAX_UPDATES; index++) {
       assert.equal(buffer.enqueue(String(index), text('payload')), null)
     }
-    assert.match(buffer.enqueue('overflow', text('payload'))?.message ?? '', /buffer limit/)
+    assert.equal(
+      buffer.enqueue('overflow', text('payload'))?.message,
+      'The coding agent sent too much data before it finished starting. Try again.',
+    )
     assert.deepEqual(buffer.take('0'), [])
   })
 
   it('bounds bytes even when the update count is small', () => {
     const buffer = new AcpStartupBuffer()
-    assert.match(
-      buffer.enqueue('opening', text('x'.repeat(ACP_STARTUP_BUFFER_MAX_BYTES / 2)))?.message ?? '',
-      /buffer limit/,
+    assert.equal(
+      buffer.enqueue('opening', text('x'.repeat(ACP_STARTUP_BUFFER_MAX_BYTES / 2)))?.message,
+      'The coding agent sent too much data before it finished starting. Try again.',
     )
     assert.deepEqual(buffer.take('opening'), [])
   })

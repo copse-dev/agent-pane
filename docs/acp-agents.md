@@ -83,12 +83,31 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   the identical retry (same command, working directory and thread) reuses it
   without prompting again. A retry that arrives while the prompt is still open
   simply joins it. Turn end still dismisses the prompt, as before.
-- Because that title is also how Copse recognises **its own** bridged tools to
-  skip a duplicate approval prompt, the same per-agent spread applies: Cursor's
-  `copse-gh_pr_list: gh_pr_list` and Claude's `mcp__copse__gh_pr_view` are both
-  recognised. Codex sends no title at all, so its bridged calls still prompt
-  twice — the bridge's own gate still enforces them, so this is noise, not a
-  hole.
+- Copse skips the agent's duplicate approval for **its own** bridged tools only
+  on adapter-authored provenance carried by the permission request itself,
+  never on a title prefix (#1446, [plan](plans/acp-tool-provenance.md)).
+  - **Claude** qualifies through `_meta.claudeCode.toolName`
+    (`mcp__copse__gh_pr_view`).
+  - **Cursor** qualifies through its exact permission-request title
+    (`copse-gh_pr_list: gh_pr_list`). A title is weak evidence, so a request
+    the agent marks `execute`, `edit`, `delete` or `move`, or one that carries a
+    command line in `rawInput.command`, is never delegated on
+    titles alone.
+  - **Codex** titles its notifications `mcp.copse.<tool>`, but its permission
+    requests carry no title and no `_meta` identity. An earlier report can
+    only veto a request's own claim, never stand in for one, so Codex's
+    bridged calls still prompt twice. The bridge's own gate still enforces
+    them, so this is noise, not a hole.
+
+  Every claim on the request and on the agent's earlier reports of the same
+  `toolCallId` must agree, and the tool must be one this session's own bridge
+  serves: a local agent with HTTP MCP whose bridge started. Titles match only
+  the literal observed shapes, so shell text such as `copse=;. ./run_shell`
+  claims nothing. Each delegation is recorded as an `acp` `allowed` decision.
+  The bridge's `bridge-request` record repeats its `toolCallId` when the call
+  can be matched (same tool, and the same arguments when the request carried
+  any), so an export can attribute both layers.
+
 - Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
   under the workspace seatbelt** on macOS when the project sandbox is active
   (issue #590): writes confined to the workspace, home denied except the agent's
@@ -100,7 +119,11 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
   `run_shell`: that reuses Copse's native permission decision and can run
   approved external commands outside the agent sandbox. Direct agent-shell
-  `git push`/`npm install` still fail inside the sandbox.
+  `git push`/`npm install` still fail inside the sandbox. An agent's own
+  per-command escape, such as Claude Code's `dangerouslyDisableSandbox`, cannot
+  lift a sandbox around its whole process either; Copse refuses Claude Code's
+  with an explanation (see
+  [shell permissions](shell-permissions.md#an-agents-own-sandbox-escape)).
 - **Client terminals** (issue #623): Copse advertises
   `clientCapabilities.terminal: true`, so a spec-following agent asks Copse to
   run each shell command (`terminal/create`) instead of using its own shell.
@@ -430,12 +453,10 @@ agents) always overrides the default, for example to point every thread at one
 shared config on purpose. Copse then adds no secure-storage override, so that
 directory behaves exactly as it does for the CLI on its own, login included.
 
-> **Known gap — sandboxed writes.** The seatbelt mounts the chat store
-> read-only and grants the agent writes only to its declared `homeDirs`
-> (`~/.claude`, …). A sandboxed agent can therefore read and refresh its login
-> but cannot write into its scoped directory (`.claude.json`, session
-> transcripts under `projects/`). Granting that directory is a separate
-> sandbox-policy change, not made here.
+A sandboxed agent may read and write its scoped directory (`.claude.json`,
+session transcripts under `projects/`). The rest of the chat store stays
+read-only to it, and a directory the agent's own `env` names is never granted,
+because it can be any path.
 
 This directory is a root-level sibling of `events.jsonl`, like the ACP wire
 trace: untouched by thread save/load, and carried along by "Export thread
@@ -511,7 +532,12 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
-  out (#590).
+  out (#590). A sandboxed agent reads its workspace, its declared `homeDirs`,
+  the thread-scoped config directory Copse creates for it (read and write), the
+  toolchains and git config contained commands get, and, when its preset sets
+  `allowMacOsKeychain` (the Claude presets, which keep their macOS login
+  there), `~/Library/Keychains`. It never gets the rest of the home directory:
+  no `~/.ssh`, cloud credentials or other projects.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

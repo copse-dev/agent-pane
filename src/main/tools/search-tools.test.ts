@@ -1,4 +1,4 @@
-import { describe, it, afterEach, beforeEach } from 'node:test'
+import { describe, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import { setIndexForTest } from '../services/search/file-index.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { setRgAvailableForTest } from '../services/tool-availability.ts'
 import { setIndexedGrepBackendForTest } from '../services/search/indexed-grep.ts'
+import { ownedIt } from '../services/thread-execution-context.test-support.ts'
 
 const noSignal = new AbortController().signal
 
@@ -31,27 +32,30 @@ describe('findFilesTool truncation flag', () => {
     restoreWorkspace?.()
   })
 
-  it('does NOT report truncation when total matches equal max_results (off-by-one)', async () => {
-    setIndexForTest(['a.ts', 'b.ts', 'c.ts'], testRoot)
-    const out = await runFindFiles({ pattern: '*.ts', max_results: 3 })
-    assert.doesNotMatch(out, /Truncated/)
-    assert.equal(out.split('\n').length, 3)
-  })
+  ownedIt(
+    'does NOT report truncation when total matches equal max_results (off-by-one)',
+    async () => {
+      setIndexForTest(['a.ts', 'b.ts', 'c.ts'], testRoot)
+      const out = await runFindFiles({ pattern: '*.ts', max_results: 3 })
+      assert.doesNotMatch(out, /Truncated/)
+      assert.equal(out.split('\n').length, 3)
+    },
+  )
 
-  it('reports truncation only when more matches exist than max_results', async () => {
+  ownedIt('reports truncation only when more matches exist than max_results', async () => {
     setIndexForTest(['a.ts', 'b.ts', 'c.ts', 'd.ts'], testRoot)
     const out = await runFindFiles({ pattern: '*.ts', max_results: 3 })
     assert.match(out, /\[Truncated at 3\]/)
     assert.equal(out.split('\n').length, 4) // 3 paths + truncation note
   })
 
-  it('returns a no-match message when nothing matches', async () => {
+  ownedIt('returns a no-match message when nothing matches', async () => {
     setIndexForTest(['a.ts'], testRoot)
     const out = await runFindFiles({ pattern: '*.md' })
     assert.match(out, /No files match/)
   })
 
-  it('finds bare filenames and extension globs at any depth', async () => {
+  ownedIt('finds bare filenames and extension globs at any depth', async () => {
     setIndexForTest(['package.json', 'packages/app/package.json', 'src/main.ts'], testRoot)
     assert.equal(
       await runFindFiles({ pattern: 'package.json' }),
@@ -60,7 +64,7 @@ describe('findFilesTool truncation flag', () => {
     assert.equal(await runFindFiles({ pattern: '*.ts' }), 'src/main.ts')
   })
 
-  it('keeps path-qualified globs scoped to their directory', async () => {
+  ownedIt('keeps path-qualified globs scoped to their directory', async () => {
     setIndexForTest(['src/main.ts', 'src/nested/other.ts', 'test/main.ts'], testRoot)
     assert.equal(await runFindFiles({ pattern: 'src/*.ts' }), 'src/main.ts')
   })
@@ -101,12 +105,12 @@ describe('searchCodeTool pattern/query aliasing', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('accepts the `query` alias in place of `pattern`', async () => {
+  ownedIt('accepts the `query` alias in place of `pattern`', async () => {
     const out = await runSearchCode({ query: 'authenticate' })
     assert.match(out, /auth\.ts/)
   })
 
-  it('reports a helpful message when neither pattern nor query is given', async () => {
+  ownedIt('reports a helpful message when neither pattern nor query is given', async () => {
     const out = await runSearchCode({})
     assert.match(out, /Provide a search pattern/)
     assert.match(out, /query/)
@@ -145,55 +149,64 @@ describe('searchCodeTool empty results under file_glob', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('says the pattern matches outside a glob that filtered it away', async () => {
+  ownedIt('says the pattern matches outside a glob that filtered it away', async () => {
     const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.tsx' })
     assert.match(out, /^No matches found within file_glob "\*\.tsx"\./)
     assert.match(out, /does match outside that glob \(e\.g\. auth\.ts\)/)
   })
 
-  it('does not claim matches outside the glob when the pattern is absent everywhere', async () => {
-    const out = await runSearchCode({ pattern: 'no_such_symbol', file_glob: '*.tsx' })
-    assert.match(out, /^No matches found within file_glob/)
-    assert.doesNotMatch(out, /does match outside/)
-  })
+  ownedIt(
+    'does not claim matches outside the glob when the pattern is absent everywhere',
+    async () => {
+      const out = await runSearchCode({ pattern: 'no_such_symbol', file_glob: '*.tsx' })
+      assert.match(out, /^No matches found within file_glob/)
+      assert.doesNotMatch(out, /does match outside/)
+    },
+  )
 
-  it('points at brace sets when the glob uses `|` as alternation', async () => {
+  ownedIt('points at brace sets when the glob uses `|` as alternation', async () => {
     const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*auth*|*view*' })
     assert.match(out, /not a regex/)
     assert.match(out, /\{\*a\*,\*b\*\}/)
   })
 
-  it('leaves the plain message for an empty search without a glob', async () => {
+  ownedIt('leaves the plain message for an empty search without a glob', async () => {
     assert.equal(await runSearchCode({ pattern: 'no_such_symbol' }), 'No matches found.')
   })
 
-  it('still returns matches normally when the glob matches', async () => {
+  ownedIt('still returns matches normally when the glob matches', async () => {
     const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.ts' })
     assert.match(out, /auth\.ts:1:/)
   })
-  it('explains excluded hits when ripgrep is unavailable', async () => {
+  ownedIt('explains excluded hits when ripgrep is unavailable', async () => {
     setRgAvailableForTest(false)
     const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.tsx' })
     assert.ok(out.startsWith('No matches found within file_glob "*.tsx".'))
     assert.ok(out.includes('does match outside that glob (e.g. auth.ts)'))
   })
 
-  it('preserves fallback errors and normal results, and avoids false excluded-hit claims', async () => {
-    setRgAvailableForTest(false)
-    assert.equal(
-      await runSearchCode({ pattern: '[', file_glob: '*.tsx' }),
-      'Invalid regular expression.',
-    )
-    assert.match(await runSearchCode({ pattern: 'authenticate', file_glob: '*.ts' }), /auth\.ts:1:/)
-    const absent = await runSearchCode({ pattern: 'absent', file_glob: '*.tsx' })
-    assert.ok(absent.startsWith('No matches found within file_glob'))
-    assert.doesNotMatch(absent, /does match outside/)
-    assert.equal(await runSearchCode({ pattern: 'absent' }), 'No matches found.')
-    assert.match(
-      await runSearchCode({ pattern: 'authenticate', file_glob: '*auth*|*view*' }),
-      /auth\.ts:1:/,
-    )
-    const pipeEmpty = await runSearchCode({ pattern: 'absent', file_glob: '*auth*|*view*' })
-    assert.doesNotMatch(pipeEmpty, /not a regex|does match outside/)
-  })
+  ownedIt(
+    'preserves fallback errors and normal results, and avoids false excluded-hit claims',
+    async () => {
+      setRgAvailableForTest(false)
+      assert.equal(
+        await runSearchCode({ pattern: '[', file_glob: '*.tsx' }),
+        'Invalid regular expression.',
+      )
+      assert.match(
+        await runSearchCode({ pattern: 'authenticate', file_glob: '*.ts' }),
+        /auth\.ts:1:/,
+      )
+      const absent = await runSearchCode({ pattern: 'absent', file_glob: '*.tsx' })
+      assert.ok(absent.startsWith('No matches found within file_glob'))
+      assert.doesNotMatch(absent, /does match outside/)
+      assert.equal(await runSearchCode({ pattern: 'absent' }), 'No matches found.')
+      assert.match(
+        await runSearchCode({ pattern: 'authenticate', file_glob: '*auth*|*view*' }),
+        /auth\.ts:1:/,
+      )
+      const pipeEmpty = await runSearchCode({ pattern: 'absent', file_glob: '*auth*|*view*' })
+      assert.doesNotMatch(pipeEmpty, /not a regex|does match outside/)
+    },
+  )
 })

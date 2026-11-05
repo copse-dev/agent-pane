@@ -25,7 +25,7 @@ import {
   createThread,
   deleteProjectThread,
   getThreadMeta,
-  loadProjectThreads,
+  loadProjectThreadMetas,
   updateMetaOrThrow,
 } from '../thread-store.ts'
 import { getActiveProjectId } from '../workspace.ts'
@@ -341,7 +341,8 @@ export interface AutomationServiceDependencies {
   ) => Promise<void>
   /** Thread-store removal; defaults to the native store. */
   deleteProjectThread?: (projectId: string, threadId: string) => Promise<void>
-  loadProjectThreads(projectId: string): Promise<Thread[]>
+  /** Run admission needs metadata only; never hydrate project transcripts. */
+  loadProjectThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
   /**
    * Whether this retained checkout is the one the next run will take over. A checkout that is
@@ -384,6 +385,7 @@ export function createAutomationService(
   const inFlight = new Set<string>()
   const triggerAttempts = new Map<string, AbortController>()
   const attemptedMinutes = new Map<string, number>()
+  const loadThreadMetas = dependencies.loadProjectThreadMetas ?? loadProjectThreadMetas
   const updateThreadMeta = dependencies.updateProjectThreadMeta ?? updateMetaOrThrow
   const removeThread = dependencies.deleteProjectThread ?? deleteProjectThread
 
@@ -793,7 +795,7 @@ export function createAutomationService(
   /** Release each finished run's checkout that is safe to remove; report what must stay. */
   async function releaseFinishedRuns(
     projectId: string,
-    threads: Thread[],
+    threads: Omit<Thread, 'messages'>[],
   ): Promise<AutomationCleanupResult> {
     const released: string[] = []
     const retained: AutomationRetainedWorktree[] = []
@@ -830,7 +832,7 @@ export function createAutomationService(
     triggerAttempts.set(schedule.id, attempt)
     const { signal } = attempt
     try {
-      const scheduleThreads = (await dependencies.loadProjectThreads(schedule.projectId)).filter(
+      const scheduleThreads = (await loadThreadMetas(schedule.projectId)).filter(
         (thread) => thread.automation?.scheduleId === schedule.id,
       )
       signal.throwIfAborted()
@@ -1150,7 +1152,7 @@ export function createAutomationService(
       if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
       inFlight.add(schedule.id)
       try {
-        const threads = (await dependencies.loadProjectThreads(projectId)).filter(
+        const threads = (await loadThreadMetas(projectId)).filter(
           (thread) => thread.automation?.scheduleId === schedule.id,
         )
         // A pending or running run owns its checkout; leave it alone.
@@ -1287,7 +1289,6 @@ export function getAutomationService(): AutomationService {
   singleton ??= createAutomationService({
     now: () => Date.now(),
     createProjectThread: createThread,
-    loadProjectThreads,
     releasePreviousRun: releaseCompletedAutomationWorktree,
     canReusePreviousRun: (projectId, threadId) =>
       getAutomationWorktreeReuse().canReusePreviousRun(projectId, threadId),
