@@ -9628,10 +9628,10 @@
     },
     {
       "modelId": "grok-4-7",
-      "value": 34.3,
+      "value": 35.3,
       "indexVersion": "v5",
-      "source": "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-10-29",
-      "asOf": "2026-10-29"
+      "source": "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
+      "asOf": "2026-11-03"
     },
     {
       "modelId": "nvidia-nemotron-3-ultra-550b-a55b",
@@ -9969,6 +9969,104 @@
       "indexVersion": "v5",
       "source": "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
       "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "granite-4-2-3b",
+      "value": 4.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'granite-4-2-3b', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "gemini-4-carbon-medium",
+      "value": 57.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "glm-5-3-flash",
+      "value": 27.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'glm-5-3-flash', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "nemotron-3-5-lightning",
+      "value": 5.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'nemotron-3-5-lightning', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "qwen3-8-27b-non-reasoning",
+      "value": 10,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-27b-non-reasoning', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "mistral-small-4",
+      "value": 4.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mistral-small-4', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "nanbeige4-3-33b",
+      "value": 20.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'nanbeige4-3-33b', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "kimi-k3-low",
+      "value": 17.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'kimi-k3-low', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "deepseek-v4-1-flash-1017-non-reasoning",
+      "value": 18.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-non-reasoning', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "qwen3-8-27b-medium",
+      "value": 17.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-27b-medium', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "qwen3-8-27b-low",
+      "value": 15.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-27b-low', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "granite-4-2-8b",
+      "value": 5.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'granite-4-2-8b', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "gemini-4-carbon-low",
+      "value": 53.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
+      "asOf": "2026-11-03"
+    },
+    {
+      "modelId": "deepseek-v4-1-flash-1017-high",
+      "value": 28.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
+      "asOf": "2026-11-03"
     }
   ],
   "wanted": [
