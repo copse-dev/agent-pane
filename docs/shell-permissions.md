@@ -449,6 +449,29 @@ otherwise remember an answer the user gave once and stop asking Copse. Agent man
 shows the agent's own request without Copse's shell classifier or remembered grants. Only its
 `allow_always` rule applies there: the dialog's box selects the agent's own option.
 
+### An agent's own sandbox escape
+
+Copse's sandbox wraps the whole agent process, so a per-command escape the agent
+offers itself cannot lift it. Claude Code's Bash `dangerouslyDisableSandbox: true`
+runs the command in the same sandbox, where it fails exactly as before. The
+agent cannot tell that from an ordinary sandboxed failure, so it retries (#4146).
+For a Claude agent that runs under Copse's sandbox on this machine,
+`acpSessionMeta` (`acp/acp-client.ts`) therefore sends Claude Code flag settings
+with every `session/new`, `session/resume` and `session/load`: one Bash
+`PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
+for the escape, the hook exits 2 and Claude Code returns its message to the model
+as the tool result. The message says the process runs inside Copse's sandbox and
+names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
+an outside run. When the session mounted no bridge, the message says so and tells
+the agent to ask the user instead.
+
+The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
+would not otherwise run, and leaves calls without the escape untouched. Claude
+Code's `sandbox.allowUnsandboxedCommands: false` is not used because it ignores
+the parameter silently. The sandbox prompt note says the same for every sandboxed
+agent. Agent managed thread mode, unsandboxed and SSH agents get no hook: there
+the agent's own escape is real or Copse has no sandbox to explain.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
