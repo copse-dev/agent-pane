@@ -35,7 +35,7 @@ import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 import { getProjectRoot } from '../workspace.ts'
-import { createThread, getProjectThread, loadProjectThreads } from '../thread-store.ts'
+import { createThread, getProjectThread, loadProjectThreadMetas } from '../thread-store.ts'
 import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
@@ -350,7 +350,8 @@ export interface BranchCiAutomationDependencies {
   labelEvents?(definition: BranchCiAutomation): Promise<LabelEventObservation[]>
   /** Whether the issue is still open and still carries the definition's label. */
   issueHasLabel?(definition: BranchCiAutomation, issue: number): Promise<boolean>
-  loadProjectThreads(projectId: string): Promise<Thread[]>
+  /** Admission and polling use metadata without reading conversation bodies. */
+  loadProjectThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
   getProjectThread(projectId: string, threadId: string): Promise<Thread | null>
   createProjectThread(projectId: string, thread: Thread): Promise<void>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
@@ -433,6 +434,7 @@ function isoToMillis(value: string, fallback: number): number {
 export function createBranchCiAutomationService(
   deps: BranchCiAutomationDependencies,
 ): BranchCiAutomationService {
+  const loadThreadMetas = deps.loadProjectThreadMetas ?? loadProjectThreadMetas
   const listeners = new Set<(event: AutomationTriggerEvent) => void>()
   const supervisor = deps.supervisor()
   const inboxStore = deps.inboxStore ?? new FileEventInboxStore()
@@ -547,7 +549,7 @@ export function createBranchCiAutomationService(
           return { allowed: false, reason: 'Automation is unavailable' }
         const stale = await staleReason(definition, record)
         if (stale) return { allowed: false, reason: stale }
-        const threads = (await deps.loadProjectThreads(definition.projectId)).filter(
+        const threads = (await loadThreadMetas(definition.projectId)).filter(
           (thread) => thread.automation?.scheduleId === definition.id,
         )
         if (
@@ -850,7 +852,7 @@ export function createBranchCiAutomationService(
     const pendingReady = new Set<number>()
     for (const candidate of result.candidates) {
       if (definition.trigger.kind === 'github-ci-failed') {
-        const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
+        const prior = (await loadThreadMetas(definition.projectId)).filter(
           (thread) => thread.automation?.scheduleId === definition.id,
         )
         if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
@@ -1339,7 +1341,6 @@ export function getBranchCiAutomationService(): BranchCiAutomationService {
           ? readIssueHasLabel(root, definition.trigger.repository, issue, definition.trigger.label)
           : Promise.resolve(false),
       ),
-    loadProjectThreads,
     getProjectThread,
     createProjectThread: createThread,
     releasePreviousRun: releaseCompletedAutomationWorktree,

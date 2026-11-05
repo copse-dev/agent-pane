@@ -449,6 +449,29 @@ otherwise remember an answer the user gave once and stop asking Copse. Agent man
 shows the agent's own request without Copse's shell classifier or remembered grants. Only its
 `allow_always` rule applies there: the dialog's box selects the agent's own option.
 
+### An agent's own sandbox escape
+
+Copse's sandbox wraps the whole agent process, so a per-command escape the agent
+offers itself cannot lift it. Claude Code's Bash `dangerouslyDisableSandbox: true`
+runs the command in the same sandbox, where it fails exactly as before. The
+agent cannot tell that from an ordinary sandboxed failure, so it retries (#4146).
+For a Claude agent that runs under Copse's sandbox on this machine,
+`acpSessionMeta` (`acp/acp-client.ts`) therefore sends Claude Code flag settings
+with every `session/new`, `session/resume` and `session/load`: one Bash
+`PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
+for the escape, the hook exits 2 and Claude Code returns its message to the model
+as the tool result. The message says the process runs inside Copse's sandbox and
+names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
+an outside run. When the session mounted no bridge, the message says so and tells
+the agent to ask the user instead.
+
+The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
+would not otherwise run, and leaves calls without the escape untouched. Claude
+Code's `sandbox.allowUnsandboxedCommands: false` is not used because it ignores
+the parameter silently. The sandbox prompt note says the same for every sandboxed
+agent. Agent managed thread mode, unsandboxed and SSH agents get no hook: there
+the agent's own escape is real or Copse has no sandbox to explain.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -1156,6 +1179,33 @@ Review-thread resolution checks the thread's repository and PR before mutation. 
 PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
 scripts, general network access, or tool calls from unrelated threads.
 
+## Remote artifact image downloads
+
+Automatic hydration of remote-agent artifact images never fetches image bytes in the Electron
+main process ([design and validation record](plans/sandboxed-artifact-image-downloads.md)).
+
+- **Authorization first.** The renderer names the project and thread it shows. Main requires the
+  thread's durable `remoteAgentLink`; an agent ID from the transcript only selects that link and
+  never creates one. Path, provenance and sandbox-platform checks run before any network request.
+- **One credentialed request.** Main asks the configured Cursor API for a signed URL with a 10 s
+  timeout and a 64 KiB bound, and does not follow redirects. The URL must be HTTPS on port 443,
+  without userinfo, a fragment or an IP literal, on an exact approved download origin. A returned
+  URL never approves its own host.
+- **Per-job host and confinement.** Each download gets a short-lived host
+  (`dist/main/artifact-image-host.js`) with its own ASRT manager and egress proxy, so the
+  allowlist never touches main's process-global scope or another job. The downloader runs inside
+  ASRT with no writes, home and temp reads denied, no Unix sockets or local binding, and an
+  environment built from scratch. Its only route is the job proxy: authenticated `CONNECT` to an
+  approved host on 443, resolved once, refused if any answer is non-public, and dialled by vetted
+  address.
+- **Bounded, verified output.** At most three redirects, each rechecked. Identity encoding only.
+  PNG, JPEG, GIF or WebP with a matching signature, at most 16,384 px per side and 40 Mpx. 15 MiB
+  enforced while streaming, a 30 s deadline and a 10 s idle stall. Main and the host each verify
+  the frames, digest and type on their own; partial output is never shown or cached.
+- **Fail closed.** Windows, a failed ASRT start or a policy denial leaves the image unavailable
+  with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
+  retry re-authorizes and fetches a fresh signed URL.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
@@ -1247,6 +1297,9 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
+- `remote/artifact-image/`: automatic artifact-image hydration. `service.ts` (authorization,
+  queue, cache), `host.ts` / `host-entry.ts` (per-job ASRT and proxy), `egress-proxy.ts`,
+  `downloader.ts` / `downloader-entry.ts` (the confined client) and `policy.ts`.
 - `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
   permission catalogue, and corroboration of renderer-visible provenance against the schedule's
   main-owned latest-run record.
