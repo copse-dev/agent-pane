@@ -517,6 +517,15 @@ describe('buildAcpPrompt', () => {
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
+  it('keeps the GitHub steer, but not the run_shell steer, for an agent without Copse tools', () => {
+    const prompt = buildAcpPrompt('hello', [], { sandboxed: true, copseTools: false })
+    assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
+    assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
+    assert.doesNotMatch(prompt, /Prefer the "copse" MCP tools/)
+    assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
+    assert.match(prompt, /hello$/)
+  })
+
   it('places the notes ahead of the replayed transcript', () => {
     const prompt = buildAcpPrompt('next', [{ role: 'user', content: 'earlier' }], {
       sandboxed: true,

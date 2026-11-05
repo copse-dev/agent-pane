@@ -916,17 +916,24 @@ async function runAcpAgentTurn(
     // An offer is not a mount (#4144): the agent has Copse's tools only once
     // it lists them. It normally does so while its session opens; give it the
     // rest of a short window before the prompt claims them.
-    const bridgeMounted = sessionBridge
+    const bridgeMount = sessionBridge
       ? await perfSpan('ttft:acp-bridge-mount', () =>
           awaitAcpBridgeMount(sessionBridge, entry.openedAt, options.signal),
         )
-      : false
+      : null
+    const bridgeMounted = bridgeMount === 'listed'
     let copseToolsNote: string | undefined
     if (sessionBridge && bridgeMounted) {
       if (markAcpBridgeAvailable(sessionBridge)) {
-        copseToolsNote = acpCopseToolsConnectedPromptNote(ACP_COPSE_TOOLS_PROMPT_NOTE)
+        copseToolsNote = acpCopseToolsConnectedPromptNote(acpCopseToolsSteering(sandboxed))
       }
-    } else if (sessionBridge && noteBridgeUnavailable(sessionBridge)) {
+    } else if (
+      // A Stop pressed while the agent was still connecting is not a failed
+      // mount: the prompt below is never sent, and the next turn decides.
+      sessionBridge &&
+      bridgeMount === 'unlisted' &&
+      noteBridgeUnavailable(sessionBridge)
+    ) {
       console.warn(
         `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,
       )
@@ -1812,8 +1819,25 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   '\n\n' +
   ACP_SANDBOX_GITHUB_STEER
 
-/** {@link ACP_SANDBOX_PROMPT_NOTE} for an agent without Copse's bridged tools. */
-const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS = `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}`
+/**
+ * {@link ACP_SANDBOX_PROMPT_NOTE} for an agent without Copse's bridged tools:
+ * no run_shell steer. The GitHub steer stays, since its "do not call github.com
+ * from this process" holds with or without the bridge.
+ */
+const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
+  `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}` + '\n\n' + ACP_SANDBOX_GITHUB_STEER
+
+/**
+ * The Copse-tool steering a session's notes carry once its agent has listed
+ * the tools: what an agent told they were unavailable gets back when it lists
+ * them late (#4144). A sandboxed session also gets back its run_shell and
+ * GitHub steering, which the unavailable note told it to ignore.
+ */
+function acpCopseToolsSteering(sandboxed: boolean): string {
+  return sandboxed
+    ? `${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${ACP_SANDBOX_GITHUB_STEER}`
+    : ACP_COPSE_TOOLS_PROMPT_NOTE
+}
 
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
