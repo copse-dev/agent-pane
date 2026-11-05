@@ -199,7 +199,7 @@ export function initSkillPicker(opts: SkillPickerOptions): SkillPickerController
   })
 
   input.el.addEventListener('keydown', (e) => {
-    if (picker.hidden) return
+    if (picker.hidden || e.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       selectedIdx = Math.min(selectedIdx + 1, currentSkills.length - 1)

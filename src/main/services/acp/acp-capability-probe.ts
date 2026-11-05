@@ -9,7 +9,7 @@ import {
   type NewSessionResponse,
   type SessionUpdate,
   type Stream,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn } from 'node:child_process'
 import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
@@ -215,7 +215,6 @@ export function extractCapabilitySnapshot(
 
   const unstable: string[] = []
   if (has(caps?.providers)) unstable.push('providers')
-  if (has(caps?.nes)) unstable.push('nes')
   if (has(session?.fork)) unstable.push('sessionCapabilities.fork')
   if (mcp?.acp === true) unstable.push('mcpCapabilities.acp')
 

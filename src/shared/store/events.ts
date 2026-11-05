@@ -61,13 +61,9 @@ export interface StoreEvents {
   // A fresh chat was opened (new blank thread reused or created). Used to refresh
   // provider-reported model context windows so the new chat reflects current limits.
   new_thread_opened: []
-  panel_changed: []
   explorer_reveal: [path: string]
   workspace_changed: []
   projects_changed: []
-  files_pane_changed: []
-  right_panel_mode_changed: []
-  sidebar_project_filter_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
@@ -89,8 +85,6 @@ export interface StoreEvents {
   /** Promote an already-rendered artefact tab to the front. */
   canvas_artefact_show_requested: [identity: CanvasArtefactIdentity]
   settings_changed: []
-  theme_changed: ['light' | 'dark']
-  staged_diffs_changed: []
   usage_updated: [threadId: string]
   context_updated: [threadId: string]
   todos_changed: [threadId: string]

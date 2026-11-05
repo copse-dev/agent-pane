@@ -40,10 +40,8 @@ describe('panel mode controls: side chat', () => {
   it('shows the control while its panel is open', () => {
     const { store, sideChat } = mount()
     store.setState({ filesPaneOpen: true, rightPanelMode: 'side-chat' })
-    store.emit('right_panel_mode_changed')
     assert.equal(sideChat().hidden, false)
     store.setState({ rightPanelMode: 'terminal' })
-    store.emit('right_panel_mode_changed')
     assert.equal(sideChat().hidden, true)
   })
 
@@ -58,5 +56,39 @@ describe('panel mode controls: side chat', () => {
     store.emit('threads_changed')
     assert.equal(sideChat().hidden, false)
     assert.equal(sideChat().querySelector('.titlebar-btn-badge')?.textContent, '1')
+  })
+})
+
+describe('panel mode controls: changes badge', () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('repaints the pending-diff count from setState alone', () => {
+    const store = createStore()
+    const controls = mountPanelModeControls(store, createFakeApi())
+    document.body.append(controls.element)
+    const changes = controls.element.querySelector<HTMLButtonElement>(
+      '[data-panel-control="changes"]',
+    )
+    assert.ok(changes)
+    const badge = changes.querySelector<HTMLElement>('.titlebar-btn-badge')
+    assert.ok(badge)
+    assert.equal(badge.hidden, true)
+
+    store.setState({
+      stagedDiffs: [
+        { path: 'a.ts', language: 'typescript' },
+        { path: 'b.ts', language: 'typescript' },
+      ],
+    })
+    assert.equal(badge.hidden, false)
+    assert.equal(badge.textContent, '2')
+    assert.equal(changes.classList.contains('has-pending'), true)
+
+    store.setState({ stagedDiffs: [] })
+    assert.equal(badge.hidden, true)
+    assert.equal(changes.classList.contains('has-pending'), false)
+    controls.destroy()
   })
 })

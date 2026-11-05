@@ -1,7 +1,8 @@
 # Default-on readiness of opt-in features
 
 Status: **Reference** (audit compiled from `main` at `edb1f4419` on 2026-09-25; pull-request,
-issue and test-inventory status refreshed at `c4304b6ec`; no defaults changed).
+issue and test-inventory status refreshed at `c4304b6ec`; MCP-UI canvas enabled 2026-10-31,
+signed off by Jonathan Kingston — see "MCP-UI canvas" below — no other defaults changed).
 
 Many features shipped since August are off by default, so the marketing site cannot advertise
 them. This audit asks, for each one, whether it is mature enough to turn on for new users. It
@@ -12,36 +13,36 @@ Each item was judged on the same criteria: who it is for; test coverage in the e
 open bugs and recent fix churn; per-turn cost and external dependencies; security and
 permission scope; failure behaviour; UX polish; and rollout to existing profiles.
 
-**No item is ready to enable today.** Seven are close, and each has a follow-up issue listing the
-remaining work. The rest should stay opt-in for the reasons given below. The line numbers cited
-are from the audited commit.
+**No other item is ready to enable today.** Six are close, and each has a follow-up issue listing
+the remaining work. The rest should stay opt-in for the reasons given below. The line numbers
+cited are from the audited commit (stale for MCP-UI canvas; see its section for current ones).
 
 ## Summary
 
-| Feature                                                                                                          | Where gated                                                  | Recommendation                | Key evidence                                                                                                       | Blockers                                                                                                               |
-| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| MCP-UI canvas (`copse.mcp-ui-canvas`)                                                                            | Plugin manifest; `mcp-registry.ts:466-496`                   | **Enable after X** — sign-off | Enabled-state e2e (`canvas-artefact-refresh`, `browser-session-restore`); layered CSP/opaque-origin/network policy | Plugin toggle does not reload MCP servers; ACP inline path ungated; CSP unit test; migration                           |
-| Apple Development (`copse.apple-development`)                                                                    | Plugin manifest; `xcodebuildmcp.ts:110-120`                  | **Enable after X** — sign-off | Inert until a project is enrolled; good unit coverage; demo scenario exists                                        | No recorded macOS e2e run (#2719); tool offered on every OS; preview depends on `vncEnabled`; migration                |
-| Copse Reviewer (`copse.review`)                                                                                  | Plugin manifest; `registry-bootstrap.ts:291-296`             | **Enable after X** — sign-off | Fails closed to read-only review; anchored multi-report history (#2826); seeded-report e2e specs                   | Very new and high-churn; no pipeline e2e; no cost estimate; model-comparison carry-over                                |
-| Automations (`copse.automations`)                                                                                | Plugin manifest; `automation-service.ts:149,324,351`         | **Enable after X** — sign-off | Inert until a schedule is saved; real cron-boundary e2e (`automation-trigger.e2e.ts`)                              | No spend budget; an unanswered approval still stalls a run (now named in Activity after 15 min, not resolved)          |
-| Roadmap plans (`copse.roadmap-plans`)                                                                            | Plugin manifest; `registry-bootstrap.ts:274-280`             | **Enable after X**            | 17 `roadmap-*.e2e.ts` specs with screenshots, 63-case pane unit suite                                              | `roadmap_plan` writes to the _active_ project, not the thread's; #2510; migration                                      |
-| CI investigator (`copse.ci-investigator`)                                                                        | Plugin manifest; `registry-bootstrap.ts:396-406`             | **Enable after X**            | Read-only `gh`; unregistered when `gh` is absent or unauthenticated                                                | Follow-up points at `investigate_ci` while `subagentsEnabled` is off; no sync/service tests; migration                 |
-| Forced planning (`copse.forced-planning`)                                                                        | Plugin manifest; `turn-start-hooks.ts:138-158`               | **Enable after X**            | Pure, byte-identical when off, conforms to hooks plan P12                                                          | No recorded steer-eval lift; overlaps todo steering; e2e seed list omits it; doc edits (P12)                           |
-| OKF memories (`copse.okf-memories`)                                                                              | Plugin manifest; `registry-bootstrap.ts:254-262`             | Keep opt-in — sign-off        | Pane e2e only; nothing drives `remember`/`recall` in a turn                                                        | Store keyed by the active project; provenance gaps (reported privately); uncapped `recall`                             |
-| Long-horizon tasks (`copse.long-horizon-tasks`)                                                                  | Plugin manifest; `registry-bootstrap.ts:308-314`             | Keep opt-in — sign-off        | Wakes obey the continuation budget; unit tests only; #558 open                                                     | Store keyed by the active project; no UI; hooks-plan decision 5 omits long-task wakes                                  |
-| Dark factory (`copse.dark-factory`)                                                                              | Plugin manifest; `dark-factory-sensor.ts:61`                 | Keep opt-in                   | Emits an event nothing subscribes to                                                                               | No consumer; description overstates it; no upgrade seed (see Rollout)                                                  |
-| Advisor strategy (`copse.advisor-strategy`)                                                                      | Plugin manifest; `registry-bootstrap.ts:326-331`             | Keep opt-in — sign-off        | No runner test, no loop e2e                                                                                        | Uncapped transcript; `maxTokens` never applied; Stop does not abort; cross-provider egress without consent             |
-| Artifact checkpoint (`copse.artifact-checkpoint`)                                                                | Plugin manifest; `run-agent-loop.ts:1183-1208`               | Keep opt-in                   | Cheap and well-contained; unit tests only                                                                          | Benchmark-shaped steering with no product A/B; wording wrong for research/refactor runs                                |
-| PII redaction (`copse.pii-redaction`)                                                                            | Plugin manifest; `pii-redactor.ts:91-93`                     | Keep opt-in — sign-off        | Tests use a fake Rampart only                                                                                      | Redacts every URL/IP in coding prompts; fails open silently; placeholder numbering resets on restart                   |
-| Parallel Search (`copse.parallel-search`) — **removed 2026-10-29**, folded into `web_search`'s Parallel provider | Plugin manifest; `registry-bootstrap.ts:460-468`             | N/A                           | Paid third-party API; enabling _is_ the network consent (`permission-gate.ts:724-735`)                             | By design: needs the user's own key and consent                                                                        |
-| DevTools shortcut (`copse.devtools-shortcut`)                                                                    | Plugin manifest; `create-main-window.ts:304-336`             | Keep opt-in                   | Developer affordance                                                                                               | `globalShortcut` steals Ctrl+Shift+I system-wide                                                                       |
-| Remote desktop viewer (`vncEnabled`)                                                                             | `settings-dialog.ts:300`; `ipc/vnc.ts` (≈11 inline defaults) | Keep opt-in — sign-off        | Good unit and e2e coverage when enabled                                                                            | Discovery (port scan, Bonjour, SSH) runs at every launch; LAN/SSH VNC not separable from local devices; stale copy     |
-| Next-step tab complete (`nextStepSuggestionEnabled`)                                                             | `next-step-service.ts`; `next-step-hint.ts`                  | On by default                 | Default-state unit and e2e coverage; toggle under Appearance                                                       | Second small-tasks call per turn; users can opt out under Appearance                                                   |
-| Unattended container runs (`containerRunsEnabled`)                                                               | `container-run-service.ts:322`; `input-bar.ts:414`           | Keep opt-in — sign-off        | Large unit suite; hardened container design                                                                        | Docker path has no required CI (advisory workflow added, never yet run); no cost/idle budget; #2689; no named reviewer |
-| Model classifier (`modelClassifierEnabled`)                                                                      | `registry-bootstrap.ts:139-141`                              | Keep opt-in                   | Pure heuristic, 13 unit tests                                                                                      | Advice nothing consumes; toggle needs a restart; no enabled-state test                                                 |
-| Delegating steps (`orchestrationStrategyEnabled`)                                                                | `registry-bootstrap.ts:155-157`                              | Keep opt-in — sign-off        | Worker goes through the permission gate                                                                            | Runner untested; bypasses afterToolUse hooks; no spend cap; toggle needs a restart                                     |
-| ACP over SSH (`acpOverSshEnabled`)                                                                               | `acp-ssh-transport.ts:60-76`                                 | Keep opt-in — sign-off        | Unit tests only                                                                                                    | No e2e/integration; design doc stale; security findings reported privately                                             |
-| Developer mode (`developerMode`)                                                                                 | `settings-dialog.ts:329`                                     | Keep opt-in                   | Developer affordance                                                                                               | Exposes hook configuration and main-window DevTools                                                                    |
+| Feature                                                                                                          | Where gated                                                  | Recommendation                                          | Key evidence                                                                                                       | Blockers                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| MCP-UI canvas (`copse.mcp-ui-canvas`)                                                                            | Plugin manifest; `mcp-registry.ts:466-496`                   | **Enabled 2026-10-31** — signed off (Jonathan Kingston) | Enabled-state e2e (`canvas-artefact-refresh`, `browser-session-restore`); layered CSP/opaque-origin/network policy | None open — see "MCP-UI canvas" below                                                                                  |
+| Apple Development (`copse.apple-development`)                                                                    | Plugin manifest; `xcodebuildmcp.ts:110-120`                  | **Enable after X** — sign-off                           | Inert until a project is enrolled; good unit coverage; demo scenario exists                                        | No recorded macOS e2e run (#2719); tool offered on every OS; preview depends on `vncEnabled`; migration                |
+| Copse Reviewer (`copse.review`)                                                                                  | Plugin manifest; `registry-bootstrap.ts:291-296`             | **Enable after X** — sign-off                           | Fails closed to read-only review; anchored multi-report history (#2826); seeded-report e2e specs                   | Very new and high-churn; no pipeline e2e; no cost estimate; model-comparison carry-over                                |
+| Automations (`copse.automations`)                                                                                | Plugin manifest; `automation-service.ts:149,324,351`         | **Enable after X** — sign-off                           | Inert until a schedule is saved; real cron-boundary e2e (`automation-trigger.e2e.ts`)                              | No spend budget; an unanswered approval still stalls a run (now named in Activity after 15 min, not resolved)          |
+| Roadmap plans (`copse.roadmap-plans`)                                                                            | Plugin manifest; `registry-bootstrap.ts:274-280`             | **Enable after X**                                      | 17 `roadmap-*.e2e.ts` specs with screenshots, 63-case pane unit suite                                              | `roadmap_plan` writes to the _active_ project, not the thread's; #2510; migration                                      |
+| CI investigator (`copse.ci-investigator`)                                                                        | Plugin manifest; `registry-bootstrap.ts:396-406`             | **Enable after X**                                      | Read-only `gh`; unregistered when `gh` is absent or unauthenticated                                                | Follow-up points at `investigate_ci` while `subagentsEnabled` is off; no sync/service tests; migration                 |
+| Forced planning (`copse.forced-planning`)                                                                        | Plugin manifest; `turn-start-hooks.ts:138-158`               | **Enable after X**                                      | Pure, byte-identical when off, conforms to hooks plan P12                                                          | No recorded steer-eval lift; overlaps todo steering; e2e seed list omits it; doc edits (P12)                           |
+| OKF memories (`copse.okf-memories`)                                                                              | Plugin manifest; `registry-bootstrap.ts:254-262`             | Keep opt-in — sign-off                                  | Pane e2e only; nothing drives `remember`/`recall` in a turn                                                        | Store keyed by the active project; provenance gaps (reported privately); uncapped `recall`                             |
+| Long-horizon tasks (`copse.long-horizon-tasks`)                                                                  | Plugin manifest; `registry-bootstrap.ts:308-314`             | Keep opt-in — sign-off                                  | Wakes obey the continuation budget; unit tests only; #558 open                                                     | Store keyed by the active project; no UI; hooks-plan decision 5 omits long-task wakes                                  |
+| Dark factory (`copse.dark-factory`)                                                                              | Plugin manifest; `dark-factory-sensor.ts:61`                 | Keep opt-in                                             | Emits an event nothing subscribes to                                                                               | No consumer; description overstates it; no upgrade seed (see Rollout)                                                  |
+| Advisor strategy (`copse.advisor-strategy`)                                                                      | Plugin manifest; `registry-bootstrap.ts:326-331`             | Keep opt-in — sign-off                                  | No runner test, no loop e2e                                                                                        | Uncapped transcript; `maxTokens` never applied; Stop does not abort; cross-provider egress without consent             |
+| Artifact checkpoint (`copse.artifact-checkpoint`)                                                                | Plugin manifest; `run-agent-loop.ts:1183-1208`               | Keep opt-in                                             | Cheap and well-contained; unit tests only                                                                          | Benchmark-shaped steering with no product A/B; wording wrong for research/refactor runs                                |
+| PII redaction (`copse.pii-redaction`)                                                                            | Plugin manifest; `pii-redactor.ts:91-93`                     | Keep opt-in — sign-off                                  | Tests use a fake Rampart only                                                                                      | Redacts every URL/IP in coding prompts; fails open silently; placeholder numbering resets on restart                   |
+| Parallel Search (`copse.parallel-search`) — **removed 2026-10-29**, folded into `web_search`'s Parallel provider | Plugin manifest; `registry-bootstrap.ts:460-468`             | N/A                                                     | Paid third-party API; enabling _is_ the network consent (`permission-gate.ts:724-735`)                             | By design: needs the user's own key and consent                                                                        |
+| DevTools shortcut (`copse.devtools-shortcut`)                                                                    | Plugin manifest; `create-main-window.ts:304-336`             | Keep opt-in                                             | Developer affordance                                                                                               | `globalShortcut` steals Ctrl+Shift+I system-wide                                                                       |
+| Remote desktop viewer (`vncEnabled`)                                                                             | `settings-dialog.ts:300`; `ipc/vnc.ts` (≈11 inline defaults) | Keep opt-in — sign-off                                  | Good unit and e2e coverage when enabled                                                                            | Discovery (port scan, Bonjour, SSH) runs at every launch; LAN/SSH VNC not separable from local devices; stale copy     |
+| Next-step tab complete (`nextStepSuggestionEnabled`)                                                             | `next-step-service.ts`; `next-step-hint.ts`                  | On by default                                           | Default-state unit and e2e coverage; toggle under Appearance                                                       | Second small-tasks call per turn; users can opt out under Appearance                                                   |
+| Unattended container runs (`containerRunsEnabled`)                                                               | `container-run-service.ts:322`; `input-bar.ts:414`           | Keep opt-in — sign-off                                  | Large unit suite; hardened container design                                                                        | Docker path has no required CI (advisory workflow added, never yet run); no cost/idle budget; #2689; no named reviewer |
+| Model classifier (`modelClassifierEnabled`)                                                                      | `registry-bootstrap.ts:139-141`                              | Keep opt-in                                             | Pure heuristic, 13 unit tests                                                                                      | Advice nothing consumes; toggle needs a restart; no enabled-state test                                                 |
+| Delegating steps (`orchestrationStrategyEnabled`)                                                                | `registry-bootstrap.ts:155-157`                              | Keep opt-in — sign-off                                  | Worker goes through the permission gate                                                                            | Runner untested; bypasses afterToolUse hooks; no spend cap; toggle needs a restart                                     |
+| ACP over SSH (`acpOverSshEnabled`)                                                                               | `acp-ssh-transport.ts:60-76`                                 | Keep opt-in — sign-off                                  | Unit tests only                                                                                                    | No e2e/integration; design doc stale; security findings reported privately                                             |
+| Developer mode (`developerMode`)                                                                                 | `settings-dialog.ts:329`                                     | Keep opt-in                                             | Developer affordance                                                                                               | Exposes hook configuration and main-window DevTools                                                                    |
 
 "Sign-off" means the item touches sandbox, network, credential or data-egress scope. Changing its
 default needs a **named human reviewer** under [`docs/shell-permissions.md`](../shell-permissions.md),
@@ -77,12 +78,14 @@ the list belongs to the user.
 - Rollout gap: plugins added after a profile already had a list need an upgrade seed to stay off.
   Automations, artifact checkpoint and Apple Development have one (Parallel Search did too,
   before the plugin was removed 2026-10-29 and folded into `web_search`'s Parallel provider).
-  `copse.dark-factory` (added 2026-08-04), and `copse.mcp-ui-canvas`, `copse.devtools-shortcut` and
+  `copse.dark-factory` (added 2026-08-04), and `copse.devtools-shortcut` and
   `copse.forced-planning` (added 2026-07-26), do not. The first public beta shipped on 2026-08-14,
-  after all four were added, so released profiles were seeded correctly. Only older development
+  after all three were added, so released profiles were seeded correctly. Only older development
   profiles have these plugins on without having opted in. Dark factory is the one to fix before it
-  gains a consumer. The comments claiming a migration from the retired `mcpUiArtefactsEnabled`
-  (`mcp-ui-canvas-plugin.ts:24-29`, `plugin-service.ts:115-116`) are wrong.
+  gains a consumer. `copse.mcp-ui-canvas` (also added 2026-07-26) no longer needs this seed: it
+  graduated to stable/default-on 2026-10-31, so a profile that had it on without an explicit opt-in
+  is simply on the new default now, and `migrateMcpUiCanvasStable()` graduates every other existing
+  profile the same way `migrateBackgroundTasksStable()` did.
 - The e2e fixture list `DEFAULT_DISABLED_PLUGIN_IDS` in `tests/e2e/helpers/seed-config.ts:45-60`
   omits `copse.forced-planning`, so seeded e2e profiles run with it on.
 
@@ -105,7 +108,7 @@ trust badge.
 
 ## Plugins
 
-### MCP-UI canvas — Enable after X (sign-off)
+### MCP-UI canvas — Enabled 2026-10-31 (signed off: Jonathan Kingston)
 
 - **What:** `render_html_artefact` from the bundled in-process `copse-canvas` server
   (`src/main/services/mcp/bundled-mcp-server.ts:74-144`). It renders agent-authored HTML as a
@@ -113,26 +116,41 @@ trust badge.
   screenshot and annotate it (`canvas-agent-mirror.ts`). A turn-start hook steers prototype requests
   onto the tool. It suits a typical user asking for a prototype, chart or demo.
 - **Tests:** unit tests for the plugin, steering, bundled server, canvas store, dispatch and mirror,
-  plus `browser-network-policy.test.ts:67-160`. Enabled-state e2e: `canvas-artefact-refresh.e2e.ts`,
+  plus `browser-network-policy.test.ts:67-160` and `preview-csp.test.ts` (added by #3099, closing the
+  earlier CSP coverage gap). Enabled-state e2e: `canvas-artefact-refresh.e2e.ts`,
   `browser-session-restore.e2e.ts`, `settings-tool-permissions.e2e.ts`, and
   `canvas-background-parity.e2e.ts`. Its rollup-timing race, exposed by #2851, was stabilized in
-  #2866. There is no test for `securePreviewHtml`/`PREVIEW_CSP`.
-- **Issues/churn:** #611 is open (full MCP Apps spec, an enhancement) and #3003 is open (annotation
-  anchoring). There have been about 6 canvas fix commits since 2026-08-01.
+  #2866.
+- **Issues/churn:** #611 is open (full MCP Apps spec, an enhancement — explicitly out of scope for
+  this graduation, see `docs/plans/mcp-apps-support.md`) and #3003 is open (annotation anchoring).
+  There have been about 6 canvas fix commits since 2026-08-01.
 - **Cost:** about 1 KB of tool schema per turn. Steering text of about 1.3 KB is added only on
   prototype turns. No external dependencies.
 - **Security:** rendering uses an opaque `data:` origin with a leading CSP, blocks network requests
   and page-driven navigation, and confines path reads to the workspace. Turning it on by default makes
   the bundled-tool auto-allow (`permission-policy.ts:651-653`) and UI rendering from external MCP
-  servers live for everyone, so a security reviewer should confirm the rendering boundary.
+  servers live for everyone. Reviewed and signed off 2026-10-31 against that rendering boundary,
+  conditional on closing the two bugs below first.
 - **Failure:** degrades gracefully. Wiring or mirror failures give no preview; a bad path returns
   `isError`.
-- **Bugs:** `plugins:set-enabled` (`register-handlers.ts:2123-2206`) never reloads MCP servers for this
-  plugin. Disabling it live leaves the tool registered while the summariser is off, so a render can
-  push up to 512 KB of HTML into the model context. Enabling it live shows no tool until restart. The
-  ACP inline-visualization path (`agent-service.ts:1038-1050`) is not gated by the capability at all,
-  so inline visualizations already render for ACP agents with the plugin off.
-- **Remaining:** [#3068](https://github.com/copse-dev/agent-pane/issues/3068).
+- **Bugs (resolved before sign-off):**
+  - `plugins:set-enabled` not reloading MCP servers for this plugin was already fixed by #3099
+    (`reloadMcpServersForPluginToggle` in `mcp-registry.ts`, wired into the handler in
+    `register-handlers.ts`), confirmed still correct and covered by
+    `mcp-registry-plugin-toggle.test.ts`.
+  - The ACP inline-visualization path (`agent-service.ts`'s `inlineVisualizationFilter`, dispatching
+    through `dispatchInlineVisualization` in `inline-visualization.ts`) was not gated by the
+    capability at all — it rendered for ACP agents regardless of the plugin's enabled state. Fixed
+    2026-10-31: `dispatchInlineVisualization` now checks
+    `getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)` before touching the
+    filesystem or dispatching, covered by `inline-visualization.test.ts`. Disabling the plugin now
+    turns off both the bundled tool and the ACP variant in one flag flip.
+  - Existing profiles are graduated once by `migrateMcpUiCanvasStable()`
+    (`src/main/services/plugins/plugin-service.ts`), the same shape as
+    `migrateBackgroundTasksStable()`; a disable made after the migration remains the user's own
+    choice.
+- **Remaining:** [#3068](https://github.com/copse-dev/agent-pane/issues/3068) (tracked follow-up, not
+  a blocker for default-on).
 
 ### Apple Development — Enable after X (sign-off)
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -188,6 +189,79 @@ describe('MCP validation', () => {
     await saveAppScreenshot('mcp-chat-toolcall.png')
     await scenario.assertComplete()
   })
+
+  const nativeDefaultsErrors = [
+    {
+      id: 'profile',
+      screenshot: 'mcp-native-profile-error.png',
+      title: 'profile error and its recovery instruction',
+      args: { profile: 'missing-validation-profile' },
+      expected: 'createIfNotExists=true',
+    },
+    {
+      id: 'simulator-creation',
+      screenshot: 'mcp-native-simulator-creation-error.png',
+      title: 'simulator-creation flag error',
+      args: { simulatorName: 'Disposable validation', createIfNotExists: true },
+      expected: 'does not create a Simulator',
+    },
+  ]
+  for (const example of nativeDefaultsErrors) {
+    it(`shows the actual native ${example.title}`, async function () {
+      this.timeout(60_000)
+      const require = createRequire(join(process.cwd(), 'package.json'))
+      await startWorkspace(`mcp-native-${example.id}-error`, {
+        native_fixture: {
+          command: process.execPath,
+          args: [require.resolve('xcodebuildmcp'), 'mcp'],
+          env: {
+            XCODEBUILDMCP_ENABLED_WORKFLOWS: 'session-management',
+            XCODEBUILDMCP_SENTRY_DISABLED: 'true',
+          },
+        },
+      })
+      await browser.waitUntil(
+        async () =>
+          (await browser.execute(() => window.api.mcp.list())).some(
+            (server) => server.name === 'native_fixture' && server.state === 'connected',
+          ),
+        { timeout: 30_000 },
+      )
+      const scenario = await installMockScenario({
+        title: 'Recover a native defaults error',
+        turns: [
+          {
+            user: 'Apply these native session defaults.',
+            responses: [
+              {
+                toolCalls: [
+                  { name: 'mcp__native_fixture__session_set_defaults', args: example.args },
+                ],
+              },
+              {
+                text: 'The native defaults were not changed. The service returned a corrective instruction.',
+                expectToolResults: [
+                  { name: 'mcp__native_fixture__session_set_defaults', includes: example.expected },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+      await setComposerValue('Apply these native session defaults.')
+      await $('.submit-btn').click()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await dialog.$('.approval-approve').click()
+      await waitForAgentIdle(30_000)
+      const card = $('.tool-card[data-tool-id][data-status="error"]')
+      await card.waitForExist({ timeout: 10_000 })
+      if (!(await card.getProperty('open'))) await card.$('.tool-card-header').click()
+      await expect(card.$('.tool-result')).toHaveText(expect.stringContaining(example.expected))
+      await saveAppScreenshot(example.screenshot)
+      await scenario.assertComplete()
+    })
+  }
 
   it('asks for approval before an untrusted MCP tool runs', async function () {
     this.timeout(60_000)

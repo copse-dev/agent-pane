@@ -7,9 +7,9 @@ still specification. It covers R-04, R-06, R-20 and R-22 from
 [`user-control-surface-gaps.md`](user-control-surface-gaps.md), which collapse into a
 single surface and should be one issue rather than four.
 
-> **Placement is being revised.** Slice 1 put the Activity panel in an overlay. The plan in
-> [`new-thread-activity-screen.md`](new-thread-activity-screen.md) keeps the overlay and also
-> shows the same view as the default new-thread screen. The slice 1 rationale below is the
+> **Placement (resolved).** Slice 1 put the Activity panel in an overlay. The
+> [`new-thread-activity-screen.md`](new-thread-activity-screen.md) stack, merged on 2026-10-11, keeps
+> the overlay and also shows the same view as the default new-thread screen. The slice 1 rationale below is the
 > record of why the overlay was chosen; it no longer rules out a screen host.
 
 ## Slice 1 — what shipped

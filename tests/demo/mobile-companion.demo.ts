@@ -135,6 +135,76 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
   )
 }
 
+/**
+ * Frame the thread composer where focusing it puts it: from the top of the
+ * page, its reveal scrolls the submit button to 12px above the viewport bottom.
+ * Opening the thread smooth-scrolls to the waiting approval and focuses the
+ * composer, and that reveal only scrolls as far as it must, so a capture
+ * otherwise inherited whichever offset those left behind.
+ *
+ * The run is still live, so the newest reply is paced in frame by frame. The
+ * reveal runs once, on focus: framing before that reply has painted all of its
+ * saved text lets the reply's growth push Queue message below where the reveal
+ * put it.
+ */
+async function frameThreadComposer(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(async () => {
+        const preview = document.querySelector<HTMLImageElement>('#message-image-preview img')
+        if (
+          preview?.complete !== true ||
+          preview.naturalWidth === 0 ||
+          document.querySelectorAll('#messages .message').length !== 4 ||
+          document.querySelector('#attention .decision-actions') === null
+        ) {
+          return false
+        }
+        const response = await fetch('/api/thread/proj-1/thread-1', {
+          headers: { Authorization: `Bearer ${localStorage.getItem('copse-mobile-token') ?? ''}` },
+        })
+        const data: unknown = await response.json()
+        if (typeof data !== 'object' || data === null || !('messages' in data)) return false
+        const saved: unknown = Array.isArray(data.messages) ? data.messages.at(-1) : undefined
+        if (typeof saved !== 'object' || saved === null || !('content' in saved)) return false
+        const painted = document.querySelector('#messages .message:last-child .message-content')
+        return (
+          typeof saved.content === 'string' && painted?.textContent.trim() === saved.content.trim()
+        )
+      }),
+    {
+      timeoutMsg:
+        'The thread, its approval, the image preview and the paced newest reply should finish rendering',
+    },
+  )
+  await browser.execute(() => {
+    const input = document.getElementById('message')
+    if (!input) throw new Error('Missing thread composer')
+    // An instant scroll also ends the smooth scroll to the approval.
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    input.blur()
+    input.focus({ preventScroll: true })
+  })
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const send = document.getElementById('send')?.getBoundingClientRect()
+        const viewport = window.visualViewport
+        const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 12
+        // Frames near the viewport load their image once; capture them loaded.
+        const loading = [...document.querySelectorAll('#messages .message-image-loading')].some(
+          (label) => {
+            const rect = label.getBoundingClientRect()
+            return rect.bottom > 0 && rect.top < window.innerHeight
+          },
+        )
+        return !!send && Math.abs(send.bottom - bottom) < 1 && !loading
+      }),
+    { timeoutMsg: 'The composer reveal should place Queue message above the viewport bottom' },
+  )
+  await expectComposerVisible('message')
+}
+
 describe('Mobile Companion at phone width', () => {
   beforeEach(async () => {
     await browser.sendCommand('Emulation.setEmulatedMedia', {
@@ -317,6 +387,7 @@ describe('Mobile Companion at phone width', () => {
       await browser.execute(async () => {
         await document.fonts.ready
       })
+      await frameThreadComposer()
       await screenshot('mobile-companion-image-preview.png')
       await $('#message').setValue('What is in this image?')
       await $('#send').click()
@@ -537,7 +608,9 @@ describe('Mobile Companion at phone width', () => {
         await reply.$('.mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
         await expect(reply.$('.mermaid-fallback-title')).not.toExist()
         await expect(reply.$('pre code .hljs-string')).toExist()
-        expect(await browser.execute(() => matchMedia('(hover: none)').matches)).toBe(true)
+        expect(
+          await browser.execute(() => matchMedia('(hover: none) and (pointer: coarse)').matches),
+        ).toBe(true)
         await expect(reply.$('.code-block-copy')).toBeDisplayed()
         await expect(reply.$('.table-copy')).toBeDisplayed()
         await expect(reply.$('.code-block-run')).not.toExist()

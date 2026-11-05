@@ -36,10 +36,12 @@ The local workflow has three invariants aimed at unattended reliability:
    same automation instead of being retained or recreated, when that is provably safe (see
    [Worktree hand-over](#worktree-hand-over)). Before creating the next task, Copse retires clean, fully merged
    checkouts and accepts already parked PR checkouts. The safe default allows one
-   live worktree; a schedule author may explicitly raise the cap to two or three
-   when independent runs should continue while older changes await review. Once
-   that cap is reached, the new trigger is skipped rather than producing an
-   unbounded trail of worktrees.
+   live worktree; a schedule author may explicitly raise the cap to 2, 3, 5, 10,
+   or 25, or select **Unlimited** when independent runs should continue while older
+   changes await review. Existing saved caps remain unchanged. A finite cap skips
+   new scheduled triggers once full; Unlimited removes this retention cap while
+   preserving checkout cleanup, safe hand-over, and the no-overlap rule. The editor
+   also offers **Every minute** and **Every hour**, with a minute-of-hour selector.
 3. **No overlapping turns.** A trigger that finds the schedule's latest task running
    or holding an unsubmitted scheduled draft is coalesced. It neither creates a
    thread/worktree nor queues another turn. The next matching cron occurrence may
@@ -64,6 +66,10 @@ repository; an explicit `owner` / `repo` target still prompts. If an unselected
 eligible tool interrupts an automation thread, the approval dialog can add that
 exact tool to the owning schedule instead of making a global grant. Disconnected
 MCP selections stay visible and inert until the same exact tool returns.
+
+PR maintenance has separate opt-ins for publishing branches with pinned leases,
+merging with a head SHA guard, commenting, and resolving verified review threads.
+See [the maintenance tool contract](automation-pr-maintenance-tools.md).
 
 Everything else keeps the normal permission boundary: shell commands, file
 approvals, websites, sensitive-data reveals, ACP permission kinds, and model

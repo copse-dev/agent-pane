@@ -613,6 +613,14 @@ function tokenBasedExternalReasons(command: string): {
       addReason(opener)
       hasHard = true
     }
+    // CoreSimulator is a host XPC service even when argv contains only a
+    // simulator UUID. A contained delete/list cannot establish device cleanup.
+    const simulatorArgs =
+      exe === 'simctl' ? args : exe === 'xcrun' && args[0] === 'simctl' ? args.slice(1) : null
+    if (simulatorArgs && !['help', '-h', '--help'].includes(simulatorArgs[0] ?? 'help')) {
+      addReason('simulator management requires host CoreSimulator services')
+      hasHard = true
+    }
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
@@ -1420,6 +1428,9 @@ const SCOPE_REASON_TEXT = {
     "Runs a file from the project directly, so Copse can't tell what it does",
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)':
     'Runs a build tool that needs caches or build services outside the project',
+
+  'simulator management requires host CoreSimulator services':
+    'Uses the Mac’s Simulator service and device data outside the project',
 
   // Files outside the project
   'home directory path (~/)': 'Reads or writes in your home directory, outside the project',

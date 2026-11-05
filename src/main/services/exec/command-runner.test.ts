@@ -80,9 +80,9 @@ describe('runCommand truncation reporting', () => {
       ['-e', `process.stdout.write('a'.repeat(${String(size)}))`],
       { unsandboxed: true },
     )
-    // Overflow is dropped silently, so the retained string looks complete —
-    // callers that size a workspace from it (#795) need this flag to know it is
-    // a floor rather than a total.
+    // The retained head + tail can still read as a plausible listing — callers
+    // that size a workspace from it (#795) need this flag to know it is a floor
+    // rather than a total.
     assert.equal(stdoutTruncated, true)
   })
 
@@ -94,6 +94,34 @@ describe('runCommand truncation reporting', () => {
     )
     assert.equal(stdout.length, 64)
     assert.equal(stdoutTruncated, false)
+  })
+
+  it('keeps the real end of stdout and stderr once output overflows the cap', async () => {
+    // Several cap-sized writes, so overflow arrives over many pipe chunks; the
+    // unique final line is usually where a failing command reports its error.
+    const script = [
+      `const line = 'filler line\\n'.repeat(${String(COMMAND_OUTPUT_MAX_BYTES / 12)})`,
+      'for (let i = 0; i < 4; i++) { process.stdout.write(line); process.stderr.write(line) }',
+      "process.stdout.write('FINAL STDOUT LINE\\n')",
+      "process.stderr.write('FINAL STDERR LINE\\n')",
+    ].join(';')
+    const { stdout, stderr, code, stdoutTruncated } = await runCommand(
+      process.execPath,
+      ['-e', script],
+      { unsandboxed: true },
+    )
+    assert.equal(code, 0)
+    assert.equal(stdoutTruncated, true)
+    assert.ok(
+      stdout.endsWith('FINAL STDOUT LINE\n'),
+      `stdout tail: ${JSON.stringify(stdout.slice(-80))}`,
+    )
+    assert.ok(
+      stderr.endsWith('FINAL STDERR LINE\n'),
+      `stderr tail: ${JSON.stringify(stderr.slice(-80))}`,
+    )
+    assert.ok(Buffer.byteLength(stdout) <= COMMAND_OUTPUT_MAX_BYTES)
+    assert.ok(Buffer.byteLength(stderr) <= COMMAND_OUTPUT_MAX_BYTES)
   })
 
   it('does not flag output that lands exactly on the cap', async () => {

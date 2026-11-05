@@ -189,6 +189,69 @@ describe('thread-store', () => {
     assert.equal(existsSync(join(root, 'project', original.id)), false)
   })
 
+  it('retries a partially committed create without overwriting newer history or metadata', async () => {
+    const original = thread('partial-create', { messages: [userMsg('u1', 'original prompt')] })
+    const realRename = fs.renameSync
+    let failed = false
+    const failCatalog = mock.method(
+      fs,
+      'renameSync',
+      (...args: Parameters<typeof fs.renameSync>) => {
+        if (!failed && String(args[1]).endsWith('/catalog.jsonl')) {
+          failed = true
+          throw new Error('catalog full after thread commit')
+        }
+        realRename(...args)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(createThread('project', original), /catalog full/)
+    } finally {
+      failCatalog.mock.restore()
+      syncBuiltinESMExports()
+    }
+    assert.ok(failed, 'fault occurred at the real catalog commit boundary')
+    const appended = assistantMsg('a2', 'newer main-owned response', 'newer tool result')
+    await appendMessage('project', original.id, appended)
+    await updateMeta('project', original.id, {
+      status: 'running',
+      usage: { inputTokens: 99, outputTokens: 50 },
+    })
+    const dir = join(root, 'project', original.id)
+    const spineBefore = readFileSync(join(dir, 'events.jsonl'), 'utf8')
+    const metaBefore = readFileSync(join(dir, 'meta.json'), 'utf8')
+    // Force the retry to repair the rebuildable catalog as well as preserve
+    // the committed sources; successful create must not merely skip all work.
+    rmSync(join(root, 'project', 'catalog.jsonl'), { force: true })
+    await createThread('project', original)
+    assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8'), spineBefore)
+    assert.equal(readFileSync(join(dir, 'meta.json'), 'utf8'), metaBefore)
+    assert.ok(existsSync(join(root, 'project', 'catalog.jsonl')))
+    const [loaded] = await loadProjectThreads('project')
+    assert.ok(loaded)
+    assert.deepEqual(
+      loaded.messages.map((message) => message.id),
+      ['u1', 'a2'],
+    )
+    assert.equal(loaded.messages[1]?.toolCalls[0]?.result, 'newer tool result')
+    assert.equal(loaded.status, 'running')
+    assert.deepEqual(loaded.usage, { inputTokens: 99, outputTokens: 50 })
+  })
+
+  it('does not create over existing unreadable metadata', async () => {
+    const dir = join(root, 'project', 'unreadable')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'meta.json'), '{broken')
+    writeFileSync(join(dir, 'events.jsonl'), 'recoverable spine')
+    await assert.rejects(
+      createThread('project', thread('unreadable')),
+      /unreadable existing metadata/,
+    )
+    assert.equal(readFileSync(join(dir, 'meta.json'), 'utf8'), '{broken')
+    assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8'), 'recoverable spine')
+  })
+
   it('does not retain an unused task solely because a failed save left orphan plan files', async () => {
     await createThread('project', thread('empty'))
     let checks = 0

@@ -9,7 +9,7 @@ import { disposeAllAcpSessions } from './acp-session-pool.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { readSkillTool } from '../../tools/read-skill-tool.ts'
 import { getSkill, setSkillsForTest } from '../skills/skills-registry.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import {
@@ -23,7 +23,7 @@ afterEach(async () => {
   await disposeAllAcpSessions()
   setSkillsForTest([])
   setWorkspaceRootForTest(null)
-  setSetting('registeredAcpAgents', [])
+  await setSetting('registeredAcpAgents', [])
   if (root) {
     await rm(root, { recursive: true, force: true })
     await rm(`${root}-retry-marker`, { force: true })
@@ -74,7 +74,7 @@ describe('Copse skills in a spawned ACP executor', () => {
         requirements: { executors: ['native'] },
       },
     ])
-    setSetting('registeredAcpAgents', [
+    await setSetting('registeredAcpAgents', [
       {
         id: 'skill-probe',
         title: 'Skill boundary probe',
@@ -123,7 +123,7 @@ describe('Copse skills in a spawned ACP executor', () => {
             registry,
           })
           assert.match(JSON.stringify(blocked.messages), /BLOCKED BEFORE INSTRUCTIONS/)
-          setSetting('registeredAcpAgents', [
+          await setSetting('registeredAcpAgents', [
             {
               id: 'skill-probe',
               title: 'Skill boundary probe',

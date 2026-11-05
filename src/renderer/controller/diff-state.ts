@@ -57,21 +57,21 @@ export function attachDiffState(
     // the real edit path. A queue-only update is metadata: forcing the panel
     // open here makes background/deferred proposals construct Monaco while the
     // user is still watching another surface.
-    store.emit('staged_diffs_changed')
-    store.emit('panel_changed')
   }
 
   const unsubShowDiff = api.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
       if (!isActiveOwner(projectId, threadId)) return
-      store.setState({ activeDiff: { path, before, after, language } })
-      if (!options.revealOnShowDiff) return
-      store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      // Layout first (unhide pane + Changes hosts), then tell the pane to sync.
+      const activeDiff = { path, before, after, language }
+      if (!options.revealOnShowDiff) {
+        store.setState({ activeDiff })
+        return
+      }
+      // One write, so the Changes pane hears the diff and its reveal together.
+      // Layout listeners subscribe before the panes, so it unhides the pane and
+      // Changes hosts before the Changes pane refreshes.
+      store.setState({ activeDiff, rightPanelMode: 'changes', filesPaneOpen: true })
       syncFilesPaneDom(store)
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
-      store.emit('panel_changed')
     },
   )
 
@@ -98,8 +98,8 @@ export function attachDiffState(
       if (!isActiveOwner(activeProjectId, activeThreadId)) return
       queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries)
       // Hydration usually confirms what the store already holds. Publishing that
-      // anyway emits `staged_diffs_changed` on every boot and thread switch, and
-      // the Changes pane answers it with a git refresh.
+      // anyway hands the Changes pane a fresh queue on every boot and thread
+      // switch, and it answers each one with a git refresh.
       if (queueKey(store.getState().stagedDiffs) === queueKey(entries)) return
       publishActiveQueue(entries)
     })()

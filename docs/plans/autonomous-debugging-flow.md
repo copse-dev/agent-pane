@@ -1,6 +1,10 @@
 # Autonomous debugging flow
 
-Status: **Proposed.** This plan integrates existing agent-runtime work into one bounded,
+Status: **Proposed (Phase 0 harness landed).** The Phase 0 regression harness
+(`scripts/run-autonomy-regression.mts`, `eval:autonomy*`) shipped in
+[#1476](https://github.com/copse-dev/agent-pane/pull/1476); Phases 1–5 remain. Several dependencies
+listed below (#744, #830, #1081, #1248, #1410, #1436) are now closed.
+This plan integrates existing agent-runtime work into one bounded,
 privacy-safe autonomy target. It does not create another supervisor, headless contract,
 permission engine, or task UI.
 

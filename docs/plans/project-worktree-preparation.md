@@ -1,6 +1,10 @@
 # Project worktree preparation
 
-Tracking: #2376 and #2654; foundation: #2388. This replaces the Copse-source-only scope of the original bootstrap proposal.
+Status: **Active.** The foundation ([#2388](https://github.com/copse-dev/agent-pane/pull/2388)) and the
+#2376 and #2654 slices are on `main` (both issues closed). Remaining: the JVM, .NET, Ruby and PHP
+adapters ([#2655](https://github.com/copse-dev/agent-pane/issues/2655)).
+
+Tracking: #2655 (earlier: #2376 and #2654); foundation: #2388. This replaces the Copse-source-only scope of the original bootstrap proposal.
 
 ## Product contract
 
@@ -112,7 +116,7 @@ The host does not invent safe flags for arbitrary project-defined commands: thei
 
 ## Follow-up sequence
 
-1. Land and validate this general foundation, keeping #2388 draft until its expanded CI passes.
+1. Land and validate this general foundation. Done: #2388 merged on 2026-09-14.
 2. #2654: uv, hash-locked wheel-only pip, Go modules, and Cargo fetching are automatic non-JavaScript adapters (details below). Declarations support projects outside that automatic boundary.
 3. #2655: Add Maven/Gradle, .NET/NuGet, Ruby/Bundler, and PHP/Composer using the same adapter contract and evidence. Do not market automatic support until its adapter and tests ship.
 4. Improve configuration discovery/authoring and mixed-ecosystem monorepo reporting. Preserve project-root confinement and explicit approval when selecting setup commands.

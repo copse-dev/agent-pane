@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import { runWithApprovalHandler } from '../approval.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   ensureChatStoreRead,
   ensureThreadAccess,
@@ -14,9 +14,9 @@ import {
 } from './thread-access.ts'
 
 describe('conversation access', () => {
-  afterEach(() => {
-    setSetting('threadReadAccess', [])
-    setSetting('threadSendAccess', [])
+  afterEach(async () => {
+    await setSetting('threadReadAccess', [])
+    await setSetting('threadSendAccess', [])
   })
 
   it('asks exactly twice, reuses each grant and isolates other threads', async () => {
@@ -161,8 +161,8 @@ describe('conversation access', () => {
   })
 
   it('revokes one permission without changing the other or another thread', async () => {
-    setSetting('threadReadAccess', ['source', 'other'])
-    setSetting('threadSendAccess', ['source'])
+    await setSetting('threadReadAccess', ['source', 'other'])
+    await setSetting('threadSendAccess', ['source'])
     await revokeThreadAccess('source', 'read')
     assert.equal(hasThreadAccess('source', 'read'), false)
     assert.equal(hasThreadAccess('source', 'send'), true)
@@ -189,8 +189,8 @@ describe('conversation access', () => {
     )
   })
 
-  it('confines an unapproved run to its own transcript and grants the whole store after consent', () => {
-    threadExecutionContextStorage.run(
+  it('confines an unapproved run to its own transcript and grants the whole store after consent', async () => {
+    await threadExecutionContextStorage.run(
       {
         projectId: 'project',
         threadId: 'source',
@@ -199,17 +199,16 @@ describe('conversation access', () => {
         checkoutMode: 'shared',
         branch: null,
       },
-      () => {
-        runWithActiveRunIdentity('source', () => {
+      () =>
+        runWithActiveRunIdentity('source', async () => {
           assert.deepEqual(threadChatReadRoots('/store'), ['/store/project/source'])
           assert.equal(needsOtherThreadRead('/store/project/source/messages/a.md', '/store'), false)
           assert.equal(needsOtherThreadRead('/store/project/other/messages/a.md', '/store'), true)
           assert.equal(needsOtherThreadRead('/store/project/catalog.jsonl', '/store'), true)
           assert.equal(needsOtherThreadRead('/elsewhere/a.md', '/store'), false)
-          setSetting('threadReadAccess', ['source'])
+          await setSetting('threadReadAccess', ['source'])
           assert.deepEqual(threadChatReadRoots('/store'), ['/store'])
-        })
-      },
+        }),
     )
   })
 

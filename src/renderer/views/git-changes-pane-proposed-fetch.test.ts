@@ -344,6 +344,34 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     )
   })
 
+  it('renders a proposed diff queued by a state write alone, with no event', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    const contentCalls: string[] = []
+    const api = makeApi(
+      { 'x.ts': { path: 'x.ts', before: 'old\n', after: 'new\n', language: 'typescript' } },
+      contentCalls,
+    )
+    const capture: { editor: StubDiffEditor | null } = { editor: null }
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    forceVisible(viewerRoot)
+    document.body.append(listRoot, viewerRoot)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, makeMonacoStub(capture))
+    await settle()
+    assert.deepEqual(contentCalls, [])
+
+    store.setState({ stagedDiffs: [{ path: 'x.ts', language: 'typescript' }] })
+    await waitForReveal(capture)
+
+    assert.deepEqual(contentCalls, ['x.ts'])
+    assert.equal(capture.editor?.models?.modified.getValue(), 'new\n')
+  })
+
   it('clears the viewer when the queue entry has no retrievable content', async () => {
     const store = createStore({
       activeProjectId: 'project-1',
@@ -415,7 +443,8 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     await waitForModifiedValue(capture, 'b-after\n')
 
     store.setState({ activeThreadId: 'thread-a', activeDiff: null })
-    store.emit('staged_diffs_changed')
+    // diff-state republishes thread-a's queue as a fresh array.
+    store.setState({ stagedDiffs: [{ path: 'same.ts', language: 'typescript' }] })
     await waitForModifiedValue(capture, 'a-after\n')
     const models = capture.editor?.models
     assert.ok(models, 'expected thread-a models to be restored')

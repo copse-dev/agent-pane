@@ -15,7 +15,7 @@ import type {
 } from '@shared/types'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { agentWorkspaceLabel } from '../execution-root.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 
 // The CI investigator subagent is experimental and off by default. It is gated
@@ -97,7 +97,8 @@ export async function runCiInvestigatorSubagent(
     localFallback,
   } = opts
 
-  const workspace = getWorkspaceRoot() ?? '(none)'
+  // The checkout the investigator's tools run in, not the window's (#1724, #3958).
+  const workspace = agentWorkspaceLabel()
   const userTask = buildCiTask(focus, prNumber)
   const prompt =
     prNumber !== undefined

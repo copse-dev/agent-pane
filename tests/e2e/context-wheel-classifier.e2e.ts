@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../packages/agent/src/plugins/first-party-plugins.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID } from '../../packages/agent/src/plugins/mcp-ui-canvas-plugin.ts'
 import { join } from 'node:path'
 import {
   E2E_SCREENSHOT_DIR,
@@ -68,6 +70,12 @@ describe('context wheel counts the classifier tool', function () {
       // files would otherwise count towards the estimate and show in the frame.
       projects: [{ id: PROJECT_ID, path: seedStableWorkspace(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
+      // Canvas is default-on, and its bundled MCP server adds an "MCP tools" row
+      // and its schemas to every figure here. This spec measures the classifier
+      // tool, so keep Canvas off in a profile that has already graduated (launch
+      // would otherwise lift the disable); the rest are the host's defaults.
+      pluginDisabled: [...EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS, MCP_UI_CANVAS_PLUGIN_ID],
+      pluginMigration: { mcpUiCanvasStable: true },
       [`threads:${PROJECT_ID}`]: [
         {
           id: THREAD_ID,

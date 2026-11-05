@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getCiFailureLogs, getCiStatus } from '../services/github/github-ci-service.ts'
 import { scheduleCiWatch } from '../services/github/ci-watch-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import {
   getThreadExecutionContext,
   requireThreadExecutionOwner,
@@ -25,8 +26,7 @@ export const getCiStatusTool = defineTool({
     pr_number: prNumberSchema,
   }),
   execute: async ({ pr_number }, _signal) => {
-    const context = getThreadExecutionContext()
-    const status = await getCiStatus(pr_number, context?.root)
+    const status = await getCiStatus(pr_number, getAgentExecutionRoot())
     return JSON.stringify(status, null, 2)
   },
 })
@@ -91,7 +91,6 @@ export const getCiFailureLogsTool = defineTool({
       .describe('Workflow run database id. Omit to use the latest run for the PR head commit.'),
   }),
   execute: async ({ pr_number, run_id }, _signal) => {
-    const context = getThreadExecutionContext()
-    return getCiFailureLogs({ prNumber: pr_number, runId: run_id, cwd: context?.root })
+    return getCiFailureLogs({ prNumber: pr_number, runId: run_id, cwd: getAgentExecutionRoot() })
   },
 })

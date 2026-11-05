@@ -1,4 +1,5 @@
 import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import type { RemoteAgentLink, RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
 import { getActiveProjectId } from '../workspace.ts'
@@ -34,7 +35,7 @@ async function resolveRepoSlug(): Promise<string | undefined> {
 
 async function resolveBranch(): Promise<string | undefined> {
   try {
-    return firstNonEmptyString((await getCurrentBranchName())?.trim())
+    return firstNonEmptyString((await getCurrentBranchName(getAgentExecutionRoot()))?.trim())
   } catch {
     return undefined
   }

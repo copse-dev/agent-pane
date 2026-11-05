@@ -1,6 +1,7 @@
 # Feature-pack marketplace and installation lifecycle
 
-Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
+Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082) (closed); follow-ups in
+[#4003](https://github.com/copse-dev/agent-pane/issues/4003)
 
 **Format amendment:** [Agent Plugins migration](agent-plugins-migration.md) defines
 the package contract: root `plugin.json` with additive `dev.copse` extensions.

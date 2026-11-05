@@ -376,10 +376,7 @@ export function getPendingAfterContent(path: string): string | null {
   return state.queue.find((e) => e.path === key)?.after ?? null
 }
 
-async function readCurrentContent(
-  path: string,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string> {
+async function readCurrentContent(path: string, root: string | null): Promise<string> {
   if (!root) return ''
   try {
     const fs = getActiveWorkspaceFs()
@@ -682,6 +679,55 @@ export async function adoptWorktreeChangesSince(baseline: WorktreeBaseline): Pro
   return changes.map((c) => c.path)
 }
 
+/**
+ * Prepare conservative ownership refresh for one isolated background writer.
+ * Only files already owned and unchanged when it starts qualify. The caller
+ * acquires exactly one writer lease next and holds it through settlement.
+ * Any intervening writer/user-turn epoch invalidates the entire refresh.
+ */
+export async function captureBackgroundEditAdoption(
+  root: string,
+  owner: ThreadExecutionOwner,
+): Promise<() => Promise<void>> {
+  const context = getThreadExecutionContext()
+  if (
+    context?.projectId !== owner.projectId ||
+    context.threadId !== owner.threadId ||
+    context.checkoutMode !== 'worktree' ||
+    context.root !== root ||
+    hasLiveWorktreeWriter(root)
+  ) {
+    return async () => {}
+  }
+  const state = stateFor(owner)
+  const epoch = worktreeWriteEpoch()
+  const owned = new Map(state.directAppliedSnapshots)
+  const baseline = await snapshotWorktreePaths([...owned.keys()], root)
+  const eligible = [...baseline].filter(
+    ([path, snapshot]) => snapshot.content !== undefined && snapshot.content === owned.get(path),
+  )
+  return async () => {
+    // The writer's own lease contributes one epoch change. Keep it held while
+    // reading so a concurrent writer cannot slip between the audit and adoption.
+    const valid = (): boolean =>
+      worktreeWriteEpoch() === epoch + 1 && state.root === root && state.queue.length === 0
+    if (!valid()) return
+    const after = await snapshotWorktreePaths(
+      eligible.map(([path]) => path),
+      root,
+    )
+    if (!valid()) return
+    for (const [path, snapshot] of after) {
+      if (
+        snapshot.content !== undefined &&
+        state.directAppliedSnapshots.get(path) === owned.get(path)
+      ) {
+        recordDirectAppliedSnapshot(state, path, snapshot.content)
+      }
+    }
+  }
+}
+
 /** Paths in `git status` whose content now differs from the baseline snapshot. */
 async function worktreeChangesSince(
   baseline: WorktreeBaseline,
@@ -816,8 +862,8 @@ export function clearStagedDiffsForTest(): void {
  */
 export async function applyDiffEntry(
   entry: QueueEntry,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
 ): Promise<ApplyResult> {
   if (!root) return { status: 'error', error: 'No workspace open.' }
   const op = entry.op ?? 'write'

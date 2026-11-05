@@ -1,5 +1,5 @@
 import { getSetting, updateSetting } from '../storage/settings.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
+import type { AgentRoots } from '../execution-root.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import {
@@ -39,18 +39,18 @@ function trustedCommandSet(): Set<string> {
  * Both the permission gate (does it prompt?) and the shell tool / todo checks
  * (does it run unsandboxed?) call this on the SAME raw command, so the prompt
  * decision and the execution context can never disagree. Trust is read from the
- * run's project and paths are judged against the run's execution root, the same
- * roots the gate uses, so a worktree or background thread is not judged against
- * whichever checkout the window happens to show.
+ * caller's project root and paths are judged against its execution root, the
+ * same roots the gate uses, so a worktree or background thread is not judged
+ * against whichever checkout the window happens to show.
  */
-export function routeShellCommand(command: string): CommandRouting {
+export function routeShellCommand(command: string, roots: AgentRoots): CommandRouting {
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) {
     return { outcome: 'defer', reasons: ['auto-run disabled'] }
   }
-  if (!isWorkspaceTrusted(getAgentProjectRoot())) {
+  if (!isWorkspaceTrusted(roots.projectRoot)) {
     return { outcome: 'defer', reasons: ['workspace not trusted'] }
   }
-  return resolveCommandRouting(command, getAgentExecutionRoot(), trustedCommandSet())
+  return resolveCommandRouting(command, roots.executionRoot, trustedCommandSet())
 }
 
 /**
@@ -59,9 +59,9 @@ export function routeShellCommand(command: string): CommandRouting {
  * that, for a command the static heuristic flags as needing network / outside
  * access. Single source of truth for run_shell and todo verification.
  */
-export function shellRunsOutsideSandbox(command: string): boolean {
-  if (routeShellCommand(command).outcome === 'allow') return true
-  return shellRequiresOutsideSandbox(command, getAgentExecutionRoot(), isProjectSandboxEnabled())
+export function shellRunsOutsideSandbox(command: string, roots: AgentRoots): boolean {
+  if (routeShellCommand(command, roots).outcome === 'allow') return true
+  return shellRequiresOutsideSandbox(command, roots.executionRoot, isProjectSandboxEnabled())
 }
 
 /**
@@ -80,14 +80,16 @@ export function shellRunsOutsideSandbox(command: string): boolean {
  *   prompt either way.
  *
  * Called by the shell tool on the same RAW command the permission gate analysed,
- * so the approval and the execution overlay stay in lockstep.
+ * so the approval and the execution overlay stay in lockstep. `roots` decide the
+ * trusted-command routing; `executionRoot` is the directory the command runs in.
  */
 export function shellReadGrantTargets(
   command: string,
+  roots: AgentRoots,
   executionRoot: string | null,
 ): string[] | null {
   if (!isProjectSandboxEnabled()) return null
-  if (routeShellCommand(command).outcome === 'allow') return null
+  if (routeShellCommand(command, roots).outcome === 'allow') return null
   return readOutsideProjectGrantTargets(command, executionRoot)
 }
 
@@ -100,8 +102,11 @@ export function shellReadGrantTargets(
  * on the list. Returns the exact basename that {@link addTrustedShellCommand}
  * would store, so the prompt label and the stored grant can't drift apart.
  */
-export function offerableTrustedCommand(command: string): string | null {
-  if (!isWorkspaceTrusted(getAgentProjectRoot())) return null
+export function offerableTrustedCommand(
+  command: string,
+  projectRoot: string | null,
+): string | null {
+  if (!isWorkspaceTrusted(projectRoot)) return null
   const head = trustableCommandHead(command)
   if (!head) return null
   return trustedCommandSet().has(head) ? null : head

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -13,6 +14,7 @@ import {
 } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
+import { createToolchainReadGuard, toolchainReadExceptions } from './toolchain-read-guard.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
   getChatStoreRootSync,
@@ -67,15 +69,115 @@ export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[
  * seatbelt denials surface as EPERM ("Operation not permitted"), which git
  * treats as fatal (exit 128) — so these must stay readable or every git command
  * fails. A more-specific allowRead overrides the broad home denyRead.
+ *
+ * The whole XDG directory, not just `config`, `ignore` and `attributes`: an
+ * `include.path` or `core.hooksPath` often points into it, and git also treats
+ * EPERM on an included file as fatal. Its credential store is denied again by
+ * `gitCredentialDenyReadPaths`.
  */
 function gitConfigReadPaths(): string[] {
   const home = homedir()
   return [
     join(home, '.gitconfig'),
+    join(home, '.config/git'),
     join(home, '.config/git/**'),
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
+    ...gitConfigIncludeReadPaths,
   ]
+}
+
+/** The files the user's global git config includes, as last resolved. */
+let gitConfigIncludeReadPaths: readonly string[] = []
+
+/**
+ * Re-resolve the files the user's global git config includes, for
+ * {@link gitConfigReadPaths}. Overlays are built synchronously, so they read
+ * the last result: Copse refreshes it when the project sandbox starts and
+ * before it spawns each sandboxed agent.
+ */
+export async function refreshGitConfigIncludeReadPaths(): Promise<void> {
+  gitConfigIncludeReadPaths = await resolveGitConfigIncludes(homedir())
+}
+
+/**
+ * Files the global git config pulls in with `[include]` or `[includeIf "…"]`,
+ * followed the way git follows them. Git reads each on every invocation, so on
+ * macOS an unreadable include is as fatal as an unreadable `~/.gitconfig`.
+ * Only regular files the user's own config names are returned, never a
+ * directory.
+ */
+export async function resolveGitConfigIncludes(home: string): Promise<string[]> {
+  const globalConfigs = [join(home, '.gitconfig'), join(home, '.config/git/config')]
+  const targets = await Promise.all(
+    globalConfigs.map((file) => gitConfigIncludeTargets(file, home)),
+  )
+  return [...new Set(targets.flat())]
+}
+
+/** Git's own limit on nested config includes. */
+const GIT_MAX_INCLUDE_DEPTH = 10
+
+async function gitConfigIncludeTargets(file: string, home: string, depth = 0): Promise<string[]> {
+  if (depth >= GIT_MAX_INCLUDE_DEPTH) return []
+  let text: string
+  try {
+    text = await readFile(file, 'utf8')
+  } catch {
+    return []
+  }
+  const targets: string[] = []
+  let inInclude = false
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.trim()
+    const header = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"(?:[^"\\]|\\.)*")?\s*\]/.exec(line)
+    if (header) {
+      inInclude = /^include(?:if)?$/i.test(header[1] ?? '')
+      line = line.slice(header[0].length).trim()
+    }
+    if (!inInclude) continue
+    const entry = /^path\s*=\s*(.*)$/i.exec(line)
+    const value = entry ? gitConfigValue(entry[1] ?? '') : ''
+    if (!value) continue
+    const target = value.startsWith('~/')
+      ? join(home, value.slice(2))
+      : isAbsolute(value)
+        ? value
+        : join(dirname(file), value)
+    if (!(await isRegularFile(target))) continue
+    targets.push(target, ...(await gitConfigIncludeTargets(target, home, depth + 1)))
+  }
+  return targets
+}
+
+/** A git config value without its quotes or a trailing comment. */
+function gitConfigValue(raw: string): string {
+  const value = raw.trim()
+  if (value.startsWith('"')) {
+    const end = value.indexOf('"', 1)
+    return end > 0 ? value.slice(1, end) : ''
+  }
+  return (value.split(/[#;]/, 1)[0] ?? '').trim()
+}
+
+async function isRegularFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Git's XDG credential store, which holds plaintext tokens, inside the
+ * `.config/git` read grant above. ASRT re-emits a literal read deny nested in a
+ * literal allow after the allows on macOS, so it beats the grant, and masks the
+ * file with `/dev/null` on Linux. When the file does not exist Linux has
+ * nothing to mask, and the directory is bound read-only, so a contained command
+ * cannot create it either.
+ */
+function gitCredentialDenyReadPaths(): string[] {
+  return [join(homedir(), '.config/git/credentials')]
 }
 
 /**
@@ -443,11 +545,152 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
   }
 }
 
-/** Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc. */
-export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.env): string[] {
+/** Whether `dir` is `target` itself or one of its ancestors. */
+function coversPath(dir: string, target: string): boolean {
+  const rel = relative(dir, target)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+/** Where `path` sits relative to `home`: covering it (home or an ancestor), inside it, or apart. */
+function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'apart' {
+  const toHome = relative(path, home)
+  if (toHome === '' || (!toHome.startsWith('..') && !isAbsolute(toHome))) return 'covers'
+  const fromHome = relative(home, path)
+  return !fromHome.startsWith('..') && !isAbsolute(fromHome) ? 'inside' : 'apart'
+}
+
+/**
+ * `path`, as spelled and canonicalized, placed against each spelling of home.
+ * A `PATH` entry can reach home through an alias (`/tmp/alias -> $HOME`) that
+ * the spelling alone hides, so every home check looks at both.
+ */
+function homePlacements(
+  path: string,
+  homes: readonly string[],
+): { path: string; home: string; place: 'covers' | 'inside' | 'apart' }[] {
+  return [...new Set([path, canonicalizePathCached(path)])].flatMap((spelling) =>
+    homes.map((home) => ({ path: spelling, home, place: placeAgainstHome(spelling, home) })),
+  )
+}
+
+/** Whether `path` is home or one of its ancestors under any spelling of either. */
+function coversHome(path: string, homes: readonly string[]): boolean {
+  return homePlacements(path, homes).some(({ place }) => place === 'covers')
+}
+
+/**
+ * How much of `versionRoot`, the parent of a node's `binDir`, is safe to
+ * re-allow. `tree`: the whole root, a Node install such as the nvm/fnm
+ * `.../versions/node/vX.Y.Z` shape, a Homebrew Cellar keg or a distro `/usr`.
+ * `npm`: only its `lib/node_modules`, because the root is a shallow home
+ * directory such as `~/.local` (an npm prefix), `~/.n` or an unpacked tarball,
+ * whose other contents (`.local/share`, …) are not a toolchain. `null`:
+ * nothing. A `~/bin/node` must not turn `~` (with `.ssh`, `.aws`, `.npmrc`, …)
+ * into a read grant, so a root that covers home is never allowed; any grant
+ * needs the root to hold npm's `lib/node_modules`, and `tree` needs it at least
+ * two levels below home when inside it, judged on every spelling of the root
+ * and of home (`homePlacements`).
+ */
+function nodeVersionRootGrant(
+  versionRoot: string,
+  binDir: string,
+  homes: readonly string[],
+): 'tree' | 'npm' | null {
+  if (basename(binDir) !== 'bin' || versionRoot === binDir) return null
+  let shallow = false
+  for (const { path, home, place } of homePlacements(versionRoot, homes)) {
+    if (place === 'covers') return null
+    if (place === 'inside' && relative(home, path).split(sep).length < 2) shallow = true
+  }
+  try {
+    if (!statSync(join(versionRoot, 'lib', 'node_modules')).isDirectory()) return null
+  } catch {
+    return null
+  }
+  return shallow ? 'npm' : 'tree'
+}
+
+/**
+ * The read grants a shim-based version manager needs when `binDir`, the
+ * directory holding a `node` on `PATH`, is its shim directory. The shim
+ * re-executes the managed install, so the shim directory alone is not enough,
+ * but the manager's whole directory is not needed either. Only the trees that
+ * hold installs, plugins and the manager's own code are granted, plus asdf's
+ * home-level version files. A manager root that is home or covers it grants
+ * nothing.
+ *
+ * - Volta (`$VOLTA_HOME`, default `~/.volta`): shims in `bin`, installs and
+ *   the default platform in `tools`.
+ * - asdf (`$ASDF_DATA_DIR`, default `~/.asdf`): shims in `shims`, installs in
+ *   `installs`, plugin scripts in `plugins`, and the pre-0.16 shell
+ *   implementation in `bin` and `lib`.
+ */
+function shimManagerAllowRead(
+  binDir: string,
+  env: NodeJS.ProcessEnv,
+  home: string,
+  homes: readonly string[],
+): string[] {
+  const root = (name: string, fallback: string): string | null => {
+    const value = env[name]
+    const dir = value === undefined || value === '' ? fallback : value
+    if (!isAbsolute(dir) || coversHome(dir, homes)) return null
+    return dir
+  }
+  const existing = (paths: readonly string[], tree: boolean): string[] =>
+    paths.flatMap((path) => {
+      try {
+        accessSync(path)
+      } catch {
+        return []
+      }
+      return tree ? [path, `${path}/**`] : [path]
+    })
+
+  const volta = root('VOLTA_HOME', join(home, '.volta'))
+  if (volta && binDir === join(volta, 'bin')) return existing([join(volta, 'tools')], true)
+
+  const asdf = root('ASDF_DATA_DIR', join(home, '.asdf'))
+  if (asdf && binDir === join(asdf, 'shims')) {
+    return [
+      ...existing(
+        ['installs', 'plugins', 'bin', 'lib'].map((dir) => join(asdf, dir)),
+        true,
+      ),
+      ...existing([join(home, '.tool-versions'), join(home, '.asdfrc')], false),
+    ]
+  }
+  return []
+}
+
+/**
+ * Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc.
+ *
+ * Each `node` on `PATH` is allowed as found, with its bin directory unless
+ * that is home or an ancestor. Its install root is added as far as
+ * `nodeVersionRootGrant` allows, and a Volta or asdf shim directory adds that
+ * manager's install trees (`shimManagerAllowRead`); otherwise the binary and
+ * its bin directory are all a contained command can read.
+ *
+ * A symlinked `node` (`~/bin/node` into nvm, Homebrew's `bin/node` into its
+ * Cellar) also grants its target's install, but only when the target is
+ * itself a `node` in a whole-tree version root. A `PATH` directory a contained
+ * command can write (a checkout's `node_modules/.bin`) could otherwise hold
+ * `node -> ~/.ssh/id_ed25519` and turn the next overlay into a grant on
+ * `~/.ssh`.
+ */
+export function resolveNodeToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
   const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
+  const homes = [...new Set([home, canonicalizePathCached(home)])]
+  const addTree = (path: string): void => {
+    allow.add(path)
+    allow.add(`${path}/**`)
+  }
 
   for (const dir of dirs) {
     let nodePath: string
@@ -460,14 +703,33 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
 
     allow.add(nodePath)
     const binDir = dirname(nodePath)
-    allow.add(binDir)
-    allow.add(`${binDir}/**`)
+    if (!coversHome(binDir, homes)) {
+      addTree(binDir)
+      for (const path of shimManagerAllowRead(binDir, env, home, homes)) allow.add(path)
 
-    // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
-    const versionRoot = dirname(binDir)
-    if (versionRoot !== binDir) {
-      allow.add(versionRoot)
-      allow.add(`${versionRoot}/**`)
+      // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
+      const versionRoot = dirname(binDir)
+      const grant = nodeVersionRootGrant(versionRoot, binDir, homes)
+      if (grant === 'tree') addTree(versionRoot)
+      if (grant === 'npm') addTree(join(versionRoot, 'lib', 'node_modules'))
+    }
+
+    let realNodePath: string
+    try {
+      realNodePath = realpathSync(nodePath)
+    } catch {
+      continue
+    }
+    const realBinDir = dirname(realNodePath)
+    const realRoot = dirname(realBinDir)
+    if (
+      realNodePath !== nodePath &&
+      basename(realNodePath) === 'node' &&
+      nodeVersionRootGrant(realRoot, realBinDir, homes) === 'tree'
+    ) {
+      allow.add(realNodePath)
+      addTree(realBinDir)
+      addTree(realRoot)
     }
   }
 
@@ -525,21 +787,6 @@ export const HOME_INTERPRETER_TOOLCHAIN_DIRS = [
 ] as const
 
 /**
- * Home files that can hold registry or index credentials. No toolchain root may
- * be one of them, contain one, or be home itself.
- */
-const HOME_CREDENTIAL_PATHS = [
-  '.npmrc',
-  '.yarnrc.yml',
-  '.config/pnpm/rc',
-  '.bunfig.toml',
-  '.config/uv',
-  '.pypirc',
-  '.config/pip',
-  '.netrc',
-] as const
-
-/**
  * Corepack's package-manager cache, resolved the way Corepack does: `$COREPACK_HOME`,
  * else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`. macOS also gets
  * `~/Library/Caches/node/corepack`, where some installs keep it.
@@ -559,11 +806,6 @@ function corepackCacheCandidates(env: NodeJS.ProcessEnv, home: string): string[]
   ]
 }
 
-function isWithin(parent: string, child: string): boolean {
-  const rel = relative(parent, child)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-}
-
 /**
  * Resolve the user's installed package-manager and interpreter caches so contained
  * commands can start them: Corepack's cache (pinned pnpm/yarn), `~/.bun/bin`, and
@@ -579,30 +821,15 @@ export function resolveInterpreterToolchainAllowRead(
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
 ): string[] {
-  let homes = [home]
-  try {
-    homes = [...new Set([home, realpathSync(home)])]
-  } catch {
-    /* Keep the literal home. */
-  }
-  const credentials = homes.flatMap((root) => HOME_CREDENTIAL_PATHS.map((path) => join(root, path)))
-  const safe = (path: string): boolean =>
-    !homes.some((root) => isWithin(path, root)) &&
-    !credentials.some((credential) => isWithin(path, credential) || isWithin(credential, path))
+  const readTarget = createToolchainReadGuard(env, home)
   const allow: string[] = []
   for (const path of [
     ...corepackCacheCandidates(env, home),
     ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((dir) => join(home, dir)),
   ]) {
-    let canonical: string
-    try {
-      if (!statSync(path).isDirectory()) continue
-      canonical = realpathSync(path)
-    } catch {
-      continue
-    }
-    if (!safe(path) || !safe(canonical) || allow.includes(path)) continue
-    allow.push(path, `${path}/**`)
+    const canonical = readTarget(path, true)
+    if (canonical === null || allow.includes(canonical)) continue
+    allow.push(canonical, `${canonical}/**`)
   }
   return allow
 }
@@ -923,6 +1150,13 @@ export function acpAgentSandboxOverlay(
      * paths stay writable, so its session files still persist.
      */
     readonlyCheckout?: boolean
+    /**
+     * Directories Copse created for this agent's own state, such as the
+     * thread-scoped `CLAUDE_CONFIG_DIR`. They sit in the chat store, which is
+     * otherwise read-only to the agent, so grant them read and write and keep
+     * the store's read-only mounts off them.
+     */
+    stateDirs?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -932,9 +1166,10 @@ export function acpAgentSandboxOverlay(
 function acpAgentSandboxOverlayWithCheckoutWrites(
   workspaceRoot: string,
   sandbox: AcpAgentSandboxConfig,
-  opts: { allowLocalhost?: boolean } | undefined,
+  opts: { allowLocalhost?: boolean; stateDirs?: readonly string[] } | undefined,
 ): Partial<SandboxRuntimeConfig> {
-  const base = workspaceSandboxOverlay(workspaceRoot)
+  const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
+  const base = workspaceSandboxOverlay(workspaceRoot, { chatStoreCarveOuts: stateDirs })
   const fs = base.filesystem
   if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   const home = homedir()
@@ -942,20 +1177,26 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
     const abs = join(home, rel)
     return [abs, `${abs}/**`]
   })
-  // macOS Keychain lookup from a sandboxed process needs metadata access to
-  // the home directory node before it can resolve credentials stored by tools
-  // such as Claude Code. Re-allow only the literal parent — never `home/**` —
-  // whenever an agent declares home-scoped state. Without this, the narrower
-  // `.claude` allowance is insufficient and `claude auth status` fails EPERM.
-  // On Linux a parent read bind shadows writable checkouts beneath home.
-  // Keep the metadata-only parent grant on platforms that support it.
-  const homeReadPaths =
-    configuredHomePaths.length > 0
-      ? [...(listingOnlyDirEntriesSupported() ? [home] : []), ...configuredHomePaths]
+  // Never re-allow `home` itself. ASRT renders a literal allowRead entry as
+  // `(subpath …)` on macOS (a read bind on Linux), and allows come after the
+  // home deny, so a bare `home` re-opened the whole home tree to the agent:
+  // ~/.ssh, cloud credentials and every other project. Stat and realpath
+  // through home already work: ASRT allows `file-read-metadata` on every
+  // directory whenever a read deny is in force.
+  //
+  // Claude keeps its macOS login in the login keychain, which
+  // Security.framework opens in-process (`claude auth status` reads it), so an
+  // agent that opts in gets the keychain directory, and nothing else above its
+  // own home dirs.
+  const keychainReadPaths =
+    sandbox.allowMacOsKeychain === true && process.platform === 'darwin'
+      ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
-  const scratchPaths = (sandbox.scratchPaths ?? [])
-    .flatMap(expandScratchPath)
-    .flatMap((abs) => [abs, `${abs}/**`])
+  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
+  const scratchPaths = [
+    ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
+    ...stateDirs,
+  ].flatMap((abs) => [abs, `${abs}/**`])
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -973,6 +1214,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
       allowWrite: [...new Set([...fs.allowWrite, ...configuredHomePaths, ...scratchPaths])],
     },
   }
+}
+
+/**
+ * The agent state dirs an ACP overlay may grant: each spelled the way the
+ * kernel sees it, so a symlinked `COPSE_DIR` still matches the chat store's
+ * canonical mounts, and only when it sits strictly inside the chat store. The
+ * dir name is built from settings Copse does not fully validate (the agent
+ * id), so anything that resolves elsewhere, home included, is dropped.
+ */
+function grantableStateDirs(stateDirs: readonly string[]): string[] {
+  const chatStoreRoot = stateDirs.length > 0 ? getChatStoreRootSync() : undefined
+  if (!chatStoreRoot) return []
+  return stateDirs.flatMap((dir) => {
+    const canonical = canonicalizeReadTarget(dir)
+    return canonical !== chatStoreRoot && coversPath(chatStoreRoot, canonical) ? [canonical] : []
+  })
 }
 
 /** Loopback hostnames a local dev server binds/serves on. */
@@ -1026,27 +1283,6 @@ function canonicalizeReadTarget(target: string): string {
   }
 }
 
-/**
- * Every directory between a granted target and the filesystem root.
- *
- * macOS seatbelt resolves a path component by component, so reading
- * `~/notes/todo.md` needs metadata access to `~/notes` and to `$HOME` itself —
- * the broad `denyRead: [homedir()]` otherwise stops the walk before the
- * more-specific leaf allow is ever consulted. Emitted as literal directory
- * paths with no `/**`, so this grants traversal (and a listing of the named
- * directories) without exposing any sibling subtree's contents — the same
- * narrow shape `worktreeDiscoveryRead` uses for git's repository probe.
- */
-function readTargetTraversalPaths(canonicalTarget: string): string[] {
-  const paths: string[] = []
-  let cursor = dirname(canonicalTarget)
-  while (cursor !== dirname(cursor)) {
-    paths.push(cursor)
-    cursor = dirname(cursor)
-  }
-  return paths
-}
-
 function isDirectoryPath(path: string): boolean {
   try {
     return statSync(path).isDirectory()
@@ -1068,8 +1304,10 @@ function isDirectoryPath(path: string): boolean {
  * makes the prompt's wording true: reads of the named paths, and nothing else.
  *
  * Deliberately one axis only, mirroring {@link portBindingSandboxOverlay}:
- * `allowRead` gains the granted targets, their ancestor directories (needed for
- * path traversal), and `${target}/**` for a target that is a directory. Network
+ * `allowRead` gains the granted targets and `${target}/**` for directories. ASRT already permits
+ * directory metadata traversal. Ancestor allows are recursive subpaths, not
+ * literal metadata grants: they both expose siblings and trigger ASRT's late
+ * home-deny rule, which can hide the approved target again. Network
  * stays on the contained deny-all, `allowWrite`/`denyWrite` are untouched, and
  * the mandatory write denies still apply. Credential and whole-home targets
  * never reach here: `sensitiveTargetReason`/`breadthBlocker` refuse them at
@@ -1094,7 +1332,6 @@ export function readAllowedSandboxOverlay(
     const canonical = canonicalizeReadTarget(target)
     grantedRead.push(canonical)
     if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
-    grantedRead.push(...readTargetTraversalPaths(canonical))
   }
   if (grantedRead.length === 0) return base
 
@@ -1107,7 +1344,13 @@ export function readAllowedSandboxOverlay(
   }
 }
 
-export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
+export function workspaceSandboxOverlay(
+  workspaceRoot: string,
+  opts?: {
+    /** Paths inside the chat store that keep their own grants, not its read-only mount. */
+    chatStoreCarveOuts?: readonly string[]
+  },
+): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = [
@@ -1152,6 +1395,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       root,
       tmpDir,
       ...(internalRoot ? [internalRoot.commonGitDir] : []),
+      ...(opts?.chatStoreCarveOuts ?? []),
     ]),
   )
   // Git discovers a repository by probing `.git` while walking from cwd toward
@@ -1257,6 +1501,27 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
           : []),
       ]
     : []
+  const existingRead = [
+    root,
+    `${root}/**`,
+    tmpDir,
+    `${tmpDir}/**`,
+    ...sandboxRuntimeRead,
+    ...preparationCacheRead,
+    ...gitConfigReadPaths(),
+    ...chatStoreRead,
+    ...worktreeDiscoveryRead,
+    ...gitAdminRead,
+    ...primaryCheckoutRead,
+    ...agentScratch,
+    ...threadReadRootAllowEntries(),
+  ]
+  const deniedRead = [
+    homedir(),
+    ...gitCredentialDenyReadPaths(),
+    ...siblingDeny,
+    ...nestedCheckoutDeny,
+  ]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1265,23 +1530,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...siblingDeny, ...nestedCheckoutDeny],
+      denyRead: deniedRead,
       allowRead: [
-        root,
-        `${root}/**`,
-        tmpDir,
-        `${tmpDir}/**`,
-        ...toolchainRead,
-        ...sandboxRuntimeRead,
-        ...preparationCacheRead,
-        ...gitConfigReadPaths(),
-        ...chatStoreRead,
-        ...worktreeDiscoveryRead,
-        ...gitAdminRead,
-        ...primaryCheckoutRead,
-        ...agentScratch,
-        // Read-only roots the active thread earned (invoked skill directories).
-        ...threadReadRootAllowEntries(),
+        ...existingRead,
+        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
       ],
       allowWrite: [
         root,

@@ -3,7 +3,7 @@
 Tracking: [#558](https://github.com/copse-dev/agent-pane/issues/558)
 
 Status: **experimental scaffold** — off by default behind the first-party pack
-`copse.long-horizon-tasks` (Settings → Packs). Tracking PR:
+`copse.long-horizon-tasks` (Settings → Plugins). Tracking PR:
 [#1084](https://github.com/copse-dev/agent-pane/pull/1084).
 
 ## What this is
@@ -19,9 +19,9 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
 
 ## What landed in this scaffold
 
-- **Pack** `copse.long-horizon-tasks` (`packages/agent/src/plugins/long-horizon-tasks-pack.ts`)
+- **Pack** `copse.long-horizon-tasks` (`packages/agent/src/plugins/long-horizon-tasks-plugin.ts`)
   — first-party pack declaring the `track_long_task` native tool + namespaced storage. The
-  Settings → Packs toggle is the atomic master switch (same pattern as P5's
+  Settings → Plugins toggle is the atomic master switch (same pattern as P5's
   `copse.model-comparison`). A one-time `migrateLongHorizonTasksEnablement()` bridge in
   `plugin-service.ts` preserves any prior `longHorizonTasksEnabled=true` opt-in and otherwise
   seeds the pack into the persisted disabled set (default OFF).
@@ -43,9 +43,9 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   them), so it resumes with its "Current plan" rather than an empty one. That plan is
   open by design, so the woken turn skips the pre-review todo gate (decision 5 in
   [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md)).
-- **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
-  atomic disable), `pack-service.test.ts` (default-OFF migration),
-  `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`
+- **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-plugin.test.ts` (registration +
+  atomic disable), `plugin-service.test.ts` (default-OFF migration),
+  `settings-plugins.e2e.ts` (plugin row defaults off), and `settings-experimental.e2e.ts`
   (retired `longHorizonTasksEnabled` fieldset gone). Pack toggles emit `settings_changed`.
 
 While the pack is disabled the tool is not registered. Any already-persisted wake

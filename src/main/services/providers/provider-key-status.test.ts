@@ -8,6 +8,9 @@ import {
   providerKeyStatus,
 } from './provider-key-status.ts'
 import { setApiKey, deleteApiKey } from '../storage/settings.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 function stubFetch(impl: typeof fetch): () => void {
   const original = globalThis.fetch

@@ -232,10 +232,12 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubs = [
     store.on('workspace_changed', refresh),
     store.on('threads_changed', refreshForActiveTask),
-    store.on('panel_changed', () => {
-      const path = store.getState().openFile?.path
-      if (path) void revealPath(path)
-    }),
+    store.select(
+      (s) => s.openFile,
+      (openFile) => {
+        if (openFile) void revealPath(openFile.path)
+      },
+    ),
     store.on('explorer_reveal', (path) => {
       void revealPath(path, true)
     }),

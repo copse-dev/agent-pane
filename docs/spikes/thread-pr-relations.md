@@ -4,8 +4,9 @@ Original file-index spike base: `933730f706ed196ed496c4a0c07b34434227db27`.
 
 This report records the first, file-index stage. The subsequent integrated SQLite
 implementation and profiling are documented in [thread-sqlite-index.md](thread-sqlite-index.md).
-The combined draft must be reworked after the sidebar/activity redesign (#3386)
-lands; it is not ready to merge.
+The sidebar/activity redesign it waited on (#3386) closed unmerged; the combined work
+landed in [#3502](https://github.com/copse-dev/agent-pane/pull/3502)
+(`packages/thread-store/src/thread-pr-relations.ts`).
 
 Acceptance: preserve every thread/PR relationship in both directions; distinguish
 recorded PR creation from mentions and legacy agent links; show producing and

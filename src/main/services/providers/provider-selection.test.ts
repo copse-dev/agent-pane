@@ -14,7 +14,7 @@ import {
   describeProvider,
   normalizeRoleModelSelection,
 } from './provider-selection.ts'
-import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
+import { setSetting, setApiKey } from '../storage/settings.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
 import { createProvider } from '@copse/llm/create-provider.ts'
 import { AnthropicProvider } from '@copse/llm/anthropic-provider.ts'
@@ -23,6 +23,10 @@ import { expectStringRecord } from '@shared/unknown-value.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { jsonResponse } from './test-response.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+import { seedHandEditedSetting } from '../storage/settings.test-support.ts'
+
+installInMemorySecretCipher()
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
 
@@ -41,12 +45,12 @@ function authHeader(init?: RequestInit): string | undefined {
 }
 
 describe('model maker execution policy', () => {
-  afterEach(() => {
-    setSetting('blockedModelMakers', [])
+  afterEach(async () => {
+    await setSetting('blockedModelMakers', [])
   })
 
   it('rejects a blocked maker before building a direct or OpenRouter provider', async () => {
-    setSetting('blockedModelMakers', ['xai'])
+    await setSetting('blockedModelMakers', ['xai'])
     await assert.rejects(
       () => describeProvider('openrouter:x-ai/grok-4.5'),
       /xAI models are blocked/,
@@ -87,15 +91,15 @@ describe('subagent local model routing', () => {
     setApiKey('openai', 'sk-routing-test')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     restoreFetch?.()
     restoreFetch = undefined
-    setSetting('localSubagentsEnabled', true)
-    setSetting('subagentModel', '')
-    setSetting('localDefaultModel', '')
-    setSetting('reviewModel', '')
-    setSetting('roleModels', {})
-    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    await setSetting('localSubagentsEnabled', true)
+    await setSetting('subagentModel', '')
+    await setSetting('localDefaultModel', '')
+    await setSetting('reviewModel', '')
+    await setSetting('roleModels', {})
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('anthropic', '')
     setApiKey('openai', '')
   })
@@ -108,19 +112,19 @@ describe('subagent local model routing', () => {
   })
 
   it('returns null when the selected research model matches the parent', async () => {
-    setSetting('subagentModel', 'local-model')
+    await setSetting('subagentModel', 'local-model')
     const route = await buildSubagentRoute('lmstudio:local-model')
     assert.equal(route, null)
   })
 
   it('returns null when local subagent routing is disabled', async () => {
-    setSetting('localSubagentsEnabled', false)
+    await setSetting('localSubagentsEnabled', false)
     const route = await buildSubagentRoute('claude-sonnet-4-6')
     assert.equal(route, null)
   })
 
   it('routes cloud chat models to the configured subagent local model', async () => {
-    setSetting('subagentModel', 'explore-model')
+    await setSetting('subagentModel', 'explore-model')
     restoreFetch = stubFetch(async () =>
       jsonResponse({ data: [{ id: 'explore-model', context_length: 32_768 }] }),
     )
@@ -132,7 +136,7 @@ describe('subagent local model routing', () => {
   })
 
   it('routes research through a configured cloud model', async () => {
-    setSetting('subagentModel', 'claude-haiku-4-5')
+    await setSetting('subagentModel', 'claude-haiku-4-5')
     const route = await buildSubagentRoute('gpt-5')
     assert.ok(route)
     assert.equal(route.usageModel, 'claude-haiku-4-5')
@@ -140,7 +144,7 @@ describe('subagent local model routing', () => {
   })
 
   it('falls back to the default local model when subagent model is auto', async () => {
-    setSetting('localDefaultModel', 'default-local')
+    await setSetting('localDefaultModel', 'default-local')
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
 
     const route = await buildSubagentRoute('gpt-4o')
@@ -157,7 +161,7 @@ describe('subagent local model routing', () => {
    * the model that actually ran, not the rule that chose it.
    */
   it('expands a rule stored on a role instead of routing to it as an id', async () => {
-    setSetting('subagentModel', 'auto:best-local')
+    await setSetting('subagentModel', 'auto:best-local')
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
 
     const route = await buildSubagentRoute('claude-sonnet-4-6')
@@ -168,14 +172,14 @@ describe('subagent local model routing', () => {
 
   it('defaults review to an on-device model', async () => {
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
-    setSetting('localDefaultModel', 'default-local')
+    await setSetting('localDefaultModel', 'default-local')
     const route = await buildReviewRoute()
     assert.ok(route)
     assert.equal(route.usageModel, 'lmstudio:default-local')
   })
 
   it('routes review through a configured cloud model', async () => {
-    setSetting('reviewModel', 'gpt-5-mini')
+    await setSetting('reviewModel', 'gpt-5-mini')
     const route = await buildReviewRoute()
     assert.ok(route)
     assert.equal(route.usageModel, 'gpt-5-mini')
@@ -225,15 +229,15 @@ describe('per-model parameters reach the built provider', () => {
     setApiKey('lmstudio', 'configured-token')
   })
 
-  afterEach(() => {
-    setSetting('modelParameters', {})
+  afterEach(async () => {
+    await setSetting('modelParameters', {})
     setApiKey('lmstudio', '')
     if (prevMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
     else process.env['COPSE_PANEL_MOCK_LLM'] = prevMock
   })
 
   it('sends the parameters saved for the model being built', async () => {
-    setSetting('modelParameters', {
+    await setSetting('modelParameters', {
       'lmstudio:qwen-tuned': { reasoning: 'high', temperature: 0.6, topP: 0.9 },
     })
     const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-tuned'))
@@ -243,14 +247,16 @@ describe('per-model parameters reach the built provider', () => {
   })
 
   it('does not leak one model’s parameters onto another', async () => {
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { temperature: 0.6 } })
+    await setSetting('modelParameters', { 'lmstudio:qwen-tuned': { temperature: 0.6 } })
     const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-other'))
     assert.equal(request['temperature'], undefined)
     assert.equal(request['reasoning_effort'], undefined)
   })
 
   it('lets a turn override the level saved on the model', async () => {
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'low', temperature: 0.6 } })
+    await setSetting('modelParameters', {
+      'lmstudio:qwen-tuned': { reasoning: 'low', temperature: 0.6 },
+    })
     const request = await captureLocalRequest(
       await buildProvider('lmstudio:qwen-tuned', undefined, { reasoning: 'max' }),
     )
@@ -261,7 +267,7 @@ describe('per-model parameters reach the built provider', () => {
   })
 
   it('caps a deeply-tuned model for a role that is meant to be cheap', async () => {
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'max' } })
+    await setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'max' } })
     const request = await captureLocalRequest(
       await buildProvider('lmstudio:qwen-tuned', undefined, { maxReasoning: 'low' }),
     )
@@ -269,7 +275,7 @@ describe('per-model parameters reach the built provider', () => {
   })
 
   it('leaves an already-cheap level alone under a ceiling', async () => {
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'minimal' } })
+    await setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'minimal' } })
     const request = await captureLocalRequest(
       await buildProvider('lmstudio:qwen-tuned', undefined, { maxReasoning: 'low' }),
     )
@@ -291,12 +297,12 @@ describe('per-model parameters reach the built provider', () => {
   })
 
   it('lets a per-call ceiling lower, never raise, the saved output cap', async () => {
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 1024 } })
+    await setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 1024 } })
     const lower = await captureLocalRequest(
       await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
     )
     assert.equal(lower['max_tokens'], 1024)
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 8192 } })
+    await setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 8192 } })
     const capped = await captureLocalRequest(
       await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
     )
@@ -309,7 +315,9 @@ describe('per-model parameters reach the built provider', () => {
     // and `sanitizeModelParameters` drops values the *selected* model would
     // reject. This covers the first; the second is unit-tested against every
     // family in `model-parameters.test.ts`.
-    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { reasoning: 'ludicrous' } })
+    await seedHandEditedSetting('modelParameters', {
+      'lmstudio:qwen-tuned': { reasoning: 'ludicrous' },
+    })
     const request = await captureLocalRequest(await buildProvider('lmstudio:qwen-tuned'))
     assert.equal(request['reasoning_effort'], undefined)
     assert.equal(request['temperature'], undefined)
@@ -452,9 +460,9 @@ describe('listLmStudioModels cache', () => {
   let fetchMock: ReturnType<typeof mock.fn<typeof fetch>>
   let restoreFetch: (() => void) | undefined
 
-  beforeEach(() => {
+  beforeEach(async () => {
     invalidateLmStudioModelsCache()
-    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('lmstudio', 'cache-test-key')
     fetchMock = mock.fn<typeof fetch>(async () => jsonResponse({ data: [{ id: 'local-model' }] }))
     restoreFetch = stubFetch(fetchMock)
@@ -490,7 +498,7 @@ describe('listLmStudioModels cache', () => {
   })
 
   it('does not collide when different URL and key pairs have the same concatenation', async () => {
-    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1a')
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1a')
     setApiKey('lmstudio', 'b')
     fetchMock = mock.fn<typeof fetch>(async (input) => {
       const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url
@@ -500,7 +508,7 @@ describe('listLmStudioModels cache', () => {
     restoreFetch = stubFetch(fetchMock)
     assert.deepEqual(await listLmStudioModels(), ['first'])
 
-    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('lmstudio', 'ab')
     assert.deepEqual(await listLmStudioModels(), ['second'])
     assert.equal(fetchMock.mock.callCount(), 4)
@@ -694,13 +702,13 @@ describe('model-info server locality for automatic recovery', () => {
     invalidateLmStudioModelsCache()
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'qwen/qwen3.6-35b-a3b' }] }))
   })
-  afterEach(() => {
+  afterEach(async () => {
     restoreFetch?.()
     if (oldEvalUrl === undefined) delete process.env['COPSE_EVAL_LM_STUDIO_URL']
     else process.env['COPSE_EVAL_LM_STUDIO_URL'] = oldEvalUrl
     if (oldBaseUrl === undefined) delete process.env['LM_STUDIO_BASE_URL']
     else process.env['LM_STUDIO_BASE_URL'] = oldBaseUrl
-    setSetting('localServerUrl', '')
+    await setSetting('localServerUrl', '')
     invalidateLmStudioModelsCache()
   })
   it('marks localhost and loopback servers local, and remote configured URLs nonlocal', async () => {
@@ -710,13 +718,13 @@ describe('model-info server locality for automatic recovery', () => {
       ['http://[::1]:1234/v1', true],
       ['https://inference.example/v1', false],
     ] as const) {
-      setSetting('localServerUrl', url)
+      await setSetting('localServerUrl', url)
       invalidateLmStudioModelsCache()
       assert.equal((await listLmStudioModelInfo())[0]?.local, local)
     }
   })
   it('uses the actual environment override rather than the stored localhost URL', async () => {
-    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     process.env['LM_STUDIO_BASE_URL'] = 'https://inference.example/v1'
     assert.equal((await listLmStudioModelInfo())[0]?.local, false)
     process.env['COPSE_EVAL_LM_STUDIO_URL'] = 'http://localhost:4321/v1'
