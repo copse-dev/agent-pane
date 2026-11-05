@@ -146,7 +146,14 @@ describe('generic subagent invocation', () => {
                     prompt: 'Plan the supplied change',
                     summary: report,
                     model: 'claude-sonnet-4-6',
-                    messages: [{ id: 'child-message', role: 'assistant', content: report }],
+                    messages: [
+                      {
+                        id: 'child-message',
+                        role: 'assistant',
+                        content: report,
+                        createdAt: now,
+                      },
+                    ],
                   },
                 },
               ],
