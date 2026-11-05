@@ -344,14 +344,23 @@ export class AcpTurnFailure extends Error {
     assistantText: string
     usage: { inputTokens: number; outputTokens: number }
   }
+  /**
+   * The turn spawned the agent under Copse's own OS sandbox on this machine
+   * (not remote, not unsandboxed), as decided when the turn started. The error
+   * copy reads it to name a cause only that sandbox creates, such as the
+   * read-only macOS Keychain (#4147).
+   */
+  readonly sandboxed: boolean
 
   constructor(
     cause: unknown,
     partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+    options: { readonly sandboxed?: boolean } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
+    this.sandboxed = options.sandboxed === true
   }
 }
 
@@ -597,13 +606,17 @@ export async function runAcpTurnWithContinuation(
           : [],
       )
       .join('')
-    throw new AcpTurnFailure(err.cause, {
-      assistantText: `${earlier}${err.partial.assistantText}`,
-      usage: {
-        inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
-        outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+    throw new AcpTurnFailure(
+      err.cause,
+      {
+        assistantText: `${earlier}${err.partial.assistantText}`,
+        usage: {
+          inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
+          outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+        },
       },
-    })
+      { sandboxed: err.sandboxed },
+    )
   }
   return {
     stopReason: second.stopReason,
@@ -670,10 +683,11 @@ async function runAcpAgentTurn(
   // One containment answer for the whole turn: the session mode preset, the
   // read/search and Codex code-mode auto-approvals, and execute gating all read
   // it, so a remote (ACP-over-SSH) agent can never be treated as seatbelted.
+  const localSandbox = willSandboxAcpAgent(sandbox)
   const { sandboxed, contained, remote } = resolveAcpRunContainment({
     cwd,
     sshTarget,
-    localSandbox: willSandboxAcpAgent(sandbox),
+    localSandbox,
     unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
   })
   // Remembered grants are per SSH host: each is its own trust boundary.
@@ -996,12 +1010,18 @@ async function runAcpAgentTurn(
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     // An agent on a remote host answering "Authentication required" needs
     // remote-side remedies; replace the dead-end message with ones that work.
-    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err, {
-      assistantText,
-      usage: turn
-        ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
-        : { inputTokens: 0, outputTokens: 0 },
-    })
+    throw new AcpTurnFailure(
+      remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err,
+      {
+        assistantText,
+        usage: turn
+          ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
+          : { inputTokens: 0, outputTokens: 0 },
+      },
+      // The seatbelt the spawn actually applied: `sandboxed` also counts an
+      // unattended container, which has no macOS Keychain to keep read-only.
+      { sandboxed: localSandbox && !remote },
+    )
   } finally {
     releaseAgentWriter()
   }

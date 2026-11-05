@@ -3034,16 +3034,17 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '```',
   ].join('\n')
   // #4147: Claude Code's start-up organization check (managed
-  // `forceLoginOrgUUID`) refused a token the sandboxed agent could not renew.
-  // Text is `classifyAgentError`'s output for the adapter's exit-code-1 report,
-  // with stderr cut to its first line so the message fits one capture.
+  // `forceLoginOrgUUID`) could not verify the token of a sandboxed agent.
+  // Text is `classifyAgentError`'s output on macOS for the adapter's
+  // exit-code-1 report from a seatbelted agent, with stderr cut to its first
+  // line so the message fits one capture.
   const claudeOrgContent = [
     '> [!WARNING]',
-    '> **Claude sign-in expired**',
+    '> **Claude couldn’t verify its sign-in**',
     '>',
-    '> This turn couldn’t run because Claude’s saved credentials are no longer valid.',
+    '> This turn couldn’t run because Claude couldn’t confirm its saved sign-in.',
     '',
-    'Claude checks its sign-in against your organization’s policy when it starts, and couldn’t confirm the saved one. Usually its access token had expired: inside Copse’s sandbox it can renew the token but can’t save the new one to the macOS Keychain. Signing in from a terminal saves a fresh token.',
+    'Claude checks its sign-in against your organization’s policy when it starts. When that fails, its access token has usually expired: inside Copse’s sandbox it can renew the token but can’t save the new one to the macOS Keychain. If your network was down instead, re-send your message once it’s back.',
     '',
     '**To continue**',
     '',

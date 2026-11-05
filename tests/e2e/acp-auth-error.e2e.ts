@@ -220,17 +220,21 @@ describe('ACP authentication error presentation', () => {
   })
 
   // #4147: Claude Code's organization check exits the agent with a raw -32603
-  // that reads like a network blip. The thread must say it is a stale sign-in,
-  // why, and how to fix it, before the agent's own words.
-  it("explains Claude's failed organization check as a stale sign-in", async () => {
+  // that reads like a network blip. The thread must say the sign-in couldn't be
+  // verified, why that is usually a stale sign-in, what to do if it was the
+  // network, and how to sign in, before the agent's own words.
+  it("explains Claude's failed organization check as an unverified sign-in", async () => {
     const message = await $(
       '[data-message-id="msg-assistant-claude-org-auth"] .message-text',
     ).getElement()
     const warning = await message.$('.markdown-alert-warning').getElement()
-    await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
+    await expect(warning.$('strong')).toHaveText('Claude couldn’t verify its sign-in')
     const cause = await message.$('p*=organization’s policy').getElement()
     await expect(cause).toHaveText(
       expect.stringContaining('can’t save the new one to the macOS Keychain'),
+    )
+    await expect(cause).toHaveText(
+      expect.stringContaining('If your network was down instead, re-send your message'),
     )
     await expect(message.$('ol code')).toHaveText('claude auth login')
     await expect(message.$('pre code')).toHaveText(

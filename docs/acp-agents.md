@@ -541,9 +541,13 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   renews it, can't save it, and keeps using the expired one. On a machine whose
   managed settings set `forceLoginOrgUUID`, the start-up organization check then
   fails with "Unable to verify organization for the current authentication
-  token" and the agent exits with code 1 (#4147). Copse reports this as an
-  expired Claude sign-in and offers `claude auth login`: signing in from a
-  terminal saves a fresh token.
+  token" and the agent exits with code 1 (#4147). Claude prints the same
+  message when the check's single, unretried request to Anthropic fails on the
+  network, so Copse reports it as a sign-in Claude couldn't verify: usually
+  expired (with the Keychain cause only for a sandboxed agent on macOS), or a
+  network failure worth one retry. It offers `claude auth login`, since signing
+  in from a terminal saves a fresh token, and the note it leaves for the next
+  turn does not claim a re-run must fail.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the
