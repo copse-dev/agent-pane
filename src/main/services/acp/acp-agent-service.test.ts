@@ -539,8 +539,9 @@ describe('buildAcpPrompt', () => {
       sandboxed: true,
       bridgeToolNames: ['run_shell'],
     })
-    assert.equal(block?.type, 'text')
-    assert.match(block.type === 'text' ? block.text : '', /offers no GitHub tools in this session/)
+    assert.ok(block)
+    assert.equal(block.type, 'text')
+    assert.match(block.text, /offers no GitHub tools in this session/)
   })
 
   it('places the notes ahead of the replayed transcript', () => {
