@@ -135,7 +135,7 @@ describe('Changes chip committed-work totals (#2318)', { skip: !gitAvailable }, 
             'pr',
             'view',
             '--json',
-            'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number',
+            'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number,baseRefName',
           ])
           assert.equal(options.cwd, root)
           return { stdout: JSON.stringify({ state }), stderr: '', code: 0 }

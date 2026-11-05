@@ -113,9 +113,17 @@ export async function branchHasOpenPr(
   return (await getOpenPrForBranch(projectId, branch, root)) !== null
 }
 
-/** A merged PR's recorded head as a committed base, labelled for the Changes panel. */
-function mergedPrHead(pr: GhPrView): { sha: string; label: string } | null {
-  if (!pr.headRefOid) return null
+/**
+ * A merged PR's recorded head as a committed base, labelled for the Changes
+ * panel. Only a PR merged into the default branch counts: one merged into
+ * another base (a release branch, say) has not landed where the committed list
+ * compares, so its head must not hide those commits.
+ */
+function mergedPrHead(
+  pr: GhPrView,
+  defaultBranch: string | null,
+): { sha: string; label: string } | null {
+  if (!pr.headRefOid || !defaultBranch || pr.baseRefName !== defaultBranch) return null
   return {
     sha: pr.headRefOid,
     label: pr.number ? `merged PR #${String(pr.number)}` : 'merged PR',
@@ -128,7 +136,8 @@ function mergedPrHead(pr: GhPrView): { sha: string; label: string } | null {
  * {@link getOpenPrForBranch}, with the same negative caching and failure
  * backoff. The default branch is skipped: `--head` matches fork PRs by branch
  * name alone, and a fork's merged `main` would otherwise become this
- * checkout's base.
+ * checkout's base. A PR merged into any other base is ignored too (see
+ * {@link mergedPrHead}).
  */
 export async function branchMergedThrough(
   projectId: string,
@@ -137,7 +146,8 @@ export async function branchMergedThrough(
   query: typeof runGh = runGh,
 ): Promise<{ sha: string; label: string } | null> {
   if (!root || !isGhAvailable()) return null
-  if (branch === (await getDefaultBranch(root))) return null
+  const defaultBranch = await getDefaultBranch(root)
+  if (!defaultBranch || branch === defaultBranch) return null
   return branchMergedPrCache.get(branchStatusLookupKey(projectId, root, branch), async () => {
     const result = await query(
       [
@@ -148,7 +158,7 @@ export async function branchMergedThrough(
         '--state',
         'merged',
         '--json',
-        'number,headRefOid',
+        'number,headRefOid,baseRefName',
         '--limit',
         '1',
       ],
@@ -158,7 +168,7 @@ export async function branchMergedThrough(
       result.code === 0 ? safeJsonParse(result.stdout, decodeWithSchema(ghPrViewListSchema)) : null
     if (list === null) return { ok: false, pr: null }
     const [pr] = list
-    return { ok: true, pr: pr ? mergedPrHead(pr) : null }
+    return { ok: true, pr: pr ? mergedPrHead(pr, defaultBranch) : null }
   })
 }
 
@@ -236,7 +246,7 @@ export async function getPrWorkspaceContext(
       'pr',
       'view',
       '--json',
-      'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number',
+      'state,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,number,baseRefName',
     ],
     { cwd: root },
   )
@@ -247,7 +257,7 @@ export async function getPrWorkspaceContext(
       hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)
       hasCiFailures = ghPrHasCiFailures(pr)
     } else if (pr?.state === 'MERGED') {
-      mergedPr = mergedPrHead(pr)
+      mergedPr = mergedPrHead(pr, await getDefaultBranch(root))
     }
   }
 

@@ -143,7 +143,12 @@ describe('getPrWorkspaceContext with a merged PR', { skip: !gitOk }, () => {
     const context = await getPrWorkspaceContext(repo, {
       runGh: () =>
         Promise.resolve({
-          stdout: JSON.stringify({ state: 'MERGED', headRefOid: sha, number: 4104 }),
+          stdout: JSON.stringify({
+            state: 'MERGED',
+            headRefOid: sha,
+            number: 4104,
+            baseRefName: 'main',
+          }),
           stderr: '',
           code: 0,
         }),
@@ -151,6 +156,25 @@ describe('getPrWorkspaceContext with a merged PR', { skip: !gitOk }, () => {
     assert.equal(context.hasOpenPr, false)
     assert.equal(context.canOpenPr, false)
     assert.equal(context.changeStats, null)
+  })
+
+  it('keeps reporting work whose PR merged into another base as committed', async () => {
+    const sha = headSha()
+    const context = await getPrWorkspaceContext(repo, {
+      runGh: () =>
+        Promise.resolve({
+          stdout: JSON.stringify({
+            state: 'MERGED',
+            headRefOid: sha,
+            number: 4104,
+            baseRefName: 'release/1.x',
+          }),
+          stderr: '',
+          code: 0,
+        }),
+    })
+    assert.equal(context.hasOpenPr, false)
+    assert.equal(context.changeStats?.additions, 1)
   })
 })
 
@@ -209,8 +233,8 @@ describe('branchMergedThrough', { skip: !gitOk }, () => {
     }
   }
 
-  const merged = (sha: string, number = 4104): GhResponse => ({
-    stdout: JSON.stringify([{ number, headRefOid: sha }]),
+  const merged = (sha: string, number = 4104, baseRefName = 'main'): GhResponse => ({
+    stdout: JSON.stringify([{ number, headRefOid: sha, baseRefName }]),
     stderr: '',
     code: 0,
   })
@@ -231,7 +255,7 @@ describe('branchMergedThrough', { skip: !gitOk }, () => {
           '--state',
           'merged',
           '--json',
-          'number,headRefOid',
+          'number,headRefOid,baseRefName',
           '--limit',
           '1',
         ],
@@ -242,7 +266,13 @@ describe('branchMergedThrough', { skip: !gitOk }, () => {
 
   const empty: Array<[string, GhResponse]> = [
     ['no merged PR', { stdout: '[]', stderr: '', code: 0 }],
-    ['a merged PR without a recorded head', { stdout: '[{"number":7}]', stderr: '', code: 0 }],
+    [
+      'a merged PR without a recorded head',
+      { stdout: '[{"number":7,"baseRefName":"main"}]', stderr: '', code: 0 },
+    ],
+    // Merged into a release branch, not the default branch: its commits have
+    // not landed where the committed list compares, so they stay visible.
+    ['a PR merged into another base', merged('a'.repeat(40), 7, 'release/1.x')],
   ]
   for (const [name, answer] of empty) {
     it(`answers null for ${name}, and caches that answer`, async () => {
