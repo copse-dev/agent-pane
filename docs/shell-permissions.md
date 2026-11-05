@@ -711,6 +711,17 @@ Block to require approval or disable it).
 
 ## Read access outside the project
 
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. An eligible outside-read command instead receives the same per-spawn read
+overlay as `run_shell`; its named paths become readable without granting writes or network.
+Separately approved loopback binding composes with that read overlay. Background starts do not yet
+offer `expects_sandbox_block`, reactive outside retries, or the foreground denial cache: an opaque
+task whose need for access appears only at runtime still needs the foreground escalation route.
+Foreground and background installs share package-firewall preparation and JavaScript
+lifecycle-script suppression under the existing safe-install setting; a missing proxy launcher
+refuses the install before spawning.
+
 A command that only reads fully-accounted-for paths outside the project receives the narrower
 “Allow read access outside of the project?” question. The prompt lists every requested path and
 warns that a directory can contain sensitive files. Its primary action grants reads of those
