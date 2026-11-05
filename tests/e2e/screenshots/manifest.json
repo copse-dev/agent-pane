@@ -3461,6 +3461,14 @@
       "sha256": "ff29258af452808a87fd1a0b7d6e0a6f34223b23d3b7062542e8660053be0ce1",
       "bytes": 304723
     },
+    "remote-artifact-image-origin-denied.png": {
+      "sha256": "0b8b9e57bdfd8c3b035d89b9f44c7df98a1a6d58ff2f506b6bdce48bbcfda91c",
+      "bytes": 161381
+    },
+    "remote-artifact-image-unavailable-retry.png": {
+      "sha256": "235dc37f5d5fc18a7b198e008f378da6185d9d1cae950bf78a1b9a514bdec8d3",
+      "bytes": 154038
+    },
     "remote-folder-add-host-error.png": {
       "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
       "bytes": 95725

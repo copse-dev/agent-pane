@@ -4,6 +4,10 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { bindBrowserLinkClicks } from './browser-links.ts'
 import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
+import type {
+  RemoteArtifactImageRequest,
+  RemoteArtifactImageResult,
+} from '@shared/remote-artifact-image.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { installArtifactImagePolicy } from './artifact-image-policy.ts'
 import { qsRequired } from '../dom/helpers.ts'
@@ -346,7 +350,7 @@ describe('markdown browser links', () => {
     assert.deepEqual(opened, [href])
   })
 
-  it('hydrates remote artifact image tags from the thread agent link', async () => {
+  it('hydrates rendered artifact image tags for the thread on screen', async () => {
     const root = document.createElement('div')
     root.className = 'messages-list'
     root.innerHTML = [
@@ -356,15 +360,23 @@ describe('markdown browser links', () => {
       renderMarkdown('<img alt="C-S-S rendered" src="artifacts/screenshots/css-new-tab.png" />'),
     ].join('\n')
 
-    hydrateRemoteArtifactImages(root, {
-      remoteAgent: {
-        artifactImageDataUrl: async (agentId, path) => {
-          assert.equal(agentId, 'bc-00000000-0000-0000-0000-000000000001')
-          assert.equal(path, 'artifacts/screenshots/css-new-tab.png')
-          return 'data:image/png;base64,abc123'
+    hydrateRemoteArtifactImages(
+      root,
+      {
+        remoteAgent: {
+          artifactImageDataUrl: async (request): Promise<RemoteArtifactImageResult> => {
+            // Main derives the agent from the thread; the transcript link is not sent.
+            assert.deepEqual(request, {
+              projectId: 'p1',
+              threadId: 't1',
+              path: 'artifacts/screenshots/css-new-tab.png',
+            })
+            return { ok: true, dataUrl: 'data:image/png;base64,abc123' }
+          },
         },
       },
-    })
+      { projectId: 'p1', threadId: 't1' },
+    )
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const img = qsRequired<HTMLImageElement>(root, 'img')
@@ -378,41 +390,34 @@ describe('markdown browser links', () => {
     dismissContextMenu()
   })
 
-  it('retries artifact image hydration after restored messages attach to the thread', async () => {
+  it('hydrates a message rendered before its thread scope was known once it is', async () => {
     const finalMessage = document.createElement('div')
     finalMessage.innerHTML = renderMarkdown(
       '<img alt="C-S-S rendered" src="artifacts/screenshots/css-new-tab.png" />',
     )
-    const calls: Array<{ agentId: string; path: string }> = []
+    const calls: RemoteArtifactImageRequest[] = []
     const api = {
       remoteAgent: {
-        artifactImageDataUrl: async (agentId: string, path: string): Promise<string> => {
-          calls.push({ agentId, path })
-          return 'data:image/png;base64,abc123'
+        artifactImageDataUrl: async (
+          request: RemoteArtifactImageRequest,
+        ): Promise<RemoteArtifactImageResult> => {
+          calls.push(request)
+          return { ok: true, dataUrl: 'data:image/png;base64,abc123' }
         },
       },
     }
 
-    hydrateRemoteArtifactImages(finalMessage, api)
+    hydrateRemoteArtifactImages(finalMessage, api, null)
     assert.equal(
       qsRequired<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
-      'missing-agent',
+      'missing-scope',
     )
 
-    const root = document.createElement('div')
-    root.className = 'messages-list'
-    root.innerHTML = renderMarkdown(
-      '_Running on Cursor Cloud Agent — follow along at https://cursor.com/agents/bc-00000000-0000-0000-0000-000000000001_',
-    )
-    root.append(finalMessage)
-    hydrateRemoteArtifactImages(root, api)
+    hydrateRemoteArtifactImages(finalMessage, api, { projectId: 'p1', threadId: 't1' })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     assert.deepEqual(calls, [
-      {
-        agentId: 'bc-00000000-0000-0000-0000-000000000001',
-        path: 'artifacts/screenshots/css-new-tab.png',
-      },
+      { projectId: 'p1', threadId: 't1', path: 'artifacts/screenshots/css-new-tab.png' },
     ])
     assert.equal(
       qsRequired<HTMLImageElement>(finalMessage, 'img').dataset['remoteArtifactState'],
