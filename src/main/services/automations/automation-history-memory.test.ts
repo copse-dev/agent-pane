@@ -139,6 +139,14 @@ describe('automation checks without project transcript allocation', () => {
           status: status === 'running' ? 'running' : 'idle',
           ...(status === 'pending-start' ? { draftPrompt: 'Check the project.' } : {}),
           automation: { scheduleId: schedule.id, scheduleName: schedule.name, triggeredAt: NOW },
+          // A checkout to retain: without one, cleanup skips the run and the
+          // releasePreviousRun guard above could never fire.
+          worktree: {
+            path: '/worktrees/busy',
+            branch: 'copse/busy',
+            baseBranch: 'main',
+            baseCommit: SHA,
+          },
         }),
       )
       await service.tick()
