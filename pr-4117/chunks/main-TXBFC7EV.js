@@ -458,12 +458,11 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-LQ7HXRVW.js";
+} from "./chunk-YFZ7CF3Z.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
-  arrowDownIcon,
   arrowLeftIcon,
   arrowRightIcon,
   arrowUpRightIcon,
@@ -475,6 +474,7 @@ import {
   circleIcon,
   clockIcon,
   closeIcon,
+  cornerDownLeftIcon,
   downloadIcon,
   escapeHtml,
   expectString,
@@ -540,7 +540,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-HZHR2CRE.js";
+} from "./chunk-6YY6Y3HG.js";
 import {
   clear,
   el,
@@ -2163,7 +2163,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncPanelBtns();
       syncSideChatBadge();
     }),
-    store2.on("staged_diffs_changed", syncChangesBadge),
+    store2.select((s) => s.stagedDiffs.length, syncChangesBadge),
     store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
@@ -12551,63 +12551,12 @@ var init_file_links = __esm({
   }
 });
 
-// src/renderer/markdown/remote-artifact-images.ts
-function threadAgentId(container) {
-  const scope = container.closest(".messages-list") ?? container;
-  for (const link of scope.querySelectorAll("a[href]")) {
-    const match = link.href.match(CURSOR_AGENT_URL_RE);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
-function hydrateRemoteArtifactImages(container, api2) {
-  let agentIdFromThread = null;
-  let threadScanned = false;
-  const fallbackAgentId = () => {
-    if (!threadScanned) {
-      agentIdFromThread = threadAgentId(container);
-      threadScanned = true;
-    }
-    return agentIdFromThread;
-  };
-  for (const img of container.querySelectorAll(
-    "img[data-remote-artifact-path]"
-  )) {
-    if (img.dataset["remoteArtifactState"] === "loading" || img.dataset["remoteArtifactState"] === "loaded") {
-      continue;
-    }
-    const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
-    if (!path || !agentId) {
-      img.dataset["remoteArtifactState"] = "missing-agent";
-      continue;
-    }
-    img.dataset["remoteArtifactState"] = "loading";
-    void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
-      img.src = dataUrl;
-      attachImageCopyMenu(img);
-      img.dataset["remoteArtifactState"] = "loaded";
-    }).catch((err) => {
-      img.dataset["remoteArtifactState"] = "error";
-      console.warn("[remote-agent] artifact image load failed:", err);
-    });
-  }
-}
-var CURSOR_AGENT_URL_RE;
-var init_remote_artifact_images = __esm({
-  "src/renderer/markdown/remote-artifact-images.ts"() {
-    init_image_expand();
-    CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
-  }
-});
-
 // src/renderer/markdown/desktop-message-host.ts
 function desktopMessageHost(api2, options = {}) {
   let cached = hosts.get(api2);
   if (!cached) {
     const decorate = (el2) => {
       void annotateFileReferences(el2, api2);
-      hydrateRemoteArtifactImages(el2, api2);
     };
     cached = { plain: { decorate }, runnable: { decorate, runCommands: true } };
     hosts.set(api2, cached);
@@ -12618,7 +12567,6 @@ var hosts;
 var init_desktop_message_host = __esm({
   "src/renderer/markdown/desktop-message-host.ts"() {
     init_file_links();
-    init_remote_artifact_images();
     hosts = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -12677,8 +12625,32 @@ var init_frame_loop = __esm({
 });
 
 // src/renderer/views/transcript-scroll.ts
+function scrollIntoTranscriptView(target, options) {
+  const list = target.closest(".messages-list");
+  const band = list?.style.getPropertyValue("--sticky-prompt-band") ?? "";
+  if (!list || !band) {
+    target.scrollIntoView(options);
+    return;
+  }
+  const previous = list.style.scrollPaddingTop;
+  list.style.scrollPaddingTop = band;
+  list.style.setProperty("--sticky-prompt-scroll-band", band);
+  try {
+    target.scrollIntoView(options);
+  } finally {
+    list.style.scrollPaddingTop = previous;
+    list.style.removeProperty("--sticky-prompt-scroll-band");
+  }
+}
+function naturalRowTop(list, row2) {
+  const listStyle = window.getComputedStyle(list);
+  const previous = row2.previousElementSibling;
+  return previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+}
 function createTranscriptScroll(host) {
-  const { list, scrollToBottomBtn } = host;
+  const { list, scrollToBottomBtn, scrollToBottomLabel, firstPromptBtn } = host;
+  let returnPosition = null;
+  let pendingFirstPromptId = null;
   let pinnedToBottom = true;
   let lastScrollTop = 0;
   let lastProgrammaticScrollTop = -1;
@@ -12691,7 +12663,23 @@ function createTranscriptScroll(host) {
     return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS;
   }
   function updateScrollButton() {
-    scrollToBottomBtn.hidden = isNearBottom();
+    if (pendingFirstPromptId) {
+      const target = Array.from(list.querySelectorAll("[data-message-id]")).find(
+        (element) => element.dataset["messageId"] === pendingFirstPromptId
+      );
+      if (target) {
+        pendingFirstPromptId = null;
+        const top = window.getComputedStyle(target).position === "sticky" ? naturalRowTop(list, target) : target.getBoundingClientRect().top;
+        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top);
+      }
+    }
+    firstPromptBtn.hidden = host.firstPromptId() === null || list.scrollTop <= SCROLL_PIN_THRESHOLD_PX || returnPosition !== null;
+    const label = returnPosition ? "Back to where you were" : "Back to latest";
+    if (scrollToBottomLabel.textContent !== label) {
+      scrollToBottomLabel.textContent = label;
+      scrollToBottomBtn.setAttribute("aria-label", label);
+    }
+    scrollToBottomBtn.hidden = returnPosition === null && isNearBottom();
   }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
@@ -12728,6 +12716,8 @@ function createTranscriptScroll(host) {
     if (!force && !shouldAutoScroll()) return;
     setScrollTopProgrammatically(list.scrollHeight);
     if (force) {
+      returnPosition = null;
+      pendingFirstPromptId = null;
       userScrolledUpAt = 0;
       pinnedToBottom = true;
       host.onReturnToLiveEnd();
@@ -12749,11 +12739,11 @@ function createTranscriptScroll(host) {
     updateScrollButton();
   }
   function captureReadingAnchor() {
-    const listRect = list.getBoundingClientRect();
+    const readingTop = list.getBoundingClientRect().top + host.stickyPromptBand();
     const candidates = list.querySelectorAll(READING_ANCHOR_CANDIDATES);
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top };
+      if (rect.bottom > readingTop) return { element, viewportTop: rect.top };
     }
     return null;
   }
@@ -12794,9 +12784,39 @@ function createTranscriptScroll(host) {
     },
     { passive: true }
   );
+  firstPromptBtn.addEventListener("click", () => {
+    const firstPromptId = host.firstPromptId();
+    if (firstPromptId === null || returnPosition) return;
+    returnPosition = {
+      anchor: captureReadingAnchor(),
+      scrollTop: list.scrollTop,
+      pinned: pinnedToBottom
+    };
+    pinnedToBottom = false;
+    userScrolledUpAt = Date.now();
+    pendingFirstPromptId = firstPromptId;
+    updateScrollButton();
+    scrollToBottomBtn.focus({ preventScroll: true });
+  });
   scrollToBottomBtn.addEventListener("click", () => {
-    userScrolledUpAt = 0;
-    scrollToBottom(true);
+    const previous = returnPosition;
+    returnPosition = null;
+    pendingFirstPromptId = null;
+    if (previous) {
+      pinnedToBottom = previous.pinned;
+      userScrolledUpAt = previous.pinned ? 0 : Date.now();
+      restoreReadingAnchor(previous.anchor, previous.scrollTop);
+      updateScrollButton();
+      const focusTarget = [firstPromptBtn, scrollToBottomBtn].find((control) => !control.hidden);
+      if (focusTarget) focusTarget.focus({ preventScroll: true });
+      else {
+        if (!list.hasAttribute("tabindex")) list.tabIndex = -1;
+        list.focus({ preventScroll: true });
+      }
+    } else {
+      userScrolledUpAt = 0;
+      scrollToBottom(true);
+    }
   });
   const streamFollow = createFrameLoop((dt) => {
     if (!shouldAutoScroll()) return false;
@@ -12808,7 +12828,7 @@ function createTranscriptScroll(host) {
     setScrollTopProgrammatically(
       list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS)))
     );
-    scrollToBottomBtn.hidden = true;
+    if (returnPosition === null) scrollToBottomBtn.hidden = true;
     return true;
   });
   list.addEventListener(STREAM_PAINT_EVENT, () => {
@@ -12828,6 +12848,8 @@ function createTranscriptScroll(host) {
       userScrolledUpAt = Date.now();
     },
     resetForThread: () => {
+      returnPosition = null;
+      pendingFirstPromptId = null;
       pinnedToBottom = true;
       userScrolledUpAt = 0;
       lastScrollTop = 0;
@@ -13273,6 +13295,116 @@ var init_workspace_links = __esm({
     init_active_thread_owner();
     init_files();
     init_toast();
+  }
+});
+
+// src/renderer/markdown/remote-artifact-images.ts
+function unavailableCopy(code2) {
+  switch (code2) {
+    case "sandbox-unavailable":
+      return "Image unavailable: it can only be downloaded inside the sandbox, which is not available here.";
+    case "unlinked-agent":
+      return "Image unavailable: this thread is not linked to the agent that made it.";
+    case "origin-denied":
+    case "redirect-denied":
+    case "too-many-redirects":
+      return "Image unavailable: it is hosted somewhere Copse does not download from.";
+    case "not-configured":
+      return "Image unavailable: add a Cursor API key in Settings.";
+    case "bad-type":
+    case "bad-image":
+    case "too-large":
+    case "bad-encoding":
+      return "Image unavailable: the file is not a supported image.";
+    default:
+      return "Image could not be loaded.";
+  }
+}
+function clearUnavailable(img) {
+  const next = img.nextElementSibling;
+  if (next?.classList.contains(UNAVAILABLE_CLASS)) next.remove();
+  img.hidden = false;
+}
+function showUnavailable(img, code2, retry) {
+  clearUnavailable(img);
+  img.hidden = true;
+  img.dataset["remoteArtifactState"] = "unavailable";
+  img.dataset["remoteArtifactError"] = code2;
+  const notice = document.createElement("div");
+  notice.className = UNAVAILABLE_CLASS;
+  notice.setAttribute("role", "status");
+  const label = document.createElement("span");
+  label.className = "remote-artifact-unavailable-label";
+  label.textContent = unavailableCopy(code2);
+  notice.append(label);
+  if (img.alt) {
+    const alt = document.createElement("span");
+    alt.className = "remote-artifact-unavailable-alt";
+    alt.textContent = img.alt;
+    notice.append(alt);
+  }
+  if (retry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn ui-btn-secondary ui-btn-compact remote-artifact-retry";
+    button.textContent = "Retry";
+    button.addEventListener("click", retry, { once: true });
+    notice.append(button);
+  }
+  img.after(notice);
+}
+function requestImage(img, api2, scope) {
+  const path = img.dataset["remoteArtifactPath"];
+  if (!path) return;
+  const agentId = img.dataset["remoteArtifactAgentId"];
+  const request = {
+    projectId: scope.projectId,
+    threadId: scope.threadId,
+    path,
+    ...agentId ? { agentId } : {}
+  };
+  clearUnavailable(img);
+  img.dataset["remoteArtifactState"] = "loading";
+  delete img.dataset["remoteArtifactError"];
+  void api2.remoteAgent.artifactImageDataUrl(request).then(
+    (result) => {
+      if (result.ok) {
+        img.src = result.dataUrl;
+        attachImageCopyMenu(img);
+        img.dataset["remoteArtifactState"] = "loaded";
+        return;
+      }
+      showUnavailable(
+        img,
+        result.code,
+        result.retryable ? () => {
+          requestImage(img, api2, scope);
+        } : null
+      );
+    },
+    () => {
+      showUnavailable(img, "invalid-request", null);
+    }
+  );
+}
+function hydrateRemoteArtifactImages(container, api2, scope) {
+  for (const img of container.querySelectorAll(
+    "img[data-remote-artifact-path]"
+  )) {
+    const state = img.dataset["remoteArtifactState"];
+    if (state === "loading" || state === "loaded" || state === "unavailable") continue;
+    if (!scope) {
+      img.dataset["remoteArtifactState"] = "missing-scope";
+      continue;
+    }
+    requestImage(img, api2, scope);
+  }
+}
+var UNAVAILABLE_CLASS;
+var init_remote_artifact_images = __esm({
+  "src/renderer/markdown/remote-artifact-images.ts"() {
+    init_image_expand();
+    UNAVAILABLE_CLASS = "remote-artifact-unavailable";
   }
 });
 
@@ -14646,6 +14778,97 @@ function liveCommandPhase(calls) {
 }
 var init_command_phase_display = __esm({
   "src/shared/tools/command-phase-display.ts"() {
+  }
+});
+
+// src/renderer/views/command-task-links.ts
+function setBackgroundTaskLogLoader(next) {
+  loadLogs = next;
+}
+function createBackgroundTaskLogsSection(tc) {
+  const taskId = tc.commandPhase?.backgroundTaskId;
+  if (taskId === void 0) return null;
+  const button = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact tool-task-logs-button" },
+    "Show logs"
+  );
+  const output = el("div", { class: "tool-task-logs-output", hidden: true });
+  const section2 = el(
+    "div",
+    { class: "tool-task-logs", "data-background-task-id": taskId },
+    el(
+      "div",
+      { class: "tool-task-logs-header" },
+      el("span", { class: "acp-content-label" }, "Task output"),
+      button
+    ),
+    output
+  );
+  button.addEventListener("click", () => {
+    const loader = loadLogs;
+    if (!loader) return;
+    button.disabled = true;
+    void loader(taskId).then((result) => {
+      output.replaceChildren(logsContent(result));
+    }).catch(() => {
+      output.replaceChildren(
+        el("p", { class: "tool-result-empty" }, "Couldn't read this task's output.")
+      );
+    }).finally(() => {
+      output.hidden = false;
+      button.disabled = false;
+      button.textContent = "Refresh logs";
+    });
+  });
+  return section2;
+}
+function logsContent(result) {
+  if (!result) {
+    return el(
+      "p",
+      { class: "tool-result-empty" },
+      "This task\u2019s output is no longer available. It was stopped, or Copse restarted."
+    );
+  }
+  const text = result.logs.trim();
+  if (text === "") {
+    return el("p", { class: "tool-result-empty" }, result.running ? "No output yet." : "No output.");
+  }
+  return el("pre", {}, text);
+}
+function backgroundTaskCommandCall(thread, taskId) {
+  if (!thread) return void 0;
+  for (let index = thread.messages.length - 1; index >= 0; index--) {
+    const call = thread.messages[index]?.toolCalls.find(
+      (candidate) => candidate.commandPhase?.backgroundTaskId === taskId
+    );
+    if (call) return call;
+  }
+  return void 0;
+}
+function revealToolCard(root, toolCallId) {
+  const card = Array.from(root.querySelectorAll("[data-tool-id]")).find(
+    (candidate) => candidate.getAttribute("data-tool-id") === toolCallId
+  );
+  if (!card) return false;
+  for (let node = card.parentElement; node; node = node.parentElement) {
+    if (node instanceof HTMLDetailsElement && !node.open) node.open = true;
+  }
+  scrollIntoTranscriptView(card, { block: "center" });
+  card.classList.add("tool-card-revealed");
+  setTimeout(() => {
+    card.classList.remove("tool-card-revealed");
+  }, REVEAL_FLASH_MS);
+  return true;
+}
+var loadLogs, REVEAL_FLASH_MS;
+var init_command_task_links = __esm({
+  "src/renderer/views/command-task-links.ts"() {
+    init_helpers();
+    init_transcript_scroll();
+    loadLogs = null;
+    REVEAL_FLASH_MS = 1600;
   }
 });
 
@@ -17380,6 +17603,9 @@ function cardStatus2(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+    return "interrupted";
+  }
   return "done";
 }
 function toolCardKey(item) {
@@ -18217,7 +18443,7 @@ function mountConversationSearch(root) {
   function scrollCurrentIntoView() {
     const current = ranges[currentIdx];
     const target = current?.startContainer.parentElement;
-    target?.scrollIntoView({ block: "center", behavior: "auto" });
+    if (target) scrollIntoTranscriptView(target, { block: "center", behavior: "auto" });
   }
   function runSearch(preserveIndex = false) {
     const query = input.value;
@@ -18307,6 +18533,7 @@ var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEA
 var init_conversation_search = __esm({
   "src/renderer/views/conversation-search.ts"() {
     init_helpers();
+    init_transcript_scroll();
     init_icons();
     BASE_HIGHLIGHT = "chat-search";
     CURRENT_HIGHLIGHT = "chat-search-current";
@@ -18843,6 +19070,7 @@ function appendStandardToolSections(card, tc, label, summaryClass, count) {
         argsSection === null && tc.status !== "running",
         tc.appendedReminderLengths
       ),
+      ...appendIfPresent(createBackgroundTaskLogsSection(tc)),
       ...appendIfPresent(createToolLocationsSection(tc.locations))
     );
   };
@@ -19903,7 +20131,7 @@ function createHookCard(card, load) {
   cardEl.append(header, detail, createHookCardInspector(card, load));
   return cardEl;
 }
-function buildMessageOriginMarker(origin, editedByUser) {
+function buildMessageOriginMarker(origin, editedByUser, showCommand) {
   const fromHook = origin.kind === "hook";
   const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : origin.operationId.startsWith("thread:") ? "Thread \xB7 prompt from another conversation" : "Machine \xB7 automatic continuation";
   const marker = el(
@@ -19928,6 +20156,15 @@ function buildMessageOriginMarker(origin, editedByUser) {
         "edited"
       )
     );
+  }
+  if (showCommand) {
+    const button = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-ghost ui-btn-compact msg-origin-command-link" },
+      "Show command"
+    );
+    button.addEventListener("click", showCommand);
+    marker.append(button);
   }
   return marker;
 }
@@ -20247,17 +20484,28 @@ function mountConversation(root, store2, api2) {
   let agentNamesRevision = 0;
   let disposed = false;
   const avatarMotion = createAgentAvatarMotion();
+  const scrollToBottomLabel = el("span", {}, "Back to latest");
   const scrollToBottomBtn = el(
     "button",
     {
       class: "scroll-to-bottom",
       type: "button",
-      "aria-label": "Scroll to bottom",
-      "data-tooltip": "Scroll to bottom",
-      "data-tooltip-placement": "top",
+      "aria-label": "Back to latest",
       hidden: true
     },
-    arrowDownIcon("ui-icon")
+    cornerDownLeftIcon("ui-icon"),
+    scrollToBottomLabel
+  );
+  const firstPromptBtn = el(
+    "button",
+    {
+      class: "conversation-first-prompt",
+      type: "button",
+      "aria-label": "Jump to first prompt",
+      hidden: true
+    },
+    chevronUpIcon("ui-icon"),
+    el("span", { class: "conversation-first-prompt-label" }, "First prompt")
   );
   const appleSuggestions = mountAppleProjectSuggestions(
     store2,
@@ -20271,11 +20519,15 @@ function mountConversation(root, store2, api2) {
     appleDevelopmentHost,
     todoHost,
     list,
-    archiveReview.element,
-    scrollToBottomBtn
+    archiveReview.element
   );
   const expandedConciseTurns = /* @__PURE__ */ new Set();
   let conciseFooterSyncQueued = false;
+  function artifactImageScope(threadId) {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    const thread = threadId ?? activeThreadId;
+    return activeProjectId && thread ? { projectId: activeProjectId, threadId: thread } : null;
+  }
   function conciseEnabledFor(thread, messageId) {
     const enabled = store2.getState().conciseThreadsEnabled;
     if (!enabled || expandedConciseTurns.size === 0 || !thread) return enabled;
@@ -20308,7 +20560,7 @@ function mountConversation(root, store2, api2) {
     const key = details.dataset["disclosureKey"];
     const threadId = store2.getState().activeThreadId;
     if (key && threadId) disclosures.choose(threadId, key, true);
-    details.scrollIntoView({ block: "nearest" });
+    scrollIntoTranscriptView(details, { block: "nearest" });
   });
   activityBar.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -20318,7 +20570,13 @@ function mountConversation(root, store2, api2) {
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
-  root.append(roadmapOrigin.element, scrollArea, queuedHost);
+  const navigationRow = el(
+    "div",
+    { class: "conversation-navigation" },
+    firstPromptBtn,
+    scrollToBottomBtn
+  );
+  root.append(roadmapOrigin.element, scrollArea, navigationRow, queuedHost);
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command: command2 }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
@@ -20657,12 +20915,21 @@ function mountConversation(root, store2, api2) {
   let renderedThreadId = null;
   let renderedInputs = null;
   let stickyImagePrompt = null;
+  let stickyPrompt = null;
+  let stickyPromptBand = 0;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   const transcriptScroll = createTranscriptScroll({
     list,
     scrollToBottomBtn,
-    syncStickyImagePreview,
+    scrollToBottomLabel,
+    firstPromptBtn,
+    firstPromptId: () => getActiveThread(store2)?.messages.find((message2) => message2.role === "user" && !message2.origin)?.id ?? null,
+    syncStickyImagePreview: (releaseOnScrollUp) => {
+      syncStickyImagePreview(releaseOnScrollUp);
+      syncStickyPromptClearance();
+    },
+    stickyPromptBand: () => stickyPromptBand,
     onReturnToLiveEnd: () => {
       const threadId = store2.getState().activeThreadId;
       if (threadId) disclosures.resumeDeferredCompaction(threadId);
@@ -20718,8 +20985,7 @@ function mountConversation(root, store2, api2) {
     }
     const listRect = list.getBoundingClientRect();
     const listStyle = window.getComputedStyle(list);
-    const previous = prompt.previousElementSibling;
-    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const naturalTop = naturalRowTop(list, prompt);
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
     const compact = prompt.classList.contains("is-preview-compact");
     const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
@@ -20729,11 +20995,42 @@ function mountConversation(root, store2, api2) {
     else stickyImageFullHeight = 0;
     prompt.classList.toggle("is-preview-compact", shouldCompact);
   }
+  function syncStickyPromptClearance() {
+    const prompt = stickyPrompt;
+    let band = 0;
+    let stuck = false;
+    if (prompt?.isConnected) {
+      const promptStyle = window.getComputedStyle(prompt);
+      if (promptStyle.position === "sticky") {
+        const listStyle = window.getComputedStyle(list);
+        const stickyOffset = Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+        band = Math.max(
+          0,
+          Math.ceil(
+            stickyOffset + prompt.getBoundingClientRect().height + Number.parseFloat(listStyle.rowGap)
+          )
+        );
+        stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5;
+      }
+    }
+    stickyPromptBand = stuck ? band : 0;
+    const value = stuck && band > 0 ? `${String(band)}px` : "";
+    if (list.style.getPropertyValue("--sticky-prompt-band") !== value) {
+      if (value) list.style.setProperty("--sticky-prompt-band", value);
+      else list.style.removeProperty("--sticky-prompt-band");
+    }
+  }
   function refreshStickyImagePrompt() {
     const prompts = list.querySelectorAll(
       ":scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)"
     );
     const latest = prompts[prompts.length - 1];
+    if (stickyPrompt !== (latest ?? null)) {
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt);
+      stickyPrompt = latest ?? null;
+      if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt);
+    }
+    syncStickyPromptClearance();
     const next = latest?.querySelector(".message-images") ? latest : null;
     if (stickyImagePrompt !== next) {
       stickyImagePrompt?.classList.remove("is-preview-compact");
@@ -20744,12 +21041,16 @@ function mountConversation(root, store2, api2) {
   }
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     syncStickyImagePreview();
+    syncStickyPromptClearance();
   });
   listResizeObserver?.observe(list);
+  const stickyPromptResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    syncStickyPromptClearance();
+  });
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
-    hydrateRemoteArtifactImages(list, api2);
+    hydrateRemoteArtifactImages(list, api2, artifactImageScope());
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
@@ -20821,7 +21122,18 @@ function mountConversation(root, store2, api2) {
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
-    if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
+    const wakeCommand = origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId) : void 0;
+    if (origin) {
+      body.append(
+        buildMessageOriginMarker(
+          origin,
+          msg.editedByUser === true,
+          wakeCommand ? () => {
+            revealToolCard(list, wakeCommand.id);
+          } : void 0
+        )
+      );
+    }
     const nestReasoning = shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== void 0;
     appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
@@ -20838,7 +21150,7 @@ function mountConversation(root, store2, api2) {
     const msg = thread?.messages.find((m2) => m2.id === msgId);
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl) return;
-    hydrateRemoteArtifactImages(list, api2);
+    hydrateRemoteArtifactImages(list, api2, artifactImageScope(threadId));
     const run4 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
@@ -21489,7 +21801,7 @@ function mountConversation(root, store2, api2) {
       if (card instanceof HTMLDetailsElement) card.open = true;
       const target = card ?? message2;
       transcriptScroll.unpin();
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrollIntoTranscriptView(target, { behavior: "smooth", block: "center" });
       target.classList.add("reviewer-input-highlight");
       setTimeout(() => {
         target.classList.remove("reviewer-input-highlight");
@@ -21604,7 +21916,7 @@ function mountConversation(root, store2, api2) {
       const msg = thread?.messages.find((m2) => m2.id === mid);
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, false, api2);
-        hydrateRemoteArtifactImages(list, api2);
+        hydrateRemoteArtifactImages(list, api2, artifactImageScope());
         syncAcpResourceReferences(list, api2, store2);
       }
       if (msg?.role === "assistant" && msgEl) {
@@ -21703,15 +22015,23 @@ function mountConversation(root, store2, api2) {
   const unbindFileLinks = bindFileReferenceClicks(root, store2, api2);
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(root, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store2, api2);
+  setBackgroundTaskLogLoader(async (taskId) => {
+    const threadId = store2.getState().activeThreadId;
+    const projectId = threadId ? getThreadProjectId(store2, threadId) : null;
+    if (!threadId || !projectId) return null;
+    return api2.backgroundTasks.logs(projectId, threadId, taskId);
+  });
   rebuildForThread();
   syncFromStore();
   return () => {
     disposed = true;
+    setBackgroundTaskLogLoader(null);
     archiveReview.dispose();
     selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
     listResizeObserver?.disconnect();
+    stickyPromptResizeObserver?.disconnect();
     conciseFooterObserver.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
     disclosures.dispose();
@@ -21804,6 +22124,7 @@ var init_conversation = __esm({
     init_agent_activity();
     init_tool_display();
     init_command_phase_display();
+    init_command_task_links();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
@@ -72954,7 +73275,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderRestoreBanner();
   }
   function sameDiffState(a, b2) {
-    return a[0] === b2[0] && (a[1] === b2[1] || a[1].length === 0 && b2[1].length === 0);
+    return a[0] === b2[0] && sameQueue(a[1], b2[1]);
+  }
+  function sameQueue(a, b2) {
+    return a === b2 || a.length === 0 && b2.length === 0;
   }
   async function syncFromStore() {
     adoptActiveOwner();
@@ -72997,13 +73321,17 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("staged_diffs_changed", () => {
-      const queue = store2.getState().stagedDiffs;
-      if (queue.length === 0) conflictBanner.hidden = true;
-      if (changesModeActive(store2)) void syncFromStore();
-      else renderList();
-      scheduleRefresh();
-    }),
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store2.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true;
+        if (!changesModeActive(store2)) renderList();
+        scheduleRefresh();
+      },
+      sameQueue
+    ),
     // Only the diff state: an ordinary thread switch is threads_changed's job.
     store2.select(
       (s) => [s.activeDiff, s.stagedDiffs],
@@ -86919,7 +87247,6 @@ function attachDiffState(store2, api2, options) {
       stagedDiffs: entries,
       activeDiff: entries.length === 0 ? null : stillQueued
     });
-    store2.emit("staged_diffs_changed");
   };
   const unsubShowDiff = api2.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
@@ -88902,7 +89229,6 @@ async function boot() {
     (nextTheme) => {
       applyThemeToDocument(nextTheme);
       store.setState({ theme: nextTheme });
-      store.emit("theme_changed", nextTheme);
     }
   );
   const savedAccentColor = startupSettings.uiAccentColor;
