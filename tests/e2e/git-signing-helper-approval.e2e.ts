@@ -14,6 +14,7 @@ import {
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A public identity for the socket approval; the private-key case generates a disposable key.
@@ -116,7 +117,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const text = await dialog.getText()
@@ -139,7 +140,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     expect(await dialog.getText()).toContain('Allow reading this Git signing key?')
     await dialog.$('.approval-approve').click()
@@ -164,11 +165,11 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit failed.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle()
     // The identity check fails before staging or hooks when an inline public
     // key is absent from the agent and no private-key path is configured.
-    assert.equal(await $('#approval-dialog').isExisting(), false)
+    assert.equal(await $('#approval-dialog').isDisplayed(), false)
     assert.equal(git('diff', '--cached'), '')
     assert.equal(existsSync(join(root, 'hook-ran')), false)
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '2')
