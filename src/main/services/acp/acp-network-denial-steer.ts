@@ -114,15 +114,17 @@ function isGithubBridgeTool(name: string): boolean {
  * so every subcommand fails here, before authentication or the network. The
  * error reads like a broken login, and an agent that takes it for one loops on
  * `gh auth login` or asks the user to open the directory. Quoting it lets the
- * agent recognise the failure when it happens. The copy matches the
- * `gh-config-read` signature in `sandbox-denial-signatures.ts`, and a test
- * holds the two together.
+ * agent recognise the failure when it happens. `gh` prints the absolute path,
+ * never `~`, so the quote shows a `<home>` placeholder where the agent will see
+ * its home directory. The copy matches the `gh-config-read` signature in
+ * `sandbox-denial-signatures.ts`, and a test holds the two together.
  */
 export const ACP_SANDBOX_GH_CONFIG_ERROR =
-  'failed to read configuration: open ~/.config/gh/config.yml: operation not permitted'
+  'failed to read configuration: open <home>/.config/gh/config.yml: operation not permitted'
 
 const GH_OWN_SHELL_DENIAL =
-  `If \`gh\` fails in your own shell with "${ACP_SANDBOX_GH_CONFIG_ERROR}", this ` +
+  `If \`gh\` fails in your own shell with "${ACP_SANDBOX_GH_CONFIG_ERROR}" ` +
+  "(<home> being your home directory's absolute path), this " +
   "sandbox is keeping gh's config, which holds the user's GitHub token, unreadable. " +
   'It is not a missing login. Do not retry it, do not run `gh auth login`, and do not ask ' +
   "for access to ~/.config/gh. Adding GitHub to this agent's sandbox.allowedDomains " +
@@ -140,29 +142,20 @@ const GITHUB_NO_DIRECT_EGRESS =
  * up front. Waiting for the turn to end on a failed `gh` call is too late: Copse
  * only sees the agent's own shell output after the fact and cannot add to it.
  *
- * The route depends on what the "copse" MCP server actually offered this
- * session (`bridgeToolNames`). Pointing at tools that are not mounted (#4142)
- * leaves the agent no way forward, so the copy names the offered GitHub tools,
- * falls back to `run_shell` (which can ask to run `gh` outside the sandbox),
- * and with no bridge at all says plainly that GitHub is out of reach.
- * `undefined` means the caller does not know what was offered, which gives the
- * generic wording.
+ * The route depends on the tools the agent has listed from the "copse" MCP
+ * server this session (`bridgeToolNames`): an offer is not a mount (#4144).
+ * Pointing at tools that are not in the agent's tool list (#4142) leaves it no
+ * way forward, so the copy names the listed GitHub tools, falls back to
+ * `run_shell` (which can ask to run `gh` outside the sandbox), and with neither,
+ * including a bridge the agent never connected to, says plainly that GitHub is
+ * out of reach.
  */
-export function acpSandboxGithubSteer(bridgeToolNames?: readonly string[]): string {
+export function acpSandboxGithubSteer(bridgeToolNames: readonly string[]): string {
   const route = githubRoute(bridgeToolNames)
   return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
 }
 
-function githubRoute(bridgeToolNames: readonly string[] | undefined): string {
-  if (bridgeToolNames === undefined) {
-    return (
-      'For GitHub work (pull requests, issues, Actions, `gh`), use the "copse" MCP ' +
-      "server's GitHub and CI tools when available: they run on Copse's host gh/API " +
-      "path and need no github.com entry in this agent's sandbox.allowedDomains. " +
-      'Use gh_api_read for other GitHub reads (instead of `gh api`/`gh api graphql`) ' +
-      'and git_fetch to fetch branches or PR heads from origin.'
-    )
-  }
+function githubRoute(bridgeToolNames: readonly string[]): string {
   const githubTools = bridgeToolNames.filter(isGithubBridgeTool)
   const hasRunShell = bridgeToolNames.includes('run_shell')
   const shellFallback = hasRunShell
@@ -196,8 +189,9 @@ function githubRoute(bridgeToolNames: readonly string[] | undefined): string {
       ? 'the "copse" MCP server is not available in this session'
       : 'the "copse" MCP server offers no GitHub or shell tools in this session'
   return (
-    `For GitHub work (pull requests, issues, Actions, \`gh\`): ${unavailable}, so ` +
-    'nothing here can reach GitHub. Tell the user that GitHub could not be reached from ' +
+    `For GitHub work (pull requests, issues, Actions, \`gh\`): ${unavailable}, and ` +
+    'your own `gh` cannot read its login in this sandbox, so this session has no ' +
+    'signed-in route to GitHub. Tell the user that GitHub could not be reached from ' +
     'this sandboxed session instead of retrying.'
   )
 }

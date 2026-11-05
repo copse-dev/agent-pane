@@ -73,6 +73,10 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   it('quotes the same gh error the gh-config-read denial signature recognises', () => {
     assert.ok(ghConfigSignature, 'the gh-config-read signature must exist')
     assert.match(ACP_SANDBOX_GH_CONFIG_ERROR, ghConfigSignature.pattern)
+    // gh prints the absolute path, so the quote holds a placeholder for it,
+    // not a `~` the agent will never see.
+    assert.match(ACP_SANDBOX_GH_CONFIG_ERROR, /open <home>\/\.config\/gh\/config\.yml/)
+    assert.doesNotMatch(ACP_SANDBOX_GH_CONFIG_ERROR, /~/)
     assert.equal(
       classifySandboxDenial(ACP_SANDBOX_GH_CONFIG_ERROR, 'gh pr view')?.operation,
       'read ~/.config/gh',
@@ -86,12 +90,13 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   })
 
   it('explains the own-shell gh failure for every route and never offers ~/.config/gh', () => {
-    for (const names of [undefined, [], ['read_file'], ['run_shell'], ['gh_api_read']]) {
+    for (const names of [[], ['read_file'], ['run_shell'], ['gh_api_read']]) {
       const steer = acpSandboxGithubSteer(names)
       assert.ok(
         steer.includes(ACP_SANDBOX_GH_CONFIG_ERROR),
         `quotes the error for ${String(names)}`,
       )
+      assert.match(steer, /<home> being your home directory's absolute path/)
       assert.match(steer, /It is not a missing login/)
       assert.match(steer, /do not run `gh auth login`/)
       assert.match(steer, /do not ask for access to ~\/\.config\/gh/)
@@ -131,20 +136,18 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   })
 
   it('says GitHub is out of reach when nothing bridged can reach it', () => {
+    // No bridge, or one the agent never listed (#4144): no tools either way.
     const noBridge = acpSandboxGithubSteer([])
     assert.match(noBridge, /"copse" MCP server is not available in this session/)
+    assert.match(noBridge, /this session has no signed-in route to GitHub/)
     assert.match(noBridge, /Tell the user that GitHub could not be reached/)
     assert.doesNotMatch(noBridge, /gh_api_read|git_fetch|run_shell/)
+    // It must not claim nothing can reach GitHub while allowing direct calls
+    // once the user widens sandbox.allowedDomains.
+    assert.doesNotMatch(noBridge, /nothing here can reach GitHub/)
 
     const noShell = acpSandboxGithubSteer(['read_file'])
     assert.match(noShell, /offers no GitHub or shell tools in this session/)
     assert.match(noShell, /Tell the user that GitHub could not be reached/)
-  })
-
-  it('keeps the generic wording when the offered tools are unknown', () => {
-    const steer = acpSandboxGithubSteer()
-    assert.match(steer, /GitHub and CI tools when available/)
-    assert.match(steer, /gh_api_read/)
-    assert.match(steer, /git_fetch/)
   })
 })

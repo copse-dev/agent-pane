@@ -985,12 +985,12 @@ async function runAcpAgentTurn(
       {
         sandboxed,
         // The tools the agent actually listed (#4144), not the ones offered:
-        // the GitHub steer names them, or says plainly that GitHub is out of
-        // reach when there are none, offered-but-never-connected included.
+        // the notes steer to Copse's tools only when there are some, and the
+        // GitHub steer names them, or says plainly that GitHub is out of reach
+        // when there are none, offered-but-never-connected included.
         bridgeToolNames: listedToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
-        copseTools: bridgeMounted,
         ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
         ...(options.executionMode !== 'agent' && options.operatorInstructions
@@ -1795,8 +1795,8 @@ const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
  * GitHub steer that {@link buildAcpPrompt} appends (`acpSandboxGithubSteer`)
  * does the same for the network side, where GitHub is the destination agents
- * reach for unprompted. It depends on the bridged tools the session offers, so
- * it is not part of this constant.
+ * reach for unprompted. It depends on the bridged tools the agent has listed,
+ * so it is not part of this constant.
  *
  * `$TMPDIR` is named rather than a literal path because an agent may export its
  * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
@@ -1851,7 +1851,8 @@ function acpCopseToolsSteering(sandboxed: boolean, bridgeToolNames: readonly str
  * re-sending them every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
  * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines, followed by a
- * GitHub steer naming the bridged tools in `bridgeToolNames`.
+ * GitHub steer naming the bridged tools in `bridgeToolNames`. Without any, the
+ * notes leave out their Copse-tool steering (#4144).
  */
 export function buildAcpPrompt(
   userPrompt: UserContent,
@@ -1859,18 +1860,15 @@ export function buildAcpPrompt(
   opts?: {
     sandboxed?: boolean
     /**
-     * Tools the "copse" MCP server offered this session, for the sandbox note's
-     * GitHub steer. Leave it out when unknown; an empty list means no bridge.
+     * The tools the agent has listed from the "copse" MCP server this session
+     * (#4144). The notes steer it to Copse's tools only when there are some,
+     * and a sandboxed session's GitHub steer names exactly these. None by
+     * default, so a prompt never claims a tool the agent was not shown to have.
      */
     bridgeToolNames?: readonly string[]
     /** The session starts on a read-only view of the user's checkout. */
     readonlyCheckout?: boolean
     includeNotes?: boolean
-    /**
-     * Whether the session notes may steer the agent to Copse's bridged tools:
-     * only once it has mounted them (#4144). Defaults to true.
-     */
-    copseTools?: boolean
     /** Sent even without the session notes: a change in Copse's tools this session. */
     copseToolsNote?: string
     operatorInstructions?: string
@@ -1878,13 +1876,14 @@ export function buildAcpPrompt(
   },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
-  const copseTools = opts?.copseTools ?? true
+  const bridgeToolNames = opts?.bridgeToolNames ?? []
+  const copseTools = bridgeToolNames.length > 0
   const note =
     (includeNotes
       ? (copseTools ? ACP_TURN_PROMPT_NOTE : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
         (opts?.sandboxed
           ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}` +
-            `\n\n${acpSandboxGithubSteer(opts.bridgeToolNames)}`
+            `\n\n${acpSandboxGithubSteer(bridgeToolNames)}`
           : '') +
         (opts?.readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '') +
         '\n\n'
@@ -1926,7 +1925,6 @@ export function buildAcpPromptContent(
     bridgeToolNames?: readonly string[]
     readonlyCheckout?: boolean
     includeNotes?: boolean
-    copseTools?: boolean
     copseToolsNote?: string
     operatorInstructions?: string
     skills?: string
@@ -1938,7 +1936,6 @@ export function buildAcpPromptContent(
     ...(opts?.bridgeToolNames !== undefined ? { bridgeToolNames: opts.bridgeToolNames } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
-    ...(opts?.copseTools !== undefined ? { copseTools: opts.copseTools } : {}),
     ...(opts?.copseToolsNote ? { copseToolsNote: opts.copseToolsNote } : {}),
     ...(opts?.operatorInstructions !== undefined
       ? { operatorInstructions: opts.operatorInstructions }

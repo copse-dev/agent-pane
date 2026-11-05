@@ -62,16 +62,26 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-function registryWithOneBridgedTool(): ToolRegistry {
+function registryWithBridgedTools(names: readonly string[]): ToolRegistry {
   const registry = new ToolRegistry()
-  registry.register({
-    name: 'read_file',
-    description: 'Read a workspace file',
-    parameters: z.object({}),
-    execute: () => Promise.resolve('contents'),
-  })
+  for (const name of names) {
+    registry.register({
+      name,
+      description: `Fixture ${name}`,
+      parameters: z.object({}),
+      execute: () => Promise.resolve('contents'),
+    })
+  }
   return registry
 }
+
+function registryWithOneBridgedTool(): ToolRegistry {
+  return registryWithBridgedTools(['read_file'])
+}
+
+/** Bridged tools that give a sandboxed agent's GitHub steer something to name. */
+const GITHUB_ROUTE_TOOLS = ['read_file', 'run_shell', 'gh_api_read', 'git_fetch']
+const LISTED_GITHUB_ROUTE = /Offered here: gh_api_read, git_fetch\./
 
 async function useFixtureAgent(flags: string[]): Promise<void> {
   await setSetting('registeredAcpAgents', [
@@ -244,13 +254,15 @@ describe('ACP native bridge mount (#4144)', () => {
 
   it('gives a sandboxed agent that lists late its run_shell and GitHub steering back', async () => {
     await useFixtureAgent(['--mcp-http'])
-    const registry = registryWithOneBridgedTool()
+    const registry = registryWithBridgedTools(GITHUB_ROUTE_TOOLS)
     await sandboxedRun('sandboxed-late', async () => {
       const first = await turn('sandboxed-late', registry)
       assert.match(first.prompt, /Environment note: this session runs inside a filesystem sandbox/)
       assert.doesNotMatch(first.prompt, /run_shell tool for commands/)
-      // The GitHub steer stays without the tools, and says GitHub is out of reach.
+      // Offered but never connected: the GitHub steer stays, names none of
+      // the offered tools, and says GitHub is out of reach (#4145).
       assert.ok(first.prompt.includes(acpSandboxGithubSteer([])))
+      assert.doesNotMatch(first.prompt, /Offered here/)
 
       await runTurn('sandboxed-late', registry, { userPrompt: 'list-mcp-tools' })
       const after = await turn('sandboxed-late', registry)
@@ -260,8 +272,21 @@ describe('ACP native bridge mount (#4144)', () => {
       assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
       assert.ok(restored.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
       assert.match(restored, /use its run_shell tool for commands/)
-      assert.match(restored, /For GitHub work/)
+      assert.match(restored, LISTED_GITHUB_ROUTE)
       assert.doesNotMatch(restored, /"copse" MCP server is not available/)
+    })
+  })
+
+  it("hands a sandboxed agent's GitHub steer the tools it listed", async () => {
+    // The wiring the steer depends on: drop the listed names at the turn's
+    // call site and this prompt says GitHub is out of reach instead.
+    await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
+    await sandboxedRun('sandboxed-lists', async () => {
+      const { prompt } = await turn('sandboxed-lists', registryWithBridgedTools(GITHUB_ROUTE_TOOLS))
+      assert.match(prompt, LISTED_GITHUB_ROUTE)
+      assert.match(prompt, /For anything they do not cover, run `gh` through its run_shell tool/)
+      assert.doesNotMatch(prompt, /"copse" MCP server is not available/)
+      assert.ok(prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
     })
   })
 
