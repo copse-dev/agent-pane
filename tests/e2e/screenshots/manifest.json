@@ -5629,6 +5629,10 @@
       "sha256": "708d6485b25f0589cb0f11d7b8dad64a093ab97786808cc27ac521d7e0486fc6",
       "bytes": 299381
     },
+    "transcript-row-reconcile-new-turn.png": {
+      "sha256": "a7ae2fc42339bef2b4dcd497c04a107f633fb486fc68d7096f826fc2079c873a",
+      "bytes": 209222
+    },
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
       "bytes": 128662
