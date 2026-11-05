@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-HZHR2CRE.js";
+} from "./chunk-6YY6Y3HG.js";
 import {
   clear,
   el,
@@ -23078,7 +23078,8 @@ function normalizeBlankThreads(store) {
   const keepIds = /* @__PURE__ */ new Set([...blanks.filter(hasUnsubmittedPrompt).map((t2) => t2.id), keepEmptyId]);
   pruneBlankThreads(store, keepIds);
 }
-function createThread(store, draftPrompt) {
+function createThread(store, draftPrompt, options) {
+  const activate2 = options?.activate ?? true;
   const id = randomUUID();
   const defaultModel = store.getState().settings?.model;
   const threads = [
@@ -23100,16 +23101,21 @@ function createThread(store, draftPrompt) {
     },
     ...store.getState().threads
   ];
-  store.setState({
-    threads,
-    activeThreadId: id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
+  if (activate2) {
+    store.setState({
+      threads,
+      activeThreadId: id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+  } else {
+    store.setState({ threads });
+  }
   store.emit("threads_changed");
-  store.emit("panel_changed");
-  store.emit("new_thread_opened");
+  if (activate2) {
+    store.emit("new_thread_opened");
+  }
   return id;
 }
 function openNewThread(store) {
@@ -23136,7 +23142,6 @@ function openNewThread(store) {
       activeDiff: null,
       stagedDiffs: []
     });
-    store.emit("panel_changed");
     store.emit("new_thread_opened");
     return existing.id;
   }
@@ -23156,7 +23161,6 @@ function switchThread(store, id) {
     const { unreadAt: _read, ...readThread } = thread;
     return readThread;
   });
-  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
   store.setState({
     activeThreadId: id,
     threads,
@@ -23164,7 +23168,6 @@ function switchThread(store, id) {
     activeDiff: null,
     stagedDiffs: []
   });
-  if (panelWasPopulated) store.emit("panel_changed");
   store.emit("threads_changed");
 }
 function nextThreadId(store) {
@@ -23219,7 +23222,6 @@ function deleteThread(store, id) {
     ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeDoomed) store.emit("panel_changed");
 }
 function archiveThread(store, id, persisted) {
   const { threads, activeThreadId } = store.getState();
@@ -23255,7 +23257,6 @@ function archiveThread(store, id, persisted) {
     ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeArchived) store.emit("panel_changed");
 }
 function restoreThread(store, id) {
   const { threads } = store.getState();
@@ -23410,6 +23411,22 @@ function appendAcpContentBlock(store, messageId, channel, block) {
       message.contentBlocks = [...message.contentBlocks ?? [], block];
     }
   });
+  store.emit("message_acp_content", messageId);
+}
+function replaceAcpContentBlocks(store, messageId, channel, blocks) {
+  const text = blocks.filter((block) => block.type === "text").map((block) => block.text).join("");
+  const richBlocks = blocks.filter((block) => block.type !== "text");
+  updateMessage(store, messageId, (message) => {
+    if (channel === "thought") {
+      message.reasoning = text;
+      message.reasoningBlocks = richBlocks;
+    } else {
+      message.content = text;
+      message.contentBlocks = richBlocks;
+    }
+  });
+  if (channel === "thought") store.emit("message_reasoning", messageId, text);
+  else store.emit("message_token", messageId, text);
   store.emit("message_acp_content", messageId);
 }
 function setMessageContent(store, messageId, content) {
@@ -23942,7 +23959,7 @@ function serializedWrite(key, write) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
 }
 function setNavigationOwnership(owns) {
@@ -23967,7 +23984,23 @@ function serializedNavigation(api, navigation) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
-  return serializedWrite("mainWindow:navigation", () => api.windowState.setNavigation(navigation));
+  return sendNavigation(api, navigation);
+}
+function sendNavigation(api, navigation) {
+  const key = "mainWindow:navigation";
+  const prev = writeChains.get(key);
+  let write;
+  try {
+    write = api.windowState.setNavigation(navigation);
+  } catch (error62) {
+    write = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+  }
+  const next = prev ? Promise.all([prev.catch(() => void 0), write]).then(() => void 0) : write;
+  writeChains.set(key, next);
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key);
+  }).catch(() => void 0);
+  return next;
 }
 function afterThreadWrites(projectId, threadId, start) {
   const pending = writeChains.get(threadWriteKey(projectId, threadId));
@@ -23999,48 +24032,162 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
-function acceptRuntimeThreadMeta(projectId, thread, before) {
-  const previous = persistedMeta.get(projectId)?.get(thread.id);
-  if (!previous) return;
-  const next = { ...previous };
-  for (const key of TRANSCRIPT_META_KEYS) {
-    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
-    Object.assign(next, { [key]: thread[key] });
-  }
-  persistedMeta.get(projectId)?.set(thread.id, next);
+function markMetadataChanged(projectId, threadId, ownLoad) {
+  if (ownLoad) return;
+  for (const load of activeMetadataLoads.get(projectId) ?? []) load.changed.add(threadId);
 }
-function recordPersistedThread(projectId, thread) {
+function metadataBaseline(projectId) {
   let metas = persistedMeta.get(projectId);
   if (!metas) {
     metas = /* @__PURE__ */ new Map();
     persistedMeta.set(projectId, metas);
   }
-  metas.set(thread.id, metaOf(thread));
+  return metas;
+}
+function acknowledgeMetadata(projectId, threadId, meta3, ownLoad) {
+  const metas = metadataBaseline(projectId);
+  if (meta3) metas.set(threadId, meta3);
+  else metas.delete(threadId);
+  markMetadataChanged(projectId, threadId, ownLoad);
+}
+function retryMetaPatch(previous, next, uncertain) {
+  const patch = metaPatch(previous, next);
+  const values = { ...next };
+  for (const key of uncertain?.fields ?? []) Object.assign(patch, { [key]: values[key] });
+  return patch;
+}
+function runtimeMeta(previous, thread, before) {
+  const next = { ...previous };
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
+    Object.assign(next, { [key]: thread[key] });
+  }
+  return next;
+}
+function acceptRuntimeThreadMeta(projectId, thread, before) {
+  const previous = persistedMeta.get(projectId)?.get(thread.id);
+  if (previous) acknowledgeMetadata(projectId, thread.id, runtimeMeta(previous, thread, before));
+  for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+    if (pending.kind === "save") pending.meta = runtimeMeta(pending.meta, thread, before);
+  }
+  const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+  if (creation) creation.meta = runtimeMeta(creation.meta, thread, before);
+  const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+  if (uncertain?.target) uncertain.target = runtimeMeta(uncertain.target, thread, before);
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (!before || JSON.stringify(before[key]) !== JSON.stringify(thread[key])) {
+      uncertain?.fields.delete(key);
+    }
+  }
+}
+function queueThreadWrite(api, projectId, threadId, target) {
+  let projectPending = pendingThreadWrites.get(projectId);
+  if (!projectPending) {
+    projectPending = /* @__PURE__ */ new Map();
+    pendingThreadWrites.set(projectId, projectPending);
+  }
+  const queue = projectPending.get(threadId) ?? [];
+  projectPending.set(threadId, queue);
+  queue.push(target);
+  markMetadataChanged(projectId, threadId);
+  return serializedWrite(threadWriteKey(projectId, threadId), async () => {
+    const previous = metadataBaseline(projectId).get(threadId);
+    const uncertain = uncertainThreadWrites.get(projectId)?.get(threadId);
+    let submittedPatch;
+    let attemptedDelete = false;
+    try {
+      if (target.kind === "delete") {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId) || uncertain?.deleted) {
+          attemptedDelete = true;
+          await api.threads.delete(projectId, threadId);
+        }
+        acknowledgeMetadata(projectId, threadId, null);
+      } else {
+        if (!previous || uncertain?.deleted || unconfirmedCreates.get(projectId)?.has(threadId)) {
+          let creations2 = unconfirmedCreates.get(projectId);
+          if (!creations2) {
+            creations2 = /* @__PURE__ */ new Map();
+            unconfirmedCreates.set(projectId, creations2);
+          }
+          const creation = creations2.get(threadId) ?? { meta: previous ?? target.meta };
+          creations2.set(threadId, creation);
+          await api.threads.create(projectId, { ...target.thread, ...target.meta });
+          submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain);
+        } else {
+          submittedPatch = retryMetaPatch(previous, target.meta, uncertain);
+        }
+        if (Object.keys(submittedPatch).length > 0) {
+          await api.threads.updateMeta(projectId, threadId, submittedPatch);
+        }
+        acknowledgeMetadata(projectId, threadId, target.meta);
+      }
+      const creations = unconfirmedCreates.get(projectId);
+      creations?.delete(threadId);
+      if (creations?.size === 0) unconfirmedCreates.delete(projectId);
+      const uncertainties = uncertainThreadWrites.get(projectId);
+      uncertainties?.delete(threadId);
+      if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId);
+    } catch (error62) {
+      const fields = Object.keys(submittedPatch ?? {});
+      if (fields.length > 0 || attemptedDelete || target.kind === "save") {
+        let uncertainties = uncertainThreadWrites.get(projectId);
+        if (!uncertainties) {
+          uncertainties = /* @__PURE__ */ new Map();
+          uncertainThreadWrites.set(projectId, uncertainties);
+        }
+        const failed = uncertainties.get(threadId) ?? {
+          fields: /* @__PURE__ */ new Set(),
+          deleted: false,
+          target: null
+        };
+        for (const field of fields) failed.fields.add(field);
+        failed.deleted ||= attemptedDelete;
+        failed.target = target.kind === "save" ? target.meta : null;
+        uncertainties.set(threadId, failed);
+        markMetadataChanged(projectId, threadId);
+      }
+      throw error62;
+    } finally {
+      queue.splice(queue.indexOf(target), 1);
+      if (queue.length === 0) projectPending.delete(threadId);
+      if (projectPending.size === 0 && pendingThreadWrites.get(projectId) === projectPending) {
+        pendingThreadWrites.delete(projectId);
+      }
+    }
+  });
 }
 function reconcileThreads(api, projectId, threads) {
-  const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
-  const next = /* @__PURE__ */ new Map();
+  const previous = new Map(persistedMeta.get(projectId));
+  for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
+    const target = queue.at(-1);
+    if (target?.kind === "save") previous.set(id, target.meta);
+    else previous.delete(id);
+  }
+  const next = new Map(threads.map((thread) => [thread.id, { thread, meta: metaOf(thread) }]));
   const writes = [];
-  for (const t2 of threads) {
-    const meta3 = metaOf(t2);
-    next.set(t2.id, meta3);
-    const key = threadWriteKey(projectId, t2.id);
-    const prevMeta = prev.get(t2.id);
-    if (prevMeta === void 0) {
-      writes.push(serializedWrite(key, () => api.threads.create(projectId, t2)));
-    } else if (metaSig(prevMeta) !== metaSig(meta3)) {
-      const patch = metaPatch(prevMeta, meta3);
-      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t2.id, patch)));
+  for (const [id, target] of next) {
+    const before = previous.get(id);
+    const uncertain = uncertainThreadWrites.get(projectId)?.has(id);
+    const pending = pendingThreadWrites.get(projectId)?.has(id);
+    if (!before || metaSig(before) !== metaSig(target.meta) || uncertain && !pending) {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "save", ...target }));
     }
   }
-  for (const id of prev.keys()) {
-    if (!next.has(id)) {
-      writes.push(
-        serializedWrite(threadWriteKey(projectId, id), () => api.threads.delete(projectId, id))
-      );
+  const potentiallyCreated = /* @__PURE__ */ new Set([
+    ...previous.keys(),
+    ...unconfirmedCreates.get(projectId)?.keys() ?? [],
+    ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+  ]);
+  for (const id of potentiallyCreated) {
+    const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+    if (!next.has(id) && pending?.kind !== "delete") {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "delete" }));
     }
   }
-  persistedMeta.set(projectId, next);
+  for (const id of pendingThreadWrites.get(projectId)?.keys() ?? []) {
+    const pending = writeChains.get(threadWriteKey(projectId, id));
+    if (pending) writes.push(pending.then(() => void 0));
+  }
   return Promise.all(writes).then(() => void 0);
 }
 function flushProjectThreads(api, projectId, threads) {
@@ -24089,6 +24236,9 @@ function saveNavigation(api, activeProjectId, activeThreadId) {
 function saveProjectGroups(api, groups) {
   return serializedSet(api, KEY_PROJECT_GROUPS, groups);
 }
+function projectThreadLoadRevision(api, projectId) {
+  return threadLoadRevisions.get(api)?.get(projectId) ?? 0;
+}
 function invalidateProjectThreadLoads(api, projectId) {
   let revisions = threadLoadRevisions.get(api);
   if (!revisions) {
@@ -24097,20 +24247,163 @@ function invalidateProjectThreadLoads(api, projectId) {
   }
   revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
 }
-async function loadThreads(api, projectId) {
-  let loaded;
-  let revision;
-  do {
-    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
-    loaded = await api.threads.loadProject(projectId);
-  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
-  const threads = sortThreadsNewestFirst(loaded).map(
-    (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
-  );
-  const metas = /* @__PURE__ */ new Map();
-  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
-  persistedMeta.set(projectId, metas);
-  return threads;
+function threadWithMeta(thread, meta3, projection) {
+  const messagesLoaded = projection ? projection.messagesLoaded : thread.messagesLoaded;
+  const hasSavedPlan = projection ? projection.hasSavedPlan : thread.hasSavedPlan;
+  return {
+    ...meta3,
+    messages: thread.messages,
+    ...messagesLoaded !== void 0 ? { messagesLoaded } : {},
+    ...hasSavedPlan !== void 0 ? { hasSavedPlan } : {}
+  };
+}
+async function readThreadMetadata(api, projectId, onlyThreadId) {
+  const load = {
+    changed: /* @__PURE__ */ new Set(),
+    generation: 0,
+    fullProjectionGeneration: 0,
+    projections: /* @__PURE__ */ new Map()
+  };
+  let loads = activeMetadataLoads.get(projectId);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Set();
+    activeMetadataLoads.set(projectId, loads);
+  }
+  loads.add(load);
+  try {
+    let loaded;
+    let revision;
+    do {
+      revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
+      load.generation = ++metadataLoadGeneration;
+      loaded = await api.threads.loadProject(projectId);
+    } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
+    const threads = sortThreadsNewestFirst(loaded).filter((thread) => onlyThreadId === void 0 || thread.id === onlyThreadId).map(
+      (thread) => onlyThreadId === void 0 && thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
+    );
+    const baseline = metadataBaseline(projectId);
+    const beforeSeed = new Map(baseline);
+    const returned = new Map(threads.map((thread) => [thread.id, thread]));
+    if (load.generation < (appliedProjectLoads.get(projectId) ?? 0)) {
+      for (const id of /* @__PURE__ */ new Set([...baseline.keys(), ...returned.keys()])) load.changed.add(id);
+    }
+    for (const [id, generation] of appliedThreadLoads.get(projectId) ?? []) {
+      if (load.generation < generation) load.changed.add(id);
+    }
+    for (const id of baseline.keys()) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      if (!returned.has(id) && !load.changed.has(id)) {
+        acknowledgeMetadata(projectId, id, null, load);
+      }
+    }
+    for (const thread of threads) {
+      if (!load.changed.has(thread.id)) {
+        const meta3 = metaOf(thread);
+        const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+        const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+        const before = beforeSeed.get(thread.id) ?? creation?.meta ?? meta3;
+        for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+          if (pending.kind === "save") {
+            pending.meta = { ...meta3, ...retryMetaPatch(before, pending.meta, uncertain) };
+          }
+        }
+        if (uncertain?.target) {
+          uncertain.target = { ...meta3, ...retryMetaPatch(before, uncertain.target, uncertain) };
+        }
+        if (creation) creation.meta = meta3;
+        acknowledgeMetadata(projectId, thread.id, meta3, load);
+      }
+    }
+    for (const id of load.changed) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const current = baseline.get(id);
+      if (current) {
+        const old = returned.get(id) ?? { ...current, messages: [], messagesLoaded: false };
+        returned.set(id, threadWithMeta(old, current));
+      } else {
+        returned.delete(id);
+      }
+    }
+    for (const id of /* @__PURE__ */ new Set([
+      ...returned.keys(),
+      ...pendingThreadWrites.get(projectId)?.keys() ?? [],
+      ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+    ])) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+      const uncertain = uncertainThreadWrites.get(projectId)?.get(id);
+      if (pending?.kind === "delete" || !pending && uncertain?.target === null) {
+        returned.delete(id);
+        continue;
+      }
+      const target = pending?.kind === "save" ? pending.meta : uncertain?.target;
+      if (!target) continue;
+      const current = returned.get(id) ?? { ...target, messages: [], messagesLoaded: false };
+      const before = beforeSeed.get(id) ?? unconfirmedCreates.get(projectId)?.get(id)?.meta ?? target;
+      const patch = retryMetaPatch(before, target, uncertain);
+      returned.set(id, threadWithMeta(current, { ...metaOf(current), ...patch }));
+    }
+    for (const [id, thread] of returned) {
+      const known = load.projections.get(id);
+      const projection = known && known.generation >= load.fullProjectionGeneration ? known : {
+        generation: load.fullProjectionGeneration,
+        messagesLoaded: void 0,
+        hasSavedPlan: void 0
+      };
+      if (projection.generation > load.generation) {
+        returned.set(id, threadWithMeta(thread, metaOf(thread), projection));
+      }
+    }
+    for (const older of loads) {
+      if (older === load || older.generation >= load.generation) continue;
+      if (onlyThreadId === void 0) {
+        older.fullProjectionGeneration = Math.max(older.fullProjectionGeneration, load.generation);
+        for (const [id, projection] of older.projections) {
+          if (projection.generation <= load.generation) older.projections.delete(id);
+        }
+      }
+      for (const [id, thread] of returned) {
+        const previous = older.projections.get(id);
+        if (!previous || previous.generation < load.generation) {
+          older.projections.set(id, {
+            generation: load.generation,
+            messagesLoaded: thread.messagesLoaded,
+            hasSavedPlan: thread.hasSavedPlan
+          });
+        }
+      }
+    }
+    if (onlyThreadId === void 0) {
+      appliedProjectLoads.set(
+        projectId,
+        Math.max(appliedProjectLoads.get(projectId) ?? 0, load.generation)
+      );
+      const scoped = appliedThreadLoads.get(projectId);
+      for (const [id, generation] of scoped ?? []) {
+        if (generation <= load.generation) scoped?.delete(id);
+      }
+      if (scoped?.size === 0) appliedThreadLoads.delete(projectId);
+    } else {
+      let scoped = appliedThreadLoads.get(projectId);
+      if (!scoped) {
+        scoped = /* @__PURE__ */ new Map();
+        appliedThreadLoads.set(projectId, scoped);
+      }
+      scoped.set(onlyThreadId, Math.max(scoped.get(onlyThreadId) ?? 0, load.generation));
+    }
+    return sortThreadsNewestFirst([...returned.values()]);
+  } finally {
+    loads.delete(load);
+    if (loads.size === 0 && activeMetadataLoads.get(projectId) === loads) {
+      activeMetadataLoads.delete(projectId);
+    }
+  }
+}
+function loadThreads(api, projectId) {
+  return readThreadMetadata(api, projectId);
+}
+async function loadPersistedThread(api, projectId, threadId) {
+  return (await readThreadMetadata(api, projectId, threadId))[0];
 }
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
@@ -24319,7 +24612,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -24337,6 +24630,13 @@ var init_persistence = __esm({
     navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
+    pendingThreadWrites = /* @__PURE__ */ new Map();
+    unconfirmedCreates = /* @__PURE__ */ new Map();
+    uncertainThreadWrites = /* @__PURE__ */ new Map();
+    activeMetadataLoads = /* @__PURE__ */ new Map();
+    metadataLoadGeneration = 0;
+    appliedProjectLoads = /* @__PURE__ */ new Map();
+    appliedThreadLoads = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
@@ -26108,6 +26408,7 @@ var init_humanize_identifier = __esm({
       ["llm", "LLM"],
       ["macos", "macOS"],
       ["mcp", "MCP"],
+      ["mdn", "MDN"],
       ["okf", "OKF"],
       ["pdf", "PDF"],
       ["pii", "PII"],
@@ -26150,7 +26451,7 @@ function getToolDisplayName(name, tense = "done") {
   const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
-  if (mcp?.tool === "startup") return `${mcp.server} startup`;
+  if (mcp?.tool === "startup") return `${humanizeIdentifier(mcp.server)} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
@@ -26276,7 +26577,7 @@ function getToolGroupKey(name, kind) {
 }
 function getToolGroupLabel(key, tense = "done") {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length);
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length));
   }
   const group = TOOL_GROUPS[key];
   if (!group) return key;
@@ -26443,6 +26744,7 @@ var init_tool_display = __esm({
     init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
+      read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
@@ -26511,7 +26813,14 @@ var init_tool_display = __esm({
     };
     TOOL_GROUPS = {
       reading: {
-        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
+        tools: [
+          "explore",
+          "read_explored",
+          "read_file",
+          "list_dir",
+          "video_frames",
+          "preflight_worktree"
+        ],
         label: { running: "Reading files", done: "Read files" }
       },
       searching: {
@@ -26679,11 +26988,20 @@ function findRunningActivity(thread) {
       const tc = toolCalls[j3];
       if (!tc) continue;
       if (tc.status === "running") {
-        return { kind: "tool", name: tc.name === "explore" ? "explore" : tc.name };
+        return {
+          kind: "tool",
+          name: tc.name === "explore" ? "explore" : tc.name,
+          ...tc.commandPhase ? { commandPhase: tc.commandPhase.state } : {}
+        };
       }
       if (tc.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
+  return null;
+}
+function commandWaitLabel(phase) {
+  if (phase === "awaiting_approval") return "Waiting for approval";
+  if (phase === "starting") return "Starting command";
   return null;
 }
 function delegateActivityLabel(count, soleKind) {
@@ -26695,7 +27013,7 @@ function agentActivityLabel(thread, writing) {
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
   const activity = findRunningActivity(thread);
   if (activity) {
-    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
+    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${commandWaitLabel(activity.commandPhase) ?? getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base} (${todoLabel})` : base;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -27395,6 +27713,9 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function isAutomationPendingStart(thread) {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+}
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
   if (thread.everRan !== void 0) return thread.everRan;
@@ -27432,6 +27753,66 @@ var init_sidebar_thread = __esm({
     init_thread_pr_status2();
     init_thread_sort();
     init_automation_run_state();
+  }
+});
+
+// src/shared/workspace-connection-error.ts
+var WORKSPACE_CONNECTION_ERROR_PREFIX, WorkspaceConnectionError;
+var init_workspace_connection_error = __esm({
+  "src/shared/workspace-connection-error.ts"() {
+    WORKSPACE_CONNECTION_ERROR_PREFIX = "[workspace-connection] ";
+    WorkspaceConnectionError = class extends Error {
+    };
+  }
+});
+
+// src/renderer/controller/project-thread-cache.ts
+var ProjectThreadCache;
+var init_project_thread_cache = __esm({
+  "src/renderer/controller/project-thread-cache.ts"() {
+    ProjectThreadCache = class {
+      projects = /* @__PURE__ */ new Map();
+      get(projectId, revision) {
+        const entry = this.projects.get(projectId);
+        if (!entry || entry.revision !== revision) return void 0;
+        return entry.threads;
+      }
+      remember(projectId, threads, revision, selectedThreadId = null) {
+        this.projects.delete(projectId);
+        this.projects.set(projectId, { threads, revision, selectedThreadId });
+        while (this.projects.size > 16) {
+          const oldest = this.projects.keys().next().value;
+          if (oldest === void 0) break;
+          this.projects.delete(oldest);
+        }
+        let remaining = 8;
+        for (const [id, entry] of [...this.projects].reverse()) {
+          if (id === projectId) continue;
+          const candidates = entry.threads.filter((thread) => thread.messagesLoaded !== false && thread.messages.length > 0).sort(
+            (a4, b2) => Number(b2.id === entry.selectedThreadId) - Number(a4.id === entry.selectedThreadId)
+          );
+          const dropping = /* @__PURE__ */ new Set();
+          for (const thread of candidates) {
+            if (thread.messagesLoaded === false || thread.messages.length === 0) continue;
+            if (remaining-- <= 0) dropping.add(thread.id);
+          }
+          if (dropping.size === 0) continue;
+          entry.threads = entry.threads.map(
+            (thread) => dropping.has(thread.id) ? { ...thread, messages: [], messagesLoaded: false } : thread
+          );
+        }
+      }
+      update(projectId, update) {
+        const entry = this.projects.get(projectId);
+        if (entry) entry.threads = entry.threads.map(update);
+      }
+      delete(projectId) {
+        this.projects.delete(projectId);
+      }
+      clear() {
+        this.projects.clear();
+      }
+    };
   }
 });
 
@@ -27476,17 +27857,21 @@ function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
     hasMore: visibleCount < total
   };
 }
+function reflectedRevision(api, projectId) {
+  return activeListRevision?.projectId === projectId ? activeListRevision.revision : projectThreadLoadRevision(api, projectId);
+}
 function clearPendingSwitch() {
   pendingSwitch = null;
   holdNavigation(null);
 }
 function settleActivationWaiter(projectId, error62) {
-  const waiter = activationWaiters.get(projectId);
-  if (!waiter) return;
+  const waiters = activationWaiters.get(projectId);
+  if (!waiters) return;
   activationWaiters.delete(projectId);
-  waiter.unsub?.();
-  if (error62) waiter.reject(error62);
-  else waiter.resolve();
+  for (const waiter of waiters) {
+    if (error62) waiter.reject(error62);
+    else waiter.resolve();
+  }
 }
 function endSwitch(gen, projectId) {
   if (pendingSwitch?.gen !== gen) return;
@@ -27523,6 +27908,7 @@ function attentionThreadId(store, threadId) {
   return threadId;
 }
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
   if (!cached2) return;
   threadCache.set(
@@ -27535,6 +27921,10 @@ function applyCachedSidebarPrRefs(projectId, refs) {
   if (!cached2) return false;
   const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
   if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  residentThreads.update(projectId, (thread) => {
+    const prRefs = byThread.get(thread.id);
+    return prRefs ? { ...thread, prRefs } : thread;
+  });
   threadCache.set(
     projectId,
     cached2.map((thread) => {
@@ -27573,6 +27963,7 @@ async function preloadSidebarThreads(store, api) {
     }
     if (unwanted(id)) continue;
     threadCache.set(id, loaded.map(compactSidebarThread));
+    residentThreads.remember(id, loaded, projectThreadLoadRevision(api, id));
     store.emit("sidebar_threads_loaded");
   }
 }
@@ -27584,22 +27975,25 @@ function attachProjectThreadCache(store) {
     }
   });
 }
-async function trySetWorkspace(api, path, sshHost) {
+async function setWorkspaceForSelection(api, path, sshHost) {
   try {
     await api.workspace.set(path, sshHost);
     return true;
-  } catch {
+  } catch (error62) {
+    const message = error62 instanceof Error ? error62.message : "";
+    const connectionError = message.indexOf(WORKSPACE_CONNECTION_ERROR_PREFIX);
+    if (connectionError >= 0) {
+      throw new WorkspaceConnectionError(
+        message.slice(connectionError + WORKSPACE_CONNECTION_ERROR_PREFIX.length),
+        { cause: error62 }
+      );
+    }
     return false;
   }
 }
-function setWorkspaceInOrder(api, path, sshHost) {
-  const next = workspaceChain.catch(() => void 0).then(() => trySetWorkspace(api, path, sshHost));
-  workspaceChain = next;
-  return next;
-}
 function cancelPendingSwitch(store, api) {
   const cancelled = pendingSwitch;
-  if (!cancelled) return;
+  if (!cancelled || cancelled.projectId === store.getState().activeProjectId) return;
   clearPendingSwitch();
   switchGeneration += 1;
   settleActivationWaiter(cancelled.projectId);
@@ -27607,7 +28001,7 @@ function cancelPendingSwitch(store, api) {
   const { activeProjectId, projects } = store.getState();
   const active2 = projects.find((p2) => p2.id === activeProjectId);
   if (!active2) return;
-  void setWorkspaceInOrder(api, active2.path, active2.sshHost);
+  void setWorkspaceForSelection(api, active2.path, active2.sshHost);
   void saveProjects(api, projects, active2.id, store.getState().activeThreadId);
 }
 function abortProjectActivation(store, id, gen, outgoingId, error62) {
@@ -27646,6 +28040,7 @@ async function removeProject(store, api, id) {
   if (!state.projects.some((p2) => p2.id === id)) return;
   forgetProjectViewState(projectViewState, id);
   threadCache.delete(id);
+  residentThreads.delete(id);
   if (liveCacheProjectId === id) liveCacheProjectId = null;
   dropProjectBackgroundThreads(store, id);
   const projects = state.projects.filter((p2) => p2.id !== id);
@@ -27680,8 +28075,6 @@ async function removeProject(store, api, id) {
     store.emit("projects_changed");
     store.emit("workspace_changed");
     store.emit("threads_changed");
-    store.emit("panel_changed");
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ projects });
@@ -27695,90 +28088,22 @@ function expandProject(store, id) {
   setExpandedProject(store, id);
   store.emit("projects_changed");
 }
-async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId) {
-  const endActivate = begin("switch:activate");
-  mark("switch:start");
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (sshHost) {
-    const enabled = await api.settings.get("sshWorkspaceEnabled");
-    if (enabled !== true) {
-      endActivate({ outcome: "ssh-disabled" });
-      abortProjectActivation(
-        store,
-        id,
-        gen,
-        outgoingId,
-        new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.")
-      );
-      return;
-    }
-    try {
-      await ensureSshConnected(api, sshHost);
-    } catch (err) {
-      if (gen !== switchGeneration) {
-        endSwitch(gen, id);
-        endActivate({ outcome: "superseded" });
-        return;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      endActivate({ outcome: "ssh-failed" });
-      abortProjectActivation(
-        store,
-        id,
-        gen,
-        outgoingId,
-        new Error(`SSH connection failed: ${message}`)
-      );
-      return;
-    }
-  }
-  const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api, outgoingId, outgoingThreads) : Promise.resolve();
-  if (pendingSwitch?.gen === gen) {
-    pendingSwitch.dispatched = true;
-    holdNavigation(id);
-  }
-  const projectsAtDispatch = store.getState().projects;
-  const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId);
-  const endWorkspace = begin("switch:workspace-set");
-  const workspaceOpened = setWorkspaceInOrder(api, path, sshHost);
-  const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
-  endWorkspace({ opened });
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (!opened) {
-    holdNavigation(null);
-    await markProjectMissing(store, api, id);
-    endActivate({ outcome: "missing" });
-    abortProjectActivation(
-      store,
-      id,
-      gen,
-      outgoingId,
-      new Error(
-        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
-      )
-    );
-    return;
-  }
-  const endLoad = begin("switch:load-threads");
-  const loaded = await loadThreads(api, id);
-  endLoad({ threads: loaded.length });
-  if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
+function applyProjectSelection(store, api, id, path, loaded, revision, pendingThreadId, outgoingId, outgoingThreads) {
   const endApply = begin("switch:apply-state");
   if (outgoingId && outgoingId !== id) {
     const state = store.getState();
     const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
+    if (liveOutgoingThreads !== outgoingThreads && isListedProject(store, outgoingId)) {
+      residentThreads.remember(
+        outgoingId,
+        liveOutgoingThreads,
+        reflectedRevision(api, outgoingId),
+        state.activeThreadId
+      );
+      void flushProjectThreads(api, outgoingId, liveOutgoingThreads).catch((error62) => {
+        console.warn("[projects] could not persist the outgoing project:", error62);
+      });
+    }
     carryRunningThreads(store, outgoingId, liveOutgoingThreads);
   }
   const merged = adoptBackgroundThreads(store, id, loaded);
@@ -27798,19 +28123,113 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id)
   });
+  activeListRevision = { projectId: id, revision };
   if (activeThreadId) markThreadRead(store, activeThreadId);
   if (merged.length === 0) createThread(store);
   else normalizeBlankThreads(store);
   store.emit("projects_changed");
   store.emit("workspace_changed");
   store.emit("threads_changed");
-  store.emit("panel_changed");
-  store.emit("files_pane_changed");
+  residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId);
   endApply({ threads: merged.length });
+}
+async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId, rollbackSelection) {
+  const endActivate = begin("switch:activate");
+  mark("switch:start");
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  const flushOutgoing = () => outgoingId && outgoingId !== id ? flushProjectThreads(api, outgoingId, outgoingThreads) : Promise.resolve();
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true;
+    holdNavigation(id);
+  }
+  const projectsAtDispatch = store.getState().projects;
+  const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId);
+  const endWorkspace = begin("switch:workspace-set");
+  const workspaceOpened = setWorkspaceForSelection(api, path, sshHost);
+  const revision = projectThreadLoadRevision(api, id);
+  const cached2 = residentThreads.get(id, revision);
+  if (cached2) {
+    applyProjectSelection(
+      store,
+      api,
+      id,
+      path,
+      cached2,
+      revision,
+      pendingThreadId,
+      outgoingId,
+      outgoingThreads
+    );
+  }
+  const flushed = flushOutgoing();
+  const prepared = Promise.all([flushed, persistSelection, workspaceOpened]);
+  void prepared.catch(() => void 0);
+  if (!cached2) {
+    const endLoad = begin("switch:load-threads");
+    const loaded = await Promise.race([
+      loadThreads(api, id),
+      prepared.then(([, , opened2]) => opened2 ? new Promise(() => void 0) : null)
+    ]);
+    endLoad({ threads: loaded?.length ?? 0 });
+    if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
+      endSwitch(gen, id);
+      endActivate({ outcome: "superseded" });
+      return;
+    }
+    if (loaded) {
+      applyProjectSelection(
+        store,
+        api,
+        id,
+        path,
+        loaded,
+        revision,
+        pendingThreadId,
+        outgoingId,
+        outgoingThreads
+      );
+    }
+  }
+  const [, , opened] = await prepared;
+  endWorkspace({ opened });
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  if (!opened) {
+    if (store.getState().activeProjectId === id) {
+      rollbackSelection();
+    } else {
+      const kept = store.getState().projects.find((project) => project.id === outgoingId);
+      if (kept) {
+        void setWorkspaceForSelection(api, kept.path, kept.sshHost).catch((error62) => {
+          console.warn("[projects] could not re-select the kept workspace:", error62);
+        });
+      }
+    }
+    holdNavigation(null);
+    await markProjectMissing(store, api, id);
+    endActivate({ outcome: "missing" });
+    abortProjectActivation(
+      store,
+      id,
+      gen,
+      outgoingId,
+      new Error(
+        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
+      )
+    );
+    return;
+  }
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
   endSwitch(gen, id);
-  endActivate({ outcome: "ok", threads: merged.length });
+  endActivate({ outcome: "ok", threads: store.getState().threads.length });
   void resumePendingQueues(store, api);
 }
 function dispatchCallers() {
@@ -27818,7 +28237,7 @@ function dispatchCallers() {
   return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store, api, id, path, sshHost, pendingThreadId) {
-  const { activeProjectId, threads, expandedProjectId } = store.getState();
+  const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState();
   if (activeProjectId === id) {
     if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store, id);
     cancelPendingSwitch(store, api);
@@ -27831,15 +28250,46 @@ function activate(store, api, id, path, sshHost, pendingThreadId) {
       restarts: pendingSwitch?.projectId === id
     });
   }
-  cancelPendingSwitch(store, api);
+  if (pendingSwitch?.projectId === activeProjectId) supersedePendingSwitch();
+  else cancelPendingSwitch(store, api);
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
   const outgoingId = activeProjectId;
   const outgoingThreads = threads;
+  const outgoingRevision = outgoingId === null ? 0 : reflectedRevision(api, outgoingId);
   if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads);
+    residentThreads.remember(outgoingId, outgoingThreads, outgoingRevision, activeThreadId);
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()));
   }
+  const rollbackSelection = () => {
+    if (gen !== switchGeneration || store.getState().activeProjectId !== id || !outgoingId) return;
+    const outgoing = store.getState().projects.find((project) => project.id === outgoingId);
+    if (!outgoing) return;
+    const abandoned = store.getState();
+    residentThreads.remember(
+      id,
+      abandoned.threads,
+      reflectedRevision(api, id),
+      abandoned.activeThreadId
+    );
+    void flushProjectThreads(api, id, abandoned.threads).catch((error62) => {
+      console.warn("[projects] could not persist the interrupted selection:", error62);
+    });
+    void setWorkspaceForSelection(api, outgoing.path, outgoing.sshHost);
+    applyProjectSelection(
+      store,
+      api,
+      outgoingId,
+      outgoing.path,
+      // Includes edits made before an uncached destination took over the screen.
+      residentThreads.get(outgoingId, outgoingRevision) ?? outgoingThreads,
+      outgoingRevision,
+      activeThreadId,
+      id,
+      store.getState().threads
+    );
+  };
   void finishActivate(
     store,
     api,
@@ -27849,18 +28299,20 @@ function activate(store, api, id, path, sshHost, pendingThreadId) {
     gen,
     outgoingId,
     outgoingThreads,
-    pendingThreadId
+    pendingThreadId,
+    rollbackSelection
   ).catch(async (error62) => {
     if (gen !== switchGeneration) {
       endSwitch(gen, id);
       return;
     }
+    rollbackSelection();
     holdNavigation(null);
     const state = store.getState();
     const active2 = state.projects.find((project) => project.id === state.activeProjectId);
     const root = active2?.path ?? state.workspaceRoot;
     await Promise.all([
-      root ? setWorkspaceInOrder(api, root, active2?.sshHost) : Promise.resolve(),
+      root ? setWorkspaceForSelection(api, root, active2?.sshHost) : Promise.resolve(),
       saveNavigation(api, state.activeProjectId, state.activeThreadId)
     ]).catch((restoreError) => {
       console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
@@ -27892,7 +28344,6 @@ function openNewProjectThread(store, api, projectId = store.getState().sidebarPr
 }
 function setSidebarProjectFilter(store, api, projectId) {
   store.setState({ sidebarProjectFilterId: projectId });
-  store.emit("sidebar_project_filter_changed");
   const thread = getActiveThread(store);
   const activeProjectId = store.getState().activeProjectId;
   if (thread && !isBlankThread(thread)) {
@@ -27971,18 +28422,12 @@ function activateAndWait(store, api, id, path, sshHost) {
   return waitForProjectActivation(store, id);
 }
 async function waitForProjectActivation(store, projectId) {
-  if (store.getState().activeProjectId === projectId) return;
+  if (store.getState().activeProjectId === projectId && pendingSwitch?.projectId !== projectId)
+    return;
   await new Promise((resolve, reject) => {
-    const waiter = { resolve, reject };
-    activationWaiters.set(projectId, waiter);
-    const unsub = store.on("workspace_changed", () => {
-      if (store.getState().activeProjectId === projectId) {
-        activationWaiters.delete(projectId);
-        unsub();
-        resolve();
-      }
-    });
-    waiter.unsub = unsub;
+    const waiters = activationWaiters.get(projectId) ?? /* @__PURE__ */ new Set();
+    waiters.add({ resolve, reject });
+    activationWaiters.set(projectId, waiters);
   });
 }
 async function quarantineAndRestoreNext(store, api, id) {
@@ -28021,8 +28466,9 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
       return;
     }
   }
+  const revision = projectThreadLoadRevision(api, id);
   const [workspaceOpened, loaded] = await Promise.all([
-    setWorkspaceInOrder(api, proj.path, proj.sshHost),
+    setWorkspaceForSelection(api, proj.path, proj.sshHost),
     loadThreads(api, id)
   ]);
   if (!workspaceOpened) {
@@ -28031,6 +28477,8 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   }
   const merged = adoptBackgroundThreads(store, id, loaded);
   cacheThreads(id, merged);
+  residentThreads.remember(id, merged, revision);
+  activeListRevision = { projectId: id, revision };
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
@@ -28088,7 +28536,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-BE5HGUWH.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -28159,7 +28607,7 @@ async function recoverOrphanProject(store, api, storeId, confirm) {
   await activateAndWait(store, api, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_side_chat2();
@@ -28170,18 +28618,21 @@ var init_projects = __esm({
     init_toast();
     init_sidebar_thread();
     init_background_threads();
+    init_workspace_connection_error();
+    init_project_thread_cache();
     init_perf();
     uuid3 = () => globalThis.crypto.randomUUID();
     basename = (p2) => p2.split("/").pop() ?? p2;
     SIDEBAR_THREADS_PAGE_SIZE = 10;
     threadCache = /* @__PURE__ */ new Map();
+    residentThreads = new ProjectThreadCache();
+    activeListRevision = null;
     liveCacheProjectId = null;
     projectViewState = /* @__PURE__ */ new Map();
     switchGeneration = 0;
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
     sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
-    workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
     dismissedOrphanStoresChain = Promise.resolve();
@@ -31312,6 +31763,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 18.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "QwQ-32B-Preview": [
@@ -31776,6 +32233,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 49,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-high": [
@@ -31784,6 +32247,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-high', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 47,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-low": [
@@ -31792,6 +32261,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 38.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-medium": [
@@ -31800,6 +32275,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 43,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -31808,6 +32289,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-xhigh', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 49.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-4-5": [
@@ -31824,6 +32311,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 36.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-high": [
@@ -31832,6 +32325,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-low": [
@@ -31840,6 +32339,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 18.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-medium": [
@@ -31848,6 +32353,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 24.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-xhigh": [
@@ -31856,6 +32367,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 34.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-instant": [
@@ -31996,6 +32513,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 58.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-high": [
@@ -32004,6 +32527,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 51.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-low": [
@@ -32012,6 +32541,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 34.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-medium": [
@@ -32020,6 +32555,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 48.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-xhigh": [
@@ -32028,6 +32569,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 57,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-high": [
@@ -32148,6 +32695,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 54.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-high": [
@@ -32156,6 +32709,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-high', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 41.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-low": [
@@ -32164,6 +32723,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 25.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-medium": [
@@ -32172,6 +32737,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-medium', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 30.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-xhigh": [
@@ -32180,6 +32751,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 49.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-high": [
@@ -32254,6 +32831,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'command-a-plus', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "command-r-03-2024": [
@@ -32676,6 +33259,28 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 32.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "deepseek-v4-1-flash-1017-high": [
+        {
+          value: 28.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
+      "deepseek-v4-1-flash-1017-non-reasoning": [
+        {
+          value: 18.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-non-reasoning', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "deepseek-v4-1-flash-non-reasoning": [
@@ -32776,6 +33381,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "deepseek-v4-pro-0424": [
@@ -33512,6 +34123,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 11.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-5-flash-lite', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-5-flash-medium": [
@@ -33604,6 +34221,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 30.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-8-flash-low": [
@@ -33612,6 +34235,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 22.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-8-flash-medium": [
@@ -33620,6 +34249,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 30,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-flash": [
@@ -33684,6 +34319,36 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-4-argon', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 50.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "gemini-4-carbon": [
+        {
+          value: 59.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "gemini-4-carbon-low": [
+        {
+          value: 53.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
+        }
+      ],
+      "gemini-4-carbon-medium": [
+        {
+          value: 57.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "gemma-3-1b": [
@@ -34146,6 +34811,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 31.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "glm-5-3-flash": [
@@ -34160,6 +34831,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 27.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3-flash', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "glm-5-3-low": [
@@ -34168,6 +34845,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "glm-5-non-reasoning": [
@@ -35228,6 +35911,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
           asOf: "2026-09-30"
+        },
+        {
+          value: 54.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-high": [
@@ -35236,6 +35925,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
           asOf: "2026-09-30"
+        },
+        {
+          value: 50.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-low": [
@@ -35244,6 +35939,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
           asOf: "2026-09-30"
+        },
+        {
+          value: 34.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-medium": [
@@ -35252,6 +35953,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
           asOf: "2026-09-30"
+        },
+        {
+          value: 46.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-xhigh": [
@@ -35260,6 +35967,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
           asOf: "2026-09-30"
+        },
+        {
+          value: 52.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra": [
@@ -35268,6 +35981,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 51,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-high": [
@@ -35276,6 +35995,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-high', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 42.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-low": [
@@ -35284,6 +36009,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-low', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 29.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-medium": [
@@ -35292,6 +36023,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-medium', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 38.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-non-reasoning": [
@@ -35300,6 +36037,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 30.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-xhigh": [
@@ -35308,6 +36051,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-xhigh', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 45,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra": [
@@ -35316,6 +36065,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 56.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-high": [
@@ -35324,6 +36079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 54.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-low": [
@@ -35332,6 +36093,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 43,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-medium": [
@@ -35340,6 +36107,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 51.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -35356,6 +36129,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 55.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna": [
@@ -35364,6 +36143,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 27.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-high": [
@@ -35372,6 +36157,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 21.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-low": [
@@ -35380,6 +36171,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 9.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-medium": [
@@ -35388,6 +36185,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 18.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-non-reasoning": [
@@ -35396,6 +36199,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 9.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-non-reasoning', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-xhigh": [
@@ -35404,6 +36213,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 23.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-sol": [
@@ -35676,6 +36491,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'granite-4-2-3b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'granite-4-2-3b', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "granite-4-2-8b": [
@@ -35690,6 +36511,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'granite-4-2-8b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 5.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'granite-4-2-8b', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "grok-1": [
@@ -35978,6 +36805,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 35.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "grok-4-7-high": [
@@ -35986,6 +36819,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 35,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "grok-4-7-low": [
@@ -35994,6 +36833,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 30.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "grok-4-fast": [
@@ -36232,6 +37077,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 12.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "inkling-small": [
@@ -36246,6 +37097,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling-small', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "intellect-3": [
@@ -36498,6 +37355,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 17.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k2-horizon-375b-a23b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "k2-horizon-7b": [
@@ -36720,6 +37583,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'kimi-k3-1-pro', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 46,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "kimi-k3-low": [
@@ -36734,6 +37603,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'kimi-k3-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 17.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "kimi-linear-48b-a3b-instruct": [
@@ -36990,6 +37865,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash-1019', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 29.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "ling-flash-2-0": [
@@ -37538,6 +38419,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 26.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mimo-v2-6-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mimo-v2-6-pro": [
@@ -37546,6 +38433,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-pro', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 29.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mimo-v2-6-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mimo-v2-flash": [
@@ -37758,6 +38651,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 28.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "ministral-3-14b": [
@@ -37892,6 +38791,28 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-large-4', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 26,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "mistral-large-4-medium": [
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "mistral-large-4-preview": [
+        {
+          value: 25.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4-preview', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mistral-medium": [
@@ -38018,6 +38939,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-small-4', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 4.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-small-4', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "mistral-small-4-non-reasoning": [
@@ -38178,6 +39105,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-glimmer', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-spark": [
@@ -38228,6 +39161,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 36.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-spark-1-3-xhigh": [
@@ -38244,6 +39183,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 24.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-wonder": [
@@ -38252,6 +39197,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 43.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-wonder-full": [
@@ -38260,6 +39211,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 49.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nanbeige4-1-3b": [
@@ -38274,6 +39231,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nanbeige4-1-3b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "nanbeige4-3-33b": [
+        {
+          value: 20.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nanbeige4-3-33b', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "nemotron-3-5-bolt-74b-a9b": [
@@ -38296,6 +39261,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 5.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nemotron-3-5-lightning', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "nemotron-3-5-super-vl": [
@@ -38304,6 +39275,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 13.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nemotron-3-5-super-vl', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -38598,6 +39575,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 1.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -38626,6 +39609,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 11.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl": [
@@ -39810,6 +40799,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 20.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "qwen3-8-27b-low": [
@@ -39824,6 +40819,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 15.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-low', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-27b-medium": [
@@ -39838,6 +40839,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 17.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-medium', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-27b-non-reasoning": [
@@ -39852,6 +40859,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 10,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b-non-reasoning', fetched 2026-11-03",
+          asOf: "2026-11-03"
         }
       ],
       "qwen3-8-flash-next": [
@@ -39880,6 +40893,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 33.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "qwen3-8-max-0803": [
@@ -40246,6 +41265,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 17.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'reflection-beam', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "reka-flash": [
@@ -40626,6 +41651,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'step-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "tiny-aya-global": [
@@ -40825,6 +41856,16 @@ var init_model_intellect_generated = __esm({
         anchorMin: 1,
         anchorMax: 54.1,
         fittedAsOf: "2026-09-09"
+      },
+      {
+        from: "v5",
+        to: "v4.3",
+        a: 0.7255437490590686,
+        b: 16.648713456654036,
+        anchorCount: 77,
+        anchorMin: 1.8,
+        anchorMax: 58.4,
+        fittedAsOf: "2026-11-01"
       }
     ];
   }
@@ -42325,8 +43366,8 @@ function resolveAgentModelIdentity(...forms) {
     if (id !== null && getIntellectScore(id)) return id;
   }
   for (const form of named) {
-    const labelled = claudeModelIdFromLabel(form);
-    const id = labelled === null ? null : resolveIntellectModelId(labelled);
+    const labelled2 = claudeModelIdFromLabel(form);
+    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
     if (id !== null && getIntellectScore(id)) return id;
   }
   return null;
@@ -42388,6 +43429,8 @@ var init_acp_known_agents = __esm({
             "*.claude.com"
           ],
           homeDirs: [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+          // Claude keeps its macOS login in the login keychain.
+          allowMacOsKeychain: true,
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -42485,6 +43528,8 @@ var init_acp_known_agents = __esm({
             "*.claude.com"
           ],
           homeDirs: [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+          // Claude keeps its macOS login in the login keychain.
+          allowMacOsKeychain: true,
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -42701,6 +43746,9 @@ function parseAcpAgentConfigs(value) {
       }
       if (typeof sandbox["allowMacOsTrustd"] === "boolean") {
         agent.sandbox.allowMacOsTrustd = sandbox["allowMacOsTrustd"];
+      }
+      if (typeof sandbox["allowMacOsKeychain"] === "boolean") {
+        agent.sandbox.allowMacOsKeychain = sandbox["allowMacOsKeychain"];
       }
     }
     return [agent];
@@ -50691,7 +51739,11 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       await work();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+      message = ipcErrorMessage(error62, "Could not connect ChatGPT.");
+      try {
+        status = await api.chatGptPlan.status();
+      } catch {
+      }
     } finally {
       busy = false;
       render();
@@ -50863,7 +51915,7 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       status = await api.chatGptPlan.status();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+      message = ipcErrorMessage(error62, "Could not read the ChatGPT connection.");
     }
     render();
     await welcome();
@@ -50880,6 +51932,7 @@ var init_chatgpt_plan_section = __esm({
   "src/renderer/views/setup/chatgpt-plan-section.ts"() {
     init_confirm_dialog();
     init_helpers();
+    init_ipc_error_message();
     USAGE_URL = "https://chatgpt.com/settings/usage";
   }
 });
@@ -53785,10 +54838,7 @@ function createAppearanceSection(form, store, markDirty) {
   }
   function apply(value) {
     document.documentElement.dataset["theme"] = value.theme;
-    if (store.getState().theme !== value.theme) {
-      store.setState({ theme: value.theme });
-      store.emit("theme_changed", value.theme);
-    }
+    if (store.getState().theme !== value.theme) store.setState({ theme: value.theme });
     applyUiAccent(value.accentColor);
     applyUiTint(value.tintColor, value.tintStrength);
   }
@@ -55278,6 +56328,8 @@ function createStorageMaintenancePanel(api) {
       <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
     </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const savedData = qsRequired(element, "#storage-saved-data");
+  const containers = qsRequired(element, "#storage-containers");
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
   const days = qsRequired(element, "#storage-expiry-days");
@@ -55289,19 +56341,19 @@ function createStorageMaintenancePanel(api) {
     days.disabled = working || !state;
     for (const area of ["runs", "builds"]) {
       const summary = state?.areas.find((entry) => entry.area === area);
-      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+      qsRequired(savedData, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
     for (const action of CONTAINER_STORAGE_ACTIONS) {
       const container = state?.containers;
-      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+      qsRequired(containers, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
     }
   }
   function renderContainers() {
     const container = state?.containers;
     if (!container) return;
-    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
-    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
-    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    containers.hidden = !container.available && !container.error;
+    qsRequired(containers, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(containers, "#storage-container-breakdown");
     breakdown.replaceChildren();
     const rows = [
       ["Total allocated", container.totalBytes],
@@ -55328,7 +56380,7 @@ function createStorageMaintenancePanel(api) {
         el("dt", {}, label),
         el("dd", {}, bytes === null ? "Not reported" : formatByteSize(bytes))
       );
-    const images = qsRequired(element, "#storage-container-images");
+    const images = qsRequired(containers, "#storage-container-images");
     images.replaceChildren();
     for (const image of container.images)
       images.append(
@@ -55353,7 +56405,7 @@ function createStorageMaintenancePanel(api) {
       }
       days.value = String(next.retention.days);
       for (const summary of next.areas)
-        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+        qsRequired(savedData, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
     } catch (error62) {
       if (token === generation) status.textContent = errorMessage(error62);
     } finally {
@@ -56057,9 +57109,344 @@ var init_storage_section = __esm({
   }
 });
 
+// src/renderer/views/settings/mcp-server-editor.ts
+function secretRows(kind) {
+  const noun = kind === "env" ? "variable" : "header";
+  const list = el("div", { class: "mcp-editor-secret-list" });
+  const addButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    kind === "env" ? "Add variable" : "Add header"
+  );
+  const rows = [];
+  function addRow(key = "", stored = false) {
+    const keyInput = el("input", {
+      type: "text",
+      class: "mcp-editor-secret-key",
+      placeholder: kind === "env" ? "NAME" : "Header-Name",
+      "aria-label": kind === "env" ? "Variable name" : "Header name",
+      spellcheck: "false",
+      autocomplete: "off"
+    });
+    keyInput.value = key;
+    const valueInput = el("input", {
+      type: "password",
+      class: "mcp-editor-secret-value",
+      placeholder: stored ? "Saved value (unchanged)" : "Value",
+      "aria-label": kind === "env" ? `Value of ${key || "variable"}` : `Value of ${key || "header"}`,
+      autocomplete: "new-password"
+    });
+    const row = { key: keyInput, value: valueInput, stored };
+    const removeButton = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary ui-btn-compact mcp-editor-secret-remove",
+        "aria-label": `Remove ${noun}`,
+        title: `Remove ${noun}`
+      },
+      "\xD7"
+    );
+    const line = el("div", { class: "mcp-editor-secret-row" }, keyInput, valueInput, removeButton);
+    removeButton.addEventListener("click", () => {
+      rows.splice(rows.indexOf(row), 1);
+      line.remove();
+    });
+    keyInput.addEventListener("input", () => {
+      if (!row.stored) return;
+      row.stored = false;
+      valueInput.placeholder = "Value";
+    });
+    rows.push(row);
+    list.append(line);
+  }
+  addButton.addEventListener("click", () => {
+    addRow();
+    rows.at(-1)?.key.focus();
+  });
+  return {
+    root: el("div", { class: "mcp-editor-secrets" }, list, addButton),
+    entries: () => rows.map(
+      ({ key, value, stored }) => value.value === "" && stored ? { key: key.value } : { key: key.value, value: value.value }
+    ),
+    reset: (stored) => {
+      rows.splice(0);
+      list.replaceChildren();
+      for (const entry of stored) addRow(entry.key, true);
+    }
+  };
+}
+function labelled(text, control, hint) {
+  const label = el("label", {}, text, control);
+  if (hint !== void 0) label.append(el("span", { class: "field-hint" }, hint));
+  return label;
+}
+function createMcpServerEditor(host, api, onSaved) {
+  let editing;
+  const heading = el("h4", { class: "mcp-editor-heading" });
+  const nameInput = el("input", {
+    type: "text",
+    id: "mcp-editor-name",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "my-server"
+  });
+  const transportSelect = el(
+    "select",
+    { id: "mcp-editor-transport" },
+    el("option", { value: "stdio" }, "Local command"),
+    el("option", { value: "http" }, "Remote URL")
+  );
+  const commandInput = el("input", {
+    type: "text",
+    id: "mcp-editor-command",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "npx"
+  });
+  const argsInput = el("textarea", {
+    id: "mcp-editor-args",
+    rows: "3",
+    spellcheck: "false",
+    placeholder: "-y\n@modelcontextprotocol/server-everything"
+  });
+  const cwdInput = el("input", {
+    type: "text",
+    id: "mcp-editor-cwd",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const urlInput = el("input", {
+    type: "url",
+    id: "mcp-editor-url",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "https://example.com/mcp"
+  });
+  const env = secretRows("env");
+  const headers = secretRows("headers");
+  const envGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Environment variables"),
+    env.root
+  );
+  const headersGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Headers"),
+    headers.root
+  );
+  const stdioFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "stdio" },
+    labelled(
+      "Command",
+      commandInput,
+      "The program that starts the server, such as npx, uvx or a path."
+    ),
+    labelled("Arguments", argsInput, "One argument per line."),
+    labelled("Working directory (optional)", cwdInput),
+    envGroup
+  );
+  const httpFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "http" },
+    labelled(
+      "URL",
+      urlInput,
+      "Servers that use OAuth need no header: save, then choose Sign in on the server."
+    ),
+    headersGroup
+  );
+  const secretsHint = el(
+    "p",
+    { class: "field-hint mcp-editor-secrets-hint" },
+    "Values are saved as plain text in Copse\u2019s MCP config, readable only by your user account. To keep a key out of the file, enter ",
+    el("code", {}, "${env:NAME}"),
+    " and Copse reads it from its environment."
+  );
+  const status = el("span", { class: "lmstudio-test-status", id: "mcp-editor-status" });
+  const saveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary", id: "mcp-editor-save" },
+    "Save server"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary", id: "mcp-editor-cancel" },
+    "Cancel"
+  );
+  const fieldControls = {
+    name: nameInput,
+    command: commandInput,
+    cwd: cwdInput,
+    url: urlInput,
+    env: envGroup,
+    headers: headersGroup
+  };
+  host.replaceChildren(
+    heading,
+    labelled("Name", nameInput, "Tools appear to the agent as mcp__<name>__<tool>."),
+    labelled("Type", transportSelect),
+    stdioFields,
+    httpFields,
+    secretsHint,
+    el("div", { class: "settings-action-row" }, saveButton, cancelButton, status)
+  );
+  function clearInvalid() {
+    for (const control of Object.values(fieldControls)) control.removeAttribute("aria-invalid");
+    status.replaceChildren();
+  }
+  function syncTransport() {
+    const http = transportSelect.value === "http";
+    stdioFields.hidden = http;
+    httpFields.hidden = !http;
+  }
+  function input2() {
+    if (transportSelect.value === "http") {
+      return {
+        transport: "http",
+        name: nameInput.value,
+        url: urlInput.value,
+        headers: headers.entries()
+      };
+    }
+    const cwd = cwdInput.value.trim();
+    return {
+      transport: "stdio",
+      name: nameInput.value,
+      command: commandInput.value,
+      args: argsInput.value.split("\n").map((arg) => arg.trim()),
+      ...cwd ? { cwd } : {},
+      env: env.entries()
+    };
+  }
+  function open2(server) {
+    editing = server?.name;
+    heading.textContent = server ? `Edit ${server.name}` : "Add an MCP server";
+    nameInput.value = server?.name ?? "";
+    transportSelect.value = server?.transport ?? "stdio";
+    commandInput.value = server?.transport === "stdio" ? server.command : "";
+    argsInput.value = server?.transport === "stdio" ? server.args.join("\n") : "";
+    cwdInput.value = server?.transport === "stdio" ? server.cwd ?? "" : "";
+    urlInput.value = server?.transport === "http" ? server.url : "";
+    env.reset(server?.transport === "stdio" ? server.env : []);
+    headers.reset(server?.transport === "http" ? server.headers : []);
+    clearInvalid();
+    syncTransport();
+    host.hidden = false;
+    nameInput.focus();
+  }
+  function close() {
+    editing = void 0;
+    host.hidden = true;
+    clearInvalid();
+  }
+  async function save() {
+    clearInvalid();
+    saveButton.disabled = true;
+    status.textContent = "Saving\u2026";
+    try {
+      const result = await api.mcp.saveUserServer(input2(), editing);
+      if (!result.ok) {
+        const control = fieldControls[result.field];
+        control?.setAttribute("aria-invalid", "true");
+        setInlineStatus(status, "error", result.message);
+        const focusTarget = control instanceof HTMLInputElement ? control : control?.querySelector("input");
+        focusTarget?.focus();
+        return;
+      }
+      close();
+      onSaved(result.list);
+    } catch (error62) {
+      setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not save the server."));
+    } finally {
+      saveButton.disabled = false;
+    }
+  }
+  transportSelect.addEventListener("change", syncTransport);
+  saveButton.addEventListener("click", () => {
+    void save();
+  });
+  cancelButton.addEventListener("click", close);
+  host.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      target.removeAttribute("aria-invalid");
+      target.closest("[aria-invalid]")?.removeAttribute("aria-invalid");
+    }
+  });
+  host.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.target instanceof HTMLTextAreaElement) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
+    event.preventDefault();
+    void save();
+  });
+  host.hidden = true;
+  return { open: open2, close };
+}
+var init_mcp_server_editor = __esm({
+  "src/renderer/views/settings/mcp-server-editor.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+  }
+});
+
 // src/renderer/views/settings/mcp-section.ts
 function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadingsChanged) {
   let generation = 0;
+  let userServers;
+  const editor = createMcpServerEditor(qsRequired(overlay, "#mcp-server-editor"), api, (list) => {
+    userServers = list;
+    void refreshMcpServers();
+  });
+  function userServerFor(s2) {
+    if (userServers === void 0 || s2.source !== userServers.path) return void 0;
+    return userServers.servers.find((server) => server.name === s2.name);
+  }
+  function userServerButtons(server) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-edit-btn";
+    edit.textContent = "Edit";
+    edit.setAttribute("aria-label", `Edit ${server.name}`);
+    edit.addEventListener("click", () => {
+      editor.open(server);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-remove-btn";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${server.name}`);
+    remove.addEventListener("click", () => {
+      void removeUserServer(server.name);
+    });
+    return [edit, remove];
+  }
+  async function removeUserServer(name) {
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${name}?`,
+      detail: "Copse deletes it from its MCP config and stops it. Its tools stop being available.",
+      confirmLabel: "Remove",
+      danger: true
+    });
+    if (!confirmed) return;
+    const statusEl = qsRequired(overlay, "#mcp-reload-status");
+    try {
+      const result = await api.mcp.removeUserServer(name);
+      if (!result.ok) {
+        setInlineStatus(statusEl, "error", result.message);
+        return;
+      }
+      userServers = result.list;
+      editor.close();
+      await refreshMcpServers();
+    } catch (error62) {
+      setInlineStatus(statusEl, "error", ipcErrorMessage(error62, "Could not remove the server."));
+    }
+  }
   function mcpOriginChip(s2) {
     const labels = {
       user: "Your config",
@@ -56183,6 +57570,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const badge = s2.state === "connected" ? inlineStatus("filled", "connected") : s2.auth === "required" ? inlineStatus("warn", "sign-in required") : s2.state === "error" ? inlineStatus("error", "error") : s2.state === "disabled" ? inlineStatus("idle", "disabled") : s2.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row = document.createElement("div");
       row.className = `mcp-server-row mcp-state-${s2.state}`;
+      row.dataset["mcpServer"] = s2.name;
       const header = document.createElement("div");
       header.className = "mcp-server-header";
       const toggleLabel = document.createElement("label");
@@ -56222,6 +57610,8 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const authButton = mcpSignInButton(s2);
       if (authButton) header.append(authButton);
       header.append(permissionsButton);
+      const userServer = userServerFor(s2);
+      if (userServer) header.append(...userServerButtons(userServer));
       row.append(header);
       const statusDetail = s2.state === "connected" ? `${String(s2.toolCount)} tool(s)${s2.tools.length ? `: ${s2.tools.join(", ")}` : ""}` : s2.auth === "required" ? "Sign in to use this server's tools." : s2.error ?? "";
       let detailText = mcpSignInPending.has(s2.name) ? "Continue in your browser to finish signing in." : mcpSignInErrors.get(s2.name) ?? statusDetail;
@@ -56247,13 +57637,21 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
   async function refreshMcpServers() {
     const request = generation;
     try {
-      const statuses = await api.mcp.list();
-      if (request === generation) renderMcpServers(statuses);
+      const [statuses, list] = await Promise.all([
+        api.mcp.list(),
+        api.mcp.listUserServers().catch(() => void 0)
+      ]);
+      if (request !== generation) return;
+      userServers = list;
+      renderMcpServers(statuses);
     } catch {
       if (request !== generation) return;
       renderMcpServers([]);
     }
   }
+  qsRequired(overlay, "#mcp-add-btn").addEventListener("click", () => {
+    editor.open();
+  });
   function renderDeclaredMcpServers(declared) {
     const fieldset = qsRequired(overlay, "#mcp-declared-fieldset");
     const listEl = qsRequired(overlay, "#mcp-declared-list");
@@ -56383,6 +57781,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
     void api.mcp.reload().then((statuses) => {
       if (request !== generation) return;
       renderMcpServers(statuses);
+      void refreshMcpServers();
       void refreshCuratedServers();
       void refreshDeclaredMcpServers();
       const visible = statuses.filter((s2) => !s2.curated);
@@ -56416,6 +57815,8 @@ var init_mcp_section = __esm({
     init_helpers();
     init_icons();
     init_inline_status();
+    init_confirm_dialog();
+    init_mcp_server_editor();
   }
 });
 
@@ -64653,7 +66054,11 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-ci-worktrees" },
     el("option", { value: "1" }, "1 \u2014 wait for prior work"),
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
-    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts"),
+    el("option", { value: "5" }, "5 live worktrees"),
+    el("option", { value: "10" }, "10 live worktrees"),
+    el("option", { value: "25" }, "25 live worktrees"),
+    el("option", { value: "unlimited" }, "Unlimited")
   );
   const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
   const matches = el("ul", { class: "automation-ci-matches", hidden: true });
@@ -64788,7 +66193,11 @@ function mountBranchCiEditor(options) {
     transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
     label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
-    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    const savedLimit = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    if (!Array.from(worktrees.options).some((option) => option.value === savedLimit)) {
+      worktrees.append(el("option", { value: savedLimit }, `${savedLimit} live worktrees`));
+    }
+    worktrees.value = savedLimit;
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
     matches.hidden = true;
     updateSummary();
@@ -65006,7 +66415,7 @@ function mountBranchCiEditor(options) {
         prompt: prompt.value,
         model: model.value || BEST_VALUE_CHAT_MODEL,
         enabled: enabled.checked,
-        maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+        maxLiveWorktrees: worktrees.value === "unlimited" ? "unlimited" : Number(worktrees.value)
       });
       return;
     }
@@ -65047,7 +66456,7 @@ function mountBranchCiEditor(options) {
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+      maxLiveWorktrees: worktrees.value === "unlimited" ? "unlimited" : Number(worktrees.value)
     };
     void api.automations.upsertBranchCi(projectId, input2).then(
       async () => {
@@ -65128,9 +66537,9 @@ function lastRunLabel(timestamp) {
   return `Last started ${new Date(timestamp).toLocaleString()}`;
 }
 function liveWorktreeLimit(value) {
-  if (value === "2") return 2;
-  if (value === "3") return 3;
-  return 1;
+  if (value === "unlimited") return "unlimited";
+  const limit = Number(value);
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 1;
 }
 function parseCronNumber(value, min, max) {
   if (!/^\d+$/.test(value)) return null;
@@ -65141,6 +66550,11 @@ function parseSimpleSchedule(cron) {
   const [minuteRaw, hourRaw, dayOfMonth, month, dayOfWeek, ...extra] = cron.trim().split(/\s+/);
   if (minuteRaw === void 0 || hourRaw === void 0 || dayOfMonth === void 0 || month === void 0 || dayOfWeek === void 0 || extra.length > 0 || month !== "*") {
     return null;
+  }
+  if (hourRaw === "*" && dayOfMonth === "*" && dayOfWeek === "*") {
+    if (minuteRaw === "*") return { repeat: "minute", hour: 0, minute: 0 };
+    const minute2 = parseCronNumber(minuteRaw, 0, 59);
+    if (minute2 !== null) return { repeat: "hourly", hour: 0, minute: minute2 };
   }
   const minute = parseCronNumber(minuteRaw, 0, 59);
   const hour = parseCronNumber(hourRaw, 0, 23);
@@ -65183,6 +66597,8 @@ function weekdayName(value) {
   return "Saturday";
 }
 function simpleScheduleDescription(schedule) {
+  if (schedule.repeat === "minute") return "Every minute";
+  if (schedule.repeat === "hourly") return `Every hour at minute ${twoDigits(schedule.minute)}`;
   const time3 = scheduleTime(schedule);
   if (schedule.repeat === "daily") return `Every day at ${time3}`;
   if (schedule.repeat === "weekdays") return `Every weekday at ${time3}`;
@@ -65253,6 +66669,8 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   const repeatSelect = el(
     "select",
     { class: "automation-input automation-repeat-select", required: true },
+    el("option", { value: "minute" }, "Every minute"),
+    el("option", { value: "hourly" }, "Every hour"),
     el("option", { value: "daily" }, "Every day"),
     el("option", { value: "weekdays" }, "Weekdays"),
     el("option", { value: "weekly" }, "Every week"),
@@ -65264,6 +66682,20 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     value: "09:00",
     required: true
   });
+  const hourlyMinuteInput = el("input", {
+    type: "number",
+    min: "0",
+    max: "59",
+    step: "1",
+    value: "0",
+    class: "automation-input automation-hourly-minute-input"
+  });
+  const hourlyMinuteLabel = el(
+    "label",
+    { class: "automation-label" },
+    "At minute",
+    hourlyMinuteInput
+  );
   const weeklyDaySelect = el("select", {
     class: "automation-input automation-weekly-day-select"
   });
@@ -65302,6 +66734,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       "div",
       { class: "automation-schedule-controls" },
       repeatLabel,
+      hourlyMinuteLabel,
       weeklyDayLabel,
       monthlyDayLabel,
       timeLabel
@@ -65324,7 +66757,11 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     { class: "automation-input automation-worktree-limit-select" },
     el("option", { value: "1" }, "1 \u2014 wait for prior work"),
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
-    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts"),
+    el("option", { value: "5" }, "5 live worktrees"),
+    el("option", { value: "10" }, "10 live worktrees"),
+    el("option", { value: "25" }, "25 live worktrees"),
+    el("option", { value: "unlimited" }, "Unlimited")
   );
   const permissionsFieldset = el("fieldset", { class: "automation-permissions" });
   const permissionFilterInput = el("input", {
@@ -65430,6 +66867,11 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     heading.hidden = false;
   }
   function selectedSimpleSchedule() {
+    if (repeatSelect.value === "minute") return { repeat: "minute", hour: 0, minute: 0 };
+    if (repeatSelect.value === "hourly") {
+      const minute2 = parseCronNumber(hourlyMinuteInput.value, 0, 59);
+      return minute2 === null ? null : { repeat: "hourly", hour: 0, minute: minute2 };
+    }
     const [hourRaw, minuteRaw] = timeInput.value.split(":");
     if (hourRaw === void 0 || minuteRaw === void 0) return null;
     const hour = parseCronNumber(hourRaw, 0, 23);
@@ -65453,6 +66895,8 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       if (repeatSelect.value === "custom" && customCron) return customCron;
       return null;
     }
+    if (schedule.repeat === "minute") return "* * * * *";
+    if (schedule.repeat === "hourly") return `${String(schedule.minute)} * * * *`;
     const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`;
     if (schedule.repeat === "daily") return `${prefix} * * *`;
     if (schedule.repeat === "weekdays") return `${prefix} * * 1-5`;
@@ -65463,9 +66907,14 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     const custom2 = repeatSelect.value === "custom";
     const weekly = repeatSelect.value === "weekly";
     const monthly = repeatSelect.value === "monthly";
-    timeLabel.hidden = custom2;
-    timeInput.disabled = custom2;
-    timeInput.required = !custom2;
+    const hourly = repeatSelect.value === "hourly";
+    const hideTime = custom2 || hourly || repeatSelect.value === "minute";
+    timeLabel.hidden = hideTime;
+    timeInput.disabled = hideTime;
+    timeInput.required = !hideTime;
+    hourlyMinuteLabel.hidden = !hourly;
+    hourlyMinuteInput.disabled = !hourly;
+    hourlyMinuteInput.required = hourly;
     weeklyDayLabel.hidden = !weekly;
     weeklyDaySelect.disabled = !weekly;
     weeklyDaySelect.required = weekly;
@@ -65487,16 +66936,17 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     repeatSelect.value = schedule.repeat;
     timeInput.value = scheduleTime(schedule);
+    hourlyMinuteInput.value = String(schedule.minute);
     if (schedule.repeat === "weekly") weeklyDaySelect.value = String(schedule.on);
     if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
     updateScheduleControls();
   }
   function unavailablePermissionOption(permission) {
     const parts = permission.toolName.split("__");
-    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${humanizeIdentifier(parts[1] ?? "MCP")} / ${humanizeIdentifier(parts.slice(2).join("__"))}` : humanizeIdentifier(permission.toolName);
     return {
       permission,
-      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      label: mcpLabel,
       detail: "Not currently available. Kept so the approval works if this tool returns."
     };
   }
@@ -65523,7 +66973,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       "label",
       {
         class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
-        title: option.permission.toolName
+        "data-tool-name": option.permission.toolName
       },
       el(
         "span",
@@ -65540,8 +66990,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
             unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
           )
         ),
-        el("span", { class: "automation-permission-detail" }, option.detail),
-        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+        el("span", { class: "automation-permission-detail" }, option.detail)
       ),
       switchControl
     );
@@ -65616,7 +67065,13 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
     promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    const savedLimit = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    if (!Array.from(worktreeLimitSelect.options).some((option) => option.value === savedLimit)) {
+      worktreeLimitSelect.append(
+        el("option", { value: savedLimit }, `${savedLimit} live worktrees`)
+      );
+    }
+    worktreeLimitSelect.value = savedLimit;
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
@@ -65742,7 +67197,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
           el(
             "span",
             {},
-            `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
+            schedule.maxLiveWorktrees === "unlimited" ? "Unlimited live worktrees" : `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
           ),
           el(
             "span",
@@ -65878,6 +67333,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     updateScheduleControls();
   });
+  hourlyMinuteInput.addEventListener("input", updateScheduleControls);
   timeInput.addEventListener("input", updateScheduleControls);
   weeklyDaySelect.addEventListener("change", updateScheduleControls);
   monthlyDaySelect.addEventListener("change", updateScheduleControls);
@@ -65969,6 +67425,7 @@ var init_automation_plugin_settings = __esm({
     init_automation_retained_worktrees();
     init_automation_failure();
     init_automations();
+    init_humanize_identifier();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -67023,7 +68480,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       chips.push({
         label: "Tools",
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(", ")
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(", ")
       });
     }
     if (contributions.modelRoutes.length > 0) {
@@ -67687,6 +69144,7 @@ var init_packs_section = __esm({
     init_plugin_catalog_browser();
     init_confirm_dialog();
     init_humanize_identifier();
+    init_tool_display();
     init_errors4();
     init_unknown_value3();
     init_helpers();
@@ -68374,9 +69832,10 @@ var init_mcp_markup = __esm({
               Model Context Protocol servers expose external tools to the agent. This section is
               the whole picture of what Copse talks to over MCP, servers you configured, servers
               the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Configure your own in <code>.cursor/mcp.json</code> (project),
-              <code>.mcp.json</code> (project), or <code>~/.cursor/mcp.json</code> (global), then
-              reload. Plugins are installed and turned on under Customise.
+              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
+              its own config. It also reads <code>.cursor/mcp.json</code> and
+              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
+              you edit yourself. Plugins are installed and turned on under Customise.
             </p>
 
             <fieldset>
@@ -68387,11 +69846,15 @@ var init_mcp_markup = __esm({
                 Off servers are not started on reload.
               </p>
               <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-primary" id="mcp-add-btn">
+                  Add server
+                </button>
                 <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
                   Reload servers
                 </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
+              <div id="mcp-server-editor" class="mcp-server-editor" hidden></div>
             </fieldset>
 
             <fieldset id="mcp-declared-fieldset" hidden>
@@ -68916,7 +70379,7 @@ var init_experimental_markup = __esm({
                 creation can take a few minutes.
               </p>
               <p class="field-hint">
-                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+                Enable Animated explainers in Canvas and explainers' plugin settings below.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
@@ -68981,6 +70444,20 @@ var init_experimental_markup = __esm({
                 Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
                 External coding agents run in the container with their selected API key, or, if you opt in
                 per run, your Codex or Gemini sign-in copied into the container.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="planModeEnabled" />
+                Show "Start planning" in the message box
+              </label>
+              <p class="field-hint">
+                Breaks a task into a living plan with explicit steps and acceptance criteria before
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
               </p>
             </fieldset>
 
@@ -69051,6 +70528,7 @@ var init_experimental_markup = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "planModeEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true }
     ];
@@ -69341,7 +70819,7 @@ function mountSettingsDialog(store, api) {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -69379,6 +70857,7 @@ function mountSettingsDialog(store, api) {
       </div>
     </div>
   `;
+  overlay.setAttribute("aria-labelledby", "settings-dialog-title");
   bindSettingsDialog(overlay);
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields);
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
@@ -69808,11 +71287,154 @@ var init_announcement_catalog = __esm({
   }
 });
 
+// src/shared/store/store.ts
+function sameItems(a4, b2) {
+  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
+}
+function createStore(initial) {
+  let state = {
+    workspaceRoot: null,
+    projects: [],
+    projectGroups: [],
+    activeProjectId: null,
+    expandedProjectId: null,
+    threads: [],
+    backgroundThreads: [],
+    activeThreadId: null,
+    panelTab: "file",
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+    filesPaneOpen: false,
+    rightPanelMode: "explorer",
+    rightPanelMaximized: false,
+    projectsPaneOpen: true,
+    layout: { ...DEFAULT_LAYOUT },
+    theme: "dark",
+    themePreference: DEFAULT_THEME_PREFERENCE,
+    fontSize: 14,
+    uiScale: 1,
+    animateAgentAvatars: true,
+    conciseThreadsEnabled: true,
+    autoPortraitRightPanel: true,
+    rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
+    openLinksInBuiltInBrowser: true,
+    developerMode: false,
+    ...initial
+  };
+  const listeners = {
+    message_added: /* @__PURE__ */ new Set(),
+    message_queued: /* @__PURE__ */ new Set(),
+    message_token: /* @__PURE__ */ new Set(),
+    message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
+    message_done: /* @__PURE__ */ new Set(),
+    tool_call_started: /* @__PURE__ */ new Set(),
+    tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
+    thread_status_changed: /* @__PURE__ */ new Set(),
+    agent_activity: /* @__PURE__ */ new Set(),
+    threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
+    thread_draft_changed: /* @__PURE__ */ new Set(),
+    new_thread_opened: /* @__PURE__ */ new Set(),
+    explorer_reveal: /* @__PURE__ */ new Set(),
+    workspace_changed: /* @__PURE__ */ new Set(),
+    projects_changed: /* @__PURE__ */ new Set(),
+    git_change_navigate: /* @__PURE__ */ new Set(),
+    roadmap_reveal: /* @__PURE__ */ new Set(),
+    thread_plan_open: /* @__PURE__ */ new Set(),
+    thread_plan_changed: /* @__PURE__ */ new Set(),
+    browser_url_requested: /* @__PURE__ */ new Set(),
+    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
+    pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
+    settings_changed: /* @__PURE__ */ new Set(),
+    usage_updated: /* @__PURE__ */ new Set(),
+    context_updated: /* @__PURE__ */ new Set(),
+    todos_changed: /* @__PURE__ */ new Set(),
+    review_changed: /* @__PURE__ */ new Set(),
+    hook_card_added: /* @__PURE__ */ new Set(),
+    comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
+    git_branch_changed: /* @__PURE__ */ new Set(),
+    thread_checkout_changed: /* @__PURE__ */ new Set(),
+    composer_draft_flush: /* @__PURE__ */ new Set(),
+    agent_task_selected: /* @__PURE__ */ new Set(),
+    shell_tab_activated: /* @__PURE__ */ new Set(),
+    request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
+  };
+  function on2(event, handler) {
+    listeners[event].add(handler);
+    return () => {
+      listeners[event].delete(handler);
+    };
+  }
+  function emit(event, ...args) {
+    listeners[event].forEach((handler) => {
+      handler(...args);
+    });
+  }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check2 = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check2);
+    return () => {
+      selections.delete(check2);
+    };
+  }
+  function setState(partial2) {
+    state = { ...state, ...partial2 };
+    for (const check2 of [...selections]) {
+      if (selections.has(check2)) check2();
+    }
+  }
+  return { getState: () => state, setState, on: on2, emit, select };
+}
+var init_store = __esm({
+  "src/shared/store/store.ts"() {
+    init_types2();
+    init_layout();
+  }
+});
+
 // src/renderer/controller/panels.ts
 function syncFilesPaneDom(store) {
   if (typeof document === "undefined") return;
   const pane = document.getElementById("pane-files");
   if (pane) pane.hidden = !store.getState().filesPaneOpen;
+}
+function rightPanelShows(state, mode) {
+  return state.filesPaneOpen && state.rightPanelMode === mode;
+}
+function selectRightPanelMode(store, mode, listener) {
+  return store.select((state) => rightPanelShows(state, mode), listener);
+}
+function selectRightPanel(store, listener) {
+  return store.select((state) => state.filesPaneOpen ? state.rightPanelMode : null, listener);
 }
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
@@ -69840,8 +71462,6 @@ function toggleFilesPane(store) {
   });
   if (!open2) clearMaximizedOnClose(store);
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  if (open2) store.emit("right_panel_mode_changed");
 }
 function openRightPanel(store, mode) {
   const { filesPaneOpen, rightPanelMode } = store.getState();
@@ -69851,8 +71471,6 @@ function openRightPanel(store, mode) {
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function navigateToChange(store, path) {
   store.emit("git_change_navigate", path);
@@ -69882,13 +71500,10 @@ function toggleRightPanel(store, mode) {
     store.setState({ filesPaneOpen: false });
     clearMaximizedOnClose(store);
     syncFilesPaneDom(store);
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function ensureWorkspaceForPanel(api, store) {
   if (store.getState().workspaceRoot) return true;
@@ -72170,7 +73785,7 @@ async function openWorkspaceFile(store, api, path, reveal) {
       if (!isOwner()) preview.close();
     };
     unsubs.push(
-      store.on("panel_changed", checkOwner),
+      store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
       store.on("threads_changed", checkOwner),
       store.on("workspace_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
@@ -72204,9 +73819,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     rightPanelMode: "explorer",
     filesPaneOpen: true
   });
-  store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
@@ -72230,9 +73842,6 @@ function revealWorkspaceDirectory(store, path) {
     filesPaneOpen: true
   });
   store.emit("explorer_reveal", path);
-  store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function activateWorkspaceReference(store, api, path, kind, reveal) {
   if (kind === "directory") {
@@ -72244,6 +73853,7 @@ async function activateWorkspaceReference(store, api, path, kind, reveal) {
 var LANG;
 var init_files = __esm({
   "src/renderer/controller/files.ts"() {
+    init_store();
     init_active_thread_owner();
     init_panels();
     init_image_path();
@@ -72516,6 +74126,7 @@ export {
   appendToken,
   appendReasoning,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   setMessageContent,
   addMessageCanvasArtefact,
   addMessageVisualEvidence,
@@ -72563,13 +74174,13 @@ export {
   suspendNavigationWrites,
   markNavigationRestored,
   acceptRuntimeThreadMeta,
-  recordPersistedThread,
   flushProjectThreads,
   loadProjects,
   saveProjects,
   saveProjectGroups,
   invalidateProjectThreadLoads,
   loadThreads,
+  loadPersistedThread,
   awaitPendingThreadPersistence,
   attachAutosave,
   init_persistence,
@@ -72649,6 +74260,7 @@ export {
   init_automation_run_state,
   sidebarPrRefs,
   sidebarLastPromptAt,
+  isAutomationPendingStart,
   sidebarHasRun,
   init_sidebar_thread,
   projectDisplayName,
@@ -72734,10 +74346,15 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sameItems,
+  createStore,
+  init_store,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   init_active_thread_owner,
   syncFilesPaneDom,
+  selectRightPanelMode,
+  selectRightPanel,
   toggleRightPanelMaximized,
   isRightPanelMaximized,
   toggleProjectsPane,
