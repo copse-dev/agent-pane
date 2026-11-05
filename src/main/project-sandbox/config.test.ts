@@ -819,9 +819,15 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowRead.includes('/tmp/project'))
     assert.ok(allowRead.some((p) => p.includes('/tmp/project/**')))
 
-    const toolchain = resolveNodeToolchainAllowRead(process.env)
-    if (toolchain.length > 0) {
-      assert.ok(toolchain.every((p) => allowRead.includes(p)))
+    // Only a toolchain inside a denied root (home) needs a read exception; one
+    // elsewhere, such as /opt or a hosted tool cache, is readable without one.
+    const denyRead = overlay.filesystem?.denyRead ?? []
+    const insideDenied = (path: string): boolean => {
+      const concrete = path.replace(/\/\*\*$/, '')
+      return denyRead.some((root) => concrete === root || concrete.startsWith(`${root}/`))
+    }
+    for (const path of resolveNodeToolchainAllowRead(process.env).filter(insideDenied)) {
+      assert.ok(allowRead.includes(path), path)
     }
   })
 
