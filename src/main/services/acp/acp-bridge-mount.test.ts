@@ -4,19 +4,34 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
+import type { ContainerRuntimeAttestation } from '@shared/types/unattended-run.ts'
 import { ACP_COPSE_TOOLS_PROMPT_NOTE, runAcpAgentFromSettings } from './acp-agent-service.ts'
 import {
   ACP_BRIDGE_MOUNT_WAIT_MS,
   ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE,
+  acpCopseToolsConnectedPromptNote,
   isAcpBridgeStartupFailure,
 } from './acp-bridge-mount.ts'
-import { disposeAllAcpSessions } from './acp-session-pool.ts'
+import { ACP_SANDBOX_GITHUB_STEER } from './acp-network-denial-steer.ts'
+import { acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import {
+  clearRuntimeContainmentForTests,
+  declareContainerRuntime,
+  type GuestContainmentObservation,
+} from '../security/runtime-containment.ts'
+import {
+  activateUnattendedRunForRun,
+  armUnattendedRun,
+  clearUnattendedRunsForTests,
+} from '../security/unattended-run.ts'
 
 /**
  * #4144: Copse offered its native-tool bridge, but an ACP agent has those tools
@@ -70,11 +85,12 @@ async function useFixtureAgent(flags: string[]): Promise<void> {
   ])
 }
 
-/** One turn; returns what the thread was shown and the prompt the agent received. */
-async function turn(
+/** One turn; returns how it stopped and what the thread was shown. */
+async function runTurn(
   threadId: string,
   registry: ToolRegistry,
-): Promise<{ shown: string; prompt: string }> {
+  opts: { userPrompt?: string; signal?: AbortSignal } = {},
+): Promise<{ stopReason: string; shown: string }> {
   const chunks: StreamChunk[] = []
   const result = await runWithThreadExecutionContext(
     {
@@ -89,18 +105,68 @@ async function turn(
       runAcpAgentFromSettings({
         threadId,
         agentId: 'bridge-fixture',
-        userPrompt: 'echo-prompt',
+        userPrompt: opts.userPrompt ?? 'echo-prompt',
         priorMessages: [],
-        signal: AbortSignal.timeout(30_000),
+        signal: opts.signal ?? AbortSignal.timeout(30_000),
         onChunk: (chunk) => chunks.push(chunk),
         registry,
       }),
   )
-  assert.equal(result.stopReason, 'end_turn')
   const shown = chunks.map((chunk) => (chunk.type === 'text' ? chunk.text : '')).join('')
+  return { stopReason: result.stopReason, shown }
+}
+
+/** One `echo-prompt` turn; returns what the thread was shown and the prompt the agent received. */
+async function turn(
+  threadId: string,
+  registry: ToolRegistry,
+): Promise<{ shown: string; prompt: string }> {
+  const { stopReason, shown } = await runTurn(threadId, registry)
+  assert.equal(stopReason, 'end_turn')
   const prompt = /prompt:([\s\S]*)/.exec(shown)?.[1] ?? ''
   assert.ok(prompt, `the agent echoed its prompt: ${shown}`)
   return { shown, prompt }
+}
+
+/**
+ * Run `fn` as the thread's unattended run inside a declared container, where
+ * the agent counts as sandboxed and its notes carry the sandbox steering. This
+ * is the one sandboxed ACP path a test can reach without a real OS sandbox.
+ */
+async function sandboxedRun<T>(threadId: string, fn: () => Promise<T>): Promise<T> {
+  const attestation: ContainerRuntimeAttestation = {
+    runtimeId: 'rt-bridge-mount',
+    image: 'copse-worker:test',
+    user: 1001,
+    readOnlyRootfs: true,
+    capDropAll: true,
+    noNewPrivileges: true,
+    pidsLimit: 512,
+    memoryLimit: '4g',
+    network: 'none',
+    egressAllowlist: [],
+    hostMounts: ['/run/copse'],
+    securityProfiles: 'default',
+  }
+  const guest: GuestContainmentObservation = {
+    uid: 1001,
+    capabilitySets: { inheritable: 0n, permitted: 0n, effective: 0n, bounding: 0n, ambient: 0n },
+    noNewPrivileges: true,
+    upNetworkInterfaces: ['lo'],
+    rootMountOptions: ['ro', 'relatime'],
+  }
+  declareContainerRuntime(attestation, guest)
+  armUnattendedRun(threadId, {
+    runtimeId: attestation.runtimeId,
+    budgets: { wallClockMs: 60_000, tokenCeiling: 1_000_000 },
+  })
+  activateUnattendedRunForRun(threadId)
+  try {
+    return await runWithActiveRunIdentity(threadId, fn)
+  } finally {
+    clearUnattendedRunsForTests()
+    clearRuntimeContainmentForTests()
+  }
 }
 
 describe('ACP native bridge mount (#4144)', () => {
@@ -133,6 +199,69 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.doesNotMatch(shown, UNAVAILABLE)
     assert.ok(prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
     assert.ok(!prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+  })
+
+  it('takes a Stop during the mount window for a cancel, not a failed mount', async () => {
+    await useFixtureAgent(['--mcp-http'])
+    const registry = registryWithOneBridgedTool()
+    const stop = new AbortController()
+    // Stop once the session is open, while the turn waits for the listing.
+    const stopOnceOpen = (async (): Promise<void> => {
+      const giveUpAt = Date.now() + 20_000
+      while (acpSessionPoolSize() === 0 && Date.now() < giveUpAt) await delay(10)
+      stop.abort()
+    })()
+    const started = Date.now()
+    const stopped = await runTurn('stopped', registry, { signal: stop.signal })
+    await stopOnceOpen
+    assert.equal(stopped.stopReason, 'cancelled')
+    assert.ok(Date.now() - started < ACP_BRIDGE_MOUNT_WAIT_MS, 'the Stop ends the wait')
+    assert.doesNotMatch(stopped.shown, UNAVAILABLE)
+
+    // The bridge was not marked unavailable: the next turn still decides, once.
+    const next = await turn('stopped', registry)
+    assert.equal(next.shown.match(new RegExp(UNAVAILABLE, 'g'))?.length, 1)
+    assert.ok(next.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+  })
+
+  it('tells an agent that lists the tools late that they are back', async () => {
+    await useFixtureAgent(['--mcp-http'])
+    const registry = registryWithOneBridgedTool()
+    const first = await turn('lists-late', registry)
+    assert.match(first.shown, UNAVAILABLE)
+
+    const listing = await runTurn('lists-late', registry, { userPrompt: 'list-mcp-tools' })
+    assert.equal(listing.stopReason, 'end_turn')
+    assert.match(listing.shown, /listed/)
+
+    const after = await turn('lists-late', registry)
+    assert.ok(after.prompt.includes(acpCopseToolsConnectedPromptNote(ACP_COPSE_TOOLS_PROMPT_NOTE)))
+    assert.ok(!after.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.doesNotMatch(after.shown, UNAVAILABLE)
+    // Unsandboxed: nothing of the sandbox note comes back with it.
+    assert.doesNotMatch(after.prompt, /run_shell tool for commands|For GitHub work/)
+  })
+
+  it('gives a sandboxed agent that lists late its run_shell and GitHub steering back', async () => {
+    await useFixtureAgent(['--mcp-http'])
+    const registry = registryWithOneBridgedTool()
+    await sandboxedRun('sandboxed-late', async () => {
+      const first = await turn('sandboxed-late', registry)
+      assert.match(first.prompt, /Environment note: this session runs inside a filesystem sandbox/)
+      assert.doesNotMatch(first.prompt, /run_shell tool for commands/)
+      // The GitHub steer stays without the tools: no github.com from this process.
+      assert.ok(first.prompt.includes(ACP_SANDBOX_GITHUB_STEER))
+
+      await runTurn('sandboxed-late', registry, { userPrompt: 'list-mcp-tools' })
+      const after = await turn('sandboxed-late', registry)
+      const restored = /Tool note: Copse's "copse" MCP server is now connected[\s\S]*/.exec(
+        after.prompt,
+      )?.[0]
+      assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
+      assert.ok(restored.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
+      assert.match(restored, /use its run_shell tool for commands/)
+      assert.ok(restored.includes(ACP_SANDBOX_GITHUB_STEER))
+    })
   })
 
   it("replaces Claude Agent ACP's failed-to-start line with Copse's own message", async () => {

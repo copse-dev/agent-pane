@@ -26,15 +26,16 @@
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
  * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
  * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
+ * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
  * | `ask-execute`    | request an `execute` permission with no command or title       |
  * | `run-kindless`   | request permission for `rm -rf build` with no tool `kind`      |
  * | `ask`            | request permission, then report the client's answer            |
  * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
  * | anything else    | echo it back as an agent message chunk                         |
  *
- * `report-env:`, `echo-prompt` and `say:` are checked first: a turn driven through
- * Copse's own prompt builder carries a preamble whose words (`task`, …) would
- * otherwise trip the substring branches below.
+ * `report-env:`, `say:`, `list-mcp-tools` and `echo-prompt` are checked first: a
+ * turn driven through Copse's own prompt builder carries a preamble whose words
+ * (`task`, …) would otherwise trip the substring branches below.
  *
  * Flags steer how it treats the MCP servers Copse offers in `session/new`
  * (#4144):
@@ -46,7 +47,8 @@
  * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
  * |                        | way Claude Agent ACP does for a client without notices        |
  *
- * `--mcp-http` alone is an agent that is offered the bridge and never mounts it.
+ * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
+ * until a `list-mcp-tools` prompt mounts it late.
  *
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
@@ -103,6 +105,14 @@ async function mcpRequest(server, id, method) {
   await response.text()
 }
 
+/** Mount servers the way an agent's MCP client does: initialize, then list the tools. */
+async function listTools(servers) {
+  for (const server of servers) {
+    await mcpRequest(server, 1, 'initialize')
+    await mcpRequest(server, 2, 'tools/list')
+  }
+}
+
 let nextSessionId = 0
 /** The http MCP servers each session was offered, by session id. */
 const offeredServers = new Map()
@@ -122,12 +132,7 @@ agent({ name: 'mock-acp-agent' })
     const sessionId = `mock-session-${String(nextSessionId)}`
     const servers = (ctx.params.mcpServers ?? []).filter((server) => server.type === 'http')
     offeredServers.set(sessionId, servers)
-    if (flags.has('--list-mcp-tools')) {
-      for (const server of servers) {
-        await mcpRequest(server, 1, 'initialize')
-        await mcpRequest(server, 2, 'tools/list')
-      }
-    }
+    if (flags.has('--list-mcp-tools')) await listTools(servers)
     return { sessionId }
   })
   .onRequest('session/prompt', async (ctx) => {
@@ -172,6 +177,12 @@ agent({ name: 'mock-acp-agent' })
     const sayLine = /say:([^\n]*)/.exec(text)
     if (sayLine) {
       await say(sayLine[1].trim())
+      return { stopReason: 'end_turn' }
+    }
+
+    if (text.includes('list-mcp-tools')) {
+      await listTools(offeredServers.get(sessionId) ?? [])
+      await say('listed')
       return { stopReason: 'end_turn' }
     }
 

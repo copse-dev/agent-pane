@@ -30,13 +30,24 @@ interface MountableBridge {
  */
 export const ACP_BRIDGE_MOUNT_WAIT_MS = 5_000
 
+/**
+ * What a turn learned while waiting for the mount: the agent `listed` the
+ * bridge's tools, stayed `unlisted` through the window, or the turn was
+ * `cancelled` (the user pressed Stop) before either. A cancel says nothing about
+ * the agent's MCP client, so it must not be taken for a failed mount.
+ */
+export type AcpBridgeMount = 'listed' | 'unlisted' | 'cancelled'
+
 /** Whether the agent listed the bridge's tools, waiting out the rest of the mount window. */
-export function awaitAcpBridgeMount(
+export async function awaitAcpBridgeMount(
   bridge: MountableBridge,
   openedAt: number,
   signal?: AbortSignal,
-): Promise<boolean> {
-  return bridge.whenToolsListed(openedAt + ACP_BRIDGE_MOUNT_WAIT_MS - Date.now(), signal)
+): Promise<AcpBridgeMount> {
+  if (await bridge.whenToolsListed(openedAt + ACP_BRIDGE_MOUNT_WAIT_MS - Date.now(), signal)) {
+    return 'listed'
+  }
+  return signal?.aborted === true ? 'cancelled' : 'unlisted'
 }
 
 /**
@@ -82,7 +93,10 @@ export const ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE =
   'Ignore any guidance, earlier in this session or below, to prefer them, and use your ' +
   'own tools instead.'
 
-/** Prompt note: the bridge connected after the agent was told it had not. */
+/**
+ * Prompt note: the bridge connected after the agent was told it had not.
+ * `toolsNote` is all the steering the session's notes left out without the tools.
+ */
 export function acpCopseToolsConnectedPromptNote(toolsNote: string): string {
   return (
     `Tool note: Copse's "${BRIDGE_MCP_SERVER_NAME}" MCP server is now connected in this ` +
