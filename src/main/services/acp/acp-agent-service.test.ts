@@ -508,6 +508,9 @@ describe('buildAcpPrompt', () => {
     // private shell from Copse's bridge, and point at the shared escape path.
     assert.match(sandboxed, /\$TMPDIR/)
     assert.match(sandboxed, /cannot unsandbox your own shell/i)
+    // An agent's own per-command escape cannot lift a sandbox around its whole
+    // process (#4146), so the note names the one agents reach for.
+    assert.match(sandboxed, /dangerouslyDisableSandbox\): this whole\s+process runs inside/)
     assert.match(sandboxed, /copse[\s\S]+run_shell/i)
     assert.match(sandboxed, /approved external work outside this sandbox/i)
     // The GitHub steer is appended to the sandbox note: bridge first, no

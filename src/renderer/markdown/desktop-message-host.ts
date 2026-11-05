@@ -1,7 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { annotateFileReferences } from './file-links.ts'
 import type { MessageMarkdownHost } from './message-markdown.ts'
-import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 
 const hosts = new WeakMap<
   ApiClient,
@@ -9,8 +8,9 @@ const hosts = new WeakMap<
 >()
 
 /**
- * The desktop app's message host: workspace file links and artifact images, which
- * need the preload API. Every desktop chat surface uses this so a side chat renders
+ * The desktop app's message host: workspace file links, which need the preload
+ * API. Remote-artifact images are hydrated by the conversation instead, which
+ * knows the thread a request belongs to (`hydrateRemoteArtifactImages`). Every desktop chat surface uses this so a side chat renders
  * a reply exactly as the main conversation does. Clicks on the decorated links are
  * bound once per surface root (`bindFileReferenceClicks` and friends).
  *
@@ -25,7 +25,6 @@ export function desktopMessageHost(
   if (!cached) {
     const decorate = (el: HTMLElement): void => {
       void annotateFileReferences(el, api)
-      hydrateRemoteArtifactImages(el, api)
     }
     cached = { plain: { decorate }, runnable: { decorate, runCommands: true } }
     hosts.set(api, cached)

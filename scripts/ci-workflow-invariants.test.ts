@@ -329,6 +329,120 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('frees e2e disk only on a cramped hosted runner, behind setup, before the suite', () => {
+    const steps = z
+      .object({
+        jobs: z.object({
+          e2e: z.object({
+            steps: z.array(
+              z.object({
+                name: z.string().optional(),
+                uses: z.string().optional(),
+                if: z.string().optional(),
+                env: z
+                  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+                  .optional(),
+                run: z.string().optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(workflow)).jobs.e2e.steps
+    const at = (name: string): number => steps.findIndex((step) => step.name === name)
+    const freeAt = at('Free disk on a cramped hosted runner')
+    const joinAt = at('Join disk cleanup and log free space')
+    const free = steps[freeAt]
+    const joined = steps[joinAt]
+    assert.ok(free?.run && joined?.run, 'expected both disk steps in the e2e job')
+    // Deleting system directories is for GitHub-hosted runners only.
+    assert.equal(free.if, "runner.environment == 'github-hosted'")
+    assert.equal(joined.if, "runner.environment == 'github-hosted'")
+    // The deletion overlaps checkout and setup; the suite starts after the join.
+    const checkoutAt = steps.findIndex((step) => step.uses?.startsWith('actions/checkout@'))
+    const suiteAt = steps.findIndex((step) => step.name?.startsWith('e2e shard '))
+    assert.ok(freeAt >= 0 && freeAt < checkoutAt, 'the cleanup must start before checkout')
+    assert.ok(joinAt > checkoutAt && joinAt < suiteAt, 'the suite must start after the join')
+
+    const root = mkdtempSync(join(tmpdir(), 'ci-e2e-disk-'))
+    try {
+      // Fakes at the boundary: `df` reports a chosen free space (GNU or BSD
+      // host alike) and `sudo` records instead of deleting, slowly enough to
+      // show the step returns before the deletion finishes.
+      const bin = join(root, 'bin')
+      const calls = join(root, 'sudo.log')
+      mkdirSync(bin)
+      writeFileSync(
+        join(bin, 'df'),
+        '#!/bin/sh\ncase "$*" in\n  *--output=avail*) printf \'Avail\\n%s\\n\' "$FAKE_AVAIL_BYTES" ;;\n  *) echo "fake df $*" ;;\nesac\n',
+        { mode: 0o755 },
+      )
+      writeFileSync(join(bin, 'sudo'), `#!/bin/sh\nsleep 2\necho "$*" >> '${calls}'\n`, {
+        mode: 0o755,
+      })
+      const runner = join(root, 'runner-temp')
+      mkdirSync(runner)
+      const run = (
+        script: string,
+        availGb: number,
+        stepEnv: Readonly<Record<string, string | number | boolean>> | undefined,
+      ): SpawnSyncReturns<string> =>
+        spawnSync('bash', ['-c', script], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            ...Object.fromEntries(Object.entries(stepEnv ?? {}).map(([k, v]) => [k, String(v)])),
+            PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+            RUNNER_TEMP: runner,
+            FAKE_AVAIL_BYTES: String(availGb * 1e9),
+          },
+        })
+
+      // The ~75 GB-free layout: one `df`, no deletion, no wait, no warning.
+      const roomy = run(free.run, 75, free.env)
+      assert.equal(roomy.status, 0, roomy.stderr)
+      assert.match(roomy.stdout, /## disk before cleanup\nfake df/)
+      assert.match(roomy.stdout, /75 GB free at .*: no cleanup needed \(threshold 40 GB\)/)
+      assert.equal(existsSync(join(runner, 'disk-cleanup.started')), false)
+      const roomyJoin = run(joined.run, 75, joined.env)
+      assert.equal(roomyJoin.status, 0, roomyJoin.stderr)
+      assert.match(roomyJoin.stdout, /## disk after cleanup\nfake df/)
+      assert.doesNotMatch(roomyJoin.stdout, /disk cleanup ran|::warning/)
+      assert.equal(existsSync(calls), false)
+
+      // The cow-root layout that failed (11.7 GB free at the spec): the step
+      // hands the deletion to the background, and the join waits for it.
+      const cramped = run(free.run, 14, free.env)
+      assert.equal(cramped.status, 0, cramped.stderr)
+      assert.match(cramped.stdout, /14 GB free at .*, under 40 GB: removing unused toolchains/)
+      assert.equal(existsSync(join(runner, 'disk-cleanup.done')), false)
+      const crampedJoin = run(joined.run, 35, joined.env)
+      assert.equal(crampedJoin.status, 0, crampedJoin.stderr)
+      assert.match(crampedJoin.stdout, /disk cleanup ran \S+ to \S+; this step waited \d+s/)
+      assert.match(crampedJoin.stdout, /## disk after cleanup\nfake df/)
+      assert.doesNotMatch(crampedJoin.stdout, /::warning/)
+      // Only toolchains that no spec and no Linux product path uses.
+      assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n').sort(), [
+        'rm -rf /opt/ghc',
+        'rm -rf /opt/hostedtoolcache/CodeQL',
+        'rm -rf /usr/local/.ghcup',
+        'rm -rf /usr/local/lib/android',
+        'rm -rf /usr/share/dotnet',
+        'rm -rf /usr/share/swift',
+      ])
+
+      // Still short after cleanup: a warning names the classifier spec.
+      const short = run(joined.run, 12, joined.env)
+      assert.equal(short.status, 0, short.stderr)
+      assert.match(
+        short.stdout,
+        /::warning title=Too little free disk for the classifier e2e::12\.0 GB free at .*settings-classifiers-install\.e2e\.ts needs about 15\.6 GB/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('keeps expensive post-merge repetitions off trunk pushes', () => {
     // Main pushes repeat the exact commit already gated as a PR. Keep the
     // expensive post-merge repeat off trunk; promotion and nightly remain the
