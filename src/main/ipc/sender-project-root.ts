@@ -1,12 +1,7 @@
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
 import type { z } from 'zod'
-import type { InvokeChannel } from './define-handler.ts'
-import {
-  parsePositionalIpcArgs,
-  senderCheck,
-  type IpcHandlerOptions,
-  type PositionalArgsOptions,
-} from './ipc-handler.ts'
+import { defineSenderHandler, type InvokeChannel } from './define-handler.ts'
+import type { IpcHandlerOptions, PositionalArgsOptions } from './ipc-handler.ts'
 import type { AgentRoots } from '../services/execution-root.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { getMainWindowNavigation } from '../windows/create-main-window.ts'
@@ -25,9 +20,9 @@ export function senderProjectRoot(sender: WebContents): string | null {
 }
 
 /**
- * `defineHandler` for a handler that acts on the asking window's project: the
- * sender is checked, then `fn` receives {@link senderProjectRoot} ahead of the
- * parsed positional arguments.
+ * `defineSenderHandler` for a handler that acts on the asking window's project:
+ * `fn` receives {@link senderProjectRoot} in place of the sender. The sender
+ * check and the parse are `defineSenderHandler`'s.
  */
 export function defineSenderRootHandler<T extends readonly z.ZodType[]>(
   win: BrowserWindow,
@@ -36,11 +31,13 @@ export function defineSenderRootHandler<T extends readonly z.ZodType[]>(
   fn: (root: string | null, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
   options?: IpcHandlerOptions & PositionalArgsOptions,
 ): void {
-  const checkSender = senderCheck(win, options)
-  ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...rawArgs: unknown[]) => {
-    checkSender(event)
-    return fn(senderProjectRoot(event.sender), ...parsePositionalIpcArgs(args, rawArgs, options))
-  })
+  defineSenderHandler(
+    win,
+    channel,
+    args,
+    (sender, ...parsed) => fn(senderProjectRoot(sender), ...parsed),
+    options,
+  )
 }
 
 /**
