@@ -12551,63 +12551,12 @@ var init_file_links = __esm({
   }
 });
 
-// src/renderer/markdown/remote-artifact-images.ts
-function threadAgentId(container) {
-  const scope = container.closest(".messages-list") ?? container;
-  for (const link of scope.querySelectorAll("a[href]")) {
-    const match = link.href.match(CURSOR_AGENT_URL_RE);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
-function hydrateRemoteArtifactImages(container, api2) {
-  let agentIdFromThread = null;
-  let threadScanned = false;
-  const fallbackAgentId = () => {
-    if (!threadScanned) {
-      agentIdFromThread = threadAgentId(container);
-      threadScanned = true;
-    }
-    return agentIdFromThread;
-  };
-  for (const img of container.querySelectorAll(
-    "img[data-remote-artifact-path]"
-  )) {
-    if (img.dataset["remoteArtifactState"] === "loading" || img.dataset["remoteArtifactState"] === "loaded") {
-      continue;
-    }
-    const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
-    if (!path || !agentId) {
-      img.dataset["remoteArtifactState"] = "missing-agent";
-      continue;
-    }
-    img.dataset["remoteArtifactState"] = "loading";
-    void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
-      img.src = dataUrl;
-      attachImageCopyMenu(img);
-      img.dataset["remoteArtifactState"] = "loaded";
-    }).catch((err) => {
-      img.dataset["remoteArtifactState"] = "error";
-      console.warn("[remote-agent] artifact image load failed:", err);
-    });
-  }
-}
-var CURSOR_AGENT_URL_RE;
-var init_remote_artifact_images = __esm({
-  "src/renderer/markdown/remote-artifact-images.ts"() {
-    init_image_expand();
-    CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
-  }
-});
-
 // src/renderer/markdown/desktop-message-host.ts
 function desktopMessageHost(api2, options = {}) {
   let cached = hosts.get(api2);
   if (!cached) {
     const decorate = (el2) => {
       void annotateFileReferences(el2, api2);
-      hydrateRemoteArtifactImages(el2, api2);
     };
     cached = { plain: { decorate }, runnable: { decorate, runCommands: true } };
     hosts.set(api2, cached);
@@ -12618,7 +12567,6 @@ var hosts;
 var init_desktop_message_host = __esm({
   "src/renderer/markdown/desktop-message-host.ts"() {
     init_file_links();
-    init_remote_artifact_images();
     hosts = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -13347,6 +13295,116 @@ var init_workspace_links = __esm({
     init_active_thread_owner();
     init_files();
     init_toast();
+  }
+});
+
+// src/renderer/markdown/remote-artifact-images.ts
+function unavailableCopy(code2) {
+  switch (code2) {
+    case "sandbox-unavailable":
+      return "Image unavailable: it can only be downloaded inside the sandbox, which is not available here.";
+    case "unlinked-agent":
+      return "Image unavailable: this thread is not linked to the agent that made it.";
+    case "origin-denied":
+    case "redirect-denied":
+    case "too-many-redirects":
+      return "Image unavailable: it is hosted somewhere Copse does not download from.";
+    case "not-configured":
+      return "Image unavailable: add a Cursor API key in Settings.";
+    case "bad-type":
+    case "bad-image":
+    case "too-large":
+    case "bad-encoding":
+      return "Image unavailable: the file is not a supported image.";
+    default:
+      return "Image could not be loaded.";
+  }
+}
+function clearUnavailable(img) {
+  const next = img.nextElementSibling;
+  if (next?.classList.contains(UNAVAILABLE_CLASS)) next.remove();
+  img.hidden = false;
+}
+function showUnavailable(img, code2, retry) {
+  clearUnavailable(img);
+  img.hidden = true;
+  img.dataset["remoteArtifactState"] = "unavailable";
+  img.dataset["remoteArtifactError"] = code2;
+  const notice = document.createElement("div");
+  notice.className = UNAVAILABLE_CLASS;
+  notice.setAttribute("role", "status");
+  const label = document.createElement("span");
+  label.className = "remote-artifact-unavailable-label";
+  label.textContent = unavailableCopy(code2);
+  notice.append(label);
+  if (img.alt) {
+    const alt = document.createElement("span");
+    alt.className = "remote-artifact-unavailable-alt";
+    alt.textContent = img.alt;
+    notice.append(alt);
+  }
+  if (retry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn ui-btn-secondary ui-btn-compact remote-artifact-retry";
+    button.textContent = "Retry";
+    button.addEventListener("click", retry, { once: true });
+    notice.append(button);
+  }
+  img.after(notice);
+}
+function requestImage(img, api2, scope) {
+  const path = img.dataset["remoteArtifactPath"];
+  if (!path) return;
+  const agentId = img.dataset["remoteArtifactAgentId"];
+  const request = {
+    projectId: scope.projectId,
+    threadId: scope.threadId,
+    path,
+    ...agentId ? { agentId } : {}
+  };
+  clearUnavailable(img);
+  img.dataset["remoteArtifactState"] = "loading";
+  delete img.dataset["remoteArtifactError"];
+  void api2.remoteAgent.artifactImageDataUrl(request).then(
+    (result) => {
+      if (result.ok) {
+        img.src = result.dataUrl;
+        attachImageCopyMenu(img);
+        img.dataset["remoteArtifactState"] = "loaded";
+        return;
+      }
+      showUnavailable(
+        img,
+        result.code,
+        result.retryable ? () => {
+          requestImage(img, api2, scope);
+        } : null
+      );
+    },
+    () => {
+      showUnavailable(img, "invalid-request", null);
+    }
+  );
+}
+function hydrateRemoteArtifactImages(container, api2, scope) {
+  for (const img of container.querySelectorAll(
+    "img[data-remote-artifact-path]"
+  )) {
+    const state = img.dataset["remoteArtifactState"];
+    if (state === "loading" || state === "loaded" || state === "unavailable") continue;
+    if (!scope) {
+      img.dataset["remoteArtifactState"] = "missing-scope";
+      continue;
+    }
+    requestImage(img, api2, scope);
+  }
+}
+var UNAVAILABLE_CLASS;
+var init_remote_artifact_images = __esm({
+  "src/renderer/markdown/remote-artifact-images.ts"() {
+    init_image_expand();
+    UNAVAILABLE_CLASS = "remote-artifact-unavailable";
   }
 });
 
@@ -20465,6 +20523,11 @@ function mountConversation(root, store2, api2) {
   );
   const expandedConciseTurns = /* @__PURE__ */ new Set();
   let conciseFooterSyncQueued = false;
+  function artifactImageScope(threadId) {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    const thread = threadId ?? activeThreadId;
+    return activeProjectId && thread ? { projectId: activeProjectId, threadId: thread } : null;
+  }
   function conciseEnabledFor(thread, messageId) {
     const enabled = store2.getState().conciseThreadsEnabled;
     if (!enabled || expandedConciseTurns.size === 0 || !thread) return enabled;
@@ -20987,7 +21050,7 @@ function mountConversation(root, store2, api2) {
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
-    hydrateRemoteArtifactImages(list, api2);
+    hydrateRemoteArtifactImages(list, api2, artifactImageScope());
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
@@ -21087,7 +21150,7 @@ function mountConversation(root, store2, api2) {
     const msg = thread?.messages.find((m2) => m2.id === msgId);
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl) return;
-    hydrateRemoteArtifactImages(list, api2);
+    hydrateRemoteArtifactImages(list, api2, artifactImageScope(threadId));
     const run4 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
@@ -21853,7 +21916,7 @@ function mountConversation(root, store2, api2) {
       const msg = thread?.messages.find((m2) => m2.id === mid);
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, false, api2);
-        hydrateRemoteArtifactImages(list, api2);
+        hydrateRemoteArtifactImages(list, api2, artifactImageScope());
         syncAcpResourceReferences(list, api2, store2);
       }
       if (msg?.role === "assistant" && msgEl) {
