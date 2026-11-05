@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-YFZ7CF3Z.js";
+} from "./chunk-7XAT66MG.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -8751,9 +8751,9 @@ function mountProjectsPane(root, store2, api2) {
       render2();
     }),
     store2.on("workspace_changed", () => {
+      prWorkspaceGeneration += 1;
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
-      prWorkspaceGeneration += 1;
       render2();
     }),
     store2.on("attention_changed", render2),
