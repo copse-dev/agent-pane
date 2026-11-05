@@ -53,6 +53,9 @@ function clockIcon(className = DEFAULT) {
     className
   );
 }
+function cornerDownLeftIcon(className = DEFAULT) {
+  return outlineIcon("corner-down-left", ["m9 10-5 5 5 5", "M20 4v7a4 4 0 0 1-4 4H4"], className);
+}
 function chevronUpIcon(className = DEFAULT) {
   return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
 }
@@ -61,9 +64,6 @@ function arrowLeftIcon(className = DEFAULT) {
 }
 function arrowRightIcon(className = DEFAULT) {
   return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
-}
-function arrowDownIcon(className = DEFAULT) {
-  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
 }
 function refreshIcon(className = DEFAULT) {
   return outlineIcon(
@@ -8931,10 +8931,10 @@ export {
   chevronRightIcon,
   chevronDownIcon,
   clockIcon,
+  cornerDownLeftIcon,
   chevronUpIcon,
   arrowLeftIcon,
   arrowRightIcon,
-  arrowDownIcon,
   refreshIcon,
   externalLinkIcon,
   closeIcon,
