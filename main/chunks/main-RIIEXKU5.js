@@ -358,6 +358,7 @@ import {
   prevThreadId,
   projectDisplayName,
   promptProgressLabel,
+  proposingThreadId,
   queuedMessageIds,
   queuedPayloadText,
   recordContextTrim,
@@ -458,7 +459,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-7XAT66MG.js";
+} from "./chunk-ZJWNRJTS.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4116,7 +4117,22 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function isShowable(req) {
     if (isWindowHidden()) return false;
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
-    return !req.threadId || attentionThreadId(store2, req.threadId) === store2.getState().activeThreadId;
+    if (!req.threadId) return true;
+    const activeThreadId = store2.getState().activeThreadId;
+    if (attentionThreadId(store2, req.threadId) === activeThreadId) return true;
+    return activeThreadId !== null && proposingThreadId(store2, req.threadId) === activeThreadId;
+  }
+  function proposedThreadPromptOrigin(threadIds) {
+    const activeThreadId = store2.getState().activeThreadId;
+    const titles2 = [];
+    for (const id of new Set(threadIds)) {
+      if (id === void 0 || id === activeThreadId) continue;
+      if (activeThreadId === null || proposingThreadId(store2, id) !== activeThreadId) continue;
+      const title = getThreadById(store2, id)?.title ?? "";
+      titles2.push(`\u201C${title === "" ? "New thread" : title}\u201D`);
+    }
+    if (titles2.length === 0) return null;
+    return titles2.length === 1 ? `From the thread ${titles2.join("")}` : `From the threads ${titles2.join(", ")}`;
   }
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
@@ -4196,8 +4212,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
       store2,
       batch.map((req) => req.threadId)
     );
-    origin.hidden = asker === null;
-    origin.textContent = asker?.label ?? "";
+    const originLabel = asker?.label ?? proposedThreadPromptOrigin(batch.map((req) => req.threadId));
+    origin.hidden = originLabel === null;
+    origin.textContent = originLabel ?? "";
     const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
     githubBrand.hidden = !isGithubApproval;
     dialog.classList.toggle("approval-dialog-github", isGithubApproval);
@@ -4513,6 +4530,7 @@ var init_approval_dialog = __esm({
     init_attention();
     init_projects();
     init_side_chat2();
+    init_thread_helpers();
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
