@@ -161,7 +161,7 @@ export async function startMobileServer(options: {
       return [route, { body, etag, headers: { ...file.headers, ETag: etag } }]
     }),
   )
-  const remoteAssets = loadRemoteAssets(join(assets, 'remote'))
+  const remoteAssets = await loadRemoteAssets(join(assets, 'remote'))
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false

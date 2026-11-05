@@ -17,6 +17,8 @@ import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-stat
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
+  desktopAppApproval,
+  gitPushApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -46,6 +48,11 @@ export interface DemoScenario {
   id: string
   label: string
   chatGptPlan?: ChatGptPlanStatus
+  /**
+   * Makes "Refresh connection" fail: the refresh rejects with `error`, as the
+   * IPC bridge delivers it, and later status reads return `status`.
+   */
+  chatGptPlanRefreshFailure?: { error: string; status: ChatGptPlanStatus }
   project: Project
   threads: Thread[]
   /**
@@ -1466,6 +1473,46 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
                     },
                   ],
                 },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+    id: 'read-explored',
+    label: 'Quote explored lines',
+    project: project('demo-read-explored-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-read-explored-thread',
+        title: 'Read explored',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-read-explored-assistant',
+            role: 'assistant',
+            content: 'Quoting the whole function before editing it.',
+            toolCalls: [
+              {
+                id: 'demo-read-explored-call',
+                name: 'read_explored',
+                args: { path: 'src/renderer/browser-pane.ts', start_line: 289, end_line: 296 },
+                status: 'done',
+                resultFormat: 'markdown',
+                result:
+                  "`src/renderer/browser-pane.ts` lines 289–296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```",
               },
             ],
             createdAt: FIXED_TIME,
@@ -3881,6 +3928,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  {
+    id: 'chatgpt-plan-expired',
+    label: 'ChatGPT plan whose sign-in has expired',
+    project: project('demo-chatgpt-plan-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      chatGptPlanWelcomeSeen: true,
+    },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    chatGptPlanRefreshFailure: {
+      error:
+        "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+      status: {
+        activeClientId: 'demo-plan-account',
+        accounts: [
+          {
+            clientId: 'demo-plan-account',
+            label: 'you@example.com',
+            connected: false,
+            planEnabled: false,
+          },
+        ],
+      },
+    },
+    threads: [],
+  },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -3890,6 +3975,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       id: `thread-${access}`,
       type: 'mcp',
       ...threadAccessApproval(access),
+    }),
+  ),
+  ...[undefined, '0123456789abcdef0123456789abcdef01234567'].map((sha) =>
+    approvalRiskScenario(sha ? 'approval-git-push-lease' : 'approval-git-push', {
+      id: 'git-push',
+      type: 'mcp',
+      ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
   approvalRiskScenario('approval-web-url', {
@@ -3925,5 +4017,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
     allowRemember: false,
     approveLabel: 'Always allow host',
+  }),
+  approvalRiskScenario('approval-desktop-app', {
+    id: 'desktop-app',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.Notes',
+      action: 'read its window contents',
+      allowRemember: true,
+      threadScoped: true,
+    }),
+  }),
+  approvalRiskScenario('approval-desktop-finder', {
+    id: 'desktop-finder',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.finder',
+      action: 'activate element e12',
+      caution:
+        'Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.',
+      allowRemember: true,
+      threadScoped: true,
+    }),
   }),
 ]

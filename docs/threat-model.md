@@ -260,28 +260,36 @@ workspace or non-network origin).
 On macOS, a separate broker for the system `/usr/bin/ssh-keygen` is on by default. A
 trusted sandboxed socket probe must receive EPERM/EACCES before Copse offers
 additional access. Git stderr and model hints are not evidence. The grant is bound
-to the project path, signing config, public key, executable hash and socket inode,
+to the project path, signing config, public key, helper executable hashes and socket inode,
 and is cached until app restart; a changed identity re-runs the probe and re-grants
 without asking. Setting the git_commit tool to Always ask forces approval for every
 use and bypasses the cached grant. Disabling the setting prevents further ssh-agent
 signing.
 
-Only the separately sandboxed system signer gets the agent socket. Its fixed argv
-forces agent use, selects the approved public key and signs in the `git` namespace.
-It receives a clean environment and a bounded commit payload through stdin. Git and
+Only the separately sandboxed system helpers get the agent socket. A fixed
+`/usr/bin/ssh-add -L` invocation checks for the configured public identity before
+staging or running hooks. Its bounded output never reaches the agent; invalid or
+truncated output and agent communication errors fail closed. The system signer's fixed
+argv forces agent use, selects the approved public key and signs in the `git` namespace.
+Both helpers are pinned by content hash and receive clean environments. The signer
+receives a bounded commit payload through stdin. Git and
 its hooks get a private, single-use broker endpoint, not the agent socket. The
 broker accepts commit objects, never paths, executables, permission requests or raw
 ssh-agent messages. The configured private key is explicitly unreadable even if it
 is stored outside the home directory. Execution-time overrides pin the approved
 signer and key against later config edits. Failure never downgrades the signature.
 
-With the socket setting off, a configured SSH key file can instead receive explicit
-one-commit consent. The prompt names the resolved file, project, system signer and
+With the socket setting off, or the configured identity unavailable from ssh-agent
+(including a missing socket or public-key file), a configured SSH key file can instead
+receive explicit one-commit consent. A missing identity is distinct from an agent
+communication failure, which never initiates private-key consent. The prompt names
+the resolved file, project, system signer and
 commit before any private bytes are read. Consent is never remembered. Copse checks
 file identity and bounded size across approval, then gives only the isolated signer
 read access to the exact canonical file with a clean environment and no agent socket.
 The identity is rechecked before and after signer invocations; changed files fail
-closed. Git and hooks remain denied access to the key. Copse writes no private-key
+closed. A derived public key must match the configured public identity when available.
+Git and hooks remain denied access to the key. Copse writes no private-key
 copy, and key bytes never appear in approval text, command arguments, logs or tool
 output. Passphrase-protected keys require ssh-agent. The existing
 one-use commit endpoint and execution-time signer pinning apply to both paths. This

@@ -21,7 +21,7 @@
   color: var(--text-primary);
 }
 .remote-header #connection {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .remote-host #pane-chat {
@@ -60,7 +60,7 @@
   min-width: 0;
   max-height: 35dvh;
   overflow: auto;
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-scale));
   width: 100%;
   padding: 12px;
 }
@@ -76,7 +76,7 @@
   padding: 8px;
   text-align: left;
   color: var(--text-secondary);
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -91,7 +91,7 @@
     padding-inline: 12px;
   }
   .remote-header {
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
   .remote-host .submit-btn,
   .remote-host .stop-btn {

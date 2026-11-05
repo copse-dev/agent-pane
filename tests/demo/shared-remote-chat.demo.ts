@@ -27,6 +27,28 @@ describe('shared desktop chat in the paired browser', () => {
     const editor = $('.prompt-input')
     await expect(editor).toHaveAttribute('contenteditable', 'plaintext-only')
     await expect($('.remote-next-step')).toBeDisplayed()
+    for (const [theme, screenshot] of [
+      ['light', 'shared-remote-chat-next-step-light.png'],
+      ['dark', 'shared-remote-chat-next-step-dark.png'],
+    ] as const) {
+      await browser.sendCommand('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: theme }],
+      })
+      await expect($('html')).toHaveAttribute('data-theme', theme)
+      await expect($('.remote-next-step')).toBeDisplayed()
+      expect(
+        await browser.execute(() => {
+          const suggestion = document.querySelector<HTMLElement>('.remote-next-step')
+          if (!suggestion) throw new Error('Next-step suggestion is missing')
+          return getComputedStyle(suggestion).backgroundColor
+        }),
+      ).not.toBe('rgba(0, 0, 0, 0)')
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, screenshot))
+    }
+    await browser.sendCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: 'light' }],
+    })
+    await expect($('html')).toHaveAttribute('data-theme', 'light')
     await $('.remote-next-step').click()
     await expect(editor).toHaveText('Run the phone reconnect test.')
     await editor.setValue('Run the phone reconnect test, including my draft.')

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 const manifestSchema = z
   .array(z.string().regex(/^(?!.*(?:^|\/)\.\.?\/)[\w./-]+\.(?:html|js|css|svg|png|ttf|woff2?)$/))
@@ -20,12 +21,18 @@ export const REMOTE_INTERFACE_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
 
 /** Only build-manifest assets, loaded before listening; request paths never touch disk. */
-export function loadRemoteAssets(
+export async function loadRemoteAssets(
   root: string,
-): Map<string, { body: Buffer; headers: Record<string, string> }> {
+): Promise<Map<string, { body: Buffer; headers: Record<string, string> }>> {
   const file = join(root, 'assets.json')
-  if (!existsSync(file)) return new Map()
-  const paths = safeJsonParse(readFileSync(file, 'utf8'), decodeWithSchema(manifestSchema))
+  let manifest: string
+  try {
+    manifest = await readFile(file, 'utf8')
+  } catch (error) {
+    if (isRecord(error) && error['code'] === 'ENOENT') return new Map()
+    throw error
+  }
+  const paths = safeJsonParse(manifest, decodeWithSchema(manifestSchema))
   if (!paths) throw new Error('Invalid remote interface asset manifest')
   const result = new Map<string, { body: Buffer; headers: Record<string, string> }>()
   for (const path of paths) {
@@ -39,7 +46,7 @@ export function loadRemoteAssets(
         path === 'mermaid-frame.html' ? "frame-ancestors 'self'" : REMOTE_INTERFACE_CSP,
     }
     if (path === 'mermaid-frame.html') headers['X-Frame-Options'] = 'SAMEORIGIN'
-    const asset = { body: readFileSync(join(root, path)), headers }
+    const asset = { body: await readFile(join(root, path)), headers }
     result.set('/remote/' + path, asset)
     if (path === 'index.html') result.set('/remote/', asset)
   }

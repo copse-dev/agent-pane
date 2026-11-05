@@ -592,7 +592,7 @@ export function mountPanelModeControls(
       syncPanelBtns()
       syncSideChatBadge()
     }),
-    store.on('staged_diffs_changed', syncChangesBadge),
+    store.select((s) => s.stagedDiffs.length, syncChangesBadge),
     store.on('threads_changed', syncSideChatBadge),
     store.on('settings_changed', syncExperimentalBtns),
   ]

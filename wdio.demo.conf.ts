@@ -55,7 +55,7 @@ async function startDemoServer(): Promise<void> {
 
   await prepareBenchmarkExplorerFixture()
   await buildMobileAssets(MOBILE_ROOT)
-  const remoteAssets = loadRemoteAssets(join(MOBILE_ROOT, 'remote'))
+  const remoteAssets = await loadRemoteAssets(join(MOBILE_ROOT, 'remote'))
   const remoteFixture = createRemoteChatFixture()
   server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${String(DEMO_PORT)}`)

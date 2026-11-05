@@ -59,31 +59,45 @@ export interface PrCreateInput {
  * needs PR reads or lifecycle writes) can be pointed at whichever is available
  * without knowing which one it got. Reads mirror the shapes in
  * `@shared/types/git.ts`; writes return a uniform {@link PrActionResult}.
+ *
+ * Every method takes the checkout it acts for as `root` (null when the caller
+ * has none). The CLI backend runs `gh` there and the "workspace" reads take the
+ * repository from its origin remote; a backend never falls back to the window's
+ * workspace, so two windows or turns in different projects cannot read each
+ * other's repository (#3958).
  */
 export interface GitHubBackend {
   readonly kind: 'cli' | 'api' | 'mock'
 
   // Reads — back the PR panel.
-  getStatus: () => Promise<GhCliStatus>
-  listMyOpenPrs: (limit: number) => Promise<GhPrSummary[] | null>
-  listWorkspaceOpenPrs: (limit: number) => Promise<GhPrSummary[]>
-  getPrDetails: (ref: PrRef) => Promise<GhPrDetails | null>
-  getPrFileDiff: (ref: PrRef, path: string) => Promise<GhPrFileDiff | null>
-  getPrChecksState: (ref: PrRef) => Promise<GhPrChecksState>
+  getStatus: (root: string | null) => Promise<GhCliStatus>
+  listMyOpenPrs: (root: string | null, limit: number) => Promise<GhPrSummary[] | null>
+  listWorkspaceOpenPrs: (root: string | null, limit: number) => Promise<GhPrSummary[]>
+  getPrDetails: (root: string | null, ref: PrRef) => Promise<GhPrDetails | null>
+  getPrFileDiff: (root: string | null, ref: PrRef, path: string) => Promise<GhPrFileDiff | null>
+  getPrChecksState: (root: string | null, ref: PrRef) => Promise<GhPrChecksState>
   /** One bounded page of open workspace issues (PRs excluded) — backs roadmap import. */
-  listWorkspaceOpenIssues: (page: number, pageSize: number) => Promise<GhIssuePage>
+  listWorkspaceOpenIssues: (
+    root: string | null,
+    page: number,
+    pageSize: number,
+  ) => Promise<GhIssuePage>
   /** One issue by coordinates (any state); null when missing or actually a PR. */
-  getIssue: (ref: PrRef) => Promise<GhIssueSummary | null>
+  getIssue: (root: string | null, ref: PrRef) => Promise<GhIssueSummary | null>
   /** Search issues in the workspace repo (any state) — backs roadmap review. */
-  searchWorkspaceIssues: (query: string, limit: number) => Promise<GhIssueSummary[]>
+  searchWorkspaceIssues: (
+    root: string | null,
+    query: string,
+    limit: number,
+  ) => Promise<GhIssueSummary[]>
 
   // Writes — Wave 1 PR lifecycle actions.
   /** Open a PR and report its coordinates, so the caller can link it to a thread. */
-  createPr: (input: PrCreateInput) => Promise<PrCreateResult>
-  rerunFailedRuns: (ref: PrRef) => Promise<PrActionResult>
-  approvePr: (ref: PrRef) => Promise<PrActionResult>
-  markPrReady: (ref: PrRef) => Promise<PrActionResult>
-  enableAutoMerge: (ref: PrRef) => Promise<PrActionResult>
+  createPr: (root: string | null, input: PrCreateInput) => Promise<PrCreateResult>
+  rerunFailedRuns: (root: string | null, ref: PrRef) => Promise<PrActionResult>
+  approvePr: (root: string | null, ref: PrRef) => Promise<PrActionResult>
+  markPrReady: (root: string | null, ref: PrRef) => Promise<PrActionResult>
+  enableAutoMerge: (root: string | null, ref: PrRef) => Promise<PrActionResult>
 }
 
 /** Settings key controlling which backend the PR panel talks to. */

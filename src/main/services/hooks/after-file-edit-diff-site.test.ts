@@ -64,12 +64,16 @@ describe('afterFileEdit fires at the diff-queue write site (B2)', () => {
     await writeMarkerHook(marker)
     await setSetting('cursorHooksEnabled', true)
 
-    const result = await applyDiffEntry({
-      path: 'src/app.ts',
-      before: '',
-      after: 'export const x = 1\n',
-      language: 'typescript',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'src/app.ts',
+        before: '',
+        after: 'export const x = 1\n',
+        language: 'typescript',
+      },
+      workspaceRoot,
+      workspaceRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     // applyDiffEntry awaited the hook before returning, so the marker exists.
     assert.equal(existsSync(marker), true)
@@ -80,12 +84,16 @@ describe('afterFileEdit fires at the diff-queue write site (B2)', () => {
     await writeMarkerHook(marker)
     // Setting left at its default (off).
 
-    const result = await applyDiffEntry({
-      path: 'src/app.ts',
-      before: '',
-      after: 'export const x = 1\n',
-      language: 'typescript',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'src/app.ts',
+        before: '',
+        after: 'export const x = 1\n',
+        language: 'typescript',
+      },
+      workspaceRoot,
+      workspaceRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     assert.equal(existsSync(marker), false)
   })
@@ -97,12 +105,16 @@ describe('afterFileEdit fires at the diff-queue write site (B2)', () => {
 
     // On-disk content differs from the staged `before`, so the write is refused.
     await writeFile(join(workspaceRoot, 'a.txt'), 'formatted\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'a.txt',
-      before: 'original\n',
-      after: 'updated\n',
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'a.txt',
+        before: 'original\n',
+        after: 'updated\n',
+        language: 'plaintext',
+      },
+      workspaceRoot,
+      workspaceRoot,
+    )
     assert.equal(result.status, 'conflict')
     assert.equal(existsSync(marker), false)
   })
@@ -113,13 +125,17 @@ describe('afterFileEdit fires at the diff-queue write site (B2)', () => {
     await setSetting('cursorHooksEnabled', true)
 
     await writeFile(join(workspaceRoot, 'gone.txt'), 'bye\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'gone.txt',
-      before: 'bye\n',
-      after: '',
-      language: 'plaintext',
-      op: 'delete',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'gone.txt',
+        before: 'bye\n',
+        after: '',
+        language: 'plaintext',
+        op: 'delete',
+      },
+      workspaceRoot,
+      workspaceRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     assert.equal(existsSync(marker), false)
   })
