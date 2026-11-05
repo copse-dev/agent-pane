@@ -94,6 +94,16 @@ agent({ name: 'mock-acp-agent' })
       return { stopReason: 'end_turn' }
     }
 
+    const clientRead = /client-read:(\/[^\s]+)/.exec(text)
+    if (clientRead) {
+      const response = await ctx.client.request(methods.client.fs.readTextFile, {
+        sessionId,
+        path: clientRead[1],
+      })
+      await say(`client-read-result:\n${response.content}`)
+      return { stopReason: 'end_turn' }
+    }
+
     if (text.includes('crash')) {
       await say('about to fall over')
       // The client should surface this line with the exit, which is the whole

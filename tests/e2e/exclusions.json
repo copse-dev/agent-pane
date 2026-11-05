@@ -143,6 +143,28 @@
       "reviewBy": "2026-11-13",
       "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. The macOS close, completion and reopen flow passed locally.",
       "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/read-outside-approval.e2e.ts",
+      "category": "platform",
+      "reason": "The approved external read case reads /etc/hosts through the project sandbox, which Windows does not provide; the shell read-approval case still runs on every platform.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-05",
+      "reviewBy": "2026-11-12",
+      "coverage": "external-tool-read and external-read-worker unit tests cover approval and the worker cross-platform; the real sandbox regression runs on macOS.",
+      "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/acp-file-read-approval.e2e.ts",
+      "category": "platform",
+      "reason": "The approved external ACP read requires the macOS/Linux project sandbox and reads /etc/hosts; Windows has neither this path nor this containment boundary.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox and ACP maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-05",
+      "reviewBy": "2026-11-12",
+      "coverage": "acp-file-access unit tests cover gate, scoped worker, cancellation and raw line ranges; acp-spawn exercises the callback over stdio. Real consent and returned bytes are asserted by this focused Electron spec.",
+      "markers": ["this.skip"]
     }
   ]
 }

@@ -1293,6 +1293,13 @@ describe('startAcpNativeBridge', () => {
       /after its agent turn ended.*no thread execution context is bound/s,
     )
     assert.deepEqual(executed, [], 'an unbound call must never reach the registry')
+    await assert.rejects(
+      bridge.readTextFile(
+        { sessionId: 'fixture', path: '/etc/hosts' },
+        new AbortController().signal,
+      ),
+      /no approved agent turn is bound/,
+    )
 
     // Listing stays available between turns: agents enumerate tools at session
     // setup, before any turn has bound a context.

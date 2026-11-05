@@ -230,10 +230,36 @@ describe('read tools on the read-only chat store (#644)', () => {
     assert.match(result, /events\.jsonl/)
   })
 
-  it('read_file still rejects paths outside both workspace and chat store', async () => {
+  it('read_file still rejects a missing path outside both workspace and chat store', async () => {
     await assert.rejects(
-      runTool(registry, 'read_file', { path: '/etc/hostname' }, new AbortController().signal),
+      runTool(
+        registry,
+        'read_file',
+        { path: join(tmpdir(), 'copse-absent-outside-dir', 'missing.txt') },
+        new AbortController().signal,
+      ),
       /outside workspace or chat store/,
     )
+  })
+
+  it('read_file refuses an existing outside path without an active thread and sandbox', async () => {
+    // Absolute outside reads go through scoped approval, which needs a thread to
+    // hold the grant and a sandbox to contain the read; without both it fails
+    // closed instead of reading on the host.
+    const outside = await mkdtemp(join(tmpdir(), 'copse-outside-read-'))
+    await writeFile(join(outside, 'note.txt'), 'outside', 'utf8')
+    try {
+      await assert.rejects(
+        runTool(
+          registry,
+          'read_file',
+          { path: join(outside, 'note.txt') },
+          new AbortController().signal,
+        ),
+        /require an active thread and project sandbox/,
+      )
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 })
