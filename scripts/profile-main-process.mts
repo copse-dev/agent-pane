@@ -58,7 +58,7 @@ export async function waitForInspectorUrl(port: number, timeoutMs: number): Prom
   let detail = 'no inspector target'
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+      const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`, {
         signal: AbortSignal.timeout(1000),
       })
       const url = safeJsonParse(await response.text(), decodeWithSchema(targetsSchema))?.find(
@@ -70,7 +70,7 @@ export async function waitForInspectorUrl(port: number, timeoutMs: number): Prom
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error(`Inspector on port ${port} did not become available: ${detail}`)
+  throw new Error(`Inspector on port ${String(port)} did not become available: ${detail}`)
 }
 
 interface InspectorSession {
@@ -118,13 +118,13 @@ async function connectInspector(url: string): Promise<InspectorSession> {
     pending.clear()
   })
   return {
-    call: (method, params = {}) =>
+    call: (method, params = {}): Promise<unknown> =>
       new Promise((resolve, reject) => {
         const id = ++nextId
         pending.set(id, { resolve, reject })
         socket.send(JSON.stringify({ id, method, params }))
       }),
-    close: () => {
+    close: (): void => {
       socket.close()
     },
   }
@@ -178,8 +178,8 @@ export function summarizeProfile(profile: CpuProfile, limit: number): string[] {
     .map(([id, micros]) => {
       const frame = nodes.get(id)?.callFrame
       const where = frame
-        ? `${frame.functionName || '(anonymous)'} ${frame.url}:${frame.lineNumber + 1}`
-        : `node ${id}`
+        ? `${frame.functionName || '(anonymous)'} ${frame.url}:${String(frame.lineNumber + 1)}`
+        : `node ${String(id)}`
       return `${(micros / 1000).toFixed(1)}ms ${where}`
     })
 }
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
   process.kill(pid, 'SIGUSR1')
   const url = await waitForInspectorUrl(Number(values.port), 5000)
   const profile = await profileInspector(url, Number(values.seconds) * 1000)
-  const out = values.out ?? join(tmpdir(), `copse-main-${pid}.cpuprofile`)
+  const out = values.out ?? join(tmpdir(), `copse-main-${String(pid)}.cpuprofile`)
   await writeFile(out, JSON.stringify(profile))
   console.log(`Profile: ${out}`)
   for (const line of summarizeProfile(profile, 25)) console.log(line)

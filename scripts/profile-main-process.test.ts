@@ -34,9 +34,9 @@ async function startTarget(): Promise<Target> {
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   let stderr = ''
-  child.stderr?.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
   const url = await new Promise<string>((resolve, reject) => {
-    child.stderr?.on('data', (chunk: string) => {
+    child.stderr.on('data', (chunk: string) => {
       stderr += chunk
       const match = /ws:\/\/127\.0\.0\.1:\d+\/[\w-]+/.exec(stderr)
       if (match) resolve(match[0])
@@ -49,7 +49,7 @@ async function startTarget(): Promise<Target> {
     child,
     url,
     stderr: () => stderr,
-    dispose: async () => {
+    dispose: async (): Promise<void> => {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill()
         await once(child, 'exit')
@@ -110,8 +110,8 @@ describe('profileInspector', { timeout: 30_000 }, () => {
       )
       await once(socket, 'message')
       socket.close()
-      const [code] = await once(target.child, 'exit')
-      assert.equal(code, 3)
+      await once(target.child, 'exit')
+      assert.equal(target.child.exitCode, 3)
       assert.match(
         target.stderr(),
         /ReferenceError: require is not defined\n\s+at Immediate\.<anonymous> \(<anonymous>:1:46\)/,
