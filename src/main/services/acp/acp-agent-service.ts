@@ -102,7 +102,7 @@ import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
-  ACP_SANDBOX_GITHUB_STEER,
+  acpSandboxGithubSteer,
   SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
   SANDBOX_NETWORK_AUDIT_TOOL,
   denialHostLabels,
@@ -928,6 +928,9 @@ async function runAcpAgentTurn(
       fresh ? options.priorMessages : [],
       {
         sandboxed,
+        // The bridge the agent was actually offered: the GitHub steer names
+        // its tools, or says plainly that GitHub is out of reach without one.
+        bridgeToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
         includeImages,
@@ -1719,8 +1722,10 @@ export const ACP_TURN_PROMPT_NOTE =
  * the agent's private shell has no approve-to-run-unsandboxed path. The native
  * bridge does, so steer commands through its run_shell implementation instead
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
- * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
- * where GitHub is the destination agents reach for unprompted.
+ * GitHub steer that {@link buildAcpPrompt} appends (`acpSandboxGithubSteer`)
+ * does the same for the network side, where GitHub is the destination agents
+ * reach for unprompted. It depends on the bridged tools the session offers, so
+ * it is not part of this constant.
  *
  * `$TMPDIR` is named rather than a literal path because an agent may export its
  * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
@@ -1740,9 +1745,7 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
-  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.' +
-  '\n\n' +
-  ACP_SANDBOX_GITHUB_STEER
+  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.'
 
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
@@ -1750,13 +1753,19 @@ export const ACP_SANDBOX_PROMPT_NOTE =
  * FRESH — a reused session already carries both in its own context, and
  * re-sending them every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
- * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
+ * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines, followed by a
+ * GitHub steer naming the bridged tools in `bridgeToolNames`.
  */
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    /**
+     * Tools the "copse" MCP server offered this session, for the sandbox note's
+     * GitHub steer. Leave it out when unknown; an empty list means no bridge.
+     */
+    bridgeToolNames?: readonly string[]
     /** The session starts on a read-only view of the user's checkout. */
     readonlyCheckout?: boolean
     includeNotes?: boolean
@@ -1767,7 +1776,9 @@ export function buildAcpPrompt(
   const includeNotes = opts?.includeNotes ?? true
   const note = includeNotes
     ? ACP_TURN_PROMPT_NOTE +
-      (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') +
+      (opts?.sandboxed
+        ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}\n\n${acpSandboxGithubSteer(opts.bridgeToolNames)}`
+        : '') +
       (opts?.readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '') +
       '\n\n'
     : ''
@@ -1805,6 +1816,7 @@ export function buildAcpPromptContent(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    bridgeToolNames?: readonly string[]
     readonlyCheckout?: boolean
     includeNotes?: boolean
     operatorInstructions?: string
@@ -1814,6 +1826,7 @@ export function buildAcpPromptContent(
 ): ContentBlock[] {
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.bridgeToolNames !== undefined ? { bridgeToolNames: opts.bridgeToolNames } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
     ...(opts?.operatorInstructions !== undefined
