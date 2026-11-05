@@ -1,4 +1,11 @@
 import { el, clear } from '../dom/helpers.ts'
+import {
+  applyTranscriptRowPlan,
+  planTranscriptRows,
+  relinkReadingAnchor,
+  transcriptRowSignature,
+  wantedTranscriptRows,
+} from './transcript-rows.ts'
 import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
@@ -9,7 +16,8 @@ import {
 } from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
-  arrowDownIcon,
+  chevronUpIcon,
+  cornerDownLeftIcon,
   checkIcon,
   closeIcon,
   gitBranchIcon,
@@ -48,7 +56,12 @@ import {
 } from '../canvas/artefact-previews.ts'
 import { createInlineArtefact, disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
-import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
+import {
+  getThreadById,
+  getActiveThread,
+  getThreadProjectId,
+  setQueuePaused,
+} from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import {
@@ -61,15 +74,21 @@ import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
 import {
   paintAssistantMarkdown,
   renderUserPromptMarkdown,
-  STREAM_PAINT_EVENT,
   STREAM_SETTLED_EVENT,
 } from '../markdown/message-markdown.ts'
 import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
-import { createFrameLoop } from './frame-loop.ts'
+import {
+  createTranscriptScroll,
+  naturalRowTop,
+  scrollIntoTranscriptView,
+} from './transcript-scroll.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
-import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
+import {
+  hydrateRemoteArtifactImages,
+  type ArtifactImageScope,
+} from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
@@ -122,6 +141,12 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { commandPhaseLabel, liveCommandPhase } from '@shared/tools/command-phase-display.ts'
+import {
+  backgroundTaskCommandCall,
+  createBackgroundTaskLogsSection,
+  revealToolCard,
+  setBackgroundTaskLogLoader,
+} from './command-task-links.ts'
 import type { ToolRun } from '@shared/tools/tool-runs.ts'
 import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { navigateToChange } from '../controller/panels.ts'
@@ -497,6 +522,7 @@ function appendStandardToolSections(
         argsSection === null && tc.status !== 'running',
         tc.appendedReminderLengths,
       ),
+      ...appendIfPresent(createBackgroundTaskLogsSection(tc)),
       ...appendIfPresent(createToolLocationsSection(tc.locations)),
     )
   }
@@ -784,6 +810,27 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
     a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.messages, b.messages) &&
     sameItems(a.pendingMessages, b.pendingMessages) &&
+    sameItems(a.threadProposals, b.threadProposals) &&
+    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+  )
+}
+
+/**
+ * Whether the thread-wide inputs that many rows read at build time are
+ * unchanged, so a keyed row reconcile may stand in for a full rebuild. The
+ * remaining inputs are either per-row (the messages, their queue, the status
+ * the live tail reads; see transcript-rows.ts) or chrome synced on its own
+ * (todos, the working brief).
+ */
+function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
+  return (
+    a.threadId === b.threadId &&
+    a.model === b.model &&
+    a.interruptedTurnAt === b.interruptedTurnAt &&
+    a.liveProposalTargets === b.liveProposalTargets &&
+    a.needsHydration === b.needsHydration &&
+    a.hydrationFailed === b.hydrationFailed &&
+    a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.threadProposals, b.threadProposals) &&
     sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
   )
@@ -2012,7 +2059,11 @@ function createHookCard(card: HookCard, load: HookRunDetailLoader): HTMLElement 
  * Attribution marker on a turn started without a human submit. Hook follow-ups
  * name the hook and event; host-native continuations use a stable machine label.
  */
-function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean): HTMLElement {
+function buildMessageOriginMarker(
+  origin: MessageOrigin,
+  editedByUser: boolean,
+  showCommand?: () => void,
+): HTMLElement {
   const fromHook = origin.kind === 'hook'
   const label = fromHook
     ? `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
@@ -2041,6 +2092,17 @@ function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean):
         'edited',
       ),
     )
+  }
+  if (showCommand) {
+    // A background task's completion wake: back to the card that started it,
+    // which now shows how the task ended (#3956).
+    const button = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact msg-origin-command-link' },
+      'Show command',
+    )
+    button.addEventListener('click', showCommand)
+    marker.append(button)
   }
   return marker
 }
@@ -2549,12 +2611,6 @@ function hydrationFailureEl(): HTMLElement {
   )
 }
 
-const SCROLL_PIN_THRESHOLD_PX = 48
-/** Ignore auto-scroll briefly after the user scrolls up during streaming. */
-const USER_SCROLL_UP_DEBOUNCE_MS = 150
-/** Time constant of the glide that keeps streamed text in view. */
-const STREAM_FOLLOW_EASE_MS = 90
-
 // Newest-first thread load (see rebuildForThread): render this many of the
 // most recent messages up front — enough to fill and slightly overfill a
 // typical viewport — then fill the rest of the history backwards in the
@@ -2576,17 +2632,28 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let agentNamesRevision = 0
   let disposed = false
   const avatarMotion = createAgentAvatarMotion()
+  const scrollToBottomLabel = el('span', {}, 'Back to latest')
   const scrollToBottomBtn = el(
     'button',
     {
       class: 'scroll-to-bottom',
       type: 'button',
-      'aria-label': 'Scroll to bottom',
-      'data-tooltip': 'Scroll to bottom',
-      'data-tooltip-placement': 'top',
+      'aria-label': 'Back to latest',
       hidden: true,
     },
-    arrowDownIcon('ui-icon'),
+    cornerDownLeftIcon('ui-icon'),
+    scrollToBottomLabel,
+  )
+  const firstPromptBtn = el(
+    'button',
+    {
+      class: 'conversation-first-prompt',
+      type: 'button',
+      'aria-label': 'Jump to first prompt',
+      hidden: true,
+    },
+    chevronUpIcon('ui-icon'),
+    el('span', { class: 'conversation-first-prompt-label' }, 'First prompt'),
   )
   const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
@@ -2599,7 +2666,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     todoHost,
     list,
     archiveReview.element,
-    scrollToBottomBtn,
   )
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
@@ -2608,6 +2674,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const expandedConciseTurns = new Set<string>()
   let conciseFooterSyncQueued = false
   /** The concise setting as it applies to one message: off inside an expanded turn. */
+  /**
+   * The thread a remote-artifact image request belongs to, captured when the
+   * request starts so a later thread switch cannot redirect its result.
+   */
+  function artifactImageScope(threadId?: string): ArtifactImageScope | null {
+    const { activeProjectId, activeThreadId } = store.getState()
+    const thread = threadId ?? activeThreadId
+    return activeProjectId && thread ? { projectId: activeProjectId, threadId: thread } : null
+  }
+
   function conciseEnabledFor(thread: Thread | undefined, messageId: string): boolean {
     const enabled = store.getState().conciseThreadsEnabled
     if (!enabled || expandedConciseTurns.size === 0 || !thread) return enabled
@@ -2654,7 +2730,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const key = details.dataset['disclosureKey']
     const threadId = store.getState().activeThreadId
     if (key && threadId) disclosures.choose(threadId, key, true)
-    details.scrollIntoView({ block: 'nearest' })
+    scrollIntoTranscriptView(details, { block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -2667,7 +2743,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  // Both navigation controls live in the reserved row between the transcript
+  // and the composer, so neither can cover a prompt line, a TODO counter or any
+  // other transcript content, at any pane width or UI scale.
+  const navigationRow = el(
+    'div',
+    { class: 'conversation-navigation' },
+    firstPromptBtn,
+    scrollToBottomBtn,
+  )
+  root.append(roadmapOrigin.element, scrollArea, navigationRow, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -3069,22 +3154,55 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
 
-  let pinnedToBottom = true
-  let lastScrollTop = 0
-  // The scrollTop our own scrollToBottom() last landed on. Used to tell our
-  // programmatic scroll echo apart from a genuine user scroll, so a user scroll
-  // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
-  let lastProgrammaticScrollTop = -1
-  let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
   // What the last full rebuild drew the transcript from (see TranscriptInputs).
   let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
+  // The latest human prompt, which sticks while its response is read, and the
+  // height of the band it covers at the top of the transcript while stuck.
+  let stickyPrompt: HTMLElement | null = null
+  let stickyPromptBand = 0
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
+  // True while older history is still being backfilled above the window, so
+  // the list does not yet hold every row of the thread.
+  let backfillPending = false
+  // What each message row was built from (see transcript-rows.ts). A row whose
+  // signature still matches its message is kept across a reconcile.
+  const rowSignatures = new WeakMap<HTMLElement, string>()
+
+  // Scroll following and reading-position preservation (see transcript-scroll.ts).
+  const transcriptScroll = createTranscriptScroll({
+    list,
+    scrollToBottomBtn,
+    scrollToBottomLabel,
+    firstPromptBtn,
+    firstPromptId: () =>
+      getActiveThread(store)?.messages.find((message) => message.role === 'user' && !message.origin)
+        ?.id ?? null,
+    syncStickyImagePreview: (releaseOnScrollUp) => {
+      syncStickyImagePreview(releaseOnScrollUp)
+      // Whether the prompt is stuck changes with every scroll.
+      syncStickyPromptClearance()
+    },
+    stickyPromptBand: () => stickyPromptBand,
+    onReturnToLiveEnd: () => {
+      const threadId = store.getState().activeThreadId
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
+    },
+  })
+  const {
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition,
+  } = transcriptScroll
 
   // Tool-card refresh and disclosure state (see tool-card-refresh.ts). The
   // disclosure model owns auto / user-open / user-closed per key; the DOM only
@@ -3103,7 +3221,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncRunStepReasoning,
       syncReasoningEl,
     },
-    isPinnedToBottom: () => pinnedToBottom,
+    isPinnedToBottom: transcriptScroll.isPinnedToBottom,
     scrollToBottom: () => {
       scrollToBottom()
     },
@@ -3120,19 +3238,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncRunStepTrail,
   } = toolCards
 
-  function isNearBottom(): boolean {
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight
-    return distance <= SCROLL_PIN_THRESHOLD_PX
-  }
-
-  function shouldAutoScroll(): boolean {
-    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS
-  }
-
-  function updateScrollButton(): void {
-    scrollToBottomBtn.hidden = isNearBottom()
-  }
-
   function syncStickyImagePreview(releaseOnScrollUp = false): void {
     const prompt = stickyImagePrompt
     if (!prompt?.isConnected) return
@@ -3144,12 +3249,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     const listRect = list.getBoundingClientRect()
     const listStyle = window.getComputedStyle(list)
-    const previous = prompt.previousElementSibling
-    // The previous row stays in normal flow while this prompt sticks. Its
-    // bottom tells us where the prompt would be without the sticky offset.
-    const naturalTop = previous
-      ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
-      : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
+    const naturalTop = naturalRowTop(list, prompt)
     const stickyTop =
       listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
     const compact = prompt.classList.contains('is-preview-compact')
@@ -3166,11 +3266,56 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     prompt.classList.toggle('is-preview-compact', shouldCompact)
   }
 
+  /**
+   * While the latest prompt is stuck, publish the band it covers as
+   * --sticky-prompt-band, so scrollIntoTranscriptView (conversation search,
+   * opened disclosures, the reviewer-input jump) lands reply content below the
+   * prompt instead of underneath it, and the reading anchor skips that band.
+   */
+  function syncStickyPromptClearance(): void {
+    const prompt = stickyPrompt
+    let band = 0
+    let stuck = false
+    if (prompt?.isConnected) {
+      const promptStyle = window.getComputedStyle(prompt)
+      if (promptStyle.position === 'sticky') {
+        const listStyle = window.getComputedStyle(list)
+        const stickyOffset =
+          Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
+        band = Math.max(
+          0,
+          Math.ceil(
+            stickyOffset +
+              prompt.getBoundingClientRect().height +
+              Number.parseFloat(listStyle.rowGap),
+          ),
+        )
+        // Stuck: its place in the flow has scrolled to or past where it sticks.
+        stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5
+      }
+    }
+    // The reading anchor skips the band only while the prompt covers it.
+    stickyPromptBand = stuck ? band : 0
+    // Only the band, not the padding: scrollIntoTranscriptView applies it for
+    // each scroll call, and the prompt and the rows before it cancel it.
+    const value = stuck && band > 0 ? `${String(band)}px` : ''
+    if (list.style.getPropertyValue('--sticky-prompt-band') !== value) {
+      if (value) list.style.setProperty('--sticky-prompt-band', value)
+      else list.style.removeProperty('--sticky-prompt-band')
+    }
+  }
+
   function refreshStickyImagePrompt(): void {
     const prompts = list.querySelectorAll<HTMLElement>(
       ':scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)',
     )
     const latest = prompts[prompts.length - 1]
+    if (stickyPrompt !== (latest ?? null)) {
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt)
+      stickyPrompt = latest ?? null
+      if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt)
+    }
+    syncStickyPromptClearance()
     const next = latest?.querySelector('.message-images') ? latest : null
     if (stickyImagePrompt !== next) {
       stickyImagePrompt?.classList.remove('is-preview-compact')
@@ -3180,111 +3325,28 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncStickyImagePreview()
   }
 
-  function handleUserScroll(): void {
-    const scrollTop = list.scrollTop
-    // Ignore the scroll event emitted by our own scrollToBottom(): it lands on
-    // an exact, known position. Everything else is a real user scroll. Matching
-    // the position (rather than suppressing for a time window) means a user
-    // scroll-up during rapid autoscroll is never dropped, so the view reliably
-    // unpins instead of being yanked back to the bottom (#468). Consume the echo
-    // once so a later user scroll to the same pixel isn't swallowed too.
-    if (scrollTop === lastProgrammaticScrollTop) {
-      lastProgrammaticScrollTop = -1
-      lastScrollTop = scrollTop
-      return
-    }
-    // A drop that lands flush with the bottom is the browser clamping scrollTop
-    // after the content shrank (a finished turn's disclosures compacting), not
-    // the reader: scrolling up always leaves the bottom by at least the scroll.
-    // A clamp says nothing about what the reader wants, so it keeps the pin
-    // state it found: a pinned view keeps following (treating the clamp as a
-    // scroll-up used to unpin it), and one the reader scrolled away from is not
-    // re-pinned just because layout pulled it onto the bottom.
-    const dropped = scrollTop < lastScrollTop - 1
-    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
-    // A reader scrolling up can restore the full preview as soon as the prompt
-    // leaves its sticky position. A clamp caused by the preview shrinking cannot.
-    syncStickyImagePreview(dropped && !clamped)
-    if (clamped) {
-      // Layout, not the reader; the pin state stands.
-    } else if (dropped) {
-      userScrolledUpAt = Date.now()
-      pinnedToBottom = false
-    } else if (isNearBottom()) {
-      pinnedToBottom = true
-      const threadId = store.getState().activeThreadId
-      if (threadId) disclosures.resumeDeferredCompaction(threadId)
-    }
-    lastScrollTop = scrollTop
-    updateScrollButton()
-  }
-
-  list.addEventListener('scroll', handleUserScroll, { passive: true })
   const listResizeObserver =
     typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(() => {
           syncStickyImagePreview()
+          // A narrow pane un-sticks the prompt, so its clearance follows width.
+          syncStickyPromptClearance()
         })
   listResizeObserver?.observe(list)
+  const stickyPromptResizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          syncStickyPromptClearance()
+        })
   // Messages arrive one at a time and in older-history batches; every one may
   // end a turn, so the footers follow the list's own children.
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync)
   conciseFooterObserver.observe(list, { childList: true })
-  // A wheel-up that a nested scroller (a long code block, tool output) takes
-  // for itself leaves the transcript where it is; unpinning on it would stop
-  // autoscroll with the view still at the bottom and no jump button to resume.
-  function nestedScrollerTakesWheelUp(target: EventTarget | null): boolean {
-    for (
-      let node = target instanceof Element ? target : null;
-      node && node !== list;
-      node = node.parentElement
-    ) {
-      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue
-      const { overflowY } = window.getComputedStyle(node)
-      if (overflowY === 'auto' || overflowY === 'scroll') return true
-    }
-    return false
-  }
-  list.addEventListener(
-    'wheel',
-    (event) => {
-      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
-        userScrolledUpAt = Date.now()
-        pinnedToBottom = false
-        updateScrollButton()
-      }
-    },
-    { passive: true },
-  )
-  scrollToBottomBtn.addEventListener('click', () => {
-    userScrolledUpAt = 0
-    scrollToBottom(true)
-  })
-
-  // Streamed prose grows a line at a time. Snapping to the bottom on every
-  // paint jerks the whole transcript up a line-height at once; glide there
-  // instead, closing a fixed fraction of the distance each frame.
-  const streamFollow = createFrameLoop((dt) => {
-    if (!shouldAutoScroll()) return false
-    const gap = list.scrollHeight - list.clientHeight - list.scrollTop
-    if (gap <= 1 || dt === Infinity) {
-      scrollToBottom()
-      return false
-    }
-    setScrollTopProgrammatically(
-      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
-    )
-    // Still following: the view is pinned, only a few pixels short mid-glide.
-    scrollToBottomBtn.hidden = true
-    return true
-  })
-  list.addEventListener(STREAM_PAINT_EVENT, () => {
-    if (shouldAutoScroll()) streamFollow.start()
-  })
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
     // The final render ran after message_done had already synced the list.
-    hydrateRemoteArtifactImages(list, api)
+    hydrateRemoteArtifactImages(list, api, artifactImageScope())
     syncAcpResourceReferences(list, api, store)
     scrollToBottom()
   })
@@ -3371,81 +3433,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     setActivity(agentActivityLabel(thread, false))
   }
 
-  // Single place that performs our own scroll bookkeeping. Assigns scrollTop,
-  // reads back the actual landed value (the browser may clamp it, e.g. when a
-  // rebuild shrank scrollHeight), and records it. The programmatic-echo arming
-  // is guarded on the position actually changing: when scrollTop doesn't move
-  // (already at the requested position, common while pinned during streaming)
-  // the browser fires NO scroll event, so handleUserScroll would never consume
-  // lastProgrammaticScrollTop back to -1 and it would silently swallow the next
-  // genuine user scroll landing on that pixel. Leaving it at -1 avoids that.
-  function setScrollTopProgrammatically(top: number): void {
-    const before = list.scrollTop
-    list.scrollTop = top
-    const landed = list.scrollTop
-    // Reading-anchor and layout corrections can move upward without reader
-    // intent. Keep the compact preview's hysteresis; only handleUserScroll
-    // releases it early for a genuine upward scroll.
-    syncStickyImagePreview()
-    lastScrollTop = landed
-    if (landed !== before) {
-      // Remember exactly where we landed so the resulting scroll event is
-      // recognized as ours and not treated as a user scroll (see handleUserScroll).
-      lastProgrammaticScrollTop = landed
-    }
-  }
-
-  function scrollToBottom(force = false): void {
-    if (!force && !shouldAutoScroll()) return
-    // The scrollable element is the messages list, not the mount root.
-    setScrollTopProgrammatically(list.scrollHeight)
-    if (force) {
-      userScrolledUpAt = 0
-      pinnedToBottom = true
-      const threadId = store.getState().activeThreadId
-      if (threadId) disclosures.resumeDeferredCompaction(threadId)
-    }
-    updateScrollButton()
-  }
-
-  /**
-   * scrollToBottom(true) flushes the transcript's bottom edge against the
-   * viewport, which is right for a short prompt but hides the start of one
-   * taller than the visible list: the reader only ever sees its tail (#2457).
-   * Nudge the scroll position, on top of scrollToBottom's, just enough to
-   * bring the whole row into view — or, when it can't fit, to show its top
-   * rather than its bottom, mirroring `scrollIntoView({ block: 'nearest' })`.
-   * Computed from rects (like captureReadingAnchor/restoreReadingAnchor above)
-   * and applied through setScrollTopProgrammatically so the programmatic-echo
-   * bookkeeping stays consistent with every other scroll in this module.
-   *
-   * When a correction was needed, this also un-pins autoscroll: otherwise the
-   * very next unforced scrollToBottom() (e.g. the reply's first token, which a
-   * mock model can emit before this function returns) would hug the tail
-   * again and immediately undo the correction. A pane wide enough to keep the
-   * prompt sticky-to-top never takes this branch, so this only affects the
-   * narrow layout where CSS stops anchoring it (`@container chat-pane
-   * (max-width: 360px)`) — the same layout the fold's own hand-off already
-   * treats as ordinary, unpinned transcript content.
-   */
-  function scrollUserPromptIntoView(msgEl: HTMLElement): void {
-    const listRect = list.getBoundingClientRect()
-    const msgRect = msgEl.getBoundingClientRect()
-    let delta = 0
-    if (msgRect.top < listRect.top) {
-      delta = msgRect.top - listRect.top
-    } else if (msgRect.bottom > listRect.bottom) {
-      delta =
-        msgRect.height > listRect.height
-          ? msgRect.top - listRect.top
-          : msgRect.bottom - listRect.bottom
-    }
-    if (delta === 0) return
-    setScrollTopProgrammatically(list.scrollTop + delta)
-    pinnedToBottom = false
-    updateScrollButton()
-  }
-
   /**
    * Build one message's DOM subtree (bubble + content), without inserting it
    * anywhere. Shared by appendMessageEl (new/live messages, inserted at the
@@ -3473,11 +3460,26 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg))
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
-    if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true))
+    const wakeCommand =
+      origin?.kind === 'machine' ? backgroundTaskCommandCall(thread, origin.operationId) : undefined
+    if (origin) {
+      body.append(
+        buildMessageOriginMarker(
+          origin,
+          msg.editedByUser === true,
+          wakeCommand
+            ? (): void => {
+                revealToolCard(list, wakeCommand.id)
+              }
+            : undefined,
+        ),
+      )
+    }
     // A message absorbed into a multi-message run shows its reasoning as a step
     // inside that run's rollup, so it never paints a body-level trail of its own
     // — not even when it contributed reasoning but no tools.
@@ -3508,7 +3510,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msg = thread?.messages.find((m) => m.id === msgId)
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    hydrateRemoteArtifactImages(list, api)
+    hydrateRemoteArtifactImages(list, api, artifactImageScope(threadId))
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls, {
@@ -3584,6 +3586,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // hugs the transcript's tail, which can scroll the top of a long prompt
     // out of view the moment it's submitted (#2457).
     if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
+  }
+
+  /**
+   * Build a message row and insert it before `before`, or at the transcript's
+   * tail (above the activity row and trailing cards) when `before` is null.
+   * The keyed reconcile's build path; a row built here is the row the live
+   * path would have appended.
+   */
+  function insertMessageRow(threadId: string, msgId: string, before: Element | null): void {
+    const msgEl = buildMessageEl(threadId, msgId)
+    if (!msgEl) return
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard()
+    list.insertBefore(msgEl, before ?? tail)
+    finalizeMessageEl(threadId, msgId)
   }
 
   /**
@@ -3924,7 +3940,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!thread) return
     // Heights change as tool cards appear and vanish, so hold the reader's place
     // by the first visible item rather than by the numeric scroll offset.
-    const wasPinned = pinnedToBottom
+    const wasPinned = transcriptScroll.isPinnedToBottom()
     const prevScrollTop = list.scrollTop
     const readingAnchor = holdPlace && !wasPinned ? captureReadingAnchor() : null
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
@@ -4322,7 +4338,64 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
       })
+    } else backfillPending = false
+  }
+
+  /**
+   * Patch the rendered rows to match `thread` instead of rebuilding the list
+   * (see transcript-rows.ts). Returns false, having touched nothing, when the
+   * change is one a whole rebuild must handle: a thread-wide input that many
+   * rows read changed, the hydration notice is involved, older history is
+   * still backfilling, or the kept rows would have to move.
+   */
+  function reconcileTranscriptRows(
+    thread: Thread,
+    inputs: TranscriptInputs,
+    previous: TranscriptInputs,
+  ): boolean {
+    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
+    if (inputs.needsHydration || inputs.hydrationFailed) return false
+    const rendered = Array.from(
+      list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'),
+      (element) => ({
+        key: element.dataset['messageId'] ?? '',
+        signature: rowSignatures.get(element) ?? '',
+      }),
+    )
+    const plan = planTranscriptRows(
+      rendered,
+      wantedTranscriptRows(thread, queuedMessageIds(thread)),
+    )
+    if (plan.kind === 'rebuild') return false
+    if (plan.ops.length > 0) {
+      const wasPinned = transcriptScroll.isPinnedToBottom()
+      const prevScrollTop = list.scrollTop
+      const anchor = wasPinned ? null : captureReadingAnchor()
+      applyTranscriptRowPlan(plan, {
+        list,
+        insert: (key, before) => {
+          insertMessageRow(thread.id, key, before)
+        },
+      })
+      // The same batched tail work a rebuild does for its window.
+      syncModelLabels()
+      syncUserActions()
+      syncAcpResourceReferences(list, api, store)
+      finishThreadChrome(thread)
+      syncConciseTurnFooters()
+      refreshStickyImagePrompt()
+      toolCards.forgetDetachedDisclosureElements()
+      syncAvatarMotion()
+      if (wasPinned) scrollToBottom()
+      else restoreReadingAnchor(relinkReadingAnchor(list, anchor), prevScrollTop)
+    } else {
+      finishThreadChrome(thread)
+      syncModelLabels()
+      syncUserActions()
     }
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    return true
   }
 
   function rebuildForThread(): void {
@@ -4343,13 +4416,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         syncUserActions()
         return
       }
+      // The messages, their queue or the thread status moved: keep every row
+      // that still draws the same thing and patch only the rest.
+      if (reconcileTranscriptRows(thread, inputs, renderedInputs)) {
+        renderedInputs = inputs
+        return
+      }
     }
-    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
-    if (!rebuildingSameThread) {
-      pinnedToBottom = true
-      userScrolledUpAt = 0
-      lastScrollTop = 0
-    }
+    const preservedScrollTop =
+      rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null
+    if (!rebuildingSameThread) transcriptScroll.resetForThread()
     toolCards.forgetDisclosureElements()
     if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
@@ -4409,52 +4485,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    backfillPending = initialStart > 0
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, initialStart, generation)
       })
     }
-  }
-
-  function captureReadingAnchor(): {
-    element: HTMLElement
-    viewportTop: number
-  } | null {
-    const listRect = list.getBoundingClientRect()
-    const candidates = list.querySelectorAll<HTMLElement>(
-      ':scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]',
-    )
-    for (const element of candidates) {
-      const rect = element.getBoundingClientRect()
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top }
-    }
-    return null
-  }
-
-  function restoreReadingAnchor(
-    anchor: { element: HTMLElement; viewportTop: number } | null,
-    fallbackScrollTop: number,
-  ): void {
-    if (anchor?.element.isConnected) {
-      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop
-      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta)
-      return
-    }
-    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop)
-  }
-
-  function keepReadingPosition(update: () => void): void {
-    // Preserve the first visible transcript item's viewport offset. Numeric
-    // scrollTop alone cannot protect what the reader is looking at when a
-    // disclosure above that item changes height (#468).
-    const prevScrollTop = list.scrollTop
-    const wasPinned = pinnedToBottom
-    const readingAnchor = wasPinned ? null : captureReadingAnchor()
-    update()
-    if (wasPinned) {
-      scrollToBottom()
-    } else restoreReadingAnchor(readingAnchor, prevScrollTop)
   }
 
   function jumpToReviewerInput(messageId: string, requestId: string): void {
@@ -4476,9 +4513,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       if (card instanceof HTMLDetailsElement) card.open = true
       const target = card ?? message
-      pinnedToBottom = false
-      userScrolledUpAt = Date.now()
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      transcriptScroll.unpin()
+      scrollIntoTranscriptView(target, { behavior: 'smooth', block: 'center' })
       target.classList.add('reviewer-input-highlight')
       setTimeout(() => {
         target.classList.remove('reviewer-input-highlight')
@@ -4608,7 +4644,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, false, api)
-        hydrateRemoteArtifactImages(list, api)
+        hydrateRemoteArtifactImages(list, api, artifactImageScope())
         syncAcpResourceReferences(list, api, store)
       }
       if (msg?.role === 'assistant' && msgEl) {
@@ -4723,10 +4759,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindFileLinks = bindFileReferenceClicks(root, store, api)
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(root, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
+  setBackgroundTaskLogLoader(async (taskId) => {
+    const threadId = store.getState().activeThreadId
+    const projectId = threadId ? getThreadProjectId(store, threadId) : null
+    if (!threadId || !projectId) return null
+    return api.backgroundTasks.logs(projectId, threadId, taskId)
+  })
   rebuildForThread()
   syncFromStore()
   return () => {
     disposed = true
+    setBackgroundTaskLogLoader(null)
     archiveReview.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
@@ -4734,6 +4777,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
     listResizeObserver?.disconnect()
+    stickyPromptResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
     disclosures.dispose()

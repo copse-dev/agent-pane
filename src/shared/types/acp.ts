@@ -28,6 +28,13 @@ export interface AcpAgentSandboxConfig {
    * for agents whose TLS stack needs it. Ignored on other platforms.
    */
   allowMacOsTrustd?: boolean
+  /**
+   * Allow reading `~/Library/Keychains`, for an agent that keeps its macOS
+   * login in the login keychain (Security.framework opens the keychain file
+   * in-process). Nothing else outside the agent's `homeDirs` is readable.
+   * Ignored on other platforms.
+   */
+  allowMacOsKeychain?: boolean
 }
 
 /**

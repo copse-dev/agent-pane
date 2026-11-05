@@ -10,6 +10,7 @@ import {
 import {
   clearAllowedWorkspaceRootsForTest,
   registerAllowedWorkspaceRoot,
+  runWithWorkspaceRoot,
   setWorkspaceRootForTest,
 } from './workspace.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
@@ -48,9 +49,9 @@ describe('verifyTodoCheck', () => {
     await registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
 
-    const result = await verifyTodoCheck(
-      { kind: 'fileExists', path: 'src/ok.ts' },
-      new AbortController().signal,
+    // A todo check runs inside the agent's run, which names its root.
+    const result = await runWithWorkspaceRoot(ws, () =>
+      verifyTodoCheck({ kind: 'fileExists', path: 'src/ok.ts' }, new AbortController().signal),
     )
 
     assert.equal(result.passed, true)

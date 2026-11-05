@@ -85,8 +85,6 @@ export interface StoreEvents {
   /** Promote an already-rendered artefact tab to the front. */
   canvas_artefact_show_requested: [identity: CanvasArtefactIdentity]
   settings_changed: []
-  theme_changed: ['light' | 'dark']
-  staged_diffs_changed: []
   usage_updated: [threadId: string]
   context_updated: [threadId: string]
   todos_changed: [threadId: string]

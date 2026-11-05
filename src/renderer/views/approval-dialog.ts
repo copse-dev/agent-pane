@@ -3,8 +3,9 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId } from '../controller/projects.ts'
+import { attentionThreadId, proposingThreadId } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { uiActions } from '../ui/actions.ts'
 
 function githubMarkIcon(): SVGSVGElement {
@@ -218,8 +219,8 @@ export function mountApprovalDialog(
     el('span', {}, 'GitHub'),
   )
   const heading = el('h3', { class: 'approval-heading' })
-  // Names the side chat asking, when a request comes from one (it is shown over
-  // the parent thread, which never asked it).
+  // Names the side chat or proposed thread asking, when a request comes from one
+  // (it is shown over the thread on screen, which never asked it).
   const origin = el('p', { class: 'approval-origin', hidden: '' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
@@ -335,10 +336,35 @@ export function mountApprovalDialog(
   function isShowable(req: PendingApproval): boolean {
     if (isWindowHidden()) return false
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false
+    if (!req.threadId) return true
+    const activeThreadId = store.getState().activeThreadId
     // A side chat is never the active thread: its requests surface over its parent.
-    return (
-      !req.threadId || attentionThreadId(store, req.threadId) === store.getState().activeThreadId
-    )
+    if (attentionThreadId(store, req.threadId) === activeThreadId) return true
+    // A thread started from a proposal runs in the background while the user
+    // stays on the thread that offered it, so its requests surface there too.
+    // Left queued behind a bell, a bridged ACP call waits unseen until the
+    // agent's MCP client gives up on it.
+    return activeThreadId !== null && proposingThreadId(store, req.threadId) === activeThreadId
+  }
+
+  /**
+   * Names the background threads asking, when a batch carries requests from
+   * threads proposed by the one on screen: the prompt is shown over a transcript
+   * that never asked it, as a side chat's is.
+   */
+  function proposedThreadPromptOrigin(threadIds: Iterable<string | undefined>): string | null {
+    const activeThreadId = store.getState().activeThreadId
+    const titles: string[] = []
+    for (const id of new Set(threadIds)) {
+      if (id === undefined || id === activeThreadId) continue
+      if (activeThreadId === null || proposingThreadId(store, id) !== activeThreadId) continue
+      const title = getThreadById(store, id)?.title ?? ''
+      titles.push(`“${title === '' ? 'New thread' : title}”`)
+    }
+    if (titles.length === 0) return null
+    return titles.length === 1
+      ? `From the thread ${titles.join('')}`
+      : `From the threads ${titles.join(', ')}`
   }
 
   // Reflect every queued request that can't currently pop a modal into the shared
@@ -470,8 +496,9 @@ export function mountApprovalDialog(
       store,
       batch.map((req) => req.threadId),
     )
-    origin.hidden = asker === null
-    origin.textContent = asker?.label ?? ''
+    const originLabel = asker?.label ?? proposedThreadPromptOrigin(batch.map((req) => req.threadId))
+    origin.hidden = originLabel === null
+    origin.textContent = originLabel ?? ''
     const isGithubApproval = batch.some((request) => request.title.includes('GitHub'))
     githubBrand.hidden = !isGithubApproval
     dialog.classList.toggle('approval-dialog-github', isGithubApproval)

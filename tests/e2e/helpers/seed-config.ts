@@ -1421,6 +1421,60 @@ export function seedTranscriptRebuildFixture(workspaceRoot: string): {
   return { activeTitle, otherTitle }
 }
 
+/** The prompt the keyed-reconcile spec sends into {@link seedTranscriptReconcileFixture}'s thread. */
+export const TRANSCRIPT_RECONCILE_PROMPT = 'Which tests cover the palette order?'
+
+/**
+ * One finished turn whose reply carries a file path (resolved into a link after
+ * render) and a finished tool card (a disclosure the reader can open). The
+ * keyed-reconcile spec then sends a new prompt and checks that both survive.
+ */
+export function seedTranscriptReconcileFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-transcript-reconcile-project'
+  const threadId = 'e2e-transcript-reconcile-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
+}
+
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
 export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-conformance-project'

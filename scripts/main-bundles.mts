@@ -52,6 +52,15 @@ export interface StandaloneMainBundle {
 
 export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   {
+    entry: 'src/main/services/thread-request-search-worker.ts',
+    outfile: 'dist/main/thread-request-search-worker.js',
+  },
+  {
+    entry: 'scripts/apple-desktop-guest.mts',
+    outfile: 'dist/main/apple-desktop-guest.cjs',
+    external: [],
+  },
+  {
     entry: 'src/main/services/remote/openai-git-worker-entry.ts',
     outfile: 'dist/main/openai-git-worker.cjs',
     external: [],
@@ -92,6 +101,21 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/acp/acp-session-host-worker.ts',
     outfile: 'dist/main/acp-session-host-worker.js',
   },
+  // Per-download host for remote artifact images
+  // (docs/plans/sandboxed-artifact-image-downloads.md): owns its own ASRT
+  // manager and egress proxy so a download never widens main's network scope.
+  {
+    entry: 'src/main/services/remote/artifact-image/host-entry.ts',
+    outfile: 'dist/main/artifact-image-host.js',
+  },
+  // The ASRT-confined downloader the host starts. It reads only its own
+  // directory and the runtime, so it gets the package.json manifest that stops
+  // Node's ancestor walk at the sandbox boundary (see `manifest` above).
+  {
+    entry: 'src/main/services/remote/artifact-image/downloader-entry.ts',
+    outfile: 'dist/main/artifact-image-downloader.js',
+    manifest: { type: 'commonjs' },
+  },
   // No esbuild `banner` for this one: askpass-helper.ts already starts with
   // `#!/usr/bin/env node` and esbuild preserves a source hashbang verbatim.
   // Adding the banner too put a second `#!…` on line 2 of the bundle, where it
@@ -122,7 +146,6 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
     alias: {
       'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs',
-      electron: 'src/main/services/container-runtime/electron-stub.ts',
     },
   },
 ]

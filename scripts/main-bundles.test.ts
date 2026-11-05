@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
+import { build } from 'esbuild'
+import { resolve } from 'node:path'
 
 describe('main bundle config (#2432)', () => {
   it('elevates require-resolve-not-external to a build error by default', () => {
@@ -28,5 +30,24 @@ describe('main bundle config (#2432)', () => {
       undefined,
       'no per-bundle downgrade of require-resolve-not-external should be needed',
     )
+  })
+
+  it('keeps the shared ChatGPT plan service independent of desktop Electron', async () => {
+    const result = await build({
+      entryPoints: ['src/main/services/providers/chatgpt-plan-service.ts'],
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node24',
+      external: ['electron'],
+      alias: { '@shared': resolve('src/shared') },
+      write: false,
+      metafile: true,
+      logLevel: 'silent',
+    })
+    const desktopImports = Object.entries(result.metafile.inputs).flatMap(([file, input]) =>
+      input.imports.filter((entry) => entry.path === 'electron').map(() => file),
+    )
+    assert.deepEqual(desktopImports, [], 'shared provider service must use host-injected actions')
   })
 })
