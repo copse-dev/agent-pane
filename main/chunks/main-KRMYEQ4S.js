@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-YTB7SEJT.js";
+} from "./chunk-YFZ7CF3Z.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2163,7 +2163,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncPanelBtns();
       syncSideChatBadge();
     }),
-    store2.on("staged_diffs_changed", syncChangesBadge),
+    store2.select((s) => s.stagedDiffs.length, syncChangesBadge),
     store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
@@ -73212,7 +73212,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderRestoreBanner();
   }
   function sameDiffState(a, b2) {
-    return a[0] === b2[0] && (a[1] === b2[1] || a[1].length === 0 && b2[1].length === 0);
+    return a[0] === b2[0] && sameQueue(a[1], b2[1]);
+  }
+  function sameQueue(a, b2) {
+    return a === b2 || a.length === 0 && b2.length === 0;
   }
   async function syncFromStore() {
     adoptActiveOwner();
@@ -73255,13 +73258,17 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("staged_diffs_changed", () => {
-      const queue = store2.getState().stagedDiffs;
-      if (queue.length === 0) conflictBanner.hidden = true;
-      if (changesModeActive(store2)) void syncFromStore();
-      else renderList();
-      scheduleRefresh();
-    }),
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store2.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true;
+        if (!changesModeActive(store2)) renderList();
+        scheduleRefresh();
+      },
+      sameQueue
+    ),
     // Only the diff state: an ordinary thread switch is threads_changed's job.
     store2.select(
       (s) => [s.activeDiff, s.stagedDiffs],
@@ -87177,7 +87184,6 @@ function attachDiffState(store2, api2, options) {
       stagedDiffs: entries,
       activeDiff: entries.length === 0 ? null : stillQueued
     });
-    store2.emit("staged_diffs_changed");
   };
   const unsubShowDiff = api2.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
@@ -89160,7 +89166,6 @@ async function boot() {
     (nextTheme) => {
       applyThemeToDocument(nextTheme);
       store.setState({ theme: nextTheme });
-      store.emit("theme_changed", nextTheme);
     }
   );
   const savedAccentColor = startupSettings.uiAccentColor;
