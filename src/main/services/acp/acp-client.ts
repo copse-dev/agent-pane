@@ -40,7 +40,7 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
-import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
+import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
@@ -59,6 +59,7 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { claudeSandboxEscapeSessionMeta } from './acp-claude-sandbox-escape.ts'
 import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
   acpReattachMethods,
@@ -483,6 +484,25 @@ export function buildAcpAgentEnv(
  */
 export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined): boolean {
   return Boolean(sandbox) && process.platform !== 'win32' && isProjectSandboxEnabled()
+}
+
+/**
+ * `_meta` Copse sends with `session/new`, `session/resume` and `session/load`,
+ * or `undefined` for none. Today that is only for a Claude agent that runs
+ * under Copse's sandbox on this machine: Claude Code flag settings whose hook
+ * refuses its `dangerouslyDisableSandbox` escape with an explanation, since
+ * Copse's sandbox wraps the whole process and the escape cannot lift it
+ * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeMounted` says whether this
+ * session offered Copse's native-tool bridge, which the refusal points to.
+ */
+export function acpSessionMeta(
+  config: Pick<AcpAgentSpawnConfig, 'command' | 'args' | 'sandbox' | 'executionMode'>,
+  opts: { remote: boolean; bridgeMounted: boolean },
+): ReturnType<typeof claudeSandboxEscapeSessionMeta> | undefined {
+  if (opts.remote || config.executionMode === 'agent') return undefined
+  if (!config.sandbox || !willSandboxAcpAgent(config.sandbox)) return undefined
+  if (!isClaudeAcpAgent(config)) return undefined
+  return claudeSandboxEscapeSessionMeta(opts.bridgeMounted)
 }
 
 const ACP_STDERR_TAIL_LIMIT = 8_000
@@ -1435,9 +1455,11 @@ export async function openAcpSession(
     // loopback, and the bearer token must not leave it (the pool already skips
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
     const remote = spawnConfigSshTarget(config) !== null
+    let bridgeMounted = false
     if (config.nativeBridge && remote) {
       console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
     } else if (config.nativeBridge && mcpCapabilities?.http === true) {
+      bridgeMounted = true
       mcpServers.push({
         type: 'http',
         name: BRIDGE_MCP_SERVER_NAME,
@@ -1452,6 +1474,7 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
+    const sessionMeta = acpSessionMeta(config, { remote, bridgeMounted })
     const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
     let restoredBy: AcpReattachMethod | null = null
@@ -1470,6 +1493,7 @@ export async function openAcpSession(
                 sessionId,
                 cwd: config.cwd,
                 mcpServers,
+                ...(sessionMeta ? { _meta: sessionMeta } : {}),
               }),
             )
             session = { sessionId, response }
@@ -1479,6 +1503,7 @@ export async function openAcpSession(
                 sessionId,
                 cwd: config.cwd,
                 mcpServers,
+                ...(sessionMeta ? { _meta: sessionMeta } : {}),
               }),
             )
             // The agent replays the conversation before answering. Copse's own
@@ -1520,6 +1545,7 @@ export async function openAcpSession(
         connection.agent.request(methods.agent.session.new, {
           cwd: config.cwd,
           mcpServers,
+          ...(sessionMeta ? { _meta: sessionMeta } : {}),
         }),
       )
       session = { sessionId: response.sessionId, response }
