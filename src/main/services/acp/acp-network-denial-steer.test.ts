@@ -88,7 +88,10 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   it('explains the own-shell gh failure for every route and never offers ~/.config/gh', () => {
     for (const names of [undefined, [], ['read_file'], ['run_shell'], ['gh_api_read']]) {
       const steer = acpSandboxGithubSteer(names)
-      assert.ok(steer.includes(ACP_SANDBOX_GH_CONFIG_ERROR), `quotes the error for ${String(names)}`)
+      assert.ok(
+        steer.includes(ACP_SANDBOX_GH_CONFIG_ERROR),
+        `quotes the error for ${String(names)}`,
+      )
       assert.match(steer, /It is not a missing login/)
       assert.match(steer, /do not run `gh auth login`/)
       assert.match(steer, /do not ask for access to ~\/\.config\/gh/)
