@@ -301,6 +301,25 @@ export async function profileInspector(
   }
 }
 
+/** A reset during shutdown is inconclusive; require a refused connection before the same deadline. */
+async function waitForInspectorClosed(origin: string): Promise<void> {
+  const deadline = Date.now() + 1000
+  let lastError: unknown
+  for (;;) {
+    try {
+      if ((await inspectorUrlAt(origin)) === null) return
+    } catch (error) {
+      // Closing the listener can reset a pooled HTTP connection before a fresh
+      // connection observes ECONNREFUSED. A reset alone does not prove closure.
+      lastError = error
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Inspector did not close: ${origin}`, { cause: lastError })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
 async function closeOpenedInspectors(pid: number, before: ReadonlySet<string>): Promise<void> {
   const failures: unknown[] = []
   for (const origin of readTargetListenerOrigins(pid)) {
@@ -315,11 +334,7 @@ async function closeOpenedInspectors(pid: number, before: ReadonlySet<string>): 
       } finally {
         session.close()
       }
-      const deadline = Date.now() + 1000
-      while (await inspectorUrlAt(origin)) {
-        if (Date.now() >= deadline) throw new Error(`Inspector did not close: ${origin}`)
-        await new Promise((resolve) => setTimeout(resolve, 50))
-      }
+      await waitForInspectorClosed(origin)
     } catch (error) {
       // A different new server must not prevent cleanup of the inspector.
       failures.push(error)
@@ -423,7 +438,9 @@ async function main(): Promise<void> {
 
 if (isDirectExecution(import.meta.url, 'profile-main-process')) {
   main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error))
+    // Preserve nested cleanup causes for diagnostics; the primary fail-safe
+    // warning remains visible when closure could not be confirmed.
+    console.error(error instanceof Error ? error : String(error))
     process.exitCode = 1
   })
 }
