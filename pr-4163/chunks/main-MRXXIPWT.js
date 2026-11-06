@@ -13551,12 +13551,11 @@ function adoptPatchedSignatures(rendered, wanted, patched, drawsCurrent) {
     };
   });
 }
-function sameExceptTurnOutcome(drawn, next) {
+function sameExceptTurnOutcome(drawn, next, redrawn = []) {
   if (drawn === next) return true;
-  const { turnOutcome: _drawnOutcome, ...drawnFields } = drawn;
-  const { turnOutcome: _nextOutcome, ...nextFields } = next;
-  const nextEntries = new Map(Object.entries(nextFields));
-  const drawnEntries = Object.entries(drawnFields);
+  const skipped = /* @__PURE__ */ new Set(["turnOutcome", ...redrawn]);
+  const nextEntries = new Map(Object.entries(next).filter(([key]) => !skipped.has(key)));
+  const drawnEntries = Object.entries(drawn).filter(([key]) => !skipped.has(key));
   return drawnEntries.length === nextEntries.size && drawnEntries.every(([key, value]) => nextEntries.has(key) && nextEntries.get(key) === value);
 }
 function relinkReadingAnchor(list, anchor) {
@@ -21399,10 +21398,12 @@ function mountConversation(root, store2, api2) {
     list.insertBefore(msgEl, before ?? tail);
     finalizeMessageEl(threadId, msgId);
   }
-  function markRowPatched(msgId) {
+  function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
     const element = message2 ? transcriptRowElement(list, msgId) : null;
     if (!message2 || !element) return;
+    const drawn = rowDrawnFrom.get(element);
+    if (drawn && !sameExceptTurnOutcome(drawn, message2, redraws)) return;
     patchedRows.add(msgId);
     rowDrawnFrom.set(element, message2);
   }
@@ -22245,7 +22246,7 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("review_changed", (tid, mid) => {
       renderMessageReview(tid, mid);
-      if (tid === store2.getState().activeThreadId) markRowPatched(mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["review"]);
       scrollToBottom();
     }),
     store2.on("hook_card_added", (tid, mid) => {
@@ -22258,8 +22259,10 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("review_report_changed", (tid, mid) => {
-      if (mid) renderMessageReviewReport(tid, mid);
-      else syncReviewReportCard();
+      if (mid) {
+        renderMessageReviewReport(tid, mid);
+        if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
+      } else syncReviewReportCard();
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
