@@ -5693,6 +5693,10 @@
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
       "bytes": 128662
     },
+    "transcript-thread-wide-reconcile.png": {
+      "sha256": "48d58f606513d442d0e5b849584020147dd63706723dbf274a62e8f6a51c09e4",
+      "bytes": 350675
+    },
     "truncated-tool-call-inspector.png": {
       "sha256": "3afafb6a7ed1dfebed1e34ce8f39286bd3db6764eb31f8197b9b0e7ce616fdad",
       "bytes": 375432
