@@ -68,6 +68,7 @@ import {
   showsNativeMainWindows,
   getMainWindow,
   getMainWindowForWebContents,
+  getMainWindowNavigation,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
 import { readBootTheme } from './windows/boot-theme.ts'
@@ -117,6 +118,7 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
+import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
@@ -238,7 +240,6 @@ import {
 import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
-  getThreadExecutionContext,
   inspectThreadCheckoutRoot,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -261,11 +262,12 @@ import {
   CANVAS_ARTEFACT_CHANNEL,
   CANVAS_ARTEFACT_SHOW_CHANNEL,
   setCanvasArtefactMirror,
+  canvasArtefactSaveTarget,
   setCanvasArtefactSink,
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
 import { rememberCanvasArtefact } from './services/canvas-store.ts'
-import { getActiveProjectId, getProjectRoot } from './services/workspace.ts'
+import { getProjectRoot } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
@@ -354,9 +356,9 @@ setCanvasArtefactSink((artefact) => {
   // when a window took delivery: an artefact rendered while the UI was gone is
   // exactly the one the user will come back looking for. Failures are swallowed
   // — losing the ability to restore an artefact must not break rendering it.
-  const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
-  if (!projectId || !artefact.threadId) return
-  void rememberCanvasArtefact(projectId, artefact.threadId, artefact).catch((err: unknown) => {
+  const target = canvasArtefactSaveTarget(artefact)
+  if (!target) return
+  void rememberCanvasArtefact(target.projectId, target.threadId, artefact).catch((err: unknown) => {
     console.warn('[canvas] could not save artefact:', err)
   })
 })
@@ -751,7 +753,7 @@ app
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)
-    initDiffQueue(win, ipcMain)
+    initDiffQueue(win, ipcMain, senderProjectId)
     initFsWatcher(win)
     // Remote watcher install prompts route through the real approval dialog.
     // Injected (rather than imported by the ssh-workspace module) for the same
@@ -838,6 +840,9 @@ app
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
       },
       (request, host) => agentDispatcher.dispatch(request, host),
+      // The project the receiving window shows; once it is gone nothing would
+      // start a draft, so every schedule runs headlessly (#3958).
+      () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)

@@ -4,6 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import type { AcpAgentProbe } from '@shared/types/acp.ts'
 import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
+import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { probeAcpAgent, type AcpAgentSpawnConfig } from './acp-client.ts'
 import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
@@ -107,7 +108,9 @@ function runProbeWorker(
     const child = spawn(process.execPath, [acpProbeWorkerPath()], {
       cwd: config.cwd,
       env: {
-        ...process.env,
+        // A wrap in flight here must not hand its scratch dir to a probe that
+        // may run the agent unsandboxed (#4149).
+        ...withoutSandboxWrapTmpPin(process.env),
         // Electron must run as Node for a plain script entry.
         ELECTRON_RUN_AS_NODE: '1',
         [ACP_PROBE_REQUEST_ENV]: JSON.stringify({ config, timeoutMs }),

@@ -121,3 +121,22 @@ it('rechecks a visible review when auto-archive settings change', async () => {
   await settle()
   assert.equal(view.element.hidden, true)
 })
+
+it('re-reads review candidates for the new project when setState alone switches it', async () => {
+  const { view, store, api } = mount(async () => true)
+  await settle()
+  assert.equal(view.element.hidden, false)
+  const reads: string[] = []
+  api.threads.archiveState = async (
+    projectId,
+  ): ReturnType<ApiClient['threads']['archiveState']> => {
+    reads.push(projectId)
+    return { archived: [], review: [] }
+  }
+
+  // No store event: the selection alone must run the refresh.
+  store.setState({ activeProjectId: 'other-project', workspaceRoot: '/other' })
+  await settle()
+  assert.deepEqual(reads, ['other-project'])
+  assert.equal(view.element.hidden, true)
+})

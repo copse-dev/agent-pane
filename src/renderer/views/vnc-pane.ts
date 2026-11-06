@@ -27,6 +27,7 @@ import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulat
 import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
@@ -1812,7 +1813,7 @@ function mountVncSession(
       clearViewer('Disconnected')
     }
   })
-  const stopWorkspace = store.on('workspace_changed', () => {
+  const stopWorkspace = selectActiveWorkspace(store, () => {
     if (channel || simulatorSessionId) disconnect()
     const activeProject = store
       .getState()

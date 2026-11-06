@@ -356,6 +356,21 @@ describe('real paired browser chat with the desktop window closed', function () 
     await waitText('The phone declined the profile read.')
     await scenario.assertComplete()
     assert.equal((await native('window-state')).visible, false)
+    // Active snapshots alone cannot prove the real main/preload read relay works.
+    const transcript = await phoneRequest('/api/remote/read', {
+      version: 1,
+      channel: 'threads:load-messages',
+      args: [projectId, threadId],
+    })
+    assert.equal(transcript.status, 200)
+    const loaded = z
+      .object({ value: z.array(z.object({ id: z.string(), role: z.string() })) })
+      .parse(transcript.body).value
+    assert.deepEqual(
+      loaded.map((message) => message.id),
+      spine().map((message) => message.id),
+    )
+    assert.equal(loaded.filter((message) => message.role === 'user').length, 2)
     const ids = await mobile()
       .$$('.msg')
       .map(async (node) => node.getAttribute('data-message-id'))
@@ -417,12 +432,19 @@ describe('real paired browser chat with the desktop window closed', function () 
     await row.$('button=Make read only').click()
     await mobile().$('#connection[data-connected="false"]').waitForExist()
     assert.equal((await phoneRequest('/api/action', {})).status, 403)
+    const transcriptRead = {
+      version: 1,
+      channel: 'threads:load-messages',
+      args: [projectId, threadId],
+    }
+    assert.equal((await phoneRequest('/api/remote/read', transcriptRead)).status, 403)
     await row.$('input[type="checkbox"]').click()
     await row.$('button=Allow control').click()
     await mobile().$('#connection[data-connected="true"]').waitForExist()
     await row.$('.mobile-companion-device-revoke').click()
     await mobile().$('#connection[data-connected="false"]').waitForExist()
     assert.equal((await phoneRequest('/api/activity')).status, 401)
+    assert.equal((await phoneRequest('/api/remote/read', transcriptRead)).status, 401)
     assert.equal(await mobile().$('.submit-btn').isEnabled(), false)
     assert.equal(await mobile().$('.prompt-input').getText(), 'Keep this unsent draft.')
     await $('#settings-cancel').click()

@@ -424,6 +424,7 @@ async function acquireAcpSessionUnlocked(
   // in wire order. `null` — always, when the flag is off — leaves the transport
   // untouched.
   const trace = await createAcpWireTrace({
+    ...(opts.projectId ? { projectId: opts.projectId } : {}),
     threadId: opts.threadId,
     agent: { command: opts.config.command, args: opts.config.args },
     ...(bridge ? { bridgeToolNames: bridge.toolNames } : {}),

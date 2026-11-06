@@ -23,12 +23,7 @@ import {
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
-import {
-  getActiveProjectId,
-  getActiveProjectRoot,
-  getProjectRoot,
-  getWorkspaceRoot,
-} from '../workspace.ts'
+import { getProjectRoot } from '../workspace.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
@@ -74,8 +69,12 @@ export interface DiscoverExternalCursorAgentsResult {
 }
 
 export interface DiscoverExternalCursorAgentsOptions {
-  projectId?: string | null
-  /** Override repository URL used for matching (defaults to active project origin). */
+  /**
+   * Project to import into, named by the caller (the asking window's project).
+   * Never defaulted from the process-global active project (#3958).
+   */
+  projectId: string | null
+  /** Override repository URL used for matching (defaults to that project's origin). */
   repositoryUrl?: string | null
   limit?: number
   includeArchived?: boolean
@@ -328,7 +327,10 @@ export async function getCursorAgent(input: {
 }
 
 async function resolveRepositoryForProject(projectId: string): Promise<string | null> {
-  const root = getProjectRoot(projectId) ?? getActiveProjectRoot() ?? getWorkspaceRoot()
+  // Only the named project's own checkout: falling back to another window's
+  // workspace would scope imports to that project's repository.
+  const root = getProjectRoot(projectId)
+  if (root === null) return null
   const slug = await getGithubRepoSlug(root)
   return slug ? `https://github.com/${slug}` : null
 }
@@ -338,9 +340,9 @@ async function resolveRepositoryForProject(projectId: string): Promise<string | 
  * not already linked, and materialize local stub threads + remote sessions.
  */
 export async function discoverExternalCursorAgents(
-  options: DiscoverExternalCursorAgentsOptions = {},
+  options: DiscoverExternalCursorAgentsOptions,
 ): Promise<DiscoverExternalCursorAgentsResult> {
-  const projectId = options.projectId === undefined ? getActiveProjectId() : options.projectId
+  const { projectId } = options
   if (!projectId) {
     throw new Error('Open a project before discovering external Cursor cloud agents.')
   }
@@ -443,7 +445,7 @@ export async function discoverExternalCursorAgents(
 }
 
 type ExternalCursorAgentDiscovery = (
-  options?: DiscoverExternalCursorAgentsOptions,
+  options: DiscoverExternalCursorAgentsOptions,
 ) => Promise<DiscoverExternalCursorAgentsResult>
 
 /**
@@ -458,7 +460,7 @@ export function createBestEffortExternalCursorAgentDiscovery(
 ): ExternalCursorAgentDiscovery {
   const loggedErrors = new Set<string>()
 
-  return async (options = {}) => {
+  return async (options) => {
     try {
       return await discoverImpl(options)
     } catch (err) {

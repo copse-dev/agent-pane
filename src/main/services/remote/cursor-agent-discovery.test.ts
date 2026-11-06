@@ -11,6 +11,8 @@ import {
   parseCursorAgentListPage,
   type CursorAgentDetail,
 } from './cursor-agent-discovery.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 function detail(
   overrides: Partial<CursorAgentDetail> & Pick<CursorAgentDetail, 'id'>,
@@ -138,9 +140,9 @@ describe('discoverExternalCursorAgents', () => {
       (message) => logs.push(message),
     )
 
-    const first = await discover()
-    const second = await discover()
-    const recovered = await discover()
+    const first = await discover({ projectId: 'proj-1' })
+    const second = await discover({ projectId: 'proj-1' })
+    const recovered = await discover({ projectId: 'proj-1' })
 
     assert.deepEqual(first, {
       imported: [],
@@ -317,6 +319,29 @@ describe('discoverExternalCursorAgents', () => {
       }),
       /GitHub remote/,
     )
+  })
+
+  it("never scopes a project with no checkout to the window's repository", async () => {
+    // The window shows this GitHub-backed checkout; the named project has no
+    // persisted root. Discovery must not borrow the window's repo (#3958).
+    const restoreWorkspace = setWorkspaceRootForTest(process.cwd())
+    storageSet('projects', [{ id: 'proj-window', path: process.cwd(), name: 'window' }])
+    storageSet('activeProjectId', 'proj-window')
+    try {
+      await assert.rejects(
+        discoverExternalCursorAgents({
+          projectId: 'proj-without-checkout',
+          fetchImpl: () => {
+            throw new Error('unexpected network call')
+          },
+        }),
+        /GitHub remote/,
+      )
+    } finally {
+      storageSet('activeProjectId', null)
+      storageSet('projects', [])
+      restoreWorkspace()
+    }
   })
 })
 
