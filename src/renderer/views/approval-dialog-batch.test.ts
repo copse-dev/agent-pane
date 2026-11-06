@@ -145,6 +145,21 @@ function shimDialog(dialog: HTMLDialogElement): { showCalls: number } {
 const COALESCE_MS = 120
 const SETTLE_MS = 500
 
+function projectPreviewRequest(id: string, root = '/projects/harbor-board'): EmitReq {
+  return {
+    id,
+    title: 'Allow this project to bind a local port?',
+    body: 'npm run dev',
+    bodyAdvice: `This background task needs localhost. Project: ${root}`,
+    bodyFooter: 'Project consent can be revoked in Context → Permissions → Project.',
+    type: 'shell',
+    allowRemember: true,
+    rememberLabel: `Always allow local port binding in this project: ${root}`,
+    approveLabel: 'Allow for this project',
+    approveOnceLabel: 'Allow once',
+  }
+}
+
 describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
   let spy: { showCalls: number }
@@ -658,6 +673,69 @@ describe('approval dialog coalescing', () => {
     input.checked = true
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
     assert.ok(responses.every((r) => r.remember))
+  })
+
+  for (const choice of [
+    { button: '.approval-approve', approved: true, remember: true },
+    { button: '.approval-approve-once', approved: true, remember: false },
+    { button: '.approval-reject', approved: false, remember: false },
+  ]) {
+    it(`offers explicit project preview choices and settles ${choice.button} with its stated scope`, () => {
+      emit(projectPreviewRequest('preview'))
+      fireWindow()
+
+      assert.equal(approve().textContent, 'Allow for this project')
+      const once = qsRequired<HTMLButtonElement>(dialog, '.approval-approve-once')
+      assert.equal(once.hidden, false)
+      assert.equal(once.textContent, 'Allow once')
+      assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+      assert.equal(qsRequired(dialog, '.approval-body').hidden, false)
+      assert.deepEqual(bodies(), ['npm run dev'])
+
+      qsRequired<HTMLButtonElement>(dialog, choice.button).click()
+      assert.deepEqual(responses, [
+        { id: 'preview', approved: choice.approved, remember: choice.remember },
+      ])
+    })
+  }
+
+  it('keeps a project preview grant out of a mixed-command batch', () => {
+    emit(projectPreviewRequest('preview'))
+    emit({ id: 'other', title: 'Run command?', body: 'npm test' })
+    fireWindow()
+
+    assert.equal(approve().textContent, 'Approve all (2)')
+    assert.equal(qsRequired(dialog, '.approval-approve-once').hidden, true)
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    approve().click()
+    assert.deepEqual(responses, [
+      { id: 'preview', approved: true, remember: false },
+      { id: 'other', approved: true, remember: false },
+    ])
+  })
+
+  it('offers one checkbox only for previews sharing the same project grant', () => {
+    emit(projectPreviewRequest('first'))
+    emit(projectPreviewRequest('second'))
+    fireWindow()
+
+    assert.equal(qsRequired(dialog, '.approval-approve-once').hidden, true)
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, false)
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '.approval-remember-input').checked, false)
+    approve().click()
+    assert.equal(responses.length, 2)
+    assert.ok(responses.every((response) => !response.remember))
+  })
+
+  it('does not offer one ambiguous remember checkbox for different project previews', () => {
+    emit(projectPreviewRequest('first', '/projects/harbor-board'))
+    emit(projectPreviewRequest('second', '/projects/market-desk'))
+    fireWindow()
+
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    approve().click()
+    assert.equal(responses.length, 2)
+    assert.ok(responses.every((response) => !response.remember))
   })
 
   it('hides the remember checkbox for a mixed-grant batch', () => {
