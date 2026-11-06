@@ -19486,7 +19486,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration;
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -20704,14 +20704,6 @@ function hydrationFailureEl() {
     el("span", { class: "conversation-hydrating-label" }, "Couldn\u2019t load the conversation.")
   );
 }
-function hydrationNoticeFor(thread) {
-  if (!needsHydration(thread)) return null;
-  if (hydrationFailed(thread.id)) return "failed";
-  return thread.status === "running" ? "running" : "loading";
-}
-function buildHydrationNotice(notice) {
-  return notice === "failed" ? hydrationFailureEl() : hydrationNoticeEl(notice === "running");
-}
 function mountConversation(root, store2, api2) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
@@ -21439,11 +21431,9 @@ function mountConversation(root, store2, api2) {
   function insertMessageRow(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
-    list.insertBefore(msgEl, before ?? rowsTail());
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
+    list.insertBefore(msgEl, before ?? tail);
     finalizeMessageEl(threadId, msgId);
-  }
-  function rowsTail() {
-    return activityBar.isConnected ? activityBar : firstTrailingCard();
   }
   function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
@@ -22022,27 +22012,9 @@ function mountConversation(root, store2, api2) {
       });
     } else backfillPending = false;
   }
-  const hydrationNotices = /* @__PURE__ */ new WeakMap();
-  function rememberHydrationNotice(element, notice) {
-    hydrationNotices.set(element, notice);
-    return element;
-  }
-  function hydrationNoticeChanges(thread) {
-    const current = list.querySelector(":scope > .conversation-hydrating");
-    return (current ? hydrationNotices.get(current) : null) !== hydrationNoticeFor(thread);
-  }
-  function syncHydrationNotice(thread) {
-    if (!hydrationNoticeChanges(thread)) return false;
-    const current = list.querySelector(":scope > .conversation-hydrating");
-    const wanted = hydrationNoticeFor(thread);
-    const next = wanted ? rememberHydrationNotice(buildHydrationNotice(wanted), wanted) : null;
-    if (current && next) current.replaceWith(next);
-    else if (current) current.remove();
-    else if (next) list.prepend(next);
-    return true;
-  }
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (!sameRowEnvironment(inputs, previous)) return false;
+    if (inputs.needsHydration || inputs.hydrationFailed) return false;
     const pending = backfillPending ? backfillPrefix : [];
     if (pending.some((id, i2) => thread.messages[i2]?.id !== id)) return false;
     const hidden = queuedMessageIds(thread);
@@ -22062,12 +22034,8 @@ function mountConversation(root, store2, api2) {
     });
     const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
-    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
-      return false;
-    }
     patchedRows.clear();
-    const noticeChanged = syncHydrationNotice(thread);
-    if (plan.ops.length > 0 || noticeChanged) {
+    if (plan.ops.length > 0) {
       const wasPinned = transcriptScroll.isPinnedToBottom();
       const prevScrollTop = list.scrollTop;
       const anchor = wasPinned ? null : captureReadingAnchor();
@@ -22137,8 +22105,13 @@ function mountConversation(root, store2, api2) {
       finishThreadChrome(null);
       return;
     }
-    const notice = hydrationNoticeFor(thread);
-    if (notice) list.append(rememberHydrationNotice(buildHydrationNotice(notice), notice));
+    if (needsHydration(thread)) {
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id) ? hydrationFailureEl() : hydrationNoticeEl(thread.status === "running")
+      );
+    }
     const total2 = thread.messages.length;
     const initialStart = Math.max(0, total2 - INITIAL_RENDER_WINDOW);
     for (let i2 = initialStart; i2 < total2; i2++) {
