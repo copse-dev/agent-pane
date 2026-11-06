@@ -171,7 +171,7 @@ describe('tool call turn rollup', () => {
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
 
-    // Nesting must preserve the etched surface's inset, including the left
+    // Nesting must preserve the reasoning plate's inset, including the left
     // edge that the old flat-row rule stripped to zero.
     const reasoningLayout = await browser.execute(() => {
       const reasoning = document.querySelector<HTMLElement>(

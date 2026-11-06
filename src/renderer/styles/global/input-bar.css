@@ -124,13 +124,16 @@
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
+/* The shared flat callout plate (docs/ui-taste.md, "Containment is a plate"): --sev
+   mixed at --callout-plate-fill, no rule underneath. Still the full-width square
+   strip that an explicit danger mode takes. */
 .guarded-yolo-banner {
+  --sev: var(--danger);
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
   padding: var(--spacing-sm) var(--spacing-md);
-  background: color-mix(in srgb, var(--danger) 14%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
@@ -156,7 +159,7 @@
 }
 .guarded-yolo-disable {
   flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border));
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs) var(--spacing-md);
   background: var(--bg-elevated);
@@ -1330,7 +1333,7 @@
   font-size: var(--font-size-2xs);
   padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--text-secondary);
 }
 .footer-usage-popover-pill.is-ok {
