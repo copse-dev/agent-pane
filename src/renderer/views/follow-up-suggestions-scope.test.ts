@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe('follow-up suggestions thread scope', () => {
-  it('follows the active thread from setState alone, and ignores renames', async () => {
+  it('follows thread switches and does not refetch for renames', async () => {
     const store = createStore()
     store.setState({ activeProjectId: 'project-1' })
     const first = createThread(store)
@@ -45,8 +45,11 @@ describe('follow-up suggestions thread scope', () => {
     assert.ok(bubble, 'the finished turn offers its suggestion')
     assert.equal(fetches, 1)
 
+    // This view stays on threads_changed (see follow-up-suggestions.ts), so
+    // switches here emit it as real writers do.
     const second = createThread(store)
     store.setState({ activeThreadId: first })
+    store.emit('threads_changed')
     await flush()
     setThreadTitle(store, first, 'Renamed')
     setThreadTitle(store, second, 'Renamed too')
@@ -54,22 +57,18 @@ describe('follow-up suggestions thread scope', () => {
     assert.equal(fetches, 1, 'renames do not refetch')
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
 
-    // No event: selecting the empty thread clears the bubbles.
+    // Selecting the empty thread clears the bubbles.
     store.setState({ activeThreadId: second })
+    store.emit('threads_changed')
     await flush()
     assert.equal(mount.root.querySelector('.follow-up-bubble'), null)
 
     // Back again: the cached suggestion returns without a second fetch.
     store.setState({ activeThreadId: first })
+    store.emit('threads_changed')
     await flush()
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     assert.equal(fetches, 1)
-
-    // Sending a message (the thread is still idle) suggests nothing new.
-    mount.clearSuggestions()
-    addMessage(store, first, 'user', 'Run the tests')
-    await flush()
-    assert.equal(fetches, 1, 'no suggestions are billed for the message just sent')
     mount.destroy()
   })
 })

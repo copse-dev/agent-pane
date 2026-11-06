@@ -1,6 +1,6 @@
 import type { OfferedClientAction } from './client-action-offers.ts'
 import { el, clear } from '../dom/helpers.ts'
-import { sameItems, type AppStore } from '@shared/store/store.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
@@ -15,7 +15,6 @@ import {
 import { lastExchange } from './last-exchange.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
-import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
@@ -397,16 +396,14 @@ export function mountFollowUpSuggestions(
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)
     }),
-    // A switch, or the transcript landing after one. Sending a message changes
-    // the thread while it is still idle; suggesting then would bill a fetch for
-    // the message just sent. Turn ends arrive as thread_status_changed above.
-    store.select(
-      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded] as const,
-      () => {
-        showForActiveThread()
-      },
-      sameItems,
-    ),
+    // Deliberately still `threads_changed`, not a selection. The bubbles on
+    // screen during and after a turn come back through the metadata writes
+    // that emit it mid-turn (the reference screenshots show them). A selection
+    // of the active thread also fires on the send itself and bills a fetch for
+    // the message just sent; one keyed on the switch alone drops the bubbles.
+    store.on('threads_changed', () => {
+      showForActiveThread()
+    }),
     api.fs.onChanged(() => {
       scheduleChangesRefresh()
     }),
