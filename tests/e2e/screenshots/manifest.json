@@ -45,6 +45,10 @@
       "sha256": "ad1465c2e856a9b67a7e5b72782f5d64b6b3e44e3f8c036c8db9d14083fc472c",
       "bytes": 324788
     },
+    "acp-bridge-unavailable.png": {
+      "sha256": "f753a7c0a985308a7df8081863fcad44d250b8521527449b80d4bf1c21a24c9f",
+      "bytes": 310841
+    },
     "acp-catalog-model-labels.png": {
       "sha256": "323ec5edc4070742efa08957c14ccb8254da02407f04a833626083eb47412fc9",
       "bytes": 24640
@@ -2626,8 +2630,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "204d476cd9fde2c6bf2244d13889641954b73faa731a399e0058264e1dbe1b25",
+      "bytes": 336853
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
