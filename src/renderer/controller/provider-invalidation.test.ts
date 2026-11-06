@@ -251,6 +251,24 @@ describe('provider warning ownership', () => {
     assert.equal(getActiveThread(f.store)?.model, 'lmstudio:qwen/qwen3.6-35b-a3b')
     stop()
   })
+  it('checks again after a workspace switch from setState alone', async () => {
+    const f = fixture()
+    const stop = attachProviderInvalidationWarning(f.store, f.api, f.ui)
+    await tick()
+    assert.equal(f.warnings(), 1)
+    const current = getActiveThread(f.store)
+    assert.ok(current)
+    f.store.setState({
+      activeProjectId: 'other-project',
+      workspaceRoot: '/repo/other',
+      threads: [{ ...current, id: 'other-thread', model: 'removed:other' }],
+      activeThreadId: 'other-thread',
+    })
+    await tick()
+    assert.equal(f.warnings(), 2, "the new project's broken thread model is reported")
+    assert.equal(getActiveThread(f.store)?.model, 'lmstudio:qwen/qwen3.6-35b-a3b')
+    stop()
+  })
   it('acknowledges unchanged fields once but warns each distinct thread', async () => {
     const f = fixture()
     f.api.models.invalidations = async (model): Promise<ModelInvalidationReport> =>

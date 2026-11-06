@@ -14,6 +14,7 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
 import { toggleProjectsPane } from '../controller/panels.ts'
 import { isMacPlatform } from './keyboard-shortcuts-dialog.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const PROJECTS_COLLAPSED_CLASS = 'is-projects-collapsed'
 
@@ -226,12 +227,12 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   // Titlebar mounts before persisted projects restore on boot; sync on mount
-  // for the no-project case, then again when restoreProject emits workspace_changed.
+  // for the no-project case, then again when restoreProject selects the workspace.
   syncName()
   syncBranch()
   const unsubs = [
     store.select((s) => s.projectsPaneOpen, syncSidebar),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       syncName()
       syncBranchNow()
       syncRunApp()

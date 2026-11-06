@@ -83,7 +83,6 @@ export async function openWorkspaceFile(
     }
     unsubs.push(
       store.select((s) => [s.activeProjectId, s.activeThreadId] as const, checkOwner, sameItems),
-      store.on('workspace_changed', checkOwner),
       store.on('thread_checkout_changed', (changedThreadId) => {
         if (changedThreadId === threadId) preview.close()
       }),
