@@ -67,7 +67,12 @@ describe('The thread Context panel', () => {
     )
     await expect(
       $$('[data-context-section="permissions"] [data-action^="revoke-"]'),
-    ).toBeElementsArrayOfSize(2)
+    ).toBeElementsArrayOfSize(3)
+    await expect($('[data-access="orchestrate"]')).toHaveText(
+      expect.stringContaining('Orchestrate own subthreads'),
+    )
+    await $('[data-action="revoke-orchestrate-access"]').scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('#pane-files', 'thread-subthread-permissions.png')
     await expect($('[data-action="disable-guarded-yolo"]')).toBeDisplayed()
     await expect($('[data-context-section="permissions"]')).toHaveText(
       expect.stringContaining('Outside-project reads'),
@@ -215,6 +220,14 @@ describe('The thread Context panel', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
     await expect($('#right-sidebar')).toBeDisplayed()
+  })
+  it('revokes orchestration while preserving other conversation permissions', async () => {
+    await openContext()
+    await $('[data-action="revoke-orchestrate-access"]').scrollIntoView()
+    await $('[data-action="revoke-orchestrate-access"]').click()
+    await expect($('[data-access="orchestrate"]')).not.toExist()
+    await expect($('[data-access="read"]')).toExist()
+    await expect($('[data-access="send"]')).toExist()
   })
   it('disables a session-only grant from Context', async () => {
     await openContext()

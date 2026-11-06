@@ -4,8 +4,12 @@ import { getActiveRunThread } from '../active-run-identity.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 
-type ThreadAccess = 'read' | 'send'
-const keys = { read: 'threadReadAccess', send: 'threadSendAccess' } as const
+type ThreadAccess = 'read' | 'send' | 'orchestrate'
+const keys = {
+  read: 'threadReadAccess',
+  send: 'threadSendAccess',
+  orchestrate: 'threadSubthreadAccess',
+} as const
 const revisions = new Map<string, number>()
 
 export function hasThreadAccess(threadId: string | null, access: ThreadAccess): boolean {
@@ -36,7 +40,12 @@ export async function ensureThreadAccess(
     {
       ...threadAccessApproval(access),
       type: 'mcp',
-      cause: access === 'read' ? 'thread-read-access' : 'thread-send-access',
+      cause:
+        access === 'read'
+          ? 'thread-read-access'
+          : access === 'send'
+            ? 'thread-send-access'
+            : 'thread-orchestration-access',
       scope: `thread-${access}`,
       subject: `thread-${access}-access`,
     },

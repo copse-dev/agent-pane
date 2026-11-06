@@ -39,6 +39,37 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
+test('revoked persisted subthread prompts are held at dispatch and refund budget', async () => {
+  const store = createProjectStore()
+  const child = createThread(store)
+  const api = fakeApi()
+  let checks = 0
+  api.threadPrompts.canDispatch = async (projectId, parentId, childId): Promise<boolean> => {
+    assert.equal(projectId, 'project-1')
+    assert.equal(parentId, 'parent')
+    assert.equal(childId, child)
+    checks++
+    return false
+  }
+  enqueueUserMessage(store, child, {
+    messageId: 'persisted',
+    payload: { content: 'Continue' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'subthread:parent' },
+  })
+  drainMessageQueue(store, api, child)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  const held = store.getState().threads.find((entry) => entry.id === child)
+  assert.equal(checks, 1)
+  assert.equal(api.runs.length, 0)
+  assert.ok(held)
+  assert.equal(held.status, 'idle')
+  assert.equal(held.continuationUsed, 0)
+  assert.equal(held.pendingMessages?.[0]?.autoDispatch, false)
+  drainMessageQueue(store, api, child)
+  assert.equal(checks, 1)
+})
+
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
 function createProjectStore(): ReturnType<typeof createStore> {
