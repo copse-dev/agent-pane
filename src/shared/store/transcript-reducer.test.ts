@@ -268,3 +268,28 @@ test('a command phase update lands on its card in main and the window alike', ()
     assert.deepEqual(call.commandPhase, { state: 'exited', since: 3, launched: true, exitCode: 2 })
   }
 })
+
+test('a deferred tool result marks only its own card deferred', () => {
+  const write = (id: string, path: string): StreamChunk => ({
+    type: 'tool_call',
+    toolCall: { id, name: 'write_file', args: { path } },
+  })
+  const { main, window } = reduceBoth([
+    write('w1', 'packages/api/first.ts'),
+    write('w2', 'README.md'),
+    {
+      type: 'tool_result',
+      toolCallId: 'w1',
+      result: 'Edit deferred…',
+      isError: false,
+      deferred: true,
+    },
+    { type: 'tool_result', toolCallId: 'w2', result: 'Applied edit.', isError: false },
+  ])
+  for (const store of [main, window]) {
+    const [deferred, applied] = messagesOf(store).at(-1)?.toolCalls ?? []
+    assert.equal(deferred?.status, 'done')
+    assert.equal(deferred.deferred, true)
+    assert.equal(applied?.deferred, undefined)
+  }
+})

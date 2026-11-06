@@ -7,6 +7,7 @@ import { expectAssistantReply } from './helpers/mock-scenario.ts'
 import {
   assertParentInstructionFiles,
   PARENT_INSTRUCTION_DEFERRAL,
+  PARENT_INSTRUCTION_EDIT_PATHS,
   PARENT_INSTRUCTION_FILES,
   PARENT_INSTRUCTION_HOLD,
   PARENT_INSTRUCTION_PROMPT,
@@ -73,8 +74,8 @@ describe('parent instruction delivery', function () {
 
       // Open the real disclosures through their summaries, including any
       // containing rollup/group, so lazy tool bodies render as they do for users.
-      for (const index of [1, 2]) {
-        const selector = `[data-tool-id$="-tool-${String(index)}"]`
+      for (const [offset, path] of PARENT_INSTRUCTION_EDIT_PATHS.entries()) {
+        const selector = `[data-tool-id$="-tool-${String(offset + 1)}"]`
         await browser.waitUntil(
           () =>
             browser.execute((cardSelector) => {
@@ -92,10 +93,21 @@ describe('parent instruction delivery', function () {
             }, selector),
           { timeout: 15_000, timeoutMsg: 'Expected the deferred edit disclosure to open' },
         )
-        await expect($(selector)).toHaveAttribute('data-status', 'done')
+        // Nothing was edited yet: the card names the deferral and never shows
+        // the success state (the green check of a completed edit).
+        await expect($(selector).$(':scope > summary .tool-name')).toHaveText(`Deferred ${path}`)
+        await expect($(selector)).toHaveAttribute('data-status', 'interrupted')
+        await expect($(selector).$(':scope > summary .tool-status-icon')).toHaveAttribute(
+          'aria-label',
+          'interrupted',
+        )
         await expect($(selector).$('.tool-result')).toBeDisplayed()
         await expect($(selector).$('.tool-result')).toHaveText(PARENT_INSTRUCTION_DEFERRAL)
       }
+      // Neither deferral is grouped or counted as an edit ("Edited files ×2").
+      await expect($('.tool-card-rollup .tool-card-group')).not.toExist()
+      const labels = await $$('.tool-card-rollup .tool-name').map((name) => name.getText())
+      expect(labels.filter((label) => label.startsWith('Edited'))).toEqual([])
       await saveElementScreenshot(
         '.tool-card-rollup',
         'parent-instruction-same-response-deferred.png',

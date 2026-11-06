@@ -2345,12 +2345,17 @@ async function runAgentWithInlineCanvas(
             }
           }
           // All edits from this response wait, including one whose path was
-          // already marked active by an earlier tool call. Reads can proceed.
+          // already marked active by an earlier tool call, or that no nested
+          // scope covers at all. Reads can proceed. `deferred` keeps the card
+          // from reading as a completed edit.
           if (isEditTool(name) && parentInstructionDelivery.hasPendingInstructions) {
-            return (
-              'Edit deferred because this path activated nested AGENTS.md instructions. ' +
-              'Review the newly loaded workspace instructions, then retry the same edit.'
-            )
+            return {
+              result:
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+              deferred: true,
+            }
           }
           if (isEditTool(name)) turnChangedFiles = true
           if (name === 'explore' && subagentsEnabled) {

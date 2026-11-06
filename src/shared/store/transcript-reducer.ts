@@ -425,6 +425,7 @@ export function createTranscriptReducer(
             ...(chunk.appendedReminderLengths
               ? { appendedReminderLengths: chunk.appendedReminderLengths }
               : {}),
+            ...(chunk.deferred ? { deferred: chunk.deferred } : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
           hooks.toolResult?.(threadId, ownerId, chunk)

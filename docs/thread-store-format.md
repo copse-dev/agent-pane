@@ -272,6 +272,7 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "status": "done" | "error",
       "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
+      "deferred": true, // optional: the host held the call back without running it
       "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
                         "exitCode": 0 }, // optional: run_shell/run_background lifecycle
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",

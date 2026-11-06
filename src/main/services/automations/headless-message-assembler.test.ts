@@ -90,6 +90,32 @@ describe('createHeadlessAutomationRun', () => {
     assert.equal(toolCall.result, 'all tests passed')
   })
 
+  it('persists a deferred tool result as deferred, so the card never reads as an edit', async () => {
+    const threadId = 'thread-deferred'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+
+    run.host.emit(threadId, {
+      type: 'tool_call',
+      toolCall: { id: 'call-1', name: 'write_file', args: { path: 'README.md' } },
+    })
+    run.host.emit(threadId, {
+      type: 'tool_result',
+      toolCallId: 'call-1',
+      result: 'Edit deferred…',
+      isError: false,
+      deferred: true,
+    })
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    const toolCall = persisted?.messages[0]?.toolCalls[0]
+    assert.ok(toolCall)
+    assert.equal(toolCall.status, 'done')
+    assert.equal(toolCall.deferred, true)
+  })
+
   it('persists ACP agent content: thoughts, message text and non-text blocks', async () => {
     const threadId = 'thread-4'
     await createThread(PROJECT_ID, thread(threadId))

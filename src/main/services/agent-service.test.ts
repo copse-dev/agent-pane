@@ -656,6 +656,7 @@ describe('runAgent AgentHost decoupling', () => {
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
     await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
     const writes: string[] = []
+    const chunks: StreamChunk[] = []
     const registry = new ToolRegistry()
     registry.register(
       defineTool({
@@ -705,7 +706,17 @@ describe('runAgent AgentHost decoupling', () => {
               message.toolResults.some((result) => result.toolCallId === 'first-edit'),
           )
           assert.ok(deferred?.role === 'tool')
-          assert.match(deferred.toolResults[0]?.result ?? '', /Edit deferred/)
+          // True for the activating path and for any other edit in the response.
+          assert.deepEqual(
+            deferred.toolResults.map((result) => result.result),
+            Array.from(
+              { length: 2 },
+              () =>
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+            ),
+          )
           assert.deepEqual(writes, [])
           yield {
             type: 'tool_call' as const,
@@ -752,7 +763,7 @@ describe('runAgent AgentHost decoupling', () => {
                 'thread-nested',
                 'Make the requested change.',
                 [],
-                { emit: () => undefined },
+                { emit: (_threadId, chunk) => chunks.push(chunk) },
                 registry,
                 {
                   provider,
@@ -772,6 +783,19 @@ describe('runAgent AgentHost decoupling', () => {
       )
       assert.equal(calls, 3)
       assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
+      // The transcript learns which calls were held back from a structured
+      // marker, not from the reason text the model reads.
+      assert.deepEqual(
+        chunks.flatMap((chunk) =>
+          chunk.type === 'tool_result' ? [[chunk.toolCallId, chunk.deferred]] : [],
+        ),
+        [
+          ['first-edit', true],
+          ['second-edit-before-instructions', true],
+          ['retried-edit', undefined],
+          ['retried-second-edit', undefined],
+        ],
+      )
     } finally {
       setDefaultPluginRegistry(null)
       await rm(root, { recursive: true, force: true })

@@ -239,6 +239,7 @@ export function createHeadlessAutomationRun(
             ...(chunk.appendedReminderLengths
               ? { appendedReminderLengths: chunk.appendedReminderLengths }
               : {}),
+            ...(chunk.deferred ? { deferred: chunk.deferred } : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
           return

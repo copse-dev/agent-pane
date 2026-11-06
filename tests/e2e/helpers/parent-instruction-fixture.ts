@@ -8,13 +8,15 @@ export const PARENT_INSTRUCTION_PROMPT =
 export const PARENT_INSTRUCTION_GUIDANCE =
   '# API instructions\n\nRead these API rules before changing either file. Keep both exported values lowercase.\n'
 export const PARENT_INSTRUCTION_DEFERRAL =
-  'Edit deferred because this path activated nested AGENTS.md instructions. ' +
-  'Review the newly loaded workspace instructions, then retry the same edit.'
+  'Edit deferred because newly activated nested AGENTS.md instructions had not reached you ' +
+  'yet. Review the newly loaded workspace instructions, then retry the same edit.'
 export const PARENT_INSTRUCTION_HOLD = 'instructions-delivered'
 export const PARENT_INSTRUCTION_REPLY = 'Both API files now follow the workspace instructions.'
 
 const FIRST_PATH = 'packages/api/first.ts'
 const SECOND_PATH = 'packages/api/second.ts'
+/** The two edits of the activating response, in tool-call order (tools 1 and 2). */
+export const PARENT_INSTRUCTION_EDIT_PATHS = [FIRST_PATH, SECOND_PATH] as const
 const FIRST_BEFORE = "export const first = 'before';\n"
 const SECOND_BEFORE = "export const second = 'before';\n"
 const FIRST_AFTER = "export const first = 'updated';\n"
