@@ -1691,19 +1691,35 @@ export async function getGitLogText(
   maxCount: number,
   path: string | undefined,
   root: string | null,
+  ref?: string,
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
+  let commit: string | undefined
+  if (ref !== undefined) {
+    const revision = ref.trim()
+    if (!revision || revision.startsWith('-')) return 'A non-option Git revision is required.'
+    const resolved = await runGitRead(
+      ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`],
+      root,
+    )
+    if (resolved.code !== 0) {
+      return resolved.stderr.trim() || `Cannot resolve Git revision: ${revision}`
+    }
+    commit = resolved.stdout.trim()
+  }
   const args = [
     'log',
     `--max-count=${String(maxCount)}`,
     '--oneline',
+    ...(commit ? [commit] : []),
     '--',
     ...(path ? [path] : []),
   ]
   const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
-  return stdout.trim() || '(no output)'
+  const history = stdout.trim() || '(no output)'
+  return commit ? `History at ${ref ?? 'HEAD'} (${commit}):\n${history}` : history
 }
 
 /** Recent commits since an ISO timestamp (or the newest `maxCount` when `since` is empty). */

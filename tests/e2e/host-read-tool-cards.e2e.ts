@@ -1,15 +1,20 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { resetUserData, seedStableWorkspace, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-host-read-tools-project'
 const THREAD_ID = 'e2e-host-read-tools-thread'
+const MAIN_SHA = 'abcdef1' + '2'.repeat(33)
 
 function seedHostReadToolCardsFixture(): void {
   const now = Date.now()
   writeSeedConfig({
-    projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
+    projects: [{ id: PROJECT_ID, path: seedStableWorkspace(), name: 'workspace' }],
     activeProjectId: PROJECT_ID,
     expandedProjectId: PROJECT_ID,
     activeThreadId: THREAD_ID,
@@ -61,9 +66,25 @@ function seedHostReadToolCardsFixture(): void {
             ],
             createdAt: now + 2,
           },
+          {
+            id: 'msg-assistant-workflow-runs',
+            role: 'assistant',
+            content:
+              'CI on the main tip is still running. The push-triggered run is pinned to its SHA.',
+            toolCalls: [
+              {
+                id: 'tc-gh-run-list',
+                name: 'gh_run_list',
+                args: { commit: MAIN_SHA, workflow: 'ci.yml', event: 'push' },
+                status: 'done',
+                result: `#123 CI: IN_PROGRESS (main @ abcdef1) — CI\n  https://github.com/o/r/actions/runs/123\n  Event: push; SHA: ${MAIN_SHA}`,
+              },
+            ],
+            createdAt: now + 3,
+          },
         ],
         createdAt: now,
-        updatedAt: now + 2,
+        updatedAt: now + 3,
       },
     ],
   })
@@ -96,5 +117,20 @@ describe('host-side read tool cards', () => {
 
     await $('.context-wheel.has-breakdown').waitForExist({ timeout: 15_000 })
     await saveAppScreenshot('host-read-tool-cards.png')
+  })
+
+  it('shows active status, trigger event and exact commit in expanded workflow evidence', async () => {
+    const selector = '.tool-card[data-tool-id="tc-gh-run-list"]'
+    const card = $(selector)
+    await card.waitForExist({ timeout: 30_000 })
+    await expect(card.$('.tool-name')).toHaveText('Listed CI runs')
+    await card.scrollIntoView()
+    if ((await card.getAttribute('open')) === null) await card.$('summary.tool-card-header').click()
+    const result = card.$('.tool-result')
+    await expect(result).toBeDisplayed()
+    await expect(result).toHaveText(expect.stringContaining('CI: IN_PROGRESS'))
+    await expect(result).toHaveText(expect.stringContaining('Event: push'))
+    await expect(result).toHaveText(expect.stringContaining(`SHA: ${MAIN_SHA}`))
+    await saveElementScreenshot(selector, 'exact-ci-run-evidence.png')
   })
 })

@@ -190,7 +190,13 @@ async function loadOpenPr(
   ]
   const result = await runGh(args, { cwd })
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
+    const message = result.stderr.trim() || result.stdout.trim() || 'gh pr view failed'
+    if (prNumber === undefined && /no pull requests found for branch/i.test(message)) {
+      throw new Error(
+        `${message}\nThis tool reads open-PR checks. Use gh_run_list for branch/main workflow runs, pin commit to the tip SHA, and use gh_run_view for failure logs. CI status remains unknown until workflow evidence is read.`,
+      )
+    }
+    throw new Error(message)
   }
   const pr = parseGhJson(result.stdout, decodeWithSchema(ghPrViewSchema))
   if (!pr || pr.state !== 'OPEN') return null

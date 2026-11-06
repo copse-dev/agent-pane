@@ -10,6 +10,7 @@ import {
   getGitChangeStats,
   getGitDiffText,
   getGitLogSinceText,
+  getGitLogText,
   getGitStatusText,
   invalidateGitWorkTreeProbe,
   resetDefaultBranchCache,
@@ -125,6 +126,31 @@ describe('git-service with two roots at once', { skip: !gitOk }, () => {
       assert.match(result.advisorDiff, new RegExp(`\\+${name} edit`))
       assert.doesNotMatch(result.advisorDiff, /window/)
     }
+  })
+
+  it('reads a named revision without checking it out or changing file-filter meaning', async () => {
+    for (const name of ['alpha', 'beta']) {
+      const root = name === 'alpha' ? repos.alpha : repos.beta
+      const beforeBranch = await getCurrentBranchName(root)
+      const beforeStatus = await getGitStatusText(root)
+      const main = await getGitLogText(5, undefined, root, 'main')
+      assert.match(main, /History at main \([a-f0-9]{40,64}\):/)
+      assert.match(main, /init/)
+      assert.doesNotMatch(main, new RegExp(`${name} commit`))
+      assert.match(await getGitLogText(5, undefined, root, 'HEAD'), new RegExp(`${name} commit`))
+      assert.match(await getGitLogText(5, `${name}-committed.txt`, root, 'main'), /\(no output\)/)
+      assert.equal(await getCurrentBranchName(root), beforeBranch)
+      assert.equal(await getGitStatusText(root), beforeStatus)
+    }
+  })
+
+  it('rejects option-like and unresolved revisions instead of reading HEAD', async () => {
+    assert.match(await getGitLogText(5, undefined, repos.alpha, '--all'), /non-option/)
+    assert.match(await getGitLogText(5, undefined, repos.alpha, 'not-a-real-ref'), /revision/)
+    assert.match(
+      await getGitLogText(5, undefined, repos.alpha, 'HEAD:tracked.txt'),
+      /revision|commit/,
+    )
   })
 
   it('reads nothing when the caller has no root, rather than the window workspace', async () => {
