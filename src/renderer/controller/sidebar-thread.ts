@@ -25,6 +25,8 @@ export interface SidebarThread {
   /** Last write to the thread, for the Activity panel's recency fallback. A compacted entry keeps it. */
   updatedAt?: number
   lastSettledAt?: number
+  /** Preserve an unfinished run when this row is compacted for another project. */
+  interruptedTurnAt?: number
   /** When the user last prompted it, for ordering across projects. A compacted entry keeps it. */
   lastPromptAt?: number
   status: Thread['status']
@@ -148,6 +150,9 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
     ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
     ...(thread.lastSettledAt !== undefined ? { lastSettledAt: thread.lastSettledAt } : {}),
+    ...(thread.interruptedTurnAt !== undefined
+      ? { interruptedTurnAt: thread.interruptedTurnAt }
+      : {}),
     ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
     // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
