@@ -462,7 +462,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-HHZJ6HWT.js";
+} from "./chunk-3JZCS2YT.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,

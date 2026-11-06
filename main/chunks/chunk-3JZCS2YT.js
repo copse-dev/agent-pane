@@ -43885,10 +43885,10 @@ var init_acp_known_agents = __esm({
           //
           // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
           // (not Claude Code's), baked into the wrapped command from the wrapping
-          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
-          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
-          // normally never sees it. The entry stays as a safety net for a wrap that
-          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
           // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
@@ -43985,10 +43985,10 @@ var init_acp_known_agents = __esm({
           //
           // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
           // (not Claude Code's), baked into the wrapped command from the wrapping
-          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
-          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
-          // normally never sees it. The entry stays as a safety net for a wrap that
-          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
           // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
