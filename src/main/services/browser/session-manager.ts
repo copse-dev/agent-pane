@@ -6,6 +6,7 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -342,6 +343,16 @@ export class BrowserSessionManager {
     )
     if (!ok) throw new Error(`no element with ref ${ref} (run browser_snapshot first)`)
     return `Typed into [ref=${ref}]`
+  }
+
+  async typeFields(
+    fields: readonly BrowserFormField[],
+    viewId?: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    signal?.throwIfAborted()
+    const tab = this.resolveTab(viewId)
+    return fillBrowserForm(tab.window.webContents, fields, signal)
   }
 
   listTabs(): TabInfo[] {
