@@ -4463,15 +4463,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return element
   }
 
+  /** Whether the notice at the top of the list says something other than `thread` needs. */
+  function hydrationNoticeChanges(thread: Thread): boolean {
+    const current = list.querySelector<HTMLElement>(':scope > .conversation-hydrating')
+    return (current ? hydrationNotices.get(current) : null) !== hydrationNoticeFor(thread)
+  }
+
   /**
    * Bring the hydration notice in line with `thread` in place: the running
    * label as a turn starts or ends while the transcript loads, or the failure
    * line once the read fails. Returns whether it changed.
    */
   function syncHydrationNotice(thread: Thread): boolean {
+    if (!hydrationNoticeChanges(thread)) return false
     const current = list.querySelector<HTMLElement>(':scope > .conversation-hydrating')
     const wanted = hydrationNoticeFor(thread)
-    if ((current ? hydrationNotices.get(current) : null) === wanted) return false
     const next = wanted ? rememberHydrationNotice(buildHydrationNotice(wanted), wanted) : null
     if (current && next) current.replaceWith(next)
     else if (current) current.remove()
@@ -4517,6 +4523,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     const plan = planTranscriptRows(rendered, wanted)
     if (plan.kind === 'rebuild') return false
+    // While the transcript loads, the list holds only the notice (and any
+    // rows streamed in meanwhile). A change that moves neither is left to the
+    // rebuild it always had, which also lands the view at the live end, so a
+    // load finishes exactly where it did before.
+    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
+      return false
+    }
     patchedRows.clear()
     const noticeChanged = syncHydrationNotice(thread)
     if (plan.ops.length > 0 || noticeChanged) {
