@@ -8,17 +8,22 @@ import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
+import { installRemoteReadRelay } from './remote-interface.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
 installPreloadPerfTracing()
 exposePerfBridge()
 ipcRenderer.invoke = createWorkspaceNavigation(ipcRenderer.invoke.bind(ipcRenderer))
+installRemoteReadRelay()
 
 // Typed against the contract so the facade cannot drift from `ApiClient`: a
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  remote: {
+    publish: (view) => ipcRenderer.invoke('remote:publish', view),
+  },
   clientActions: {
     claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
     publish: (offer) => ipcRenderer.invoke('client-actions:publish', offer),

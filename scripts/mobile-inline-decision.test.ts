@@ -75,7 +75,9 @@ async function harness(): Promise<{
       json: () =>
         path === '/api/activity'
           ? Promise.resolve({ access: 'control', sessionId: 's', projects: [], rows: [row] })
-          : new Promise<unknown>((resolve) => requests.push(resolve)),
+          : path.startsWith('/api/remote/')
+            ? Promise.resolve({ error: 'Live desktop unavailable in this saved-thread fixture' })
+            : new Promise<unknown>((resolve) => requests.push(resolve)),
     }),
   })
   window.localStorage.setItem('copse-mobile-token', 'test-token')

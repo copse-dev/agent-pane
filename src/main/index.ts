@@ -1,6 +1,7 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   syncPluginClientApi,
@@ -77,6 +78,7 @@ import { createKeyringCipher, createMigratingCipher } from './services/storage/k
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import {
+  getMobileCompanionState,
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
@@ -629,12 +631,14 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win, () => {
+      const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
         runningTurns: listRunningThreadIds().length,
+        mobileCompanionEnabled: mobile,
       })
-      if (detach) detachWindow(win)
+      if (detach) detachWindow(win, { keepRenderer: mobile })
       return detach
     })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
@@ -737,6 +741,7 @@ app
     })
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
+    initRemoteInterface(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane

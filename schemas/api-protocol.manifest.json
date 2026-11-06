@@ -1809,6 +1809,13 @@
           2
         ]
       },
+      "remote:publish": {
+        "api": "remote.publish",
+        "args": [
+          1,
+          1
+        ]
+      },
       "review:dismiss-finding": {
         "api": "review.dismissFinding",
         "args": [

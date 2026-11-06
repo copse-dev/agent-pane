@@ -1,4 +1,5 @@
 import { browser } from '@wdio/globals'
+import type { Browser } from 'webdriverio'
 
 declare global {
   interface Window {
@@ -12,8 +13,11 @@ declare global {
 }
 
 /** Pin looping CSS indicators only while capturing; keep motion tests live. */
-export async function withFrozenAnimations(capture: () => Promise<void>): Promise<void> {
-  await browser.execute(() => {
+export async function withFrozenAnimations(
+  capture: () => Promise<void>,
+  client: Browser = browser,
+): Promise<void> {
+  await client.execute(() => {
     if (window.e2eCaptureAnimations) throw new Error('Nested animation capture')
     if (!CSS.supports('caret-animation', 'manual')) {
       throw new Error('Capture browser must support a steady visible caret')
@@ -58,7 +62,7 @@ export async function withFrozenAnimations(capture: () => Promise<void>): Promis
   try {
     await capture()
   } finally {
-    await browser.execute(() => {
+    await client.execute(() => {
       window.e2eCaptureAnimationObserver?.disconnect()
       delete window.e2eCaptureAnimationObserver
       for (const { animation, time, playing } of window.e2eCaptureAnimations ?? []) {
