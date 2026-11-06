@@ -52,37 +52,33 @@ describe('native workflow read evidence', () => {
                   args: { project_id: 'latest-project', thread_id: 'draft', limit: 1, offset: 0 },
                   result: wrapExternalContent(
                     'read_thread',
-                    JSON.stringify(
-                      {
-                        title: 'Dissertation draft',
-                        projectName: 'Latest project',
-                        status: 'idle',
-                        messages: [
-                          {
-                            content:
-                              'Remaining: dataset manifest, server-error archive, Monday outline. Keep agents frozen.',
-                            turnOutcome: { status: 'completed', stopReason: 'end_turn' },
-                            role: 'assistant',
-                            createdAt: timestamp,
-                            id: 'draft-answer',
-                            contentTruncated: false,
-                            unavailable: false,
-                            contentPath:
-                              '/thread-store/latest-project/draft/messages/draft-answer.md',
-                            toolCalls: [],
-                            toolCallCount: 0,
-                          },
-                        ],
-                        updatedAt: timestamp,
-                        projectId: 'latest-project',
-                        threadId: 'draft',
-                        totalMessages: 21,
-                        offset: 0,
-                        nextOffset: 1,
-                      },
-                      null,
-                      2,
-                    ),
+                    JSON.stringify({
+                      title: 'Dissertation draft',
+                      projectName: 'Latest project',
+                      status: 'idle',
+                      messages: [
+                        {
+                          content:
+                            'Remaining: dataset manifest, server-error archive, Monday outline. Keep agents frozen.',
+                          turnOutcome: { status: 'completed', stopReason: 'end_turn' },
+                          role: 'assistant',
+                          createdAt: timestamp,
+                          id: 'draft-answer',
+                          contentTruncated: false,
+                          unavailable: false,
+                          contentPath:
+                            '/thread-store/latest-project/draft/messages/draft-answer.md',
+                          toolCalls: [],
+                          toolCallCount: 0,
+                        },
+                      ],
+                      updatedAt: timestamp,
+                      projectId: 'latest-project',
+                      threadId: 'draft',
+                      totalMessages: 21,
+                      offset: 0,
+                      nextOffset: 1,
+                    }),
                   ),
                 },
               ],
@@ -131,8 +127,8 @@ describe('native workflow read evidence', () => {
     await expect(result).toHaveText(expect.stringContaining('Dissertation draft'))
     await expect(result).toHaveText(expect.stringContaining('Latest project'))
     await expect(result).toHaveText(expect.stringContaining('Keep agents frozen.'))
-    await expect(result).toHaveText(expect.stringContaining('"nextOffset": 1'))
-    await expect(result).toHaveText(expect.stringContaining('"status": "completed"'))
+    await expect(result).toHaveText(expect.stringContaining('"nextOffset":1'))
+    await expect(result).toHaveText(expect.stringContaining('"status":"completed"'))
     await saveElementScreenshot(selector, 'conversation-page-evidence.png')
   })
 })

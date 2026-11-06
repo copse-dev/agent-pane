@@ -249,3 +249,13 @@ The final focused selection passes all 193 tests. The initial implementation
 including static/unit/build/browser/bench gates and all nine Electron shards.
 That success is baseline evidence for the implementation before the later
 provenance and turn-outcome follow-ups; the final head must earn its own gates.
+
+The final production code `f2a9f10abf11eb8cc9ffd5c4896fc3b287844aca` also passes
+`cross-project-budget-outcome-final-1793998199500.jsonl` in visible Copse with
+Qwen and ordinary permissions (34.2 seconds). It preserves the original two
+conversation prompts and their final-fact assertions, then asks whether an idle
+review with positive partial prose finished cleanly. The recorded failed
+`max_steps` outcome is returned, and the answer identifies the incomplete review.
+No shell, writes or sends are permitted by the unchanged read-only scorer.
+The final screenshot fixture uses the producer's compact JSON payload rather
+than introducing pretty-printing absent from the real tool result.
