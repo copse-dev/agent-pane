@@ -505,6 +505,7 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     ['webAllowedOrigins', ['https://saved.example:443']],
   ])
   const revoked: string[] = []
+  let portBindingAllowed = true
   let guardedYoloPhase: GuardedYoloState['phase'] = 'active'
   const base = createFakeApi()
   const api = {
@@ -531,10 +532,15 @@ test('Context shows this thread’s saved read and send grants and revokes each 
           expiresAt: null,
         }
       },
+      revokeProjectPortBinding: async (pid: string, tid: string): Promise<void> => {
+        assert.equal(pid, 'p')
+        assert.equal(tid, threadId)
+        portBindingAllowed = false
+      },
       getContextPermissions: async (): Promise<ContextPermissionSnapshot> => ({
         outsideReadPaths: ['/outside/notes'],
         browserOrigins: ['https://session.example:443'],
-        portBindingAllowed: true,
+        portBindingAllowed,
       }),
     },
     decisions: {
@@ -585,6 +591,12 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? '',
     /https:\/\/denied.example:443webdenied/,
   )
+  const revokePort = viewer.querySelector<HTMLButtonElement>('[data-action="revoke-port-binding"]')
+  assert.ok(revokePort)
+  assert.match(revokePort.title, /Stop running tasks separately/)
+  revokePort.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-action="revoke-port-binding"]'), null)
   viewer.querySelector<HTMLButtonElement>('[data-action="disable-guarded-yolo"]')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-action="disable-guarded-yolo"]'), null)

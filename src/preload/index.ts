@@ -250,6 +250,8 @@ const api: ApiClient = {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
     getContextPermissions: (projectId: string, threadId: string, projectRoot: string) =>
       ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, projectRoot),
+    revokeProjectPortBinding: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('security:revoke-project-port-binding', projectId, threadId),
     enableGuardedYolo: (threadId: string) =>
       ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>

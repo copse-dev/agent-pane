@@ -1377,3 +1377,5 @@ needed, deletes it, and reports absence only after a successful host inventory.
 Deletion asks on every invocation, including with a stored Device Hub allow,
 and cannot be remembered through the approval dialog. Stored blocks, read-only
 runs and toolGate hooks still win. Other Device Hub actions retain their policy.
+
+Saved local port-binding consent can be revoked under Context → Permissions → Project → Local port binding. Revocation applies to future task starts for that project; stop any already-running background task separately in Process manager. Other projects keep their own consent.

@@ -1,3 +1,4 @@
+import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
@@ -1869,8 +1870,6 @@ async function checkBrowserNavigatePermission(
   return approved
 }
 
-const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
-
 /**
  * Gate the `run_background` tool. A start action's command is first put through
  * the *same* decision as run_shell: on macOS the seatbelt contains it (contained
@@ -1917,8 +1916,7 @@ async function checkBackgroundProcessPermission(
   const root = getAgentProjectRoot()
   if (!root) throw new Error('No workspace open.')
 
-  const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
-  if (allowed.includes(root)) return true
+  if (projectAllowsPortBinding(root)) return true
 
   const { approved, remember } = await requestApproval(
     {
@@ -1934,9 +1932,7 @@ async function checkBackgroundProcessPermission(
     signal,
   )
   if (approved && remember) {
-    await updateSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [], (current) =>
-      current.includes(root) ? current : [...current, root],
-    )
+    await rememberProjectPortBinding(root)
   }
   return approved
 }
