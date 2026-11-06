@@ -164,6 +164,11 @@ Source files remain authoritative; deleting this cache is safe.
   discard confirmation; cancellation keeps the chat and checkout. The branch
   is retained, and `worktree.retiredAt` records that the checkout can be rebuilt.
   Shared project checkouts are never removed by archiving.
+  The whole `worktree` value is main-owned: renderer `threads:create` and
+  `threads:update-meta` payloads cannot allocate, replace or clear it. This keeps
+  delayed completion snapshots and autosaves from reviving a checkout after
+  cleanup. Native allocation, rename, restore, adoption and explicit clearing
+  still write through the trusted store API. No on-disk field is added.
   Optional `prRefs` are cached references, not ownership. `prProductions` records
   successful non-noop native PR creation (`pr`, `eventId`, `source: "pr-create"`,
   `createdAt`); `commitProductions` records native commit creation (`repository`,
