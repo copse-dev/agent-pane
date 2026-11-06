@@ -67985,14 +67985,10 @@ ${context}` : text;
     getReasoning: () => getActiveThread(store2)?.reasoning,
     onSelectReasoning: selectReasoning
   });
-  store2.select(
-    activeProjectThreadOf,
-    () => {
-      modelPicker.refresh();
-      void refreshAutomaticCheckoutPreview();
-    },
-    sameProjectThreadBesidesDraft
-  );
+  store2.on("threads_changed", () => {
+    modelPicker.refresh();
+    void refreshAutomaticCheckoutPreview();
+  });
   store2.on("projects_changed", () => {
     modelPicker.refresh();
     void refreshAutomaticCheckoutPreview();
@@ -69745,17 +69741,26 @@ ${reply}`);
     store2.on("message_added", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
-    // The active thread: a switch loads its composer, and its own updates
-    // (model, mode, worktree, queue, status) repaint the footer. Other threads'
-    // updates and this thread's draft autosave do not.
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store2.select(
+      (s) => [s.activeProjectId, s.activeThreadId],
+      () => {
+        syncComposerThread();
+        containerRun.refresh();
+      },
+      sameItems
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
     store2.select(
       activeProjectThreadOf,
       () => {
-        syncComposerThread();
         executionMode.refresh();
         footerOverflow.update();
         guardedYolo.refresh();
-        containerRun.refresh();
         hideBranchMismatch();
         hideDirtyWarning();
         updateState();
@@ -69886,6 +69891,7 @@ var init_input_bar = __esm({
     init_text_expand();
     init_video_expand();
     init_wire_types();
+    init_store();
     init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
