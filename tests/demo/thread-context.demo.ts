@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
@@ -172,6 +173,32 @@ describe('The thread Context panel', () => {
     ])
     await $('[data-context-section="decisions"]').scrollIntoView()
     await saveElementScreenshot('#pane-files', 'side-chats-context-permissions-decisions.png')
+  })
+
+  it('reads permission states as text and keeps a frame only on the buttons', async () => {
+    const permissions = $('[data-context-section="permissions"]')
+    await permissions.scrollIntoView({ block: 'start' })
+    await expect(permissions.$('[data-access="read"] .thread-context-chip')).toHaveText('Granted')
+    const states = await browser.execute(() => {
+      const section = document.querySelector('[data-context-section="permissions"]')
+      const chips = [...(section?.querySelectorAll<HTMLElement>('.thread-context-chip') ?? [])]
+      const revoke = section?.querySelector<HTMLElement>('[data-action^="revoke-"]')
+      return {
+        chips: chips.map((chip) => {
+          const style = getComputedStyle(chip)
+          return [style.borderTopWidth, style.paddingLeft, style.backgroundColor].join(' ')
+        }),
+        revokeBorder: revoke ? getComputedStyle(revoke).borderTopWidth : null,
+      }
+    })
+    assert.ok(states.chips.length >= 2, 'the permissions section lists its states')
+    for (const chip of states.chips) assert.equal(chip, '0px 0px rgba(0, 0, 0, 0)')
+    assert.equal(states.revokeBorder, '1px', 'Revoke is a button and keeps its frame')
+    await waitForSettledLayout('#pane-files')
+    await saveElementScreenshot(
+      '[data-context-section="permissions"]',
+      'thread-context-permission-states.png',
+    )
   })
 
   it('expands and closes the single context panel', async () => {
