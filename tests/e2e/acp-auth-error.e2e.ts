@@ -31,15 +31,6 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       composerTop: composer.top,
     }
   }, selector)
-  // TEMPORARY DIAGNOSTIC (revert before review)
-  const diag = await browser.execute(() => ({
-    heights: Array.from(
-      document.querySelectorAll('.messages-list > .msg-assistant'),
-      (row) => row.getBoundingClientRect().height,
-    ),
-    mutations: document.documentElement.dataset['diagMutations'] ?? 'none',
-  }))
-  console.log(`[mutdiag ${filename}] ${JSON.stringify(diag)}`)
   expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
   await saveElementScreenshot(selector, filename, { frame: 'document' })
@@ -98,48 +89,6 @@ describe('ACP authentication error presentation', () => {
     })
     await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
       timeout: 30_000,
-    })
-    // TEMPORARY DIAGNOSTIC (revert before review): count DOM mutations from the
-    // first settled transcript through every capture.
-    await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      const counts: Record<string, number> = {}
-      const bump = (key: string): void => {
-        counts[key] = (counts[key] ?? 0) + 1
-      }
-      new MutationObserver((records) => {
-        for (const record of records) {
-          const inList = list !== null && list.contains(record.target)
-          const where = inList ? 'list' : 'outside'
-          const target =
-            record.target instanceof Element ? record.target : record.target.parentElement
-          const label = `${target?.tagName.toLowerCase() ?? '?'}.${(target?.getAttribute('class') ?? '').split(' ').slice(0, 2).join('.')}`
-          bump(`${where}:${record.type}`)
-          if (record.type === 'attributes')
-            bump(`${where}:attr:${record.attributeName ?? ''}:${label}`)
-          if (record.type === 'childList') {
-            bump(`${where}:child:${label}`)
-            if (record.target === list) {
-              for (const node of Array.from(record.addedNodes))
-                bump(
-                  `list-row-added:${node instanceof Element ? (node.getAttribute('data-message-id') ?? node.className) : '#text'}`,
-                )
-              for (const node of Array.from(record.removedNodes))
-                bump(
-                  `list-row-removed:${node instanceof Element ? (node.getAttribute('data-message-id') ?? node.className) : '#text'}`,
-                )
-            }
-          }
-          if (record.type === 'characterData') bump(`${where}:text:${label}`)
-        }
-        document.documentElement.dataset['diagMutations'] = JSON.stringify(counts)
-      }).observe(document.body, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        characterData: true,
-      })
-      document.documentElement.dataset['diagMutations'] = '{}'
     })
   })
 
