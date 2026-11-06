@@ -487,7 +487,29 @@ describe('syncCiInvestigatorTools', () => {
   const registered = (registry: ToolRegistry): boolean[] =>
     CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
 
-  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+  it('keeps basic workflow reads available independently of the investigator plugin', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    for (const enabled of [false, true, false]) {
+      if (enabled) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+      else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+      syncCiInvestigatorTools(registry)
+      assert.equal(registry.has('gh_run_list'), true)
+      assert.equal(registry.has('gh_run_view'), true)
+      assert.equal(registry.has('investigate_ci'), enabled)
+    }
+    setGhAvailableForTest(false)
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+    assert.equal(registry.has('gh_run_list'), false)
+    assert.equal(registry.has('gh_run_view'), false)
+    assert.equal(registry.has('investigate_ci'), false)
+  })
+
+  it('registers the investigator only with the plugin on and gh usable', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -496,29 +518,29 @@ describe('syncCiInvestigatorTools', () => {
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
-    // gh probe answers: all three appear.
+    // gh probe answers: the investigator appears.
     setGhAvailableForTest(true)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
     // Idempotent while enabled.
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
-    // Plugin off drops all three even though gh is still usable.
+    // Plugin off drops the investigator even though gh is still usable.
     plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
     // Re-enable, then gh goes away: the tools follow gh too.
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
   })
 })
 
