@@ -542,7 +542,7 @@ describe('roadmap IPC handlers', () => {
   // window instead would, in a second window on another project, import that
   // project's issues into this roadmap and review these notes against its log.
   it('read git and GitHub from the knowledge store project, not the asking window', async () => {
-    const source = await readFile(new URL('../ipc/register-handlers.ts', import.meta.url), 'utf8')
+    const source = await readFile(new URL('../ipc/roadmap-handlers.ts', import.meta.url), 'utf8')
     const start = source.indexOf('const roadmapProjectRoot = ')
     const end = source.indexOf("ipcMain.handle('roadmap:complete-review'")
     assert.ok(start !== -1 && end > start, 'roadmap handler block not found')

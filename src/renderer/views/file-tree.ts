@@ -20,6 +20,7 @@ import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { showErrorToast } from './toast.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -230,7 +231,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     refresh()
   }
   const unsubs = [
-    store.on('workspace_changed', refresh),
+    selectActiveWorkspace(store, refresh),
     store.on('threads_changed', refreshForActiveTask),
     store.select(
       (s) => s.openFile,

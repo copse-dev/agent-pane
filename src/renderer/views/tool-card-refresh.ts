@@ -727,6 +727,9 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
     syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store))
+    // A fresh build registers the trail with the disclosure model, which keeps
+    // the reader's choice for it from when it was the run's step.
+    registerReasoningDisclosures(msgEl)
   }
 
   /**
