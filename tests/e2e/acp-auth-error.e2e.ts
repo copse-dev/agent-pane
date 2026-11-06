@@ -41,8 +41,10 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       scrollTop: list?.scrollTop,
       scrollHeight: list?.scrollHeight,
       clientHeight: list?.clientHeight,
-      children: Array.from(list?.children ?? [], (child) =>
-        `${child.className}${child instanceof HTMLElement && child.hidden ? '[hidden]' : ''} ${rect(child)}`,
+      children: Array.from(
+        list?.children ?? [],
+        (child) =>
+          `${child.className}${child instanceof HTMLElement && child.hidden ? '[hidden]' : ''} ${rect(child)}`,
       ),
       stickyBand: getComputedStyle(list ?? document.body).scrollPaddingTop,
       fonts: document.fonts.status,
