@@ -383,6 +383,13 @@ loops driven by an actual local model rather than the mock:
   agent evals (`tests/e2e/agent-eval-drive.e2e.ts`), reading `LM_STUDIO_API_KEY`
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
+  For an existing checkout, set `COPSE_EVAL_BRANCH=<branch>` to choose that branch
+  through the new-thread picker before submitting; otherwise the product's default
+  branch selection applies. The driver confirms dirty-checkout warnings, accepts
+  both single-file and bulk proposals through Changes, waits for acceptance wakes,
+  and fails if any proposals remain before judging workspace files. Failed runs
+  preserve a window screenshot, visible composer/error text, and the thread export
+  under `tests/e2e/artifacts/` when available.
 - `npm run validate:local-agent` exercises the agent loop headlessly.
 - `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
   holds a fixed task/model/tool set constant and compares the full system prompt
