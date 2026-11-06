@@ -586,6 +586,7 @@ function registerListedTools(
       provenance: 'external',
       parameters: z.unknown(),
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
+      untrustedSchema: true,
       async execute(args, signal) {
         const preparedArgs =
           server.serverName === XCODEBUILD_MCP_SERVER_NAME
