@@ -391,6 +391,18 @@ describe('sameExceptTurnOutcome', () => {
       'a field the next message lost',
     )
   })
+
+  it('accepts a change only in the fields a handler says it redraws', () => {
+    const reviewed: Message = { ...drawn, review: { status: 'running', summary: '' } }
+    assert.equal(sameExceptTurnOutcome(drawn, reviewed), false)
+    assert.equal(sameExceptTurnOutcome(drawn, reviewed, ['review']), true)
+    assert.equal(sameExceptTurnOutcome(reviewed, drawn, ['review']), true, 'a review removed')
+    assert.equal(
+      sameExceptTurnOutcome(drawn, { ...reviewed, content: 'Edited.' }, ['review']),
+      false,
+      'another field changed alongside the redrawn one',
+    )
+  })
 })
 
 describe('applyTranscriptRowPlan', () => {

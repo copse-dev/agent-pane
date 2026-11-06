@@ -3624,11 +3624,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * adoptPatchedSignatures), so nothing is signed per streamed event. Only for
    * handlers whose patched DOM equals a fresh build; the reconcile-vs-rebuild
    * component test holds them to that.
+   *
+   * `redraws` names the fields a handler replaces the message for and redraws
+   * itself. Any other difference from what the row last drew came from outside
+   * the stream and is not on screen, so the row is not noted and keeps the
+   * message it drew: the next reconcile then adopts nothing and rebuilds it.
    */
-  function markRowPatched(msgId: string): void {
+  function markRowPatched(msgId: string, redraws: readonly (keyof Message)[] = []): void {
     const message = locateMessage(store, msgId)?.message
     const element = message ? transcriptRowElement(list, msgId) : null
     if (!message || !element) return
+    const drawn = rowDrawnFrom.get(element)
+    if (drawn && !sameExceptTurnOutcome(drawn, message, redraws)) return
     patchedRows.add(msgId)
     rowDrawnFrom.set(element, message)
   }
@@ -4745,7 +4752,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('review_changed', (tid, mid) => {
       renderMessageReview(tid, mid)
-      if (tid === store.getState().activeThreadId) markRowPatched(mid)
+      if (tid === store.getState().activeThreadId) markRowPatched(mid, ['review'])
       scrollToBottom()
     }),
     store.on('hook_card_added', (tid, mid) => {
@@ -4758,8 +4765,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       scrollToBottom()
     }),
     store.on('review_report_changed', (tid, mid) => {
-      if (mid) renderMessageReviewReport(tid, mid)
-      else syncReviewReportCard()
+      // A report replaces its message's object; noting the row it just drew
+      // keeps that from blocking the rows the stream patched (see
+      // adoptPatchedSignatures).
+      if (mid) {
+        renderMessageReviewReport(tid, mid)
+        if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
+      } else syncReviewReportCard()
       scrollToBottom()
     }),
     store.on('settings_changed', () => {

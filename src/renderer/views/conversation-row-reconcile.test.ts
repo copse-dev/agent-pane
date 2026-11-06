@@ -10,6 +10,7 @@ import {
   createThread,
   markThreadRead,
   patchThreadAnywhere,
+  setMessageReviewReport,
   setMessageTurnOutcome,
   setThreadStatus,
   setThreadTitle,
@@ -22,7 +23,7 @@ import {
   recordedTurn,
   threadWith,
 } from '@shared/store/transcript-stream.test-support.ts'
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, ThreadReviewReport } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -130,6 +131,25 @@ async function assertDrawnAsRebuilt(
     -1,
     `row ${String(firstDifference)} differs from a rebuild:\n${reconciled[firstDifference] ?? ''}\n${rebuilt[firstDifference] ?? ''}`,
   )
+}
+
+const REVIEW_REPORT: ThreadReviewReport = {
+  status: 'done',
+  startedAt: 1,
+  models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
+  lenses: ['correctness'],
+  baseRef: 'HEAD',
+  headCommit: 'abc',
+  dirtyWorkingTree: true,
+  execution: { backend: 'os-sandbox', strength: 'os-sandbox', executed: true, reason: '' },
+  checks: [],
+  notChecked: [],
+  findings: [],
+  appendix: 0,
+  refuted: 0,
+  reviewers: [],
+  verification: null,
+  durationMs: 1,
 }
 
 const STOPPED: StreamChunk = {
@@ -497,6 +517,95 @@ describe('conversation keyed row reconcile (component)', () => {
     )
     assert.ok(reply.querySelector('a.file-reference-link') === link, 'the resolved link was lost')
     assert.equal(resolveCalls.count, resolvesBefore, 'the kept reply resolved its paths again')
+  })
+
+  it('keeps a streamed reply when a review report lands on an earlier message', async () => {
+    // A review report replaces its message's object and is drawn by its own
+    // handler. That must not stop the next reconcile from keeping the rows the
+    // stream patched, here a reply whose path has resolved into a link.
+    const store = createStore({
+      threads: [threadWith('t1', [humanPrompt('u1', 'Review the palette change.')])],
+      activeThreadId: 't1',
+      activeProjectId: 'project-1',
+    })
+    const live = document.createElement('div')
+    document.body.append(live)
+    unmounts.push(mountConversation(live, store, fakeApi({ count: 0 })))
+    const reducer = createTranscriptReducer(store)
+    reducer.apply('t1', { type: 'text', text: 'Reviewed.' })
+    reducer.apply('t1', { type: 'done' })
+    const reviewed = live.querySelector<HTMLElement>('.messages-list > .msg-assistant')
+    const reviewedId = reviewed?.dataset['messageId']
+    assert.ok(reviewedId)
+
+    addMessage(store, 't1', 'user', 'Where are palette entries built?')
+    setThreadStatus(store, 't1', 'running')
+    store.emit('threads_changed')
+    reducer.apply('t1', { type: 'reasoning', text: 'Look for the builder.' })
+    const replies = (): HTMLElement[] =>
+      Array.from(live.querySelectorAll<HTMLElement>('.messages-list > .msg-assistant'))
+    const built = replies()[1]
+    assert.ok(built, 'expected the streamed reply')
+    reducer.apply('t1', { type: 'text', text: 'Entries are built in ' })
+    reducer.apply('t1', { type: 'text', text: '`src/renderer/views/command-palette.ts`.' })
+    reducer.apply('t1', { type: 'done' })
+    await delay(0)
+    const link = built.querySelector('a.file-reference-link')
+    assert.ok(link, 'expected the streamed path to resolve into a link')
+
+    setMessageReviewReport(store, 't1', reviewedId, REVIEW_REPORT)
+    assert.ok(live.querySelector(`[data-review-report-for="${reviewedId}"]`))
+    store.emit('threads_changed')
+    await delay(0)
+
+    assert.ok(replies()[1] === built, 'the review report rebuilt the streamed reply')
+    assert.ok(built.querySelector('a.file-reference-link') === link, 'the resolved link was lost')
+    await assertDrawnAsRebuilt(store, live)
+  })
+
+  it('rebuilds a streamed row whose message was replaced outside the stream', async () => {
+    // A snapshot or edit can replace a streaming message with fields no
+    // streaming handler draws. A later chunk patches only its own part, so the
+    // row must not count as drawing the replaced message.
+    const store = createStore({
+      threads: [threadWith('t1', [humanPrompt('u1', 'Read a.ts.')])],
+      activeThreadId: 't1',
+      activeProjectId: 'project-1',
+    })
+    const live = document.createElement('div')
+    document.body.append(live)
+    unmounts.push(mountConversation(live, store, fakeApi({ count: 0 })))
+    const reducer = createTranscriptReducer(store)
+    reducer.apply('t1', { type: 'text', text: 'Reading' })
+    const replyId = live.querySelector<HTMLElement>('.messages-list > .msg-assistant')?.dataset[
+      'messageId'
+    ]
+    assert.ok(replyId)
+    patchThreadAnywhere(store, 't1', (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.id === replyId
+          ? {
+              ...message,
+              toolCalls: [
+                {
+                  id: 'tc-snap',
+                  name: 'read_file',
+                  args: { path: 'a.ts' },
+                  status: 'done',
+                  result: 'ok',
+                },
+              ],
+            }
+          : message,
+      ),
+    }))
+    reducer.apply('t1', { type: 'text', text: ' a.ts.' })
+    store.emit('threads_changed')
+    await delay(0)
+
+    assert.ok(live.querySelector('[data-tool-id="tc-snap"]'), 'the replaced message lost its card')
+    await assertDrawnAsRebuilt(store, live)
   })
 })
 

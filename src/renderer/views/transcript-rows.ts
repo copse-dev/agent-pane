@@ -370,14 +370,19 @@ export function adoptPatchedSignatures(
 /**
  * Whether `next` is `drawn` with at most a new turn outcome: the one field the
  * stream sets by replacing the message rather than patching it in place, and
- * which the row signature leaves to what it draws.
+ * which the row signature leaves to what it draws. `redrawn` names further
+ * fields a handler replaces the message for and redraws itself (a review, a
+ * review report), which may differ too.
  */
-export function sameExceptTurnOutcome(drawn: Message, next: Message): boolean {
+export function sameExceptTurnOutcome(
+  drawn: Message,
+  next: Message,
+  redrawn: readonly (keyof Message)[] = [],
+): boolean {
   if (drawn === next) return true
-  const { turnOutcome: _drawnOutcome, ...drawnFields } = drawn
-  const { turnOutcome: _nextOutcome, ...nextFields } = next
-  const nextEntries = new Map(Object.entries(nextFields))
-  const drawnEntries = Object.entries(drawnFields)
+  const skipped = new Set<string>(['turnOutcome', ...redrawn])
+  const nextEntries = new Map(Object.entries(next).filter(([key]) => !skipped.has(key)))
+  const drawnEntries = Object.entries(drawn).filter(([key]) => !skipped.has(key))
   return (
     drawnEntries.length === nextEntries.size &&
     drawnEntries.every(([key, value]) => nextEntries.has(key) && nextEntries.get(key) === value)
