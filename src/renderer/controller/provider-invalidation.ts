@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { sameItems, type AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import type { ModelInvalidation, ModelSettingsTarget } from '@shared/model-invalidation.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -198,13 +199,13 @@ export function attachProviderInvalidationWarning(
       })
   }
   const unsubscribe = [
-    store.on('workspace_changed', check),
+    selectActiveWorkspace(store, check),
     // The check reads the active thread's route: which thread, whether it is
     // idle, and its model. Other threads' updates, and this one's rename, do not.
     store.select(
-      (state) => {
+      () => {
         const thread = getActiveThread(store)
-        return [state.activeProjectId, thread?.id, thread?.status, thread?.model] as const
+        return [thread?.id, thread?.status, thread?.model] as const
       },
       check,
       sameItems,

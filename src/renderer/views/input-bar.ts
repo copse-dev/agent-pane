@@ -136,6 +136,7 @@ import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 interface MountInputBarOptions {
   /**
@@ -2893,7 +2894,7 @@ export function mountInputBar(
     refreshSkillsCache()
     scheduleContextEstimate(0)
   }
-  const unsubWorkspace = store.on('workspace_changed', onSkillsChanged)
+  const unsubWorkspace = selectActiveWorkspace(store, onSkillsChanged)
   window.addEventListener('copse:skills-changed', onSkillsChanged)
 
   const skillPicker = initSkillPicker({
@@ -3033,7 +3034,7 @@ export function mountInputBar(
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {

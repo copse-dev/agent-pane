@@ -877,3 +877,49 @@ test('the mounted pane follows the active thread from setState alone, not other 
   assert.ok(viewer.querySelector('[data-link-key="url:https://docs.example.com/b"]'))
   dispose()
 })
+
+test('a project switch through setState alone refetches Context for the new project', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    workspaceRoot: '/work/widgets',
+    projects: [
+      { id: 'p', path: '/work/widgets', name: 'Widgets' },
+      { id: 'q', path: '/work/gadgets', name: 'Gadgets' },
+    ],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const backlinkProjects: string[] = []
+  const approvalProjects: string[] = []
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      backlinks: (projectId: string): Promise<ThreadBacklink[]> => {
+        backlinkProjects.push(projectId)
+        return Promise.resolve([
+          { threadId: `from-${projectId}`, title: `Mentioned in ${projectId}` },
+        ])
+      },
+      pendingApprovals: (projectId: string): Promise<DeferredApproval[]> => {
+        approvalProjects.push(projectId)
+        return Promise.resolve([])
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(viewer.querySelector('[data-thread-id="from-p"]'))
+
+  store.setState({ activeProjectId: 'q', workspaceRoot: '/work/gadgets' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(backlinkProjects, ['p', 'q'])
+  assert.deepEqual(approvalProjects, ['p', 'q'])
+  assert.ok(viewer.querySelector('[data-thread-id="from-q"]'), 'the new project’s backlinks render')
+  assert.equal(viewer.querySelector('[data-thread-id="from-p"]'), null)
+  dispose()
+})

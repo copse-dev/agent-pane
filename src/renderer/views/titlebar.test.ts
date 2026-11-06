@@ -137,3 +137,58 @@ describe('titlebar sidebar toggle', () => {
     }
   })
 })
+
+describe('titlebar workspace switch', () => {
+  it('repaints the project name and re-syncs the branch from setState alone', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    class TestResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = TestResizeObserver
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      projects: [
+        { id: 'project-1', name: 'First', path: '/repo' },
+        { id: 'project-2', name: 'Second', path: '/other' },
+      ],
+      threads: [thread('thread-1', 'main')],
+    })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const branchReads: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base['git'],
+        currentBranch: async (projectId) => {
+          branchReads.push(projectId)
+          return projectId === 'project-1' ? 'main' : 'feature/second'
+        },
+      },
+    }
+
+    let destroy: (() => void) | undefined
+    try {
+      destroy = mountTitlebar(root, store, api)
+      await settle()
+      assert.equal(root.querySelector('.workspace-name-label')?.textContent, 'First')
+      assert.equal(root.querySelector('.workspace-branch')?.textContent, 'main')
+      assert.deepEqual(branchReads, ['project-1'])
+
+      // No store event: the selection alone must reach the titlebar.
+      store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other' })
+      assert.equal(root.querySelector('.workspace-name-label')?.textContent, 'Second')
+      await settle()
+      assert.deepEqual(branchReads, ['project-1', 'project-2'], 'no debounce wait')
+      assert.equal(root.querySelector('.workspace-branch')?.textContent, 'feature/second')
+    } finally {
+      destroy?.()
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+})

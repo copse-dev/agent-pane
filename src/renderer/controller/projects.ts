@@ -471,7 +471,6 @@ function abortProjectActivation(
     store.setState({ expandedProjectId: revertExpanded })
   }
   store.emit('projects_changed')
-  store.emit('workspace_changed')
 }
 
 /** Strip the `missing` flag from a project once its folder opens again. */
@@ -563,7 +562,6 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
       filesPaneOpen: false,
     })
     store.emit('projects_changed')
-    store.emit('workspace_changed')
     store.emit('threads_changed')
     return
   }
@@ -657,7 +655,6 @@ function applyProjectSelection(
   // Publish selection before persistence or workspace services finish. Cached
   // transcripts render now; workspace-dependent IPC waits in the preload.
   store.emit('projects_changed')
-  store.emit('workspace_changed')
   store.emit('threads_changed')
   residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId)
   endApply({ threads: merged.length })
@@ -703,8 +700,8 @@ async function finishActivate(
   // (see cancelPendingSwitch). From here until the switch applies, the store
   // still names the outgoing project, so hold persisted navigation on `id`:
   // otherwise an autosave flush puts the outgoing project back, and the
-  // project-scoped reads that refresh on `workspace_changed` (the roadmap pane)
-  // list the previous project's data.
+  // project-scoped reads that refresh when the workspace is selected (the
+  // roadmap pane) list the previous project's data.
   if (pendingSwitch?.gen === gen) {
     pendingSwitch.dispatched = true
     holdNavigation(id)
@@ -1007,6 +1004,17 @@ export function switchProject(
   activate(store, api, id, proj.path, proj.sshHost, pendingThreadId)
 }
 
+/**
+ * Switch to project `id` and settle once that switch is over: applied, or
+ * cancelled or superseded by another selection. Rejects when activation fails.
+ * Check `activeProjectId` afterwards to tell an applied switch from the rest.
+ */
+export function switchProjectAndWait(store: AppStore, api: ApiClient, id: string): Promise<void> {
+  const proj = store.getState().projects.find((p) => p.id === id)
+  if (!proj) return Promise.resolve()
+  return activateAndWait(store, api, id, proj.path, proj.sshHost)
+}
+
 /** Activate the existing project through the normal workspace/trust path for a phone submission. */
 export async function activateMobileProject(
   store: AppStore,
@@ -1137,6 +1145,8 @@ async function quarantineAndRestoreNext(
     await restoreProject(store, api, next.id)
     return
   }
+  // Sent before the write that publishes it, as in restoreProject.
+  const persisted = saveProjects(api, store.getState().projects, null, null)
   store.setState({
     activeProjectId: null,
     expandedProjectId: null,
@@ -1144,8 +1154,7 @@ async function quarantineAndRestoreNext(
     threads: [],
     activeThreadId: null,
   })
-  await saveProjects(api, store.getState().projects, null, null)
-  store.emit('workspace_changed')
+  await persisted
   store.emit('threads_changed')
 }
 
@@ -1187,32 +1196,37 @@ export async function restoreProject(
   cacheThreads(id, merged)
   residentThreads.remember(id, merged, revision)
   activeListRevision = { projectId: id, revision }
+  const activeThreadId =
+    preferredThreadId && merged.some((thread) => thread.id === preferredThreadId)
+      ? preferredThreadId
+      : (merged[0]?.id ?? null)
+  // Opening succeeded — lift any prior quarantine on this project (#997).
+  const projects = projectsWithMissingCleared(store.getState().projects, id)
+  // Send navigation before publishing the selection. Views that select the
+  // workspace read project stores as soon as `setState` lands, and preload holds
+  // those reads behind a navigation write only once it is in flight; sent after,
+  // a read could resolve against the project this window is leaving.
+  //
+  // Recording where we landed must not decide whether we render it. Letting
+  // this write reject once skipped publishing, so a single refused IPC left a
+  // window with its chrome up and no workspace in it. Persistence is
+  // recoverable (the next save re-sends it); a blank window is not.
+  const persisted = saveProjects(api, projects, id, activeThreadId).catch((error: unknown) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error)
+  })
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
     workspaceRoot: proj.path,
     threads: merged,
-    activeThreadId:
-      preferredThreadId && merged.some((thread) => thread.id === preferredThreadId)
-        ? preferredThreadId
-        : (merged[0]?.id ?? null),
-    // Opening succeeded — lift any prior quarantine on this project (#997).
-    projects: projectsWithMissingCleared(store.getState().projects, id),
+    activeThreadId,
+    projects,
   })
-  const activeThreadId = store.getState().activeThreadId
   if (activeThreadId) markThreadRead(store, activeThreadId)
-  // Recording where we landed must not decide whether we render it. The project
-  // is already in the store by this point; letting this write reject took the
-  // three emits below with it, so a single refused IPC left a window with its
-  // chrome up and no workspace in it — the pane never heard `workspace_changed`.
-  // Persistence is recoverable (the next save re-sends it); a blank window is not.
-  await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error: unknown) => {
-    console.warn(`[projects] could not persist the restored project ${id}:`, error)
-  })
+  await persisted
   if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
   store.emit('projects_changed')
-  store.emit('workspace_changed')
   store.emit('threads_changed')
   void resumePendingQueues(store, api)
 }

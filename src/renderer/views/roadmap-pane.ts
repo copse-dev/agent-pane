@@ -68,6 +68,7 @@ import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
 // the IPC surface so this view never imports main-process types directly.
@@ -2608,7 +2609,7 @@ export function mountRoadmapPane(
         renderEditor({ preserveDirty: true })
       },
     ),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       // The roadmap is per-project; drop the previous workspace's selection.
       // Invalidate in-flight reads even when the pane is hidden and no new
       // refresh will replace them. Paint the cleared editor before awaiting IPC.

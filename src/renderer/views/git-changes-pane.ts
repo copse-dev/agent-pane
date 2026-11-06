@@ -41,6 +41,7 @@ import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -1350,7 +1351,7 @@ export function mountGitChangesPane(
       pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       adoptActiveOwner()
       if (changesModeActive(store)) void refresh()
     }),

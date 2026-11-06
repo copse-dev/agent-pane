@@ -172,4 +172,47 @@ describe('Changes pane owner transitions', () => {
       /bmV3LWFmdGVy/,
     )
   })
+
+  it('adopts the new owner and refreshes when setState alone switches projects', async () => {
+    const statusCalls: string[] = []
+    const base = makeApi({ value: imageDiff('unused') }, [])
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        status: async (projectId, threadId): Promise<GitStatusResult> => {
+          statusCalls.push(`${projectId}/${threadId}`)
+          return { staged: [], unstaged: [{ path: `${projectId}.ts`, status: 'modified' }] }
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      workspaceRoot: '/work/one',
+      activeThreadId: 'a',
+      threads: [thread('a')],
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    const paths = (): string[] =>
+      Array.from(listRoot.querySelectorAll('.git-change-path'), (node) => node.textContent)
+
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
+    await settle()
+    assert.deepEqual(paths(), ['project-1.ts'])
+
+    store.setState({
+      activeProjectId: 'project-2',
+      workspaceRoot: '/work/two',
+      activeThreadId: 'b',
+      threads: [thread('b')],
+    })
+    await settle()
+
+    assert.equal(statusCalls.at(-1), 'project-2/b', 'the refresh reads the new owner’s checkout')
+    assert.deepEqual(paths(), ['project-2.ts'])
+  })
 })

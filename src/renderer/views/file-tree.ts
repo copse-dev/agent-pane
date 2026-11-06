@@ -222,11 +222,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
 
   refreshBtn.addEventListener('click', refresh)
   const unsubs = [
-    store.on('workspace_changed', refresh),
-    // The tree lists the active thread's checkout: reload only when that owner
-    // changes, not on renames, hydration or other threads' updates.
+    // The tree lists the active project's root, scoped to the active thread's
+    // checkout: reload only when one of those changes, not on renames,
+    // hydration or other threads' updates.
     store.select(
-      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId] as const,
       () => {
         refresh()
       },
