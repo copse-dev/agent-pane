@@ -132,6 +132,41 @@ override to the default. An existing Always allow override remains valid, while
 Blocked continues to deny. Each configured classifier's provider-host approval
 remains a separate gate.
 
+## Bounded foreground yielding
+
+`run_shell` supports `yield_after_ms` for a bounded command that needs its ordinary
+shell approval path but should not hold a model turn open. The value is a foreground
+wait, at least 1,000ms and less than `timeout_ms`; the total deadline still defaults
+to 30,000ms and cannot exceed 1,800,000ms. For example, a long approved build can use
+`timeout_ms: 1800000, yield_after_ms: 1000`.
+
+An early exit returns its ordinary foreground result. Otherwise Copse adopts the
+same process into its existing thread-owned background supervisor, retaining its
+containment, logs, command card, worktree-writer lease and remaining deadline. A
+running receipt is not a successful command result: the model must send the
+yielding call alone, end its turn,
+wait for the completion wake, then inspect the retained logs and exit status before
+dependent work or a success claim. Completion uses the existing turn-tree budget,
+stale-epoch checks and operation-id deduplication. It never replays the command.
+The Background tasks rail can cancel it; Stop during startup or handoff and app
+quit also terminate the owned process. Failed adoption terminates the command
+instead of leaving an untracked writer.
+
+This is an asynchronous invocation contract, not a dependency barrier between
+tools. The runner does not infer that a later call in the same response depends
+on the command, and does not defer that call. Dependent edits must be requested
+after the completion wake, rather than batched alongside the yielding command.
+
+This option grants no additional shell, filesystem, network or port authority.
+Background tasks must be enabled and supervision plus an owning turn and completion
+handler must be available before the command starts. An explicit Always ask or
+Blocked setting on `run_background` refuses yielding before execution. Use an
+ordinary foreground call with a finite deadline, or invoke the background tool
+through its own approval path. Ordinary foreground calls retain their behavior.
+Eligibility is checked again after approval or workspace preparation and before
+each start, including an approved outside-sandbox retry, so a background setting
+changed while approval was pending cannot reuse the earlier decision.
+
 ## Approval audit evidence
 
 Approval decisions persist the available tool-call ID, including cancellation and

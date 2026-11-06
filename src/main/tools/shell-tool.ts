@@ -1,10 +1,17 @@
-import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-shell-process.ts'
+import {
+  runShellOnce,
+  type ShellRunResult,
+  type ShellYieldOptions,
+} from '../services/exec/foreground-shell-process.ts'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { currentAgentRoots, getAgentExecutionRoot } from '../services/execution-root.ts'
-import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
+import {
+  getThreadExecutionContext,
+  isThreadCheckoutDeferred,
+} from '../services/thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import {
   isProjectSandboxEnabled,
@@ -63,13 +70,22 @@ import { stripTerminalControlSequences } from '../services/exec/subprocess-outpu
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 import { beginWorktreeWriter } from '../services/worktree-writers.ts'
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
-import { getActiveRunThread } from '../services/thread-models.ts'
+import { getActiveRunThread, getActiveRunTurnTreeId } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 import { currentRunIsUnattendedContainer } from '../services/security/unattended-run.ts'
 import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
 import { worktreePreparationShellEnvironment } from '../services/worktree-preparation.ts'
+import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { hasBackgroundProcessSupervisor } from '../services/exec/supervised-background-process.ts'
+import { isBackgroundExitObserved } from '../services/exec/background-process.ts'
+import {
+  requestBackgroundCompletionWake,
+  resolveBackgroundCompletionWakeHandler,
+} from '../services/exec/background-completion-wake.ts'
+import { resolveToolPermission } from '../services/security/tool-permissions.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -89,6 +105,56 @@ const RUN_SHELL_TIMEOUT_TOO_LARGE =
   `timeout_ms may not exceed ${String(RUN_SHELL_MAX_TIMEOUT_MS)}ms (` +
   `${String(RUN_SHELL_MAX_TIMEOUT_MS / 60_000)} minutes). For dev servers, watchers, or ` +
   `intentionally unbounded work, use run_background instead of a longer foreground timeout.`
+
+function prepareShellYield(
+  yieldAfterMs: number | undefined,
+  timeoutMs: number,
+): ShellYieldOptions | string | undefined {
+  if (yieldAfterMs === undefined) return undefined
+  if (yieldAfterMs >= timeoutMs) return 'yield_after_ms must be less than timeout_ms.'
+  if (!getDefaultPluginRegistry().isEnabled(BACKGROUND_TASKS_PLUGIN_ID)) {
+    return 'Background tasks are disabled. Enable them in Settings before requesting a foreground yield.'
+  }
+  const backgroundPolicy = resolveToolPermission('run_background')?.policy
+  if (backgroundPolicy === 'ask' || backgroundPolicy === 'block') {
+    return 'Foreground yielding cannot bypass the explicit background-task permission setting. Use an ordinary foreground call or the background tool with its required approval; the command was not started.'
+  }
+  if (!hasBackgroundProcessSupervisor()) {
+    return 'Background task supervision is unavailable; the command was not started.'
+  }
+  const owner = getThreadExecutionContext()
+  const turnTreeId = getActiveRunTurnTreeId()
+  const wakeHandler = resolveBackgroundCompletionWakeHandler()
+  if (!owner || getActiveRunThread() !== owner.threadId || !turnTreeId || !wakeHandler) {
+    return 'A foreground yield requires an active owning turn and its completion handler; the command was not started.'
+  }
+  return {
+    yieldAfterMs,
+    onCompletion: async ({ info: completed }): Promise<void> => {
+      await requestBackgroundCompletionWake(
+        {
+          operationId: completed.id,
+          owner,
+          turnTreeId,
+          exitCode: completed.exitCode,
+          timedOut: completed.timedOut,
+          alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
+        },
+        wakeHandler,
+      )
+    },
+  }
+}
+
+/** Approvals and workspace preparation can outlast the background settings they read. */
+function revalidateShellYield(
+  options: ShellYieldOptions | undefined,
+  timeoutMs: number,
+): ShellYieldOptions | undefined {
+  const refreshed = prepareShellYield(options?.yieldAfterMs, timeoutMs)
+  if (typeof refreshed === 'string') throw new Error(refreshed)
+  return refreshed
+}
 
 /**
  * Record which predicate withheld an unsandboxed retry from a failure that named
@@ -147,6 +213,7 @@ async function maybeRetryUnsandboxed(
   env: NodeJS.ProcessEnv,
   options: UnsandboxedRetryOptions,
   onDetach: () => () => Promise<void>,
+  yieldOptions?: ShellYieldOptions,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
   const { rawCommand, executedCommand } = commandText
   if (!isProjectSandboxEnabled()) return null
@@ -214,6 +281,8 @@ async function maybeRetryUnsandboxed(
     env,
     [],
     onDetach,
+    false,
+    revalidateShellYield(yieldOptions, timeout_ms),
   )
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
 }
@@ -297,6 +366,7 @@ export const runShellTool = defineTool({
     'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) run with install lifecycle scripts disabled, and a download of a package on a known-malware list is refused with a 403. ' +
     'Versions published to the public npm, PyPI and crates.io registries in the last 48 hours are not offered to these installs: a version range resolves to an older version, and an exact pin to a newer one fails as not found. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
+    'For an already-authorized command that must use run_shell, set yield_after_ms to return a still-running task handle after a short foreground wait. The SAME process continues until timeout_ms; it is not restarted and no permission is widened. Its completion wakes this task once. Send a yielding call as the only tool in its response. End the turn after a running receipt, and wait for the result before dependent edits or success claims. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
@@ -314,6 +384,15 @@ export const runShellTool = defineTool({
           `Use run_background for dev servers, watchers, and bounded work expected to leave you ` +
           `waiting (long builds, test suites, evals, data generation, or migrations).`,
       ),
+    yield_after_ms: z
+      .number()
+      .int()
+      .min(RUN_SHELL_MIN_TIMEOUT_MS)
+      .max(RUN_SHELL_MAX_TIMEOUT_MS)
+      .optional()
+      .describe(
+        'Optional foreground wait before transferring the same command to a supervised background task. Must be less than timeout_ms, which remains the total hard deadline. For a long bounded command use, for example, timeout_ms: 1800000 and yield_after_ms: 1000. Send this call alone. A still-running receipt is not success; end the turn and wait for the completion wake rather than polling or starting dependent work.',
+      ),
     expects_sandbox_block: z
       .boolean()
       .optional()
@@ -324,9 +403,11 @@ export const runShellTool = defineTool({
           'might reach outside the sandbox; fully local commands run sandboxed regardless of this flag.',
       ),
   }),
-  async execute({ command, timeout_ms, expects_sandbox_block }, signal) {
+  async execute({ command, timeout_ms, yield_after_ms, expects_sandbox_block }, signal) {
     const cwd = getAgentExecutionRoot()
     if (!cwd) return 'No workspace open.'
+    const yieldOptions = prepareShellYield(yield_after_ms, timeout_ms)
+    if (typeof yieldOptions === 'string') return yieldOptions
     // A deferred-worktree thread reads the user's own checkout. The registry
     // allocates a worktree before any command that could leave the sandbox, so
     // one reaching here is contained; it runs with the checkout read-only and
@@ -504,7 +585,10 @@ export const runShellTool = defineTool({
       }
     }
     const backgroundResult = (id: string): string =>
-      `Command continues as background task ${id}. Inspect its output with run_background logs; do not rerun it.`
+      `Command is still running as background task ${id}; it has not completed. ` +
+      (yieldOptions
+        ? 'Completion wake is armed. End this turn now. Wait for completion before dependent work or success claims; do not poll or rerun the command.'
+        : 'Inspect its output with run_background logs; do not rerun it.')
     try {
       const result = await runShellOnce(
         executedCommand,
@@ -516,6 +600,7 @@ export const runShellTool = defineTool({
         readGrantTargets ?? [],
         onDetach,
         readonlyCheckout,
+        revalidateShellYield(yieldOptions, timeout_ms),
       )
 
       if (result.backgroundId) return backgroundResult(result.backgroundId)
@@ -553,6 +638,7 @@ export const runShellTool = defineTool({
             threadId,
           },
           onDetach,
+          yieldOptions,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
