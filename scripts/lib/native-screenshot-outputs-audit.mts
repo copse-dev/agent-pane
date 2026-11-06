@@ -129,7 +129,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {
-    sourceSha256: 'd81e028650114e8794741a1fed1c6032747ff6ed7dd73d6bbeb0a37a79e4307d',
+    sourceSha256: 'b6c290b2aba9a12d367d1a06e67630e35e90dcd32d2eb2bee367b9ac395c9cf2',
     filenames: [
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',

@@ -447,6 +447,26 @@ async function layoutSnapshot(target: string | WebdriverIO.Element): Promise<str
 /** How many times a capture is retaken when its subject moved while it was taken. */
 const STILL_CAPTURE_ATTEMPTS = 4
 
+/** Whether `target`'s box lies wholly inside the viewport, so capturing it scrolls nothing. */
+async function fullyInViewport(target: string | WebdriverIO.Element): Promise<boolean> {
+  try {
+    return await browser.execute((subject: string | Element) => {
+      const host = typeof subject === 'string' ? document.querySelector(subject) : subject
+      if (!host) return false
+      const rect = host.getBoundingClientRect()
+      return (
+        rect.top >= 0 &&
+        rect.left >= 0 &&
+        rect.bottom <= window.innerHeight &&
+        rect.right <= window.innerWidth
+      )
+    }, target)
+  } catch (error) {
+    if (!isStaleElement(error)) throw error
+    return false
+  }
+}
+
 /**
  * Take `capture` and keep it only if `target` was in the same place before and
  * after. ChromeDriver measures an element's box and then grabs a frame, so a
@@ -456,11 +476,21 @@ const STILL_CAPTURE_ATTEMPTS = 4
  * `guarded-yolo-hard-deny.png` came back with the denied card 4px higher in an
  * identical crop that way. A changed snapshot settles again and retakes; the
  * last attempt is kept so a genuinely moving surface still gets a capture.
+ *
+ * Only a subject wholly inside the viewport is checked. For one that is not,
+ * ChromeDriver scrolls it into view as part of the capture, so the subject
+ * always "moves" (about 40px per capture on a settings page taller than the
+ * window) and retaking would only keep a later, different frame. That subject
+ * keeps the single capture it always had.
  */
 async function captureWhileStill(
   target: string | WebdriverIO.Element,
   capture: () => Promise<void>,
 ): Promise<void> {
+  if (!(await fullyInViewport(target))) {
+    await capture()
+    return
+  }
   for (let attempt = 1; ; attempt += 1) {
     const before = await layoutSnapshot(target)
     await capture()
