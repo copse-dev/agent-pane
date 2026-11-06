@@ -1969,6 +1969,26 @@
       "sha256": "f281a5260fcc523fd164586dba59ea3a3a802c5c7b65684bb017a195f2ed92a7",
       "bytes": 365715
     },
+    "foreground-shell-yield-cancelled.png": {
+      "sha256": "706edaf6f1d62f2d3f59bc20c60ae3102ac805b35f7341196513f8a629f77220",
+      "bytes": 358925
+    },
+    "foreground-shell-yield-completed.png": {
+      "sha256": "c31e5f8b85d7988ef15591fe8533c7e41391d68ce029be3f6db415a923f91871",
+      "bytes": 432712
+    },
+    "foreground-shell-yield-deadline.png": {
+      "sha256": "81629e66a777ef155c8f7ed9e831e38c900dd5d231cd0e1aa16e0a098e881c07",
+      "bytes": 417204
+    },
+    "foreground-shell-yield-failed.png": {
+      "sha256": "d4941c95d814932aad9308f70d0f325b195037b598885f017e7d594a8f7f633e",
+      "bytes": 418335
+    },
+    "foreground-shell-yield-running.png": {
+      "sha256": "9846d2823c1fb1508ba6c1cfda68669cd36778b022b83d8629e1d81bf5f734d6",
+      "bytes": 372655
+    },
     "git-attribution-off.png": {
       "sha256": "17cc9dc1fe532989b34dedb9c25da487f4da72f00ffcd2af5cd45d923e7d9fae",
       "bytes": 37781
