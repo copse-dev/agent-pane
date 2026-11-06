@@ -923,17 +923,14 @@ describe('ToolRegistry input schemas agents can list (#4142)', () => {
 
   it('refuses a first-party tool whose parameters are a union', () => {
     const reg = new ToolRegistry()
-    assert.throws(
-      () => {
-        reg.register({
-          name: 'union_tool',
-          description: 'one shape per action',
-          parameters: unionParameters,
-          execute: echo,
-        })
-      },
-      /Tool "union_tool" can't be offered to agents: its input schema is not a top-level object/,
-    )
+    assert.throws(() => {
+      reg.register({
+        name: 'union_tool',
+        description: 'one shape per action',
+        parameters: unionParameters,
+        execute: echo,
+      })
+    }, /Tool "union_tool" can't be offered to agents: its input schema is not a top-level object/)
     assert.equal(reg.has('union_tool'), false)
   })
 
