@@ -66203,12 +66203,15 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
     }),
+    // A switch, or the transcript landing after one. Sending a message changes
+    // the thread while it is still idle; suggesting then would bill a fetch for
+    // the message just sent. Turn ends arrive as thread_status_changed above.
     store2.select(
-      activeThreadOf,
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded],
       () => {
         showForActiveThread();
       },
-      sameThreadBesidesDraft
+      sameItems
     ),
     api2.fs.onChanged(() => {
       scheduleChangesRefresh();
@@ -66237,6 +66240,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
 var init_follow_up_suggestions = __esm({
   "src/renderer/views/follow-up-suggestions.ts"() {
     init_helpers();
+    init_store();
     init_changes_stat();
     init_create_pr_dialog();
     init_thread_helpers();
@@ -66314,8 +66318,17 @@ function mountNextStepHint(store2, api2, onChanged) {
       }
       if (status === "idle") void maybeFetchHint(tid);
     }),
-    // The active thread: a switch, or its own last exchange or status.
-    store2.select(activeThreadOf, syncActiveThread, sameThreadBesidesDraft)
+    // Only a switch, or the transcript landing after one, can start a fetch.
+    // Sending a message changes the thread while it is still idle; asking then
+    // would bill a hint for the message just sent.
+    store2.select(
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded],
+      syncActiveThread,
+      sameItems
+    ),
+    // Any other change to the active thread only re-checks what is shown: a
+    // new or edited message retires a hint for the previous exchange.
+    store2.select(activeThreadOf, refreshDisplayed, sameThreadBesidesDraft)
   ];
   return {
     current: () => displayed,
@@ -66340,6 +66353,7 @@ function mountNextStepHint(store2, api2, onChanged) {
 }
 var init_next_step_hint = __esm({
   "src/renderer/views/next-step-hint.ts"() {
+    init_store();
     init_thread_helpers();
     init_last_exchange();
     init_active_thread_owner();
