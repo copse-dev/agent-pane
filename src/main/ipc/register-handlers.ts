@@ -378,11 +378,7 @@ import {
 import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
 import { issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
-import {
-  senderInstructionRoots,
-  senderProjectId,
-  senderProjectRoot,
-} from './sender-project-root.ts'
+import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
@@ -1378,8 +1374,11 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
     assertMainFrameSender(event, win)
     const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
-    // The asking window's project, never the process-global one (#3958).
-    const projectId = senderProjectId(event.sender)
+    // Named from the same scope `buildRoadmapExport` loads the notes from, so
+    // the header can never describe a different project than the items. Both
+    // move to the asking window's project together with the knowledge store
+    // (#3958).
+    const { projectId } = currentProjectStoreScope()
     const project = projectId ? getProjectById(projectId) : null
     if (!project) {
       throw new IpcValidationError('No active project to export a roadmap for.')
