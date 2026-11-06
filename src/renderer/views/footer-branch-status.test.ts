@@ -662,6 +662,38 @@ describe('footer branch status', () => {
     control.destroy()
   })
 
+  it('re-reads git status straight away when setState alone switches the workspace', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(undefined, true)],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const reads: string[] = []
+    const base = createApi({ currentBranch: 'main', pr: null })
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (projectId) => {
+          reads.push(projectId)
+          return { currentBranch: projectId === 'project-1' ? 'main' : 'feature/other', pr: null }
+        },
+      },
+    })
+    await settle()
+    assert.deepEqual(reads, ['project-1'])
+
+    // The thread id stays put so only the workspace selection can fire.
+    store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other-repo' })
+    await settle()
+    assert.deepEqual(reads, ['project-1', 'project-2'], 'no 500ms debounce before the read')
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/other')
+    control.destroy()
+  })
+
   it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
     // thread-2 has no gitBranch/worktree binding of its own, so its display
     // falls through to `status.currentBranch` - the field that is shared

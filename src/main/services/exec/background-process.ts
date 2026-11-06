@@ -15,12 +15,16 @@ import {
   requireThreadExecutionOwner,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
-import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
-import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import {
+  shellReadGrantTargets,
+  shellRunsOutsideSandbox,
+} from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { captureBackgroundEditAdoption } from '../diff-queue.ts'
+import { packageFirewallLauncher } from '../security/package-firewall-launcher.ts'
+import { prepareShellCommand } from './prepare-shell-command.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -320,10 +324,18 @@ export async function startBackgroundProcess(
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
   const owner = opts.owner ?? requireThreadExecutionOwner()
-  const unsandboxed =
-    !isProjectSandboxEnabled() ||
-    (currentRunUsesGuardedYolo(owner.threadId) &&
-      shellRunsOutsideSandbox(command, currentAgentRoots()))
+  // The tool gate already obtained shell consent for this raw command. Use the
+  // same routing as run_shell: an approved outside command does not require
+  // Guarded YOLO as well. A read-access answer remains narrower than an escape.
+  const roots = currentAgentRoots()
+  let unsandboxed =
+    !isProjectSandboxEnabled() || shellRunsOutsideSandbox(command, roots, 'run_background')
+  const readGrantTargets = unsandboxed
+    ? shellReadGrantTargets(command, roots, cwd, 'run_background')
+    : null
+  if (readGrantTargets) unsandboxed = false
+  const prepared = prepareShellCommand(command, cwd, packageFirewallLauncher)
+  if ('refused' in prepared) throw new Error(prepared.refused)
 
   const adoptEdits = await captureBackgroundEditAdoption(cwd, owner).catch((error: unknown) => {
     console.warn('[background-process] edit ownership snapshot failed:', error)
@@ -340,11 +352,12 @@ export async function startBackgroundProcess(
     return settleEdits
   }
   const entry = await createThreadResource(owner, async () => {
-    const proc = await spawnBackgroundProcess(command, {
+    const proc = await spawnBackgroundProcess(prepared.command, {
       cwd,
-      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
+      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess(prepared.env)),
       allowPortBinding: portBinding,
       unsandboxed,
+      ...(readGrantTargets ? { readGrantTargets } : {}),
     })
 
     const entry: BackgroundProcess = {
@@ -369,6 +382,7 @@ export async function startBackgroundProcess(
       ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
       owner,
     }
+    if (prepared.banner) entry.output.append(prepared.banner)
     processes.set(entry.id, entry)
 
     if (opts.timeoutMs !== undefined) {

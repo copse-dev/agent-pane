@@ -165,11 +165,9 @@ describe('Apple project suggestion', () => {
     assert.match(harness.host.textContent, /Apple development is off for MyApp\./)
 
     harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
-    harness.store.emit('workspace_changed')
     assert.equal(harness.host.hidden, true)
 
     harness.store.setState({ activeProjectId: 'myapp', activeThreadId: 'thread-1' })
-    harness.store.emit('workspace_changed')
     assert.equal(harness.host.hidden, false)
 
     const dismiss = harness.host.querySelector<HTMLButtonElement>(
@@ -187,12 +185,10 @@ describe('Apple project suggestion', () => {
     assert.match(harness.host.textContent, /Apple development is off for MyApp\./)
 
     harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
-    harness.store.emit('workspace_changed')
     await tick()
     assert.match(harness.host.textContent, /Apple development is off for site\./)
 
     harness.store.setState({ activeProjectId: 'myapp', activeThreadId: 'thread-1' })
-    harness.store.emit('workspace_changed')
     await tick()
     assert.equal(harness.host.hidden, false)
     assert.match(harness.host.textContent, /Apple development is off for MyApp\./)
@@ -205,7 +201,6 @@ describe('Apple project suggestion', () => {
     assert.match(dialog()?.textContent ?? '', /MyApp looks like an Apple project/)
 
     harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
-    harness.store.emit('workspace_changed')
     await tick()
     await tick()
 
@@ -217,10 +212,8 @@ describe('Apple project suggestion', () => {
   it('asks each project at most once per session', async () => {
     const harness = mount({ offer: 'none', pluginEnabled: false })
     await tick()
-    harness.store.emit('workspace_changed')
     await tick()
     harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
-    harness.store.emit('workspace_changed')
     await tick()
 
     assert.deepEqual(harness.probes, ['myapp', 'site'])
@@ -236,7 +229,6 @@ describe('Apple project suggestion', () => {
     assert.equal(dialog(), null)
 
     harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
-    harness.store.emit('workspace_changed')
     await tick()
     assert.deepEqual(harness.probes, ['myapp'])
   })

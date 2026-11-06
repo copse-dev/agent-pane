@@ -48,7 +48,7 @@ function formatItem(note: KnowledgeNote): string {
  * Record a new roadmap item for `prompt`. Recording is immediate — the note
  * persists under the plain truncation title (roadmapTitleFromPrompt) — and a
  * short AI-generated name (issue #2472) replaces it in the background, same as
- * the pane's own create path (register-handlers.ts `roadmap:create`), via
+ * the pane's own create path (roadmap-handlers.ts `roadmap:create`), via
  * `stampRoadmapTitle`.
  *
  * Split out of the tool's `execute` (rather than inlined there) so tests can

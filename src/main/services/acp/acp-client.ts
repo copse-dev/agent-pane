@@ -1,3 +1,4 @@
+import { AcpStartupBuffer } from './acp-startup-buffer.ts'
 import { observeProcessShutdown } from '../diagnostics/process-memory.ts'
 import { noteAcpSessionActivity } from './acp-session-activity.ts'
 import {
@@ -64,7 +65,6 @@ import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-proven
 import {
   acpReattachMethods,
   noReattachMethodFailure,
-  splitLoadReplay,
   type AcpCarryOverFailure,
   type AcpReattachMethod,
   type AcpSessionCarryOver,
@@ -101,7 +101,11 @@ import {
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
-import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
+import {
+  sandboxTmpDirFor,
+  withSandboxTmpEnv,
+  withSandboxWrapTmpDir,
+} from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
@@ -616,14 +620,14 @@ export async function spawnAcpAgentProcess(
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
-      const { argv } = await SandboxManager.wrapWithSandboxArgv(
-        command,
-        shellForSandboxWrap(),
-        overlay,
+      // ASRT bakes this in as the agent's TMPDIR; the spawn env names the same
+      // directory in every other temp variable (#4149).
+      const tmpDir = sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
+      const { argv } = await withSandboxWrapTmpDir(tmpDir, () =>
+        SandboxManager.wrapWithSandboxArgv(command, shellForSandboxWrap(), overlay),
       )
       const file = argv[0]
       if (!file) throw new Error('sandbox wrap produced empty argv')
-      const tmpDir = ensureWorkspaceTmpDir()
       const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
         cwd: config.cwd,
         env: withSandboxShellPath(withSandboxTmpEnv(env, tmpDir)),
@@ -1296,17 +1300,19 @@ export async function openAcpSession(
   const stream = tapAcpWireStream(transport.stream, trace)
 
   let activeUpdates: { sessionId: string; queue: AcpUpdateQueue } | null = null
-  const pendingUpdates = new Map<string, SessionUpdate[]>()
+  const pendingUpdates = new AcpStartupBuffer()
   const observedToolCalls = new AcpToolCallObservations()
 
   const enqueueUpdate = (sessionId: string, update: SessionUpdate): void => {
-    if (activeUpdates?.sessionId === sessionId) {
-      activeUpdates.queue.enqueue(update)
+    if (disposed) return
+    if (activeUpdates) {
+      // This connection owns one session. Unmatched notifications have no
+      // future consumer once startup has selected it.
+      if (activeUpdates.sessionId === sessionId) activeUpdates.queue.enqueue(update)
       return
     }
-    const pending = pendingUpdates.get(sessionId) ?? []
-    pending.push(update)
-    pendingUpdates.set(sessionId, pending)
+    const overflow = pendingUpdates.enqueue(sessionId, update)
+    if (overflow) failStartup(overflow)
   }
 
   // Client terminals run on this machine (#623): never offered to an agent on
@@ -1404,6 +1410,7 @@ export async function openAcpSession(
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
     disposed = true
+    pendingUpdates.clear()
     terminals?.dispose()
     connection.close()
     disposal = Promise.resolve(transport.dispose())
@@ -1498,6 +1505,7 @@ export async function openAcpSession(
             )
             session = { sessionId, response }
           } else {
+            pendingUpdates.beginReplay(sessionId)
             const response: LoadSessionResponse = await perfSpan('ttft:acp-session-load', () =>
               connection.agent.request(methods.agent.session.load, {
                 sessionId,
@@ -1506,13 +1514,9 @@ export async function openAcpSession(
                 ...(sessionMeta ? { _meta: sessionMeta } : {}),
               }),
             )
-            // The agent replays the conversation before answering. Copse's own
-            // transcript already shows it, so drop the replay rather than let
-            // the update pump render the thread a second time — but only after
-            // it proved the agent found the conversation it was asked for.
-            const replay = splitLoadReplay(pendingUpdates.get(sessionId) ?? [])
-            pendingUpdates.set(sessionId, replay.keep)
-            if (carryOver.hasHistory && !replay.foundConversation) {
+            // Replay payloads were discarded as they arrived; keep only the
+            // evidence that the agent actually found the user's conversation.
+            if (carryOver.hasHistory && !pendingUpdates.replayFoundConversation()) {
               carryOverFailure = 'history-missing'
               continue
             }
@@ -1522,6 +1526,9 @@ export async function openAcpSession(
           carryOverFailure = null
           break
         } catch (err) {
+          const startupError = failedStartup()
+          if (startupError) throw startupError
+          pendingUpdates.clear()
           // A session can expire while its client is disconnected. Try the next
           // method, then fall back to a fresh session below; the caller replays
           // Copse's transcript into it once.
@@ -1538,7 +1545,7 @@ export async function openAcpSession(
         }
       }
       // A failed load may have queued a replay nobody will read.
-      if (!session) pendingUpdates.delete(carryOver.sessionId)
+      if (!session) pendingUpdates.clear()
     }
     if (!session) {
       const response = await perfSpan('ttft:acp-session-new', () =>
@@ -1551,8 +1558,7 @@ export async function openAcpSession(
       session = { sessionId: response.sessionId, response }
     }
     const updates = new AcpUpdateQueue()
-    for (const update of pendingUpdates.get(session.sessionId) ?? []) updates.enqueue(update)
-    pendingUpdates.clear()
+    for (const update of pendingUpdates.take(session.sessionId)) updates.enqueue(update)
     activeUpdates = { sessionId: session.sessionId, queue: updates }
     // Relax/tighten the agent's own permission prompting for the whole session
     // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since

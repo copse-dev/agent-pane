@@ -114,3 +114,42 @@ describe('file tree browser context menu', () => {
     unmount()
   })
 })
+
+describe('file tree workspace switch', () => {
+  it('reloads the root listing when setState alone switches projects', async () => {
+    const lists: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      fs: {
+        ...base.fs,
+        listDir: async (projectId, threadId, dirPath) => {
+          lists.push(`${projectId}/${threadId}:${dirPath}`)
+          return [{ name: `${projectId}.md`, isDir: false }]
+        },
+      },
+    }
+    const store = localStore()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const unmount = mountFileTree(root, store, api)
+    await tick()
+    assert.ok(root.querySelector('.tree-row[title="project-1.md"]'))
+
+    store.setState({
+      activeProjectId: 'project-2',
+      activeThreadId: 'thread-2',
+      workspaceRoot: '/other',
+      projects: [
+        { id: 'project-1', name: 'workspace', path: '/workspace' },
+        { id: 'project-2', name: 'other', path: '/other' },
+      ],
+    })
+    await tick()
+
+    assert.deepEqual(lists, ['project-1/thread-1:', 'project-2/thread-2:'])
+    assert.ok(root.querySelector('.tree-row[title="project-2.md"]'), 'the new project’s entries')
+    assert.equal(root.querySelector('.tree-row[title="project-1.md"]'), null)
+    unmount()
+  })
+})
