@@ -1,4 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import type { AutomationFailureCode } from '@shared/types'
@@ -340,7 +341,7 @@ export function attachAutomationController(
   const unsubscribeTrigger = api.automations.onTriggered((event) => {
     void receiveTrigger(event)
   })
-  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     startPendingForActiveProject()
     refreshSchedulesForActiveProject()
   })
