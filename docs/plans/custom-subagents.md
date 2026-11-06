@@ -85,6 +85,13 @@ Binding once this plan is accepted; divergence updates this file in the same PR.
 
 ### 1. Explicit invocation only in v1 — no automatic delegation
 
+**Amendment (2026-10-31): ad hoc delegation.** The native `run_agent` tool
+allows the parent to create a bounded child with an explicit task, context and
+exact tool list, without a named definition. It does not select user-authored
+agents by description; the named-worker rules below still apply to those tools.
+Task roles reuse Settings and intellect bands reuse the shared low/mid/top scale.
+See [generic subagents](generic-subagents.md) for precedence and acceptance checks.
+
 The parent model is **not** told which agents exist. The native
 `run_readonly_workers` first slice permits one or two exact names already supplied
 by the user, under a two-worker allowance per turn and the existing supervisor.

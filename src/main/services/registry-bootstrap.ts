@@ -44,6 +44,7 @@ import { exploreTool } from '../tools/explore-tool.ts'
 import { readExploredTool } from '../tools/read-explored-tool.ts'
 import { isolatedWorkersTool } from '../tools/isolated-workers-tool.ts'
 import { readonlyWorkersTool } from '../tools/readonly-workers-tool.ts'
+import { runAgentTool } from '../tools/run-agent-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
@@ -146,6 +147,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(exploreTool)
   registry.register(readExploredTool)
   registry.register(readonlyWorkersTool)
+  registry.register(runAgentTool)
   registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >

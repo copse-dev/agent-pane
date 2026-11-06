@@ -571,6 +571,7 @@ describe('ACP bridge exposure decisions', () => {
     const nativeOnly = new Set([
       'ask_user',
       'run_readonly_workers',
+      'run_agent',
       'run_isolated_workers',
       'explore',
       // Quotes what this native run's explore subagents read; it has nothing

@@ -399,6 +399,68 @@ describe('subagent display (component)', () => {
     assert.equal(secondLink.dataset['fileReferencePath'], 'src/renderer/index.ts')
   })
 
+  it('unwraps a generic worker report and collapses its technical result', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const call = structuredClone(exploreCall)
+    call.name = 'run_agent'
+    call.args = { task: 'Plan the supplied change' }
+    call.result = JSON.stringify({
+      workerId: 'worker-1',
+      report: 'README describes Copse setup and dev workflow.',
+      routing: { warning: 'The Settings assignment takes precedence.' },
+    })
+    addToolCall(store, messageId, call)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    assert.equal(card.querySelector('.subagent-parent-result'), null)
+    assert.equal(card.querySelector('.subagent-task')?.textContent, 'Plan the supplied change')
+    assert.equal(
+      card.querySelector('.subagent-routing-warning')?.textContent,
+      'The Settings assignment takes precedence.',
+    )
+    const details = qsRequired<HTMLDetailsElement>(card, '.subagent-technical-details')
+    assert.equal(details.open, false)
+    assert.match(details.querySelector('pre')?.textContent ?? '', /worker-1/)
+  })
+
+  it('preserves the generic report, routing warning and notes when the host appends a reminder', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    const call = structuredClone(exploreCall)
+    call.name = 'run_agent'
+    call.args = { task: 'Plan the supplied change' }
+    const reminder = '<system-reminder>\nKeep changes within this task.\n</system-reminder>'
+    const report = JSON.stringify({
+      workerId: 'worker-reminder',
+      report: 'README describes Copse setup and dev workflow.',
+      routing: { warning: 'The Settings assignment takes precedence.' },
+    })
+    call.result = `${report}\n\n${reminder}`
+    call.appendedReminderLengths = [reminder.length]
+    addToolCall(store, messageId, call)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    const card = qsRequired<HTMLDetailsElement>(host, '.tool-card-subagent')
+    assert.equal(card.querySelector('.subagent-parent-result'), null)
+    assert.equal(
+      card.querySelector('.subagent-routing-warning')?.textContent,
+      'The Settings assignment takes precedence.',
+    )
+    const details = qsRequired<HTMLDetailsElement>(card, '.subagent-technical-details')
+    assert.equal(details.open, false)
+    assert.equal(details.querySelector('pre')?.textContent, report)
+    assert.equal(
+      card.querySelector('.tool-result-note')?.textContent,
+      'Keep changes within this task.',
+    )
+  })
+
   it('shows the summary once when the parent result repeats the timeline', () => {
     mountWithSubagent()
 

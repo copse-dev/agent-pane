@@ -55,7 +55,15 @@ describe('resolveCustomAgentTools', () => {
     }
   })
   it('cannot overwrite the parent plan, even through an explicit allow-list', () => {
-    for (const parentTool of ['update_thread_plan', 'report_plan_completion']) {
+    for (const parentTool of [
+      'update_thread_plan',
+      'report_plan_completion',
+      'update_todos',
+      'run_background',
+      'send_thread_prompt',
+      'track_long_task',
+      'subthreads',
+    ]) {
       assert.deepEqual(
         names(
           resolveCustomAgentTools(tools('read_file', parentTool), {

@@ -11,7 +11,6 @@ import {
   threadPlanInstructions,
 } from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
-import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import {
@@ -67,6 +66,7 @@ import {
   createNestedInstructionTurn,
   invalidateNestedInstructionDiscoveryForWrite,
 } from './project-instructions.ts'
+import { instructionContextPathsForTool } from './instruction-context-paths.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import {
   clearActiveRunThread,
@@ -172,6 +172,8 @@ import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { createReadonlyWorkerTurn } from './agents/readonly-worker-batch.ts'
 import { getTaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithReadonlyWorkerRunner } from '../tools/readonly-workers-tool.ts'
+import { runWithAgentRunner } from '../tools/run-agent-tool.ts'
+import { prepareRunAgent, runPreparedAgent } from './agents/run-agent-runner.ts'
 import {
   getAgent,
   collectDiscoveryRoots,
@@ -491,30 +493,6 @@ function promptTextForSubmit(userPrompt: UserContent): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
-}
-
-/** Built-in file tools whose path establishes directory-scoped instruction context. */
-const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  read_file: ['path'],
-  list_dir: ['path'],
-  search_code: ['path'],
-  search_codebase: ['path'],
-  read_staged_diff: ['path'],
-  write_file: ['path'],
-  str_replace: ['path'],
-  delete_file: ['path'],
-  rename_file: ['from', 'to'],
-  make_directory: ['path'],
-}
-
-function instructionContextPathsForTool(name: string, args: unknown): string[] {
-  if (name === 'apply_patch') return isRecord(args) ? patchTouchedPaths(args['input']) : []
-  const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
-  if (!fields || !isRecord(args)) return []
-  return fields.flatMap((field) => {
-    const value = args[field]
-    return typeof value === 'string' && value.trim() ? [value] : []
-  })
 }
 
 /**
@@ -2388,6 +2366,61 @@ async function runAgentWithInlineCanvas(
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
                 localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'run_agent') {
+            return runWithAgentRunner(
+              async (request, workerSignal) => {
+                const owner = getThreadExecutionContext()
+                if (!owner) throw new Error('Subagents require an owning thread checkout.')
+                const prepared = await prepareRunAgent(request, registry)
+                workerSignal.throwIfAborted()
+                // The selected tools can mutate this checkout through ordinary gates.
+                if (
+                  !isAgentRunReadonly() &&
+                  prepared.tools.some(
+                    (tool) =>
+                      !isToolAllowedInReadonlyMode(tool.name, {
+                        mcpAnnotations: tool.name.startsWith('mcp__')
+                          ? getMcpToolMeta(tool.name)?.annotations
+                          : undefined,
+                      }),
+                  )
+                )
+                  turnChangedFiles = true
+                const results = await readonlyWorkerTurn.run({
+                  mode: 'shared',
+                  owner,
+                  permissionSnapshot: {
+                    capturedAt: Date.now(),
+                    executionRoot: owner.root,
+                    autoRunSandboxCommands: false,
+                    projectSandboxEnabled: isProjectSandboxEnabled(),
+                  },
+                  requests: [{ agent: prepared.route.role, prompt: request.task }],
+                  signal: workerSignal,
+                  execute: async (_request, _workerId, ownedSignal) =>
+                    runPreparedAgent({
+                      request,
+                      prepared,
+                      registry,
+                      parentToolCallId: toolCallId,
+                      signal: ownedSignal,
+                      onChunk: sendChunk,
+                    }),
+                })
+                const result = results[0]
+                if (!result) throw new Error('Subagent returned no result.')
+                if (result.state !== 'completed') {
+                  sendChunk({
+                    type: 'subagent_error',
+                    parentToolCallId: toolCallId,
+                    error: result.error ?? result.state,
+                  })
+                }
+                return JSON.stringify({ ...result, routing: prepared.route })
               },
               () => registry.execute(name, args, signal),
             )
