@@ -681,6 +681,34 @@ describe('acp wire trace (session pool integration)', () => {
     assert.deepEqual(nativeBridge['toolNames'], ['read_file', 'run_shell'])
   })
 
+  it("traces under the pool's own project for a thread no store owns yet", async () => {
+    // No turn and no saved thread: the project the session pool was given is
+    // the only authority, never the window's (#3958).
+    process.env['COPSE_DEBUG_ACP_UPDATES'] = '1'
+    storageSet('activeProjectId', 'proj-window')
+    try {
+      const { entry } = await acquireAcpSession({
+        projectId: 'proj-pool',
+        threadId: 'thread-unsaved',
+        config: { command: 'fake-cursor', cwd: root },
+        createTransport: cursorLikeTransport(),
+      })
+      entry.open.handlers.current = {
+        onChunk: (): void => {},
+        requestPermission: (): Promise<RequestPermissionResponse> =>
+          Promise.resolve({ outcome: { outcome: 'cancelled' } }),
+      }
+      await runAcpSessionPrompt(entry.open, 'make a linear issue', undefined)
+      await disposeAllAcpSessions()
+      await drainAcpWireTrace()
+    } finally {
+      storageSet('activeProjectId', null)
+    }
+
+    assert.ok(existsSync(join(root, 'proj-pool', 'thread-unsaved', ACP_WIRE_TRACE_FILE)))
+    assert.equal(existsSync(join(root, 'proj-window', 'thread-unsaved')), false)
+  })
+
   it('leaves no trace behind on the same turn with the flag unset', async () => {
     delete process.env['COPSE_DEBUG_ACP_UPDATES']
     const chunks = await runOneTurn()

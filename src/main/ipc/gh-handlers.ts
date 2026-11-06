@@ -1,8 +1,8 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
-import { defineHandler } from './define-handler.ts'
-import { defineSenderProjectHandler, defineSenderRootHandler } from './sender-project-root.ts'
+import { defineHandler, defineSenderHandler } from './define-handler.ts'
+import { defineSenderRootHandler, senderProjectId } from './sender-project-root.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
@@ -32,6 +32,38 @@ import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
 } from '../services/thread-store.ts'
+
+/**
+ * The project-scoped PR lookups behind `gh:agent-pr-links` and the PR/thread
+ * relationship channels. Each reads the project `projectOf` names for its
+ * sender (the asking window's, in production), never the process-global active
+ * project, so two windows on two projects each see their own (#3958).
+ */
+type AgentPrLinks = ReturnType<typeof listProjectAgentPrLinks>
+type PrThreadRelationships = ReturnType<typeof lookupPrThreadRelationships>
+type ThreadPrRelationships = ReturnType<typeof lookupThreadPrRelationships>
+type PrRef = Parameters<typeof lookupPrThreadRelationships>[1]
+
+export function senderProjectPrReaders<Sender>(projectOf: (sender: Sender) => string | null): {
+  agentPrLinks: (sender: Sender) => AgentPrLinks
+  prThreadRelationships: (sender: Sender, pr: PrRef) => PrThreadRelationships
+  threadPrRelationships: (sender: Sender, threadId: string) => ThreadPrRelationships
+} {
+  return {
+    agentPrLinks: async (sender): AgentPrLinks => {
+      const projectId = projectOf(sender)
+      return projectId ? listProjectAgentPrLinks(projectId) : []
+    },
+    prThreadRelationships: async (sender, pr): PrThreadRelationships => {
+      const projectId = projectOf(sender)
+      return projectId ? lookupPrThreadRelationships(projectId, pr) : []
+    },
+    threadPrRelationships: (sender, threadId): ThreadPrRelationships => {
+      const projectId = projectOf(sender)
+      return projectId ? lookupThreadPrRelationships(projectId, threadId) : Promise.resolve([])
+    },
+  }
+}
 
 export function registerGhHandlers(win: BrowserWindow): void {
   // PR reads and writes run for the asking window's project (#3958).
@@ -100,24 +132,21 @@ export function registerGhHandlers(win: BrowserWindow): void {
   )
   // Local-only legacy agent/PR associations; reads thread metadata. These and
   // the relationship lookups below read the asking window's project (#3958).
-  defineSenderProjectHandler(
-    win,
-    'gh:agent-pr-links',
-    z.tuple([]),
-    (projectId) => (projectId ? listProjectAgentPrLinks(projectId) : []),
-    { sender: 'any' },
-  )
-  defineSenderProjectHandler(
+  const prReaders = senderProjectPrReaders(senderProjectId)
+  defineSenderHandler(win, 'gh:agent-pr-links', z.tuple([]), prReaders.agentPrLinks, {
+    sender: 'any',
+  })
+  defineSenderHandler(
     win,
     'gh:pr-thread-relationships',
     z.tuple([prRefSchema]),
-    (projectId, pr) => (projectId ? lookupPrThreadRelationships(projectId, pr) : []),
+    prReaders.prThreadRelationships,
   )
-  defineSenderProjectHandler(
+  defineSenderHandler(
     win,
     'gh:thread-pr-relationships',
     z.tuple([z.string().min(1)]),
-    (projectId, threadId) => (projectId ? lookupThreadPrRelationships(projectId, threadId) : []),
+    prReaders.threadPrRelationships,
   )
   // PR lifecycle write actions. They mutate GitHub state, so each asserts a
   // main-frame sender (the `defineHandler` default) before acting.

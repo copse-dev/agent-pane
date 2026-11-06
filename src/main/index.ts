@@ -260,6 +260,7 @@ import {
   CANVAS_ARTEFACT_CHANNEL,
   CANVAS_ARTEFACT_SHOW_CHANNEL,
   setCanvasArtefactMirror,
+  canvasArtefactSaveTarget,
   setCanvasArtefactSink,
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
@@ -353,11 +354,9 @@ setCanvasArtefactSink((artefact) => {
   // when a window took delivery: an artefact rendered while the UI was gone is
   // exactly the one the user will come back looking for. Failures are swallowed
   // — losing the ability to restore an artefact must not break rendering it.
-  // Saved under the producing turn's project (`dispatchCanvasArtefact` stamps
-  // it as `owner`), never whichever project a window shows (#3958).
-  const projectId = artefact.owner?.projectId
-  if (!projectId || !artefact.threadId) return
-  void rememberCanvasArtefact(projectId, artefact.threadId, artefact).catch((err: unknown) => {
+  const target = canvasArtefactSaveTarget(artefact)
+  if (!target) return
+  void rememberCanvasArtefact(target.projectId, target.threadId, artefact).catch((err: unknown) => {
     console.warn('[canvas] could not save artefact:', err)
   })
 })

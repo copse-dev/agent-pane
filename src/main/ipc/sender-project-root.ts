@@ -50,26 +50,6 @@ export function defineSenderRootHandler<T extends readonly z.ZodType[]>(
 }
 
 /**
- * `defineSenderHandler` for a handler that acts on the asking window's project
- * store: `fn` receives {@link senderProjectId} in place of the sender.
- */
-export function defineSenderProjectHandler<T extends readonly z.ZodType[]>(
-  win: BrowserWindow,
-  channel: InvokeChannel,
-  args: z.ZodTuple<T, null>,
-  fn: (projectId: string | null, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
-  options?: IpcHandlerOptions & PositionalArgsOptions,
-): void {
-  defineSenderHandler(
-    win,
-    channel,
-    args,
-    (sender, ...parsed) => fn(senderProjectId(sender), ...parsed),
-    options,
-  )
-}
-
-/**
  * Instruction roots for the asking window: outside a turn there is no worktree
  * checkout, so the project root is both the trust anchor and the tree read.
  */
