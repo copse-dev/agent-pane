@@ -69,6 +69,41 @@ async function logFontDiag(filename: string, phase: string): Promise<void> {
       ),
       families: [...families],
       blocks: perBlock,
+      listWidth: document.querySelector<HTMLElement>('.messages-list')?.clientWidth ?? -1,
+      geometry: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '.messages-list .message-text pre, .messages-list .message-text :not(pre) > code',
+        ),
+        (el) => {
+          const r = el.getBoundingClientRect()
+          const style = getComputedStyle(el)
+          const parent = el.closest<HTMLElement>('.message-text')
+          const pr = parent?.getBoundingClientRect()
+          const wrapper = el.parentElement
+          const lines = Math.round(r.height / (Number.parseFloat(style.lineHeight) || 1))
+          if (el.tagName === 'CODE' && lines < 2) return ''
+          return [
+            el.tagName.toLowerCase(),
+            `rect=${String(r.x)},${String(r.y)} ${String(r.width)}x${String(r.height)}`,
+            `client=${String(el.clientWidth)} scroll=${String(el.scrollWidth)}`,
+            `w=${style.width} lh=${style.lineHeight} fs=${style.fontSize} ws=${style.whiteSpace} ov=${style.overflowX}`,
+            `pad=${style.paddingTop}/${style.paddingBottom} bd=${style.borderTopWidth}/${style.borderBottomWidth} mg=${style.marginTop}/${style.marginBottom}`,
+            `parent=${pr ? `${String(pr.x)} ${String(pr.width)}x${String(pr.height)}` : 'none'}`,
+            `wrap=${wrapper?.tagName.toLowerCase() ?? ''}.${(wrapper?.getAttribute('class') ?? '').replaceAll(' ', '.')} ${Array.from(
+              wrapper?.attributes ?? [],
+              (a) => a.name,
+            )
+              .filter((n) => n.startsWith('data-'))
+              .join(',')}`,
+            `self=.${(el.getAttribute('class') ?? '').replaceAll(' ', '.')} ${Array.from(
+              el.attributes,
+              (a) => a.name,
+            )
+              .filter((n) => n.startsWith('data-'))
+              .join(',')}`,
+          ].join(' | ')
+        },
+      ).filter((line) => line !== ''),
       rows: Array.from(
         document.querySelectorAll('.messages-list > .msg-assistant'),
         (row) => row.getBoundingClientRect().height,
