@@ -32,37 +32,28 @@ import { registerWorktreeHandlers } from './worktree-handlers.ts'
 import { registerContainerHandlers } from './container-handlers.ts'
 import { registerGuardedYoloHandlers } from './guarded-yolo-handlers.ts'
 import { registerThreadHandlers } from './thread-handlers.ts'
-import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { registerPaneHandlers } from './pane-handlers.ts'
+import { registerEditorHandlers } from './editor-handlers.ts'
+import { registerShellHandlers } from './shell-handlers.ts'
+import { registerIndexHandlers } from './index-handlers.ts'
+import { registerFsHandlers } from './fs-handlers.ts'
+import { registerBrowserShareHandlers } from './browser-share-handlers.ts'
+import { app, BrowserWindow, dialog, ipcMain, webContents, type WebContents } from 'electron'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import micromatch from 'micromatch'
-import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
-import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
-import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
-import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
-import {
-  captureBrowserPageText,
-  exportBrowserPageHtml,
-  captureBrowserScreenshot,
-  captureBrowserScrollPosition,
-  exportCanvasArtefact,
-  exportBrowserPagePdf,
-} from '../services/browser/browser-share.ts'
-import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
-import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
   getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
-  resolvePathWithinRoot,
   resolveSshHostForWorkspaceRoot,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
@@ -71,8 +62,6 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import {
-  assertFsWriteContent,
-  isIndexQueryPattern,
   assertMainFrameSender,
   IpcValidationError,
   parseIpcArgs,
@@ -81,24 +70,7 @@ import {
   zThreadId,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
-import { threadPathArgs } from './thread-path-args.ts'
-import {
-  resolveThreadExecutionContext,
-  runWithThreadExecutionContext,
-} from '../services/thread-execution-context.ts'
-import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
-import {
-  getReadyFileIndex,
-  resolveFileIndexTarget,
-  whenFileIndexReady,
-} from '../services/search/file-index.ts'
-import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
-import {
-  getWorkspaceIndexStatus,
-  onWorkspaceIndexStatusChanged,
-} from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
-import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { storageGet } from '../services/storage/storage.ts'
@@ -114,10 +86,6 @@ import type { ThreadDeletionRuntime } from '../services/thread-deletion.ts'
 import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import type { ThreadHistoryEditRuntime } from '../services/thread-history-edit.ts'
-import {
-  listExternalEditors,
-  openWorkspaceInExternalEditor,
-} from '../services/editors/editor-launcher.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { getSshConnectionManager } from '../services/ssh-workspace/connection-manager.ts'
@@ -140,13 +108,6 @@ import { reloadMcpServers, setWorkspaceTrustAndReload } from '../services/mcp/mc
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import { getFocusedMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 
-import {
-  gatewayListDir,
-  gatewayReadFile,
-  gatewayReadImage,
-  gatewayReaddir,
-  gatewayWriteFile,
-} from '../project-sandbox/sandbox-fs-client.ts'
 import { getGuardedYoloState, onGuardedYoloChanged } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
 
@@ -425,110 +386,7 @@ export function registerAllHandlers(
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  function interactiveBrowserContents(
-    event: Electron.IpcMainInvokeEvent,
-    rawId: unknown,
-  ): WebContents {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(z.number().int().positive(), [rawId])
-    const contents = webContents.fromId(id)
-    const partition = contents ? browserPartitionForContents(contents) : undefined
-    if (
-      !contents ||
-      contents.isDestroyed() ||
-      // The guest must belong to the window asking: the main window, a second
-      // main window, or the pane pop-out — never another window's tab.
-      contents.hostWebContents !== event.sender ||
-      !partition ||
-      !isVisibleBrowserSessionPartition(partition)
-    ) {
-      throw new IpcValidationError('Browser sharing rejected: unknown interactive browser tab')
-    }
-    return contents
-  }
-
-  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
-    const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-    if (!event.sender.isDestroyed()) event.sender.send('browser:share-text', share)
-  })
-
-  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
-    const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-    if (!event.sender.isDestroyed()) event.sender.send('browser:share-image', share)
-  })
-
-  ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
-    return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-  })
-
-  ipcMain.handle('browser:scroll-position', async (event, rawId: unknown) => {
-    return await captureBrowserScrollPosition(interactiveBrowserContents(event, rawId))
-  })
-
-  ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
-    const contents = interactiveBrowserContents(event, rawId)
-    return await exportBrowserPagePdf(
-      contents,
-      async (defaultFilename) => {
-        const result = await dialog.showSaveDialog(win, {
-          title: 'Export PDF',
-          defaultPath: defaultFilename,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        })
-        return result.canceled || !result.filePath ? null : result.filePath
-      },
-      async (filePath, data) => {
-        await writeFile(filePath, data)
-      },
-    )
-  })
-
-  ipcMain.handle('browser:export-page', async (event, rawId: unknown) => {
-    const contents = interactiveBrowserContents(event, rawId)
-    return await exportBrowserPageHtml(
-      contents,
-      async (defaultFilename) => {
-        const result = await dialog.showSaveDialog(win, {
-          title: 'Download page',
-          defaultPath: defaultFilename,
-          filters: [{ name: 'HTML document', extensions: ['html'] }],
-        })
-        return result.canceled || !result.filePath ? null : result.filePath
-      },
-      async (filePath, body) => {
-        await writeFile(filePath, body, 'utf8')
-      },
-    )
-  })
-
-  ipcMain.handle('browser:export-artefact', async (event, rawArtefact: unknown) => {
-    assertMainFrameSender(event, win)
-    const artefact = parseIpcArgs(
-      z.strictObject({
-        title: z.string().trim().min(1).max(200),
-        mimeType: z.literal('text/html'),
-        body: z
-          .string()
-          .min(1)
-          .max(512 * 1024),
-      }),
-      [rawArtefact],
-    )
-    return await exportCanvasArtefact(
-      artefact,
-      async (defaultFilename) => {
-        const result = await dialog.showSaveDialog(win, {
-          title: 'Download canvas',
-          defaultPath: defaultFilename,
-          filters: [{ name: 'HTML document', extensions: ['html'] }],
-        })
-        return result.canceled || !result.filePath ? null : result.filePath
-      },
-      async (filePath, body) => {
-        await writeFile(filePath, body, 'utf8')
-      },
-    )
-  })
+  registerBrowserShareHandlers(win)
 
   const workspaceActivations = new WeakMap<WebContents, WorkspaceActivation>()
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
@@ -613,130 +471,9 @@ export function registerAllHandlers(
     return canonical
   })
 
-  ipcMain.handle('fs:read-file', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return gatewayReadFile(abs, root)
-  })
+  registerFsHandlers(win)
 
-  ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    // Missing or oversized previews are routine (a thread can outlive its worktree
-    // files), so report them as data; a rejected handler makes Electron log a stack.
-    try {
-      const { root } = await resolveThreadExecutionContext(projectId, threadId)
-      const abs = await resolvePathWithinRoot(relPath, root)
-      return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-
-  ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath, content] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, zPathString, z.string()]),
-      rawArgs,
-    )
-    assertFsWriteContent(content)
-    const context = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, context.root)
-    await gatewayWriteFile(abs, content, context.root)
-    runWithThreadExecutionContext(context, () => {
-      scheduleIndexRebuild(context.root)
-    })
-  })
-
-  ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return gatewayReaddir(abs, root)
-  })
-
-  ipcMain.handle('fs:list-dir', async (event, projectIdArg, threadIdArg, pathArg) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, zPathString.optional()]),
-      [projectIdArg, threadIdArg, pathArg],
-    )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(nonEmptyStringOr(relPath, '.'), root)
-    const dirents = await gatewayListDir(abs, root)
-    return dirents
-      .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
-      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
-  })
-
-  ipcMain.handle('index:query', async (event, pattern: unknown) => {
-    assertMainFrameSender(event, win)
-    if (pattern !== undefined && typeof pattern !== 'string') {
-      throw new IpcValidationError('Index query pattern must be a string')
-    }
-    const query = typeof pattern === 'string' ? pattern : ''
-    if (query && !isIndexQueryPattern(query)) return []
-    // Renderer-global feature (command palette / `@` mention picker), scoped
-    // to the renderer-selected workspace root, not any one thread's execution root.
-    const root = getWorkspaceRoot()
-    if (!root) return []
-    const idx = await getReadyFileIndex(root)
-    if (!idx) return []
-    return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
-  })
-
-  ipcMain.handle('index:status', (event) => {
-    assertMainFrameSender(event, win)
-    return getWorkspaceIndexStatus()
-  })
-
-  onWorkspaceIndexStatusChanged((status) => {
-    if (!win.isDestroyed()) win.webContents.send('index:status-changed', status)
-  })
-
-  ipcMain.handle(
-    'index:resolve-file-references',
-    async (event, rawCandidates: unknown, rawOwner: unknown) => {
-      assertMainFrameSender(event, win)
-      const [candidates, owner] = parseIpcArgs(
-        z.tuple([
-          z.array(z.string().min(1).max(4096)).max(200),
-          z.object({ projectId: zProjectId, threadId: zThreadId }).strict().optional(),
-        ]),
-        [rawCandidates, rawOwner],
-      )
-      if (!owner) {
-        const root = getWorkspaceRoot()
-        const target = resolveFileIndexTarget()
-        if (root) await whenFileIndexReady(root, target)
-        return await resolveFileReferences(candidates, root, undefined, target)
-      }
-      const context = await resolveThreadExecutionContext(owner.projectId, owner.threadId)
-      return runWithThreadExecutionContext(context, async () => {
-        const root = context.root
-        await whenFileIndexReady(root)
-
-        const currentWorktreePath = expectedThreadWorktreePath(owner.projectId, owner.threadId)
-        let projectRelativePath = relative(currentWorktreePath, context.root)
-        if (context.checkoutMode === 'shared') {
-          try {
-            ;({ projectRelativePath } = await repositoryLocation(context.projectRoot))
-          } catch {
-            // Non-Git projects still support root-relative links.
-            projectRelativePath = ''
-          }
-        }
-        return await resolveFileReferences(candidates, root, {
-          projectRoot: context.projectRoot,
-          managedProjectRoot: dirname(currentWorktreePath),
-          projectRelativePath,
-        })
-      })
-    },
-  )
+  registerIndexHandlers(win)
 
   registerPortHandlers(win)
 
@@ -787,88 +524,11 @@ export function registerAllHandlers(
   registerRemoteAgentHandlers(win, isDispatcherThreadActive)
   registerAcpHandlers(win)
   registerAboutHandlers(win)
-  ipcMain.handle('shell:open-external', (event, url: unknown) => {
-    assertMainFrameSender(event, win)
-    const href = parseIpcArgs(z.url().max(2048), [url])
-    if (!href.startsWith('http://') && !href.startsWith('https://')) {
-      throw new IpcValidationError('URL must be http or https')
-    }
-    return shell.openExternal(href)
-  })
-  ipcMain.handle('shell:open-workspace-file-in-browser', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
-    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
-      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
-    }
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return shell.openExternal(await workspacePreviewFileUrl(root, abs))
-  })
-  ipcMain.handle('browser:workspace-file-url', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
-    if (resolveSshHostForWorkspaceRoot(projectRoot)) {
-      throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
-    }
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return workspacePreviewFileUrl(root, abs)
-  })
+  registerShellHandlers(win)
 
-  ipcMain.handle('editors:list', (event) => {
-    assertMainFrameSender(event, win)
-    return listExternalEditors()
-  })
-  ipcMain.handle('editors:open', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, parsedId] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)]),
-      rawArgs,
-    )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    return openWorkspaceInExternalEditor(parsedId, root)
-  })
+  registerEditorHandlers(win)
 
-  ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsed = parseIpcArgs(
-      z.enum([
-        'explorer',
-        'context',
-        'side-chat',
-        'terminal',
-        'changes',
-        'prs',
-        'memories',
-        'roadmap',
-        'browser',
-        'vnc',
-      ]),
-      [mode],
-    )
-    createPanePopoutWindow(parsed, seed)
-  })
-
-  ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsed = parseIpcArgs(
-      z.enum([
-        'explorer',
-        'context',
-        'side-chat',
-        'terminal',
-        'changes',
-        'prs',
-        'memories',
-        'roadmap',
-        'browser',
-        'vnc',
-      ]),
-      [mode],
-    )
-    return takePopoutSeed(parsed)
-  })
+  registerPaneHandlers(win)
 
   registerToolPermissionHandlers(win, registry)
 
