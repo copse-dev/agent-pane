@@ -236,7 +236,6 @@ import {
 import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
-  getThreadExecutionContext,
   inspectThreadCheckoutRoot,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -263,7 +262,7 @@ import {
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
 import { rememberCanvasArtefact } from './services/canvas-store.ts'
-import { getActiveProjectId, getProjectRoot } from './services/workspace.ts'
+import { getProjectRoot } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
@@ -352,7 +351,9 @@ setCanvasArtefactSink((artefact) => {
   // when a window took delivery: an artefact rendered while the UI was gone is
   // exactly the one the user will come back looking for. Failures are swallowed
   // — losing the ability to restore an artefact must not break rendering it.
-  const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+  // Saved under the producing turn's project (`dispatchCanvasArtefact` stamps
+  // it as `owner`), never whichever project a window shows (#3958).
+  const projectId = artefact.owner?.projectId
   if (!projectId || !artefact.threadId) return
   void rememberCanvasArtefact(projectId, artefact.threadId, artefact).catch((err: unknown) => {
     console.warn('[canvas] could not save artefact:', err)
