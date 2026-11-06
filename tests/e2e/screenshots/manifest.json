@@ -1689,6 +1689,10 @@
       "sha256": "3747bb819addbb1c25c628ef26c297f3fc5bd15fec8363da974eee0e0e0574bc",
       "bytes": 133913
     },
+    "exact-ci-run-evidence.png": {
+      "sha256": "5b4a701df0cd9b1d62ed5656b43d0a2a713d27b6089763cae07419e407911181",
+      "bytes": 48231
+    },
     "explainer-drawing-1-player.png": {
       "sha256": "30a3d9e98f4e3910be17ad0b43891db60dbbb98aac91150bd88fbcac821dc01e",
       "bytes": 97147
@@ -2134,8 +2138,8 @@
       "bytes": 347558
     },
     "host-read-tool-cards.png": {
-      "sha256": "55a81e65e9f0e4de112db27b1d7fbc84b7110f11dfd53be15fbfabc1aeff3d71",
-      "bytes": 308101
+      "sha256": "a00dd3ed1e69cebc34418e4cdc4a097499834940fe048646cacbdcc7216bff4f",
+      "bytes": 330882
     },
     "image-description-draft.png": {
       "sha256": "759faae8e2132c12e7d04c2b6598114a641953af2ea8bf8e5df9d792f1a1c4f6",
