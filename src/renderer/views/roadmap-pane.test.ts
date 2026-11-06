@@ -1315,7 +1315,7 @@ describe('roadmap pane', () => {
     }
   })
 
-  it('offers Reopen once the tracked thread appears in state, and ignores renames', async () => {
+  it('offers Reopen once the tracked thread appears in state, and follows its title only', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const seeded = makeItem('a', 'Ship the thing')
     seeded.fields['thread'] = 't1'
@@ -1335,8 +1335,27 @@ describe('roadmap pane', () => {
       const row = list.querySelector('.roadmap-row')
       assert.ok(row)
 
-      store.setState({ threads: [makeThread('t1', 'Renamed thread')] })
-      assert.equal(list.querySelector('.roadmap-row'), row, 'a rename does not repaint the list')
+      // Another thread's turn: nothing the list shows.
+      const other = makeThread('t2', 'Other thread')
+      store.setState({ threads: [...store.getState().threads, other] })
+      const settledRow = list.querySelector('.roadmap-row')
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === other.id ? { ...t, status: 'running', updatedAt: 9 } : t)),
+      })
+      assert.equal(list.querySelector('.roadmap-row'), settledRow, 'a turn does not repaint')
+
+      // The tracked thread's rename reaches the row chip's tooltip and label.
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 't1' ? { ...t, title: 'Renamed thread' } : t)),
+      })
+      const chip = list.querySelector<HTMLElement>('.roadmap-thread-chip')
+      assert.ok(chip)
+      assert.equal(chip.getAttribute('aria-label'), 'Reopen thread "Renamed thread"')
+      assert.equal(chip.title, 'Reopen thread "Renamed thread"')
     } finally {
       unmount()
     }
