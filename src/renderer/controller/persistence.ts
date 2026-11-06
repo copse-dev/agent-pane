@@ -187,8 +187,8 @@ export function markNavigationRestored(restored: MainWindowNavigation): void {
  * project-scoped reads (`roadmap:list` and the rest of the project store) resolve
  * their directory from, and the switch repaints without awaiting its final
  * navigation write. So the outgoing project, written mid-switch, was what those
- * reads saw on `workspace_changed`: the roadmap listed the previous project's
- * notes. While held, a write naming any other project is dropped, which keeps
+ * reads saw when the switch selected the workspace: the roadmap listed the
+ * previous project's notes. While held, a write naming any other project is dropped, which keeps
  * the persisted selection on the target from dispatch onwards.
  */
 let navigationHeldFor: string | null = null
