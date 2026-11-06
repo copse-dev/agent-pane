@@ -529,6 +529,11 @@ export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
   return entry ? cancelAgentInitiatedTurn(entry.open) : false
 }
 
+/** Revoke every self-started turn's bridge authority before app teardown awaits IO. */
+export function cancelAllAgentInitiatedAcpTurns(): void {
+  for (const entry of pool.values()) cancelAgentInitiatedTurn(entry.open)
+}
+
 /** Tear down every pooled session (app shutdown). */
 export async function disposeAllAcpSessions(): Promise<void> {
   await Promise.all([...threadOperations.values()])

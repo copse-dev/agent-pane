@@ -269,7 +269,10 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
-import { cancelAgentInitiatedAcpTurn } from './acp/acp-session-pool.ts'
+import {
+  cancelAgentInitiatedAcpTurn,
+  cancelAllAgentInitiatedAcpTurns,
+} from './acp/acp-session-pool.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -312,6 +315,11 @@ export {
 import { isNonEmptyString } from '@shared/nullish.ts'
 
 const abortMap = new Map<string, AbortController>()
+let shuttingDown = false
+
+function assertAgentAdmissionOpen(): void {
+  if (shuttingDown) throw new Error('Copse is closing; the turn was not started.')
+}
 
 function pluginModelResult(raw: unknown): {
   text: string
@@ -838,6 +846,7 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: RunAgentOptions,
 ): Promise<RunAgentResult> {
+  assertAgentAdmissionOpen()
   // Register before admission so Stop, mobile Stop and renderer reconnection
   // continue to own a queued turn even though no provider process has started.
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
@@ -3115,6 +3124,13 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
   cancelAgentInitiatedAcpTurn(threadId)
 }
 
+/** Fence new turns and interrupt existing work before command cleanup can settle tools. */
+export function stopAllAgentRuns(): void {
+  shuttingDown = true
+  for (const controller of abortMap.values()) controller.abort()
+  cancelAllAgentInitiatedAcpTurns()
+}
+
 const mobileRunIds = new WeakMap<AbortController, string>()
 
 /** A stop from a delayed phone page must never abort a newer run. */
@@ -3156,6 +3172,7 @@ function beginRetryRun(threadId: string): {
   controller: AbortController
   runAbort: ReturnType<typeof createAgentRunAbortScheduler>
 } | null {
+  assertAgentAdmissionOpen()
   if (abortMap.has(threadId)) return null
   const controller = new AbortController()
   abortMap.set(threadId, controller)
