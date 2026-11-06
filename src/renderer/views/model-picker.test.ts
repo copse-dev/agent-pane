@@ -467,9 +467,7 @@ describe('shared model picker', () => {
     assert.equal(new Set(names).size, 2)
     for (const name of names) assert.match(name, /^--model-picker-\d+$/)
   })
-})
 
-describe('route retention notice', () => {
   it('marks only a superseded selected row as running, not a selected row that cannot run', async () => {
     const host = document.createElement('div')
     document.body.append(host)
@@ -522,7 +520,9 @@ describe('route retention notice', () => {
 
     picker.destroy()
   })
+})
 
+describe('route retention notice', () => {
   it('shows the qualification on the current route and each choice, then removes it for an unqualified selection', async () => {
     document.body.innerHTML = ''
     const host = document.createElement('div')
