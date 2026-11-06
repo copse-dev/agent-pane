@@ -161,6 +161,7 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
@@ -1088,7 +1089,17 @@ async function checkGithubWriteToolPermission(
       ? automationPermissionTarget(permission)
       : null
   if (automation?.allowed) return true
-  const prompt = formatGithubWritePrompt(toolName, args)
+  const needsWorkspaceRepository =
+    toolName === 'gh_pr_create' &&
+    isRecord(args) &&
+    (typeof args['owner'] !== 'string' ||
+      args['owner'].length === 0 ||
+      typeof args['repo'] !== 'string' ||
+      args['repo'].length === 0)
+  const workspaceRepositorySlug = needsWorkspaceRepository
+    ? await getGithubRepoSlug(getAgentExecutionRoot())
+    : null
+  const prompt = formatGithubWritePrompt(toolName, args, workspaceRepositorySlug)
   const { approved, remember } = await requestApproval(
     {
       ...prompt,
