@@ -2,7 +2,13 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  setThreadGitBranch,
+  setThreadStatus,
+  setThreadTitle,
+} from '@shared/store/thread-helpers.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -69,6 +75,37 @@ describe('follow-up suggestions thread scope', () => {
     await flush()
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     assert.equal(fetches, 1)
+    mount.destroy()
+  })
+
+  it('brings the bubbles back after a mid-turn metadata write, as the references show', async () => {
+    const store = createStore()
+    store.setState({ activeProjectId: 'project-1' })
+    const thread = createThread(store)
+    addMessage(store, thread, 'user', 'fix the parser')
+    addMessage(store, thread, 'assistant', 'Fixed it.')
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: { ...base.agent, suggestFollowUps: () => Promise.resolve([SUGGESTION]) },
+    }
+    const mount = mountFollowUpSuggestions(store, api, () => {})
+    document.body.append(mount.root)
+    store.emit('thread_status_changed', thread, 'idle')
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
+
+    // The next turn starts: the bubbles clear.
+    setThreadStatus(store, thread, 'running')
+    await flush()
+    assert.equal(mount.root.querySelector('.follow-up-bubble'), null)
+
+    // A metadata write during the turn (the checkout binding its branch) emits
+    // threads_changed. On main the bubbles return here; a selection keyed on
+    // the thread switch alone left them gone (the 613a72a screenshot regression).
+    setThreadGitBranch(store, thread, 'copse/work')
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     mount.destroy()
   })
 })
