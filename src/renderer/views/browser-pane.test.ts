@@ -2,7 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { createThread, setThreadTitle, switchThread } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
@@ -860,6 +861,65 @@ describe('browser pane requested URLs', () => {
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
 
       switchThread(store, 'background-thread')
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Background Dashboard',
+      )
+      assert.ok(viewer.querySelector('.browser-tab-panel.is-active .browser-webview'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('keeps a background canvas deferred through thread metadata, and shows it on a bare selection', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      threads: [makeThread({ id: 'current-thread' }), makeThread({ id: 'background-thread' })],
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Background Dashboard',
+        owner: { projectId: 'project-1', threadId: 'background-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Background</h1>',
+      })
+
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      setThreadTitle(store, 'current-thread', 'Renamed')
+      setThreadTitle(store, 'background-thread', 'Renamed too')
+      store.emit('threads_changed')
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      // No event: the selection alone flushes the deferred canvas.
+      store.setState({ activeThreadId: 'background-thread' })
 
       assert.equal(store.getState().rightPanelMode, 'browser')
       assert.equal(

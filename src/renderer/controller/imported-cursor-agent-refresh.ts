@@ -79,7 +79,13 @@ export function attachImportedCursorAgentRefresh(store: AppStore, api: ApiClient
       })
   }
 
-  const offThreads = store.on('threads_changed', refreshActive)
+  // Only what `refreshActive` keys on: the active thread's link, turn and queue
+  // state. Another thread's update, or this one's rename, does not re-check.
+  const offThreads = store.select((state) => {
+    const { activeProjectId, activeThreadId, threads } = state
+    const thread = activeThreadId ? threads.find((t) => t.id === activeThreadId) : undefined
+    return activeProjectId && thread ? refreshKey(activeProjectId, thread) : null
+  }, refreshActive)
   const offWorkspace = store.on('workspace_changed', refreshActive)
   refreshActive()
   return (): void => {

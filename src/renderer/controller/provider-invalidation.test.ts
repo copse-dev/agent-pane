@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
-import { createThread, getActiveThread } from '@shared/store/thread-helpers.ts'
+import { createThread, getActiveThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import type {
   ModelInvalidation,
   ModelInvalidationReport,
@@ -245,7 +245,6 @@ describe('provider warning ownership', () => {
           thread.id === next ? { ...thread, model: 'removed:second' } : thread,
         ),
     })
-    f.store.emit('threads_changed')
     release?.()
     await tick()
     assert.equal(f.warnings(), 1)
@@ -263,7 +262,10 @@ describe('provider warning ownership', () => {
       )
     const stop = attachProviderInvalidationWarning(f.store, f.api, f.ui)
     await tick()
-    f.store.emit('threads_changed')
+    // A rename of the active thread is not a new route to check.
+    const active = getActiveThread(f.store)
+    assert.ok(active)
+    setThreadTitle(f.store, active.id, 'Renamed')
     f.store.emit('settings_changed')
     await tick()
     assert.equal(f.warnings(), 1)
@@ -275,7 +277,6 @@ describe('provider warning ownership', () => {
           thread.id === next ? { ...thread, model: 'removed:model' } : thread,
         ),
     })
-    f.store.emit('threads_changed')
     await tick()
     assert.equal(f.warnings(), 2)
     stop()

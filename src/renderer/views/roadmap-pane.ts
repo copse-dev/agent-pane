@@ -61,6 +61,8 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { BackgroundThread } from '@shared/types/state.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
@@ -89,6 +91,14 @@ const STATUS_OPTIONS: readonly RoadmapStatus[] = [
 const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'archived'])
 
 const isRoadmapStatus = memberOf(STATUS_OPTIONS)
+
+/** Every thread id `getThreadById` can resolve, as one comparable key. */
+function knownThreadIds(
+  threads: readonly Thread[],
+  backgroundThreads: readonly BackgroundThread[],
+): string {
+  return [...threads.map((t) => t.id), ...backgroundThreads.map((b) => b.thread.id)].join('\n')
+}
 
 function roadmapModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -2588,12 +2598,16 @@ export function mountRoadmapPane(
       void refresh()
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
-    // re-render from the already-loaded items (no IPC round-trip needed).
-    store.on('threads_changed', () => {
-      if (!roadmapModeActive(store)) return
-      renderList()
-      renderEditor({ preserveDirty: true })
-    }),
+    // re-render from the already-loaded items (no IPC round-trip needed). Only
+    // the set of known thread ids matters: renames and turns do not repaint.
+    store.select(
+      (s) => knownThreadIds(s.threads, s.backgroundThreads),
+      () => {
+        if (!roadmapModeActive(store)) return
+        renderList()
+        renderEditor({ preserveDirty: true })
+      },
+    ),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
       // Invalidate in-flight reads even when the pane is hidden and no new

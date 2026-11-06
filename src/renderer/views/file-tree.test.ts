@@ -5,6 +5,8 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountFileTree } from './file-tree.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -55,6 +57,51 @@ describe('file tree selection', () => {
     await tick()
 
     assert.equal(row.classList.contains('selected'), true)
+    unmount()
+  })
+})
+
+describe('file tree thread scope', () => {
+  it('reloads for a newly selected thread from setState alone, not for thread metadata', async () => {
+    const store = createStore({
+      workspaceRoot: '/workspace',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      projects: [{ id: 'project-1', name: 'workspace', path: '/workspace' }],
+      threads: [makeThread({ id: 'thread-1' }), makeThread({ id: 'thread-2' })],
+      filesPaneOpen: true,
+    })
+    const listed: string[] = []
+    const base = makeApi([])
+    const api: ApiClient = {
+      ...base,
+      fs: {
+        ...base.fs,
+        listDir: async (_projectId, threadId) => {
+          listed.push(threadId)
+          return [{ name: `${threadId}.ts`, isDir: false }]
+        },
+      },
+    }
+    const root = document.createElement('div')
+    document.body.append(root)
+    const unmount = mountFileTree(root, store, api)
+    await tick()
+    assert.deepEqual(listed, ['thread-1'])
+    const row = root.querySelector('.tree-row[title="thread-1.ts"]')
+    assert.ok(row)
+
+    setThreadTitle(store, 'thread-1', 'Renamed')
+    setThreadTitle(store, 'thread-2', 'Another thread')
+    store.emit('threads_changed')
+    await tick()
+    assert.deepEqual(listed, ['thread-1'], 'renames and other threads do not reload the tree')
+    assert.equal(root.querySelector('.tree-row[title="thread-1.ts"]'), row)
+
+    store.setState({ activeThreadId: 'thread-2' })
+    await tick()
+    assert.deepEqual(listed, ['thread-1', 'thread-2'])
+    assert.ok(root.querySelector('.tree-row[title="thread-2.ts"]'))
     unmount()
   })
 })

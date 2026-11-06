@@ -613,11 +613,12 @@ describe('roadmap pane', () => {
         await flush()
         assert.ok(list.querySelector('.roadmap-row.is-selected'))
 
-        store.emit('threads_changed')
+        // A new thread re-renders the list (it may make an item reopenable).
+        store.setState({ threads: [makeThread('t-1', 'One')] })
         assert.equal(scrollCalls, 0, 'a partly visible row stays put')
 
         selectedTop = 310
-        store.emit('threads_changed')
+        store.setState({ threads: [makeThread('t-1', 'One'), makeThread('t-2', 'Two')] })
         assert.equal(scrollCalls, 1, 'a fully off-screen row scrolls to the nearest edge')
       } finally {
         if (rectDescriptor) {
@@ -1309,6 +1310,33 @@ describe('roadmap pane', () => {
       assert.deepEqual(calls.setThread, [{ id: 'a', threadId }], 'stamps the new thread id')
       assert.equal(reopenBtn.hidden, false, 'the tracked thread can now be reopened')
       assert.ok(list.querySelector('.roadmap-thread-chip'), 'the row shows a thread chip')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('offers Reopen once the tracked thread appears in state, and ignores renames', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const reopenBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')
+      assert.ok(reopenBtn)
+      assert.equal(reopenBtn.hidden, true, 'the tracked thread is not loaded yet')
+
+      // No event: the thread landing in state is enough.
+      store.setState({ threads: [makeThread('t1', 'Ship the thing')] })
+      assert.equal(reopenBtn.hidden, false)
+      const row = list.querySelector('.roadmap-row')
+      assert.ok(row)
+
+      store.setState({ threads: [makeThread('t1', 'Renamed thread')] })
+      assert.equal(list.querySelector('.roadmap-row'), row, 'a rename does not repaint the list')
     } finally {
       unmount()
     }
@@ -2121,7 +2149,7 @@ describe('roadmap pane', () => {
       assert.equal(viewer.querySelector('.roadmap-review-result-body')?.textContent, advice)
       assert.ok(viewer.querySelector('.roadmap-review-result.is-error'))
       // A background re-render (there is no verdict to show) must not wipe it.
-      store.emit('threads_changed')
+      store.setState({ threads: [makeThread('t-1', 'One')] })
       await flush()
       assert.equal(viewer.querySelector('.roadmap-review-result-body')?.textContent, advice)
     } finally {

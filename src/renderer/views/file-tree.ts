@@ -7,7 +7,7 @@ import {
   materialFolderIconUrl,
   mountMaterialIcon,
 } from '../icons/material-file-icons.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
 import {
@@ -221,17 +221,17 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   refreshBtn.addEventListener('click', refresh)
-  let lastOwnerKey = ''
-  function refreshForActiveTask(): void {
-    const owner = getActiveThreadOwner(store)
-    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : ''
-    if (nextKey === lastOwnerKey) return
-    lastOwnerKey = nextKey
-    refresh()
-  }
   const unsubs = [
     store.on('workspace_changed', refresh),
-    store.on('threads_changed', refreshForActiveTask),
+    // The tree lists the active thread's checkout: reload only when that owner
+    // changes, not on renames, hydration or other threads' updates.
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      () => {
+        refresh()
+      },
+      sameItems,
+    ),
     store.select(
       (s) => s.openFile,
       (openFile) => {
@@ -243,7 +243,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
-  refreshForActiveTask()
+  if (getActiveThreadOwner(store)) refresh()
   const unregisterPopoutSeed = registerPopoutSeedHandlers('explorer', {
     capture: () => ({
       openFilePath: store.getState().openFile?.path ?? null,
