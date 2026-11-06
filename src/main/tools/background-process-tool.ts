@@ -168,7 +168,8 @@ export const runBackgroundTool = defineTool({
         command,
         ['This starts a new attempt; the failed task may have made partial changes.', ...reasons],
         signal,
-        { requireInteractiveApproval: true },
+        // One outside attempt only: a forged denial must not earn a standing grant.
+        { requireInteractiveApproval: true, oneShot: true },
       )
       signal.throwIfAborted()
       if (!approved) return 'Outside background retry declined; no new attempt was started.'

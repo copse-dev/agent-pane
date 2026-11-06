@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,7 +12,7 @@ import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { TRUSTED_COMMANDS_SETTING } from '../security/command-routing-config.ts'
-import { setSetting } from '../storage/settings.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { saveProjectThread } from '../thread-store.ts'
 import { ToolRegistry } from '../tool-registry.ts'
@@ -39,6 +40,7 @@ describe('explicit background sandbox escalation', () => {
   let dispose: () => void
   let registry: ToolRegistry
   let approve: boolean
+  let remember: boolean
   let violations: number
   let wrappedCommand: string
   let beforeAnswer: (() => Promise<void>) | undefined
@@ -101,6 +103,7 @@ describe('explicit background sandbox escalation', () => {
     registry = new ToolRegistry()
     registry.register(runBackgroundTool)
     approve = true
+    remember = false
     violations = 1
     wrappedCommand = 'printf contained; exit 1'
     beforeAnswer = undefined
@@ -130,7 +133,7 @@ describe('explicit background sandbox escalation', () => {
     setApprovalHandler(async (request) => {
       prompts.push(request)
       await beforeAnswer?.()
-      return { approved: approve, remember: false }
+      return { approved: approve, remember }
     })
   })
 
@@ -250,6 +253,41 @@ describe('explicit background sandbox escalation', () => {
       inOwner(() => listBackgroundProcesses().length),
       1,
     )
+  })
+
+  // A failing command can print a denial signature itself. Approving the
+  // retry it earns must authorize that one attempt, never a standing grant
+  // that would let a later `git push` leave the sandbox unprompted.
+  it('offers only a one-shot escape when retrying a forgeable denial', async () => {
+    violations = 0
+    wrappedCommand =
+      'printf "fatal: unable to access remote: CONNECT tunnel failed, response 403"; exit 1'
+    const command = 'git fetch origin main'
+    // The approved retry really runs: give it a repository with no remote so
+    // it fails locally instead of reaching any network or enclosing checkout.
+    execFileSync('git', ['init', '-q', root])
+    const id = await failed(command)
+    remember = true
+    assert.match(await call({ action: 'start', command, retry_of: id }), /unsandboxed/)
+    const prompt = prompts.at(-1)
+    assert.ok(prompt)
+    assert.equal(prompt.title, 'Run outside sandbox?')
+    assert.notEqual(prompt.allowRemember, true)
+    assert.equal(prompt.rememberLabel, undefined)
+    assert.equal(prompt.allowTurnTreeLease, undefined)
+    assert.deepEqual(getSetting<string[]>(TRUSTED_COMMANDS_SETTING, []), [])
+  })
+
+  it('offers only a one-shot escape for an expected sandbox block', async () => {
+    remember = true
+    await call({ action: 'start', command: COMMAND, expects_sandbox_block: true })
+    const prompt = prompts.at(-1)
+    assert.ok(prompt)
+    assert.equal(prompt.title, 'Agent requests sandbox escape')
+    assert.notEqual(prompt.allowRemember, true)
+    assert.equal(prompt.rememberLabel, undefined)
+    assert.equal(prompt.allowTurnTreeLease, undefined)
+    assert.deepEqual(getSetting<string[]>(TRUSTED_COMMANDS_SETTING, []), [])
   })
 
   it('rejects changed commands, roots, owners, successful, running and cancelled attempts', async () => {
