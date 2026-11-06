@@ -498,7 +498,7 @@ describe('roadmap pane', () => {
           resolveList = resolve
         })
 
-      store.emit('workspace_changed')
+      store.setState({ activeProjectId: 'project-b', workspaceRoot: '/b' })
 
       assert.equal(form.hidden, true, 'the old item is hidden synchronously')
       assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
@@ -525,7 +525,7 @@ describe('roadmap pane', () => {
         })
       fireChanged()
       store.setState({ filesPaneOpen: false })
-      store.emit('workspace_changed')
+      store.setState({ activeProjectId: 'project-b', workspaceRoot: '/b' })
       resolveList([makeItem('a', 'Stale project A result')])
       await flush()
 

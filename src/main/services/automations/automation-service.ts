@@ -28,7 +28,6 @@ import {
   loadProjectThreadMetas,
   updateMetaOrThrow,
 } from '../thread-store.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import {
   prepareThreadCheckout,
   renameThreadWorktreeBranchAfterTitle,
@@ -305,7 +304,18 @@ export interface AutomationService {
   ): Promise<boolean>
   health(): AutomationSchedulerHealth
   onHealthChange(listener: (health: AutomationSchedulerHealth) => void): () => void
-  start(notify: (event: AutomationTriggerEvent) => void, dispatch: DispatchHeadlessTurn): void
+  /**
+   * `shownProjectId` is the project the window that receives `notify` shows
+   * (or null when there is none): only that renderer starts a draft thread, so
+   * a schedule in any other project is driven headlessly. Named by the caller
+   * that owns the window, never read from the process-global active project
+   * (#3958).
+   */
+  start(
+    notify: (event: AutomationTriggerEvent) => void,
+    dispatch: DispatchHeadlessTurn,
+    shownProjectId: () => string | null,
+  ): void
   sync(): Promise<void>
   stop(): void
   /**
@@ -353,8 +363,6 @@ export interface AutomationServiceDependencies {
   supervisor?: () => AutomationTaskSupervisor
   /** Pause before replacing a scheduler task that died, so a task that dies instantly cannot spin. */
   recoveryDelayMs?: number
-  /** Project currently focused in the renderer, or none/unknown. */
-  getActiveProjectId(): string | null
   prepareCheckout?: typeof prepareThreadCheckout
 }
 
@@ -375,6 +383,7 @@ export function createAutomationService(
   dependencies: AutomationServiceDependencies,
 ): AutomationService {
   let notify: ((event: AutomationTriggerEvent) => void) | null = null
+  let notifiedWindowProjectId: (() => string | null) | null = null
   let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
@@ -968,8 +977,9 @@ export function createAutomationService(
       // firing against any other project would otherwise sit unsent until the
       // user happens to reopen it. Drive the turn from here instead when that
       // would happen; `notify` below still fires either way so an open
-      // renderer sees the thread appear.
-      if (dependencies.getActiveProjectId() !== schedule.projectId) {
+      // renderer sees the thread appear. "Focused" is judged by the window
+      // `notify` reaches, the only renderer that could start it.
+      if (notifiedWindowProjectId?.() !== schedule.projectId) {
         void runHeadlessAutomationTurn(
           schedule.projectId,
           threadId,
@@ -1171,8 +1181,9 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender, dispatch) {
+    start(sender, dispatch, shownProjectId) {
       notify = sender
+      notifiedWindowProjectId = shownProjectId
       dispatchHeadlessTurn = dispatch
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
@@ -1211,6 +1222,7 @@ export function createAutomationService(
       recoveryTimer = null
       healthListeners.clear()
       notify = null
+      notifiedWindowProjectId = null
     },
     async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return
@@ -1293,7 +1305,6 @@ export function getAutomationService(): AutomationService {
     canReusePreviousRun: (projectId, threadId) =>
       getAutomationWorktreeReuse().canReusePreviousRun(projectId, threadId),
     isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
-    getActiveProjectId,
   })
   return singleton
 }

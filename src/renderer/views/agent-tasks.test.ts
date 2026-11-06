@@ -338,4 +338,17 @@ describe('agent-tasks', () => {
     assert.equal(visible.length, 1)
     assert.equal(visible[0]?.querySelector('.agent-task-label')?.textContent, 'thread-one cmd')
   })
+
+  it('re-scopes on a project switch made through setState alone, with no event', () => {
+    startShell(h, 'a', 'thread-one cmd')
+    at(tabs(h), 0).click()
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
+
+    h.store.setState({ activeProjectId: 'p2', workspaceRoot: '/work/p2', activeThreadId: 't2' })
+
+    assert.equal(at(tabs(h), 0).hidden, true, 'the old thread’s task is no longer shown')
+    assert.equal(at(panels(h), 0).hidden, true)
+    assert.equal(section(h).hidden, true)
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false, 'nor selected')
+  })
 })
