@@ -126,8 +126,11 @@ export function deriveOverallState(
     // genuinely has no CI" when checks are merely pending. (#521)
     return opts.checksPending ? 'pending' : 'no_checks'
   }
-  if (checks.some((check) => check.bucket === 'pending')) return 'pending'
-  if (checks.some((check) => check.bucket === 'fail')) return 'failure'
+  if (opts.checksPending || checks.some((check) => check.bucket === 'pending')) return 'pending'
+  if (checks.some((check) => check.bucket === 'fail' || check.bucket === 'cancel')) return 'failure'
+  // An unfamiliar GitHub state is not evidence that CI passed. Keep watching
+  // until it resolves or the existing durable-watch deadline expires.
+  if (checks.some((check) => check.bucket === 'unknown')) return 'pending'
   return 'success'
 }
 
@@ -165,8 +168,7 @@ export function pickLatestRunForHead(
 ): GhWorkflowRun | null {
   if (runs.length === 0) return null
   if (headSha) {
-    const match = runs.find((run) => run.headSha === headSha)
-    if (match) return match
+    return runs.find((run) => run.headSha === headSha) ?? null
   }
   return runs[0] ?? null
 }
