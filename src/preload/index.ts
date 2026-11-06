@@ -891,6 +891,7 @@ const api: ApiClient = {
     ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
+    actionState: () => ipcRenderer.invoke('threads:action-state'),
     archiveState: (projectId: string, view: 'review' | 'archived') =>
       ipcRenderer.invoke('threads:archive-state', projectId, view),
     archiveDecision: (

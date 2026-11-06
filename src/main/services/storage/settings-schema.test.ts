@@ -68,7 +68,7 @@ describe('settings-schema', () => {
   it('validates the sidebar thread sort settings', () => {
     const sort = getSettingSchema('sidebarThreadSort')
     assert.ok(sort)
-    for (const mode of ['activity', 'created', 'title']) {
+    for (const mode of ['activity', 'created', 'title', 'action']) {
       assert.equal(sort.safeParse(mode).success, true)
     }
     assert.equal(sort.safeParse('random').success, false)

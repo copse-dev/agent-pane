@@ -14,9 +14,12 @@ export function orderSidebarThreads(
   threads: readonly SidebarThread[],
   mode: ThreadSortMode,
   reverse: boolean,
+  actionRank: (thread: SidebarThread) => number = () => 0,
 ): SidebarThread[] {
   const ordered = [...threads]
-  if (mode === 'created') {
+  if (mode === 'action') {
+    ordered.sort((a, b) => actionRank(a) - actionRank(b))
+  } else if (mode === 'created') {
     ordered.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
   } else if (mode === 'title') {
     // An untitled thread shows as "New Thread", so it sorts as that.
@@ -42,12 +45,15 @@ export function orderSidebarRows(
   rows: readonly SidebarRow[],
   mode: ThreadSortMode,
   reverse: boolean,
+  actionRank: (thread: SidebarThread) => number = () => 0,
 ): SidebarRow[] {
   const created = (row: SidebarRow): number => row.thread.createdAt ?? 0
   const activity = (row: SidebarRow): number => sidebarLastPromptAt(row.thread) ?? created(row)
   const name = (row: SidebarRow): string => row.thread.title || 'New Thread'
   const ordered = [...rows]
-  if (mode === 'created') {
+  if (mode === 'action') {
+    ordered.sort((a, b) => actionRank(a.thread) - actionRank(b.thread) || activity(b) - activity(a))
+  } else if (mode === 'created') {
     ordered.sort((a, b) => created(b) - created(a))
   } else if (mode === 'title') {
     ordered.sort((a, b) => name(a).localeCompare(name(b), undefined, { sensitivity: 'base' }))
