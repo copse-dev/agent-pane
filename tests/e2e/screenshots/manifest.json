@@ -177,6 +177,10 @@
       "sha256": "bfb1d66cf6bd85a4e0ef2b35c025ab56b9dfe2fc5456c1ede6b73ea5b5969aad",
       "bytes": 19234
     },
+    "acp-startup-overflow.png": {
+      "sha256": "36e046ffc533ec4be67c136eddfe066ed46fab9a2b5c294a6821ae79dd6293c6",
+      "bytes": 47554
+    },
     "acp-startup-tools.png": {
       "sha256": "a60340869975b02670fe0cf2048503f8d2a63fea5dfa67aa23853449d6ae2536",
       "bytes": 149816
