@@ -20,6 +20,7 @@ import { registerAppleDevelopmentHandlers } from './apple-development-handlers.t
 import { registerGhHandlers } from './gh-handlers.ts'
 import { registerRemoteAgentHandlers } from './remote-agent-handlers.ts'
 import { registerTestScenarioHandlers } from './test-scenario-handlers.ts'
+import { registerGitHandlers } from './git-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -37,10 +38,7 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import {
-  hasBackgroundProcessesForThread,
-  peekBackgroundProcessLogs,
-} from '../services/exec/background-process.ts'
+import { peekBackgroundProcessLogs } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
 import micromatch from 'micromatch'
@@ -96,20 +94,16 @@ import {
   zModelId,
   zHookRunId,
   zHookTestRequest,
-  zGitBranchName,
   zNonEmptyString,
   zPathString,
   zProjectId,
   zThreadId,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
+import { threadPathArgs } from './thread-path-args.ts'
 import { resolveHookTestTarget } from './hook-test-target.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import {
-  inspectThreadCheckoutAttachment,
-  inspectThreadCheckoutRoot,
-  reattachThreadCheckout,
-  restoreThreadCheckout,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -125,10 +119,7 @@ import {
   onWorkspaceIndexStatusChanged,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
-import {
-  ensureWorkingTreeWatched,
-  scheduleIndexRebuild,
-} from '../services/search/workspace-index-watcher.ts'
+import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
@@ -346,24 +337,7 @@ import {
   saveKnowledgeAttachments,
 } from '../services/storage/knowledge-attachments.ts'
 import { ATTACHMENTS_FIELD, parseKnowledgeAttachments } from '@shared/knowledge/attachments.ts'
-import {
-  checkoutGitBranch,
-  getBranches,
-  getCommittedChanges,
-  getCommittedFileDiff,
-  getCurrentBranchName,
-  getDefaultBranch,
-  getGitChangeStats,
-  getGitFileDiff,
-  getGitPromptState,
-  getGitStatus,
-  readThreadChangeSummary,
-  getGitWorkingFileDiff,
-  getGithubRepoSlug,
-  isInsideGitWorkTree,
-  resetDefaultBranchCache,
-} from '../services/github/git-service.ts'
-import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
+import { getGithubRepoSlug } from '../services/github/git-service.ts'
 import { issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
@@ -384,13 +358,6 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import {
-  branchHasOpenPr,
-  branchMergedThrough,
-  getGitBranchStatus,
-} from '../services/github/pr-context-service.ts'
-import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
-import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
 import {
   reloadMcpServers,
@@ -910,8 +877,6 @@ export function registerAllHandlers(
     }
     return canonical
   })
-
-  const threadPathArgs = z.tuple([zProjectId, zThreadId, zPathString])
 
   ipcMain.handle('fs:read-file', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2664,174 +2629,7 @@ export function registerAllHandlers(
     return toCursorRuleSummaries(await discoverCursorRules(root))
   })
 
-  const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
-
-  async function resolveWatchedGitRoot(projectId: string, threadId: string): Promise<string> {
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    // Watch-only: isolated worktrees are otherwise unwatched until an agent
-    // turn starts indexing, and large workspaces may skip the index watcher.
-    ensureWorkingTreeWatched(root)
-    return root
-  }
-
-  ipcMain.handle('git:is-available', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return (await isGitAvailableForTarget()) && (await isInsideGitWorkTree(root))
-  })
-  ipcMain.handle('git:status', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
-  })
-  // Inspect-only: resolves each thread's checkout without restoring worktrees, syncing
-  // metadata, or ensureWorkingTreeWatched.
-  const readThreadChangeSummaries = createThreadChangeSummaryReader({
-    resolveRoot: inspectThreadCheckoutRoot,
-    read: readThreadChangeSummary,
-  })
-  ipcMain.handle('git:thread-change-summary', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [refs, opts] = parseIpcArgs(
-      z.tuple([
-        z.array(z.object({ projectId: zProjectId, threadId: zThreadId })).max(200),
-        z.object({ fresh: z.boolean().optional() }).optional(),
-      ]),
-      rawArgs,
-    )
-    return readThreadChangeSummaries(refs, opts?.fresh === true ? { fresh: true } : {})
-  })
-  ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getGitChangeStats(root, {
-      includeCommitted: true,
-      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
-      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
-    })
-  })
-  ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, filePath, isStaged] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
-      rawArgs,
-    )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getGitFileDiff(filePath, isStaged, root)
-  })
-  ipcMain.handle('git:committed-changes', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getCommittedChanges(root, {
-      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
-      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
-    })
-  })
-  ipcMain.handle('git:committed-file-diff', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getCommittedFileDiff(filePath, root, {
-      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
-      mergedThrough: (branch) => branchMergedThrough(projectId, branch, root),
-    })
-  })
-  ipcMain.handle('git:working-file-diff', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getGitWorkingFileDiff(filePath, root)
-  })
-  ipcMain.handle('git:current-branch', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getCurrentBranchName(await resolveWatchedGitRoot(projectId, threadId))
-  })
-  ipcMain.handle('git:branch-status', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    // Git-ref charset only, no leading dash: the branch reaches `gh pr list
-    // --head <branch>` and must never be option-shaped (#580).
-    const [projectId, threadId, branch] = parseIpcArgs(
-      z.tuple([
-        zProjectId,
-        zThreadId,
-        z
-          .string()
-          .max(256)
-          .regex(/^[A-Za-z0-9_][A-Za-z0-9_\-./]*$/)
-          .optional(),
-      ]),
-      rawArgs,
-    )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getGitBranchStatus(projectId, branch, root)
-  })
-  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
-    isDispatcherThreadActive(projectId, threadId) ||
-    listRunningThreadIds().includes(threadId) ||
-    hasBackgroundProcessesForThread({ projectId, threadId })
-  ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
-  })
-  ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
-  })
-  ipcMain.handle('git:restore-worktree', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return restoreThreadCheckout(projectId, threadId, threadCheckoutBusy)
-  })
-  ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
-  })
-  ipcMain.handle('git:checkout-branch', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, targetBranch] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, zGitBranchName]),
-      rawArgs,
-    )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    await checkoutGitBranch(targetBranch, root)
-  })
-  ipcMain.handle('git:list-branches', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getBranches(await resolveWatchedGitRoot(projectId, threadId))
-  })
-  ipcMain.handle('agent:reset-default-branch-cache', (event) => {
-    assertMainFrameSender(event, win)
-    resetDefaultBranchCache()
-  })
-  ipcMain.handle('git:get-default-branch', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
-  })
-  ipcMain.handle('git:session-backup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-    return getSessionBackup({ projectId, threadId })
-  })
-  ipcMain.handle(
-    'git:restore-backup',
-    async (event, projectIdArg: unknown, threadIdArg: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      return restoreSessionBackup({ projectId, threadId })
-    },
-  )
-
+  registerGitHandlers(win, isDispatcherThreadActive)
   registerGhHandlers(win)
   registerRemoteAgentHandlers(win, isDispatcherThreadActive)
   registerAcpHandlers(win)
