@@ -655,6 +655,21 @@ in forgeable command output, Guarded YOLO and deterministic shell auto-approval 
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
 
+### Background tasks
+
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. Trusted-command routing follows `run_background`'s own per-tool setting in the
+permission gate and the runner alike: Always ask on `run_shell` alone changes neither where a
+background task runs nor how the gate records and, under Guarded YOLO, screens it. An eligible
+outside-read command instead receives the same per-spawn read overlay as `run_shell`; its named
+paths become readable without granting writes or network. Separately approved loopback binding
+composes with that read overlay. Background starts do not yet offer `expects_sandbox_block`,
+reactive outside retries, or the foreground denial cache: an opaque task whose need for access
+appears only at runtime still needs the foreground escalation route. Foreground and background
+installs share package-firewall preparation and JavaScript lifecycle-script suppression under the
+existing safe-install setting; a missing proxy launcher refuses the install before spawning.
+
 ## Host-side read tools
 
 `gh` through `run_shell` is an ambiguous “may reach” command: it starts in the network-less project
@@ -710,17 +725,6 @@ an agent-requested action, governed like any tool by its per-tool permission (se
 Block to require approval or disable it).
 
 ## Read access outside the project
-
-Background starts use the same approved command routing as `run_shell`. A command approved for
-outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
-standard mode too. An eligible outside-read command instead receives the same per-spawn read
-overlay as `run_shell`; its named paths become readable without granting writes or network.
-Separately approved loopback binding composes with that read overlay. Background starts do not yet
-offer `expects_sandbox_block`, reactive outside retries, or the foreground denial cache: an opaque
-task whose need for access appears only at runtime still needs the foreground escalation route.
-Foreground and background installs share package-firewall preparation and JavaScript
-lifecycle-script suppression under the existing safe-install setting; a missing proxy launcher
-refuses the install before spawning.
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
 “Allow read access outside of the project?” question. The prompt lists every requested path and

@@ -59,6 +59,11 @@ Review also reproduced an existing foreground mismatch between Always ask and tr
 routing: the gate suppressed trusted auto-approval, but the runner could still select the trusted
 outside route after a contained prompt. Shared routing now honors the selected tool's explicit
 override. The background regression and tests cover this before enabling standard outside runs.
+A later review found the gate still routed a background start on `run_shell`'s setting while the
+runner used `run_background`'s, so Always ask on `run_shell` alone hid a trusted background escape
+from the gate's decision record and from Guarded YOLO's tier screening. The gate now routes on the
+tool being run; regressions in `background-command-routing.test.ts` and `tier-screening.test.ts`
+failed before that change.
 
 ### 2. Background tasks cannot explicitly request a runtime escape
 
