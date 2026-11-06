@@ -11,7 +11,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { loadEvalScenario } from '../../tests/e2e/helpers/agent-eval-scenario.ts'
+import { execFileSync } from 'node:child_process'
+import {
+  createEvalProject,
+  loadEvalScenario,
+  seedEvalWorkspace,
+} from '../../tests/e2e/helpers/agent-eval-scenario.ts'
 import { expectRecord } from '../../src/shared/unknown-value.mts'
 import {
   toolExpectationViolations,
@@ -55,6 +60,23 @@ const GOOD_RUN: ObservedToolCall[] = [
 ]
 
 describe('git-ci-first-class-tools scenario', () => {
+  it('isolates project activation while retaining the GitHub origin', () => {
+    const project = createEvalProject(scenario)
+    assert.notEqual(
+      project.root,
+      process.cwd(),
+      'project activation must not switch the developer checkout',
+    )
+    try {
+      seedEvalWorkspace(project.root, scenario)
+      const origin = (cwd: string): string =>
+        execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8' }).trim()
+      assert.equal(origin(project.root), origin(process.cwd()))
+    } finally {
+      project.cleanup()
+    }
+  })
+
   it('fails the exported thread from #1845', () => {
     const violations = toolExpectationViolations(EXPORTED_FAILURE, expectations)
     // The trace never completed the merge-history half through a first-class
