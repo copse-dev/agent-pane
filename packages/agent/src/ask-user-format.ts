@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 /**
  * A single clarifying question the agent asks the user. `options` are optional
@@ -57,8 +58,30 @@ export const ASK_USER_ANSWER_MAX_LENGTH = 8192
 /** How long a question waits for the user before it gives up as timed out. */
 export const ASK_USER_TIMEOUT_MS = 30 * 60 * 1000
 
+/** A saved question is not an answer or permission to choose for the user. */
+export const DEFERRED_ASK_USER_RESULT =
+  'Saved for human review because this run is unattended. The user has not answered. ' +
+  'Continue independent work; leave work that depends on this answer pending. ' +
+  'Do not ask this question again or treat the missing answer as permission.'
+
 export type AskUserQuestion = z.infer<typeof askUserQuestionSchema>
 export type AskUserParams = z.infer<typeof askUserParamsSchema>
+
+const DEFERRED_QUESTIONS_PREFIX = `${DEFERRED_ASK_USER_RESULT}\n\nSaved questions:\n`
+
+/** Preserve the executed questions, including any supported toolGate rewrite. */
+export function formatDeferredAskUserResult(questions: AskUserQuestion[]): string {
+  return `${DEFERRED_QUESTIONS_PREFIX}${JSON.stringify({ questions })}`
+}
+
+/** Only the exact saved-result envelope contains durable unanswered questions. */
+export function parseDeferredAskUserResult(result: string): AskUserParams | null {
+  if (!result.startsWith(DEFERRED_QUESTIONS_PREFIX)) return null
+  return safeJsonParse(
+    result.slice(DEFERRED_QUESTIONS_PREFIX.length),
+    decodeWithSchema(askUserParamsSchema),
+  )
+}
 
 /** One question paired with the answer the user gave (or left blank). */
 export interface AskUserAnswer {
