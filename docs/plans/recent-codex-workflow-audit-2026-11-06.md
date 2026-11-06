@@ -231,3 +231,21 @@ These are diagnostic controls with a different model, not paired evidence that
 Qwen's quality failures were fixed. The native/ACP product route is established;
 model reliability and the history scorer's narrow successful-tool group remain
 explicit limits.
+
+### Preserve failed-turn progress
+
+The failed handoff fixture had an idle thread with a failed recorded turn. Bounded
+retrieval now preserves each selected message's `turnOutcome.status` and
+`stopReason`, with null for a legacy unknown outcome. It returns no raw error
+details. A failing-before regression retains positive partial prose alongside a
+failed `max_steps` outcome: idle and a few green observations cannot become a
+clean completed review merely because the reader omitted terminal metadata.
+Turn completion is still distinct from task acceptance. Final validation uses
+the same read-only workflow prompts plus a separate failed-review fixture probe.
+
+The final focused selection passes all 193 tests. The initial implementation
+`733b3b848f53cbea48ecb9e8328c282019156ea4` passed full Linux cloud CI
+[42283579487](https://github.com/copse-dev/agent-pane/actions/runs/42283579487),
+including static/unit/build/browser/bench gates and all nine Electron shards.
+That success is baseline evidence for the implementation before the later
+provenance and turn-outcome follow-ups; the final head must earn its own gates.

@@ -35,6 +35,7 @@ import {
   type RefResolver,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
+import type { TurnOutcome } from './turn-outcome.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
@@ -1007,6 +1008,7 @@ export interface ThreadTranscriptPage {
     createdAt: number
     content: string
     contentTruncated: boolean
+    turnOutcome: Pick<TurnOutcome, 'status' | 'stopReason'> | null
     unavailable: boolean
     contentPath: string | null
     toolCalls: Array<Pick<Message['toolCalls'][number], 'name' | 'status'>>
@@ -1054,6 +1056,9 @@ export function readThreadTranscriptPage(
       }
       return {
         content: content.slice(0, 4000),
+        turnOutcome: line.turnOutcome
+          ? { status: line.turnOutcome.status, stopReason: line.turnOutcome.stopReason }
+          : null,
         role: line.role,
         createdAt: line.createdAt ?? 0,
         id: line.id,

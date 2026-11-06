@@ -61,6 +61,7 @@ describe('native workflow read evidence', () => {
                           {
                             content:
                               'Remaining: dataset manifest, server-error archive, Monday outline. Keep agents frozen.',
+                            turnOutcome: { status: 'completed', stopReason: 'end_turn' },
                             role: 'assistant',
                             createdAt: timestamp,
                             id: 'draft-answer',
@@ -131,6 +132,7 @@ describe('native workflow read evidence', () => {
     await expect(result).toHaveText(expect.stringContaining('Latest project'))
     await expect(result).toHaveText(expect.stringContaining('Keep agents frozen.'))
     await expect(result).toHaveText(expect.stringContaining('"nextOffset": 1'))
+    await expect(result).toHaveText(expect.stringContaining('"status": "completed"'))
     await saveElementScreenshot(selector, 'conversation-page-evidence.png')
   })
 })

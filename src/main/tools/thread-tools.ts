@@ -71,7 +71,7 @@ export const readThreadTool = defineTool({
   name: 'read_thread',
   provenance: 'external',
   description:
-    'Read recent finalized messages from a Copse conversation returned by list_threads, resolving its stored prose directly. Returns at most 20 messages (10 by default), oldest first within the page; offset counts backward from the newest message and nextOffset requests older messages. Each body is capped at 4000 characters with an explicit truncation flag and contentPath for a detailed read_file. Tool names/statuses are summaries, not tool results; active work may not have finalized yet. Uses the existing thread-scoped read consent; never grants sending or reads another app’s history.',
+    'Read recent stored messages from a Copse conversation returned by list_threads, resolving its stored prose directly. Returns at most 20 messages (10 by default), oldest first within the page; offset counts backward from the newest message and nextOffset requests older messages. Each body is capped at 4000 characters with an explicit truncation flag and contentPath for a detailed read_file. Tool names/statuses are summaries, not tool results. Message turnOutcome reports recorded turn completion/failure and stop reason, or null for unknown legacy outcomes; it is not task acceptance, and thread idle alone does not prove success. Active work may not have finalized yet. Uses the existing thread-scoped read consent; never grants sending or reads another app’s history.',
   parameters: z.object({
     project_id: z.string().min(1),
     thread_id: z.string().min(1),

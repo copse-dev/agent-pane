@@ -132,3 +132,40 @@ it('rejects escaping thread ids and invalid page bounds', async () => {
     /offset/,
   )
 })
+
+it('retains a failed budget outcome independently of idle status and positive partial prose', async () => {
+  await createThread('project', {
+    id: 'budget-review',
+    title: 'Review checkpoint',
+    status: 'idle',
+    createdAt: 1,
+    updatedAt: 2,
+    usage: { inputTokens: 0, outputTokens: 0 },
+    messages: [
+      {
+        id: 'partial-review',
+        role: 'assistant',
+        createdAt: 1,
+        content: 'The checks inspected so far were green.',
+        toolCalls: [],
+        turnOutcome: {
+          status: 'failed',
+          stopReason: 'max_steps',
+          source: 'host',
+          executor: 'local',
+          provider: 'fixture',
+          model: 'fixture',
+          endedAt: 2,
+        },
+      },
+    ],
+  })
+  const page = await readThreadTranscriptPage('project', 'budget-review', { limit: 1, offset: 0 })
+  assert.ok(page)
+  assert.ok(page.messages[0])
+  assert.equal(page.status, 'idle')
+  assert.match(page.messages[0].content, /green/)
+  assert.deepEqual(page.messages[0].turnOutcome, { status: 'failed', stopReason: 'max_steps' })
+  const legacy = await readThreadTranscriptPage('project', 'thread', { limit: 1, offset: 0 })
+  assert.equal(legacy?.messages[0]?.turnOutcome, null)
+})
