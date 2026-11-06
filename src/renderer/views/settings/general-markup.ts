@@ -17,20 +17,14 @@ export const generalMarkup = `
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
-                Choose the main chat model and the models used for background tasks. The defaults
-                prefer a model running on this machine, but anything from a provider you have set
-                up can be selected.
+                The chat model, and the models used for background tasks.
               </p>
               <label>
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks
-                  the model that gives the most for what it costs on your plan, and sends the turn
-                  to that provider. You can pin a specific model here instead, or from the picker
-                  beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under its API key’s Options in
-                  Models &amp; agents.
+                  Best value picks the model that gives the most for what it costs on your plans.
+                  Pin one here or from the chat picker.
                 </span>
               </label>
               <label>
