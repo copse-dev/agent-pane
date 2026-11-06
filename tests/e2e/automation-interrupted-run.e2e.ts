@@ -295,8 +295,20 @@ describe('inactive automation after an interrupted app session', function () {
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
-    await parkPointer()
-    await saveAppScreenshot('automation-interrupted-fresh-run.png')
+    // The completed run renames its real checkout after the thread title.
+    // Wait for that state, then pin only the generated suffix for capture.
+    await expect($('.footer-branch-label')).toHaveText(/^copse\/health-check-[a-f0-9]+$/)
+    const restoreBranch = await pinTextForCapture(
+      '.footer-branch-label',
+      /^copse\/health-check-[a-f0-9]+$/,
+      'copse/health-check-000001',
+    )
+    try {
+      await parkPointer()
+      await saveAppScreenshot('automation-interrupted-fresh-run.png')
+    } finally {
+      await restoreBranch()
+    }
     await $(`.chat-row[data-thread-id="${OLD}"]`).click()
     const card = $('[data-turn-recovery-card]')
     await expect(card.$('.turn-recovery-title')).toHaveText('TURN INTERRUPTED')
