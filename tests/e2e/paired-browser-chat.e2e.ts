@@ -18,6 +18,8 @@ import {
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { shouldUseChromiumHeadless } from './helpers/display-mode.mts'
+import { withFrozenAnimations } from './helpers/frozen-animations.ts'
+import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
 const projectId = 'e2e-paired-browser'
 const deviceLabel = 'Paired browser acceptance'
@@ -316,9 +318,15 @@ describe('real paired browser chat with the desktop window closed', function () 
     await waitText('The approved command completed.')
     await mobile().$('button=Deny').waitForExist()
     // Full phone viewport is the subject, not Electron's #app screenshot frame.
-    const shots = join(process.cwd(), 'e2e-failure-artifacts', 'paired-browser')
+    const shots =
+      process.platform === 'darwin'
+        ? join(process.cwd(), 'e2e-failure-artifacts', 'paired-browser')
+        : E2E_SCREENSHOT_DIR
     mkdirSync(shots, { recursive: true })
-    for (const theme of ['light', 'dark']) {
+    for (const [theme, filename] of [
+      ['light', 'paired-browser-approval-light.png'],
+      ['dark', 'paired-browser-approval-dark.png'],
+    ] as const) {
       await mobile().sendCommand('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value: theme }],
       })
@@ -340,7 +348,9 @@ describe('real paired browser chat with the desktop window closed', function () 
         )
       })
       assert.equal(await mobile().$('.submit-btn').getText(), 'Queue')
-      await mobile().saveScreenshot(join(shots, `paired-browser-approval-${theme}.png`))
+      await withFrozenAnimations(async () => {
+        await mobile().saveScreenshot(join(shots, filename))
+      }, mobile())
     }
     await mobile().$('button=Deny').click()
     await waitText('The phone declined the profile read.')
