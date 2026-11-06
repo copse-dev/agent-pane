@@ -12467,7 +12467,10 @@ function hydrateAcpResourceImages(root, api2, store2) {
     card.dataset["imagePreviewRequested"] = "true";
     const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(card), path);
     whenImageRead(read, (src) => {
-      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) {
+        delete card.dataset["imagePreviewRequested"];
+        return;
+      }
       showCardImage(card, src, read);
     });
   }
