@@ -386,6 +386,7 @@ import {
   reviewerInputAnswer,
   reviewerInputRequests,
   sameItems,
+  sameThreadBesidesDraft,
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
@@ -461,7 +462,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CII65E5X.js";
+} from "./chunk-QECTC33F.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -64751,10 +64752,14 @@ function mountFooterBranchStatus(host, store2, api2) {
     ),
     // The active thread's own updates (branch, worktree, PR links, blank or
     // not). Other threads' renames and turns no longer repaint the footer.
-    store2.select(activeThreadOf, () => {
-      if (switchedThisTask) renderStoreState();
-      else scheduleStoreRefresh();
-    }),
+    store2.select(
+      activeThreadOf,
+      () => {
+        if (switchedThisTask) renderStoreState();
+        else scheduleStoreRefresh();
+      },
+      sameThreadBesidesDraft
+    ),
     store2.on("thread_status_changed", scheduleStoreRefresh),
     store2.on("message_added", () => {
       scheduleStoreRefresh();
@@ -66196,9 +66201,13 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
     }),
-    store2.select(activeThreadOf, () => {
-      showForActiveThread();
-    }),
+    store2.select(
+      activeThreadOf,
+      () => {
+        showForActiveThread();
+      },
+      sameThreadBesidesDraft
+    ),
     api2.fs.onChanged(() => {
       scheduleChangesRefresh();
     }),
@@ -66304,7 +66313,7 @@ function mountNextStepHint(store2, api2, onChanged) {
       if (status === "idle") void maybeFetchHint(tid);
     }),
     // The active thread: a switch, or its own last exchange or status.
-    store2.select(activeThreadOf, syncActiveThread)
+    store2.select(activeThreadOf, syncActiveThread, sameThreadBesidesDraft)
   ];
   return {
     current: () => displayed,

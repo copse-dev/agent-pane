@@ -71826,6 +71826,16 @@ function activeThreadOf(state) {
   if (!activeThreadId) return void 0;
   return threads.find((t2) => t2.id === activeThreadId) ?? backgroundThreads.find((b2) => b2.thread.id === activeThreadId)?.thread;
 }
+function besidesDraft(thread) {
+  return Object.entries(thread).filter(([key]) => key !== "draftPrompt" && key !== "updatedAt");
+}
+function sameThreadBesidesDraft(a4, b2) {
+  if (a4 === b2) return true;
+  if (!a4 || !b2 || a4.id !== b2.id) return false;
+  const left = besidesDraft(a4);
+  const right = new Map(besidesDraft(b2));
+  return left.length === right.size && left.every(([key, value]) => right.has(key) && Object.is(value, right.get(key)));
+}
 var init_active_thread_owner = __esm({
   "src/renderer/controller/active-thread-owner.ts"() {
   }
@@ -74375,6 +74385,7 @@ export {
   getActiveThreadOwner,
   requireActiveThreadOwner,
   activeThreadOf,
+  sameThreadBesidesDraft,
   init_active_thread_owner,
   syncFilesPaneDom,
   selectRightPanelMode,
