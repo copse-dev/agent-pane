@@ -1390,21 +1390,21 @@ rather than by what it looks like. Flat and hatched plates set `--sev` and mix t
 locally using the tuning tokens in `styles/global/base.css`: `--callout-plate-fill`,
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch`. There are no finished
 `--callout-plate` or `--callout-hatch` properties: a root-level mix would resolve the root's
-severity before inheritance. Expanded reasoning builds its etched surface from theme tokens and
-applies a fainter accent hatch.
+severity before inheritance. Expanded reasoning sits on a plain raised plate built from theme
+tokens alone.
 
 - **Flat plate** — prose the agent wrote. GitHub alerts and blockquotes. It is part of the answer,
   so it gets a plain surface, and the severity hue moves to the title and its glyph.
 - **Hatched plate** — Short status annotations such as review and comparison. The texture sets
   them apart from assistant prose without spending another hue or shape. Under
   `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate.
-- **Etched plate** — Expanded reasoning keeps a finer, lighter hatch over a softly tinted solid
-  surface. The hatch fades toward the center of the box so longer passages sit on calmer glass.
-  A faint edge and inset highlight preserve the etched feel, while `--text-secondary` keeps the
-  words legible. Under reduced transparency or increased contrast, use a plain elevated surface
-  and a stronger edge.
+- **Raised plate** — Expanded reasoning: `--bg-elevated`, no outline, texture, gradient or inset
+  highlight, with `--text-secondary` keeping the words legible. It used to be an "etched glass"
+  (a sheen, a radial glow, a fading hatch, an edge and a highlight stacked on one disclosure),
+  which was the busiest surface in the transcript for the least important text. Under increased
+  contrast it gains a `--border-strong` edge.
 
-Expanded reasoning uses the etched plate both while live and after completion, including inside a
+Expanded reasoning uses the raised plate both while live and after completion, including inside a
 tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.

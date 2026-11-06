@@ -98,7 +98,8 @@ export function createVisualEvidenceSection(
       el(
         'span',
         { class: 'visual-evidence-heading' },
-        el('span', { class: 'visual-evidence-eyebrow' }, 'Visual evidence'),
+        // The caption names the evidence; the section's aria-label says what
+        // kind of block this is, so no visible eyebrow sits above it.
         el('span', { class: 'visual-evidence-caption' }, item.caption),
         el(
           'span',
