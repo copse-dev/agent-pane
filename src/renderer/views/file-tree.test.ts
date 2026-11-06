@@ -5,7 +5,8 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountFileTree } from './file-tree.ts'
-import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { createThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { __resetPersistenceForTest, attachAutosave } from '../controller/persistence.ts'
 import { makeThread } from '../thread-fixture.test-support.ts'
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -198,5 +199,62 @@ describe('file tree workspace switch', () => {
     assert.ok(root.querySelector('.tree-row[title="project-2.md"]'), 'the new project’s entries')
     assert.equal(root.querySelector('.tree-row[title="project-1.md"]'), null)
     unmount()
+  })
+})
+
+describe('file tree and thread persistence', () => {
+  it('lists a new thread only after autosave has created it in main', async () => {
+    __resetPersistenceForTest()
+    const store = createStore({
+      workspaceRoot: '/workspace',
+      activeProjectId: 'project-1',
+      projects: [{ id: 'project-1', name: 'workspace', path: '/workspace' }],
+      filesPaneOpen: true,
+    })
+    const base = createFakeApi()
+    const created = new Set<string>()
+    let releaseCreate: (() => void) | undefined
+    const listed: string[] = []
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        create: (_projectId, thread) =>
+          new Promise<void>((resolve) => {
+            releaseCreate = (): void => {
+              created.add(thread.id)
+              resolve()
+            }
+          }),
+      },
+      fs: {
+        ...base.fs,
+        // Main rejects a thread whose meta is not on disk yet.
+        listDir: async (_projectId, threadId) => {
+          listed.push(threadId)
+          if (!created.has(threadId)) throw new Error('Thread is not persisted yet')
+          return [{ name: 'guide.html', isDir: false }]
+        },
+      },
+    }
+    const autosave = attachAutosave(store, api)
+    const root = document.createElement('div')
+    document.body.append(root)
+    const unmount = mountFileTree(root, store, api)
+    try {
+      // The selection fires inside createThread's setState, before the
+      // threads_changed that starts the create.
+      const id = createThread(store)
+      await tick()
+      assert.deepEqual(listed, [], 'no listing while the create is in flight')
+
+      releaseCreate?.()
+      await tick()
+      assert.deepEqual(listed, [id])
+      assert.ok(root.querySelector('.tree-row[title="guide.html"]'))
+    } finally {
+      unmount()
+      autosave.detach()
+    }
   })
 })
