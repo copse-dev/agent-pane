@@ -66,6 +66,7 @@ import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
 import { githubSamlAuthorizationUrl, isGithubSamlError } from './pr-auth-error.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -1567,7 +1568,7 @@ export function mountPrPane(
       syncWatch()
       if (active) void refresh()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       threadRelationshipRequest++
       activeThreadRelations = null
       relationshipRequest++

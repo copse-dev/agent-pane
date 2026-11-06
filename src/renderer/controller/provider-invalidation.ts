@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import type { ModelInvalidation, ModelSettingsTarget } from '@shared/model-invalidation.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -198,7 +199,7 @@ export function attachProviderInvalidationWarning(
       })
   }
   const unsubscribe = [
-    store.on('workspace_changed', check),
+    selectActiveWorkspace(store, check),
     store.on('threads_changed', check),
     store.on('settings_changed', check),
     store.on('thread_status_changed', check),

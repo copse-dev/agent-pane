@@ -7,6 +7,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ExternalEditor } from '@shared/types/editors.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 function editorIcon(): SVGSVGElement {
   // A generic "code window" glyph — the dropdown lists editors by name, so the
@@ -183,7 +184,7 @@ export function mountOpenInEditor(
     on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && open) setOpen(false)
     }),
-    store.on('workspace_changed', syncVisibility),
+    selectActiveWorkspace(store, syncVisibility),
     store.on('projects_changed', syncVisibility),
   )
 
