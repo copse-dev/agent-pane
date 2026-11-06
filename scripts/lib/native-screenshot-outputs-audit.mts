@@ -36,7 +36,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
-    sourceSha256: '9df2346aa7c03ecdaa74539f312b62d0b08253b306e5073760d0db26368882c5',
+    sourceSha256: '09ba9923d244eeda7ba2f434c1bc6dd5ff53e7ff801d53ad10fb862daf011993',
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
@@ -182,7 +182,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {
-    sourceSha256: '2f9e156344b418ebf679d4a7e443346875b886cc68cc530b10be1d7202877675',
+    sourceSha256: '0677090d0256c665c1b0a79c99225bf1f76169ce648590a218bc997a3b766f08',
     filenames: [
       'explainer-drawing-1-player.png',
       'explainer-drawing-1.png',
@@ -195,7 +195,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer-scenes.e2e.ts': {
-    sourceSha256: '77f582553f6468a160782bd34eee9595c967ec8dc4c3b0babfbcf2f270c12e1f',
+    sourceSha256: 'ca38e42ddbe098d7c27458cf90d8dcd088ecdda3f7fd2f546f938cf1a8659e7d',
     filenames: [
       'explainer-scenes-1-player.png',
       'explainer-scenes-1.png',
@@ -204,7 +204,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer.e2e.ts': {
-    sourceSha256: '9537872e2bcf98bd1acf03478cc1130af77c19b4fb45b1a7420340081ac1e025',
+    sourceSha256: 'e1cac3d4f3a96cffa1db645d0973e315f14de0f43c871af9304cf60be4bc430a',
     filenames: ['thread-explainer-player.png'],
   },
 }
