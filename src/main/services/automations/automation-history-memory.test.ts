@@ -124,7 +124,6 @@ describe('automation checks without project transcript allocation', () => {
         releasePreviousRun: () => {
           throw new Error('A busy run must retain its checkout')
         },
-        getActiveProjectId: () => PROJECT,
       })
       const schedule = await service.upsert(PROJECT, {
         name: 'Health check',
