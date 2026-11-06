@@ -293,7 +293,13 @@ describe('callout surfaces', () => {
             shadow: style.boxShadow,
           }
         })
-        expect(reasoning).toEqual({ image: 'none', border: '1px', shadow: 'none' })
+        // The thinking plate is already a flat fill; only increased contrast
+        // adds its edge.
+        expect(reasoning).toEqual({
+          image: 'none',
+          border: feature.name === 'prefers-contrast' ? '1px' : '0px',
+          shadow: 'none',
+        })
       }
       // The pointer rests where the Settings dialog was dismissed, which can be
       // over this message, fading its hover-only Copy button into the frame.

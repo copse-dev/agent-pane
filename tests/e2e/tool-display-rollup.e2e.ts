@@ -191,6 +191,7 @@ describe('tool call turn rollup', () => {
       const textBox = text.getBoundingClientRect()
       return {
         background: style.backgroundImage,
+        backgroundColor: style.backgroundColor,
         borderWidth: style.borderLeftWidth,
         textColor: getComputedStyle(text).color,
         secondaryColor,
@@ -202,10 +203,11 @@ describe('tool call turn rollup', () => {
         textBottom: box.bottom - textBox.bottom,
       }
     })
-    expect(reasoningLayout.background).toContain('linear-gradient')
-    expect(reasoningLayout.background).toContain('radial-gradient')
-    expect(reasoningLayout.background).toContain('repeating-linear-gradient')
-    expect(reasoningLayout.borderWidth).toBe('1px')
+    // One flat raised plate: a fill, no sheen or hatch, and no outline outside
+    // increased contrast (docs/ui-taste.md).
+    expect(reasoningLayout.background).toBe('none')
+    expect(reasoningLayout.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(reasoningLayout.borderWidth).toBe('0px')
     expect(reasoningLayout.textColor).toBe(reasoningLayout.secondaryColor)
     expect(reasoningLayout.padding).toEqual(['12px', '16px', '12px', '16px'])
     expect(reasoningLayout.summaryLeft).toBeGreaterThanOrEqual(16)
