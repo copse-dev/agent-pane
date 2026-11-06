@@ -11027,6 +11027,8 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl);
+  margin-inline: calc(-1 * var(--spacing-sm));
+  padding-inline: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
 .plugins-group-heading {
