@@ -47494,7 +47494,10 @@ async function fetchModelOptions(api, current, opts = {}) {
       {
         ...option,
         label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
-        disabled: true
+        disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...option.disabled === true ? {} : { superseded: true }
       }
     ];
   });
@@ -49695,6 +49698,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ] : []
       );
       if (selected) item.classList.add("is-selected");
+      if (opt.superseded) item.classList.add("is-superseded");
       if (opt.value === activeValue) item.classList.add("is-active");
       item.addEventListener("click", () => {
         selectOption(opt.value);
