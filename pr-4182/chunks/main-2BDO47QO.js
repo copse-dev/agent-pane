@@ -47,6 +47,7 @@ import {
   addRemoteProject,
   addToolCall,
   addUsageDelta,
+  afterPendingThreadPersistence,
   agentActivityLabel,
   announcementCatalog,
   appendAcpContentBlock,
@@ -467,7 +468,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-K6I3A6PR.js";
+} from "./chunk-SLPWG4Q7.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2649,10 +2650,14 @@ function mountTitlebar(root, store2, api2) {
   syncBranch();
   const unsubs = [
     store2.select((s) => s.projectsPaneOpen, syncSidebar),
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
     selectActiveWorkspace(store2, () => {
       syncName();
-      syncBranchNow();
-      syncRunApp();
+      afterPendingThreadPersistence(() => {
+        syncBranchNow();
+        syncRunApp();
+      });
     }),
     store2.on("projects_changed", syncName),
     store2.on("message_added", syncProjectPicker),
@@ -2670,7 +2675,7 @@ function mountTitlebar(root, store2, api2) {
       },
       () => {
         if (store2.getState().activeThreadId !== syncedThreadId) {
-          syncBranchNow();
+          afterPendingThreadPersistence(syncBranchNow);
           return;
         }
         scheduleBranchSync();
@@ -2680,7 +2685,7 @@ function mountTitlebar(root, store2, api2) {
     store2.select(
       (s) => s.activeThreadId,
       (threadId) => {
-        if (threadId !== detectedThread) syncRunApp();
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp);
       }
     ),
     store2.on("thread_checkout_changed", syncRunApp),
@@ -2719,6 +2724,7 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     init_active_workspace();
+    init_persistence();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
@@ -73641,7 +73647,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     // its DOM/selection and skip Git IPC.
     store2.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
-      if (changesModeActive(store2)) void refresh();
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store2)) void refresh();
+      });
     }),
     // The queue alone. While Changes is open the diff-state selection below
     // repaints it; otherwise keep the list (and its count) current here.
@@ -73732,6 +73740,7 @@ var init_git_changes_pane = __esm({
     init_image_path();
     init_panels();
     init_active_workspace();
+    init_persistence();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -76870,10 +76879,13 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       contextPanelInputs,
       () => {
         if (!contextModeActive(store2)) return;
-        const active = getActiveThread(store2)?.id ?? null;
         render2();
-        if (active !== mentionedFor) void refreshMentions();
-        else if (storageKey !== activeStorageKey()) void refreshStorage();
+        afterPendingThreadPersistence(() => {
+          if (disposed || !contextModeActive(store2)) return;
+          const active = getActiveThread(store2)?.id ?? null;
+          if (active !== mentionedFor) void refreshMentions();
+          else if (storageKey !== activeStorageKey()) void refreshStorage();
+        });
       },
       sameContextPanelInputs
     ),
@@ -76934,6 +76946,7 @@ var init_thread_context_panel = __esm({
     init_settings_dialog();
     init_active_thread_owner();
     init_active_workspace();
+    init_persistence();
     SECTION_TITLES = {
       requests: "Needs your input",
       repos: "Access",
