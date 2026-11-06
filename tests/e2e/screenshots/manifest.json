@@ -2861,6 +2861,14 @@
       "sha256": "7fd7ebb63fcc9e1cbc98cb62c5ee887d268f9557bbd69b214c05078295925fe0",
       "bytes": 129073
     },
+    "paired-browser-approval-dark.png": {
+      "sha256": "84dd1259296b24fc21e7b0fee0a220910eab8d9cffffcb544d92199f9776eb33",
+      "bytes": 155212
+    },
+    "paired-browser-approval-light.png": {
+      "sha256": "fbca967c447d732b0f1799c38e447c7a0444ab9b245e1f5bd84990bf20f7457e",
+      "bytes": 154468
+    },
     "pane-header-band.png": {
       "sha256": "d4d140ef13cb34476051fd00a7125491f8746df73779b4a75cd87318b648feac",
       "bytes": 33566
@@ -3492,6 +3500,30 @@
     "remote-artifact-image-unavailable-retry.png": {
       "sha256": "235dc37f5d5fc18a7b198e008f378da6185d9d1cae950bf78a1b9a514bdec8d3",
       "bytes": 154038
+    },
+    "remote-chat-connected-phone.png": {
+      "sha256": "95f6f917ec5f3b000460c0a477dd55c9cccdffb5f30e3d41c619fb4ce05b4851",
+      "bytes": 38329
+    },
+    "remote-chat-prototype-desktop.png": {
+      "sha256": "f7413b489328c5066e584ebb0f81063e4715bb5292ddf9bd72506ac4cf75ed6b",
+      "bytes": 105982
+    },
+    "remote-chat-prototype-phone-changes.png": {
+      "sha256": "8c9fcf187dbbf8d39e183ebfa0fb1a1c6d5019e749f71b8d83a3aace6a10ddbf",
+      "bytes": 29848
+    },
+    "remote-chat-prototype-phone-dark.png": {
+      "sha256": "b36660052a14b2a64ee2692be63d4a1c9b209115bc2337312c7456dd30195604",
+      "bytes": 49513
+    },
+    "remote-chat-prototype-phone-light.png": {
+      "sha256": "3c36c368e79b0808737a67fc4d7352d1f2595e56a7b975ae3baa96a3ff1c8d91",
+      "bytes": 48362
+    },
+    "remote-chat-reconnected-phone-dark.png": {
+      "sha256": "57ffac9fce8f57ee4427e2aab969a96190eac83d494cdad385784c91e8bda2b6",
+      "bytes": 40752
     },
     "remote-folder-add-host-error.png": {
       "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
@@ -4768,6 +4800,22 @@
     "settings-zdr-provider-presets.png": {
       "sha256": "0f0292e8f7ada8d1b5b472b32babee45ed38522fb4e0480de3b8adf611c12992",
       "bytes": 232103
+    },
+    "shared-remote-chat-next-step-dark.png": {
+      "sha256": "daf72efea496472ccabad35b8ec30e23de4190e4bc2ede85ac7849be80228586",
+      "bytes": 29655
+    },
+    "shared-remote-chat-next-step-light.png": {
+      "sha256": "d4475e7bfcb828fe57abcfdea99aa8cbf23966316e7ec6e582731420827d64c9",
+      "bytes": 28907
+    },
+    "shared-remote-chat-phone-dark.png": {
+      "sha256": "cc7ed65f2ae3359e0543e9eca7d3b841cd429611f7ab5cb335a0df969c5b4c8f",
+      "bytes": 25965
+    },
+    "shared-remote-chat-phone-light.png": {
+      "sha256": "89804776ae9d95b44e0de2f6f3bd3a4fd8f634f76bd055c6c796647a8b4742fd",
+      "bytes": 25112
     },
     "shell-mention-chip.png": {
       "sha256": "649e11c323c40ef70a1d6497afb4ecdc1c83866b1c70a3f6b904ec1f2dc17214",
