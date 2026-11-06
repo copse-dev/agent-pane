@@ -132,9 +132,14 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    the recovery it offers. The thread model is drawn only by chrome (the queued
    panel), so none of these rebuild the whole list any more. The trailing review
    report and comparison cards follow the active thread's report and comparison
-   through `store.select` and are recreated only when those change. A thread
-   switch, hydration, a pending backfill and a reorder still rebuild the whole
-   list (#3962).
+   through `store.select` and are recreated only when those change. While a
+   transcript is still loading, its notice is patched in place (the running
+   label, the failure line). While older history is still backfilling, the
+   reconcile plans only the rows below the part still to backfill, unless a
+   message in that part was added or removed. Kept rows that would reorder are
+   moved, the fewest of them that restore the order, rather than rebuilt. A
+   thread switch, a transcript finishing its load, and a duplicate key still
+   build the list fresh (#3962).
 
 7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height
