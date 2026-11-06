@@ -832,11 +832,7 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
  * the queued panel shows, todos, the working brief).
  */
 function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
-  return (
-    a.threadId === b.threadId &&
-    a.needsHydration === b.needsHydration &&
-    a.hydrationFailed === b.hydrationFailed
-  )
+  return a.threadId === b.threadId && a.needsHydration === b.needsHydration
 }
 
 function summaryPreview(text: string, max = 200): string {
@@ -4508,8 +4504,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     previous: TranscriptInputs,
   ): boolean {
     if (!sameRowEnvironment(inputs, previous)) return false
-    // TEMPORARY BISECT (revert before review): main's rebuild while loading.
-    if (inputs.needsHydration || inputs.hydrationFailed) return false
     const pending = backfillPending ? backfillPrefix : []
     if (pending.some((id, i) => thread.messages[i]?.id !== id)) return false
     const hidden = queuedMessageIds(thread)
@@ -4533,6 +4527,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // rows streamed in meanwhile). A change that moves neither is left to the
     // rebuild it always had, which also lands the view at the live end, so a
     // load finishes exactly where it did before.
+    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
+      return false
+    }
     patchedRows.clear()
     const noticeChanged = syncHydrationNotice(thread)
     if (plan.ops.length > 0 || noticeChanged) {

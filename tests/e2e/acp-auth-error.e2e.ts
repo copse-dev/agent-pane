@@ -70,6 +70,12 @@ async function logFontDiag(filename: string, phase: string): Promise<void> {
       families: [...families],
       blocks: perBlock,
       listWidth: document.querySelector<HTMLElement>('.messages-list')?.clientWidth ?? -1,
+      listScroll: (() => {
+        const l = document.querySelector<HTMLElement>('.messages-list')
+        return l
+          ? `${String(l.scrollTop)}/${String(l.scrollHeight)}/${String(l.clientHeight)}`
+          : 'none'
+      })(),
       geometry: Array.from(
         document.querySelectorAll<HTMLElement>(
           '.messages-list .message-text pre, .messages-list .message-text :not(pre) > code',
