@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
 import { mountPrPane } from './pr-pane.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -148,6 +149,48 @@ before(() => {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('pr pane thread scope', () => {
+  it('lists a newly linked PR from setState alone, and ignores renames of unlinked threads', async () => {
+    let agentLinkReads = 0
+    const { listRoot, store, dispose } = mount([OTHER_PR], {
+      linkedUrls: 'nothing linked yet',
+      extraThreads: [makeThread('thread-2', 'no links here either')],
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      await settle()
+      const reads = agentLinkReads
+      const before = listRoot.querySelector('.pr-list-row')
+
+      // A thread with no PR link is not this pane's business (it still emits).
+      setThreadTitle(store, 'thread-2', 'Renamed')
+      await settle()
+      assert.equal(agentLinkReads, reads, 'no agent-link refetch for an unlinked rename')
+      assert.equal(listRoot.querySelector('.pr-list-row'), before, 'the list is not rebuilt')
+
+      // The active thread's transcript gains a PR link: no event emitted.
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) =>
+            t.id === 'thread-1'
+              ? makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')
+              : t,
+          ),
+      })
+      await settle()
+      assert.ok(rowTitles(listRoot).includes('Fix login flow'))
+    } finally {
+      dispose()
+    }
+  })
 })
 
 describe('pr pane filter (issue #2482)', () => {
@@ -592,7 +635,22 @@ describe('pr pane filter (issue #2482)', () => {
             productions: [],
           },
         ]
-        store.emit('threads_changed')
+        // A run settling is what records a new link in main; no event is needed.
+        store.setState({
+          threads: [
+            ...store.getState().threads,
+            {
+              id: 'producer',
+              title: 'Newly recorded producer',
+              status: 'idle',
+              messages: [],
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: 1,
+              updatedAt: 2,
+              lastSettledAt: 2,
+            },
+          ],
+        })
         await settle()
         assert.equal(
           viewerRoot.querySelector('[data-thread-id="producer"] .pr-thread-title')?.textContent,

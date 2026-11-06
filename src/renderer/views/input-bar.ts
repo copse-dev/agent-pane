@@ -119,7 +119,11 @@ import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeProjectThreadOf,
+  getActiveThreadOwner,
+  sameProjectThreadBesidesDraft,
+} from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
@@ -659,12 +663,17 @@ export function mountInputBar(
     onSelectReasoning: selectReasoning,
   })
   // Re-sync the picker whenever the active thread changes (new thread,
-  // thread switch, or thread deletion that shifts the active pointer), and when
-  // the project changes so ACP options hide/show with SSH workspaces.
-  store.on('threads_changed', () => {
-    modelPicker.refresh()
-    void refreshAutomaticCheckoutPreview()
-  })
+  // thread switch, or thread deletion that shifts the active pointer) or its
+  // own state does, and when the project changes so ACP options hide/show with
+  // SSH workspaces. Other threads, and this thread's draft autosave, do not.
+  store.select(
+    activeProjectThreadOf,
+    () => {
+      modelPicker.refresh()
+      void refreshAutomaticCheckoutPreview()
+    },
+    sameProjectThreadBesidesDraft,
+  )
   store.on('projects_changed', () => {
     modelPicker.refresh()
     void refreshAutomaticCheckoutPreview()
@@ -2031,7 +2040,7 @@ export function mountInputBar(
   refreshClientActions = clientActionOffers.refresh
   composer.el.addEventListener('input', refreshClientActions)
   const stopClientActions = [
-    store.on('threads_changed', refreshClientActions),
+    store.select(activeProjectThreadOf, refreshClientActions, sameProjectThreadBesidesDraft),
     store.on('thread_status_changed', refreshClientActions),
   ]
 
@@ -2979,18 +2988,25 @@ export function mountInputBar(
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
-    store.on('threads_changed', () => {
-      syncComposerThread()
-      executionMode.refresh()
-      footerOverflow.update()
-      guardedYolo.refresh()
-      containerRun.refresh()
-      hideBranchMismatch()
-      hideDirtyWarning()
-      updateState()
-      updateFooter()
-      updateQueueIndicator()
-    }),
+    // The active thread: a switch loads its composer, and its own updates
+    // (model, mode, worktree, queue, status) repaint the footer. Other threads'
+    // updates and this thread's draft autosave do not.
+    store.select(
+      activeProjectThreadOf,
+      () => {
+        syncComposerThread()
+        executionMode.refresh()
+        footerOverflow.update()
+        guardedYolo.refresh()
+        containerRun.refresh()
+        hideBranchMismatch()
+        hideDirtyWarning()
+        updateState()
+        updateFooter()
+        updateQueueIndicator()
+      },
+      sameProjectThreadBesidesDraft,
+    ),
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),

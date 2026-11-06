@@ -6,7 +6,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
   GitChange,
@@ -1354,10 +1354,25 @@ export function mountGitChangesPane(
       adoptActiveOwner()
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('threads_changed', () => {
-      syncOwnerLabel()
-      // Titles, hydration, and updates to other threads do not change this
-      // checkout. Preserve its DOM/selection and avoid redundant Git IPC.
+    // The pop-out header names the active thread and its branch.
+    store.select(
+      (s) => {
+        const thread = s.threads.find((candidate) => candidate.id === s.activeThreadId)
+        return [
+          s.activeProjectId,
+          thread?.id,
+          thread?.title,
+          thread?.worktree?.branch,
+          thread?.gitBranch,
+        ] as const
+      },
+      syncOwnerLabel,
+      sameItems,
+    ),
+    // The checkout this pane shows (owner, root, branch, worktree). Titles,
+    // hydration, and updates to other threads do not change it, so they keep
+    // its DOM/selection and skip Git IPC.
+    store.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return
       // Inactive worktrees are not continuously watched. Revalidate on return
       // while showing their last known rows, rather than flashing Loading.
@@ -1379,7 +1394,7 @@ export function mountGitChangesPane(
       },
       sameQueue,
     ),
-    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    // Only the diff state: an ordinary thread switch is the owner selection's job.
     store.select(
       (s) => [s.activeDiff, s.stagedDiffs] as const,
       () => {
@@ -1389,7 +1404,10 @@ export function mountGitChangesPane(
     ),
     store.on('settings_changed', syncReviewGate),
     store.on('thread_status_changed', syncReviewButton),
-    store.on('threads_changed', syncReviewButton),
+    store.select((s) => {
+      const thread = s.threads.find((t) => t.id === s.activeThreadId)
+      return thread === undefined || thread.status === 'running'
+    }, syncReviewButton),
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),

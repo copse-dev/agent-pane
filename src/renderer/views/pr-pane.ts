@@ -16,6 +16,7 @@ import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { AppState, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
   GhCliStatus,
@@ -109,6 +110,42 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
     repo: pr.repo,
     number: pr.number,
   }))
+}
+
+const threadPrKeys = new WeakMap<Thread, string>()
+
+/**
+ * What this pane reads from one thread: its PR links (scraped from the
+ * transcript), title, archive state, productions, and when its last turn
+ * settled (a finished run may have recorded an agent↔PR link in main).
+ * Memoised per thread object; thread writes replace only the thread they patch.
+ */
+function threadPrKey(thread: Thread): string {
+  const cached = threadPrKeys.get(thread)
+  if (cached !== undefined) return cached
+  const links = threadPrRelationships(thread, thread.messages)
+    .map(({ pr, kinds }) => `${prRelationKey(pr)}:${kinds.join(',')}`)
+    .join(' ')
+  const productions = (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(' ')
+  // A thread with no PR link shows nowhere in the pane: only its settling counts.
+  const key =
+    links === '' && productions === ''
+      ? `${thread.id}\u0000${String(thread.lastSettledAt ?? '')}`
+      : [
+          thread.id,
+          thread.title,
+          String(thread.archivedAt ?? ''),
+          String(thread.lastSettledAt ?? ''),
+          links,
+          productions,
+        ].join('\u0000')
+  threadPrKeys.set(thread, key)
+  return key
+}
+
+/** Every input of the pane's thread-derived state, as one comparable key. */
+function prPaneThreadsKey(state: AppState): string {
+  return `${state.activeThreadId ?? ''}\n${state.threads.map(threadPrKey).join('\n')}`
 }
 
 export function indexThreadLinks(store: AppStore): Map<string, PrThreadRelationship[]> {
@@ -1601,7 +1638,9 @@ export function mountPrPane(
       if (prsModeActive(store)) void refresh()
       else renderList()
     }),
-    store.on('threads_changed', () => {
+    // The threads' PR links, titles and finished turns; not streaming,
+    // hydration or other metadata that leaves every key unchanged.
+    store.select(prPaneThreadsKey, () => {
       if (!prsModeActive(store)) return
       threadLinks = indexThreadLinks(store)
       linkedRefs = collectLinkedPrs(store)

@@ -6,6 +6,7 @@ import {
   addMessage,
   getThreadById,
   setThreadDraftPrompt,
+  setThreadTitle,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
 import type { ContextBreakdown, Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
@@ -838,7 +839,6 @@ describe('input bar first-message checkout', () => {
       activeThreadId: 'thread-2',
       threads: [{ ...thread(), id: 'thread-2', draftPrompt: 'Other project draft' }],
     })
-    store.emit('threads_changed')
     store.emit('workspace_changed')
     checkout.resolve({
       checkoutMode: 'worktree',
@@ -871,7 +871,6 @@ describe('input bar first-message checkout', () => {
     assert.equal(composer.textContent, 'Other project draft')
     const restored = adoptBackgroundThreads(store, 'project-1', [])
     store.setState({ activeProjectId: 'project-1', threads: restored, activeThreadId: 'thread-1' })
-    store.emit('threads_changed')
     assert.equal(composer.textContent, '')
   })
 
@@ -1153,7 +1152,6 @@ describe('input bar first-message checkout', () => {
         worktreeChoice: 'worktree',
       })),
     })
-    store.emit('threads_changed')
     store.emit('git_branch_changed')
     await settle()
 
@@ -1758,7 +1756,6 @@ describe('externally cleared draft', () => {
     // Selecting the automation's thread loads its draft into the composer, the
     // same way clicking the sidebar row does.
     store.setState({ threads: [scheduled, existing], activeThreadId: scheduled.id })
-    store.emit('threads_changed')
     await settle()
 
     const composer = host.querySelector<HTMLElement>('.prompt-input')
@@ -2640,7 +2637,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(
@@ -2676,13 +2672,11 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(host.querySelectorAll('.attachment-chips .image-chip').length, 0)
     assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 0)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(
@@ -2743,7 +2737,6 @@ describe('input bar attachments across a thread switch', () => {
     })
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.ok(resolveArchive)
     assert.ok(resolveVideo)
@@ -2769,7 +2762,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 1)
@@ -2813,7 +2805,6 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     store.emit('code_block_run_finished', {
       id: 'run-1',
@@ -2848,7 +2839,6 @@ describe('input bar attachments across a thread switch', () => {
     assert.equal(getThreadById(store, second.id)?.messages.length, 0)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(
       host.querySelectorAll('.attachment-chips .shell-chip').length,
@@ -2885,7 +2875,6 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     store.emit('code_block_run_finished', {
       id: 'run-1',
@@ -2909,7 +2898,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
@@ -3073,12 +3061,10 @@ describe('input bar thread mentions', () => {
     assert.doesNotMatch(composer.textContent, /@auth/)
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(composer.querySelector('.inline-thread-chip'), null)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(
       Array.from(composer.childNodes).map((node) =>
@@ -3702,11 +3688,9 @@ describe('input bar image compatibility', () => {
     const controls = host.querySelector<HTMLFieldSetElement>('.composer-image-description-actions')
     assert.equal(controls?.disabled, true)
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await flush()
     assert.equal(composer.getAttribute('contenteditable'), 'plaintext-only')
     store.setState({ activeThreadId: 'thread-1' })
-    store.emit('threads_changed')
     await flush()
     assert.ok(resolveDescription)
     resolveDescription({ text: 'Late description from a previous view.' })
@@ -4315,7 +4299,6 @@ describe('input bar footer classifier use', () => {
       ],
       activeThreadId: 'thread-2',
     })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(asked, ['thread-1', 'thread-2'])
 
@@ -4403,7 +4386,6 @@ describe('input bar footer classifier use', () => {
       ],
       activeProjectId: 'project-2',
     })
-    store.emit('threads_changed')
     await settle()
     wheel.dispatchEvent(new Event('mouseenter'))
     assert.doesNotMatch(
@@ -5012,5 +4994,58 @@ describe('composer Send now shortcuts', () => {
       store.getState().threads[0]?.pendingMessages?.[0]?.payload.content,
       'send this now',
     )
+  })
+})
+
+describe('composer thread scope', () => {
+  it('follows the active thread from setState alone, but not drafts or other threads', async () => {
+    const active = thread()
+    const other: Thread = { ...thread(), id: 'thread-2', title: 'Other thread' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, other],
+    })
+    let previews = 0
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPreviewCheckout: async (): Promise<ThreadCheckoutPreview> => {
+          previews += 1
+          return { checkoutMode: 'shared' }
+        },
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const settled = previews
+
+    // Another thread's rename (which still emits threads_changed) and this
+    // thread's draft autosave are not checkout changes for the blank thread.
+    setThreadTitle(store, other.id, 'Renamed elsewhere')
+    setThreadDraftPrompt(store, active.id, 'half a thought')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(previews, settled, 'no checkout preview re-run')
+
+    // The active thread's queue grows: the indicator follows, with no event.
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id === active.id
+          ? {
+              ...t,
+              pendingMessages: [{ messageId: 'q1', payload: { content: 'next' }, createdAt: 2 }],
+            }
+          : t,
+      ),
+    })
+    const indicator = host.querySelector<HTMLElement>('.footer-queue')
+    assert.ok(indicator)
+    assert.equal(indicator.hidden, false)
+    assert.equal(indicator.textContent, '1 queued')
   })
 })

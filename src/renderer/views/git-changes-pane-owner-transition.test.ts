@@ -160,7 +160,6 @@ describe('Changes pane owner transitions', () => {
         },
       ],
     })
-    store.emit('threads_changed')
     await settle()
 
     assert.deepEqual(

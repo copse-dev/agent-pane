@@ -833,3 +833,47 @@ test('Context paints when the panel opens on it from the store alone, with no ev
   assert.ok(viewer.querySelector(link))
   dispose()
 })
+
+test('the mounted pane follows the active thread from setState alone, not other threads', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work/widgets', name: 'Widgets' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const other = createThread(store, undefined, { activate: false })
+  const threadId = createThread(store)
+  addMessage(store, threadId, 'user', 'Read https://docs.example.com/a')
+  let backlinkReads = 0
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      backlinks: (): Promise<ThreadBacklink[]> => {
+        backlinkReads += 1
+        return Promise.resolve([])
+      },
+    },
+  }
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(list, viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const reads = backlinkReads
+
+  // Another thread's status changes: nothing this panel shows.
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((t) => (t.id === other ? { ...t, status: 'running', updatedAt: 9 } : t)),
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(backlinkReads, reads)
+
+  // The active thread's transcript gains a link: no event emitted.
+  addMessage(store, threadId, 'assistant', 'Also https://docs.example.com/b')
+  assert.ok(viewer.querySelector('[data-link-key="url:https://docs.example.com/b"]'))
+  dispose()
+})
