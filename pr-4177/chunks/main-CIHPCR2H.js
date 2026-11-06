@@ -19486,7 +19486,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -22043,7 +22043,6 @@ function mountConversation(root, store2, api2) {
   }
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (!sameRowEnvironment(inputs, previous)) return false;
-    if (inputs.needsHydration || inputs.hydrationFailed) return false;
     const pending = backfillPending ? backfillPrefix : [];
     if (pending.some((id, i2) => thread.messages[i2]?.id !== id)) return false;
     const hidden = queuedMessageIds(thread);
@@ -22063,6 +22062,9 @@ function mountConversation(root, store2, api2) {
     });
     const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
+    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
+      return false;
+    }
     patchedRows.clear();
     const noticeChanged = syncHydrationNotice(thread);
     if (plan.ops.length > 0 || noticeChanged) {
