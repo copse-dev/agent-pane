@@ -33246,6 +33246,8 @@ function mountFileTree(root, store2, api2) {
     try {
       const owner = getActiveThreadOwner(store2);
       if (!owner) throw new Error("No active task");
+      await awaitPendingThreadPersistence();
+      if (generation !== loadGeneration) return;
       const entries = await api2.fs.listDir(owner.projectId, owner.threadId, dirPath);
       if (generation !== loadGeneration) return;
       clear(target);
@@ -33283,11 +33285,13 @@ function mountFileTree(root, store2, api2) {
   const unsubs = [
     // The tree lists the active project's root, scoped to the active thread's
     // checkout: reload only when one of those changes, not on renames,
-    // hydration or other threads' updates.
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
     store2.select(
       (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId],
       () => {
-        refresh();
+        queueMicrotask(refresh);
       },
       sameItems
     ),
@@ -33335,6 +33339,7 @@ var init_file_tree = __esm({
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
+    init_persistence();
   }
 });
 
