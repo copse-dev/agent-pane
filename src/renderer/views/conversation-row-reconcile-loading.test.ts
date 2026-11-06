@@ -18,11 +18,12 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The keyed row reconcile (transcript-rows.ts) used to give up, and rebuild
 // every row, while the transcript was still loading (its notice changing as a
-// turn starts or ends, or the read failing), while older history was still
-// backfilling above the newest-first window, and when kept rows would have to
-// move. Each of these now patches the list in place: the rows and the chrome
-// that did not change are the same nodes afterwards, and the list draws what a
-// fresh mount of the same store draws.
+// turn starts or ends, or the read failing) and while older history was still
+// backfilling above the newest-first window. Each of these now patches the
+// list in place: the rows and the chrome that did not change are the same
+// nodes afterwards, and the list draws what a fresh mount of the same store
+// draws. Kept rows that would have to move still rebuild the list: nothing in
+// the product reorders a thread's messages.
 
 function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   const base = createFakeApi()
@@ -266,7 +267,7 @@ describe('conversation keyed row reconcile: pending backfill and reorders (compo
     assert.ok(rowNodes(host).get(ids.at(-1) ?? '') !== window.get(ids.at(-1) ?? ''))
   })
 
-  it('moves reordered rows instead of rebuilding the list', async () => {
+  it('rebuilds a reordered transcript and draws it as a fresh mount does', async () => {
     const store = createStore()
     const { threadId, ids } = longThread(store, 6)
     const host = mount(store)
@@ -278,8 +279,7 @@ describe('conversation keyed row reconcile: pending backfill and reorders (compo
 
     const expected = [0, 1, 4, 5, 2, 3].map((i) => ids[i] ?? '')
     assert.deepEqual(rowIds(host), expected)
-    const after = rowNodes(host)
-    for (const id of ids) assert.ok(after.get(id) === before.get(id), `${id} was rebuilt`)
+    assert.ok(rowNodes(host).get(ids[4] ?? '') !== before.get(ids[4] ?? ''), 'the list was rebuilt')
     await assertMatchesFreshMount(store, host, 'reordered')
   })
 })

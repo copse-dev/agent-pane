@@ -143,10 +143,10 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    transcript is still loading, its notice is patched in place (the running
    label, the failure line). While older history is still backfilling, the
    reconcile plans only the rows below the part still to backfill, unless a
-   message in that part was added or removed. Kept rows that would reorder are
-   moved, the fewest of them that restore the order, rather than rebuilt. A
-   thread switch, a transcript finishing its load, and a duplicate key still
-   build the list fresh (#3962).
+   message in that part was added or removed. A thread switch, a transcript
+   finishing its load, kept rows that would reorder (nothing in the product
+   reorders a thread's messages) and a duplicate key still build the list fresh
+   (#3962).
 
 7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height

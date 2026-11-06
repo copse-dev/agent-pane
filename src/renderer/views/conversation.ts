@@ -4541,7 +4541,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         insert: (key, before) => {
           insertMessageRow(thread.id, key, before)
         },
-        tail: rowsTail,
       })
       // The same batched tail work a rebuild does for its window.
       syncModelLabels()
