@@ -1475,6 +1475,118 @@ export function seedTranscriptReconcileFixture(workspaceRoot: string): void {
   writeSettings({ subagentsEnabled: false })
 }
 
+/**
+ * The keyed-reconcile thread plus two cards that draw thread-wide state: a
+ * standing `propose_thread` offer (its answer lives on the thread) and the
+ * thread's trailing Copse Reviewer report with one finding the reader can
+ * open. Answering the offer used to rebuild every row, and every chrome sync
+ * recreated the report card.
+ */
+export function seedThreadWideReconcileFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-thread-wide-reconcile-project'
+  const threadId = 'e2e-thread-wide-reconcile-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 3000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-proposal',
+            role: 'assistant',
+            content: 'The ranking deserves its own thread.',
+            toolCalls: [
+              {
+                id: 'tc-reconcile-propose',
+                name: 'propose_thread',
+                args: {
+                  title: 'Split palette ranking out',
+                  summary: 'Move the palette ranking into its own module with its own tests.',
+                  rationale: 'It is a refactor, so it should not ride along with this answer.',
+                  prompt: 'Move the ranking out of command-palette.ts into its own module.',
+                },
+                status: 'done',
+                result: 'Offered to the user.',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        reviewReport: {
+          status: 'done',
+          startedAt: now,
+          models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
+          lenses: ['correctness'],
+          baseRef: 'HEAD',
+          headCommit: 'abc1234def',
+          dirtyWorkingTree: true,
+          execution: {
+            backend: 'os-sandbox',
+            strength: 'os-sandbox',
+            executed: true,
+            reason: 'own diff behind the OS sandbox',
+          },
+          checks: [{ kind: 'typecheck', verdict: 'clean' }],
+          notChecked: [],
+          findings: [
+            {
+              id: 'aaaabbbbccccdddd',
+              path: TRANSCRIPT_REBUILD_FILE,
+              startLine: 12,
+              endLine: 12,
+              claim: 'Entries added in the same tick keep insertion order only by accident.',
+              class: 'contract',
+              severity: 'medium',
+              confidence: 'medium',
+              verdict: { status: 'unverified', reason: 'Survived challenge: no sort is stable.' },
+              raisedBy: ['gpt-5 (correctness)'],
+              corroboratedBy: [],
+              challengedBy: ['claude-opus-4-8'],
+              evidence: [],
+            },
+          ],
+          appendix: 0,
+          refuted: 0,
+          reviewers: [],
+          verification: null,
+          durationMs: 4_000,
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 3000,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
+}
+
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
 export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-conformance-project'
