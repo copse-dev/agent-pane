@@ -17,6 +17,7 @@ import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
 import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
@@ -842,7 +843,7 @@ export function mountFooterBranchStatus(
       }
       refreshNow()
     }),
-    store.on('workspace_changed', refreshNow),
+    selectActiveWorkspace(store, refreshNow),
     // A real thread switch repaints immediately, whichever writer made it and
     // whether or not it emitted anything (#3928).
     store.select(
