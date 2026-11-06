@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 /**
  * The composer's Tab-completable next step, enabled by default.
@@ -87,6 +88,23 @@ export function mountNextStepHint(
     refreshDisplayed()
   }
 
+  /**
+   * Covers switching to a thread whose finished turn was never asked (e.g.
+   * restored on reload). Only an idle thread qualifies — a running one has a
+   * half-streamed assistant message as its "last exchange".
+   */
+  function syncActiveThread(): void {
+    const activeId = store.getState().activeThreadId
+    if (activeId && getThreadById(store, activeId)?.status === 'idle') {
+      const exchange = lastExchange(store, activeId)
+      if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
+        void maybeFetchHint(activeId)
+        return
+      }
+    }
+    refreshDisplayed()
+  }
+
   const unsubs = [
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
@@ -97,20 +115,8 @@ export function mountNextStepHint(
       }
       if (status === 'idle') void maybeFetchHint(tid)
     }),
-    store.on('threads_changed', () => {
-      // Covers switching to a thread whose finished turn was never asked (e.g.
-      // restored on reload). Only an idle thread qualifies — a running one has
-      // a half-streamed assistant message as its "last exchange".
-      const activeId = store.getState().activeThreadId
-      if (activeId && getThreadById(store, activeId)?.status === 'idle') {
-        const exchange = lastExchange(store, activeId)
-        if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
-          void maybeFetchHint(activeId)
-          return
-        }
-      }
-      refreshDisplayed()
-    }),
+    // The active thread: a switch, or its own last exchange or status.
+    store.select(activeThreadOf, syncActiveThread),
   ]
 
   return {

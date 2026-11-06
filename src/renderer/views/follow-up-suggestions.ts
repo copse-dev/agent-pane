@@ -15,6 +15,7 @@ import {
 import { lastExchange } from './last-exchange.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
@@ -396,7 +397,7 @@ export function mountFollowUpSuggestions(
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)
     }),
-    store.on('threads_changed', () => {
+    store.select(activeThreadOf, () => {
       showForActiveThread()
     }),
     api.fs.onChanged(() => {

@@ -1,9 +1,9 @@
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId, proposingThreadId } from '../controller/projects.ts'
+import { attentionThreadId, proposingThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { uiActions } from '../ui/actions.ts'
@@ -883,13 +883,17 @@ export function mountApprovalDialog(
   // When the user switches threads, the prompt on screen has to follow the
   // focus: requests for the thread just left are withdrawn, and a
   // previously-backgrounded request for the now-focused thread surfaces.
-  // `threads_changed` also fires on project switches, so this covers
-  // cross-project focus changes too.
-  store.on('threads_changed', () => {
-    withdrawUnshowable()
-    if (active) appendToOpen()
-    else show()
-  })
+  // A project switch changes the active thread too. A request's showability
+  // also depends on which thread it surfaces over (side-chat parent, proposer).
+  store.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)] as const,
+    () => {
+      withdrawUnshowable()
+      if (active) appendToOpen()
+      else show()
+    },
+    sameItems,
+  )
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt

@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { archiveThread, getActiveThread } from '@shared/store/thread-helpers.ts'
 import { threadIsInactive } from '@shared/threads/auto-archive.ts'
@@ -6,6 +6,7 @@ import { invalidateProjectThreadLoads } from '../controller/persistence.ts'
 import { el } from '../dom/helpers.ts'
 import { showErrorToast } from './toast.ts'
 import { showThreadArchiveToast } from './thread-archive-toast.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 /** A return-to-thread decision, shown only after main cannot establish completion. */
 export function createThreadArchiveReview(
@@ -110,7 +111,8 @@ export function createThreadArchiveReview(
     void refresh()
   }
   const unsubs = [
-    store.on('threads_changed', sync),
+    // Readiness is keyed on the active project and thread (its `updatedAt`).
+    store.select((s) => [s.activeProjectId, activeThreadOf(s)] as const, sync, sameItems),
     store.on('thread_status_changed', sync),
     store.on('workspace_changed', sync),
     store.on('settings_changed', () => {

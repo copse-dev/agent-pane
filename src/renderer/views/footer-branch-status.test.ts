@@ -9,6 +9,7 @@ import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -366,13 +367,11 @@ describe('footer branch status', () => {
         activeThreadId: otherThread.id,
         threads: [...store.getState().threads, otherThread],
       })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, false)
       assert.equal(reattach.textContent, 'Continue rebase')
 
       store.setState({ activeThreadId: 'thread-1' })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, true)
       assert.equal(reattach.textContent, 'Running…')
@@ -600,7 +599,6 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 1)
 
-    store.emit('threads_changed')
     store.emit('message_added', 'thread-1', 'message-1')
     store.emit('git_branch_changed')
     await settle()
@@ -611,14 +609,22 @@ describe('footer branch status', () => {
     assert.equal(branchReads, 2, 'the event burst resolves to one deferred refresh')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
     assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
 
     await new Promise<void>((resolve) => setTimeout(resolve, 550))
     await settle()
-    assert.equal(branchReads, 3, "the switch's own threads_changed adds no deferred read")
+    assert.equal(branchReads, 3, 'the switch adds no deferred read')
+
+    // Another thread's rename (which still emits threads_changed) is not this
+    // footer's business: no repaint, no deferred Git read.
+    const label = host.querySelector('.footer-branch-label')
+    setThreadTitle(store, 'thread-1', 'Renamed elsewhere')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, "another thread's rename starts no Git read")
+    assert.equal(host.querySelector('.footer-branch-label'), label)
   })
 
   it('repaints a thread switch from the store alone, with no event emitted (#3928)', async () => {
@@ -695,7 +701,6 @@ describe('footer branch status', () => {
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
 
     // thread-2's own branch status is still in flight - the widget must hide
@@ -965,7 +970,6 @@ describe('footer branch status', () => {
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
 
     store.setState({ threads: [thread(undefined, true)] })
-    store.emit('threads_changed')
     await settle()
 
     // The selection was consumed by the first send; the thread now speaks for a

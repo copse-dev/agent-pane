@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { needsHydration } from '../controller/thread-hydration.ts'
 
 /**
@@ -69,7 +69,11 @@ export function bindChatComposerLayout(
 
   window.addEventListener('resize', sync, { passive: true })
 
-  const unsubs = [store.on('threads_changed', sync), store.on('message_added', sync)]
+  const unsubs = [
+    // Which thread, and whether it is the empty Activity home.
+    store.select((s) => [s.activeThreadId, isActiveThreadEmpty(store)] as const, sync, sameItems),
+    store.on('message_added', sync),
+  ]
 
   return () => {
     unsubs.forEach((u) => {

@@ -6,6 +6,7 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountTitlebar } from './titlebar.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
 
 function thread(id: string, branch: string): Thread {
   return {
@@ -73,7 +74,6 @@ describe('titlebar branch status', () => {
       assert.equal(branchReads, 1)
       assert.equal(root.querySelector('.workspace-branch')?.textContent, 'main')
 
-      store.emit('threads_changed')
       store.emit('git_branch_changed')
       await settle()
       assert.equal(branchReads, 1, 'same-thread events do not start competing Git reads')
@@ -83,11 +83,17 @@ describe('titlebar branch status', () => {
       assert.equal(branchReads, 2, 'the event burst resolves to one deferred refresh')
 
       store.setState({ activeThreadId: 'thread-2' })
-      store.emit('threads_changed')
       await settle()
       assert.equal(remoteReads, 0, 'titlebar background refreshes never query PR status')
       assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
       assert.equal(root.querySelector('.workspace-branch')?.textContent, 'feature/two')
+
+      // Another thread's rename (which still emits threads_changed) is not a
+      // branch change for this thread: no deferred Git read follows.
+      setThreadTitle(store, 'thread-1', 'Renamed elsewhere')
+      await new Promise<void>((resolve) => setTimeout(resolve, 550))
+      await settle()
+      assert.equal(branchReads, 3, "another thread's rename starts no Git read")
     } finally {
       destroy?.()
       globalThis.ResizeObserver = originalResizeObserver
