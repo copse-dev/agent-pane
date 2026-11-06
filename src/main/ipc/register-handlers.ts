@@ -24,22 +24,22 @@ import { registerMemoryHandlers } from './memory-handlers.ts'
 import { registerPortHandlers } from './port-handlers.ts'
 import { registerAlertHandlers } from './alert-handlers.ts'
 import { registerSettingsHandlers } from './settings-handlers.ts'
+import { registerPluginHandlers } from './plugin-handlers.ts'
+import { registerSupervisorHandlers } from './supervisor-handlers.ts'
+import { registerCustomizationHandlers } from './customization-handlers.ts'
+import { registerInstructionHandlers } from './instruction-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
-import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
-import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import { peekBackgroundProcessLogs } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
 import micromatch from 'micromatch'
@@ -60,7 +60,6 @@ import { workspacePreviewFileUrl } from '../services/browser/static-preview-serv
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
-  getActiveProjectId,
   getActiveProjectSshHost,
   getProjectRoot,
   getWorkspaceRoot,
@@ -88,8 +87,6 @@ import {
   IpcValidationError,
   parseIpcArgs,
   zModelId,
-  zHookRunId,
-  zHookTestRequest,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -97,8 +94,6 @@ import {
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { threadPathArgs } from './thread-path-args.ts'
-import { resolveHookTestTarget } from './hook-test-target.ts'
-import type { HooksListResult } from '@shared/types/hooks.ts'
 import {
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -116,7 +111,7 @@ import {
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
-import { getSetting, setSetting } from '../services/storage/settings.ts'
+import { getSetting } from '../services/storage/settings.ts'
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { storageGet } from '../services/storage/storage.ts'
 import {
@@ -191,85 +186,19 @@ import { getSshConnectionManager } from '../services/ssh-workspace/connection-ma
 import { WorkspaceActivation } from '../services/workspace-activation.ts'
 import { prepareWorkspaceConnection } from '../services/workspace-connection.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import {
-  listSkills,
-  listSkillSources,
-  initSkillsRegistry,
-  waitForSkillsRegistryRefresh,
-} from '../services/skills/skills-registry.ts'
-import {
-  listAgents,
-  initAgentsRegistry,
-  waitForAgentsRegistryRefresh,
-} from '../services/agents/agents-registry.ts'
-import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listBundledSkillPlugins } from '../services/skills/bundled-cursor-skills.ts'
-import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
-import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
-import {
-  listCopseHooksForSources,
-  listUnsandboxedProjectHooks,
-} from '../services/hooks/copse-adapter.ts'
-import { dryRunHook } from '../services/hooks/dry-run.ts'
-import { readHookRunDetail } from '../services/hooks/run-detail.ts'
+import { initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { getPluginService } from '../services/plugins/plugin-service.ts'
-import { getPluginInstallService } from '../services/plugins/plugin-install-service.ts'
 import {
   setPluginToolRuntimeController,
   ToolingPluginToolRuntimeController,
 } from '../services/plugins/plugin-tool-controller.ts'
 import { createPluginBrowserPanelService } from '../services/plugins/plugin-browser-panel.ts'
 import { setPluginBrowserService } from '../services/plugins/plugin-browser-service.ts'
-import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
-import { loadProjectInstructionSources } from '../services/project-instructions.ts'
-import {
-  registerSkillTools,
-  syncAppleDevelopmentTools,
-  syncComputerUseTools,
-  syncAdvisorStrategyTools,
-  syncCiInvestigatorTools,
-  syncLongHorizonTasksTools,
-  syncReviewTools,
-  syncBackgroundTasksTools,
-  syncOkfMemoryTools,
-  syncPiiTools,
-  syncRoadmapPlanTools,
-  syncReviewerInputTools,
-} from '../services/registry-bootstrap.ts'
-import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
-import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
-import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
-import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
-import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
-import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
-import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
-import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
-import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
-import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import {
-  MCP_UI_CANVAS_PLUGIN_ID,
-  ANIMATED_EXPLAINERS_SETTING_ID,
-} from '@copse/agent/canvas-settings.ts'
-import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
-import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
-import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
-import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
-import { getAutomationService } from '../services/automations/automation-service.ts'
-import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
-import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
-import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
-import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
+import { registerSkillTools } from '../services/registry-bootstrap.ts'
 
-import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
-
-import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
 import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
-import {
-  reloadMcpServers,
-  reloadMcpServersForPluginToggle,
-  setWorkspaceTrustAndReload,
-} from '../services/mcp/mcp-registry.ts'
+import { reloadMcpServers, setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import { getFocusedMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 import { lookupThreadBacklinks } from '../services/thread-store.ts'
@@ -1478,406 +1407,15 @@ export function registerAllHandlers(
     },
   )
 
-  ipcMain.handle('skills:list', async () => {
-    await waitForSkillsRegistryRefresh()
-    return listSkills()
-  })
-  ipcMain.handle('skills:sources', async () => {
-    await initSkillsRegistry()
-    return listSkillSources()
-  })
-  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
-    const roots = skillRootsSchema.safeParse(value)
-    if (!roots.success)
-      throw new IpcValidationError(
-        'Extra skill folders must be at most 64 absolute paths, one per line',
-      )
-    await setSetting('skillPluginPaths', roots.data)
-    await initSkillsRegistry()
-    return listSkillSources()
-  })
-  ipcMain.handle('agents:list', async () => {
-    await waitForAgentsRegistryRefresh()
-    return listAgents()
-  })
-  ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
-  ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
-  async function listDiscoveredHooks(): Promise<HooksListResult> {
-    const root = getWorkspaceRoot()
-    const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
-    const [cursor, claude, copse] = await Promise.all([
-      listCursorHooksForSources(opts),
-      listClaudeHooks(opts),
-      listCopseHooksForSources(opts),
-    ])
-    return {
-      hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
-      warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
-    }
-  }
-  ipcMain.handle('hooks:list', () => listDiscoveredHooks())
-  ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
-    assertMainFrameSender(event, win)
-    // G2 dry-run tester: run one discovered hook once against a synthetic
-    // payload and report stdin/stdout/stderr/exit/duration. `dryRunHook` is a
-    // side-effect-free probe — it never records the spine, propagates session
-    // env, or applies the outcome (see dry-run.ts). The renderer only names
-    // the hook: what is spawned (command, cwd, sandbox escape) comes from
-    // re-running discovery here, so a compromised renderer cannot run an
-    // arbitrary command or turn the sandbox off.
-    const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
-    if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
-    return dryRunHook(target, senderProjectRoot(event.sender))
-  })
-  // Read one recorded hook execution back out of a thread's spine so the
-  // hook-card inspector can show what the hook was handed and what it returned.
-  // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
-  // validated so a compromised renderer cannot walk out of the chat store.
-  ipcMain.handle(
-    'hooks:run-detail',
-    (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, runId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zHookRunId]),
-        [rawProjectId, rawThreadId, rawRunId],
-      )
-      return readHookRunDetail(projectId, threadId, runId)
-    },
-  )
-  // Plugin registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
-  // Settings plugin list ("about:addons") calls these to enumerate every
-  // registered plugin, toggle enablement atomically (P1 contract), and read /
-  // write plugin-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('plugins:list', async (event) => {
-    assertMainFrameSender(event, win)
-    await getPluginService().refreshInstalledPlugins()
-    return { plugins: getPluginService().list() }
-  })
-  ipcMain.handle('plugins:list-installs', async (event) => {
-    assertMainFrameSender(event, win)
-    return getPluginInstallService().records()
-  })
-  ipcMain.handle('plugins:prepare-install', async (event, rawCatalogId: unknown) => {
-    assertMainFrameSender(event, win)
-    const catalogId = parseIpcArgs(zNonEmptyString.max(2048), [rawCatalogId])
-    return getPluginInstallService().prepare(catalogId)
-  })
-  ipcMain.handle('plugins:cancel-install', async (event, rawToken: unknown) => {
-    assertMainFrameSender(event, win)
-    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
-    await getPluginInstallService().cancel(token)
-  })
-  ipcMain.handle('plugins:commit-install', async (event, rawToken: unknown) => {
-    assertMainFrameSender(event, win)
-    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
-    const result = await getPluginInstallService().commit(token)
-    const service = getPluginService()
-    const { pluginId } = result.record
-    // The review the user just confirmed is the consent, so a first install
-    // enables exactly what it showed. An update keeps the user's own toggle;
-    // the registry still holds the previous revision until the refresh below.
-    const enable =
-      result.record.previousPin === undefined ||
-      (service.registry.has(pluginId) && service.registry.isEnabled(pluginId))
-    await service.refreshInstalledPlugins()
-    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, enable)
-    await initSkillsRegistry()
-    registerSkillTools(registry)
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return result
-  })
-  ipcMain.handle(
-    'plugins:uninstall',
-    async (event, rawPluginId: unknown, rawDeleteData: unknown) => {
-      assertMainFrameSender(event, win)
-      const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
-      const deleteData = parseIpcArgs(z.boolean(), [rawDeleteData])
-      const service = getPluginService()
-      if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
-      const result = await getPluginInstallService().uninstall(pluginId, deleteData)
-      await service.refreshInstalledPlugins()
-      await initSkillsRegistry()
-      registerSkillTools(registry)
-      const statuses = await reloadMcpServers(registry)
-      broadcastToAppWindows('mcp:status-changed', statuses)
-      return result
-    },
-  )
-  ipcMain.handle('plugins:rollback', async (event, rawPluginId: unknown) => {
-    assertMainFrameSender(event, win)
-    const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
-    const service = getPluginService()
-    // Rolling back returns to a revision the user already reviewed, so the
-    // plugin is only paused for the switch and keeps the user's toggle after it.
-    const wasEnabled = service.registry.has(pluginId) && service.registry.isEnabled(pluginId)
-    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
-    const result = await getPluginInstallService().rollback(pluginId)
-    await service.refreshInstalledPlugins()
-    if (wasEnabled && service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, true)
-    await initSkillsRegistry()
-    registerSkillTools(registry)
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return result
-  })
-  ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-    const supervisor = getTaskSupervisor()
-    await supervisor.start()
-    // The trusted desktop owns a project overview, including orphaned threads.
-    // Individual clients still receive a bound thread scope, just like headless hosts.
-    const owners = new Set(supervisor.list(projectId).map((task) => task.threadId))
-    const results = await Promise.all(
-      [...owners].map((threadId) =>
-        createSupervisedTaskClient(supervisor, { projectId, threadId }).list(),
-      ),
-    )
-    const tasks = results
-      .flatMap((result) => result.tasks)
-      .filter((task) => task.state !== 'completed' && task.state !== 'cancelled')
-    return { tasks }
-  })
-  ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-    const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-    const supervisor = getTaskSupervisor()
-    await supervisor.start()
-    const task = supervisor.get(projectId, taskId)
-    if (!task) return { task: null }
-    return createSupervisedTaskClient(supervisor, task).cancel(taskId)
-  })
-  ipcMain.handle(
-    'supervisor:get',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
-      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
-    },
-  )
-  // A command card's "Logs" (#3956): one task's retained output, scoped to the
-  // thread that started it. Reading here is not the agent observing the exit.
-  ipcMain.handle(
-    'background-tasks:logs',
-    (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, taskId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawThreadId, rawTaskId],
-      )
-      return peekBackgroundProcessLogs(taskId, { projectId, threadId })
-    },
-  )
-  ipcMain.handle(
-    'supervisor:resume',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
-      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).resume(taskId)
-    },
-  )
-  ipcMain.handle('plugins:add-source', async (event) => {
-    assertMainFrameSender(event, win)
-    const result = await dialog.showOpenDialog(win, {
-      title: 'Add plugin',
-      properties: ['openDirectory'],
-    })
-    const sourcePath = result.filePaths[0]
-    if (!result.canceled && sourcePath) {
-      await getPluginService().addPluginSource(sourcePath)
-    }
-    return { plugins: getPluginService().list() }
-  })
-  ipcMain.handle('plugins:set-enabled', async (event, rawId: unknown, rawEnabled: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
-    const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    const pluginService = getPluginService()
-    await pluginService.setEnabled(id, enabled)
-    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
-    if (pluginService.hasUserPlugin(id)) {
-      // The plugin toggle is the portable component consent boundary. Refresh
-      // both registries immediately so skills and MCP disappear atomically on
-      // disable and become available without a restart on enable.
-      await initSkillsRegistry()
-      registerSkillTools(registry)
-      const statuses = await reloadMcpServers(registry)
-      broadcastToAppWindows('mcp:status-changed', statuses)
-    }
-    // Toggling the review plugin adds/removes its `review_changes` tool on the
-    // live registry so the atomic plugin-disable also drops the tool from the
-    // model tool list without an app restart (mirrors the setting toggles
-    // above for the other syncable tools).
-    if (id === REVIEW_PLUGIN_ID) {
-      syncReviewTools(registry)
-    }
-    // Same for the `copse.long-horizon-tasks` plugin's `track_long_task` tool.
-    if (id === LONG_HORIZON_TASKS_PLUGIN_ID) {
-      syncLongHorizonTasksTools(registry)
-    }
-    // Same for the `copse.roadmap-plans` plugin's `roadmap_plan` tool.
-    if (id === ROADMAP_PLANS_PLUGIN_ID) {
-      syncRoadmapPlanTools(registry)
-    }
-    if (id === REVIEWER_INPUT_PLUGIN_ID) {
-      syncReviewerInputTools(registry)
-    }
-    // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
-    if (id === ADVISOR_STRATEGY_PLUGIN_ID) {
-      syncAdvisorStrategyTools(registry)
-    }
-    // Same for the `copse.okf-memories` plugin's `remember`/`recall` tools — the
-    // atomic plugin-disable also drops the tools from the model tool list (and
-    // stops the memory prompt block) without an app restart.
-    if (id === OKF_MEMORIES_PLUGIN_ID) {
-      syncOkfMemoryTools(registry)
-    }
-    // Same for the `copse.ci-investigator` plugin's entry and gh_run_* helper
-    // tools; the register direction still requires `gh` availability.
-    if (id === CI_INVESTIGATOR_PLUGIN_ID) {
-      syncCiInvestigatorTools(registry)
-    }
-    // Same for the `copse.pii-redaction` plugin's `reveal_pii` tool — toggling the
-    // plugin also arms/disarms the input rewrite and steering block, which read
-    // the same plugin enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
-    if (id === PII_REDACTION_PLUGIN_ID) {
-      syncPiiTools(registry)
-    }
-    // The `copse.devtools-shortcut` plugin contributes no tool — it owns the
-    // `devtools-shortcut` capability. Toggling the plugin registers/unregisters the
-    // global Ctrl+Shift+I shortcut so the atomic plugin-disable turns it off
-    // without an app restart (mirrors the tool syncs above).
-    if (id === DEVTOOLS_SHORTCUT_PLUGIN_ID) {
-      syncDevtoolsShortcut()
-    }
-    // Same for the `copse.background-tasks` plugin's `run_background` tool — the
-    // atomic plugin-disable also revokes the plugin's declared `loopback-bind`
-    // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
-    if (id === BACKGROUND_TASKS_PLUGIN_ID) {
-      syncBackgroundTasksTools(registry)
-    }
-    if (id === DARK_FACTORY_PLUGIN_ID) {
-      syncDarkFactorySensor()
-    }
-    // The `copse.mcp-ui-canvas` plugin gates the bundled canvas server, so its
-    // `render_html_artefact` tool must connect or disconnect with the toggle —
-    // the same live reload the Apple Development toggle does below.
-    const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
-    if (bundledMcpStatuses) broadcastToAppWindows('mcp:status-changed', bundledMcpStatuses)
-    if (id === AUTOMATIONS_PLUGIN_ID) {
-      getTaskSupervisor().syncCronTasks()
-      await getAutomationService().sync()
-      await getBranchCiAutomationService().sync()
-    }
-    if (id === COMPUTER_USE_PLUGIN_ID) {
-      syncComputerUseTools(registry)
-      if (!enabled) disposeDesktopControlService()
-    }
-    if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
-      syncAppleDevelopmentTools(registry)
-      const statuses = await reloadMcpServers(registry)
-      broadcastToAppWindows('mcp:status-changed', statuses)
-      if (!enabled) {
-        const activeProjectId = getActiveProjectId()
-        if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
-      }
-    }
-    return { plugins: getPluginService().list() }
-  })
-  ipcMain.handle(
-    'plugins:set-setting',
-    async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
-      assertMainFrameSender(event, win)
-      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
-      const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
-      // Plugin-scoped setting values are declaratively-shaped by the manifest;
-      // the renderer sends the primitive it read from the form. Cap to a sane
-      // upper bound so a compromised renderer can't stuff arbitrary payloads.
-      const value = parseIpcArgs(
-        z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
-        [rawValue],
-      )
-      await getPluginService().setSetting(id, key, value)
-      if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
-        const statuses = await reloadMcpServersForPluginToggle(registry, id)
-        if (statuses) broadcastToAppWindows('mcp:status-changed', statuses)
-      }
-      return { plugins: getPluginService().list() }
-    },
-  )
+  registerCustomizationHandlers(win)
+  registerPluginHandlers(win, registry)
+  registerSupervisorHandlers(win)
 
   registerAutomationHandlers(win)
 
   registerAppleDevelopmentHandlers(win, registry)
 
-  // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
-  // declare `sandbox: false` at the consent moment. Read-only display parsing —
-  // trust-independent by design (the whole point is showing this BEFORE trust).
-  ipcMain.handle('hooks:unsandboxed-project-hooks', async () => {
-    const root = getWorkspaceRoot()
-    if (!root) return []
-    return listUnsandboxedProjectHooks(root)
-  })
-  ipcMain.handle('instructions:list', async (event) =>
-    (
-      await loadProjectInstructionSources({
-        useLatestNestedActivation: true,
-        refreshNestedDiscovery: true,
-        roots: senderInstructionRoots(event.sender),
-      })
-    ).map(
-      ({
-        path,
-        name,
-        scope,
-        content,
-        active,
-        trusted,
-        scopePath,
-        duplicateOf,
-        discoveryTruncated,
-      }) => ({
-        path,
-        name,
-        scope,
-        bytes: Buffer.byteLength(content, 'utf-8'),
-        active,
-        trusted,
-        ...(scopePath !== undefined ? { scopePath } : {}),
-        ...(duplicateOf !== undefined ? { duplicateOf } : {}),
-        ...(discoveryTruncated ? { discoveryTruncated } : {}),
-      }),
-    ),
-  )
-  /**
-   * Read one instruction file for display (Settings → Sources opens it in the
-   * shared preview dialog). Narrow and fail-closed: the path must still be a
-   * discovered instruction source, so this is not a general file-read channel.
-   * Reading is trust-independent on purpose — seeing what a repo's AGENTS.md
-   * says is how the user decides whether to trust the workspace at all — and it
-   * returns the same trimmed text the prompt would get, not the raw bytes.
-   */
-  ipcMain.handle('instructions:read', async (event, rawPath: unknown) => {
-    assertMainFrameSender(event, win)
-    const path = parseIpcArgs(zPathString, [rawPath])
-    const source = (
-      await loadProjectInstructionSources({ roots: senderInstructionRoots(event.sender) })
-    ).find((s) => s.path === path)
-    if (!source) throw new IpcValidationError('Not a discovered instruction file')
-    return source.content
-  })
-  ipcMain.handle('cursor-rules:list', async () => {
-    const root = getWorkspaceRoot()
-    if (!root) return []
-    return toCursorRuleSummaries(await discoverCursorRules(root))
-  })
+  registerInstructionHandlers(win)
 
   registerGitHandlers(win, isDispatcherThreadActive)
   registerGhHandlers(win)
