@@ -66201,16 +66201,14 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
     }),
-    // A switch, or the transcript landing after one. Sending a message changes
-    // the thread while it is still idle; suggesting then would bill a fetch for
-    // the message just sent. Turn ends arrive as thread_status_changed above.
-    store2.select(
-      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded],
-      () => {
-        showForActiveThread();
-      },
-      sameItems
-    ),
+    // Deliberately still `threads_changed`, not a selection. The bubbles on
+    // screen during and after a turn come back through the metadata writes
+    // that emit it mid-turn (the reference screenshots show them). A selection
+    // of the active thread also fires on the send itself and bills a fetch for
+    // the message just sent; one keyed on the switch alone drops the bubbles.
+    store2.on("threads_changed", () => {
+      showForActiveThread();
+    }),
     api2.fs.onChanged(() => {
       scheduleChangesRefresh();
     }),
@@ -66238,14 +66236,12 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
 var init_follow_up_suggestions = __esm({
   "src/renderer/views/follow-up-suggestions.ts"() {
     init_helpers();
-    init_store();
     init_changes_stat();
     init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
     init_review_actions();
     init_toast();
-    init_active_thread_owner();
   }
 });
 
