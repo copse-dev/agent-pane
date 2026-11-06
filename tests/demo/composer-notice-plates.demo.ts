@@ -29,6 +29,20 @@ describe('composer notice plates', () => {
     assert.equal(yolo.rule, '0px', 'no rule under the strip')
     assert.equal(yolo.image, 'none')
     assert.notEqual(yolo.color, 'rgba(0, 0, 0, 0)', 'the strip keeps its danger wash')
+    // Disable shares the strip's base fill, so its border is its only edge: the
+    // strong tier, not --border, which all but vanishes on the wash.
+    const disable = await browser.execute(() => {
+      const button = document.querySelector('.guarded-yolo-disable')
+      if (!button) return null
+      const sample = document.createElement('span')
+      sample.style.color = 'var(--border-strong)'
+      button.append(sample)
+      const strong = getComputedStyle(sample).color
+      sample.remove()
+      return { edge: getComputedStyle(button).borderTopColor, strong }
+    })
+    assert.ok(disable, 'the Disable button renders')
+    assert.equal(disable.edge, disable.strong, 'Disable takes the --border-strong edge')
     await expect($('.msg-side-chat-chip')).toHaveStyle({ 'border-top-left-radius': '6px' })
 
     await saveElementScreenshot('.guarded-yolo-banner', 'guarded-yolo-plate.png')

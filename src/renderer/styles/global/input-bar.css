@@ -157,9 +157,11 @@
   flex: 1;
   line-height: var(--line-height-base);
 }
+/* Its fill is the strip's own base, so the border is the only edge; --border-strong keeps
+   it findable on the danger wash (docs/ui-taste.md, "An outlined chip needs an edge"). */
 .guarded-yolo-disable {
   flex: 0 0 auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: var(--spacing-xs) var(--spacing-md);
   background: var(--bg-elevated);
