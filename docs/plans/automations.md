@@ -93,12 +93,33 @@ refreshes the authoritative transcript and status in any renderer that opened th
 mid-turn; the renderer never re-dispatches that completion. This does not provide
 a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
+On admission or user-requested cleanup, main reconciles an earlier run's persisted
+`running` status even when its project stays closed after a restart. Only a run
+proved absent by the live dispatcher, native/container owners and ACP session state
+becomes idle with `interruptedTurnAt`; unchanged metadata and liveness are checked
+again inside the store's atomic write queue. Missing or uncertain runtime proof
+keeps the run busy. Its transcript, checkout, turn epoch and spent continuation
+budget remain intact. This is status repair, never replay of the interrupted turn:
+normal checkout retention, no-overlap, event identity and daily limits still apply
+before a future trigger can create new work.
+Retained background-completion and machine-operation records are conservatively
+unknown, even when their promise may already have settled. They cannot authorize
+repair in a warm process; a fresh process has no such in-memory records. This
+change does not introduce another runtime activity registry or alter completion
+wakes, their deduplication, or continuation accounting.
+An owner admitted just after the repair can still be publishing its own status.
+Admission therefore rechecks liveness after the metadata read and on later
+attempts involving an already-interrupted idle run. A live or uncertain owner
+produces a busy admission view; it never rolls persisted metadata back over that
+owner's write. Ordinary idle history and unsent drafts keep their existing rules.
+
 Prototype boundaries:
 
 - local machine and local wall-clock time only;
 - Copse must be running;
 - standard five-field cron, evaluated once per minute;
-- no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or process recovery;
+- no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or automatic replay
+  of interrupted turns;
 - no webhook ingress; an app-open GitHub Actions branch-failure poller is the first event adapter;
 - inactive-project cron execution requires the desktop main process; no detached runtime.
 
