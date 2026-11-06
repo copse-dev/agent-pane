@@ -312,7 +312,6 @@ describe('projects pane thread PR status (component)', () => {
         activeThreadId: selected.id,
       })
       store.emit('projects_changed')
-      store.emit('workspace_changed')
       store.emit('threads_changed')
     }
     try {
@@ -383,7 +382,6 @@ describe('projects pane thread PR status (component)', () => {
           threads: [active],
           activeThreadId: active.id,
         })
-        store.emit('workspace_changed')
       }
       assert.equal(requests, 1, 'switching must not duplicate an outstanding PR request')
       assert.ok(resolveDetails)
@@ -452,7 +450,6 @@ describe('projects pane thread PR status (component)', () => {
             threads: [other],
             activeThreadId: other.id,
           })
-          store.emit('workspace_changed')
           if (!cancelledBeforeWorkspaceEvent) {
             assert.equal(detailReads, 1, 'the pending read still owns its request')
             rejectRead()
@@ -523,7 +520,6 @@ describe('projects pane thread PR status (component)', () => {
         threads: [other],
         activeThreadId: other.id,
       })
-      store.emit('workspace_changed')
       assert.equal(reads, 3, 'a failed revalidation retries when the workspace commits')
       assert.equal(
         (await waitForIcon(selected.title, 'open')).classList.contains('has-ci-failure'),

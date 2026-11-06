@@ -65,6 +65,7 @@ import {
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
+  switchProjectAndWait,
   openNewProjectThread,
   setSidebarProjectFilter,
   switchProjectThread,
@@ -138,6 +139,7 @@ import {
   type DropIntent,
   type SidebarDragPayload,
 } from './projects-drag.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /** Re-fetch PR lifecycle when a cache entry is older than this. */
 const PR_STATUS_CACHE_TTL_MS = 60_000
@@ -2458,15 +2460,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     openAppRunDialog(store, api, project.id)
                     return
                   }
-                  const unsubscribe = store.on('workspace_changed', () => {
-                    if (store.getState().activeProjectId === project.id) {
-                      unsubscribe()
-                      openAppRunDialog(store, api, project.id)
-                    } else if (!isProjectSwitchInFlight(store, project.id)) {
-                      unsubscribe()
-                    }
-                  })
-                  switchProject(store, api, project.id)
+                  // Open once this switch is over, if it landed here. A
+                  // cancelled or superseded switch settles elsewhere, and a
+                  // failed one rejects; neither opens the dialog.
+                  void switchProjectAndWait(store, api, project.id)
+                    .then(() => {
+                      if (store.getState().activeProjectId === project.id) {
+                        openAppRunDialog(store, api, project.id)
+                      }
+                    })
+                    .catch(() => undefined)
                 },
               })
             }
@@ -2911,7 +2914,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', () => {
       render()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       prWorkspaceGeneration += 1
       // Preload can reject a superseded read before this renderer commits the
       // new workspace. Keep failures memoized within a workspace, then retry
