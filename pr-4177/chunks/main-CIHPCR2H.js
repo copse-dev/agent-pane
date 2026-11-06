@@ -13434,55 +13434,33 @@ function planTranscriptRows(rendered, wanted) {
     if (wantedKeys.has(row2.key)) return { kind: "rebuild", reason: "duplicate-key" };
     wantedKeys.add(row2.key);
   }
-  const wantedIndex = new Map(wanted.map((row2, i2) => [row2.key, i2]));
-  const surviving = rendered.filter((row2) => wantedKeys.has(row2.key));
-  const stable = longestIncreasingRun(surviving.map((row2) => wantedIndex.get(row2.key) ?? 0));
-  const stableKeys = new Set(stable.map((i2) => surviving[i2]?.key ?? ""));
+  const survivingOrder = rendered.filter((row2) => wantedKeys.has(row2.key)).map((row2) => row2.key);
+  const wantedOrder = wanted.filter((row2) => renderedByKey.has(row2.key)).map((row2) => row2.key);
+  if (survivingOrder.some((key, i2) => key !== wantedOrder[i2])) {
+    return { kind: "rebuild", reason: "reordered" };
+  }
   const ops = [];
   for (const row2 of rendered) {
     if (!wantedKeys.has(row2.key)) ops.push({ kind: "remove", key: row2.key });
   }
-  const placeBefore = /* @__PURE__ */ new Map();
-  let nextStable = null;
+  const insertBefore = /* @__PURE__ */ new Map();
+  let nextExisting = null;
   for (let i2 = wanted.length - 1; i2 >= 0; i2--) {
     const row2 = wanted[i2];
     if (!row2) continue;
-    if (stableKeys.has(row2.key)) nextStable = row2.key;
-    else placeBefore.set(row2.key, nextStable);
+    if (renderedByKey.has(row2.key)) nextExisting = row2.key;
+    else insertBefore.set(row2.key, nextExisting);
   }
   let kept = 0;
   for (const row2 of wanted) {
     const previous = renderedByKey.get(row2.key);
-    const before = placeBefore.get(row2.key) ?? null;
     if (!previous) {
-      ops.push({ kind: "insert", key: row2.key, before });
-      continue;
-    }
-    if (!stableKeys.has(row2.key)) ops.push({ kind: "move", key: row2.key, before });
-    if (!sameSignature(previous.signature, row2.signature))
+      ops.push({ kind: "insert", key: row2.key, before: insertBefore.get(row2.key) ?? null });
+    } else if (!sameSignature(previous.signature, row2.signature)) {
       ops.push({ kind: "replace", key: row2.key });
-    else kept++;
+    } else kept++;
   }
   return { kind: "patch", ops, kept };
-}
-function longestIncreasingRun(values) {
-  const tails = [];
-  const previous = new Array(values.length).fill(-1);
-  for (let i2 = 0; i2 < values.length; i2++) {
-    const value = values[i2] ?? 0;
-    let lo = 0;
-    let hi = tails.length;
-    while (lo < hi) {
-      const mid = lo + hi >>> 1;
-      if ((values[tails[mid] ?? 0] ?? 0) < value) lo = mid + 1;
-      else hi = mid;
-    }
-    if (lo > 0) previous[i2] = tails[lo - 1] ?? -1;
-    tails[lo] = i2;
-  }
-  const run4 = [];
-  for (let i2 = tails.at(-1) ?? -1; i2 !== -1; i2 = previous[i2] ?? -1) run4.push(i2);
-  return run4.reverse();
 }
 function rowCardSelector(key) {
   const quoted = CSS.escape(key);
@@ -13505,13 +13483,6 @@ function removeTranscriptRow(list, key) {
   }
   return next;
 }
-function moveTranscriptRow(host, key, before) {
-  const { list } = host;
-  const element = transcriptRowElement(list, key);
-  const parts = [...element ? [element] : [], ...list.querySelectorAll(rowCardSelector(key))];
-  const target = before ?? host.tail();
-  for (const part of parts) list.insertBefore(part, target);
-}
 function applyTranscriptRowPlan(plan, host) {
   const { list } = host;
   for (const op of plan.ops) {
@@ -13520,12 +13491,6 @@ function applyTranscriptRowPlan(plan, host) {
     } else if (op.kind === "replace") {
       const next = removeTranscriptRow(list, op.key);
       host.insert(op.key, next);
-    } else if (op.kind === "move") {
-      moveTranscriptRow(
-        host,
-        op.key,
-        op.before === null ? null : transcriptRowElement(list, op.before)
-      );
     } else {
       host.insert(op.key, op.before === null ? null : transcriptRowElement(list, op.before));
     }
@@ -22110,8 +22075,7 @@ function mountConversation(root, store2, api2) {
         list,
         insert: (key, before) => {
           insertMessageRow(thread.id, key, before);
-        },
-        tail: rowsTail
+        }
       });
       syncModelLabels();
       syncUserActions();
