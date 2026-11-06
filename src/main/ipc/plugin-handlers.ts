@@ -45,9 +45,24 @@ import { getAutomationService } from '../services/automations/automation-service
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
-import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
+import {
+  getAppleDevelopmentService,
+  type AppleDevelopmentService,
+} from '../services/apple-development/apple-development-service.ts'
 import { reloadMcpServers, reloadMcpServersForPluginToggle } from '../services/mcp/mcp-registry.ts'
 import { syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+
+/**
+ * Stop Apple work once the Apple Development plugin is turned off. The plugin
+ * is app-wide, so that is every project's work, not only the one the primary
+ * window shows (#3958).
+ */
+export async function stopAppleWorkWhenTurnedOff(
+  enabled: boolean,
+  service: Pick<AppleDevelopmentService, 'cancelAllProjects'>,
+): Promise<void> {
+  if (!enabled) await service.cancelAllProjects()
+}
 
 export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   // Plugin registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
@@ -228,9 +243,7 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
       broadcastToAppWindows('mcp:status-changed', statuses)
-      // The plugin is app-wide, so turning it off stops Apple work in every
-      // project, not only the one the primary window shows (#3958).
-      if (!enabled) await getAppleDevelopmentService().cancelAllProjects()
+      await stopAppleWorkWhenTurnedOff(enabled, getAppleDevelopmentService())
     }
     return { plugins: getPluginService().list() }
   })
