@@ -1220,13 +1220,24 @@ main process ([design and validation record](plans/sandboxed-artifact-image-down
 
 ## Implementation map
 
-Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
-`TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
-heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
-when every destination file is inside the workspace. This redirect does not widen the sandbox's
-writable roots or change the approval policy. When `COPSE_DIR` is reached through a symlink,
-Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS seatbelt otherwise
-rejects traversal through the home-directory link before its target allow can apply.
+Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
+patch commands even when every destination file is inside the workspace. This redirect does not
+widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
+through a symlink, Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS
+seatbelt otherwise rejects traversal through the home-directory link before its target allow can
+apply.
+
+ASRT bakes its own `TMPDIR` into every wrapped command, after the spawn env, from the wrapping
+process's `CLAUDE_CODE_TMPDIR` (else `/tmp/claude`). `withSandboxWrapTmpDir` (`tmp-env.ts`) sets
+that variable in Copse's `process.env` only while a wrap is in flight and restores the user's own
+value when it settles; concurrent wraps for one directory share it, and a wrap for another waits.
+It is never left set: an unsandboxed Claude Code that inherited it would keep its `claude-<uid>`
+files in the scratch directory every contained command can write. `envForRendererChildProcess`
+and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
+it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
+ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
@@ -1286,6 +1297,10 @@ A Node target must be a regular executable file. Known Codex/Claude and configur
 Copse/XDG/Cargo credential stores and their canonical aliases are excluded too. Grants use the
 checked canonical destinations (plus those spellings) and omit toolchain exceptions already
 covered by the workspace.
+Known-store targets, Node install placement and crossed-link holders are resolved afresh for each
+policy construction. A resolution may be reused within that construction, but is never carried
+from an earlier command: a newly created/relinked store or a newly writable link must be recognised
+by the next policy build without a cache-expiry window.
 Replacing a canonical path or its ancestors before ASRT constructs the profile still races; these
 checks do not pin filesystem identity atomically.
 Known credential-location overrides checked in both the host and child environment are

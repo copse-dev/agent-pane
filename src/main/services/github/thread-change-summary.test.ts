@@ -47,10 +47,7 @@ const ref = (threadId: string): { projectId: string; threadId: string } => ({
 
 describe('git:thread-change-summary handler', () => {
   it('resolves roots without restoring worktrees or arming a watcher', async () => {
-    const source = await readFile(
-      new URL('../../ipc/register-handlers.ts', import.meta.url),
-      'utf8',
-    )
+    const source = await readFile(new URL('../../ipc/git-handlers.ts', import.meta.url), 'utf8')
     const start = source.indexOf('createThreadChangeSummaryReader({')
     const end = source.indexOf("ipcMain.handle('git:change-stats'")
     assert.ok(start !== -1 && end > start, 'handler block not found')

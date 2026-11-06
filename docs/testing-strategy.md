@@ -609,7 +609,8 @@ It uses the production ASRT wrapper and filesystem overlay, a byte-for-byte copy
 Node executable, an isolated `COPSE_DIR`, and synthetic credential/home fixtures. Allowed reads
 and execution, credential/sibling and symlink-alias denial, and read-only enforcement must pass
 as real child-process syscalls; profile strings alone are not this evidence. A missing or failed
-sandbox fails the job. Its environment record and TAP log are retained for 14 days.
+sandbox fails the job. The job requests 14-day retention for its environment record and TAP log;
+repository policy can shorten it.
 
 The label opts in only this focused job; ordinary full CI and any additional device or visual
 acceptance still apply. Requested native checks must succeed before `CI Passed` can pass, including

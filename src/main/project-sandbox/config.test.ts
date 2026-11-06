@@ -785,6 +785,30 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
+  it('rechecks a Node install alias before deciding whether to expose its whole root', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const deep = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      const shallow = join(home, '.local')
+      for (const root of [deep, shallow]) {
+        installNode(join(root, 'bin'))
+        mkdirSync(join(root, 'lib', 'node_modules'), { recursive: true })
+      }
+      const alias = join(home, 'tools', 'current')
+      mkdirSync(dirname(alias), { recursive: true })
+      symlinkSync(deep, alias)
+      const env = { PATH: join(alias, 'bin') }
+      assert.ok(resolveNodeToolchainAllowRead(env, home).includes(`${deep}/**`))
+      rmSync(alias)
+      symlinkSync(shallow, alias)
+      const allow = resolveNodeToolchainAllowRead(env, home)
+      assert.ok(!allow.includes(`${shallow}/**`), 'a stale deep install must not expose ~/.local')
+      assert.ok(allow.includes(`${join(shallow, 'lib', 'node_modules')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
   it('recognises home behind a PATH entry that reaches it through an alias', () => {
     const { home: parent, cleanup } = fakeHome()
     try {

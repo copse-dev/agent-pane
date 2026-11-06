@@ -12,7 +12,6 @@ import {
   copseUserDataDir,
   copseWorkspaceDir,
 } from '../services/storage/copse-paths.ts'
-import { createCanonicalPathCache } from './canonical-path-cache.ts'
 
 const HOME_CREDENTIAL_PATHS = [
   ...SENSITIVE_BASENAMES,
@@ -62,18 +61,6 @@ function isWithin(parent: string, child: string): boolean {
 }
 
 /**
- * Canonical spellings of the sandbox's read, write and deny roots and of the
- * links an exception crosses, memoized with the same short TTL as
- * `canonicalizePathCached`. A separate instance, so the forty-odd roots each
- * overlay checks do not evict the rule paths the shared cache holds.
- */
-const canonicalizeGuardPath = createCanonicalPathCache({ maxEntries: 512 })
-
-function spellings(path: string): string[] {
-  return [...new Set([resolve(path), canonicalizeGuardPath(path)])]
-}
-
-/**
  * The symlinks a lookup of `path` crosses below `root`, outermost first,
  * including `path` itself when it is one. Null when any of those components
  * cannot be inspected (the lookup would fail anyway; callers grant nothing).
@@ -91,29 +78,6 @@ export function crossedSymlinks(path: string, root: string): string[] | null {
     }
   }
   return links
-}
-
-/**
- * Every variable the protected-store list reads. It sees only these, through
- * {@link pickStoreEnv}, so they also form a complete memo key.
- */
-const PROTECTED_STORE_ENV = [
-  'XDG_CONFIG_HOME',
-  ...CREDENTIAL_LOCATION_ENV,
-  'KUBECONFIG',
-  'CARGO_HOME',
-  'COPSE_DIR',
-  'COPSE_PANEL_USER_DATA',
-  'COPSE_WORKSPACE_DIR',
-]
-
-function pickStoreEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const picked: NodeJS.ProcessEnv = {}
-  for (const name of PROTECTED_STORE_ENV) {
-    const value = source[name]
-    if (value !== undefined) picked[name] = value
-  }
-  return picked
 }
 
 interface ProtectedStores {
@@ -173,37 +137,6 @@ function computeProtectedStores(
   return { homes, credentials: [...new Set(protectedPaths.flatMap(freshSpellings))] }
 }
 
-/**
- * The protected-store list, rebuilt at most once per {@link PROTECTED_STORES_TTL_MS}
- * for the same home and store variables. Every sandboxed spawn builds a guard
- * (about ten a second during an agent turn) and the list canonicalizes well
- * over a hundred mostly-missing paths, so rebuilding it each time multiplied
- * the overlay's cost. The window matches `canonicalizePathCached`: a store
- * created or relinked later is protected once it expires.
- */
-const PROTECTED_STORES_TTL_MS = 2_000
-const PROTECTED_STORES_MAX_ENTRIES = 16
-const protectedStoresMemo = new Map<
-  string,
-  { readonly stores: ProtectedStores; readonly expiresAt: number }
->()
-
-function protectedStores(env: NodeJS.ProcessEnv, home: string): ProtectedStores {
-  const sources = [pickStoreEnv(process.env), pickStoreEnv(env)]
-  const key = JSON.stringify([home, sources])
-  const now = Date.now()
-  const hit = protectedStoresMemo.get(key)
-  if (hit && hit.expiresAt > now) return hit.stores
-  const stores = computeProtectedStores(sources, home)
-  protectedStoresMemo.delete(key)
-  protectedStoresMemo.set(key, { stores, expiresAt: now + PROTECTED_STORES_TTL_MS })
-  if (protectedStoresMemo.size > PROTECTED_STORES_MAX_ENTRIES) {
-    const oldest = protectedStoresMemo.keys().next()
-    if (!oldest.done) protectedStoresMemo.delete(oldest.value)
-  }
-  return stores
-}
-
 export type ToolchainReadGuard = (path: string, recursive: boolean) => string | null
 
 /**
@@ -218,7 +151,9 @@ export function createToolchainReadGuard(
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
 ): ToolchainReadGuard {
-  const { homes, credentials } = protectedStores(env, home)
+  // Each construction is a new policy decision. Reusing filesystem identities
+  // from a previous command can miss a newly created or relinked known store.
+  const { homes, credentials } = computeProtectedStores([process.env, env], home)
   return (path, recursive) => {
     if (!isAbsolute(path)) return null
     let canonical: string
@@ -261,18 +196,41 @@ export function toolchainReadExceptions(
   existingReads: readonly string[],
   writableRoots: readonly string[] = [],
 ): string[] {
+  // Reuse a resolution only inside this synchronous policy construction. A
+  // cross-command cache can mistake a newly writable link for its old path.
+  const canonical = new Map<string, string | null>()
+  const canonicalizeGuardPath = (path: string): string | null => {
+    const normalized = resolve(path)
+    const known = canonical.get(normalized)
+    if (known !== undefined) return known
+    let target: string | null = null
+    try {
+      target = realpathSync(normalized)
+    } catch {
+      // An unresolved exception or crossed-link holder must fail closed.
+    }
+    canonical.set(normalized, target)
+    return target
+  }
+  const spellings = (path: string): string[] => {
+    const target = canonicalizeGuardPath(path)
+    return target === null ? [resolve(path)] : [...new Set([resolve(path), target])]
+  }
   const concreteOf = (path: string): string => resolve(path.replace(/\/\*\*$/, ''))
   const roots = existingReads.flatMap((path) => spellings(concreteOf(path)))
   const reachable = [...roots, ...writableRoots.flatMap((path) => spellings(concreteOf(path)))]
   const deniedRoots = deniedReads.flatMap((path) => spellings(concreteOf(path)))
   const linksStayDenied = (concrete: string, deniedRoot: string): boolean => {
-    if (canonicalizeGuardPath(concrete) === concrete) return true
+    const target = canonicalizeGuardPath(concrete)
+    if (target === null) return false
+    if (target === concrete) return true
     const links = crossedSymlinks(concrete, deniedRoot)
     return (
       links !== null &&
       links.every((link) => {
         const holder = canonicalizeGuardPath(dirname(link))
         return (
+          holder !== null &&
           deniedRoots.some((root) => isWithin(root, holder)) &&
           !reachable.some((root) => isWithin(root, holder))
         )

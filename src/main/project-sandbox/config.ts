@@ -572,6 +572,15 @@ function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'ap
   return !fromHome.startsWith('..') && !isAbsolute(fromHome) ? 'inside' : 'apart'
 }
 
+/** Toolchain identity decisions must see changes completed before this build. */
+function canonicalizeToolchainPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
 /**
  * `path`, as spelled and canonicalized, placed against each spelling of home.
  * A `PATH` entry can reach home through an alias (`/tmp/alias -> $HOME`) that
@@ -581,7 +590,7 @@ function homePlacements(
   path: string,
   homes: readonly string[],
 ): { path: string; home: string; place: 'covers' | 'inside' | 'apart' }[] {
-  return [...new Set([path, canonicalizePathCached(path)])].flatMap((spelling) =>
+  return [...new Set([path, canonicalizeToolchainPath(path)])].flatMap((spelling) =>
     homes.map((home) => ({ path: spelling, home, place: placeAgainstHome(spelling, home) })),
   )
 }
@@ -759,7 +768,7 @@ export function resolveNodeToolchainAllowRead(
   const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
-  const homes = [...new Set([home, canonicalizePathCached(home)])]
+  const homes = [...new Set([home, canonicalizeToolchainPath(home)])]
   const guard = createToolchainReadGuard(env, home)
   // One answer per path for this build: the canonical branch below re-checks
   // trees the spelled branch already checked, and every check is a realpath.

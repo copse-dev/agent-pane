@@ -217,3 +217,59 @@ it('matches canonical toolchain exceptions against aliased home, temp and existi
     rmSync(parent, { recursive: true, force: true })
   }
 })
+
+it('a fresh guard must reject a credential-store target retargeted before construction', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'copse-store-cache-review-')))
+  try {
+    const oldTarget = join(home, 'first-cache')
+    const newTarget = join(home, 'second-cache')
+    mkdirSync(oldTarget)
+    mkdirSync(newTarget)
+    const store = join(home, '.ssh')
+    symlinkSync(oldTarget, store)
+    assert.equal(createToolchainReadGuard({}, home)(oldTarget, true), null)
+    rmSync(store)
+    symlinkSync(newTarget, store)
+    // No concurrent race: the filesystem change has completed before a NEW
+    // guard is constructed for the next command.
+    assert.equal(createToolchainReadGuard({}, home)(newTarget, true), null)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+it('a new credential-store alias must be protected immediately, even after a missing-path cache hit', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'copse-new-store-cache-review-')))
+  try {
+    const target = join(home, 'otherwise-ordinary-cache')
+    mkdirSync(target)
+    assert.equal(createToolchainReadGuard({}, home)(target, true), target)
+    symlinkSync(target, join(home, '.ssh'))
+    assert.equal(createToolchainReadGuard({}, home)(target, true), null)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+it('a writable alias must be filtered after a warm canonical path becomes a symlink', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'copse-link-cache-review-')))
+  try {
+    const state = join(home, '.cursor')
+    const warm = join(state, 'warm-runtime')
+    const cold = join(state, 'cold-runtime')
+    const install = join(home, '.nvm', 'versions', 'node', 'v24.22.1')
+    mkdirSync(warm, { recursive: true })
+    mkdirSync(install, { recursive: true })
+    const warmPaths = [warm, `${warm}/**`]
+    assert.deepEqual(toolchainReadExceptions(warmPaths, [home], [], [state]), warmPaths)
+    rmSync(warm, { recursive: true })
+    symlinkSync(install, warm)
+    symlinkSync(install, cold)
+    // Equivalent current symlinks in the same supported ACP writable root:
+    // a cold lookup correctly drops its spelling; a warm lookup must too.
+    assert.deepEqual(toolchainReadExceptions([cold, `${cold}/**`], [home], [], [state]), [])
+    assert.deepEqual(toolchainReadExceptions(warmPaths, [home], [], [state]), [])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

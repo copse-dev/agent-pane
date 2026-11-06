@@ -24,7 +24,7 @@ import {
   withoutCheckoutWrites,
 } from './config.ts'
 import { formatArgvForShell, resolveSandboxShellExecutable } from './sandbox-argv.ts'
-import { pinSandboxWrapTmpDir, withSandboxTmpEnv } from './tmp-env.ts'
+import { sandboxTmpDirFor, withSandboxTmpEnv, withSandboxWrapTmpDir } from './tmp-env.ts'
 
 // A denial must be a real kernel permission error. Missing fixtures, a broken
 // executable, sandbox startup failures and timeouts must never look like proof.
@@ -33,7 +33,8 @@ const denialProbe = `
   const [operation, target] = process.argv.slice(1)
   try {
     if (operation === 'read') fs.readFileSync(target)
-    else fs.writeFileSync(target, 'unexpected write\\n')
+    else if (operation === 'write') fs.writeFileSync(target, 'unexpected write\\n')
+    else fs.unlinkSync(target)
     throw new Error('sandbox unexpectedly allowed ' + operation + ': ' + target)
   } catch (error) {
     if (error.code !== 'EACCES' && error.code !== 'EPERM') throw error
@@ -116,7 +117,6 @@ async function withFixture(
     for (const path of credentials)
       assert.equal(readFileSync(path, 'utf8'), 'synthetic credential\n')
     const scratch = ensureWorkspaceTmpDir()
-    pinSandboxWrapTmpDir(scratch)
     await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
     await run({
       root,
@@ -151,10 +151,9 @@ async function nodeProbe(
   overlay: Partial<SandboxRuntimeConfig> = workspaceSandboxOverlay(fixture.workspace),
   executable = fixture.node,
 ): Promise<string> {
-  const { argv } = await SandboxManager.wrapWithSandboxArgv(
-    formatArgvForShell(executable, args),
-    '/bin/sh',
-    overlay,
+  const scratch = sandboxTmpDirFor(overlay, fixture.scratch)
+  const { argv } = await withSandboxWrapTmpDir(scratch, () =>
+    SandboxManager.wrapWithSandboxArgv(formatArgvForShell(executable, args), '/bin/sh', overlay),
   )
   const [file, ...wrappedArgs] = argv
   assert.ok(file, 'ASRT must return an executable')
@@ -163,7 +162,7 @@ async function nodeProbe(
     encoding: 'utf8',
     timeout: 10_000,
     // No inherited auth or provider environment reaches the probe process.
-    env: withSandboxTmpEnv({ PATH: process.env['PATH'] }, fixture.scratch),
+    env: withSandboxTmpEnv({ PATH: process.env['PATH'] }, scratch),
   })
   assert.equal(result.error, undefined)
   assert.equal(result.signal, null, result.stderr)
@@ -173,7 +172,7 @@ async function nodeProbe(
 
 async function denied(
   fixture: Fixture,
-  operation: 'read' | 'write',
+  operation: 'read' | 'write' | 'unlink',
   target: string,
   overlay?: Partial<SandboxRuntimeConfig>,
 ): Promise<void> {
@@ -229,6 +228,76 @@ describe(
           )
           assert.equal(readFileSync(fixture.workspaceData, 'utf8'), 'allowed workspace write\n')
           assert.equal(readFileSync(fixture.toolchainData, 'utf8'), 'toolchain data\n')
+          for (const target of fixture.credentials)
+            assert.equal(readFileSync(target, 'utf8'), 'synthetic credential\n')
+        })
+      },
+    )
+
+    it(
+      'runs Node through an fnm multishell spelling without exposing or writing nearby data',
+      { timeout: 120_000 },
+      async (t) => {
+        await withFixture(t, async (fixture) => {
+          const install = join(
+            fixture.home,
+            '.local',
+            'share',
+            'fnm',
+            'node-versions',
+            process.version,
+            'installation',
+          )
+          const node = join(install, 'bin', 'node')
+          const data = join(install, 'lib', 'node_modules', 'fixture.txt')
+          for (const file of [node, data]) mkdirSync(dirname(file), { recursive: true })
+          copyFileSync(fixture.node, node)
+          chmodSync(node, 0o755)
+          writeFileSync(data, 'fnm toolchain data\n')
+          const multishell = join(fixture.home, '.local', 'state', 'fnm_multishells', '1234')
+          mkdirSync(dirname(multishell), { recursive: true })
+          symlinkSync(install, multishell)
+          const sibling = join(dirname(multishell), 'unrelated.txt')
+          writeFileSync(sibling, 'unrelated fnm state\n')
+          process.env['PATH'] = `${join(multishell, 'bin')}:/usr/bin:/bin`
+          const fnm = { ...fixture, node, toolchainData: data }
+          const overlay = workspaceSandboxOverlay(fixture.workspace)
+          // No nvm/system Node fallback is on PATH. This must execute through
+          // the lexical directory link that canonical-only grants broke.
+          assert.equal(
+            await nodeProbe(fnm, ['-p', 'process.version'], overlay, 'node'),
+            `${process.version}\n`,
+          )
+          assert.equal(
+            await nodeProbe(fnm, ['-p', 'process.execPath'], overlay, 'node'),
+            `${node}\n`,
+          )
+          const lexicalData = join(multishell, 'lib', 'node_modules', 'fixture.txt')
+          for (const file of [data, lexicalData]) {
+            assert.equal(
+              await nodeProbe(
+                fnm,
+                [
+                  '-e',
+                  "process.stdout.write(require('node:fs').readFileSync(process.argv[1], 'utf8'))",
+                  file,
+                ],
+                overlay,
+                'node',
+              ),
+              'fnm toolchain data\n',
+            )
+            await denied(fnm, 'write', file, overlay)
+          }
+          for (const target of [sibling, fixture.sibling, ...fixture.credentials]) {
+            await denied(fnm, 'read', target, overlay)
+          }
+          // The safety of the lexical exception depends on the contained
+          // process being unable to retarget its parent link.
+          await denied(fnm, 'unlink', multishell, overlay)
+          assert.equal(realpathSync(multishell), install)
+          assert.equal(readFileSync(data, 'utf8'), 'fnm toolchain data\n')
+          assert.equal(readFileSync(sibling, 'utf8'), 'unrelated fnm state\n')
           for (const target of fixture.credentials)
             assert.equal(readFileSync(target, 'utf8'), 'synthetic credential\n')
         })
