@@ -31,93 +31,9 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       composerTop: composer.top,
     }
   }, selector)
-  // TEMPORARY DIAGNOSTIC (revert before review)
-  await logFontDiag(filename, 'before')
   expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
   await saveElementScreenshot(selector, filename, { frame: 'document' })
-  await logFontDiag(filename, 'after')
-}
-
-// TEMPORARY DIAGNOSTIC (revert before review): font, stylesheet and document
-// state at each capture.
-async function logFontDiag(filename: string, phase: string): Promise<void> {
-  const diag = await browser.execute(() => {
-    const blocks = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '.messages-list .message-text code, .messages-list .message-text pre',
-      ),
-    ).slice(0, 12)
-    const families = new Set<string>()
-    const perBlock = blocks.map((block) => {
-      const style = getComputedStyle(block)
-      families.add(style.fontFamily)
-      let ready: boolean | string
-      try {
-        ready = document.fonts.check(`${style.fontSize} ${style.fontFamily}`)
-      } catch {
-        ready = 'error'
-      }
-      return `${block.tagName.toLowerCase()} ${String(block.getBoundingClientRect().height)} ${style.fontFamily.slice(0, 40)} ready=${String(ready)}`
-    })
-    return {
-      at: Math.round(performance.now()),
-      fontsStatus: document.fonts.status,
-      faces: Array.from(
-        document.fonts,
-        (face) => `${face.family} ${face.weight} ${face.style} ${face.status}`,
-      ),
-      families: [...families],
-      blocks: perBlock,
-      listWidth: document.querySelector<HTMLElement>('.messages-list')?.clientWidth ?? -1,
-      geometry: Array.from(
-        document.querySelectorAll<HTMLElement>(
-          '.messages-list .message-text pre, .messages-list .message-text :not(pre) > code',
-        ),
-        (el) => {
-          const r = el.getBoundingClientRect()
-          const style = getComputedStyle(el)
-          const parent = el.closest<HTMLElement>('.message-text')
-          const pr = parent?.getBoundingClientRect()
-          const wrapper = el.parentElement
-          const lines = Math.round(r.height / (Number.parseFloat(style.lineHeight) || 1))
-          if (el.tagName === 'CODE' && lines < 2) return ''
-          return [
-            el.tagName.toLowerCase(),
-            `rect=${String(r.x)},${String(r.y)} ${String(r.width)}x${String(r.height)}`,
-            `client=${String(el.clientWidth)} scroll=${String(el.scrollWidth)}`,
-            `w=${style.width} lh=${style.lineHeight} fs=${style.fontSize} ws=${style.whiteSpace} ov=${style.overflowX}`,
-            `pad=${style.paddingTop}/${style.paddingBottom} bd=${style.borderTopWidth}/${style.borderBottomWidth} mg=${style.marginTop}/${style.marginBottom}`,
-            `parent=${pr ? `${String(pr.x)} ${String(pr.width)}x${String(pr.height)}` : 'none'}`,
-            `wrap=${wrapper?.tagName.toLowerCase() ?? ''}.${(wrapper?.getAttribute('class') ?? '').replaceAll(' ', '.')} ${Array.from(
-              wrapper?.attributes ?? [],
-              (a) => a.name,
-            )
-              .filter((n) => n.startsWith('data-'))
-              .join(',')}`,
-            `self=.${(el.getAttribute('class') ?? '').replaceAll(' ', '.')} ${Array.from(
-              el.attributes,
-              (a) => a.name,
-            )
-              .filter((n) => n.startsWith('data-'))
-              .join(',')}`,
-          ].join(' | ')
-        },
-      ).filter((line) => line !== ''),
-      rows: Array.from(
-        document.querySelectorAll('.messages-list > .msg-assistant'),
-        (row) => row.getBoundingClientRect().height,
-      ),
-      html: document.documentElement.getAttribute('class') ?? '',
-      htmlAttrs: Array.from(
-        document.documentElement.attributes,
-        (a) => `${a.name}=${a.value.slice(0, 40)}`,
-      ),
-      sheets: document.styleSheets.length,
-      events: document.documentElement.dataset['diagFontEvents'] ?? 'none',
-    }
-  })
-  console.log(`[fontdiag ${filename} ${phase}] ${JSON.stringify(diag)}`)
 }
 
 /**
@@ -173,43 +89,6 @@ describe('ACP authentication error presentation', () => {
     })
     await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
       timeout: 30_000,
-    })
-    // TEMPORARY DIAGNOSTIC (revert before review): <html> attributes and <head>
-    // insertions from the first settled transcript on.
-    await browser.execute(() => {
-      const events: string[] = []
-      const record = (entry: string): void => {
-        events.push(`${String(Math.round(performance.now()))} ${entry}`)
-        document.documentElement.dataset['diagFontEvents'] = JSON.stringify(events.slice(-40))
-      }
-      new MutationObserver((records) => {
-        for (const r of records) {
-          if (r.attributeName === 'data-diag-font-events') continue
-          record(
-            `html@${r.attributeName ?? ''}=${(document.documentElement.getAttribute(r.attributeName ?? '') ?? '').slice(0, 40)}`,
-          )
-        }
-      }).observe(document.documentElement, { attributes: true })
-      new MutationObserver((records) => {
-        for (const r of records) {
-          for (const node of Array.from(r.addedNodes)) {
-            if (node instanceof Element) {
-              record(
-                `head+${node.tagName.toLowerCase()} ${node.getAttribute('href') ?? node.getAttribute('src') ?? node.textContent.slice(0, 40)}`,
-              )
-            }
-          }
-        }
-      }).observe(document.head, { childList: true, subtree: true })
-      document.fonts.addEventListener('loadingdone', (event) => {
-        record(
-          `fonts-done ${event.fontfaces.map((face) => `${face.family}/${face.weight}`).join(',')}`,
-        )
-      })
-      document.fonts.addEventListener('loading', () => {
-        record('fonts-loading')
-      })
-      record('installed')
     })
   })
 
