@@ -93,12 +93,18 @@ const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'arch
 
 const isRoadmapStatus = memberOf(STATUS_OPTIONS)
 
-/** Every thread id `getThreadById` can resolve, as one comparable key. */
-function knownThreadIds(
+/**
+ * What the list reads from threads, as one comparable key: every thread id
+ * `getThreadById` can resolve (a row's Reopen chip shows only for those) and
+ * its title (the chip's tooltip and label).
+ */
+function knownThreadsKey(
   threads: readonly Thread[],
   backgroundThreads: readonly BackgroundThread[],
 ): string {
-  return [...threads.map((t) => t.id), ...backgroundThreads.map((b) => b.thread.id)].join('\n')
+  return [...threads, ...backgroundThreads.map((b) => b.thread)]
+    .map((t) => `${t.id}\0${t.title}`)
+    .join('\n')
 }
 
 function roadmapModeActive(store: AppStore): boolean {
@@ -2600,9 +2606,10 @@ export function mountRoadmapPane(
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
     // re-render from the already-loaded items (no IPC round-trip needed). Only
-    // the set of known thread ids matters: renames and turns do not repaint.
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
     store.select(
-      (s) => knownThreadIds(s.threads, s.backgroundThreads),
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
       () => {
         if (!roadmapModeActive(store)) return
         renderList()
