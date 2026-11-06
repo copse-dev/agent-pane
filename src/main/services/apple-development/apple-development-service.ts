@@ -950,6 +950,15 @@ export class AppleDevelopmentService {
   }
 
   async cancelProject(projectId: string): Promise<void> {
+    await this.cancelActiveTasks(projectId)
+  }
+
+  /** Cancel Apple work in every project, e.g. when the app-wide plugin is turned off. */
+  async cancelAllProjects(): Promise<void> {
+    await this.cancelActiveTasks(undefined)
+  }
+
+  private async cancelActiveTasks(projectId: string | undefined): Promise<void> {
     const active = this.supervisor
       .list(projectId)
       .filter(
@@ -957,7 +966,7 @@ export class AppleDevelopmentService {
           task.handler === APPLE_HANDLER &&
           (task.state === 'queued' || task.state === 'running' || task.state === 'waiting'),
       )
-    await Promise.all(active.map((task) => this.supervisor.cancel(projectId, task.taskId)))
+    await Promise.all(active.map((task) => this.supervisor.cancel(task.projectId, task.taskId)))
   }
 }
 

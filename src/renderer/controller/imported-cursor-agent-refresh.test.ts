@@ -158,7 +158,6 @@ describe('imported Cursor agent refresh', () => {
     )
 
     store.setState({ activeProjectId: 'project-2', activeThreadId: null, threads: [] })
-    store.emit('workspace_changed')
     resolveResult?.(result)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 

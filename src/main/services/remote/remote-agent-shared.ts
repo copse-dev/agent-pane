@@ -1,7 +1,7 @@
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
-import { getActiveProjectId, getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import type { OpenAiHostTools } from './openai-host-tools.ts'
 
@@ -37,8 +37,9 @@ export interface RemoteAgentRunResult {
 export type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
 
 /**
- * GitHub repository URL for the active project, or null when the project is not
- * a git repo (or has no GitHub remote). Providers that can run without a
+ * GitHub repository URL for the running turn's checkout, or null when it is not
+ * a git repo (or has no GitHub remote), or when no turn is running: the
+ * process-global workspace is never consulted (#3958). Providers that can run without a
  * repository treat null as "no repo attached"; providers that must clone one
  * raise their own error.
  */
@@ -46,15 +47,17 @@ export async function resolveRemoteAgentRepository(
   options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
 ): Promise<string | null> {
   const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
-  const slug = await resolveSlug(
-    getThreadExecutionContext()?.root ?? getActiveProjectRoot() ?? getWorkspaceRoot(),
-  )
+  const slug = await resolveSlug(getAgentExecutionRoot())
   return slug ? `https://github.com/${slug}` : null
 }
 
-/** Stable project owner for a run, even when a background turn outlives a UI switch. */
+/**
+ * Stable project owner for a run: the running turn's project, so a background
+ * turn that outlives a UI switch keeps it. Null outside a turn, never the
+ * project some window happens to show (#3958).
+ */
 export function resolveRemoteAgentProjectId(): string | null {
-  return getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+  return getThreadExecutionContext()?.projectId ?? null
 }
 
 /** Parse `owner` and `repo` out of a GitHub repository URL or `owner/repo` slug. */
