@@ -29,6 +29,8 @@ import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { runAcpSessionPrompt } from './acp-client.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { ToolRegistry } from '../tool-registry.ts'
+import { storageSet } from '../storage/storage.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import {
   loadProjectThreads,
   readThreadDirectory,
@@ -367,6 +369,49 @@ describe('acp wire trace', () => {
       wireRecords(trace.path).map((record) => record['msg']),
       messages,
     )
+  })
+
+  it("traces an unsaved thread under its turn's project, never the window's", async () => {
+    // The window shows a third project. Neither thread has been saved yet, so
+    // no store owns it and the turn's own project is the only authority.
+    storageSet('activeProjectId', 'p-window')
+    const traceInTurn = (
+      projectId: string,
+      threadId: string,
+    ): Promise<Awaited<ReturnType<typeof createAcpWireTrace>>> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        async () => {
+          await new Promise((resolve) => setImmediate(resolve))
+          return createAcpWireTrace({ threadId }, ON)
+        },
+      )
+    try {
+      const [a, b] = await Promise.all([traceInTurn('p-a', 't-a'), traceInTurn('p-b', 't-b')])
+      assert.equal(a?.path, join(threadDirectoryPath('p-a', 't-a'), ACP_WIRE_TRACE_FILE))
+      assert.equal(b?.path, join(threadDirectoryPath('p-b', 't-b'), ACP_WIRE_TRACE_FILE))
+    } finally {
+      storageSet('activeProjectId', null)
+    }
+  })
+
+  it('does not trace an unowned thread outside a turn into the window project', async () => {
+    storageSet('activeProjectId', 'p-window')
+    try {
+      const trace = await createAcpWireTrace({ threadId: 't-orphan' }, ON)
+      assert.equal(trace, null)
+      await drainAcpWireTrace()
+      assert.equal(existsSync(threadDirectoryPath('p-window', 't-orphan')), false)
+    } finally {
+      storageSet('activeProjectId', null)
+    }
   })
 
   it('lands in the thread directory, beside events.jsonl', async () => {
