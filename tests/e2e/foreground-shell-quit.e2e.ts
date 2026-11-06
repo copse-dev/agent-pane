@@ -7,7 +7,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { readFixtureJsonObject } from './helpers/fixture-json.ts'
+import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -62,7 +62,7 @@ describe('quit during an owned foreground command', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
   after(() => {
-    for (const pid of owned) {
+    for (const pid of fixtureHostPids(root)) {
       try {
         process.kill(pid, 'SIGKILL')
       } catch {
@@ -127,10 +127,7 @@ describe('quit during an owned foreground command', function () {
       },
       { timeout: 30_000, interval: 100 },
     )
-    const data = readFixtureJsonObject(join(root, 'pids.json'))
-    owned = [data['parent'], data['child']].filter(
-      (value): value is number => typeof value === 'number' && value > 1,
-    )
+    owned = fixtureHostPids(root)
     assert.equal(owned.length, 2)
     assert.ok(owned.every(alive))
     assert.equal(existsSync(join(root, 'after-quit.txt')), false)
@@ -148,10 +145,16 @@ describe('quit during an owned foreground command', function () {
     await browser.waitUntil(
       async () => {
         if (!alive(mainPid)) return true
-        const confirm = $('#confirm-dialog')
-        if (await confirm.isDisplayed()) {
-          await expect(confirm.$('.confirm-dialog-confirm')).toHaveText('Close anyway')
-          await confirm.$('.confirm-dialog-confirm').click()
+        try {
+          const confirm = $('#confirm-dialog')
+          if (await confirm.isDisplayed()) {
+            await expect(confirm.$('.confirm-dialog-confirm')).toHaveText('Close anyway')
+            await confirm.$('.confirm-dialog-confirm').click()
+          }
+        } catch (error) {
+          // The renderer can close before main finishes draining. Only the
+          // actual main-process exit below satisfies the shutdown condition.
+          if (!/no such window|web view not found/.test(String(error))) throw error
         }
         return !alive(mainPid)
       },
