@@ -24,6 +24,7 @@ function configuredProject(id: string): Record<string, unknown> | undefined {
 
 export const listThreadsTool = defineTool({
   name: 'list_threads',
+  provenance: 'external',
   description:
     'Find other Copse conversations by title and summary, newest updated first across projects, including project names. Returns up to 50 results by default; use offset and limit to page through older matches, or project_id to narrow the search. First use asks permission to read all other threads; approval belongs only to this thread. Use read_thread with a returned projectId and id to read conversation text directly; spine paths remain available for detailed file reads. This catalog does not include history stored only in other apps.',
   parameters: z.object({
@@ -68,6 +69,7 @@ export const listThreadsTool = defineTool({
 
 export const readThreadTool = defineTool({
   name: 'read_thread',
+  provenance: 'external',
   description:
     'Read recent finalized messages from a Copse conversation returned by list_threads, resolving its stored prose directly. Returns at most 20 messages (10 by default), oldest first within the page; offset counts backward from the newest message and nextOffset requests older messages. Each body is capped at 4000 characters with an explicit truncation flag and contentPath for a detailed read_file. Tool names/statuses are summaries, not tool results; active work may not have finalized yet. Uses the existing thread-scoped read consent; never grants sending or reads another app’s history.',
   parameters: z.object({

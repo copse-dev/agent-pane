@@ -88,7 +88,8 @@ conversation-read consent; revoking that consent leaves the outside-path grant i
 returns identifiers for `read_thread` plus paths for detailed file reads. `read_thread` resolves
 recent message prose directly, with bounded pages and explicit truncation/older-page indicators;
 it uses the same conversation-read consent, including own/direct-follow-up-parent exceptions.
-Neither tool imports history stored only in another application. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
+Catalog and transcript results use the external-content envelope: historical instructions are data,
+not authority for the current turn. Neither tool imports history stored only in another application. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.

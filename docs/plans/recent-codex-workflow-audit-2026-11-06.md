@@ -184,3 +184,50 @@ Final full-check and cloud-gate results are recorded in the follow-up PR. Keep
 publication draft until required gates and screenshot review complete. Earlier
 static runs exposed new lint/type errors in tests; those were fixed, not treated
 as host noise.
+
+### Final provenance review and Codex ACP control
+
+Final review added the existing external-content envelope to both conversation
+catalog and transcript results. Text from another conversation is historical
+data, including any quoted instructions. A real registry regression returns
+catalog/transcript text containing a forged closing tag and proves that it
+cannot terminate the envelope; sending permission remains ungranted. The test
+fails before the provenance declarations. The focused tool/registry suite then
+passes all 53 cases; the complete focused selection passes all 192 cases. The
+framed-payload Electron card spec passes both cases, and its capture was
+inspected. This framing does not change permission decisions.
+
+The completed local full check on `733b3b848f53cbea48ecb9e8328c282019156ea4`
+passed all static gates: 17,217 unit tests passed, nine failed, one skipped.
+All nine failures reproduce on unchanged main: one Bash 3.2 protocol fixture,
+six `/var` screenshot-review guards, one per-user-temp read assertion, and the
+shell replay. The replay initially differed between worktree locations; checking
+out unchanged main in the exact fix directory, keeping dependencies and build
+artifacts constant, reproduces all 37 differing rows with an identical digest.
+Do not label the full suite zero-failure. The later provenance follow-up is
+validated by focused checks and the final-head full cloud run under the
+previously documented draft/cloud-validation route.
+
+To separate local-model judgment from app capability, two additional controls
+used the existing authenticated `acp:codex` route with explicit normal `agent`
+permissions. Matching backend turn-context metadata establishes `gpt-6.1-sol`,
+medium effort. These controls ran on the committed build before the provenance
+follow-up, without changing credentials, model defaults or assertions:
+
+- `git-ci-first-class-tools-1793996156940.jsonl`: the original explicit question
+  obtains current remote history through `gh_api_read` and exact-SHA CI through
+  `get_ci_status`. It correctly reports all six observed push workflows green
+  at `92c89179`, explicitly excluding PR-only/protection requirements. The
+  unchanged tool scorer fails because its history group permits only `git_log`,
+  `gh_pr_list`, or `gh_pr_view`, not the valid commits API route. Preserve this
+  failed score; do not relabel it an assertion pass.
+- `cross-project-workflow-main-1793996311184.jsonl`: the same two fixture prompts
+  pass the unchanged scorer and final-fact assertions in 42.4 seconds. Calls
+  are two native MCP `list_threads` reads and one `read_thread`; no sends,
+  shell or file writes. The inspected capture shows the correct project,
+  three-item checklist and instruction to keep agents frozen.
+
+These are diagnostic controls with a different model, not paired evidence that
+Qwen's quality failures were fixed. The native/ACP product route is established;
+model reliability and the history scorer's narrow successful-tool group remain
+explicit limits.
