@@ -2630,8 +2630,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "89291d549316e3d1d63df970e0c832b5a7152ad679f8fb164ef598d52d17a237",
+      "bytes": 336849
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
@@ -3925,6 +3925,10 @@
       "sha256": "1a5a06e1753f8a9d6f9da7e7c1c6c61c6b0a599715896e679d94115f9383a836",
       "bytes": 284589
     },
+    "settings-ci-investigator-plugin.png": {
+      "sha256": "88a69be60c46e58f2840acb81ff29e94865b94e1facf0f7bcd27b5b3c953db7b",
+      "bytes": 39036
+    },
     "settings-classifier-permission-failure-detail.png": {
       "sha256": "3b49d2fe90dc3adfb41f44ffaafdb59707629b09270598413909657985a33a90",
       "bytes": 54825
@@ -4174,8 +4178,8 @@
       "bytes": 259882
     },
     "settings-gui-app-permission.png": {
-      "sha256": "e48d293e2d852e22a62300f8427750ecc5b5da1c40bc7c85f6abbc03cb69c017",
-      "bytes": 380754
+      "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
+      "bytes": 376843
     },
     "settings-load-failed.png": {
       "sha256": "84e3c4d4071fd5f69e7303f40566a422c3ce542d717c59ba576c8b6bb84c6e88",
