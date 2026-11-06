@@ -168,6 +168,7 @@ import {
   init_acp_known_agents,
   init_actions,
   init_active_thread_owner,
+  init_active_workspace,
   init_agent_activity,
   init_annotation_layer,
   init_announcement_catalog,
@@ -389,6 +390,7 @@ import {
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
+  selectActiveWorkspace,
   selectRightPanel,
   selectRightPanelMode,
   sendQueuedMessageNow,
@@ -435,6 +437,7 @@ import {
   summarizeThreadPrStatus,
   suspendNavigationWrites,
   switchProject,
+  switchProjectAndWait,
   switchProjectThread,
   switchThread,
   syncAgentActivity,
@@ -460,7 +463,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-S2ACVBPN.js";
+} from "./chunk-KZGW74ZW.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1280,7 +1283,7 @@ function openAppRunDialog(store2, api2, projectId = store2.getState().activeProj
     ),
     panel.element
   );
-  const unsubscribe = store2.on("workspace_changed", close2);
+  const unsubscribe = selectActiveWorkspace(store2, close2);
   const unsubscribeThread = store2.on("threads_changed", () => {
     if (store2.getState().activeThreadId !== (owner.threadId ?? null)) close2();
   });
@@ -1303,6 +1306,7 @@ var init_app_run_dialog = __esm({
     init_helpers();
     init_icons();
     init_dialog_shell();
+    init_active_workspace();
     isBusy = (operation) => !["running", "succeeded", "failed", "cancelled", "stopped"].includes(operation.stage);
   }
 });
@@ -1675,7 +1679,7 @@ function mountOpenInEditor(root, store2, api2) {
     on(document, "keydown", (e) => {
       if (e.key === "Escape" && open) setOpen(false);
     }),
-    store2.on("workspace_changed", syncVisibility),
+    selectActiveWorkspace(store2, syncVisibility),
     store2.on("projects_changed", syncVisibility)
   );
   void refresh();
@@ -1696,6 +1700,7 @@ var init_open_in_editor = __esm({
     init_tooltip();
     init_toast();
     init_active_thread_owner();
+    init_active_workspace();
   }
 });
 
@@ -2625,7 +2630,7 @@ function mountTitlebar(root, store2, api2) {
   syncBranch();
   const unsubs = [
     store2.select((s) => s.projectsPaneOpen, syncSidebar),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       syncName();
       syncBranchNow();
       syncRunApp();
@@ -2678,6 +2683,7 @@ var init_titlebar = __esm({
     init_titlebar_compact();
     init_panels();
     init_keyboard_shortcuts_dialog();
+    init_active_workspace();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
@@ -2908,9 +2914,12 @@ function openAutomationDialog(store2, api2, options = {}) {
   const status = el("p", { class: "automation-notice", role: "status" }, "Loading automations\u2026");
   body.append(status);
   dialog.append(header, body);
-  const unsubscribe = store2.on("workspace_changed", () => {
-    if (store2.getState().activeProjectId !== activeProjectId) close2();
-  });
+  const unsubscribe = store2.select(
+    (s) => s.activeProjectId,
+    (projectId2) => {
+      if (projectId2 !== activeProjectId) close2();
+    }
+  );
   dialog.addEventListener(
     "close",
     () => {
@@ -8382,15 +8391,11 @@ function mountProjectsPane(root, store2, api2) {
                   openAppRunDialog(store2, api2, project.id);
                   return;
                 }
-                const unsubscribe = store2.on("workspace_changed", () => {
+                void switchProjectAndWait(store2, api2, project.id).then(() => {
                   if (store2.getState().activeProjectId === project.id) {
-                    unsubscribe();
                     openAppRunDialog(store2, api2, project.id);
-                  } else if (!isProjectSwitchInFlight(store2, project.id)) {
-                    unsubscribe();
                   }
-                });
-                switchProject(store2, api2, project.id);
+                }).catch(() => void 0);
               }
             });
           }
@@ -8757,7 +8762,7 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("thread_status_changed", () => {
       render2();
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
       prStatusGeneration += 1;
@@ -8842,6 +8847,7 @@ var init_projects_pane = __esm({
     init_project_tree();
     init_project_groups();
     init_projects_drag();
+    init_active_workspace();
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE = "16";
     SVG_NS = "http://www.w3.org/2000/svg";
@@ -13712,7 +13718,7 @@ function createThreadArchiveReview(store2, api2) {
   const unsubs = [
     store2.on("threads_changed", sync),
     store2.on("thread_status_changed", sync),
-    store2.on("workspace_changed", sync),
+    selectActiveWorkspace(store2, sync),
     store2.on("settings_changed", () => {
       void refresh(true);
     })
@@ -13742,6 +13748,7 @@ var init_thread_archive_review = __esm({
     init_helpers();
     init_toast();
     init_thread_archive_toast();
+    init_active_workspace();
   }
 });
 
@@ -17005,7 +17012,7 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     reminders.delete(reminder.projectId);
     renderReminder();
   });
-  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store2, () => {
     const activeProjectId = store2.getState().activeProjectId;
     if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
       pendingDialog.controller.abort();
@@ -17034,6 +17041,7 @@ var init_apple_project_suggestion = __esm({
     init_icons();
     init_dialog_shell();
     init_toast();
+    init_active_workspace();
     PLUGIN_NAME = "Apple development";
     PLUGIN_DESCRIPTION = "Build, test, and run local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.";
   }
@@ -33448,7 +33456,7 @@ function mountFileTree(root, store2, api2) {
     refresh();
   }
   const unsubs = [
-    store2.on("workspace_changed", refresh),
+    selectActiveWorkspace(store2, refresh),
     store2.on("threads_changed", refreshForActiveTask),
     store2.select(
       (s) => s.openFile,
@@ -33493,6 +33501,7 @@ var init_file_tree = __esm({
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
+    init_active_workspace();
   }
 });
 
@@ -64853,7 +64862,7 @@ function mountFooterBranchStatus(host, store2, api2) {
       }
       refreshNow();
     }),
-    store2.on("workspace_changed", refreshNow),
+    selectActiveWorkspace(store2, refreshNow),
     // A real thread switch repaints immediately, whichever writer made it and
     // whether or not it emitted anything (#3928).
     store2.select(
@@ -64933,6 +64942,7 @@ var init_footer_branch_status = __esm({
     init_thread_helpers();
     init_panels();
     init_active_thread_owner();
+    init_active_workspace();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     nextPickerId = 0;
@@ -69761,7 +69771,7 @@ ${reply}`);
     refreshSkillsCache();
     scheduleContextEstimate(0);
   };
-  const unsubWorkspace = store2.on("workspace_changed", onSkillsChanged);
+  const unsubWorkspace = selectActiveWorkspace(store2, onSkillsChanged);
   window.addEventListener("copse:skills-changed", onSkillsChanged);
   const skillPicker = initSkillPicker({
     input: composer,
@@ -69874,7 +69884,7 @@ ${reply}`);
       updateFooter();
       scheduleContextEstimate(0);
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       void refreshAutomaticCheckoutPreview();
     }),
     store2.on("git_branch_changed", () => {
@@ -70032,6 +70042,7 @@ var init_input_bar = __esm({
     init_perf();
     init_keyboard_shortcuts();
     init_dialog_shell();
+    init_active_workspace();
     IMAGE_DETAIL_LABELS = {
       auto: "Auto detail (provider decides)",
       low: "Low detail \u2014 cheapest, text may be unreadable",
@@ -72018,7 +72029,7 @@ ${output}` : "Terminal output: (none)"
     store2.on("thread_checkout_changed", (threadId) => {
       void onThreadCheckoutChanged(threadId);
     }),
-    store2.on("workspace_changed", onThreadMaybeChanged),
+    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("request_terminal_command", (command2, options) => {
       void runCommandInNewShell(command2, options);
     }),
@@ -72331,7 +72342,7 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
   });
   const unsubShell = store2.on("shell_tab_activated", clearSelection);
   const unsubThreads = store2.on("threads_changed", onThreadMaybeChanged);
-  const unsubWorkspace = store2.on("workspace_changed", onThreadMaybeChanged);
+  const unsubWorkspace = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
   return () => {
     unsubChunk();
     unsubOutput();
@@ -73684,7 +73695,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       pendingNavigate = path;
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
     }),
@@ -73777,6 +73788,7 @@ var init_git_changes_pane = __esm({
     init_material_file_icons();
     init_image_path();
     init_panels();
+    init_active_workspace();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -75403,7 +75415,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       syncWatch();
       if (active) void refresh();
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       threadRelationshipRequest++;
       activeThreadRelations = null;
       relationshipRequest++;
@@ -75529,6 +75541,7 @@ var init_pr_pane = __esm({
     init_pr_auth_error();
     init_ipc_error_message();
     init_panels();
+    init_active_workspace();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -75831,7 +75844,7 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
     selectRightPanelMode(store2, "memories", (active) => {
       if (active) void refresh({ preserveDirty: true });
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       selectedId = null;
       creating = false;
       memories = [];
@@ -75862,6 +75875,7 @@ var init_memories_pane = __esm({
     init_icons();
     init_pane_loading();
     init_panels();
+    init_active_workspace();
   }
 });
 
@@ -76871,7 +76885,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       render2();
       void refreshMentions();
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       mentionedFor = null;
       approvalsKey = "";
       approvalsToken++;
@@ -76920,6 +76934,7 @@ var init_thread_context_panel = __esm({
     init_reviewer_input3();
     init_toast();
     init_settings_dialog();
+    init_active_workspace();
     SECTION_TITLES = {
       requests: "Needs your input",
       repos: "Access",
@@ -80029,7 +80044,7 @@ Notes: ${notes}` : prompt;
       renderList();
       renderEditor({ preserveDirty: true });
     }),
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       loadToken++;
       loading = false;
       cancelResolutionCheckUi();
@@ -80101,6 +80116,7 @@ var init_roadmap_pane = __esm({
     init_member_of2();
     init_nullish2();
     init_panels();
+    init_active_workspace();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -81494,9 +81510,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const cancel = () => {
         settle(false);
       };
-      const stop = store2.on("workspace_changed", () => {
-        if (store2.getState().activeProjectId) settle(true);
-      });
+      const stop = store2.select(
+        (s) => s.activeProjectId !== null,
+        (active) => {
+          if (active) settle(true);
+        }
+      );
       pendingProjectWaits.add(cancel);
     });
   }
@@ -81581,7 +81600,11 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   });
   const unsubs = [
     store2.on("threads_changed", onThreadMaybeChanged),
-    store2.on("workspace_changed", onThreadMaybeChanged),
+    store2.select(
+      (s) => [s.activeProjectId, s.activeThreadId],
+      onThreadMaybeChanged,
+      sameItems
+    ),
     selectRightPanelMode(store2, "browser", onBrowserModeChange),
     store2.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store2.on("browser_url_requested", openRequestedBrowserUrl),
@@ -81643,6 +81666,7 @@ var init_browser_pane = __esm({
     init_pane_popout_button();
     init_pane_tabs();
     init_pane_popout_seed();
+    init_store();
     init_browser_url();
     init_artefact();
     init_guest_surface();
@@ -83698,7 +83722,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       clearViewer("Disconnected");
     }
   });
-  const stopWorkspace = store2.on("workspace_changed", () => {
+  const stopWorkspace = selectActiveWorkspace(store2, () => {
     if (channel || simulatorSessionId) disconnect();
     const activeProject = store2.getState().projects.find((project) => project.id === store2.getState().activeProjectId);
     void refreshSshHosts(
@@ -83970,6 +83994,7 @@ var init_vnc_pane = __esm({
     init_panels();
     init_desktop_viewer();
     init_vnc_ssh_host_form();
+    init_active_workspace();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
@@ -84932,7 +84957,7 @@ function mountSshStatusBanner(store2, api2) {
     });
   }
   const unsubs = [
-    store2.on("workspace_changed", () => {
+    selectActiveWorkspace(store2, () => {
       void api2.sshWorkspace.getStates().then(sync);
     }),
     store2.on("projects_changed", () => {
@@ -84955,6 +84980,7 @@ var init_ssh_status_banner = __esm({
   "src/renderer/views/ssh-status-banner.ts"() {
     init_helpers();
     init_settings_dialog();
+    init_active_workspace();
     BANNER_ID = "ssh-status-banner";
   }
 });
@@ -87665,7 +87691,11 @@ function attachDiffState(store2, api2, options) {
     publishActiveQueue(entries);
     hydrate();
   };
-  const unsubWorkspace = store2.on("workspace_changed", syncDiffOwner);
+  const unsubWorkspace = store2.select(
+    (s) => [s.activeProjectId, s.activeThreadId],
+    syncDiffOwner,
+    sameItems
+  );
   const unsubThreads = store2.on("threads_changed", syncDiffOwner);
   hydrate();
   return () => {
@@ -87677,6 +87707,7 @@ function attachDiffState(store2, api2, options) {
 }
 var init_diff_state = __esm({
   "src/renderer/controller/diff-state.ts"() {
+    init_store();
     init_panels();
   }
 });
@@ -87844,7 +87875,7 @@ function startAgentController(store2, api2) {
       console.error("[threads] could not attach transcripts:", error);
     });
   };
-  const unsubWorkspace = store2.on("workspace_changed", attach);
+  const unsubWorkspace = selectActiveWorkspace(store2, attach);
   attach();
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
     if (stamp && !attached.has(threadId)) return;
@@ -88000,6 +88031,7 @@ function mergeRuntimeMessages(current, incoming) {
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
     init_thread_prompts();
+    init_active_workspace();
     init_thread_helpers();
     init_transcript_state();
     init_persistence();
@@ -88063,7 +88095,7 @@ function attachBestValueDefaultResolver(store2, api2) {
     void resolveBestValueForActiveBlankThread(store2, api2);
   };
   const unsubscribeNewThread = store2.on("new_thread_opened", resolve);
-  const unsubscribeWorkspace = store2.on("workspace_changed", resolve);
+  const unsubscribeWorkspace = selectActiveWorkspace(store2, resolve);
   return () => {
     unsubscribeNewThread();
     unsubscribeWorkspace();
@@ -88071,6 +88103,7 @@ function attachBestValueDefaultResolver(store2, api2) {
 }
 var init_best_value_default = __esm({
   "src/renderer/controller/best-value-default.ts"() {
+    init_active_workspace();
     init_thread_helpers();
     init_dynamic_model();
     init_model_selection();
@@ -88195,7 +88228,7 @@ function attachProviderInvalidationWarning(store2, api2, ui) {
     });
   };
   const unsubscribe = [
-    store2.on("workspace_changed", check),
+    selectActiveWorkspace(store2, check),
     store2.on("threads_changed", check),
     store2.on("settings_changed", check),
     store2.on("thread_status_changed", check)
@@ -88212,6 +88245,7 @@ var init_provider_invalidation = __esm({
   "src/renderer/controller/provider-invalidation.ts"() {
     init_zod();
     init_safe_json2();
+    init_active_workspace();
     init_thread_helpers();
     init_model_selection();
   }
@@ -88702,7 +88736,11 @@ function attachImportedCursorAgentRefresh(store2, api2) {
     });
   };
   const offThreads = store2.on("threads_changed", refreshActive);
-  const offWorkspace = store2.on("workspace_changed", refreshActive);
+  const offWorkspace = store2.select(
+    (s) => [s.activeProjectId, s.activeThreadId],
+    refreshActive,
+    sameItems
+  );
   refreshActive();
   return () => {
     offThreads();
@@ -88712,6 +88750,7 @@ function attachImportedCursorAgentRefresh(store2, api2) {
 var init_imported_cursor_agent_refresh = __esm({
   "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
     init_remote_agent_link2();
+    init_store();
   }
 });
 
@@ -89755,7 +89794,7 @@ async function boot() {
   } else {
     endBoot({ projects: 0 });
     const unmountWelcome = mountWelcome(requireElement("welcome"), store, api);
-    const unsubWelcome = store.on("workspace_changed", () => {
+    const unsubWelcome = selectActiveWorkspace(store, () => {
       unsubWelcome();
       unmountWelcome();
       ensureLayout();
@@ -90086,6 +90125,7 @@ var init_main = __esm({
     init_startup_settings();
     init_projects();
     init_panels();
+    init_active_workspace();
     init_artefact_previews();
     init_setup();
     init_pane_resizer();
