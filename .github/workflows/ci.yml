@@ -9,7 +9,7 @@ on:
     branches: [release, main]
     # A release tag must receive this exact same aggregate gate before the
     # publishing workflow will package it. See release-mac.yml's preflight.
-    tags: ['v*']
+    tags: ["v*"]
   # `labeled` is included so adding the `update-screenshots` or `ci-full` label
   # kicks a fresh run on the PR head — plan-e2e then forces mode=full
   # (`update-screenshots` additionally renders every reference shot into an
@@ -37,7 +37,7 @@ on:
   # exact commit was already gated as a PR; the nightly catches direct-push and
   # environment drift. Off-:00 minute to avoid the cron stampede.
   schedule:
-    - cron: '17 6 * * *'
+    - cron: "17 6 * * *"
   # Queue commits combine candidates with the latest base. They must earn
   # the same required CI Passed gate before GitHub can merge them.
   merge_group:
@@ -1036,6 +1036,30 @@ jobs:
   # wiring changes. Unit tests cover the broker with a fake engine; this is the
   # small hosted proof that the built image enforces the declared boundary and
   # can read the exact caller-trusted preparation-file mount used in Job B.
+  macos-tmpdir-check:
+    # Scratch validation for #4162 only: run its temp-dir tests under real
+    # macOS seatbelt. This branch is never merged.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-26
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Run #4162 temp-dir tests under seatbelt
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/sandbox-exec
+          sw_vers
+          uname -m
+          node --version
+          pnpm test -- src/main/project-sandbox/tmp-env.test.ts src/main/project-sandbox/tmp-env-seatbelt-probe.test.ts src/main/services/acp/acp-probe-worker.test.ts src/main/services/review/os-sandbox-backend.test.ts
+
   review-cell:
     needs: precheck
     if: >-
@@ -1063,7 +1087,7 @@ jobs:
             packages/review
       - name: Prove the real container boundary
         env:
-          COPSE_REVIEW_CONTAINER_E2E: '1'
+          COPSE_REVIEW_CONTAINER_E2E: "1"
           COPSE_REVIEW_IMAGE: copse-review-cell:ci
           COPSE_REVIEW_DEPENDENCY_STORE: ${{ runner.temp }}/pnpm-store
         run: npm test -- packages/review/src/hostile-fixture.test.ts
@@ -1270,12 +1294,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { path: native, model: '', variant: '0' }
-          - { path: native, model: '', variant: '1' }
-          - { path: native, model: '', variant: '2' }
+          - { path: native, model: "", variant: "0" }
+          - { path: native, model: "", variant: "1" }
+          - { path: native, model: "", variant: "2" }
           # The ACP arm runs the wording taken verbatim from the exported
           # thread, so a regression there is comparable to the recorded case.
-          - { path: acp-codex, model: 'acp:codex-acp', variant: '0' }
+          - { path: acp-codex, model: "acp:codex-acp", variant: "0" }
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
@@ -1601,7 +1625,7 @@ jobs:
       # Keep reference rendering on Chromium's headed path in CI. The e2e
       # launcher still provides Xvfb on Linux, while local runs remain headless
       # by default unless developers opt out with the same variable.
-      COPSE_E2E_HEADLESS: '0'
+      COPSE_E2E_HEADLESS: "0"
     steps:
       # Measurement only: the shard's job start, before checkout wipes the
       # workspace (RUNNER_TEMP survives it). The collect step below folds it
@@ -1635,7 +1659,7 @@ jobs:
           # The classifier spec needs ~15.6 GB free when it runs, and setup plus
           # the specs before it use several GB first. 40 GB clears both with
           # margin and still skips the ~75 GB-free layout.
-          E2E_MIN_FREE_GB: '40'
+          E2E_MIN_FREE_GB: "40"
         run: |
           set -euo pipefail
           tmp="${TMPDIR:-/tmp}"
@@ -1766,7 +1790,7 @@ jobs:
         if: runner.environment == 'github-hosted'
         env:
           # Winnow-12B's preflight: downloadGb 12.5 x DISK_HEADROOM 1.25.
-          E2E_CLASSIFIER_NEEDS_GB: '15.6'
+          E2E_CLASSIFIER_NEEDS_GB: "15.6"
         run: |
           set -euo pipefail
           tmp="${TMPDIR:-/tmp}"
@@ -2539,7 +2563,16 @@ jobs:
     # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
     needs:
-      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
+      [
+        precheck,
+        screenshot-baselines,
+        check,
+        review-cell,
+        bench,
+        build,
+        e2e,
+        screenshot-artifacts,
+      ]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
