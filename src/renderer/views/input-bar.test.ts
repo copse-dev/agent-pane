@@ -5013,3 +5013,46 @@ describe('composer Send now shortcuts', () => {
     )
   })
 })
+
+describe('input bar skills across a workspace switch', () => {
+  it('lists skills again when setState alone selects another project', async () => {
+    let listCalls = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [
+        { id: 'project-1', name: 'Project', path: '/repo' },
+        { id: 'project-2', name: 'Other', path: '/other' },
+      ],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const inputBar = mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        listSkills: async () => {
+          listCalls += 1
+          return []
+        },
+      }),
+    )
+    try {
+      await flush()
+      const mountCalls = listCalls
+      assert.ok(mountCalls >= 1, 'mount primes the skills cache')
+
+      // No store event: the selection alone must reach the composer.
+      store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other' })
+      assert.equal(listCalls, mountCalls + 1, 'the workspace switch lists skills again')
+
+      store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other' })
+      assert.equal(listCalls, mountCalls + 1, 'an unchanged workspace does not refetch')
+    } finally {
+      inputBar.unmount()
+    }
+  })
+})
