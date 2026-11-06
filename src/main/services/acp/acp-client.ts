@@ -45,7 +45,7 @@ import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@sh
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
-import { isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
+import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
@@ -148,6 +148,12 @@ export interface AcpClientHandlers {
    * thread already says so in Copse's words, to drop the agent's line.
    */
   onBridgeStartupFailure?: () => boolean
+  /**
+   * The agent's own runtime refused a call of the bridged tool `tool` as not in
+   * its tool list ({@link acpBridgeToolMissing}): it may have dropped Copse's
+   * tools after listing them (#4142). Called after the failed call is shown.
+   */
+  onBridgeToolMissing?: (tool: string) => void
 }
 
 export interface AcpAgentSpawnConfig {
@@ -886,6 +892,8 @@ export interface OpenAcpSession {
   promptImage: boolean
   /** The agent's current slash-command registry, refreshed by session updates. */
   availableCommands: AvailableCommand[]
+  /** What the agent has said about a tool call's identity so far (`AcpToolCallObservations`). */
+  toolCallIdentities: (toolCallId: string) => readonly AcpToolIdentity[]
   /** Mutable ACP-owned metadata for the live session. */
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
@@ -1264,6 +1272,13 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         for (const chunk of sessionUpdateToStreamChunks(update)) {
           open.handlers.current?.onChunk(chunk)
         }
+        const missingTool = acpBridgeToolMissing(
+          update,
+          update.sessionUpdate === 'tool_call_update'
+            ? open.toolCallIdentities(update.toolCallId)
+            : [],
+        )
+        if (missingTool !== null) open.handlers.current?.onBridgeToolMissing?.(missingTool)
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
         // future turn on this session) depends on the loop staying alive.
@@ -1592,6 +1607,7 @@ export async function openAcpSession(
       ),
     )
 
+    const openedSessionId = session.sessionId
     const open: OpenAcpSession = {
       session,
       connection,
@@ -1602,6 +1618,7 @@ export async function openAcpSession(
       canLoad,
       promptImage,
       availableCommands: [],
+      toolCallIdentities: (toolCallId) => observedToolCalls.get(openedSessionId, toolCallId),
       sessionInfo: {},
       resumed: restoredBy !== null,
       restoredBy,

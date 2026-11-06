@@ -390,6 +390,13 @@ export interface AcpNativeBridge {
    */
   toolsListed: () => boolean
   /**
+   * The tools the agent's latest `tools/list` returned, or null before it has
+   * listed them. This, not {@link toolNames}, is what the agent was given: the
+   * registry can change between the offer and the listing. Listing still does
+   * not prove the agent kept them (#4142, `acp-bridge-mount.ts`).
+   */
+  listedToolNames: () => readonly string[] | null
+  /**
    * Resolve true as soon as the agent lists the bridge's tools, or false once
    * `timeoutMs` passes or `signal` aborts without it.
    */
@@ -493,7 +500,8 @@ interface BridgeExecuteContext {
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
   /** The agent asked for the tool list: it has mounted this bridge. */
-  recordToolsListed: () => void
+  /** The agent listed the bridge's tools; `names` are the ones this listing returned. */
+  recordToolsListed: (names: readonly string[]) => void
 }
 
 /** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
@@ -634,8 +642,9 @@ function buildMcpServer(
     { capabilities: { tools: {}, logging: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => {
-    ctx.recordToolsListed()
-    return { tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess) }
+    const tools = bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess)
+    ctx.recordToolsListed(tools.map((tool) => tool.name))
+    return { tools }
   })
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
@@ -931,11 +940,11 @@ export async function startAcpNativeBridge(
   const inflightCalls = new Map<string, (detail: string) => void>()
   // Only a request carrying this bridge's bearer token reaches the MCP server,
   // so a listing here is this session's agent mounting the bridge.
-  let toolsListed = false
+  // The latest listing wins: the agent's MCP client lists again on reconnect.
+  let listedToolNames: readonly string[] | null = null
   const toolsListedWaiters = new Set<() => void>()
-  const recordToolsListed = (): void => {
-    if (toolsListed) return
-    toolsListed = true
+  const recordToolsListed = (names: readonly string[]): void => {
+    listedToolNames = names
     for (const wake of toolsListedWaiters) wake()
     toolsListedWaiters.clear()
   }
@@ -1021,9 +1030,10 @@ export async function startAcpNativeBridge(
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
     toolNames: offeredToolNames,
-    toolsListed: () => toolsListed,
+    toolsListed: () => listedToolNames !== null,
+    listedToolNames: () => listedToolNames,
     whenToolsListed: (timeoutMs, waitSignal): Promise<boolean> => {
-      if (toolsListed) return Promise.resolve(true)
+      if (listedToolNames !== null) return Promise.resolve(true)
       if (closed || waitSignal?.aborted || timeoutMs <= 0) return Promise.resolve(false)
       return new Promise<boolean>((resolve) => {
         const finish = (listed: boolean): void => {

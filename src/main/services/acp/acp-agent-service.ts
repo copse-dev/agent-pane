@@ -61,12 +61,17 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import {
+  ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE,
   ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE,
+  acpBridgeToolLoss,
+  acpBridgeToolsDroppedNotice,
   acpBridgeUnavailableNotice,
   acpCopseToolsConnectedPromptNote,
   awaitAcpBridgeMount,
   markAcpBridgeAvailable,
+  markAcpBridgeToolsDropped,
   markAcpBridgeUnavailable,
+  takeAcpBridgeToolsDroppedPromptNote,
 } from './acp-bridge-mount.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { skillPreflightEnvironment } from '../skills/skills-registry.ts'
@@ -219,11 +224,15 @@ export interface RunAcpAgentOptions {
    */
   invokedSkills?: string[]
   /**
-   * Trusted, current-turn guidance assembled by Copse's canonical `turnStart`
-   * hooks. The user's prompt remains verbatim; this block is separately framed
-   * as product guidance and is sent on every turn, including pooled sessions.
+   * Assemble the trusted, current-turn guidance of Copse's canonical
+   * `turnStart` hooks (decision 20) from `bridgeToolNames`: the Copse tools
+   * this session's agent actually has, listed and not since dropped, so the
+   * guidance never names one it lacks (#4142, #4144). Called once per turn,
+   * after the session's mount is known and before the prompt is sent. The
+   * user's prompt remains verbatim; the result is separately framed as product
+   * guidance and is sent on every turn, including pooled sessions.
    */
-  operatorInstructions?: string
+  turnGuidance?: (bridgeToolNames: readonly string[]) => Promise<string | undefined>
   /**
    * Aborted when the Copse turn ends (success, error, or Stop). Merged into
    * bridged tool execution so an agent that abandons an MCP call and finishes
@@ -818,10 +827,13 @@ async function runAcpAgentTurn(
   // this session's agent, or null when it offered none (remote, no HTTP MCP,
   // bridge not started).
   let offeredBridge: AcpNativeBridge | null = null
-  // The tools this session's own bridge serves, or none until its agent has
-  // mounted it by listing them (#4144). Read live: an agent may list late.
+  // The tools this session's agent actually has from its bridge: the ones it
+  // listed (#4144), and none once its runtime showed it dropped them (#4142).
+  // Read live: an agent may list late, or lose the tools mid-turn.
   const bridgeToolNames = (): readonly string[] =>
-    offeredBridge?.toolsListed() ? offeredBridge.toolNames : []
+    offeredBridge && acpBridgeToolLoss(offeredBridge) === null
+      ? (offeredBridge.listedToolNames() ?? [])
+      : []
   // Once per session: tell the thread its agent never connected to Copse's tools.
   const noteBridgeUnavailable = (bridge: AcpNativeBridge): boolean => {
     if (!markAcpBridgeUnavailable(bridge)) return false
@@ -859,6 +871,18 @@ async function runAcpAgentTurn(
       noteBridgeUnavailable(offeredBridge)
       return true
     },
+    // The agent listed Copse's tools, yet its own runtime says one of them is
+    // not in its tool list: it dropped them after the listing (#4142). Say so
+    // once, in the thread; later prompts stop steering it to them.
+    onBridgeToolMissing: (tool) => {
+      const bridge = offeredBridge
+      if (!bridge?.listedToolNames()?.includes(tool)) return
+      if (!markAcpBridgeToolsDropped(bridge, tool)) return
+      console.warn(
+        `[acp-bridge] thread ${options.threadId}'s agent listed Copse's tools, but its runtime refused ${tool} as "No such tool available"; treating Copse's tools as unavailable to it this session`,
+      )
+      options.onChunk({ type: 'text', text: acpBridgeToolsDroppedNotice(agent.title) })
+    },
   }
   // New turn: reset the restore point so this turn's first file-write approval
   // snapshots the user's current uncommitted work (see respondToPermission).
@@ -869,6 +893,8 @@ async function runAcpAgentTurn(
   // Snapshot explicit instructions only after negotiation supplies the actual
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
+  // Like the skills block, assembled once per turn; a retry reuses the bytes.
+  let turnGuidance: Promise<string | undefined> | null = null
 
   // The thread's model has dropped off the agent's list: say so in the thread.
   // Like the handover note, straight to the caller's sink rather than
@@ -935,9 +961,15 @@ async function runAcpAgentTurn(
           awaitAcpBridgeMount(sessionBridge, entry.openedAt, options.signal),
         )
       : null
-    const bridgeMounted = bridgeMount === 'listed'
+    // Listed, and not since refused by the agent's own runtime (#4142).
+    const bridgeDropped = sessionBridge !== null && acpBridgeToolLoss(sessionBridge) !== null
+    const bridgeMounted = bridgeMount === 'listed' && !bridgeDropped
     let copseToolsNote: string | undefined
-    if (sessionBridge && bridgeMounted) {
+    if (sessionBridge && bridgeDropped) {
+      if (takeAcpBridgeToolsDroppedPromptNote(sessionBridge)) {
+        copseToolsNote = ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE
+      }
+    } else if (sessionBridge && bridgeMounted) {
       if (markAcpBridgeAvailable(sessionBridge)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(acpCopseToolsSteering(sandboxed))
       }
@@ -953,7 +985,11 @@ async function runAcpAgentTurn(
       )
       copseToolsNote = ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE
     }
-    const skillToolNames = sessionBridge && bridgeMounted ? sessionBridge.toolNames : []
+    const skillToolNames = bridgeMounted ? bridgeToolNames() : []
+    const operatorInstructions =
+      options.executionMode !== 'agent' && options.turnGuidance
+        ? await (turnGuidance ??= options.turnGuidance(skillToolNames))
+        : undefined
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
       buildInvokedSkillsBlock(options.invokedSkills ?? [], {
         sandboxActive: sandboxed,
@@ -999,9 +1035,7 @@ async function runAcpAgentTurn(
         copseTools: bridgeMounted,
         ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
-        ...(options.executionMode !== 'agent' && options.operatorInstructions
-          ? { operatorInstructions: options.operatorInstructions }
-          : {}),
+        ...(operatorInstructions ? { operatorInstructions } : {}),
         ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
       },
     )
