@@ -27,20 +27,23 @@ async function saveSettledChangesScreenshot(
   await $('#git-changes-host [aria-label="Refresh changes"]').click()
   await browser.waitUntil(
     async () => {
-      const rendered = await $$('.git-change-row .git-change-path').map((path) => path.getText())
+      // A refresh can replace every row. Read one coherent DOM snapshot rather
+      // than holding WebDriver elements across separate text round trips.
+      const rendered = await browser.execute(() =>
+        [...document.querySelectorAll('#git-changes-host .git-change-row .git-change-path')].map(
+          (path) => path.textContent.trim(),
+        ),
+      )
       return JSON.stringify(rendered.sort()) === JSON.stringify([...paths].sort())
     },
     { timeout: 15_000, timeoutMsg: 'Changes did not settle to the fixture files' },
   )
-  const selector = proposed
-    ? '.git-change-row-proposed'
-    : '.git-change-row:not(.git-change-row-proposed)'
-  for (const row of await $$(selector).getElements()) {
-    if ((await row.$('.git-change-path').getText()) === 'draft.txt') {
-      await row.click()
-      break
-    }
-  }
+  const row = proposed
+    ? 'contains(@class,"git-change-row-proposed")'
+    : 'contains(@class,"git-change-row") and not(contains(@class,"git-change-row-proposed"))'
+  await $(
+    `//*[@id="git-changes-host"]//button[${row}]/span[contains(@class,"git-change-path") and text()="draft.txt"]`,
+  ).click()
   await browser.waitUntil(async () => (await $('.monaco-diff-editor').getText()).includes(draft), {
     timeout: 10_000,
     timeoutMsg: 'The diff did not show the expected draft',
