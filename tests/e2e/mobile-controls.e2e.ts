@@ -14,6 +14,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 const projectId = 'e2e-mobile-control'
 const token = randomBytes(32).toString('hex')
@@ -399,7 +400,15 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     await waitForAgentIdle(30_000)
     await stopScenario.assertComplete()
-    await saveAppScreenshot('mobile-controls-stopped-desktop.png')
+    await saveAppScreenshot('mobile-controls-stopped-desktop.png', undefined, async () => {
+      // Stopping removes activity UI; frame the settled end after the capture resize.
+      await browser.execute(() => {
+        const list = document.querySelector('.messages-list')
+        if (!(list instanceof HTMLElement)) throw new Error('Transcript missing')
+        list.scrollTop = list.scrollHeight
+      })
+      await waitForTranscriptScrollSettled(false)
+    })
   })
 
   it('pairs through shared auth, retains phone credentials on restart, revokes them and cancels pending consent on stop', async () => {

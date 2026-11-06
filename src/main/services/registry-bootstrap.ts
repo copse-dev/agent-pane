@@ -308,7 +308,7 @@ export function syncComputerUseTools(
  * Register or unregister the experimental OKF memory tools to match the current
  * enablement of the `copse.okf-memories` first-party plugin. Called at startup
  * (via createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tools appear
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tools appear
  * or disappear live without an app restart. This keeps the registry in sync with
  * the memory system-prompt block, which is rebuilt every turn from the same plugin
  * enablement (`agent-system-prompt.ts`) — otherwise enabling the feature
@@ -329,7 +329,7 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `roadmap_plan` tool to match the
  * current enablement of the `copse.roadmap-plans` first-party plugin (issue #556).
  * Called at startup (via createRegistry) and again whenever the plugin is toggled
- * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so
+ * from Settings > Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so
  * enabling the feature (e.g. to use the Roadmap pane) also gives the agent its
  * tool without an app restart — the atomic plugin disable drops the tool from the
  * model tool list in the same flag flip that drops the plugin's
@@ -356,7 +356,7 @@ export function syncReviewerInputTools(registry: ToolRegistry): void {
  * Register or unregister the `review_changes` tool to match the current
  * enablement of the `copse.review` first-party plugin. Called at startup (via
  * createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tool
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tool
  * appears or disappears live — the atomic plugin disable drops the tool from
  * the model tool list in the same flag flip that drops the plugin's bubble,
  * its `activeToolNames()` entry, and the Changes view's "Review" button.
@@ -373,7 +373,7 @@ export function syncReviewTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `track_long_task` tool to match the
  * current enablement of the `copse.long-horizon-tasks` first-party plugin (issue
  * #558). Called at startup (via createRegistry) and again whenever the plugin is
- * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
  * `plugins:set-enabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
  * drops the plugin's `activeToolNames()` entry from the Settings plugin list.
@@ -390,7 +390,7 @@ export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `advisor` tool to match the current
  * enablement of the `copse.advisor-strategy` first-party plugin (issue #566).
  * Called at startup (via createRegistry) and again whenever the plugin is toggled
- * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so
+ * from Settings > Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so
  * the tool appears or disappears live — the atomic plugin disable drops the tool
  * from the model tool list in the same flag flip that drops the plugin's
  * `activeToolNames()` entry from the Settings plugin list. The orthogonal
@@ -464,6 +464,7 @@ export function syncGhTools(registry: ToolRegistry): void {
  * availability. Workflow listing and log reads are core tools in syncGhTools;
  * plugin changes must not remove them. Existing subagent and read-only gates
  * further restrict the investigator when parentTools offers a turn's tool list.
+ * Live toggles route through ipc/plugin-handlers.ts (plugins:set-enabled).
  */
 export function syncCiInvestigatorTools(registry: ToolRegistry): void {
   if (ciInvestigatorToolsRegistrable()) {
@@ -477,7 +478,7 @@ export function syncCiInvestigatorTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `reveal_pii` tool to match the current
  * enablement of the `copse.pii-redaction` first-party plugin. Called at startup
  * (via createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tool appears
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tool appears
  * or disappears live — and stays in sync with the redaction system-prompt block
  * (`agent-system-prompt.ts`) and the input rewrite (`pii-redactor.ts`), which
  * are gated on the same plugin enablement. The atomic plugin disable drops the tool
@@ -496,7 +497,7 @@ export function syncPiiTools(registry: ToolRegistry): void {
  * Register or unregister the stable `run_background` tool to match the
  * current enablement of the `copse.background-tasks` first-party plugin (issue
  * #691). Called at startup (via createRegistry) and again whenever the plugin is
- * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
  * `plugins:set-enabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
  * drops the plugin's `activeToolNames()` entry from the Settings plugin list AND
