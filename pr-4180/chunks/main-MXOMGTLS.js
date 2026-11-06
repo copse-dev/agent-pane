@@ -46,6 +46,7 @@ import {
   addRemoteProject,
   addToolCall,
   addUsageDelta,
+  afterPendingThreadPersistence,
   agentActivityLabel,
   announcementCatalog,
   appendAcpContentBlock,
@@ -465,7 +466,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-JSQBBMAC.js";
+} from "./chunk-TLFJ6OO2.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2647,10 +2648,14 @@ function mountTitlebar(root, store2, api2) {
   syncBranch();
   const unsubs = [
     store2.select((s) => s.projectsPaneOpen, syncSidebar),
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
     selectActiveWorkspace(store2, () => {
       syncName();
-      syncBranchNow();
-      syncRunApp();
+      afterPendingThreadPersistence(() => {
+        syncBranchNow();
+        syncRunApp();
+      });
     }),
     store2.on("projects_changed", syncName),
     store2.on("message_added", syncProjectPicker),
@@ -2668,7 +2673,7 @@ function mountTitlebar(root, store2, api2) {
       },
       () => {
         if (store2.getState().activeThreadId !== syncedThreadId) {
-          syncBranchNow();
+          afterPendingThreadPersistence(syncBranchNow);
           return;
         }
         scheduleBranchSync();
@@ -2678,7 +2683,7 @@ function mountTitlebar(root, store2, api2) {
     store2.select(
       (s) => s.activeThreadId,
       (threadId) => {
-        if (threadId !== detectedThread) syncRunApp();
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp);
       }
     ),
     store2.on("thread_checkout_changed", syncRunApp),
@@ -2717,6 +2722,7 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     init_active_workspace();
+    init_persistence();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });

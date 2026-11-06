@@ -24850,6 +24850,11 @@ async function loadPersistedThread(api, projectId, threadId) {
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
 }
+function afterPendingThreadPersistence(task) {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task);
+  });
+}
 function attachAutosave(store, api) {
   let timer = null;
   let projectsDirty = false;
@@ -74243,6 +74248,7 @@ export {
   loadThreads,
   loadPersistedThread,
   awaitPendingThreadPersistence,
+  afterPendingThreadPersistence,
   attachAutosave,
   init_persistence,
   RUN_ROLLUP_KEY,
