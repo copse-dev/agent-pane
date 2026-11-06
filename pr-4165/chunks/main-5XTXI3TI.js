@@ -459,7 +459,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-ZJWNRJTS.js";
+} from "./chunk-4JG3LF2I.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -12993,7 +12993,7 @@ function cardStatus(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started" || call.deferred === true)) {
     return "interrupted";
   }
   return "done";
@@ -87153,6 +87153,7 @@ function createTranscriptReducer(store2, hooks = {}) {
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
+            ...chunk.deferred ? { deferred: chunk.deferred } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           hooks.toolResult?.(threadId, ownerId, chunk);

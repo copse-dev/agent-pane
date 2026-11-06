@@ -26498,7 +26498,14 @@ function shellCommandsFromToolCalls(toolCalls) {
   }
   return commands;
 }
+function deferredCallLabel(tc) {
+  const patchFiles = copseToolCallName(tc) === "apply_patch" ? getApplyPatchFiles(tc) : [];
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`;
+  const path = getToolEditPath(tc);
+  return path ? `Deferred ${path}` : "Deferred edit";
+}
 function getToolCallLabel(tc) {
+  if (tc.deferred === true) return deferredCallLabel(tc);
   const tense = tenseFromStatus(tc.status);
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
@@ -26591,11 +26598,14 @@ function aggregateToolStatus(toolCalls) {
 function bucketKey(groupKey, isError) {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
 }
+function displayGroupKey(tc) {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+}
 function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -26605,7 +26615,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc, label: getToolCallLabel(tc) });
       continue;
