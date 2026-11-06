@@ -12,6 +12,7 @@ import {
 import { listCursorCloudModels } from '../services/remote/cursor-cloud-models.ts'
 import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
 import { artifactImageService } from '../services/remote/artifact-image/default-service.ts'
+import { senderProjectId } from './sender-project-root.ts'
 import { zArtifactImageRequest } from '../services/remote/artifact-image/service.ts'
 
 const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
@@ -51,12 +52,14 @@ export function registerRemoteAgentHandlers(
   /**
    * Import Cursor cloud agents launched outside Copse as local thread stubs.
    * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
-   * open project. Caller should reload/merge project threads after imports.
+   * open project; without one, the asking window's project is used, never the
+   * process-global one (#3958). Caller should reload/merge project threads
+   * after imports.
    */
   ipcMain.handle('remote-agent:discover-external', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     if (projectId === undefined || projectId === null) {
-      return discoverExternalCursorAgentsFromIpc()
+      return discoverExternalCursorAgentsFromIpc({ projectId: senderProjectId(event.sender) })
     }
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgentsFromIpc({ projectId: id })
