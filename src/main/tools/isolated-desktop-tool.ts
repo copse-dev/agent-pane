@@ -3,7 +3,10 @@ import { getIsolatedDesktopLifetime } from '../services/isolated-desktop/desktop
 import { defineTool } from '@shared/types'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveRunModel } from '../services/thread-models.ts'
-import { appleDesktopRequestSchema } from '../../../scripts/lib/apple-desktop-wire.mts'
+import {
+  APPLE_DESKTOP_KEY_PATTERN,
+  appleDesktopRequestSchema,
+} from '../../../scripts/lib/apple-desktop-wire.mts'
 import {
   startIsolatedDesktop,
   controlIsolatedDesktop,
@@ -27,7 +30,12 @@ const ISOLATED_DESKTOP_INPUT_SCHEMA = z.toJSONSchema(
     y: z.number().int().min(0).max(799).optional().describe('click: y pixel'),
     button: z.number().int().min(1).max(3).optional().describe('click: mouse button, default 1'),
     text: z.string().max(2000).optional().describe('type: the text to type'),
-    key: z.string().max(80).optional().describe('key: a key such as Return or ctrl+c'),
+    key: z
+      .string()
+      .max(80)
+      .regex(APPLE_DESKTOP_KEY_PATTERN)
+      .optional()
+      .describe('key: a key such as Return or ctrl+c'),
   }),
 )
 

@@ -405,7 +405,7 @@ describe('persistent subthread recovery and revocation', function () {
     const held = $('.conversation-queued .msg-held')
     await held.waitForDisplayed()
     await expect(held.$('.message-text')).toHaveText(QUEUED)
-    await expect(held.$('.message-queued-badge')).toHaveText('Held')
+    await expect(held.$('.message-queued-badge')).toHaveText('HELD')
     await expect(held.$('.queued-release')).toBeDisplayed()
     await expect(held.$('.queued-send-now')).not.toExist()
     await saveElementScreenshot(

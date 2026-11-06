@@ -433,6 +433,7 @@ export interface ApiClient {
         threadId?: string
         title: string
         body: string
+        bodyMarkdown?: string
         bodyAdvice?: string
         bodyFooter?: string
         type: string
