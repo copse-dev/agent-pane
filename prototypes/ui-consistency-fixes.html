@@ -1,0 +1,1534 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — UI consistency fixes, prototyped</title>
+    <style>
+      /* ============== Copse tokens (abridged, matched to tokens.css / themes.css) ============== */
+      :root {
+        --tint-hue: #244c25;
+        --tint-amount: 4%;
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2a2d2e);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2d2d2d);
+        --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #232324);
+        --text-primary: #d4d4d4;
+        --text-secondary: #a6a6a6;
+        --text-muted: #808080;
+        --text-prose: #e6e6e6;
+        --text-prose-strong: #ffffff;
+        --border: #414141;
+        --border-subtle: #333333;
+        --border-strong: #565656;
+        --accent-color: #ff93d0;
+        --accent: var(--accent-color);
+        --accent-fill: var(--accent-color);
+        --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, white);
+        --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
+        --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+        --border-focus: var(--accent);
+        --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+        --text-on-accent: #444444;
+        --success: #4ec9b0;
+        --warning: #cca700;
+        --danger: #f14c4c;
+        --info: #6fb3d9;
+
+        --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-display: 'Averia Serif Libre', Georgia, serif;
+        --font-prose: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+        --font-size-3xs: 9px;
+        --font-size-2xs: 10px;
+        --font-size-xs: 11px;
+        --font-size-sm: 12px;
+        --font-size-base: 14px;
+        --font-size-md: 15px;
+        --font-size-lg: 16px;
+        --line-height-base: 22px;
+
+        --radius-sm: 4px;
+        --radius: 6px;
+        --radius-lg: 8px;
+        --action-radius: 999px;
+        --action-min-height: 36px;
+
+        --spacing-xs: 4px;
+        --spacing-sm: 8px;
+        --spacing-md: 12px;
+        --spacing-lg: 16px;
+        --spacing-xl: 24px;
+
+        --pane-header-band-height: 37px;
+
+        --group-header-font-size: var(--font-size-xs);
+        --group-header-letter-spacing: 0.04em;
+        --group-header-font-weight: 600;
+      }
+
+      [data-theme='light'] {
+        --tint-amount-light: calc(var(--tint-amount) * 1.9);
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ffffff);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f3f3f3);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #e8e8e8);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ececec);
+        --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
+        --text-primary: #333333;
+        --text-prose: #333333;
+        --text-prose-strong: #111111;
+        --text-secondary: #5f5f5f;
+        --text-muted: #767676;
+        --border: #d4d4d4;
+        --border-subtle: #e4e4e4;
+        --border-strong: #ababab;
+        --accent: color-mix(in srgb, var(--accent-color) 30%, black);
+        --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+        --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
+        --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, black);
+        --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
+        --text-on-accent: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg-base);
+        color: var(--text-primary);
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+      }
+      code,
+      .mono {
+        font-family: var(--font-mono);
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      /* ---------------- shell ---------------- */
+      .shell {
+        display: flex;
+        min-height: 100%;
+      }
+      .toc {
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        width: 212px;
+        flex-shrink: 0;
+        height: 100vh;
+        overflow-y: auto;
+        padding: var(--spacing-lg) var(--spacing-md);
+        border-right: 1px solid var(--border);
+        background: var(--bg-elevated);
+      }
+      .toc h1 {
+        font-family: var(--font-family);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        margin: 0 0 var(--spacing-xs);
+        color: var(--text-primary);
+      }
+      .toc .sub {
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        margin: 0 0 var(--spacing-lg);
+        line-height: 1.5;
+      }
+      .toc ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .toc a {
+        display: block;
+        text-decoration: none;
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        padding: 6px var(--spacing-sm);
+        border-radius: var(--radius);
+      }
+      .toc a:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .toc .num {
+        color: var(--text-muted);
+        margin-right: 6px;
+        font-family: var(--font-mono);
+      }
+
+      .theme-toggle {
+        margin-top: var(--spacing-lg);
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        border: 1px solid var(--border);
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        border-radius: var(--action-radius);
+        padding: 4px 10px;
+        font-size: var(--font-size-xs);
+        cursor: pointer;
+      }
+      .theme-toggle:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+
+      .main {
+        flex: 1;
+        min-width: 0;
+        padding: var(--spacing-xl) var(--spacing-xl) 120px;
+        max-width: 980px;
+      }
+      .main > header {
+        margin-bottom: var(--spacing-xl);
+      }
+      .main > header h1 {
+        font-family: var(--font-family);
+        font-size: 22px;
+        font-weight: 600;
+        margin: 0 0 6px;
+      }
+      .main > header p {
+        color: var(--text-secondary);
+        margin: 0;
+        max-width: 62ch;
+        line-height: 1.6;
+        font-size: var(--font-size-sm);
+      }
+
+      section.concept {
+        margin: 0 0 var(--spacing-xl);
+        padding-top: var(--spacing-xl);
+        border-top: 1px solid var(--border-subtle);
+        scroll-margin-top: var(--spacing-lg);
+      }
+      section.concept:first-of-type {
+        border-top: none;
+        padding-top: 0;
+      }
+      .concept h2 {
+        font-size: var(--font-size-md);
+        font-weight: 600;
+        margin: 0 0 4px;
+        display: flex;
+        align-items: baseline;
+        gap: var(--spacing-sm);
+      }
+      .concept h2 .tag {
+        font-size: var(--font-size-2xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: var(--group-header-letter-spacing);
+        color: var(--text-muted);
+        background: var(--bg-muted);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 2px 6px;
+      }
+      .concept .problem {
+        color: var(--text-secondary);
+        font-size: var(--font-size-sm);
+        line-height: 1.6;
+        margin: 0 0 var(--spacing-md);
+        max-width: 68ch;
+      }
+      .concept .problem b {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-lg);
+      }
+      @media (max-width: 760px) {
+        .compare {
+          grid-template-columns: 1fr;
+        }
+      }
+      .frame {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background: var(--bg-elevated);
+        display: flex;
+        flex-direction: column;
+      }
+      .frame .label {
+        font-size: var(--font-size-2xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: var(--group-header-letter-spacing);
+        padding: 7px var(--spacing-md);
+        border-bottom: 1px solid var(--border);
+      }
+      .frame.before .label {
+        color: var(--danger);
+        background: color-mix(in srgb, var(--danger) 10%, var(--bg-elevated));
+      }
+      .frame.after .label {
+        color: var(--success);
+        background: color-mix(in srgb, var(--success) 10%, var(--bg-elevated));
+      }
+      .frame .body {
+        padding: var(--spacing-md);
+        min-height: 64px;
+      }
+      .frame .caption {
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        padding: 0 var(--spacing-md) var(--spacing-md);
+        line-height: 1.5;
+      }
+
+      /* ============== shared chrome pieces reused across sections ============== */
+      .pane-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-xs);
+        min-height: var(--pane-header-band-height);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-elevated);
+      }
+      .pane-header.wrap-allowed {
+        flex-wrap: wrap;
+      }
+      .pane-header-title {
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+      .pane-header.wrap-allowed .pane-header-title {
+        white-space: normal;
+      }
+      .pane-header .spacer {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .icon-btn {
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .icon-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      svg {
+        display: block;
+      }
+
+      .resizer {
+        resize: horizontal;
+        overflow: auto;
+        min-width: 150px;
+        max-width: 100%;
+        width: 230px;
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius);
+      }
+      .resizer .inner {
+        width: max-content;
+        min-width: 100%;
+      }
+      .resize-hint {
+        font-size: var(--font-size-2xs);
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 6px;
+      }
+
+      /* ---- search field ---- */
+      .search-field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg-base);
+        border-radius: var(--radius);
+        padding: 0 var(--spacing-sm);
+        height: 28px;
+        color: var(--text-muted);
+      }
+      .search-field input {
+        border: none;
+        background: transparent;
+        outline: none;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: var(--font-size-sm);
+        width: 100%;
+        padding: 0;
+      }
+      .search-field input::placeholder {
+        color: var(--text-muted);
+      }
+      .search-field:focus-within {
+        border-color: var(--border-focus);
+      }
+
+      .bad-field-a {
+        /* mimics .pr-pane-filter: no icon, font:inherit (14px), looser radius position */
+        width: 100%;
+        color: var(--text-primary);
+        background: var(--bg-base);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font: inherit;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        height: 30px;
+      }
+      .bad-field-a::placeholder {
+        color: var(--text-muted);
+      }
+      .bad-field-b {
+        /* mimics .chat-search pill */
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 4px 6px 4px var(--spacing-sm);
+        width: 100%;
+      }
+      .bad-field-b input {
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: var(--font-size-sm);
+        color: var(--text-primary);
+        width: 100%;
+      }
+      .bad-field-c {
+        /* mimics roadmap search: filled bg, no border */
+        width: 100%;
+        border: none;
+        border-radius: var(--radius);
+        background: var(--bg-hover);
+        padding: 6px var(--spacing-sm);
+        color: var(--text-primary);
+        font-size: var(--font-size-xs);
+      }
+      .bad-field-c::placeholder {
+        color: var(--text-muted);
+      }
+      .field-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+      .field-row .tiny-label {
+        font-size: var(--font-size-2xs);
+        color: var(--text-muted);
+      }
+
+      /* ---- PR viewer mock (prose + headings) ---- */
+      .pr-mock {
+        font-size: var(--font-size-sm);
+      }
+      .pr-mock .pr-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 4px;
+      }
+      .pr-mock .pr-meta {
+        color: var(--text-muted);
+        font-size: var(--font-size-xs);
+        margin-bottom: var(--spacing-sm);
+      }
+      .pr-mock h3 {
+        margin: var(--spacing-sm) 0 4px;
+        font-size: var(--font-size-base);
+      }
+      .pr-mock.serif-headings h3 {
+        font-family: var(--font-display);
+        font-weight: 400;
+        letter-spacing: -0.02em;
+      }
+      .pr-mock.interface-headings h3 {
+        font-family: var(--font-family);
+        font-weight: 600;
+      }
+      .pr-mock.wrong-font p {
+        font-family: var(--font-family);
+        line-height: 1.45;
+      }
+      .pr-mock.right-font p {
+        font-family: var(--font-prose);
+        line-height: 1.5;
+        color: var(--text-prose);
+      }
+      .pr-mock p {
+        margin: 0 0 6px;
+        color: var(--text-secondary);
+      }
+      .pr-mock code {
+        background: var(--bg-muted);
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+
+      .chat-echo {
+        margin-top: var(--spacing-sm);
+        padding-top: var(--spacing-sm);
+        border-top: 1px dashed var(--border-subtle);
+      }
+      .chat-echo .who {
+        font-size: var(--font-size-2xs);
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
+      }
+      .chat-echo p {
+        font-family: var(--font-prose);
+        color: var(--text-prose);
+        line-height: 1.5;
+        margin: 0;
+        font-size: var(--font-size-sm);
+      }
+
+      /* ---- model picker ---- */
+      .model-picker {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-elevated);
+        overflow: hidden;
+        max-width: 420px;
+      }
+      .model-picker .mp-header {
+        padding: 6px var(--spacing-md);
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .mp-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        width: 100%;
+        text-align: left;
+        border: none;
+        background: transparent;
+        padding: 7px var(--spacing-md);
+        cursor: pointer;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: var(--font-size-sm);
+      }
+      .mp-row:hover {
+        background: var(--bg-hover);
+      }
+      .mp-row.is-selected {
+        background: var(--bg-selected);
+        font-weight: 600;
+      }
+      .mp-row.is-disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .mp-row .check {
+        width: 14px;
+        flex-shrink: 0;
+        color: var(--accent);
+        visibility: hidden;
+      }
+      .mp-row.is-selected .check {
+        visibility: visible;
+      }
+      .mp-row .label {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .mp-row .note {
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        font-weight: 400;
+        margin-top: 1px;
+        display: block;
+        white-space: normal;
+      }
+
+      /* after: structured columns */
+      .mp-row.structured {
+        gap: var(--spacing-sm);
+      }
+      .mp-row.structured .name {
+        font-weight: 600;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .mp-row.structured.is-selected .name {
+        color: var(--text-primary);
+      }
+      .mp-row.structured .badge {
+        font-size: var(--font-size-2xs);
+        color: var(--text-muted);
+        background: var(--bg-muted);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 1px 5px;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      .mp-row.structured .score {
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        flex-shrink: 0;
+        width: 52px;
+        text-align: right;
+      }
+      .mp-row.structured.is-disabled .name {
+        text-decoration: none;
+      }
+      .mp-row.structured.is-disabled .badge.superseded {
+        color: var(--warning);
+        border-color: color-mix(in srgb, var(--warning) 45%, var(--border-subtle));
+        background: color-mix(in srgb, var(--warning) 12%, var(--bg-muted));
+      }
+
+      /* ---- tabs / active state ---- */
+      .tabrow {
+        display: flex;
+        gap: var(--spacing-md);
+        border-bottom: 1px solid var(--border);
+        padding: 0 var(--spacing-xs);
+      }
+      .tab {
+        appearance: none;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-family: inherit;
+        color: var(--text-secondary);
+        padding: var(--spacing-sm) 2px;
+        font-size: var(--font-size-sm);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tab.bold-active[aria-pressed='true'] {
+        color: var(--text-primary);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+      .tab.stable-active[aria-pressed='true'] {
+        color: var(--text-primary);
+        border-bottom-color: var(--accent);
+      }
+      .tab.stable-active {
+        position: relative;
+      }
+      .tab.stable-active::after {
+        content: attr(data-label);
+        display: block;
+        height: 0;
+        overflow: hidden;
+        visibility: hidden;
+        font-weight: 600;
+      }
+
+      .seg-group {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .seg-btn {
+        border: none;
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        padding: 4px 10px;
+        font-size: var(--font-size-xs);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .seg-btn + .seg-btn {
+        border-left: 1px solid var(--border);
+      }
+      .seg-btn[aria-pressed='true'] {
+        background: var(--bg-selected);
+        color: var(--text-primary);
+      }
+
+      .row-list {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .row-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: 8px var(--spacing-md);
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .row-item:last-child {
+        border-bottom: none;
+      }
+      .row-item:hover {
+        background: var(--bg-hover);
+      }
+      .row-item[aria-selected='true'] {
+        background: var(--bg-selected);
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      .state-strip {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+      .state-strip .row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+      }
+      .state-strip .which {
+        width: 130px;
+        flex-shrink: 0;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+      }
+
+      /* ---- group headers ---- */
+      .group-header-bad-1 {
+        font-size: var(--font-size-2xs);
+        letter-spacing: 0.1em;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin: 0 0 6px;
+      }
+      .group-header-bad-2 {
+        font-size: var(--font-size-xs);
+        letter-spacing: 0.02em;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        margin: 0 0 6px;
+      }
+      .group-header-bad-3 {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin: 0 0 6px;
+      }
+      .group-header-good {
+        font-size: var(--group-header-font-size);
+        letter-spacing: var(--group-header-letter-spacing);
+        font-weight: var(--group-header-font-weight);
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin: 0 0 6px;
+      }
+      .mini-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+        margin: 0 0 var(--spacing-md);
+      }
+      .mini-rows div {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+      }
+      .mini-rows div span:last-child {
+        color: var(--text-muted);
+        font-size: var(--font-size-xs);
+        flex-shrink: 0;
+      }
+
+      footer.end {
+        margin-top: var(--spacing-xl);
+        padding-top: var(--spacing-lg);
+        border-top: 1px solid var(--border-subtle);
+        color: var(--text-muted);
+        font-size: var(--font-size-xs);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="toc">
+        <h1>UI consistency fixes</h1>
+        <p class="sub">
+          8 prototyped concepts, each with the current (reproduced) behaviour and the proposed fix,
+          side by side. Real Copse tokens, no placeholder text.
+        </p>
+        <ol>
+          <li>
+            <a href="#prose-font"><span class="num">01</span>PR description font</a>
+          </li>
+          <li>
+            <a href="#heading-font"><span class="num">02</span>Side-pane heading face</a>
+          </li>
+          <li>
+            <a href="#superseded"><span class="num">03</span>Superseded model row</a>
+          </li>
+          <li>
+            <a href="#picker-labels"><span class="num">04</span>Model picker label format</a>
+          </li>
+          <li>
+            <a href="#search"><span class="num">05</span>One search field</a>
+          </li>
+          <li>
+            <a href="#header-wrap"><span class="num">06</span>Pane header wrap</a>
+          </li>
+          <li>
+            <a href="#active-state"><span class="num">07</span>Active-state weight shift</a>
+          </li>
+          <li>
+            <a href="#group-headers"><span class="num">08</span>Group header rhythm</a>
+          </li>
+        </ol>
+        <button class="theme-toggle" id="themeToggle" type="button">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+            />
+          </svg>
+          <span id="themeLabel">Switch to light</span>
+        </button>
+      </nav>
+
+      <main class="main">
+        <header>
+          <h1>Making the UI feel like one system</h1>
+          <p>
+            Each section below reproduces a specific inconsistency found in the current styles, then
+            shows the proposed fix rendered with the same Copse design tokens (<code
+              >tokens.css</code
+            >
+            / <code>themes.css</code>). Toggle light/dark at the left to check both.
+          </p>
+        </header>
+
+        <!-- 1 — PR description font -->
+        <section class="concept" id="prose-font">
+          <h2>01 · PR description font <span class="tag">typography</span></h2>
+          <p class="problem">
+            Chat and side-chat prose use <code>--font-prose</code> because Pliant's tight word-gaps
+            hurt long-form reading. <code>.pr-viewer-description</code> sets no font, so it falls
+            back to Pliant — the PR body reads tighter and denser than the chat message right above
+            it.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — inherits Pliant</div>
+              <div class="body">
+                <div class="pr-mock wrong-font">
+                  <p>
+                    The Changes panel's Committed section keeps showing a branch's work as "still
+                    committed" forever once its PR merges, if the merge was a squash or rebase.
+                  </p>
+                </div>
+                <div class="chat-echo">
+                  <div class="who">Chat message, same thread</div>
+                  <p>
+                    Root cause and reproduction came out of a conversation debugging that symptom.
+                  </p>
+                </div>
+              </div>
+              <div class="caption">
+                The PR text sits visibly tighter than the chat message beneath it, even though both
+                are prose.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — <code>--font-prose</code></div>
+              <div class="body">
+                <div class="pr-mock right-font">
+                  <p>
+                    The Changes panel's Committed section keeps showing a branch's work as "still
+                    committed" forever once its PR merges, if the merge was a squash or rebase.
+                  </p>
+                </div>
+                <div class="chat-echo">
+                  <div class="who">Chat message, same thread</div>
+                  <p>
+                    Root cause and reproduction came out of a conversation debugging that symptom.
+                  </p>
+                </div>
+              </div>
+              <div class="caption">
+                Same type family and letter-spacing as the transcript — one reading rhythm.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2 — heading font -->
+        <section class="concept" id="heading-font">
+          <h2>02 · Side-pane heading face <span class="tag">typography</span></h2>
+          <p class="problem">
+            <code>brand.css</code> puts every <code>h1</code>–<code>h3</code> in the Averia serif
+            display face. PR markdown headings ("Summary", "Validation") inherit that rule even
+            though the PR viewer is a side pane, not a page — so the body text and its own section
+            headings are in two unrelated faces.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — serif h3</div>
+              <div class="body">
+                <div class="pr-mock serif-headings">
+                  <div class="pr-title">
+                    #4135 Stop showing a merged PR's work as still-committed
+                  </div>
+                  <div class="pr-meta">copse-dev/agent-pane · main</div>
+                  <h3>Summary</h3>
+                  <p>
+                    The Changes panel's Committed section keeps showing a branch's work as "still
+                    committed" forever once its PR merges.
+                  </p>
+                  <h3>Validation</h3>
+                  <p><code>pnpm test</code> — 96/96 pass, including 4 new cases.</p>
+                </div>
+              </div>
+              <div class="caption">
+                "Summary" and "Validation" read as if they belong to a different, more decorative
+                surface than the pane around them.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — interface h3</div>
+              <div class="body">
+                <div class="pr-mock interface-headings">
+                  <div class="pr-title">
+                    #4135 Stop showing a merged PR's work as still-committed
+                  </div>
+                  <div class="pr-meta">copse-dev/agent-pane · main</div>
+                  <h3>Summary</h3>
+                  <p>
+                    The Changes panel's Committed section keeps showing a branch's work as "still
+                    committed" forever once its PR merges.
+                  </p>
+                  <h3>Validation</h3>
+                  <p><code>pnpm test</code> — 96/96 pass, including 4 new cases.</p>
+                </div>
+              </div>
+              <div class="caption">
+                Pliant, weight 600 — matches the pane's own title and every other utility heading in
+                the chrome.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3 — superseded model row -->
+        <section class="concept" id="superseded">
+          <h2>03 · Superseded model row <span class="tag">states</span></h2>
+          <p class="problem">
+            A selected model that has since been superseded is marked <code>disabled</code>, which
+            drops it to 50% opacity — so the model you're actually running looks like the dimmest,
+            most unavailable row in the list.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — opacity 0.5</div>
+              <div class="body">
+                <div class="model-picker">
+                  <div class="mp-header">Recent</div>
+                  <button class="mp-row is-selected is-disabled" type="button">
+                    <span class="check">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      >
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    </span>
+                    <span class="label"
+                      >Claude Sonnet 5: intellect 55.3 (superseded by Claude Sonnet 5.5)</span
+                    >
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span>
+                    <span class="label"
+                      >Default (recommended): Claude Opus 5.5 · intellect ~70.2</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                The checked row and "disabled" both use opacity, so the currently-running model
+                reads as broken rather than selected.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — fill, not opacity</div>
+              <div class="body">
+                <div class="model-picker">
+                  <div class="mp-header">Recent</div>
+                  <button class="mp-row is-selected" type="button">
+                    <span class="check">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      >
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    </span>
+                    <span>
+                      <span class="label" style="display: block"
+                        >Claude Sonnet 5 · intellect 55.3</span
+                      >
+                      <span class="note"
+                        >Superseded by Claude Sonnet 5.5 — pick it on next thread</span
+                      >
+                    </span>
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span>
+                    <span class="label"
+                      >Default (recommended): Claude Opus 5.5 · intellect ~70.2</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                Full-strength selected fill, plus a muted note explaining the successor — selectable
+                rows are never dimmed.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4 — picker label format -->
+        <section class="concept" id="picker-labels">
+          <h2>04 · Model picker label format <span class="tag">structure</span></h2>
+          <p class="problem">
+            Labels are built as one ad-hoc string per route, so the list mixes name-first,
+            provider-first, and plan-suffixed formats in the same menu — reproduced from the
+            screenshot's actual picker.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — one string each</div>
+              <div class="body">
+                <div class="model-picker">
+                  <div class="mp-header">Recent</div>
+                  <button class="mp-row is-selected is-disabled" type="button">
+                    <span class="check">✓</span
+                    ><span class="label"
+                      >Claude Sonnet 5: intellect 55.3 (superseded by Clau…)</span
+                    >
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span
+                    ><span class="label">GPT-6.1-Sol · intellect — Plan</span>
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span
+                    ><span class="label"
+                      >Default (recommended): Claude Opus 5.5: intellect ~70.2</span
+                    >
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span
+                    ><span class="label">6 Sol: intellect ~58.7 — Plan</span>
+                  </button>
+                  <button class="mp-row" type="button">
+                    <span class="check"></span
+                    ><span class="label">Anthropic: Claude Opus 5.5 — $</span>
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                Five rows, five different word orders — the eye has to re-parse every row to find
+                the model name.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — one column layout</div>
+              <div class="body">
+                <div class="model-picker">
+                  <div class="mp-header">Recent</div>
+                  <button class="mp-row structured is-selected" type="button">
+                    <span class="check">✓</span>
+                    <span class="name">Claude Sonnet 5</span>
+                    <span class="badge superseded">superseded</span>
+                    <span class="score">55.3</span>
+                  </button>
+                  <button class="mp-row structured" type="button">
+                    <span class="check"></span>
+                    <span class="name">GPT-6.1-Sol</span>
+                    <span class="badge">ChatGPT plan</span>
+                    <span class="score"></span>
+                  </button>
+                  <button class="mp-row structured" type="button">
+                    <span class="check"></span>
+                    <span class="name">Claude Opus 5.5</span>
+                    <span class="badge">recommended</span>
+                    <span class="score">~70.2</span>
+                  </button>
+                  <button class="mp-row structured" type="button">
+                    <span class="check"></span>
+                    <span class="name">6 Sol</span>
+                    <span class="badge">plan</span>
+                    <span class="score">~58.7</span>
+                  </button>
+                  <button class="mp-row structured" type="button">
+                    <span class="check"></span>
+                    <span class="name">Claude Opus 5.5</span>
+                    <span class="badge">Anthropic · $</span>
+                    <span class="score"></span>
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                Name, then a muted provider/plan badge, then a right-aligned score column — one
+                shape, scan vertically.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 — search field -->
+        <section class="concept" id="search">
+          <h2>05 · One search field <span class="tag">kit gap</span></h2>
+          <p class="problem">
+            Seven surfaces each style their own search/filter input: the PR filter has no icon and
+            inherits the 14px body font; the sidebar search is a rounded pill at 12px with an icon;
+            Roadmap's is a filled box with no border. None share a recipe — there's no
+            <code>.ui-search</code> in the kit.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — three recipes</div>
+              <div class="body">
+                <div class="field-row">
+                  <div>
+                    <span class="tiny-label">PR pane filter</span
+                    ><input class="bad-field-a" placeholder="Filter pull requests" />
+                  </div>
+                  <div>
+                    <span class="tiny-label">Sidebar thread search</span>
+                    <div class="bad-field-b">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m21 21-4.3-4.3" />
+                      </svg>
+                      <input placeholder="Search…" />
+                    </div>
+                  </div>
+                  <div>
+                    <span class="tiny-label">Roadmap search</span
+                    ><input class="bad-field-c" placeholder="Search roadmap" />
+                  </div>
+                </div>
+              </div>
+              <div class="caption">
+                Different radius, border treatment, icon presence and font size for the same job in
+                three adjacent panes.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — <code>.ui-search</code></div>
+              <div class="body">
+                <div class="field-row">
+                  <div>
+                    <span class="tiny-label">PR pane filter</span>
+                    <div class="search-field">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m21 21-4.3-4.3" />
+                      </svg>
+                      <input placeholder="Filter pull requests" />
+                    </div>
+                  </div>
+                  <div>
+                    <span class="tiny-label">Sidebar thread search</span>
+                    <div class="search-field">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m21 21-4.3-4.3" />
+                      </svg>
+                      <input placeholder="Search…" />
+                    </div>
+                  </div>
+                  <div>
+                    <span class="tiny-label">Roadmap search</span>
+                    <div class="search-field">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m21 21-4.3-4.3" />
+                      </svg>
+                      <input placeholder="Search roadmap" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="caption">
+                One shell, one icon, one font size — each caller only supplies its placeholder. Try
+                focusing a field in both columns.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6 — pane header wrap -->
+        <section class="concept" id="header-wrap">
+          <h2>06 · Pane header wrap <span class="tag">layout</span></h2>
+          <p class="problem">
+            <code>.pane-header</code> carries <code>flex-wrap: wrap</code> for Roadmap's toolbar,
+            but every pane shares the class — so "Pull requests" drops its refresh icon to a second
+            row under modest width, growing past <code>--pane-header-band-height</code> and
+            misaligning with the pane beside it.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — shared wrap</div>
+              <div class="body">
+                <div class="resizer" id="resizeBefore">
+                  <div class="inner">
+                    <div class="pane-header wrap-allowed">
+                      <span class="pane-header-title">Pull requests</span>
+                      <span class="spacer"></span>
+                      <button class="icon-btn" type="button">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8" />
+                          <path d="M21 3v5h-5" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="resize-hint">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M3 12h18M3 6h18M3 18h18" />
+                  </svg>
+                  drag the corner to narrow it
+                </div>
+              </div>
+              <div class="caption">
+                Below ~200px the icon wraps onto its own row and the header grows taller than 37px.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — wrap opt-in</div>
+              <div class="body">
+                <div class="resizer" id="resizeAfter">
+                  <div class="inner">
+                    <div class="pane-header">
+                      <span class="pane-header-title">Pull requests</span>
+                      <span class="spacer"></span>
+                      <button class="icon-btn" type="button">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.6-6.4L21 8" />
+                          <path d="M21 3v5h-5" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="resize-hint">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M3 12h18M3 6h18M3 18h18" />
+                  </svg>
+                  drag the corner — stays one row
+                </div>
+              </div>
+              <div class="caption">
+                Default is <code>flex-wrap: nowrap</code>; only Roadmap's header opts into wrapping
+                for its extra toolbar row.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7 — active state weight shift -->
+        <section class="concept" id="active-state">
+          <h2>07 · Active-state weight shift <span class="tag">states</span></h2>
+          <p class="problem">
+            Section tabs add <code>font-weight: 600</code> on the active state. Bold text is wider
+            than regular at the same size, so the active tab's label — and everything to its right —
+            shifts a few pixels the moment it's selected. Click the tabs below to feel it.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — bold on select</div>
+              <div class="body">
+                <div class="tabrow" data-demo="bold">
+                  <button class="tab bold-active" type="button" aria-pressed="true">
+                    Overview
+                  </button>
+                  <button class="tab bold-active" type="button" aria-pressed="false">
+                    Comments 0
+                  </button>
+                  <button class="tab bold-active" type="button" aria-pressed="false">
+                    Checks 3
+                  </button>
+                  <button class="tab bold-active" type="button" aria-pressed="false">
+                    Files 4
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                Click a tab — the underline and every tab after it visibly jogs sideways as labels
+                re-flow.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — weight reserved</div>
+              <div class="body">
+                <div class="tabrow" data-demo="stable">
+                  <button
+                    class="tab stable-active"
+                    type="button"
+                    data-label="Overview"
+                    aria-pressed="true"
+                  >
+                    Overview
+                  </button>
+                  <button
+                    class="tab stable-active"
+                    type="button"
+                    data-label="Comments 0"
+                    aria-pressed="false"
+                  >
+                    Comments 0
+                  </button>
+                  <button
+                    class="tab stable-active"
+                    type="button"
+                    data-label="Checks 3"
+                    aria-pressed="false"
+                  >
+                    Checks 3
+                  </button>
+                  <button
+                    class="tab stable-active"
+                    type="button"
+                    data-label="Files 4"
+                    aria-pressed="false"
+                  >
+                    Files 4
+                  </button>
+                </div>
+              </div>
+              <div class="caption">
+                Colour and the underline carry the selection; a hidden bold copy reserves the width
+                so nothing moves.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8 — group header rhythm -->
+        <section class="concept" id="group-headers">
+          <h2>08 · Group header rhythm <span class="tag">tokens</span></h2>
+          <p class="problem">
+            Only a handful of list group headers use the shared
+            <code>--group-header-*</code> recipe. Letter-spacing in the rest ranges from 0.02em to
+            0.1em and sizes drift between 10–11px, so caption-style headers next to each other in
+            the PR pane don't read as the same kind of label.
+          </p>
+          <div class="compare">
+            <div class="frame before">
+              <div class="label">Before — three recipes</div>
+              <div class="body">
+                <div class="group-header-bad-1">Related PRs · this thread (2)</div>
+                <div class="mini-rows">
+                  <div>
+                    <span>#4104 Focus Copse's window when the ChatGPT sign-in callback…</span
+                    ><span>Produced</span>
+                  </div>
+                  <div>
+                    <span>#4135 Stop showing a merged PR's work as still-…</span
+                    ><span>Produced</span>
+                  </div>
+                </div>
+                <div class="group-header-bad-3">Your other open PRs</div>
+              </div>
+              <div class="caption">
+                0.1em tight-caps above, 0.06em normal-weight below — two unrelated label styles one
+                scroll apart.
+              </div>
+            </div>
+            <div class="frame after">
+              <div class="label">After — one token set</div>
+              <div class="body">
+                <div class="group-header-good">Related PRs · this thread (2)</div>
+                <div class="mini-rows">
+                  <div>
+                    <span>#4104 Focus Copse's window when the ChatGPT sign-in callback…</span
+                    ><span>Produced</span>
+                  </div>
+                  <div>
+                    <span>#4135 Stop showing a merged PR's work as still-…</span
+                    ><span>Produced</span>
+                  </div>
+                </div>
+                <div class="group-header-good">Your other open PRs</div>
+              </div>
+              <div class="caption">
+                <code>--group-header-font-size</code> / <code>-letter-spacing</code> /
+                <code>-font-weight</code> on both — same label, same rhythm.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="end">
+          Prototype only — reproduces the inconsistencies found while reviewing
+          <code>docs/ui-taste.md</code> against the current renderer styles. Colours, radii and type
+          scale are pulled from <code>src/renderer/styles/tokens.css</code> and
+          <code>themes.css</code>; Pliant / Averia Serif Libre fall back to system fonts here since
+          this canvas can't load the app's bundled font files.
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      // Theme toggle
+      var root = document.documentElement
+      var btn = document.getElementById('themeToggle')
+      var label = document.getElementById('themeLabel')
+      btn.addEventListener('click', function () {
+        var isDark = root.getAttribute('data-theme') !== 'light'
+        root.setAttribute('data-theme', isDark ? 'light' : 'dark')
+        label.textContent = isDark ? 'Switch to dark' : 'Switch to light'
+      })
+
+      // Tab click handling for section 07 (both demo rows independently stateful)
+      document.querySelectorAll('.tabrow').forEach(function (row) {
+        row.addEventListener('click', function (e) {
+          var btn = e.target.closest('.tab')
+          if (!btn) return
+          row.querySelectorAll('.tab').forEach(function (t) {
+            t.setAttribute('aria-pressed', 'false')
+          })
+          btn.setAttribute('aria-pressed', 'true')
+        })
+      })
+
+      // Model picker row selection for section 03/04 (click to move the checkmark)
+      document.querySelectorAll('.model-picker').forEach(function (picker) {
+        picker.addEventListener('click', function (e) {
+          var row = e.target.closest('.mp-row')
+          if (!row || row.classList.contains('is-disabled')) return
+          picker.querySelectorAll('.mp-row').forEach(function (r) {
+            r.classList.remove('is-selected')
+          })
+          row.classList.add('is-selected')
+        })
+      })
+    </script>
+  </body>
+</html>
