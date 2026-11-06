@@ -35,6 +35,11 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  it('labels and groups viewport changes with the other browser tools', () => {
+    assert.equal(getToolDisplayName('browser_resize', 'running'), 'Resizing browser')
+    assert.equal(getToolDisplayName('browser_resize', 'done'), 'Resized browser')
+    assert.equal(getToolGroupKey('mcp.copse.browser_resize'), 'browser')
+  })
   for (const prefix of ['', 'mcp__copse__', 'mcp.copse.', 'copse.', 'copse-']) {
     it(`preserves edit links, grouping and shell summaries for ${prefix || 'bare'} calls`, () => {
       const edit = { ...tc('edit', `${prefix}write_file`), args: { path: 'src/app.ts' } }

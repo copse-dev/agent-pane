@@ -6,6 +6,7 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { browserViewportSchema, type BrowserViewport } from '@shared/browser-viewport.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -271,6 +272,20 @@ export class BrowserSessionManager {
     const tab = this.resolveTab(viewId)
     const raw: unknown = await tab.window.webContents.executeJavaScript(DOM_SNAPSHOT_SCRIPT, true)
     return renderSnapshot(parsePageSnapshot(raw))
+  }
+
+  async resize(viewport: BrowserViewport, viewId?: string): Promise<string> {
+    const { width, height } = browserViewportSchema.parse(viewport)
+    const tab = this.resolveTab(viewId)
+    const wc = tab.window.webContents
+    // A preview temporarily changes zoom. Let it restore the tab before sizing
+    // its CSS viewport, and do not wait for frames in a hidden BrowserWindow.
+    const preview = previewCaptures.get(wc)
+    if (preview) await preview
+    wc.setZoomFactor(1)
+    tab.window.setContentSize(width, height)
+    await wc.executeJavaScript(LAYOUT_SCRIPT, false)
+    return `Resized ${tab.id} to ${String(width)}×${String(height)} CSS pixels. Take a fresh browser_snapshot before interacting.`
   }
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {

@@ -8,6 +8,7 @@ import { staticPreviewEntryUrl } from '../services/browser/static-preview-server
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { presentVisualEvidenceTool } from './visual-evidence-tools.ts'
+import { browserViewportSchema } from '@shared/browser-viewport.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
@@ -56,6 +57,18 @@ export const browserSnapshotTool = defineTool({
   }),
   async execute({ viewId }) {
     return getBrowserSession().snapshot(viewId)
+  },
+})
+
+export const browserResizeTool = defineTool({
+  name: 'browser_resize',
+  description:
+    'Set the CSS viewport size of an isolated agent browser tab for responsive layout checks. Use 390×844 for a narrow phone-sized layout and 1280×800 to restore desktop. This changes layout dimensions, not the user’s visible Browser pane, device hardware, touch support or user agent. Take a fresh snapshot after resizing.',
+  parameters: browserViewportSchema.extend({
+    viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
+  }),
+  async execute({ width, height, viewId }) {
+    return getBrowserSession().resize({ width, height }, viewId)
   },
 })
 
@@ -207,6 +220,7 @@ export const browserTools = [
   browserPreviewTool,
   browserNavigateTool,
   browserSnapshotTool,
+  browserResizeTool,
   browserScreenshotTool,
   browserClickTool,
   browserTypeTool,
@@ -219,6 +233,7 @@ export function registerBrowserTools(registry: ToolRegistry): void {
   registry.register(browserPreviewTool)
   registry.register(browserNavigateTool)
   registry.register(browserSnapshotTool)
+  registry.register(browserResizeTool)
   registry.register(browserScreenshotTool)
   registry.register(browserClickTool)
   registry.register(browserTypeTool)
