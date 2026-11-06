@@ -20,6 +20,7 @@ import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { showErrorToast } from './toast.ts'
+import { awaitPendingThreadPersistence } from '../controller/persistence.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -184,6 +185,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     try {
       const owner = getActiveThreadOwner(store)
       if (!owner) throw new Error('No active task')
+      // Main lists a thread's checkout only once its create is on disk; until
+      // then `fs:list-dir` rejects with "not persisted yet". Autosave starts
+      // that create on the `threads_changed` a new thread's writer emits.
+      await awaitPendingThreadPersistence()
+      if (generation !== loadGeneration) return
       const entries = await api.fs.listDir(owner.projectId, owner.threadId, dirPath)
       if (generation !== loadGeneration) return
       clear(target)
@@ -224,11 +230,13 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   const unsubs = [
     // The tree lists the active project's root, scoped to the active thread's
     // checkout: reload only when one of those changes, not on renames,
-    // hydration or other threads' updates.
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
     store.select(
       (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId] as const,
       () => {
-        refresh()
+        queueMicrotask(refresh)
       },
       sameItems,
     ),
