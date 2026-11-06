@@ -314,8 +314,8 @@ export function mountAgentTasks(
   }
 
   // Only re-scope when the active thread actually changed. `threads_changed`
-  // fires for many unrelated reasons; `workspace_changed` also swaps the active
-  // thread when the project switches — both funnel here.
+  // fires for many unrelated reasons; a project switch swaps the active thread
+  // in the same write, which the selection below hears — both funnel here.
   function onThreadMaybeChanged(): void {
     const threadId = currentThreadId()
     if (threadId === lastThreadId) return
@@ -351,7 +351,7 @@ export function mountAgentTasks(
   // A shell tab took over the viewer — yield the task panel back to it.
   const unsubShell = store.on('shell_tab_activated', clearSelection)
   const unsubThreads = store.on('threads_changed', onThreadMaybeChanged)
-  const unsubWorkspace = store.on('workspace_changed', onThreadMaybeChanged)
+  const unsubWorkspace = store.select((s) => s.activeThreadId, onThreadMaybeChanged)
 
   return () => {
     unsubChunk()

@@ -1,6 +1,6 @@
 import type { Message, Thread } from '@shared/types'
 import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 function refreshKey(projectId: string, thread: Thread): string | null {
@@ -80,7 +80,11 @@ export function attachImportedCursorAgentRefresh(store: AppStore, api: ApiClient
   }
 
   const offThreads = store.on('threads_changed', refreshActive)
-  const offWorkspace = store.on('workspace_changed', refreshActive)
+  const offWorkspace = store.select(
+    (s) => [s.activeProjectId, s.activeThreadId] as const,
+    refreshActive,
+    sameItems,
+  )
   refreshActive()
   return (): void => {
     offThreads()
