@@ -17,6 +17,37 @@ function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
 }
 
+async function saveSettledChangesScreenshot(
+  name: string,
+  paths: string[],
+  draft: string,
+  proposed = false,
+): Promise<void> {
+  await expect($('.messages-list .tool-card[data-status="running"]')).not.toExist()
+  await $('#git-changes-host [aria-label="Refresh changes"]').click()
+  await browser.waitUntil(
+    async () => {
+      const rendered = await $$('.git-change-row .git-change-path').map((path) => path.getText())
+      return JSON.stringify(rendered.sort()) === JSON.stringify([...paths].sort())
+    },
+    { timeout: 15_000, timeoutMsg: 'Changes did not settle to the fixture files' },
+  )
+  const selector = proposed
+    ? '.git-change-row-proposed'
+    : '.git-change-row:not(.git-change-row-proposed)'
+  for (const row of await $$(selector).getElements()) {
+    if ((await row.$('.git-change-path').getText()) === 'draft.txt') {
+      await row.click()
+      break
+    }
+  }
+  await browser.waitUntil(async () => (await $('.monaco-diff-editor').getText()).includes(draft), {
+    timeout: 10_000,
+    timeoutMsg: 'The diff did not show the expected draft',
+  })
+  await saveAppScreenshot(name)
+}
+
 describe('restore user work after a follow-up and restart', function () {
   this.timeout(120_000)
   before(async () => {
@@ -88,7 +119,11 @@ describe('restore user work after a follow-up and restart', function () {
     await waitForAgentIdle(30_000)
     await scenario.assertComplete()
     await expect($('.git-changes-restore-btn')).toBeDisplayed()
-    await saveAppScreenshot('session-backup-after-followup.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-after-followup.png',
+      ['draft.txt', 'notes.txt', 'untracked.txt'],
+      'Copse repair',
+    )
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -112,7 +147,11 @@ describe('restore user work after a follow-up and restart', function () {
       { left: true, right: true, top: true, bottom: true },
       'restore must fit inside a narrow Changes pane',
     )
-    await saveAppScreenshot('session-backup-after-restart.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-after-restart.png',
+      ['draft.txt', 'notes.txt', 'untracked.txt'],
+      'Copse repair',
+    )
     await $('.git-changes-restore-btn').click()
     await expect($('#confirm-dialog')).toBeDisplayed()
     await expect($('.confirm-dialog-confirm')).toHaveText('Restore')
@@ -125,7 +164,11 @@ describe('restore user work after a follow-up and restart', function () {
     assert.equal(readFileSync(join(root, 'untracked.txt'), 'utf8'), 'untracked user draft\n')
     assert.equal(readFileSync(join(root, 'notes.txt'), 'utf8'), 'staged user notes\n')
     await expect($('.git-changes-restore-btn')).toBeEnabled()
-    await saveAppScreenshot('session-backup-restored.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-restored.png',
+      ['draft.txt', 'notes.txt', 'untracked.txt'],
+      userDraft.trim(),
+    )
   })
 
   it('refreshes before a later edit to the same already-owned file', async () => {
@@ -174,7 +217,11 @@ describe('restore user work after a follow-up and restart', function () {
       { timeout: 10_000, timeoutMsg: 'Restore skipped the immediately preceding edit turn' },
     )
     await expect($('.git-changes-restore-btn')).toBeEnabled()
-    await saveAppScreenshot('session-backup-latest-edit-restored.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-latest-edit-restored.png',
+      ['draft.txt', 'notes.txt', 'untracked.txt'],
+      'First repair',
+    )
   })
 
   it('retires an obsolete dirty pointer after committing and keeps the clean Git baseline', async () => {
@@ -251,7 +298,11 @@ describe('restore user work after a follow-up and restart', function () {
     if (!(await $('#git-changes-host').isDisplayed()))
       await $('.titlebar-btn[aria-label="Open changes"]').click()
     await expect($('.git-changes-restore-btn')).not.toBeDisplayed()
-    await saveAppScreenshot('session-backup-clean-baseline-after-restart.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-clean-baseline-after-restart.png',
+      ['draft.txt', 'new-file.txt'],
+      'Refined edit',
+    )
   })
 
   it('keeps the earlier restore point when a manual follow-up turns the next edit into a proposal', async () => {
@@ -300,7 +351,12 @@ describe('restore user work after a follow-up and restart', function () {
     if (!(await $('#git-changes-host').isDisplayed()))
       await $('.titlebar-btn[aria-label="Open changes"]').click()
     await expect($('.git-changes-restore-btn')).toBeDisplayed()
-    await saveAppScreenshot('session-backup-proposal-retains-point.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-proposal-retains-point.png',
+      ['draft.txt', 'draft.txt', 'new-file.txt', 'new-user-note.txt'],
+      'Proposed revision',
+      true,
+    )
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     if (!(await $('#git-changes-host').isDisplayed()))
@@ -319,6 +375,10 @@ describe('restore user work after a follow-up and restart', function () {
       async () => (await $('.monaco-diff-editor').getText()).includes(userDraft.trim()),
       { timeout: 10_000, timeoutMsg: 'the diff did not refresh to the restored draft' },
     )
-    await saveAppScreenshot('session-backup-proposal-restored-after-restart.png')
+    await saveSettledChangesScreenshot(
+      'session-backup-proposal-restored-after-restart.png',
+      ['draft.txt', 'new-file.txt', 'new-user-note.txt'],
+      userDraft.trim(),
+    )
   })
 })
