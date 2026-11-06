@@ -2,6 +2,20 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## Paired-browser acceptance (2026-11-06)
+
+The [capability matrix](../remote-client-capabilities.md) and its checked wire inventory
+classify the shared chat, existing companion actions and desktop-only surfaces. A real
+paired Chrome browser now exercises the app's HTTPS server, submission/queue path and
+scripted agent: send/retry after a lost response, queue, questions, approvals, Stop,
+disconnect/reconnect, access downgrade and revocation. The browser never writes transcripts.
+
+Closing the desktop window while Mobile Companion is enabled keeps the primary renderer
+hidden and unthrottled, including at idle. It still owns submissions, queues and read
+relays; reopening reuses it. This is deliberately short of a renderer-free runtime or a
+separate daemon. Explicit Quit, host sleep and disabling the service end availability.
+Physical-phone trust, keyboard and background/resume acceptance remain separate gates.
+
 ## Remote shared-renderer integration (2026-10-31, in progress)
 
 The requested outcome is the real shared chat interface in a browser connected to the

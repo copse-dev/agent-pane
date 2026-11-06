@@ -98,3 +98,26 @@
     min-height: 44px;
   }
 }
+
+.remote-host #decisions {
+  flex: none;
+  max-height: 40dvh;
+  overflow: auto;
+  padding-inline: var(--spacing-md);
+}
+.remote-decision {
+  padding: var(--spacing-md);
+  border-left: 2px solid var(--accent);
+}
+.remote-decision pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.remote-decision textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+.remote-decision .ui-btn {
+  margin: var(--spacing-xs);
+}

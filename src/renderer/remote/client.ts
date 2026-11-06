@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { DecisionAnswer } from './decisions.ts'
 import { RemoteRequestError } from './transport.ts'
 import {
   remoteStateSchema,
@@ -12,6 +13,7 @@ type Transport = (path: string, options?: RequestInit) => Promise<unknown>
 type Action = { projectId: string; threadId: string } & (
   | { action: 'message'; text: string }
   | { action: 'stop'; runId: string }
+  | DecisionAnswer
 )
 const actionResultSchema = z.object({ ok: z.boolean().optional(), error: z.string().optional() })
 

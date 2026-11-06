@@ -88,6 +88,7 @@ describe('paired remote chat connection', () => {
       }
     })
     await $('.row-title=Review the release').click()
+    await $('#inline-decision .open-thread-link').click()
     await expect($('#messages')).toHaveText(
       expect.stringContaining('The release build is ready for testing.'),
     )

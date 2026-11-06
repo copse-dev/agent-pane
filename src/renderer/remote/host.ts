@@ -1,8 +1,9 @@
 import { z } from 'zod'
+import { mountRemoteDecisions, remoteDecisionSchema, type DecisionAnswer } from './decisions.ts'
 import { createStore } from '@shared/store/store.ts'
 import { RemoteChatClient, RemoteActions } from './client.ts'
 import { mountChatSurface } from '../views/chat-surface.ts'
-import { request } from './transport.ts'
+import { request, RemoteRequestError } from './transport.ts'
 import { installHighlighterBackend } from '../markdown/highlighter-backend.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { mountConfirmDialog, showConfirmDialog } from '../views/confirm-dialog.ts'
@@ -11,6 +12,7 @@ const metadataSchema = z.object({
   access: z.enum(['read', 'control']),
   sessionId: z.uuid(),
   runId: z.uuid().nullable(),
+  decisions: z.array(remoteDecisionSchema).default([]),
 })
 
 export async function startRemoteChat(): Promise<void> {
@@ -47,7 +49,10 @@ export async function startRemoteChat(): Promise<void> {
     }),
   )
   async function action(
-    payload: { action: 'message'; text: string } | { action: 'stop'; runId: string },
+    payload:
+      | { action: 'message'; text: string }
+      | { action: 'stop'; runId: string }
+      | DecisionAnswer,
   ): Promise<void> {
     if (!connected || !metadata || metadata.access !== 'control')
       throw new Error('Reconnect to your Mac to send.')
@@ -56,6 +61,10 @@ export async function startRemoteChat(): Promise<void> {
       metadata.sessionId,
     )
   }
+  const decisions = mountRemoteDecisions(qsRequired(document, '#decisions'), async (answer) => {
+    await action(answer)
+    void refresh()
+  })
   mountChatSurface(conversation, input, store, window.api, {
     transport: {
       connected: () => connected,
@@ -87,6 +96,7 @@ export async function startRemoteChat(): Promise<void> {
       if (!thread) throw new Error('Open this project on your Mac to share its live chat.')
       const wasConnected = connected
       connected = metadata.access === 'control'
+      decisions.update(metadata.decisions, connected)
       const snapshotKey = `${state.sessionId}:${String(state.revision)}`
       if (snapshotKey !== appliedSnapshot) {
         const hydrated = await client.hydrate(projectId ?? '', thread)
@@ -103,6 +113,8 @@ export async function startRemoteChat(): Promise<void> {
       status.dataset['connected'] = String(connected)
     } catch (cause) {
       connected = false
+      const revoked = cause instanceof RemoteRequestError && [401, 403].includes(cause.status)
+      decisions.update(revoked ? [] : (metadata?.decisions ?? []), false)
       store.emit('threads_changed')
       status.dataset['connected'] = 'false'
       status.textContent =

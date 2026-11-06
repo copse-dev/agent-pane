@@ -50,6 +50,7 @@ const nextPrompt = document.getElementById('next-prompt')
 let remoteRefresh = false
 let remoteGeneration = 0
 let liveMessages = null
+let remoteConnectionStatus = null
 const connection = document.getElementById('remote-connection')
 
 function selectChatPanel(name) {
@@ -129,6 +130,7 @@ async function refreshRemoteThread() {
     if (selected !== row) return
     if (!live) {
       liveMessages = null
+      remoteConnectionStatus = null
       connection.textContent = 'Saved view'
       connection.dataset.connected = 'false'
       nextPrompt.hidden = true
@@ -146,10 +148,11 @@ async function refreshRemoteThread() {
       if (selected !== row) return
       renderMessages(list)
     }
-    document.getElementById('thread-status').textContent =
+    remoteConnectionStatus =
       live.status === 'running'
         ? 'Connected · Live output from your Mac.'
         : 'Connected to your Mac.'
+    document.getElementById('thread-status').textContent = remoteConnectionStatus
     remoteRefresh = false
     const hint = await remote.hint(live)
     if (selected !== row || generation !== remoteGeneration) return
@@ -162,8 +165,8 @@ async function refreshRemoteThread() {
       connection.textContent = 'Reconnecting…'
       connection.dataset.connected = 'false'
       nextPrompt.hidden = true
-      document.getElementById('thread-status').textContent =
-        'Live connection unavailable · Retrying. Your draft is kept.'
+      remoteConnectionStatus = 'Live connection unavailable · Retrying. Your draft is kept.'
+      document.getElementById('thread-status').textContent = remoteConnectionStatus
     }
   } finally {
     if (generation === remoteGeneration) remoteRefresh = false
@@ -764,9 +767,10 @@ async function refreshThread() {
     document.getElementById('thread-status').textContent =
       access !== 'control'
         ? 'Read only · Enable control in Mobile Companion on your Mac.'
-        : runId
-          ? 'Running · Saved output refreshes automatically.'
-          : 'Send a message to continue this chat.'
+        : (remoteConnectionStatus ??
+          (runId
+            ? 'Running · Saved output refreshes automatically.'
+            : 'Send a message to continue this chat.'))
     // Toggled every poll, independent of the message-signature gate below, so it
     // reflects the live run even while the agent hasn't saved a new message yet.
     document.getElementById('working').hidden = !runId
@@ -795,6 +799,7 @@ async function refreshThread() {
 }
 
 async function openThread(row, addHistory = true) {
+  remoteConnectionStatus = null
   inlineDecisionRequest += 1
   if (addHistory && (selected?.projectId !== row.projectId || selected?.threadId !== row.threadId))
     history.pushState({ mobileView: 'thread', row }, '')
