@@ -208,16 +208,23 @@ export const gitShowTool = defineTool({
 
 export const gitLogTool = defineTool({
   name: 'git_log',
-  description: 'Show recent commit history.',
+  description:
+    'Show recent commit history at HEAD or a named revision without checking it out. Use ref for main/origin/main; path only filters commits touching a file.',
   parameters: z.object({
     max_count: z.number().int().min(1).max(50).optional().default(10),
+    ref: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe('Commit, tag or branch to read; defaults to HEAD.'),
     path: z.string().optional().describe('Limit to commits touching this file.'),
   }),
-  execute: async ({ max_count, path }) => {
+  execute: async ({ max_count, ref, path }) => {
     const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
     const valid = await validateGitPath(path, root)
     if (!valid.ok) return valid.error
-    return getGitLogText(max_count, path, root)
+    return getGitLogText(max_count, path, root, ref)
   },
 })

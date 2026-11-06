@@ -32,6 +32,7 @@ import { createWorkspaceNavigation } from '../../preload/workspace-navigation.ts
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { collectActivityThreads } from './activity-model.ts'
 import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import {
   __resetPersistenceForTest,
   invalidateProjectThreadLoads,
@@ -449,7 +450,7 @@ test('a project switch repaints before its final navigation write lands and writ
   })
 
   let repainted = false
-  store.on('workspace_changed', () => {
+  selectActiveWorkspace(store, () => {
     repainted = true
   })
 
@@ -501,7 +502,7 @@ test('an autosave flush mid-switch cannot point main back at the outgoing projec
     loadProjectThreads: async () => [thread('t-b')],
   })
   let seenOnRepaint: string | null | undefined
-  store.on('workspace_changed', () => {
+  selectActiveWorkspace(store, () => {
     seenOnRepaint = persistedActive.at(-1)
   })
 
@@ -1033,7 +1034,7 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
   })
   const events: string[] = []
   store.on('projects_changed', () => events.push('projects_changed'))
-  store.on('workspace_changed', () => events.push('workspace_changed'))
+  selectActiveWorkspace(store, () => events.push('workspace selected'))
   store.on('threads_changed', () => events.push('threads_changed'))
 
   let releaseWorkspace!: () => void
@@ -1058,7 +1059,35 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
 
   assert.equal(store.getState().expandedProjectId, 'a')
   assert.equal(store.getState().threads.length, 1)
-  assert.deepEqual(events, ['projects_changed', 'workspace_changed', 'threads_changed'])
+  // The selection is heard as the restore writes it, ahead of the paired events.
+  assert.deepEqual(events, ['workspace selected', 'projects_changed', 'threads_changed'])
+})
+
+test('restoreProject sends navigation before views hear the workspace', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  // Preload holds project-store reads behind a navigation write only once it is
+  // in flight, so the write has to be sent before the selection is published.
+  const navigations: Array<string | null> = []
+  const api = makeApi({
+    setNavigation: async (navigation) => {
+      navigations.push(navigation.activeProjectId)
+    },
+    loadProjectThreads: async () => [thread('t-a')],
+  })
+  let sentBeforeSelection: Array<string | null> | undefined
+  selectActiveWorkspace(store, () => {
+    sentBeforeSelection = [...navigations]
+  })
+
+  await restoreProject(store, api, 'a')
+
+  assert.deepEqual(sentBeforeSelection, ['a'])
 })
 
 test('restoreProject restores the window-preferred thread when it still exists', async () => {

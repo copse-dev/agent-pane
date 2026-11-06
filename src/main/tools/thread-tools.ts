@@ -10,16 +10,21 @@ import { sendThreadPrompt } from '../services/thread-prompts.ts'
 export const listThreadsTool = defineTool({
   name: 'list_threads',
   description:
-    'Find other conversations by title and summary. First use asks permission to read all other threads; approval belongs only to this thread. Read the returned spine paths with read_file to explore a conversation.',
-  parameters: z.object({ query: z.string().optional() }),
-  async execute({ query }, signal) {
+    'Find other conversations by title and summary, newest updated first across projects. Returns up to 50 results by default; use offset and limit to page through older matches, or project_id to narrow the search. First use asks permission to read all other threads; approval belongs only to this thread. Read the returned spine paths with read_file to explore a conversation.',
+  parameters: z.object({
+    query: z.string().optional(),
+    project_id: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    offset: z.number().int().nonnegative().optional(),
+  }),
+  async execute({ query, project_id, limit, offset }, signal) {
     if (!(await ensureThreadAccess('read', signal)))
       return 'Read access to other threads was not granted.'
     const projects = recordArrayOrEmpty(storageGet('projects'))
     const catalogs = await Promise.all(
       projects.flatMap((project) => {
         const id = project['id']
-        return typeof id === 'string'
+        return typeof id === 'string' && (project_id === undefined || id === project_id)
           ? [
               loadProjectCatalog(id, query).then((hits) =>
                 hits.map((hit) => ({ projectId: id, ...hit })),
@@ -28,7 +33,17 @@ export const listThreadsTool = defineTool({
           : []
       }),
     )
-    return JSON.stringify(catalogs.flat().filter((hit) => hit.id !== getActiveRunThread()))
+    const start = offset ?? 0
+    const hits = catalogs
+      .flat()
+      .filter((hit) => hit.id !== getActiveRunThread())
+      .sort(
+        (a, b) =>
+          b.updatedAt - a.updatedAt ||
+          a.projectId.localeCompare(b.projectId) ||
+          a.id.localeCompare(b.id),
+      )
+    return JSON.stringify(hits.slice(start, start + (limit ?? 50)))
   },
 })
 

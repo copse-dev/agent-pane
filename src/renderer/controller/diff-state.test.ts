@@ -101,6 +101,39 @@ describe('diff state', () => {
     assert.deepEqual(store.getState().stagedDiffs, [{ path: 'b.ts', language: 'typescript' }])
   })
 
+  it('republishes and re-reads the new owner queue on a project switch from setState alone', async () => {
+    const store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-a' })
+    const h = harness({
+      'project-1/thread-a': [{ path: 'a.ts', language: 'typescript' }],
+      'project-2/thread-b': [{ path: 'authoritative.ts', language: 'typescript' }],
+    })
+    attachDiffState(store, h.api, { revealOnShowDiff: false })
+    await settle()
+    // A push for the inactive owner is cached, not published.
+    h.emitQueued('project-2', 'thread-b', [{ path: 'cached.ts', language: 'typescript' }])
+    assert.deepEqual(store.getState().stagedDiffs, [{ path: 'a.ts', language: 'typescript' }])
+
+    store.setState({
+      activeProjectId: 'project-2',
+      workspaceRoot: '/repo/two',
+      activeThreadId: 'thread-b',
+    })
+
+    assert.deepEqual(
+      store.getState().stagedDiffs,
+      [{ path: 'cached.ts', language: 'typescript' }],
+      'the cached queue is republished synchronously',
+    )
+    await settle()
+    assert.deepEqual(h.queueCalls, [
+      ['project-1', 'thread-a'],
+      ['project-2', 'thread-b'],
+    ])
+    assert.deepEqual(store.getState().stagedDiffs, [
+      { path: 'authoritative.ts', language: 'typescript' },
+    ])
+  })
+
   it('ignores a hydrate that resolves after the thread moved on', async () => {
     const store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-a' })
     const h = harness({ 'project-1/thread-a': [{ path: 'stale.ts', language: 'typescript' }] })

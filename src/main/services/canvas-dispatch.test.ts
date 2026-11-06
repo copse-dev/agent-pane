@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import {
+  canvasArtefactSaveTarget,
   dispatchCanvasArtefacts,
   setCanvasArtefactMirror,
   setCanvasArtefactSink,
 } from './canvas-dispatch.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import { storageSet } from './storage/storage.ts'
 
 function uiResult(title = 'sales-dashboard', html = '<h1>v1</h1>'): unknown {
   return [
@@ -60,6 +63,37 @@ describe('dispatchCanvasArtefacts', () => {
 
     assert.equal(mirrored[0]?.threadId, 'thread-a')
     assert.equal(seen[0]?.threadId, 'thread-a')
+  })
+
+  it("stamps two concurrent turns' artefacts with their own projects, and none outside a turn", async () => {
+    // The main-process sink saves an artefact under `owner.projectId`, so this
+    // stamp is the only project it ever sees (#3958).
+    const seen: CanvasArtefact[] = []
+    setCanvasArtefactMirror(async () => {
+      await new Promise((resolve) => setImmediate(resolve))
+      return null
+    })
+    setCanvasArtefactSink((artefact) => seen.push(artefact))
+    const inTurn = (projectId: string, threadId: string): Promise<void> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: `/${projectId}`,
+          root: `/${projectId}`,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () => dispatchCanvasArtefacts(uiResult(projectId), threadId),
+      )
+
+    await Promise.all([inTurn('project-a', 'thread-a'), inTurn('project-b', 'thread-b')])
+    await dispatchCanvasArtefacts(uiResult('no-turn'), 'thread-c')
+
+    const owners = new Map(seen.map((artefact) => [artefact.threadId, artefact.owner]))
+    assert.deepEqual(owners.get('thread-a'), { projectId: 'project-a', threadId: 'thread-a' })
+    assert.deepEqual(owners.get('thread-b'), { projectId: 'project-b', threadId: 'thread-b' })
+    assert.equal(owners.get('thread-c'), undefined)
   })
 
   it('awaits the mirror before handing the artefact on', async () => {
@@ -128,5 +162,38 @@ describe('inline explainer dispatch', () => {
     setCanvasArtefactSink((artefact) => seen.push(artefact))
     await dispatchCanvasArtefacts(uiResult(), 'a', true)
     assert.equal(seen[0]?.presentation, undefined)
+  })
+})
+
+describe('canvasArtefactSaveTarget', () => {
+  it("saves under the producing turn's project and never under the window's", async () => {
+    storageSet('activeProjectId', 'project-window')
+    try {
+      const seen: CanvasArtefact[] = []
+      setCanvasArtefactSink((artefact) => seen.push(artefact))
+      await runWithThreadExecutionContext(
+        {
+          projectId: 'project-a',
+          threadId: 'thread-a',
+          projectRoot: '/project-a',
+          root: '/project-a',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () => dispatchCanvasArtefacts(uiResult('in-turn'), 'thread-a'),
+      )
+      // Outside any turn there is no owner: the artefact is shown, not saved.
+      await dispatchCanvasArtefacts(uiResult('no-turn'), 'thread-c')
+
+      const [inTurn, noTurn] = seen
+      assert.ok(inTurn && noTurn)
+      assert.deepEqual(canvasArtefactSaveTarget(inTurn), {
+        projectId: 'project-a',
+        threadId: 'thread-a',
+      })
+      assert.equal(canvasArtefactSaveTarget(noTurn), null)
+    } finally {
+      storageSet('activeProjectId', null)
+    }
   })
 })
