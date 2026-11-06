@@ -5705,6 +5705,26 @@
       "sha256": "7552ae35f0240f75bf6d3a6b65fa7b5ce5dad28aaabfcb5cc319abfd934290fb",
       "bytes": 23920
     },
+    "ui-consistency-pr-header-narrow.png": {
+      "sha256": "be9496b298d52e69c3ecb12ba75ab9dadcd550c1daa9c0106d0874d3dd8b8200",
+      "bytes": 138350
+    },
+    "ui-consistency-pr-prose.png": {
+      "sha256": "76a317c68ad5ae2c5ead45ea7eaa1ce4af74340272adc126185efcf0c08aa598",
+      "bytes": 137356
+    },
+    "ui-consistency-pr-tabs.png": {
+      "sha256": "8d695ae2b3fe66f14e173c548da55139fc4e094dec04a99bef39b60c3a6b7191",
+      "bytes": 8076
+    },
+    "ui-consistency-process-manager-tabs.png": {
+      "sha256": "39645fb7e93b18136bd01d1a06cb43ff599552db3de561afa6be982c6605de2f",
+      "bytes": 5804
+    },
+    "ui-consistency-superseded-model.png": {
+      "sha256": "9c7f6cd39d9db5c54eec0554bd6ec6f1792b318753d3a8f72dffa9c03c987c07",
+      "bytes": 43367
+    },
     "ui-kit-confirm-dialog-light.png": {
       "sha256": "22d03114390c6b6e0481ffd02d3420275070fc20a6b2acfdbc94a24462cb210b",
       "bytes": 16326
