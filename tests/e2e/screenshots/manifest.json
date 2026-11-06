@@ -3761,6 +3761,26 @@
       "sha256": "fe238d814ad8de133780fedb85409930db7001f86793c82a4019c386ad3ad975",
       "bytes": 346709
     },
+    "run-budget-checkpoint-paused.png": {
+      "sha256": "87c7401e1c3745629ada220a36dca994ed63cb05f13aa4a08cce59af5f38963a",
+      "bytes": 390893
+    },
+    "run-budget-deadline-recovery.png": {
+      "sha256": "881a8978ea577965710f71016756efb413255ab6b30834b606cc9180e2d90d9d",
+      "bytes": 362266
+    },
+    "run-budget-exhausted-plan-recovery.png": {
+      "sha256": "cba19cbe97b70156f89cab31c40f1cea0d65c4049b965c83bcab956accb95992",
+      "bytes": 401437
+    },
+    "run-budget-exhausted-plan-summary.png": {
+      "sha256": "e324abdbc677366b7a12b8c3a2cd02b13d3e96a641ef53af106af74303c8d243",
+      "bytes": 387676
+    },
+    "run-budget-explicitly-continued.png": {
+      "sha256": "4a9c7946a279cb399aa60035c5d0eaa37f6480534419176242dc7dca20403f75",
+      "bytes": 373977
+    },
     "screenshot-motion-frame.png": {
       "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
       "bytes": 4566
