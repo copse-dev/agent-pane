@@ -80,3 +80,16 @@ record its immutable links and the committed-checkout rerun in the PR.
 
 No live model inference, physical-phone validation, daemon deployment or successful full-night run
 is established by these deterministic tests.
+
+## Screenshot review follow-up
+
+Reviewing the five PRs exposed a hidden dependency on unrelated checkout updates in the phone-control
+fixture. A clean disposable workspace reproduced [#4190](https://github.com/copse-dev/agent-pane/issues/4190):
+phone and cross-thread submissions released a WeakMap-owned lock without notifying the composer.
+Submission ownership now lives in session-only store state; the composer selects its active lock.
+Both controller-path component regressions fail before this fix and pass afterward, without a later
+token, Git event or state write. The stable-workspace mobile spec passes both scenarios, and the
+four worker scenarios also pass on macOS. All ten local captures were inspected; Linux CI remains
+the baseline source. Final phone and running-worker captures explicitly frame the transcript after
+shell resizing and wait for scrolling to settle. Required final-head cloud checks and screenshot
+review remain prerequisites for merging.
