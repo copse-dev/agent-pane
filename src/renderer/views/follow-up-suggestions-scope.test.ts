@@ -64,6 +64,12 @@ describe('follow-up suggestions thread scope', () => {
     await flush()
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     assert.equal(fetches, 1)
+
+    // Sending a message (the thread is still idle) suggests nothing new.
+    mount.clearSuggestions()
+    addMessage(store, first, 'user', 'Run the tests')
+    await flush()
+    assert.equal(fetches, 1, 'no suggestions are billed for the message just sent')
     mount.destroy()
   })
 })

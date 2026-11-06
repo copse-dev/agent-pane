@@ -164,6 +164,13 @@ describe('next-step hint controller', () => {
     await flush()
     assert.equal(changes, 0)
     assert.equal(fetches.length, 1)
+
+    // Sending a message retires the hint at once and asks for nothing: the
+    // thread is still idle until the turn starts, but this is not a new turn.
+    addMessage(store, threadId, 'user', 'Run the tests')
+    await flush()
+    assert.equal(mount.current(), null)
+    assert.equal(fetches.length, 1, 'no hint is billed for the message just sent')
     mount.destroy()
   })
 })

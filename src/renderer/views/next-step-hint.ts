@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
@@ -115,8 +115,17 @@ export function mountNextStepHint(
       }
       if (status === 'idle') void maybeFetchHint(tid)
     }),
-    // The active thread: a switch, or its own last exchange or status.
-    store.select(activeThreadOf, syncActiveThread, sameThreadBesidesDraft),
+    // Only a switch, or the transcript landing after one, can start a fetch.
+    // Sending a message changes the thread while it is still idle; asking then
+    // would bill a hint for the message just sent.
+    store.select(
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded] as const,
+      syncActiveThread,
+      sameItems,
+    ),
+    // Any other change to the active thread only re-checks what is shown: a
+    // new or edited message retires a hint for the previous exchange.
+    store.select(activeThreadOf, refreshDisplayed, sameThreadBesidesDraft),
   ]
 
   return {

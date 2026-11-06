@@ -1,6 +1,6 @@
 import type { OfferedClientAction } from './client-action-offers.ts'
 import { el, clear } from '../dom/helpers.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
@@ -15,7 +15,7 @@ import {
 import { lastExchange } from './last-exchange.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
-import { activeThreadOf, sameThreadBesidesDraft } from '../controller/active-thread-owner.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
@@ -397,12 +397,15 @@ export function mountFollowUpSuggestions(
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)
     }),
+    // A switch, or the transcript landing after one. Sending a message changes
+    // the thread while it is still idle; suggesting then would bill a fetch for
+    // the message just sent. Turn ends arrive as thread_status_changed above.
     store.select(
-      activeThreadOf,
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded] as const,
       () => {
         showForActiveThread()
       },
-      sameThreadBesidesDraft,
+      sameItems,
     ),
     api.fs.onChanged(() => {
       scheduleChangesRefresh()
