@@ -255,6 +255,8 @@ export interface ToolCardRefresher {
   syncRunStepTrail: (thread: Thread | undefined, run: ToolRun) => void
   /** Drop element registrations; the model's state and user choices are kept. */
   forgetDisclosureElements: () => void
+  /** Drop only the registrations of elements no longer in the document (rows a reconcile removed). */
+  forgetDetachedDisclosureElements: () => void
 }
 
 export interface ToolCardRenderOptions {
@@ -777,6 +779,11 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     syncRunStepTrail,
     forgetDisclosureElements(): void {
       disclosureElements.clear()
+    },
+    forgetDetachedDisclosureElements(): void {
+      for (const [key, details] of disclosureElements) {
+        if (!details.isConnected) disclosureElements.delete(key)
+      }
     },
   }
 }

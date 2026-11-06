@@ -177,6 +177,10 @@
       "sha256": "bfb1d66cf6bd85a4e0ef2b35c025ab56b9dfe2fc5456c1ede6b73ea5b5969aad",
       "bytes": 19234
     },
+    "acp-startup-overflow.png": {
+      "sha256": "36e046ffc533ec4be67c136eddfe066ed46fab9a2b5c294a6821ae79dd6293c6",
+      "bytes": 47554
+    },
     "acp-startup-tools.png": {
       "sha256": "a60340869975b02670fe0cf2048503f8d2a63fea5dfa67aa23853449d6ae2536",
       "bytes": 149816
@@ -1188,6 +1192,10 @@
     "claude-opus-5-5-picker.png": {
       "sha256": "ffc8266797816721a2518dd2c1bb246848855bf1fbc735a66adaf4ba26c9b765",
       "bytes": 15593
+    },
+    "claude-org-check-auth-error.png": {
+      "sha256": "b9bf6e2b1051c711a6a524c3ea3ec1de65ede564b3af9e4a0b452ec729845bb0",
+      "bytes": 293358
     },
     "claude-sign-in.png": {
       "sha256": "b4ad973c94ae2cc5888034cbc04796e930651a9689557133afbc88d4c70e4388",
@@ -3341,6 +3349,10 @@
       "sha256": "2475d759e63f7c0f7f1a2314ab2af1cd42358144e7eed22cb145289b3e41d3c5",
       "bytes": 103726
     },
+    "proposed-thread-approval-over-source.png": {
+      "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
+      "bytes": 304084
+    },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
       "bytes": 212522
@@ -3460,6 +3472,14 @@
     "remote-artifact-backtick-filename.png": {
       "sha256": "ff29258af452808a87fd1a0b7d6e0a6f34223b23d3b7062542e8660053be0ce1",
       "bytes": 304723
+    },
+    "remote-artifact-image-origin-denied.png": {
+      "sha256": "0b8b9e57bdfd8c3b035d89b9f44c7df98a1a6d58ff2f506b6bdce48bbcfda91c",
+      "bytes": 161381
+    },
+    "remote-artifact-image-unavailable-retry.png": {
+      "sha256": "235dc37f5d5fc18a7b198e008f378da6185d9d1cae950bf78a1b9a514bdec8d3",
+      "bytes": 154038
     },
     "remote-folder-add-host-error.png": {
       "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
@@ -5616,6 +5636,10 @@
     "transcript-quote-sticky-reply.png": {
       "sha256": "708d6485b25f0589cb0f11d7b8dad64a093ab97786808cc27ac521d7e0486fc6",
       "bytes": 299381
+    },
+    "transcript-row-reconcile-new-turn.png": {
+      "sha256": "a7ae2fc42339bef2b4dcd497c04a107f633fb486fc68d7096f826fc2079c873a",
+      "bytes": 209222
     },
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",

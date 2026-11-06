@@ -344,14 +344,23 @@ export class AcpTurnFailure extends Error {
     assistantText: string
     usage: { inputTokens: number; outputTokens: number }
   }
+  /**
+   * The turn spawned the agent under Copse's own OS sandbox on this machine
+   * (not remote, not unsandboxed), as decided when the turn started. The error
+   * copy reads it to name a cause only that sandbox creates, such as the
+   * read-only macOS Keychain (#4147).
+   */
+  readonly sandboxed: boolean
 
   constructor(
     cause: unknown,
     partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+    options: { readonly sandboxed?: boolean } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
+    this.sandboxed = options.sandboxed === true
   }
 }
 
@@ -597,13 +606,17 @@ export async function runAcpTurnWithContinuation(
           : [],
       )
       .join('')
-    throw new AcpTurnFailure(err.cause, {
-      assistantText: `${earlier}${err.partial.assistantText}`,
-      usage: {
-        inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
-        outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+    throw new AcpTurnFailure(
+      err.cause,
+      {
+        assistantText: `${earlier}${err.partial.assistantText}`,
+        usage: {
+          inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
+          outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+        },
       },
-    })
+      { sandboxed: err.sandboxed },
+    )
   }
   return {
     stopReason: second.stopReason,
@@ -670,10 +683,11 @@ async function runAcpAgentTurn(
   // One containment answer for the whole turn: the session mode preset, the
   // read/search and Codex code-mode auto-approvals, and execute gating all read
   // it, so a remote (ACP-over-SSH) agent can never be treated as seatbelted.
+  const localSandbox = willSandboxAcpAgent(sandbox)
   const { sandboxed, contained, remote } = resolveAcpRunContainment({
     cwd,
     sshTarget,
-    localSandbox: willSandboxAcpAgent(sandbox),
+    localSandbox,
     unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
   })
   // Remembered grants are per SSH host: each is its own trust boundary.
@@ -996,12 +1010,18 @@ async function runAcpAgentTurn(
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     // An agent on a remote host answering "Authentication required" needs
     // remote-side remedies; replace the dead-end message with ones that work.
-    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err, {
-      assistantText,
-      usage: turn
-        ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
-        : { inputTokens: 0, outputTokens: 0 },
-    })
+    throw new AcpTurnFailure(
+      remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err,
+      {
+        assistantText,
+        usage: turn
+          ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
+          : { inputTokens: 0, outputTokens: 0 },
+      },
+      // The seatbelt the spawn actually applied: `sandboxed` also counts an
+      // unattended container, which has no macOS Keychain to keep read-only.
+      { sandboxed: localSandbox && !remote },
+    )
   } finally {
     releaseAgentWriter()
   }
@@ -1273,8 +1293,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
 async function respondToPermission(
   agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
   signal?: AbortSignal,
   context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
@@ -1736,7 +1756,9 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
   'elsewhere in /tmp and the rest of the home directory, and most network ' +
   'destinations are blocked. Approval ' +
-  'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
+  'cannot unsandbox your own shell, and neither can a sandbox escape your own ' +
+  "tools offer (such as Claude Code's dangerouslyDisableSandbox): this whole " +
+  'process runs inside the sandbox. When the "copse" MCP server is available, ' +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +

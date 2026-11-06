@@ -114,4 +114,51 @@ describe('Codex MCP startup failures', () => {
       'acp-startup-tools.png',
     )
   })
+
+  it('explains an excessive startup response without protocol jargon', async () => {
+    resetUserData()
+    const now = 1_700_000_000_000
+    const message = 'The coding agent sent too much data before it finished starting. Try again.'
+    writeSeedConfig({
+      projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: PROJECT_ID,
+      expandedProjectId: PROJECT_ID,
+      activeThreadId: THREAD_ID,
+      [`threads:${PROJECT_ID}`]: [
+        {
+          id: THREAD_ID,
+          title: 'Coding agent could not start',
+          status: 'idle',
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 1,
+          messages: [
+            {
+              id: 'startup-user',
+              role: 'user',
+              content: 'Check the project documentation.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'startup-overflow',
+              role: 'error',
+              content: message,
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+          ],
+        },
+      ],
+    })
+    await browser.reloadSession()
+    const failure = $('[data-message-id="startup-overflow"]')
+    await failure.waitForDisplayed({ timeout: 30_000 })
+    await expect(failure).toHaveText(expect.stringContaining(message))
+    await expect(failure).not.toHaveText(expect.stringContaining('ACP'))
+    await savePreparedElementScreenshot(
+      '[data-message-id="startup-overflow"]',
+      'acp-startup-overflow.png',
+    )
+  })
 })

@@ -505,6 +505,9 @@ describe('buildAcpPrompt', () => {
     // private shell from Copse's bridge, and point at the shared escape path.
     assert.match(sandboxed, /\$TMPDIR/)
     assert.match(sandboxed, /cannot unsandbox your own shell/i)
+    // An agent's own per-command escape cannot lift a sandbox around its whole
+    // process (#4146), so the note names the one agents reach for.
+    assert.match(sandboxed, /dangerouslyDisableSandbox\): this whole\s+process runs inside/)
     assert.match(sandboxed, /copse[\s\S]+run_shell/i)
     assert.match(sandboxed, /approved external work outside this sandbox/i)
     // The GitHub steer is appended to the sandbox note: bridge first, no
@@ -1683,10 +1686,11 @@ describe('continuing into a granted worktree', () => {
     const first = dependencies.runTurn
     dependencies.runTurn = async (turnOptions): Promise<TurnResult> => {
       if (turnOptions.userPrompt !== 'fix the redirect') {
-        throw new AcpTurnFailure(new Error('agent died'), {
-          assistantText: 'half',
-          usage: { inputTokens: 5, outputTokens: 1 },
-        })
+        throw new AcpTurnFailure(
+          new Error('agent died'),
+          { assistantText: 'half', usage: { inputTokens: 5, outputTokens: 1 } },
+          { sandboxed: true },
+        )
       }
       return first(turnOptions)
     }
@@ -1695,7 +1699,10 @@ describe('continuing into a granted worktree', () => {
       (err: unknown) =>
         err instanceof AcpTurnFailure &&
         err.partial.assistantText === 'Going to edit. half' &&
-        err.partial.usage.inputTokens === 15,
+        err.partial.usage.inputTokens === 15 &&
+        // The failed turn's containment answer outlives the rewrap, so the error
+        // copy can still tell a sandboxed agent's causes from anyone else's.
+        err.sandboxed,
     )
   })
 })

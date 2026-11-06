@@ -87,7 +87,6 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     thread_draft_changed: new Set(),
     new_thread_opened: new Set(),
     explorer_reveal: new Set(),
-    workspace_changed: new Set(),
     projects_changed: new Set(),
     git_change_navigate: new Set(),
     roadmap_reveal: new Set(),
