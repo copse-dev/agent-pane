@@ -839,7 +839,6 @@ describe('input bar first-message checkout', () => {
       threads: [{ ...thread(), id: 'thread-2', draftPrompt: 'Other project draft' }],
     })
     store.emit('threads_changed')
-    store.emit('workspace_changed')
     checkout.resolve({
       checkoutMode: 'worktree',
       choice: 'worktree',
