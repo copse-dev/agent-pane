@@ -2265,6 +2265,14 @@
       "sha256": "6970848a14f7a276f6ca806bdec0087d53def980b52e1d2e5d6d45336028698f",
       "bytes": 37123
     },
+    "local-git-inspection-complete.png": {
+      "sha256": "ac9838dcf7b528d3d9f7f86a74d46de186890d35aa40864d8939892d5c20df38",
+      "bytes": 288309
+    },
+    "local-git-inspection-remote-update-approval.png": {
+      "sha256": "b990b25a2c74f8e1caca6f1e5c26312e952813670a1fc943854155d00670bfb7",
+      "bytes": 286514
+    },
     "local-model-worktree-isolation.png": {
       "sha256": "83828a0af4689389e43352ab27e67cc27ebf2c661a3b27fd39a6f6fed49579a9",
       "bytes": 292878
