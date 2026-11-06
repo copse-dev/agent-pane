@@ -78007,8 +78007,8 @@ var init_review = __esm({
 });
 
 // src/renderer/views/roadmap-pane.ts
-function knownThreadIds(threads, backgroundThreads) {
-  return [...threads.map((t) => t.id), ...backgroundThreads.map((b2) => b2.thread.id)].join("\n");
+function knownThreadsKey(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map((b2) => b2.thread)].map((t) => `${t.id}\0${t.title}`).join("\n");
 }
 function roadmapModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -80037,9 +80037,10 @@ Notes: ${notes}` : prompt;
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
     // re-render from the already-loaded items (no IPC round-trip needed). Only
-    // the set of known thread ids matters: renames and turns do not repaint.
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
     store2.select(
-      (s) => knownThreadIds(s.threads, s.backgroundThreads),
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
       () => {
         if (!roadmapModeActive(store2)) return;
         renderList();
@@ -88232,13 +88233,20 @@ function attachProviderInvalidationWarning(store2, api2, ui) {
     });
   };
   const unsubscribe = [
-    selectActiveWorkspace(store2, check),
-    // The check reads the active thread's route: which thread, whether it is
-    // idle, and its model. Other threads' updates, and this one's rename, do not.
+    // The check reads the active workspace and the active thread's route:
+    // which thread, whether it is idle, and its model. One selection, so a
+    // project switch checks once. Other threads' updates, and this one's
+    // rename, do not re-check.
     store2.select(
-      () => {
+      (state) => {
         const thread = getActiveThread(store2);
-        return [thread?.id, thread?.status, thread?.model];
+        return [
+          state.activeProjectId,
+          state.workspaceRoot,
+          thread?.id,
+          thread?.status,
+          thread?.model
+        ];
       },
       check,
       sameItems
@@ -88259,7 +88267,6 @@ var init_provider_invalidation = __esm({
     init_zod();
     init_safe_json2();
     init_store();
-    init_active_workspace();
     init_thread_helpers();
     init_model_selection();
   }
