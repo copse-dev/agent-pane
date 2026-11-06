@@ -9,8 +9,7 @@
  * When the transcript's inputs change, the view plans against the rows
  * already in the list: rows whose signature still matches are kept as they
  * are, changed rows are rebuilt in place, new rows are inserted at their
- * position, rows that left the transcript are dropped and rows out of order
- * are moved, nodes and all.
+ * position and rows that left the transcript are dropped.
  *
  * The view's streaming handlers also patch rows in place between reconciles.
  * They only note which rows they touched; {@link adoptPatchedSignatures} lets
@@ -89,12 +88,6 @@ export type TranscriptRowOp =
    * or at the rows' tail when `before` is null.
    */
   | { readonly kind: 'insert'; readonly key: string; readonly before: string | null }
-  /**
-   * Move the row, with its anchored cards and everything it holds, before the
-   * row keyed `before` (or to the rows' tail when null). A moved row whose
-   * signature also changed is replaced right after the move.
-   */
-  | { readonly kind: 'move'; readonly key: string; readonly before: string | null }
 
 export type TranscriptRowPlan =
   | {
@@ -106,11 +99,12 @@ export type TranscriptRowPlan =
     }
   | {
       /**
-       * The list holds a key twice, so rows cannot be matched by key and the
-       * caller rebuilds the list instead.
+       * The kept rows would have to move, or the list holds a key twice. Moving
+       * rows is not worth a second code path: the transcript only ever
+       * appends, edits or truncates, so the caller rebuilds the list instead.
        */
       readonly kind: 'rebuild'
-      readonly reason: 'duplicate-key'
+      readonly reason: 'reordered' | 'duplicate-key'
     }
 
 /**
@@ -132,69 +126,37 @@ export function planTranscriptRows(
     wantedKeys.add(row.key)
   }
 
-  // Rows present on both sides stay where they are when they are already in
-  // transcript order. Otherwise the longest run of them that is still in order
-  // stays put and only the rest move: the fewest rows leave their place.
-  const wantedIndex = new Map(wanted.map((row, i) => [row.key, i]))
-  const surviving = rendered.filter((row) => wantedKeys.has(row.key))
-  const stable = longestIncreasingRun(surviving.map((row) => wantedIndex.get(row.key) ?? 0))
-  const stableKeys = new Set(stable.map((i) => surviving[i]?.key ?? ''))
+  // Rows present on both sides must already be in transcript order.
+  const survivingOrder = rendered.filter((row) => wantedKeys.has(row.key)).map((row) => row.key)
+  const wantedOrder = wanted.filter((row) => renderedByKey.has(row.key)).map((row) => row.key)
+  if (survivingOrder.some((key, i) => key !== wantedOrder[i])) {
+    return { kind: 'rebuild', reason: 'reordered' }
+  }
 
   const ops: TranscriptRowOp[] = []
   for (const row of rendered) {
     if (!wantedKeys.has(row.key)) ops.push({ kind: 'remove', key: row.key })
   }
-  // The row each insertion or move goes before: the next wanted row that stays
-  // where it is. Walk backwards so each lookup is O(1). Rows placed before the
-  // same stable row are placed in transcript order, so they land in order.
-  const placeBefore = new Map<string, string | null>()
-  let nextStable: string | null = null
+  // The row each insertion goes before: the next wanted row that is already
+  // in the list. Walk backwards so each lookup is O(1).
+  const insertBefore = new Map<string, string | null>()
+  let nextExisting: string | null = null
   for (let i = wanted.length - 1; i >= 0; i--) {
     const row = wanted[i]
     if (!row) continue
-    if (stableKeys.has(row.key)) nextStable = row.key
-    else placeBefore.set(row.key, nextStable)
+    if (renderedByKey.has(row.key)) nextExisting = row.key
+    else insertBefore.set(row.key, nextExisting)
   }
   let kept = 0
   for (const row of wanted) {
     const previous = renderedByKey.get(row.key)
-    const before = placeBefore.get(row.key) ?? null
     if (!previous) {
-      ops.push({ kind: 'insert', key: row.key, before })
-      continue
-    }
-    if (!stableKeys.has(row.key)) ops.push({ kind: 'move', key: row.key, before })
-    if (!sameSignature(previous.signature, row.signature))
+      ops.push({ kind: 'insert', key: row.key, before: insertBefore.get(row.key) ?? null })
+    } else if (!sameSignature(previous.signature, row.signature)) {
       ops.push({ kind: 'replace', key: row.key })
-    else kept++
+    } else kept++
   }
   return { kind: 'patch', ops, kept }
-}
-
-/**
- * Indexes into `values` of one longest strictly increasing subsequence
- * (patience sorting, O(n log n)). In the common case the whole input is
- * increasing and every index is returned.
- */
-function longestIncreasingRun(values: readonly number[]): number[] {
-  // tails[k]: index of the smallest tail value of an increasing run of length k + 1.
-  const tails: number[] = []
-  const previous = new Array<number>(values.length).fill(-1)
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i] ?? 0
-    let lo = 0
-    let hi = tails.length
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1
-      if ((values[tails[mid] ?? 0] ?? 0) < value) lo = mid + 1
-      else hi = mid
-    }
-    if (lo > 0) previous[i] = tails[lo - 1] ?? -1
-    tails[lo] = i
-  }
-  const run: number[] = []
-  for (let i = tails.at(-1) ?? -1; i !== -1; i = previous[i] ?? -1) run.push(i)
-  return run.reverse()
 }
 
 /**
@@ -247,25 +209,6 @@ export interface TranscriptRowHost {
    * cards) when `before` is null.
    */
   insert: (key: string, before: Element | null) => void
-  /** Where a row placed at the rows' tail goes: above the activity row and trailing cards. */
-  tail: () => Element | null
-}
-
-/**
- * Move row `key` (its message element and anchored cards, in list order)
- * before `before`, or to the rows' tail when null. The nodes stay alive: a
- * moved row keeps its links, disclosures and inline artefacts.
- */
-export function moveTranscriptRow(
-  host: TranscriptRowHost,
-  key: string,
-  before: Element | null,
-): void {
-  const { list } = host
-  const element = transcriptRowElement(list, key)
-  const parts = [...(element ? [element] : []), ...list.querySelectorAll(rowCardSelector(key))]
-  const target = before ?? host.tail()
-  for (const part of parts) list.insertBefore(part, target)
 }
 
 /** Apply a `patch` plan to the list. */
@@ -280,12 +223,6 @@ export function applyTranscriptRowPlan(
     } else if (op.kind === 'replace') {
       const next = removeTranscriptRow(list, op.key)
       host.insert(op.key, next)
-    } else if (op.kind === 'move') {
-      moveTranscriptRow(
-        host,
-        op.key,
-        op.before === null ? null : transcriptRowElement(list, op.before),
-      )
     } else {
       host.insert(op.key, op.before === null ? null : transcriptRowElement(list, op.before))
     }

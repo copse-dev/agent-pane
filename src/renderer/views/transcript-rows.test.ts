@@ -109,32 +109,10 @@ describe('planTranscriptRows', () => {
     })
   })
 
-  it('moves only the rows outside the longest run still in order', () => {
-    // Swapping two rows moves one of them; the rest stay put.
+  it('asks for a rebuild when kept rows would have to move', () => {
     assert.deepEqual(planTranscriptRows(rows('a b c'), rows('a c b')), {
-      kind: 'patch',
-      ops: [{ kind: 'move', key: 'b', before: null }],
-      kept: 3,
-    })
-    // A row moved from the front to the back, changed on the way, with a new
-    // row after it: one move, then its replacement, then the insertion.
-    assert.deepEqual(planTranscriptRows(rows('a b c d'), rows('b c d a:2 e')), {
-      kind: 'patch',
-      ops: [
-        { kind: 'move', key: 'a', before: null },
-        { kind: 'replace', key: 'a' },
-        { kind: 'insert', key: 'e', before: null },
-      ],
-      kept: 3,
-    })
-    // A full reversal keeps one row in place and moves the others after it, in order.
-    assert.deepEqual(planTranscriptRows(rows('a b c'), rows('c b a')), {
-      kind: 'patch',
-      ops: [
-        { kind: 'move', key: 'b', before: null },
-        { kind: 'move', key: 'a', before: null },
-      ],
-      kept: 3,
+      kind: 'rebuild',
+      reason: 'reordered',
     })
   })
 
@@ -588,7 +566,6 @@ describe('applyTranscriptRowPlan', () => {
         built.push(key)
         list.insertBefore(row(key, `${key}-new`), before ?? activity)
       },
-      tail: () => activity,
     })
 
     assert.deepEqual(built, ['b', 'd'])
@@ -597,32 +574,6 @@ describe('applyTranscriptRowPlan', () => {
     assert.ok(list.children[1] !== b, 'the changed row is rebuilt')
     assert.equal(list.children[1]?.textContent, 'b-new')
     assert.equal(c.isConnected, false)
-  })
-
-  it('moves a row with its anchored cards and keeps every node', () => {
-    const list = document.createElement('div')
-    const activity = document.createElement('div')
-    activity.className = 'agent-activity'
-    const a = row('a')
-    const aCard = card('data-hook-cards-for', 'a')
-    const b = row('b')
-    const c = row('c')
-    list.append(a, aCard, b, c, activity)
-    document.body.append(list)
-    const plan = planTranscriptRows(rows('a b c'), rows('b a c'))
-    assert.equal(plan.kind, 'patch')
-    applyTranscriptRowPlan(plan, {
-      list,
-      insert: () => {
-        assert.fail('a reorder builds no row')
-      },
-      tail: () => activity,
-    })
-    assert.deepEqual(order(list), ['b', 'a', 'data-hook-cards-for=a', 'c', 'class=agent-activity'])
-    assert.ok(
-      list.children[1] === a && list.children[2] === aCard,
-      'the moved row is the same node',
-    )
   })
 
   it('rebuilds a row with cards before the node that followed them', () => {

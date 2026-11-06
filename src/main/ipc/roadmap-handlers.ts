@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
-import { getActiveProjectId, getProjectById } from '../services/workspace.ts'
+import { getProjectById } from '../services/workspace.ts'
 import {
   assertMainFrameSender,
   IpcValidationError,
@@ -37,7 +37,7 @@ import { stampRoadmapTitle } from '../services/roadmap-title.ts'
 import { notifyRoadmapChanged } from '../services/roadmap-events.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
-import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
+import { ROADMAP_EXPORT_FORMATS, type RoadmapExportProject } from '@shared/roadmap/export.ts'
 import {
   abortRoadmapReview,
   completeRoadmapReview,
@@ -46,6 +46,21 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
+
+/**
+ * The project `roadmap:export` names in its header. Named from the same scope
+ * `buildRoadmapExport` loads the notes from, so the header can never describe a
+ * different project than the items. Both move to the asking window's project
+ * together with the knowledge store (#3958).
+ */
+export function roadmapExportProject(): RoadmapExportProject {
+  const { projectId } = currentProjectStoreScope()
+  const project = projectId ? getProjectById(projectId) : null
+  if (!project) {
+    throw new IpcValidationError('No active project to export a roadmap for.')
+  }
+  return project
+}
 
 export function registerRoadmapHandlers(win: BrowserWindow): void {
   // Roadmap pane (issue #556; #645 Phase 3). Reads and edits the `Roadmap` notes
@@ -297,12 +312,7 @@ export function registerRoadmapHandlers(win: BrowserWindow): void {
   ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
     assertMainFrameSender(event, win)
     const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
-    const activeProjectId = getActiveProjectId()
-    const project = activeProjectId ? getProjectById(activeProjectId) : null
-    if (!project) {
-      throw new IpcValidationError('No active project to export a roadmap for.')
-    }
-    const result = buildRoadmapExport(project, format, new Date().toISOString())
+    const result = buildRoadmapExport(roadmapExportProject(), format, new Date().toISOString())
     return {
       filename: result.filename,
       mimeType: result.mimeType,
