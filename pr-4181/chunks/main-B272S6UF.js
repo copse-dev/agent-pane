@@ -13438,7 +13438,6 @@ function planTranscriptRows(rendered, wanted) {
   const surviving = rendered.filter((row2) => wantedKeys.has(row2.key));
   const stable = longestIncreasingRun(surviving.map((row2) => wantedIndex.get(row2.key) ?? 0));
   const stableKeys = new Set(stable.map((i2) => surviving[i2]?.key ?? ""));
-  if (stable.length !== surviving.length) return { kind: "rebuild", reason: "duplicate-key" };
   const ops = [];
   for (const row2 of rendered) {
     if (!wantedKeys.has(row2.key)) ops.push({ kind: "remove", key: row2.key });
