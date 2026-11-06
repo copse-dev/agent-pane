@@ -3257,6 +3257,18 @@
       "sha256": "45d278df556354446d3c45b18711c5f95e98ae83075fd71fdf90c24a9db9783f",
       "bytes": 25254
     },
+    "project-port-grant-asks-again.png": {
+      "sha256": "6796a3c16b97ca2f7936021a06de90293143a0e21b2c91492080a20145dcce36",
+      "bytes": 332248
+    },
+    "project-port-grant-before-revoke.png": {
+      "sha256": "156b5fc634e83960a8b63aed6f40d3e94755f188d7a3ce956ff65ce51d4eaa04",
+      "bytes": 371961
+    },
+    "project-port-grant-revoked.png": {
+      "sha256": "7d132306df0f0e6b5049bb972f719f1c76da431afea70e1ef9b850534820fa0e",
+      "bytes": 363362
+    },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
       "bytes": 84841
