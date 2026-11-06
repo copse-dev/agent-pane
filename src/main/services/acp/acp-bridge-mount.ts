@@ -138,10 +138,24 @@ export function isAcpBridgeStartupFailure(update: SessionUpdate): boolean {
  * Claude Code's result for a call of a tool that is not in its tool list. The
  * Claude adapter reports it as that call's failed `tool_call_update`
  * (`<tool_use_error>Error: No such tool available: mcp__copse__gh_pr_view</tool_use_error>`).
+ * Current CLIs append why, after the name; the second group captures it.
  */
 const NO_SUCH_BRIDGE_TOOL = new RegExp(
-  `No such tool available: mcp__${BRIDGE_MCP_SERVER_NAME}__([A-Za-z0-9_-]+)`,
+  `No such tool available: mcp__${BRIDGE_MCP_SERVER_NAME}__([A-Za-z0-9_-]+)([^<\n]*)`,
 )
+
+/**
+ * The reasons Claude Code gives (after the tool name) that mean the copse
+ * server does not offer the tool in this session: none at all (older CLIs, and
+ * #4142's report), a connected server without the tool, or no such server. Any
+ * other reason is transient ("still connecting; try again shortly") or about
+ * something else (a deny rule, a subagent's context), and is not evidence.
+ */
+const SERVER_LACKS_TOOL_REASONS: readonly string[] = [
+  '',
+  `. Its MCP server '${BRIDGE_MCP_SERVER_NAME}' is connected but does not offer this tool here.`,
+  '. No MCP server in this session provides it;',
+]
 
 /** How much of a failed call's output is searched; the error leads it. */
 const MAX_SCANNED_TEXT = 2_000
@@ -175,7 +189,8 @@ function failureTexts(
  * tool of a server when one schema breaks its rules (#4142), and the mount
  * check (#4144) cannot see that.
  *
- * Only a failed call qualifies, and only when the adapter itself named the
+ * Only a failed call qualifies, only for a reason that says the server lacks
+ * the tool (not that it is still connecting), and only when the adapter itself named the
  * call as that same Copse tool (`_meta.claudeCode.toolName` or a qualified ACP
  * `name`, on this report or an earlier one about the call). A model or a
  * command's output that merely prints the phrase proves nothing. Whether
@@ -189,7 +204,11 @@ export function acpBridgeToolMissing(
   let missing: string | null = null
   for (const text of failureTexts(update)) {
     const match = NO_SUCH_BRIDGE_TOOL.exec(text)
-    if (match?.[1]) {
+    const reason = match?.[2]?.trim() ?? ''
+    const serverLacksTool = SERVER_LACKS_TOOL_REASONS.some((known) =>
+      known === '' ? reason === '' : reason.startsWith(known),
+    )
+    if (match?.[1] && serverLacksTool) {
       missing = match[1]
       break
     }

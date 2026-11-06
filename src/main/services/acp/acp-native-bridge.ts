@@ -499,7 +499,6 @@ interface BridgeExecuteContext {
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
-  /** The agent asked for the tool list: it has mounted this bridge. */
   /** The agent listed the bridge's tools; `names` are the ones this listing returned. */
   recordToolsListed: (names: readonly string[]) => void
 }

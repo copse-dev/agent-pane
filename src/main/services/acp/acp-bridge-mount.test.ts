@@ -435,6 +435,30 @@ describe('acpBridgeToolMissing', () => {
     )
   })
 
+  it("accepts only Claude Code's reasons that mean the server lacks the tool", () => {
+    const withReason = (reason: string): Parameters<typeof acpBridgeToolMissing>[0] =>
+      failed({
+        rawOutput: `<tool_use_error>Error: No such tool available: mcp__copse__read_file${reason}</tool_use_error>`,
+      })
+    for (const reason of [
+      ". Its MCP server 'copse' is connected but does not offer this tool here. Continue without it.",
+      '. No MCP server in this session provides it; continue without this tool.',
+    ]) {
+      assert.equal(acpBridgeToolMissing(withReason(reason), named), 'read_file', reason)
+    }
+    for (const reason of [
+      // Transient: the tools come back by themselves.
+      ". Its MCP server 'copse' is still connecting; try again shortly.",
+      ". The MCP server 'copse' is still connecting. Call WaitForMcp to wait for it, then try again.",
+      // About something else than the server's tool list.
+      '. A permissions deny rule now blocks this tool; do not call it again.',
+      ". Its MCP server 'copse' is not available in this context. Continue without this tool.",
+      ". Its MCP server 'copse' needs the user to re-authorize it before its tools work again.",
+    ]) {
+      assert.equal(acpBridgeToolMissing(withReason(reason), named), null, reason)
+    }
+  })
+
   it('reads only failed results that name a Copse tool', () => {
     assert.equal(
       acpBridgeToolMissing(

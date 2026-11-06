@@ -80,7 +80,9 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
     available to it, and the prompt stops steering it to them.
   - **Dropping.** If the agent's own runtime later refuses a listed tool as
     `No such tool available`, the thread says so once. Copse acts only on a
-    failed call that the adapter itself named as that Copse tool. The next
+    failed call that the adapter itself named as that Copse tool, and only
+    when Claude Code's stated reason says the server lacks the tool. A
+    transient reason, such as "still connecting", doesn't count. The next
     prompt tells the agent to ignore earlier steering to Copse's tools, and the
     reason is logged.
   - **Guidance.** The turn's Copse guidance (canonical `turnStart`) is built
