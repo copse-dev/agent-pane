@@ -28,7 +28,9 @@ import { registerPluginHandlers } from './plugin-handlers.ts'
 import { registerSupervisorHandlers } from './supervisor-handlers.ts'
 import { registerCustomizationHandlers } from './customization-handlers.ts'
 import { registerInstructionHandlers } from './instruction-handlers.ts'
-import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { registerWorktreeHandlers } from './worktree-handlers.ts'
+import { registerContainerHandlers } from './container-handlers.ts'
+import { registerGuardedYoloHandlers } from './guarded-yolo-handlers.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -61,7 +63,6 @@ import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
   getActiveProjectSshHost,
-  getProjectRoot,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -72,11 +73,6 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
-import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
-import { browserThreadScope } from '@shared/browser-session.ts'
-import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -130,7 +126,6 @@ import {
 import {
   measureThreadStorage,
   backfillThreadPrRefs,
-  getLatestThreadPlan,
   loadProjectThreadMetas,
   loadThreadMessages,
   createThread,
@@ -174,13 +169,6 @@ import {
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
-import {
-  listWorktreeInventory,
-  cleanupWorktreePackages,
-  measureWorktreeSize,
-  removeWorktree,
-  resolveRegisteredWorktreePath,
-} from '../services/worktree-inventory.ts'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { getSshConnectionManager } from '../services/ssh-workspace/connection-manager.ts'
 import { WorkspaceActivation } from '../services/workspace-activation.ts'
@@ -210,15 +198,8 @@ import {
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
-import { requestApproval } from '../services/approval.ts'
-import {
-  armGuardedYolo,
-  disableGuardedYolo,
-  getGuardedYoloState,
-  onGuardedYoloChanged,
-} from '../services/security/guarded-yolo.ts'
+import { getGuardedYoloState, onGuardedYoloChanged } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
-import { explainContainerModel } from '../services/providers/container-provider.ts'
 
 function storedWorkspaceProjects(): WorkspaceProjectRef[] {
   return recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
@@ -829,137 +810,9 @@ export function registerAllHandlers(
   registerDecisionHandlers(win)
   registerStorageHandlers(win)
 
-  const zGuardedYoloThreadId = zNonEmptyString.max(256)
-  ipcMain.handle('security:get-guarded-yolo', (event, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
-    return getGuardedYoloState(id)
-  })
-  ipcMain.handle(
-    'security:get-context-permissions',
-    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
-      assertMainFrameSender(event, win)
-      const [pid, tid, root] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
-        [projectId, threadId, projectRoot],
-      )
-      return {
-        outsideReadPaths: listReadOutsideProjectGrants(tid),
-        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
-        portBindingAllowed:
-          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
-          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
-      }
-    },
-  )
-  ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
-    const current = getGuardedYoloState(id)
-    if (current.phase !== 'off') return current
-    const containment =
-      current.containment === 'project-sandbox'
-        ? 'The project sandbox remains in use where possible. Outside-project reads of non-credential paths auto-run inside a widened seatbelt; other external commands may run unsandboxed.'
-        : 'No OS sandbox is active on this platform, so commands run with your full user permissions. Outside-project reads of non-credential paths still auto-run; credential paths and home-root listings stay refused.'
-    const { approved } = await requestApproval({
-      title: 'Enable Guarded YOLO for this thread?',
-      cause: 'mode-arming',
-      body: [
-        'Routine shell commands will run without approval in this thread, including outside-project reads of non-credential paths.',
-        '',
-        containment,
-        '',
-        'GitHub CLI writes (for example `gh pr create`) still require confirmation. Credential files, `~`, and `/` remain refused.',
-        '',
-        'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
-        '',
-        'Guarded YOLO stays enabled for this thread until you disable it or restart the app.',
-      ].join('\n'),
-      type: 'shell',
-      allowRemember: false,
-    })
-    if (approved) armGuardedYolo(id)
-    return getGuardedYoloState(id)
-  })
-  ipcMain.handle('security:disable-guarded-yolo', (event, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
-    disableGuardedYolo(id)
-    return getGuardedYoloState(id)
-  })
+  registerGuardedYoloHandlers(win)
 
-  // Unattended container runs (docs/plans/thread-in-container.md). The
-  // renderer sends the prompt, the model and the budgets; the main process
-  // resolves the checkout, the provider and its key, and owns the run.
-  ipcMain.handle('container:run-thread', async (event, request: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsed = parseIpcArgs(containerRunRequestSchema, [request])
-    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
-      parsed.projectId,
-      parsed.threadId,
-    ])
-    if (startingContainerThreads.has(threadId))
-      throw new Error('A container run is already starting')
-    startingContainerThreads.add(threadId)
-    try {
-      const activePlan = await getLatestThreadPlan(projectId, threadId)
-      if (activePlan && activePlan.meta.status !== 'abandoned') {
-        throw new Error(
-          'Container runs cannot enforce the plan workflow. End the plan before starting a container run.',
-        )
-      }
-      return await getContainerRunService().start({
-        projectId,
-        threadId,
-        prompt: parsed.prompt,
-        model: parsed.model,
-        budgets: parsed.budgets,
-        ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
-        ...(parsed.installDependencies !== undefined
-          ? { installDependencies: parsed.installDependencies }
-          : {}),
-        ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
-        ...(parsed.continueContext !== undefined
-          ? { continueContext: parsed.continueContext }
-          : {}),
-      })
-    } finally {
-      startingContainerThreads.delete(threadId)
-    }
-  })
-  // Why each model could not run in a container, or null when it could — the
-  // resolver's own answer, so the dialog's greyed rows never disagree with a
-  // refused start about which key counts (Settings or the environment).
-  ipcMain.handle('container:model-availability', async (event, models: unknown) => {
-    assertMainFrameSender(event, win)
-    const list = parseIpcArgs(z.array(zNonEmptyString.max(256)).max(512), [models])
-    const verdicts = await Promise.all(list.map((model) => explainContainerModel(model)))
-    return Object.fromEntries(list.map((model, index) => [model, verdicts[index]]))
-  })
-  ipcMain.handle('container:get-run', (event, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
-    return getContainerRunService().get(id)
-  })
-  ipcMain.handle('container:stop-run', (event, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
-    return getContainerRunService().stop(id)
-  })
-  // Follow up on a finished run: its commits, cherry-picked onto the thread's
-  // checkout. The runtime id names the record on disk, so it works for a run
-  // an earlier app session made; the thread must be the one that ran it.
-  ipcMain.handle(
-    'container:adopt-run',
-    (event, projectId: unknown, threadId: unknown, runtimeId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [pid, tid, rid] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, z.string().regex(/^[a-z0-9-]{1,128}$/i)]),
-        [projectId, threadId, runtimeId],
-      )
-      return getContainerRunService().adopt(pid, tid, rid)
-    },
-  )
+  registerContainerHandlers(win, startingContainerThreads)
   ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
@@ -1326,86 +1179,7 @@ export function registerAllHandlers(
     return listOrphanProjectStores(projectIds)
   })
 
-  // Settings → Sources → Worktrees. Every call names the project by id and the
-  // main process resolves its root itself, so the renderer never gets to say
-  // which repository (or which directory) is operated on.
-  const worktreeInput = (
-    rawProjectId: unknown,
-  ): { projectId: string; projectRoot: string } | null => {
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    const projectRoot = getProjectRoot(projectId)
-    return projectRoot === null ? null : { projectId, projectRoot }
-  }
-
-  ipcMain.handle('worktrees:list', async (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const target = worktreeInput(rawProjectId)
-    if (!target) return []
-    return listWorktreeInventory({
-      ...target,
-      runningThreadIds: new Set(listRunningThreadIds()),
-    })
-  })
-
-  ipcMain.handle('worktrees:size', async (event, rawProjectId: unknown, rawPath: unknown) => {
-    assertMainFrameSender(event, win)
-    const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
-    const target = worktreeInput(rawProjectId)
-    if (!target) throw new IpcValidationError('That project is no longer available')
-    return measureWorktreeSize({ ...target, path })
-  })
-
-  ipcMain.handle(
-    'worktrees:cleanup-packages',
-    async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
-      assertMainFrameSender(event, win)
-      const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
-        rawProjectId,
-        rawPath,
-        rawRemove,
-      ])
-      const target = worktreeInput(rawProjectId)
-      if (!target) throw new IpcValidationError('That project is no longer available')
-      return cleanupWorktreePackages({
-        ...target,
-        path,
-        remove,
-        runningThreadIds: new Set(listRunningThreadIds()),
-      })
-    },
-  )
-
-  ipcMain.handle(
-    'worktrees:open-terminal',
-    async (event, rawProjectId: unknown, rawPath: unknown) => {
-      assertMainFrameSender(event, win)
-      const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
-      const target = worktreeInput(rawProjectId)
-      if (!target) throw new IpcValidationError('That project is no longer available')
-      const root = await resolveRegisteredWorktreePath({ ...target, path })
-      return openWorkspaceInExternalEditor('terminal', root)
-    },
-  )
-
-  ipcMain.handle(
-    'worktrees:remove',
-    async (event, rawProjectId: unknown, rawPath: unknown, rawForce: unknown) => {
-      assertMainFrameSender(event, win)
-      const [, path, force] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
-        rawProjectId,
-        rawPath,
-        rawForce,
-      ])
-      const target = worktreeInput(rawProjectId)
-      if (!target) throw new IpcValidationError('That project is no longer available')
-      return removeWorktree({
-        ...target,
-        path,
-        force,
-        runningThreadIds: new Set(listRunningThreadIds()),
-      })
-    },
-  )
+  registerWorktreeHandlers(win)
 
   registerCustomizationHandlers(win)
   registerPluginHandlers(win, registry)
