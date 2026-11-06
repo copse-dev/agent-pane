@@ -853,7 +853,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
+    {
+      state: PrLifecycleState
+      checks?: GhPrChecksState
+      conflicts?: boolean
+      fetchedAt: number
+      failed?: true
+    }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -1051,9 +1057,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             return
           }
           prLifecycleCache.set(key, {
+            ...cached,
             state: cached?.state ?? 'unknown',
-            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
+            failed: true,
           })
         })
         .finally(() => {
@@ -2906,6 +2913,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('workspace_changed', () => {
       prWorkspaceGeneration += 1
+      // Preload can reject a superseded read before this renderer commits the
+      // new workspace. Keep failures memoized within a workspace, then retry
+      // them at its successor even when the rejection preceded this event.
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1,
+          })
+        }
+      }
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
       if (store.getState().activeProjectId !== filteredProjectId) closeThreadFilter()

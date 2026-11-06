@@ -396,69 +396,143 @@ describe('projects pane thread PR status (component)', () => {
   })
 
   for (const blocked of ['details', 'checks'] as const) {
-    it(`retries a ${blocked} read cancelled by a superseding workspace selection`, async () => {
-      const selected = thread('cancelled', 'Cancelled PR lookup', {
-        messages: [assistant('cancelled-message', OPEN_URL)],
-      })
-      const store = createStore({
-        projects: [
-          { id: 'p1', path: '/proj', name: 'Proj' },
-          { id: 'p2', path: '/other', name: 'Other' },
-        ],
-        activeProjectId: 'p1',
-        workspaceRoot: '/proj',
-        threads: [selected],
-        activeThreadId: selected.id,
-      })
-      let rejectRead: (() => void) | undefined
-      const cancelled = new Promise<never>((_resolve, reject) => {
-        rejectRead = (): void => {
-          reject(new Error('Workspace selection changed before the request could run'))
+    for (const cancelledBeforeWorkspaceEvent of [false, true]) {
+      it(`retries a ${blocked} read cancelled ${cancelledBeforeWorkspaceEvent ? 'before' : 'after'} the workspace event`, async () => {
+        const selected = thread('cancelled', 'Cancelled PR lookup', {
+          messages: [assistant('cancelled-message', OPEN_URL)],
+        })
+        const store = createStore({
+          projects: [
+            { id: 'p1', path: '/proj', name: 'Proj' },
+            { id: 'p2', path: '/other', name: 'Other' },
+          ],
+          activeProjectId: 'p1',
+          workspaceRoot: '/proj',
+          threads: [selected],
+          activeThreadId: selected.id,
+        })
+        let rejectRead: (() => void) | undefined
+        const cancelled = new Promise<never>((_resolve, reject) => {
+          rejectRead = (): void => {
+            reject(new Error('Workspace selection changed before the request could run'))
+          }
+        })
+        let detailReads = 0
+        let checkReads = 0
+        const base = apiWithPrDetails(async () => {
+          detailReads += 1
+          if (blocked === 'details' && detailReads === 1) return cancelled
+          return details(OPEN_NUMBER, 'OPEN')
+        })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const cleanup = mountProjectsPane(host, store, {
+          ...base,
+          gh: {
+            ...base.gh,
+            prChecks: async () => {
+              checkReads += 1
+              if (blocked === 'checks' && checkReads === 1) return cancelled
+              return 'failure'
+            },
+          },
+        })
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          assert.ok(rejectRead)
+          if (cancelledBeforeWorkspaceEvent) {
+            rejectRead()
+            await new Promise((resolve) => setTimeout(resolve, 0))
+            assert.equal(detailReads, 1, 'a failure stays memoized within the current workspace')
+          }
+          const other = { ...selected, id: 'other-cancelled' }
+          store.setState({
+            activeProjectId: 'p2',
+            workspaceRoot: '/other',
+            threads: [other],
+            activeThreadId: other.id,
+          })
+          store.emit('workspace_changed')
+          if (!cancelledBeforeWorkspaceEvent) {
+            assert.equal(detailReads, 1, 'the pending read still owns its request')
+            rejectRead()
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          assert.equal(detailReads, 2, 'retry on the new workspace without waiting for the TTL')
+          assert.equal(checkReads, blocked === 'checks' ? 2 : 1)
+          const icon = await waitForIcon(selected.title, 'open')
+          assert.equal(icon.classList.contains('has-ci-failure'), true)
+        } finally {
+          cleanup()
         }
       })
-      let detailReads = 0
-      let checkReads = 0
-      const base = apiWithPrDetails(async () => {
-        detailReads += 1
-        if (blocked === 'details' && detailReads === 1) return cancelled
-        return details(OPEN_NUMBER, 'OPEN')
-      })
-      const host = document.createElement('div')
-      document.body.append(host)
-      const cleanup = mountProjectsPane(host, store, {
-        ...base,
-        gh: {
-          ...base.gh,
-          prChecks: async () => {
-            checkReads += 1
-            if (blocked === 'checks' && checkReads === 1) return cancelled
-            return 'failure'
-          },
-        },
-      })
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-        const other = { ...selected, id: 'other-cancelled' }
-        store.setState({
-          activeProjectId: 'p2',
-          workspaceRoot: '/other',
-          threads: [other],
-          activeThreadId: other.id,
-        })
-        store.emit('workspace_changed')
-        assert.equal(detailReads, 1, 'the pending read still owns its request')
-        assert.ok(rejectRead)
-        rejectRead()
-        await new Promise((resolve) => setTimeout(resolve, 0))
-        assert.equal(detailReads, 2, 'retry on the new workspace without waiting for the TTL')
-        assert.equal(checkReads, blocked === 'checks' ? 2 : 1)
-        const icon = await waitForIcon(selected.title, 'open')
-        assert.equal(icon.classList.contains('has-ci-failure'), true)
-      } finally {
-        cleanup()
+    }
+  }
+
+  it('keeps resolved CI state when revalidation fails before the next workspace commits', async (t) => {
+    const selected = thread('cached-failure', 'Cached CI state', {
+      messages: [assistant('cached-failure-message', OPEN_URL)],
+    })
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/proj', name: 'Proj' },
+        { id: 'p2', path: '/other', name: 'Other' },
+      ],
+      activeProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [selected],
+      activeThreadId: selected.id,
+    })
+    let rejectRefresh: (() => void) | undefined
+    const refresh = new Promise<never>((_resolve, reject) => {
+      rejectRefresh = (): void => {
+        reject(new Error('Workspace selection changed'))
       }
     })
-  }
+    let reads = 0
+    const base = apiWithPrDetails(async () => {
+      reads += 1
+      return reads === 2 ? refresh : details(OPEN_NUMBER, 'OPEN')
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const cleanup = mountProjectsPane(host, store, {
+      ...base,
+      gh: { ...base.gh, prChecks: async () => 'failure' },
+    })
+    try {
+      assert.equal(
+        (await waitForIcon(selected.title, 'open')).classList.contains('has-ci-failure'),
+        true,
+      )
+      const expiredAt = Date.now() + 60_001
+      t.mock.method(Date, 'now', () => expiredAt)
+      store.emit('threads_changed')
+      assert.equal(reads, 2)
+      assert.ok(rejectRefresh)
+      rejectRefresh()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(
+        (await waitForIcon(selected.title, 'open')).classList.contains('has-ci-failure'),
+        true,
+      )
+      const other = { ...selected, id: 'other-cached-failure' }
+      store.setState({
+        activeProjectId: 'p2',
+        workspaceRoot: '/other',
+        threads: [other],
+        activeThreadId: other.id,
+      })
+      store.emit('workspace_changed')
+      assert.equal(reads, 3, 'a failed revalidation retries when the workspace commits')
+      assert.equal(
+        (await waitForIcon(selected.title, 'open')).classList.contains('has-ci-failure'),
+        true,
+      )
+    } finally {
+      cleanup()
+    }
+  })
 
   it('re-observes the current visible row when an older render request fails', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
