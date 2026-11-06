@@ -1,7 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
-import { getWorkspaceRoot } from '../services/workspace.ts'
 import {
   assertMainFrameSender,
   IpcValidationError,
@@ -56,8 +55,7 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
   ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
-  async function listDiscoveredHooks(): Promise<HooksListResult> {
-    const root = getWorkspaceRoot()
+  async function listDiscoveredHooks(root: string | null): Promise<HooksListResult> {
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude, copse] = await Promise.all([
       listCursorHooksForSources(opts),
@@ -69,7 +67,7 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
       warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   }
-  ipcMain.handle('hooks:list', () => listDiscoveredHooks())
+  ipcMain.handle('hooks:list', (event) => listDiscoveredHooks(senderProjectRoot(event.sender)))
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
     // G2 dry-run tester: run one discovered hook once against a synthetic
@@ -80,9 +78,10 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     // re-running discovery here, so a compromised renderer cannot run an
     // arbitrary command or turn the sandbox off.
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
+    const root = senderProjectRoot(event.sender)
+    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks(root)).hooks)
     if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
-    return dryRunHook(target, senderProjectRoot(event.sender))
+    return dryRunHook(target, root)
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.
