@@ -215,6 +215,13 @@ send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit
     const prompts = records.filter((record) => record?.kind === 'prompt')
     assert.equal(prompts.length, 2)
     assert.ok(prompts[1]?.text?.includes(NEW_GOAL))
+    // The reused session already holds its own first turn. Resending it would
+    // mean the transcript checkpoint never matched the rebuilt history, and
+    // every reused turn would replay the whole conversation.
+    assert.ok(
+      !prompts[1]?.text?.includes('OLD_AGENT_GOAL'),
+      'the reused agent must not be sent its own earlier turn again',
+    )
     assert.equal(localCalls, 2, 'the completed local write must not be repeated')
     await saveAppScreenshot('provider-handoff-current-request-recovered.png')
   })
