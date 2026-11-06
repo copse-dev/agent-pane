@@ -52712,7 +52712,8 @@ function mountRemoteComposer(root, store2, api2, transport) {
     }
     const connected = transport.connected();
     submitBtn.disabled = busy || !activeId || !connected;
-    submitBtn.textContent = busy ? "Sending\u2026" : thread?.status === "running" ? "Queue" : "Send";
+    const label = busy ? "Sending\u2026" : thread?.status === "running" ? "Queue" : "Send";
+    if (submitBtn.textContent !== label) submitBtn.textContent = label;
     stopBtn.hidden = thread?.status !== "running";
     stopBtn.disabled = busy || !connected;
     composer.el.setAttribute("aria-label", "Message");
