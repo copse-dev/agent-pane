@@ -800,7 +800,13 @@ export function formatGhRunList(entries: GhRunEntry[]): string {
       const where = `${run.headBranch ?? '?'} @ ${shortSha(run.headSha)}`
       const title = run.displayTitle ? ` — ${run.displayTitle}` : ''
       const url = run.url ? `\n  ${run.url}` : ''
-      return `${id} ${workflow}: ${outcome} (${where})${title}${url}`
+      const evidence = [
+        run.event ? `Event: ${run.event}` : '',
+        run.headSha ? `SHA: ${run.headSha}` : '',
+      ]
+        .filter(Boolean)
+        .join('; ')
+      return `${id} ${workflow}: ${outcome} (${where})${title}${url}${evidence ? `\n  ${evidence}` : ''}`
     })
     .join('\n')
 }
@@ -816,13 +822,16 @@ export function truncateLogTail(text: string, maxChars: number): string {
 export async function getGhRunListText(
   opts: {
     branch?: string | undefined
+    commit?: string | undefined
+    workflow?: string | undefined
+    event?: string | undefined
     limit: number
     failedOnly?: boolean | undefined
   },
   context: GhToolContext,
 ): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
-  const branch = opts.branch ?? (await currentGitBranch(context.root))
+  const branch = opts.branch ?? (opts.commit ? undefined : await currentGitBranch(context.root))
   const args = [
     'run',
     'list',
@@ -832,11 +841,15 @@ export async function getGhRunListText(
     'databaseId,workflowName,name,displayTitle,headBranch,headSha,conclusion,status,event,createdAt,url',
   ]
   if (branch) args.push('--branch', branch)
+  if (opts.commit) args.push('--commit', opts.commit)
+  if (opts.workflow) args.push('--workflow', opts.workflow)
+  if (opts.event) args.push('--event', opts.event)
   const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   let list = safeJsonParse(stdout.trim(), decodeWithSchema(ghRunListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   if (opts.failedOnly) list = list.filter((run) => isFailingConclusion(run.conclusion))
+  if (list.length === 0) return '(no matching workflow runs; CI status is unknown)'
   return formatGhRunList(list)
 }
 
