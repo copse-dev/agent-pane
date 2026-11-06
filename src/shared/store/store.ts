@@ -41,6 +41,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     threads: [],
     backgroundThreads: [],
     activeThreadId: null,
+    pendingSubmissionThreadIds: [],
     panelTab: 'file',
     openFile: null,
     activeDiff: null,
