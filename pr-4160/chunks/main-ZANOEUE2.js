@@ -7254,9 +7254,10 @@ function mountProjectsPane(root, store2, api2) {
           return;
         }
         prLifecycleCache.set(key, {
+          ...cached,
           state: cached?.state ?? "unknown",
-          ...cached?.conflicts !== void 0 ? { conflicts: cached.conflicts } : {},
-          fetchedAt: Date.now()
+          fetchedAt: Date.now(),
+          failed: true
         });
       }).finally(() => {
         if (generation !== prStatusGeneration) return;
@@ -8770,6 +8771,14 @@ function mountProjectsPane(root, store2, api2) {
     }),
     store2.on("workspace_changed", () => {
       prWorkspaceGeneration += 1;
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1
+          });
+        }
+      }
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
       render2();
