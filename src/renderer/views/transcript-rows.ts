@@ -139,8 +139,6 @@ export function planTranscriptRows(
   const surviving = rendered.filter((row) => wantedKeys.has(row.key))
   const stable = longestIncreasingRun(surviving.map((row) => wantedIndex.get(row.key) ?? 0))
   const stableKeys = new Set(stable.map((i) => surviving[i]?.key ?? ''))
-  // TEMPORARY DIAGNOSTIC (#4177): a reorder rebuilds, as before. Revert before review.
-  if (stable.length !== surviving.length) return { kind: 'rebuild', reason: 'duplicate-key' }
 
   const ops: TranscriptRowOp[] = []
   for (const row of rendered) {
