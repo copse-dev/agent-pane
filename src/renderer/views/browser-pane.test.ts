@@ -935,6 +935,55 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('opens a deferred canvas once setState alone moves to its project and thread', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Other Project Dashboard',
+        owner: { projectId: 'project-2', threadId: 'other-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Other</h1>',
+      })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      // No threads_changed or any other event: the scope selection alone flushes.
+      store.setState({ activeProjectId: 'project-2', activeThreadId: 'other-thread' })
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Other Project Dashboard',
+      )
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
   it('refreshes the open artefact tab in place instead of stacking duplicates', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {

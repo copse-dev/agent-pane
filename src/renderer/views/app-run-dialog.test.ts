@@ -106,6 +106,34 @@ describe('Run app picker', () => {
     assert.equal(launched, false)
     assert.equal(panel.element.querySelector<HTMLButtonElement>('.app-run-run')?.disabled, true)
   })
+  it('closes an open dialog when setState alone switches the workspace', async () => {
+    const api = createFakeApi()
+    api.appRun.discover = async (): Promise<AppRunDiscovery> => data
+    api.appRun.devices = async (): Promise<AppRunDiscovery['devices']> => []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project',
+      projects: [
+        { id: 'project', name: 'Project', path: '/repo' },
+        { id: 'other', name: 'Other', path: '/other' },
+      ],
+    })
+    openAppRunDialog(store, api)
+    cleanup.push(() => {
+      document.querySelector<HTMLDialogElement>('#app-run-dialog')?.close()
+    })
+    await settle()
+    assert.ok(document.querySelector('#app-run-dialog[open]'), 'the dialog opens')
+
+    // No store event: the selection alone must close the dialog.
+    store.setState({ activeProjectId: 'other', workspaceRoot: '/other' })
+    await settle()
+    assert.equal(
+      document.querySelectorAll('#app-run-dialog').length,
+      0,
+      'the workspace switch closes the dialog',
+    )
+  })
 })
 
 describe('Run app dialog thread scope', () => {

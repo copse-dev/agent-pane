@@ -1808,9 +1808,12 @@ export function mountBrowserPane(
       const cancel = (): void => {
         settle(false)
       }
-      const stop = store.on('workspace_changed', () => {
-        if (store.getState().activeProjectId) settle(true)
-      })
+      const stop = store.select(
+        (s) => s.activeProjectId !== null,
+        (active) => {
+          if (active) settle(true)
+        },
+      )
       pendingProjectWaits.add(cancel)
     })
   }
@@ -1925,7 +1928,6 @@ export function mountBrowserPane(
       onThreadMaybeChanged,
       sameItems,
     ),
-    store.on('workspace_changed', onThreadMaybeChanged),
     selectRightPanelMode(store, 'browser', onBrowserModeChange),
     store.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store.on('browser_url_requested', openRequestedBrowserUrl),

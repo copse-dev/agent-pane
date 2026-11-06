@@ -123,8 +123,7 @@ export function attachDiffState(
     // not seen staged before — re-read the authoritative one.
     hydrate()
   }
-  const unsubWorkspace = store.on('workspace_changed', syncDiffOwner)
-  const unsubThreads = store.select(
+  const unsubOwner = store.select(
     (s) => [s.activeProjectId, s.activeThreadId] as const,
     syncDiffOwner,
     sameItems,
@@ -135,7 +134,6 @@ export function attachDiffState(
   return () => {
     unsubShowDiff()
     unsubQueued()
-    unsubWorkspace()
-    unsubThreads()
+    unsubOwner()
   }
 }

@@ -914,9 +914,8 @@ export function mountTerminalsPane(
     }
   }
 
-  // Only re-scope when the active thread actually changed. The `activeThreadId`
-  // selection and `workspace_changed` (which also swaps the active thread when
-  // the project switches) both funnel here.
+  // Only re-scope when the active thread actually changed. A project switch
+  // swaps the active thread in the same write the selection below hears.
   function onThreadMaybeChanged(): void {
     const threadId = currentThreadId()
     if (threadId === lastThreadId) return
@@ -970,7 +969,6 @@ export function mountTerminalsPane(
     store.on('thread_checkout_changed', (threadId) => {
       void onThreadCheckoutChanged(threadId)
     }),
-    store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', (command, options) => {
       void runCommandInNewShell(command, options)
     }),
