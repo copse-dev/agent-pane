@@ -67,6 +67,7 @@ import {
   showsNativeMainWindows,
   getMainWindow,
   getMainWindowForWebContents,
+  getMainWindowNavigation,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
 import { readBootTheme } from './windows/boot-theme.ts'
@@ -834,6 +835,9 @@ app
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
       },
       (request, host) => agentDispatcher.dispatch(request, host),
+      // The project the receiving window shows; once it is gone nothing would
+      // start a draft, so every schedule runs headlessly (#3958).
+      () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
