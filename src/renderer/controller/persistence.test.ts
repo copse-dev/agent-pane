@@ -259,7 +259,7 @@ test('a window that does not own navigation persists projects but never navigati
   // A pane pop-out boots this renderer and restores the same project, but the
   // main process rejects `setNavigation` from any window that is not a
   // registered full main window. Sending it anyway rejected mid-`restoreProject`
-  // and took the `workspace_changed` emit with it, so the detached pane came up
+  // and skipped publishing the selection with it, so the detached pane came up
   // empty. Projects still save — only the navigation half is withheld.
   __resetPersistenceForTest()
   setNavigationOwnership(false)
