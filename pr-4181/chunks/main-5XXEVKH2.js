@@ -13440,55 +13440,33 @@ function planTranscriptRows(rendered, wanted) {
     if (wantedKeys.has(row2.key)) return { kind: "rebuild", reason: "duplicate-key" };
     wantedKeys.add(row2.key);
   }
-  const wantedIndex = new Map(wanted.map((row2, i2) => [row2.key, i2]));
-  const surviving = rendered.filter((row2) => wantedKeys.has(row2.key));
-  const stable = longestIncreasingRun(surviving.map((row2) => wantedIndex.get(row2.key) ?? 0));
-  const stableKeys = new Set(stable.map((i2) => surviving[i2]?.key ?? ""));
+  const survivingOrder = rendered.filter((row2) => wantedKeys.has(row2.key)).map((row2) => row2.key);
+  const wantedOrder = wanted.filter((row2) => renderedByKey.has(row2.key)).map((row2) => row2.key);
+  if (survivingOrder.some((key, i2) => key !== wantedOrder[i2])) {
+    return { kind: "rebuild", reason: "reordered" };
+  }
   const ops = [];
   for (const row2 of rendered) {
     if (!wantedKeys.has(row2.key)) ops.push({ kind: "remove", key: row2.key });
   }
-  const placeBefore = /* @__PURE__ */ new Map();
-  let nextStable = null;
+  const insertBefore = /* @__PURE__ */ new Map();
+  let nextExisting = null;
   for (let i2 = wanted.length - 1; i2 >= 0; i2--) {
     const row2 = wanted[i2];
     if (!row2) continue;
-    if (stableKeys.has(row2.key)) nextStable = row2.key;
-    else placeBefore.set(row2.key, nextStable);
+    if (renderedByKey.has(row2.key)) nextExisting = row2.key;
+    else insertBefore.set(row2.key, nextExisting);
   }
   let kept = 0;
   for (const row2 of wanted) {
     const previous = renderedByKey.get(row2.key);
-    const before = placeBefore.get(row2.key) ?? null;
     if (!previous) {
-      ops.push({ kind: "insert", key: row2.key, before });
-      continue;
-    }
-    if (!stableKeys.has(row2.key)) ops.push({ kind: "move", key: row2.key, before });
-    if (!sameSignature(previous.signature, row2.signature))
+      ops.push({ kind: "insert", key: row2.key, before: insertBefore.get(row2.key) ?? null });
+    } else if (!sameSignature(previous.signature, row2.signature)) {
       ops.push({ kind: "replace", key: row2.key });
-    else kept++;
+    } else kept++;
   }
   return { kind: "patch", ops, kept };
-}
-function longestIncreasingRun(values) {
-  const tails = [];
-  const previous = new Array(values.length).fill(-1);
-  for (let i2 = 0; i2 < values.length; i2++) {
-    const value = values[i2] ?? 0;
-    let lo = 0;
-    let hi = tails.length;
-    while (lo < hi) {
-      const mid = lo + hi >>> 1;
-      if ((values[tails[mid] ?? 0] ?? 0) < value) lo = mid + 1;
-      else hi = mid;
-    }
-    if (lo > 0) previous[i2] = tails[lo - 1] ?? -1;
-    tails[lo] = i2;
-  }
-  const run4 = [];
-  for (let i2 = tails.at(-1) ?? -1; i2 !== -1; i2 = previous[i2] ?? -1) run4.push(i2);
-  return run4.reverse();
 }
 function rowCardSelector(key) {
   const quoted = CSS.escape(key);
@@ -13511,13 +13489,6 @@ function removeTranscriptRow(list, key) {
   }
   return next;
 }
-function moveTranscriptRow(host, key, before) {
-  const { list } = host;
-  const element = transcriptRowElement(list, key);
-  const parts = [...element ? [element] : [], ...list.querySelectorAll(rowCardSelector(key))];
-  const target = before ?? host.tail();
-  for (const part of parts) list.insertBefore(part, target);
-}
 function applyTranscriptRowPlan(plan, host) {
   const { list } = host;
   for (const op of plan.ops) {
@@ -13526,12 +13497,6 @@ function applyTranscriptRowPlan(plan, host) {
     } else if (op.kind === "replace") {
       const next = removeTranscriptRow(list, op.key);
       host.insert(op.key, next);
-    } else if (op.kind === "move") {
-      moveTranscriptRow(
-        host,
-        op.key,
-        op.before === null ? null : transcriptRowElement(list, op.before)
-      );
     } else {
       host.insert(op.key, op.before === null ? null : transcriptRowElement(list, op.before));
     }
@@ -19527,7 +19492,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration;
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -20745,14 +20710,6 @@ function hydrationFailureEl() {
     el("span", { class: "conversation-hydrating-label" }, "Couldn\u2019t load the conversation.")
   );
 }
-function hydrationNoticeFor(thread) {
-  if (!needsHydration(thread)) return null;
-  if (hydrationFailed(thread.id)) return "failed";
-  return thread.status === "running" ? "running" : "loading";
-}
-function buildHydrationNotice(notice) {
-  return notice === "failed" ? hydrationFailureEl() : hydrationNoticeEl(notice === "running");
-}
 function mountConversation(root, store2, api2) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
@@ -21480,11 +21437,9 @@ function mountConversation(root, store2, api2) {
   function insertMessageRow(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
-    list.insertBefore(msgEl, before ?? rowsTail());
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
+    list.insertBefore(msgEl, before ?? tail);
     finalizeMessageEl(threadId, msgId);
-  }
-  function rowsTail() {
-    return activityBar.isConnected ? activityBar : firstTrailingCard();
   }
   function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
@@ -22067,27 +22022,9 @@ function mountConversation(root, store2, api2) {
       returningRows = /* @__PURE__ */ new Map();
     }
   }
-  const hydrationNotices = /* @__PURE__ */ new WeakMap();
-  function rememberHydrationNotice(element, notice) {
-    hydrationNotices.set(element, notice);
-    return element;
-  }
-  function hydrationNoticeChanges(thread) {
-    const current = list.querySelector(":scope > .conversation-hydrating");
-    return (current ? hydrationNotices.get(current) : null) !== hydrationNoticeFor(thread);
-  }
-  function syncHydrationNotice(thread) {
-    if (!hydrationNoticeChanges(thread)) return false;
-    const current = list.querySelector(":scope > .conversation-hydrating");
-    const wanted = hydrationNoticeFor(thread);
-    const next = wanted ? rememberHydrationNotice(buildHydrationNotice(wanted), wanted) : null;
-    if (current && next) current.replaceWith(next);
-    else if (current) current.remove();
-    else if (next) list.prepend(next);
-    return true;
-  }
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (!sameRowEnvironment(inputs, previous)) return false;
+    if (inputs.needsHydration || inputs.hydrationFailed) return false;
     const pending = backfillPending ? backfillPrefix : [];
     if (pending.some((id, i2) => thread.messages[i2]?.id !== id)) return false;
     const hidden = queuedMessageIds(thread);
@@ -22107,12 +22044,8 @@ function mountConversation(root, store2, api2) {
     });
     const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
-    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
-      return false;
-    }
     patchedRows.clear();
-    const noticeChanged = syncHydrationNotice(thread);
-    if (plan.ops.length > 0 || noticeChanged) {
+    if (plan.ops.length > 0) {
       const wasPinned = transcriptScroll.isPinnedToBottom();
       const prevScrollTop = list.scrollTop;
       const anchor = wasPinned ? null : captureReadingAnchor();
@@ -22120,8 +22053,7 @@ function mountConversation(root, store2, api2) {
         list,
         insert: (key, before) => {
           insertMessageRow(thread.id, key, before);
-        },
-        tail: rowsTail
+        }
       });
       syncModelLabels();
       syncUserActions();
@@ -22281,8 +22213,13 @@ function mountConversation(root, store2, api2) {
       }
       return;
     }
-    const notice = hydrationNoticeFor(thread);
-    if (notice) list.append(rememberHydrationNotice(buildHydrationNotice(notice), notice));
+    if (needsHydration(thread)) {
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id) ? hydrationFailureEl() : hydrationNoticeEl(thread.status === "running")
+      );
+    }
     const total2 = thread.messages.length;
     const initialStart = Math.max(0, total2 - INITIAL_RENDER_WINDOW);
     for (let i2 = initialStart; i2 < total2; i2++) {
