@@ -825,6 +825,14 @@
       "sha256": "b059551b3f47275efeb314ecd934c6478f416b3fc5acab72f9a50941e9e8d462",
       "bytes": 277629
     },
+    "background-command-outside-approval.png": {
+      "sha256": "51f70b488e43b3bb4f79bf1b70cf5fed9cdfc163a8fe9e2f649f04b5d83ecf77",
+      "bytes": 78007
+    },
+    "background-expected-block-approval.png": {
+      "sha256": "edeebe61332df27a58c2041060db57e0dd8b06551a6bf6ca193e6e582844af6a",
+      "bytes": 87379
+    },
     "background-task-completion-wake.png": {
       "sha256": "4b93c2c968174dda4f88af5035314c441d6bd957180efadac3479e0f4547f38f",
       "bytes": 346627
@@ -1238,8 +1246,8 @@
       "bytes": 230182
     },
     "command-phase-background-logs.png": {
-      "sha256": "75b654f24210c8800aba232fd1a0084073c1ab1ea129946ed6b2410e512ff7e3",
-      "bytes": 169839
+      "sha256": "68293e397ae0546e83cdc3e6d8b72c520777bf02bd84f7729a1e2c1a8f4389c6",
+      "bytes": 172478
     },
     "command-phase-not-started.png": {
       "sha256": "ef76e3a5ff6e2f75449cf895600f608695ed10fd5638363168bebef1f174d7dc",
@@ -2614,8 +2622,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "b95ce8d661e49e7e7b35826d0972b2950463d8a5d4b0a0f89b84a03db4cbc4c0",
+      "bytes": 336851
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
