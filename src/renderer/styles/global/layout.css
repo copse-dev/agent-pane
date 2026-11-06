@@ -1397,8 +1397,14 @@
 /* One header band for every right-panel list pane (Explorer, Terminal, Changes,
    PRs, Memories, Roadmap, Desktop, Browser) and one sentence-case title, so
    switching panel modes never moves the header edge or restyles its label.
-   `min-height` rather than `height`: headers that carry a toolbar (Roadmap's
-   search + actions, Changes' bulk actions) may wrap onto more rows.
+   `min-height` rather than `height`: a header that carries a toolbar (Roadmap's
+   search + actions, Changes' owner label + bulk actions) may need a second
+   row — but that is an opt-in on those two headers below, not the default.
+   A plain header (Pull requests, Memories, Explorer...) has nothing to wrap
+   onto a second row, so it stays nowrap: without it, a header narrow enough to
+   just barely not fit its trailing icons drops them under the title instead
+   of truncating or crowding, growing the band past its shared height and
+   misaligning it with the pane beside it.
    See docs/ui-taste.md "Pane headers share one band". */
 .pane-header {
   display: flex;
@@ -1410,12 +1416,30 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+/* Only these two headers carry enough toolbar content to legitimately need
+   the second row `.pane-header`'s own `min-height` makes room for. */
+.roadmap-list-header,
+.git-changes-header {
   flex-wrap: wrap;
 }
 .pane-header-title {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
+}
+/* nowrap alone only moves the break: short of room for "Pull requests" and its
+   three icons, the title wrapped onto two lines instead and the header still
+   outgrew the band (53px against 37px at a 170px column). Truncate it instead,
+   so the header keeps its single row down to the list's 120px minimum. Changes
+   wraps, so its title only truncates in a column narrower than the title. */
+.pr-list-host > .pane-header > .pane-header-title,
+.git-changes-header > .pane-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .git-changes-header-owner {
   font-size: var(--font-size-2xs);
@@ -1779,11 +1803,14 @@
   font-size: var(--font-size-sm);
   white-space: nowrap;
 }
+/* Colour, fill and the underline carry the selection; weight stays put. A
+   heavier label is wider at the same size, so bolding it on select nudged the
+   underline — and every tab after it — a few pixels sideways the moment it
+   was picked. process-manager.css's flat tabs match this same rule. */
 .pr-detail-section[aria-pressed='true'] {
   color: var(--text-primary);
   border-bottom-color: var(--accent);
   background: var(--bg-selected);
-  font-weight: 600;
 }
 .pr-section-count {
   display: inline-grid;
@@ -2129,6 +2156,29 @@ summary.pr-check-group-heading::-webkit-details-marker {
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-sm);
+}
+/* `.pr-viewer-description` and `.pr-comment-body` reuse the shared markdown
+   renderer (`.message-text`) but, unlike the transcript, are never inside a
+   `.msg-assistant` ancestor — the rule that hands chat prose `--font-prose`
+   (conversation.css) never reaches them, so PR body/comment text quietly
+   renders in the interface font instead of the reading face sitting right
+   above it in the same thread. Restate the font + colour step at this pane's
+   own size (--font-size-sm), not the chat column's --font-size-md. */
+.pr-viewer-description,
+.message-text.pr-comment-body {
+  font-family: var(--font-prose);
+  color: var(--text-prose);
+}
+/* The PR viewer is a side pane, not a page (docs/ui-taste.md "Shared
+   foundations": a side pane's titles are utility headings, not the display
+   tier). A markdown heading inside a PR body or comment is this pane's own
+   content, not the top of a page, so pull it back into the interface face
+   instead of the Averia serif that brand.css hands every h1-h3 app-wide. */
+.pr-viewer-description :is(h1, h2, h3),
+.message-text.pr-comment-body :is(h1, h2, h3) {
+  font-family: var(--font-family);
+  font-weight: 600;
+  letter-spacing: normal;
 }
 /* No file selected: the diff area is hidden, so the description takes the
    whole column instead of being capped at 28%. */
