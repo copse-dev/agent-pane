@@ -583,7 +583,7 @@ describe('conversation trailing cards (component)', () => {
   it('keeps the review report card, and the finding the reader opened, across chrome syncs', async () => {
     const { store, threadId, host } = await seed()
     setThreadReviewReport(store, threadId, reviewReport())
-    const report = qsRequired<HTMLElement>(
+    const report = qsRequired(
       document.body,
       '[data-review-report-card]:not([data-review-report-for])',
     )
@@ -599,7 +599,7 @@ describe('conversation trailing cards (component)', () => {
     store.emit('threads_changed')
     await delay(0)
 
-    const list = qsRequired<HTMLElement>(document.body, '.messages-list')
+    const list = qsRequired(document.body, '.messages-list')
     assert.ok(
       list.querySelector('[data-review-report-card]:not([data-review-report-for])') === report,
       'the report card was recreated',
@@ -618,13 +618,13 @@ describe('conversation trailing cards (component)', () => {
   it('redraws the report card when the report changes, without an event', async () => {
     const { store, threadId } = await seed()
     setThreadReviewReport(store, threadId, reviewReport())
-    const report = qsRequired<HTMLElement>(document.body, '[data-review-report-card]')
+    const report = qsRequired(document.body, '[data-review-report-card]')
     // Write the store directly: the card follows the state, not the event.
     patchThreadAnywhere(store, threadId, (thread) => ({
       ...thread,
       reviewReport: reviewReport({ status: 'error', error: 'Review declined.' }),
     }))
-    const redrawn = qsRequired<HTMLElement>(document.body, '[data-review-report-card]')
+    const redrawn = qsRequired(document.body, '[data-review-report-card]')
     assert.ok(redrawn !== report, 'a changed report must redraw its card')
     assert.equal(redrawn.getAttribute('data-status'), 'error')
     patchThreadAnywhere(store, threadId, (thread) => {
