@@ -21924,18 +21924,31 @@ function mountConversation(root, store2, api2) {
     if (!thread || !report) return;
     if (!reviewReportCard) {
       const threadId = thread.id;
+      const act = (action) => () => {
+        const before = getThreadById(store2, threadId)?.reviewReport;
+        action();
+        if (getThreadById(store2, threadId)?.reviewReport !== before) return;
+        if (reviewReportCard?.threadId !== threadId) return;
+        reviewReportCard.element.remove();
+        reviewReportCard = null;
+        syncReviewReportCard();
+      };
       const element2 = createReviewFindingsCardEl(report, {
-        onRetry: () => {
+        onRetry: act(() => {
           startReview(store2, api2, threadId);
-        },
-        onDismissCard: () => {
+        }),
+        onDismissCard: act(() => {
           dismissReviewReport(store2, threadId);
-        },
+        }),
         onDismissFinding: (finding) => {
-          dismissReviewFinding(store2, api2, threadId, finding);
+          act(() => {
+            dismissReviewFinding(store2, api2, threadId, finding);
+          })();
         },
         onRestoreFinding: (finding) => {
-          restoreReviewFinding(store2, api2, threadId, finding.id);
+          act(() => {
+            restoreReviewFinding(store2, api2, threadId, finding.id);
+          })();
         }
       });
       element2.setAttribute("data-review-report-card", "");
