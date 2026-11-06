@@ -27714,7 +27714,7 @@ function sidebarLastPromptAt(thread) {
   return void 0;
 }
 function isAutomationPendingStart(thread) {
-  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+  return thread.automationPendingStart === true || thread.automation !== void 0 && automationRunBlock(thread) === "pending-start";
 }
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
