@@ -212,33 +212,6 @@ function reviewReport(overrides: Partial<ThreadReviewReport> = {}): ThreadReview
   }
 }
 
-/** Every child of the list but the activity row, which outlives every rebuild. */
-function listRows(host: HTMLElement): string[] {
-  return Array.from(
-    host.querySelectorAll('.messages-list > :not(.agent-activity)'),
-    (child) => child.outerHTML,
-  )
-}
-
-/** Mount a second view on the same store and require it to draw the same rows. */
-async function assertMatchesFreshRebuild(
-  store: ReturnType<typeof createStore>,
-  live: HTMLElement,
-  label: string,
-): Promise<void> {
-  const fresh = document.createElement('div')
-  document.body.append(fresh)
-  const unmount = mountConversation(fresh, store, fakeApi({ count: 0 }))
-  await delay(0)
-  const reconciled = listRows(live)
-  const rebuilt = listRows(fresh)
-  unmount()
-  fresh.remove()
-  assert.equal(reconciled.length, rebuilt.length, `${label}: row count`)
-  const firstDifference = reconciled.findIndex((html, i) => html !== rebuilt[i])
-  assert.equal(firstDifference, -1, `${label}: row ${String(firstDifference)} differs`)
-}
-
 interface Seeded {
   store: ReturnType<typeof createStore>
   threadId: string
@@ -286,10 +259,11 @@ function row(id: string): HTMLElement | null {
 async function assertDrawnAsRebuilt(
   store: ReturnType<typeof createStore>,
   live: HTMLElement,
+  label = 'reconciled',
 ): Promise<void> {
   const fresh = document.createElement('div')
   document.body.append(fresh)
-  unmounts.push(mountConversation(fresh, store, fakeApi({ count: 0 })))
+  const unmount = mountConversation(fresh, store, fakeApi({ count: 0 }))
   await delay(0)
   // The activity row outlives every rebuild, so it is the view's, not a row.
   const rows = (host: HTMLElement): string[] =>
@@ -299,12 +273,15 @@ async function assertDrawnAsRebuilt(
     )
   const reconciled = rows(live)
   const rebuilt = rows(fresh)
-  assert.equal(reconciled.length, rebuilt.length)
+  // Unmounted so later changes in the same test reach only the live view.
+  unmount()
+  fresh.remove()
+  assert.equal(reconciled.length, rebuilt.length, `${label}: row count`)
   const firstDifference = reconciled.findIndex((html, i) => html !== rebuilt[i])
   assert.equal(
     firstDifference,
     -1,
-    `row ${String(firstDifference)} differs from a rebuild:\n${reconciled[firstDifference] ?? ''}\n${rebuilt[firstDifference] ?? ''}`,
+    `${label}: row ${String(firstDifference)} differs from a rebuild:\n${reconciled[firstDifference] ?? ''}\n${rebuilt[firstDifference] ?? ''}`,
   )
 }
 
@@ -937,7 +914,7 @@ describe('conversation keyed row reconcile: thread-wide inputs (component)', () 
     for (const { name, change } of threadWideChanges(store, threadId, started)) {
       change()
       await delay(0)
-      await assertMatchesFreshRebuild(store, host, name)
+      await assertDrawnAsRebuilt(store, host, name)
     }
   })
 })
@@ -975,7 +952,27 @@ describe('conversation trailing cards (component)', () => {
     )
     // A fresh view draws the finding closed; close it to compare the rest.
     finding.open = false
-    await assertMatchesFreshRebuild(store, host, 'kept')
+    await assertDrawnAsRebuilt(store, host, 'kept')
+  })
+
+  it('leaves Retry usable when a retry changes nothing', async () => {
+    // A kept card is drawn again only when its report changes, but its buttons
+    // disable themselves on click. A Retry while a turn is running is a no-op
+    // (startReview waits for the turn), so it must not leave Retry disabled.
+    const { store, threadId } = await seed()
+    setThreadReviewReport(store, threadId, reviewReport({ status: 'error', error: 'Declined.' }))
+    setThreadStatus(store, threadId, 'running')
+    store.emit('threads_changed')
+    const retry = (): HTMLButtonElement =>
+      qsRequired<HTMLButtonElement>(
+        document.body,
+        '[data-review-report-card]:not([data-review-report-for]) .card-retry-button',
+      )
+    retry().click()
+    assert.equal(retry().disabled, false, 'Retry stayed disabled after a no-op retry')
+    setThreadStatus(store, threadId, 'idle')
+    store.emit('threads_changed')
+    assert.equal(retry().disabled, false, 'Retry is disabled once the turn ends')
   })
 
   it('redraws the report card when the report changes, without an event', async () => {
