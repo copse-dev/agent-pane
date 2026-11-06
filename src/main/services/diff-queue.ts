@@ -2,14 +2,13 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, sep } from 'node:path'
-import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
+import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
-import { senderProjectId } from '../ipc/sender-project-root.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
 import {
@@ -1094,7 +1093,16 @@ export function parseDiffQueueOwner(
   return { projectId, threadId }
 }
 
-export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
+/**
+ * `senderProjectId` names the project the asking window shows. It is injected
+ * by the Electron entry point (`senderProjectId` in `ipc/sender-project-root`)
+ * so the headless agent construction reaching this module stays Electron-free.
+ */
+export function initDiffQueue(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  senderProjectId: (sender: WebContents) => string | null,
+): void {
   function parseOwner(
     event: IpcMainInvokeEvent,
     projectIdArg: unknown,

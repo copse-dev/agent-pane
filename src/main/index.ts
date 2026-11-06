@@ -116,6 +116,7 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
+import { senderProjectId } from './ipc/sender-project-root.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
@@ -748,7 +749,7 @@ app
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
     initSshWorkspaceIpc(win)
-    initDiffQueue(win, ipcMain)
+    initDiffQueue(win, ipcMain, senderProjectId)
     initFsWatcher(win)
     // Remote watcher install prompts route through the real approval dialog.
     // Injected (rather than imported by the ssh-workspace module) for the same
