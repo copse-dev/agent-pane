@@ -88,6 +88,7 @@ import {
   addTrustedShellCommand,
   offerableTrustedCommand,
   routeShellCommand,
+  type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
@@ -221,6 +222,12 @@ export interface ShellCommandPermissionOptions {
   outwardEffects?: 'defer' | 'deny'
   /** Explicit per-tool policy for an agent-originated run_shell/run_background call. */
   toolPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>
+  /**
+   * The native shell tool that will run the command (default `run_shell`).
+   * Trusted-command routing honours that tool's own per-tool setting, and the
+   * runner routes on the same tool, so the gate must judge the same boundary.
+   */
+  toolName?: ShellRoutingTool
 }
 
 export interface TerminalPermissionOptions {
@@ -1145,6 +1152,7 @@ async function checkShellPermission(
   originalCommand?: string,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+  toolName: ShellRoutingTool = 'run_shell',
 ): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) {
@@ -1162,6 +1170,7 @@ async function checkShellPermission(
     ...(originalCommand !== undefined ? { originalCommand } : {}),
     ...(signal !== undefined ? { signal } : {}),
     ...(explicitPolicy !== undefined ? { toolPolicy: explicitPolicy } : {}),
+    toolName,
   })
 }
 
@@ -1387,6 +1396,8 @@ export async function ensureShellCommandPermitted(
   if (opts.signal?.aborted) return false
   refuseCheckoutDetachingCommand(command, opts)
   const forceAsk = opts.toolPolicy === 'ask'
+  // Route on the tool that will run the command, exactly as its runner does.
+  const routingTool = opts.toolName ?? 'run_shell'
   const runThread = getActiveRunThread()
   // Plain reads of the chat store ask for the narrow conversation permission
   // before any outside-project grant or auto-run route can cover them.
@@ -1477,7 +1488,7 @@ export async function ensureShellCommandPermitted(
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
   if (!guardedYolo && !forceAsk) {
-    const routing = routeShellCommand(command, currentAgentRoots())
+    const routing = routeShellCommand(command, currentAgentRoots(), routingTool)
     if (routing.outcome === 'allow') {
       recordDecision({
         kind: 'shell',
@@ -1553,7 +1564,7 @@ export async function ensureShellCommandPermitted(
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
     (guardedYolo &&
       sandboxEnabled &&
-      routeShellCommand(command, currentAgentRoots()).outcome === 'allow')
+      routeShellCommand(command, currentAgentRoots(), routingTool).outcome === 'allow')
   const auditGuardedYolo = (
     userResponse: 'approved' | 'declined' | 'not-required',
     promptedBy?: string[],
@@ -1879,7 +1890,10 @@ async function checkBackgroundProcessPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const command = backgroundCommandFromArgs(args)
-  if (command && !(await checkShellPermission(args, originalCommand, signal, explicitPolicy))) {
+  if (
+    command &&
+    !(await checkShellPermission(args, originalCommand, signal, explicitPolicy, 'run_background'))
+  ) {
     return false
   }
   if (!command && explicitPolicy === 'ask') {

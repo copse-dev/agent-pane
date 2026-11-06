@@ -12,6 +12,12 @@ import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { ensureToolPermitted } from '../security/permission-gate.ts'
 import { TRUSTED_COMMANDS_SETTING } from '../security/command-routing-config.ts'
+import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
+import {
+  activateGuardedYoloForRun,
+  armGuardedYolo,
+  disableGuardedYolo,
+} from '../security/guarded-yolo.ts'
 import { clearReadOutsideProjectGrants } from '../security/read-outside-grant.ts'
 import { copseToolPermissionId } from '../security/tool-permissions.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
@@ -239,6 +245,56 @@ describe('background commands honour shell approval routing', () => {
     assert.equal(await start('printf blocked'), null)
     assert.equal(prompts.length, 0)
     assert.equal(overlays.length, 0)
+  })
+
+  // The gate and the runner must route on the same tool's setting. Always ask on
+  // run_shell alone must neither hide a background escape from the gate's
+  // trusted-command record nor from Guarded YOLO's outside-sandbox checks.
+  it("routes the gate on run_background's own setting when only run_shell is Always ask", async () => {
+    await setSetting(TRUSTED_COMMANDS_SETTING, ['printf'])
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('run_shell')]: 'ask',
+    })
+    const recorded: RecordedDecision[] = []
+    const info = await runWithDecisionRecorder(
+      (decision) => recorded.push(decision),
+      () => start('printf trusted'),
+    )
+    assert.ok(info)
+    assert.equal(info.unsandboxed, true)
+    assert.equal(prompts.length, 0)
+    assert.equal(overlays.length, 0)
+    const trusted = recorded.filter((decision) => decision.line.source === 'trusted-command')
+    assert.equal(trusted.length, 1, 'the gate records the trusted route the runner takes')
+    assert.equal(trusted[0]?.line.scope, 'external')
+  })
+
+  it('audits a Guarded YOLO background escape at the boundary the runner uses', async () => {
+    await setSetting(TRUSTED_COMMANDS_SETTING, ['printf'])
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('run_shell')]: 'ask',
+    })
+    armGuardedYolo(OWNER.threadId)
+    assert.equal(activateGuardedYoloForRun(OWNER.threadId), true)
+    const recorded: RecordedDecision[] = []
+    try {
+      const info = await runWithDecisionRecorder(
+        (decision) => recorded.push(decision),
+        () => start('printf trusted'),
+      )
+      assert.ok(info)
+      assert.equal(info.unsandboxed, true)
+      assert.equal(prompts.length, 0)
+    } finally {
+      disableGuardedYolo(OWNER.threadId)
+    }
+    const audits = recorded.filter((decision) => decision.line.cause === 'shell-guarded-yolo-harm')
+    assert.equal(audits.length, 1)
+    assert.equal(
+      audits[0]?.line.scope,
+      'external',
+      'an unsandboxed start is not audited as contained',
+    )
   })
 
   it('keeps the contained boundary shown by Always ask even for a trusted binary', async () => {

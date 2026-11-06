@@ -22,7 +22,9 @@ export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
 // getSetting validates+returns a fresh array each call, so key the cache on the
 // serialized value rather than reference identity.
 let cache: { key: string; set: Set<string> } | null = null
-type ShellRoutingTool = 'run_shell' | 'run_background'
+
+/** The native shell tools whose own per-tool setting decides trusted-command routing. */
+export type ShellRoutingTool = 'run_shell' | 'run_background'
 
 function trustedCommandSet(): Set<string> {
   const list = sanitizeTrustedCommands(getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []))
@@ -52,9 +54,12 @@ export function routeShellCommand(
 ): CommandRouting {
   // The gate suppresses trusted auto-approval for Always ask. The runner must
   // suppress the same outside routing, or its contained prompt would authorize
-  // a different execution boundary. Each shell tool owns its own override.
+  // a different execution boundary. Each shell tool owns its own override, so
+  // the gate and the runner must both pass the tool actually being run.
   // These two fixed native ids need no MCP identity or custom-tool resolution.
-  // Keep this settings-only path independent of the full tool registry.
+  // Keep this settings-only path independent of the full tool registry:
+  // tool-permissions.ts reaches tool-registry.ts, and this module is part of
+  // the preload/renderer type graph through background-process.ts.
   const toolPolicy = getSetting<Record<string, ToolPermissionPolicy>>(
     'toolPermissionOverrides',
     {},
