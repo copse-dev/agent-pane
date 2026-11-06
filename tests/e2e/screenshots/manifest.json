@@ -1189,6 +1189,10 @@
       "sha256": "ffc8266797816721a2518dd2c1bb246848855bf1fbc735a66adaf4ba26c9b765",
       "bytes": 15593
     },
+    "claude-org-check-auth-error.png": {
+      "sha256": "b9bf6e2b1051c711a6a524c3ea3ec1de65ede564b3af9e4a0b452ec729845bb0",
+      "bytes": 293358
+    },
     "claude-sign-in.png": {
       "sha256": "b4ad973c94ae2cc5888034cbc04796e930651a9689557133afbc88d4c70e4388",
       "bytes": 91375

@@ -27,6 +27,8 @@ describe('settings usage panel plan errors', () => {
   })
 
   after(async () => {
+    // Release a held fixture even when a progress assertion/capture failed.
+    if (fakeClaudeDir) writeFileSync(join(fakeClaudeDir, 'ready'), '')
     writeFileSync(e2eEnvFile, initialEnv, 'utf8')
     resetUserData()
     await browser.reloadSession()
@@ -112,9 +114,26 @@ describe('settings usage panel plan errors', () => {
     if (process.platform === 'win32') return
     fakeClaudeDir = mkdtempSync(join(tmpdir(), 'copse-claude-login-'))
     const fakeClaude = join(fakeClaudeDir, 'claude')
+    writeFileSync(join(fakeClaudeDir, 'mode'), 'pending')
     writeFileSync(
       fakeClaude,
-      '#!/bin/sh\nif [ "$2" = "login" ]; then while [ ! -f "$(dirname "$0")/ready" ]; do sleep 0.1; done; exit 0; fi\nif [ "$2" = "status" ]; then echo \'{"authMethod":"claude.ai"}\'; exit 0; fi\nexit 1\n',
+      `#!${process.execPath}
+const fs = require('node:fs')
+const path = require('node:path')
+const directory = path.dirname(process.argv[1])
+const mode = fs.readFileSync(path.join(directory, 'mode'), 'utf8')
+if (process.argv[3] === 'login') {
+  if (mode === 'nonzero') process.exit(19)
+  if (mode === 'cancel') process.kill(process.pid, 'SIGTERM')
+  if (mode === 'pending') {
+    const timer = setInterval(() => {
+      if (fs.existsSync(path.join(directory, 'ready'))) clearInterval(timer)
+    }, 25)
+  }
+} else if (process.argv[3] === 'status') {
+  process.stdout.write(JSON.stringify({ authMethod: mode === 'api-key' ? 'api_key' : 'claude.ai' }))
+} else process.exit(1)
+`,
     )
     chmodSync(fakeClaude, 0o755)
     const env = readFixtureJsonObject(e2eEnvFile)
@@ -133,5 +152,44 @@ describe('settings usage panel plan errors', () => {
     await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-progress.png')
     writeFileSync(join(fakeClaudeDir, 'ready'), '')
     await expect(status).toHaveText('Claude sign-in complete.')
+
+    // The executable boundary owns these outcomes. Keep the real usage IPC,
+    // renderer handler and Settings dialog in the failure/retry loop.
+    for (const [mode, message] of [
+      [
+        'nonzero',
+        'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+      ],
+      [
+        'cancel',
+        'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+      ],
+      ['api-key', 'Claude is using an API key or token, not a Claude subscription sign-in.'],
+    ] as const) {
+      writeFileSync(join(fakeClaudeDir, 'mode'), mode)
+      const button = $('.usage-plan-provider[data-provider="claude"] .usage-plan-signin-btn')
+      await expect(button).toBeEnabled()
+      await button.click()
+      await expect(status).toHaveText(message)
+      await expect(button).toBeEnabled()
+      await expect($('#settings-dialog')).toBeDisplayed()
+      if (mode !== 'cancel') {
+        await prepareE2eScreenshot()
+        if (mode === 'nonzero') {
+          await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-failed.png')
+        } else {
+          await saveElementScreenshot(
+            '#settings-dialog',
+            'settings-usage-claude-signin-not-subscription.png',
+          )
+        }
+      }
+      writeFileSync(join(fakeClaudeDir, 'mode'), 'success')
+      await button.click()
+      await expect(status).toHaveText('Claude sign-in complete.')
+      await expect($('.usage-plan-signin-btn')).toBeEnabled()
+    }
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-retry.png')
   })
 })
