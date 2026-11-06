@@ -1726,7 +1726,17 @@ export const ACP_TURN_PROMPT_NOTE =
   'reporting validation as complete. run_background does not accept ' +
   'expects_sandbox_block or support outside-sandbox execution. If a command ' +
   'needs that approval path, use copse run_shell with an explicit timeout_ms ' +
-  '(up to 1800000), setting expects_sandbox_block=true when required. Use ' +
+  '(up to 1800000), setting expects_sandbox_block=true when required. Add ' +
+  'yield_after_ms=1000 to transfer the same approved process to supervision ' +
+  'after a short foreground wait; timeout_ms remains its total deadline. ' +
+  'run_shell yield example: ' +
+  '{"command":"pnpm test","timeout_ms":1800000,"yield_after_ms":1000}' +
+  '\nSend a yielding call as the only tool in its response. A still-running ' +
+  'receipt is not success: end the turn and wait for completion ' +
+  'before dependent work. Inspect the task logs and exit status when woken; do not ' +
+  'poll or rerun it. Yielding requires enabled Background tasks and cannot bypass ' +
+  'its explicit Always ask or Blocked setting; if refused, use an ordinary finite ' +
+  'foreground call or the background tool through its own approval path. Use ' +
   'tool deadlines instead of assuming a shell timeout executable is installed ' +
   '(macOS does not provide it by default).' +
   '\n\n' +
