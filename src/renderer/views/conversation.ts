@@ -4328,18 +4328,37 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!thread || !report) return
     if (!reviewReportCard) {
       const threadId = thread.id
+      // Each button disables itself on click and relied on the card being
+      // drawn again. A kept card is drawn again only when the report changes,
+      // so an action that left the report as it was (a Retry while a turn is
+      // running) draws the card afresh here, with its buttons enabled.
+      const act =
+        (action: () => void): (() => void) =>
+        () => {
+          const before = getThreadById(store, threadId)?.reviewReport
+          action()
+          if (getThreadById(store, threadId)?.reviewReport !== before) return
+          if (reviewReportCard?.threadId !== threadId) return
+          reviewReportCard.element.remove()
+          reviewReportCard = null
+          syncReviewReportCard()
+        }
       const element = createReviewFindingsCardEl(report, {
-        onRetry: () => {
+        onRetry: act(() => {
           startReview(store, api, threadId)
-        },
-        onDismissCard: () => {
+        }),
+        onDismissCard: act(() => {
           dismissReviewReport(store, threadId)
-        },
+        }),
         onDismissFinding: (finding) => {
-          dismissReviewFinding(store, api, threadId, finding)
+          act(() => {
+            dismissReviewFinding(store, api, threadId, finding)
+          })()
         },
         onRestoreFinding: (finding) => {
-          restoreReviewFinding(store, api, threadId, finding.id)
+          act(() => {
+            restoreReviewFinding(store, api, threadId, finding.id)
+          })()
         },
       })
       element.setAttribute('data-review-report-card', '')
@@ -4463,9 +4482,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   /**
    * Patch the rendered rows to match `thread` instead of rebuilding the list
    * (see transcript-rows.ts). Returns false, having touched nothing, when the
-   * change is one a whole rebuild must handle: another thread, the hydration
-   * notice is involved, a message the backfill has yet to render changed, or
-   * the list holds a key twice.
+   * change is one a whole rebuild must handle: another thread, a transcript
+   * finishing its load, a message the backfill has yet to render added or
+   * removed, or the list holding a key twice. Thread-wide facts a card draws
+   * are signed on its row, and a loading transcript's notice is patched in
+   * place (syncHydrationNotice).
    *
    * While older history is still backfilling, the plan covers the rows below
    * the part the backfill has yet to render; the backfill goes on rendering
