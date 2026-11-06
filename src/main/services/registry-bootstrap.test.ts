@@ -50,8 +50,27 @@ import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-developm
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
 import { installInMemorySecretCipher } from './storage/secret-cipher.test-support.ts'
+import { normalizeOpenAIToolSchema } from '@copse/llm/normalize-tool-schema.ts'
 
 installInMemorySecretCipher()
+
+it('exports object parameter envelopes for native tools sent to compatible local servers', () => {
+  const registry = createRegistry()
+  const tools = registry.toLLMTools()
+  const invalid = tools
+    .filter((tool) => normalizeOpenAIToolSchema(tool.parameters)['type'] !== 'object')
+    .map((tool) => tool.name)
+  assert.deepEqual(invalid, [], 'a single invalid schema prevents every tool from being used')
+  registry.validateArgs('isolated_copse', { action: 'start' })
+  registry.validateArgs('isolated_copse', { action: 'screenshot' })
+  registry.validateArgs('isolated_copse', { action: 'click', x: 10, y: 20, button: 1 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
+  })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+  })
+})
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
