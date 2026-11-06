@@ -14,6 +14,7 @@ import {
 } from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
 import { readOutsideProjectGrantTargets } from './read-outside-project.ts'
+import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 
 export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
 
@@ -21,6 +22,9 @@ export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
 // getSetting validates+returns a fresh array each call, so key the cache on the
 // serialized value rather than reference identity.
 let cache: { key: string; set: Set<string> } | null = null
+
+/** The native shell tools whose own per-tool setting decides trusted-command routing. */
+export type ShellRoutingTool = 'run_shell' | 'run_background'
 
 function trustedCommandSet(): Set<string> {
   const list = sanitizeTrustedCommands(getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []))
@@ -43,7 +47,26 @@ function trustedCommandSet(): Set<string> {
  * same roots the gate uses, so a worktree or background thread is not judged
  * against whichever checkout the window happens to show.
  */
-export function routeShellCommand(command: string, roots: AgentRoots): CommandRouting {
+export function routeShellCommand(
+  command: string,
+  roots: AgentRoots,
+  toolName: ShellRoutingTool = 'run_shell',
+): CommandRouting {
+  // The gate suppresses trusted auto-approval for Always ask. The runner must
+  // suppress the same outside routing, or its contained prompt would authorize
+  // a different execution boundary. Each shell tool owns its own override, so
+  // the gate and the runner must both pass the tool actually being run.
+  // These two fixed native ids need no MCP identity or custom-tool resolution.
+  // Keep this settings-only path independent of the full tool registry:
+  // tool-permissions.ts reaches tool-registry.ts, and this module is part of
+  // the preload/renderer type graph through background-process.ts.
+  const toolPolicy = getSetting<Record<string, ToolPermissionPolicy>>(
+    'toolPermissionOverrides',
+    {},
+  )[`copse:${toolName}`]
+  if (toolPolicy === 'ask') {
+    return { outcome: 'defer', reasons: ['tool permission requires approval for every invocation'] }
+  }
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) {
     return { outcome: 'defer', reasons: ['auto-run disabled'] }
   }
@@ -59,8 +82,12 @@ export function routeShellCommand(command: string, roots: AgentRoots): CommandRo
  * that, for a command the static heuristic flags as needing network / outside
  * access. Single source of truth for run_shell and todo verification.
  */
-export function shellRunsOutsideSandbox(command: string, roots: AgentRoots): boolean {
-  if (routeShellCommand(command, roots).outcome === 'allow') return true
+export function shellRunsOutsideSandbox(
+  command: string,
+  roots: AgentRoots,
+  toolName: ShellRoutingTool = 'run_shell',
+): boolean {
+  if (routeShellCommand(command, roots, toolName).outcome === 'allow') return true
   return shellRequiresOutsideSandbox(command, roots.executionRoot, isProjectSandboxEnabled())
 }
 
@@ -87,9 +114,10 @@ export function shellReadGrantTargets(
   command: string,
   roots: AgentRoots,
   executionRoot: string | null,
+  toolName: ShellRoutingTool = 'run_shell',
 ): string[] | null {
   if (!isProjectSandboxEnabled()) return null
-  if (routeShellCommand(command, roots).outcome === 'allow') return null
+  if (routeShellCommand(command, roots, toolName).outcome === 'allow') return null
   return readOutsideProjectGrantTargets(command, executionRoot)
 }
 
