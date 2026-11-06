@@ -833,6 +833,14 @@
       "sha256": "b059551b3f47275efeb314ecd934c6478f416b3fc5acab72f9a50941e9e8d462",
       "bytes": 277629
     },
+    "background-command-outside-approval.png": {
+      "sha256": "51f70b488e43b3bb4f79bf1b70cf5fed9cdfc163a8fe9e2f649f04b5d83ecf77",
+      "bytes": 78007
+    },
+    "background-expected-block-approval.png": {
+      "sha256": "edeebe61332df27a58c2041060db57e0dd8b06551a6bf6ca193e6e582844af6a",
+      "bytes": 87379
+    },
     "background-task-completion-wake.png": {
       "sha256": "4b93c2c968174dda4f88af5035314c441d6bd957180efadac3479e0f4547f38f",
       "bytes": 346627
@@ -872,6 +880,10 @@
     "benchmark-trial.png": {
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
+    },
+    "branch-ci-status-evidence.png": {
+      "sha256": "7856473097339ef6bd4820d86e3d2e72336e96314ce8420a43f74d57965877f1",
+      "bytes": 88769
     },
     "bridged-thread-proposals.png": {
       "sha256": "3b264fa1cd26bd7a3f25b47db0cde2f1af8b38f5440bdf087af3d5b189ed319f",
@@ -1250,8 +1262,8 @@
       "bytes": 230182
     },
     "command-phase-background-logs.png": {
-      "sha256": "75b654f24210c8800aba232fd1a0084073c1ab1ea129946ed6b2410e512ff7e3",
-      "bytes": 169839
+      "sha256": "68293e397ae0546e83cdc3e6d8b72c520777bf02bd84f7729a1e2c1a8f4389c6",
+      "bytes": 172478
     },
     "command-phase-not-started.png": {
       "sha256": "ef76e3a5ff6e2f75449cf895600f608695ed10fd5638363168bebef1f174d7dc",
@@ -1689,6 +1701,10 @@
       "sha256": "3747bb819addbb1c25c628ef26c297f3fc5bd15fec8363da974eee0e0e0574bc",
       "bytes": 133913
     },
+    "exact-ci-run-evidence.png": {
+      "sha256": "5b4a701df0cd9b1d62ed5656b43d0a2a713d27b6089763cae07419e407911181",
+      "bytes": 48231
+    },
     "explainer-drawing-1-player.png": {
       "sha256": "30a3d9e98f4e3910be17ad0b43891db60dbbb98aac91150bd88fbcac821dc01e",
       "bytes": 97147
@@ -2074,8 +2090,8 @@
       "bytes": 100563
     },
     "github-write-approval-create-dialog.png": {
-      "sha256": "85d19c39fdc2ee92a68b4b4ad3e58b7dacee017df51bd6e6cc16818f2810bd95",
-      "bytes": 82247
+      "sha256": "058aebc8c770e25549f09458a52761ef3ad652d9a502cc61b45aeae2ed3a60f8",
+      "bytes": 92207
     },
     "github-write-approval-dialog.png": {
       "sha256": "5d3d3a89dc6917c39a8731fe78aa4c4bd8ed3c40751bdf12994dc68c52bd158a",
@@ -2134,8 +2150,8 @@
       "bytes": 347558
     },
     "host-read-tool-cards.png": {
-      "sha256": "55a81e65e9f0e4de112db27b1d7fbc84b7110f11dfd53be15fbfabc1aeff3d71",
-      "bytes": 308101
+      "sha256": "2871fa69f6a9c55dea2a8e8e0eea2a3304d9ea3ef51a301150d63fecea74d09b",
+      "bytes": 365016
     },
     "image-description-draft.png": {
       "sha256": "759faae8e2132c12e7d04c2b6598114a641953af2ea8bf8e5df9d792f1a1c4f6",
@@ -2626,8 +2642,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "89291d549316e3d1d63df970e0c832b5a7152ad679f8fb164ef598d52d17a237",
+      "bytes": 336849
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
@@ -3257,6 +3273,18 @@
       "sha256": "45d278df556354446d3c45b18711c5f95e98ae83075fd71fdf90c24a9db9783f",
       "bytes": 25254
     },
+    "project-port-grant-asks-again.png": {
+      "sha256": "6796a3c16b97ca2f7936021a06de90293143a0e21b2c91492080a20145dcce36",
+      "bytes": 332248
+    },
+    "project-port-grant-before-revoke.png": {
+      "sha256": "156b5fc634e83960a8b63aed6f40d3e94755f188d7a3ce956ff65ce51d4eaa04",
+      "bytes": 371961
+    },
+    "project-port-grant-revoked.png": {
+      "sha256": "7d132306df0f0e6b5049bb972f719f1c76da431afea70e1ef9b850534820fa0e",
+      "bytes": 363362
+    },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
       "bytes": 84841
@@ -3356,6 +3384,18 @@
     "proposed-thread-approval-over-source.png": {
       "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
       "bytes": 304084
+    },
+    "provider-handoff-cancel-before-dispatch-recovered.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
+    },
+    "provider-handoff-current-request-recovered.png": {
+      "sha256": "0824e33e8adc2c272b1db7bbf220d752600410388f840b46aaa2a2779176d619",
+      "bytes": 392809
+    },
+    "provider-handoff-final-state.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
     },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
@@ -3921,6 +3961,10 @@
       "sha256": "1a5a06e1753f8a9d6f9da7e7c1c6c61c6b0a599715896e679d94115f9383a836",
       "bytes": 284589
     },
+    "settings-ci-investigator-plugin.png": {
+      "sha256": "88a69be60c46e58f2840acb81ff29e94865b94e1facf0f7bcd27b5b3c953db7b",
+      "bytes": 39036
+    },
     "settings-classifier-permission-failure-detail.png": {
       "sha256": "3b49d2fe90dc3adfb41f44ffaafdb59707629b09270598413909657985a33a90",
       "bytes": 54825
@@ -4170,8 +4214,8 @@
       "bytes": 259882
     },
     "settings-gui-app-permission.png": {
-      "sha256": "e48d293e2d852e22a62300f8427750ecc5b5da1c40bc7c85f6abbc03cb69c017",
-      "bytes": 380754
+      "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
+      "bytes": 376843
     },
     "settings-load-failed.png": {
       "sha256": "84e3c4d4071fd5f69e7303f40566a422c3ce542d717c59ba576c8b6bb84c6e88",
@@ -5668,6 +5712,26 @@
     "two-step-stop-armed.png": {
       "sha256": "7552ae35f0240f75bf6d3a6b65fa7b5ce5dad28aaabfcb5cc319abfd934290fb",
       "bytes": 23920
+    },
+    "ui-consistency-pr-header-narrow.png": {
+      "sha256": "be9496b298d52e69c3ecb12ba75ab9dadcd550c1daa9c0106d0874d3dd8b8200",
+      "bytes": 138350
+    },
+    "ui-consistency-pr-prose.png": {
+      "sha256": "76a317c68ad5ae2c5ead45ea7eaa1ce4af74340272adc126185efcf0c08aa598",
+      "bytes": 137356
+    },
+    "ui-consistency-pr-tabs.png": {
+      "sha256": "8d695ae2b3fe66f14e173c548da55139fc4e094dec04a99bef39b60c3a6b7191",
+      "bytes": 8076
+    },
+    "ui-consistency-process-manager-tabs.png": {
+      "sha256": "39645fb7e93b18136bd01d1a06cb43ff599552db3de561afa6be982c6605de2f",
+      "bytes": 5804
+    },
+    "ui-consistency-superseded-model.png": {
+      "sha256": "9c7f6cd39d9db5c54eec0554bd6ec6f1792b318753d3a8f72dffa9c03c987c07",
+      "bytes": 43367
     },
     "ui-kit-confirm-dialog-light.png": {
       "sha256": "22d03114390c6b6e0481ffd02d3420275070fc20a6b2acfdbc94a24462cb210b",

@@ -149,8 +149,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
-  // Plugins is the atomic master switch. Registration also requires `gh` (the
-  // entry tool and its deep-log gh_run_* helpers shell out to it), so the sync
+  // Plugins is the atomic master switch. Registration also requires `gh`, so the sync
   // ANDs plugin enablement with `gh` availability. Live toggles route through
   // {@link syncCiInvestigatorTools} on `plugins:set-enabled`.
   syncCiInvestigatorTools(registry)
@@ -429,6 +428,8 @@ export function syncGhTools(registry: ToolRegistry): void {
     if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
     if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
     if (!registry.has('gh_api_read')) registry.register(ghApiReadTool)
+    if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
+    if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
     if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
     if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
     if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
@@ -437,6 +438,8 @@ export function syncGhTools(registry: ToolRegistry): void {
     registry.unregister('gh_pr_view')
     registry.unregister('gh_pr_files')
     registry.unregister('gh_api_read')
+    registry.unregister('gh_run_list')
+    registry.unregister('gh_run_view')
     registry.unregister('get_ci_status')
     registry.unregister('wait_for_ci_checks')
     registry.unregister('get_ci_failure_logs')
@@ -457,34 +460,16 @@ export function syncGhTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental CI investigator tools — the
- * `investigate_ci` entry tool and its deep-log `gh_run_list` / `gh_run_view`
- * helpers — to match the current enablement of the `copse.ci-investigator`
- * first-party plugin. Called at startup (via createRegistry) and again whenever
- * the plugin is toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
- * `plugins:set-enabled`), so the tools appear or disappear live — the atomic plugin
- * disable drops them from the model tool list in the same flag flip that drops
- * the plugin's `activeToolNames()` entries from the Settings plugin list.
- *
- * The register direction additionally requires `gh`: the entry tool and the
- * gh_run_* helpers shell out to it, so advertising them without a usable `gh`
- * would just surface "gh is not available" on every call. `gh` availability is
- * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
- * a live plugin enable respects the probed environment.
- *
- * `parentTools` additionally withholds `investigate_ci` while subagents are off
- * or read-only mode is on;
- * `isInvestigateCiOffered` is the combined predicate the prompt and the
- * CI follow-up read.
+ * The experimental investigator's entry point follows plugin enablement and gh
+ * availability. Workflow listing and log reads are core tools in syncGhTools;
+ * plugin changes must not remove them. Existing subagent and read-only gates
+ * further restrict the investigator when parentTools offers a turn's tool list.
+ * Live toggles route through ipc/plugin-handlers.ts (plugins:set-enabled).
  */
 export function syncCiInvestigatorTools(registry: ToolRegistry): void {
   if (ciInvestigatorToolsRegistrable()) {
-    if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
-    if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
     if (!registry.has(INVESTIGATE_CI_TOOL_NAME)) registry.register(investigateCiTool)
   } else {
-    registry.unregister('gh_run_list')
-    registry.unregister('gh_run_view')
     registry.unregister(INVESTIGATE_CI_TOOL_NAME)
   }
 }
