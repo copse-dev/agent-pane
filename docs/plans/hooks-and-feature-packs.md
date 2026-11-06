@@ -334,8 +334,12 @@ revisiting this document, not silently diverging in an implementation PR.
     and an explicitly invoked skill remains the last instruction block because it is
     a direct user action. `TurnStartPayload.executor` lets hooks abstain from
     executor-private mechanisms, while `toolNames` contains only tools the host can
-    prove it offers on that path (the filtered local list or Copse's active ACP bridge
-    list). A hook must not name a tool absent from that list. Disabling a pack removes
+    prove the executor has on that path: the filtered local list, or the Copse bridge
+    tools the ACP agent listed and has not since shown it dropped. That list is empty
+    when the agent was offered no bridge, never listed it (#4144), or dropped the tools
+    after listing them (#4142). An offer is not enough, so the ACP event fires once
+    the session's bridge mount is known, still before the prompt is sent. A hook must
+    not name a tool absent from that list. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17). `invokedSkills` carries explicit user-selected skill names from
     both host fire sites. `TurnStartPayload.firstTurn` (the same "no prior
