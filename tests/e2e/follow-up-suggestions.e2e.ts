@@ -14,6 +14,7 @@ import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { e2eGitBranch } from './helpers/e2e-env.ts'
+import { expectAssistantReply } from './helpers/mock-scenario.ts'
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -100,14 +101,10 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()
-      const assistantMessages = await $$(
-        '.messages-list .msg-assistant .message-text',
-      ).getElements()
-      const finalReply = assistantMessages.at(-1)
-      if (!finalReply) throw new Error('expected the Debug CI follow-up reply')
-      await expect(finalReply).toHaveText(
+      // Idle can arrive before the new reply mounts. Re-read the last reply
+      // while waiting instead of retaining the preceding turn's DOM element.
+      await expectAssistantReply(
         'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
-        { containing: true },
       )
       await scenario.assertComplete()
     })
