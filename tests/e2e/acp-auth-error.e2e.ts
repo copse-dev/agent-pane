@@ -31,9 +31,58 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       composerTop: composer.top,
     }
   }, selector)
+  // TEMPORARY DIAGNOSTIC (revert before review)
+  await logFontDiag(filename, 'before')
   expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
   await saveElementScreenshot(selector, filename, { frame: 'document' })
+  await logFontDiag(filename, 'after')
+}
+
+// TEMPORARY DIAGNOSTIC (revert before review): font, stylesheet and document
+// state at each capture.
+async function logFontDiag(filename: string, phase: string): Promise<void> {
+  const diag = await browser.execute(() => {
+    const blocks = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.messages-list .message-text code, .messages-list .message-text pre',
+      ),
+    ).slice(0, 12)
+    const families = new Set<string>()
+    const perBlock = blocks.map((block) => {
+      const style = getComputedStyle(block)
+      families.add(style.fontFamily)
+      let ready: boolean | string
+      try {
+        ready = document.fonts.check(`${style.fontSize} ${style.fontFamily}`)
+      } catch {
+        ready = 'error'
+      }
+      return `${block.tagName.toLowerCase()} ${String(block.getBoundingClientRect().height)} ${style.fontFamily.slice(0, 40)} ready=${String(ready)}`
+    })
+    return {
+      at: Math.round(performance.now()),
+      fontsStatus: document.fonts.status,
+      faces: Array.from(
+        document.fonts,
+        (face) => `${face.family} ${face.weight} ${face.style} ${face.status}`,
+      ),
+      families: [...families],
+      blocks: perBlock,
+      rows: Array.from(
+        document.querySelectorAll('.messages-list > .msg-assistant'),
+        (row) => row.getBoundingClientRect().height,
+      ),
+      html: document.documentElement.getAttribute('class') ?? '',
+      htmlAttrs: Array.from(
+        document.documentElement.attributes,
+        (a) => `${a.name}=${a.value.slice(0, 40)}`,
+      ),
+      sheets: document.styleSheets.length,
+      events: document.documentElement.dataset['diagFontEvents'] ?? 'none',
+    }
+  })
+  console.log(`[fontdiag ${filename} ${phase}] ${JSON.stringify(diag)}`)
 }
 
 /**
@@ -89,6 +138,43 @@ describe('ACP authentication error presentation', () => {
     })
     await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
       timeout: 30_000,
+    })
+    // TEMPORARY DIAGNOSTIC (revert before review): <html> attributes and <head>
+    // insertions from the first settled transcript on.
+    await browser.execute(() => {
+      const events: string[] = []
+      const record = (entry: string): void => {
+        events.push(`${String(Math.round(performance.now()))} ${entry}`)
+        document.documentElement.dataset['diagFontEvents'] = JSON.stringify(events.slice(-40))
+      }
+      new MutationObserver((records) => {
+        for (const r of records) {
+          if (r.attributeName === 'data-diag-font-events') continue
+          record(
+            `html@${r.attributeName ?? ''}=${(document.documentElement.getAttribute(r.attributeName ?? '') ?? '').slice(0, 40)}`,
+          )
+        }
+      }).observe(document.documentElement, { attributes: true })
+      new MutationObserver((records) => {
+        for (const r of records) {
+          for (const node of Array.from(r.addedNodes)) {
+            if (node instanceof Element) {
+              record(
+                `head+${node.tagName.toLowerCase()} ${node.getAttribute('href') ?? node.getAttribute('src') ?? node.textContent.slice(0, 40)}`,
+              )
+            }
+          }
+        }
+      }).observe(document.head, { childList: true, subtree: true })
+      document.fonts.addEventListener('loadingdone', (event) => {
+        record(
+          `fonts-done ${event.fontfaces.map((face) => `${face.family}/${face.weight}`).join(',')}`,
+        )
+      })
+      document.fonts.addEventListener('loading', () => {
+        record('fonts-loading')
+      })
+      record('installed')
     })
   })
 
