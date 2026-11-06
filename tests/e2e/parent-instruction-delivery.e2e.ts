@@ -1,4 +1,5 @@
-import { mkdirSync, realpathSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
@@ -122,7 +123,50 @@ describe('parent instruction delivery', function () {
     }
 
     await waitForAgentIdle(30_000)
-    await expectAssistantReply(PARENT_INSTRUCTION_REPLY)
+    try {
+      await expectAssistantReply(PARENT_INSTRUCTION_REPLY)
+    } catch (error) {
+      // Keep the native failure inspectable when its HTML/PNG artifact cannot
+      // be downloaded. Only this isolated fixture's known paths and visible
+      // transcript are reported; the original assertion still fails below.
+      try {
+        let completion = 'complete'
+        try {
+          server.assertComplete()
+        } catch (fixtureError) {
+          completion = fixtureError instanceof Error ? fixtureError.message : String(fixtureError)
+        }
+        const files = PARENT_INSTRUCTION_EDITS.map(({ path }) => ({
+          path,
+          content: readFileSync(join(workspace, path), 'utf8'),
+        }))
+        const dom = await browser.execute(() => ({
+          assistants: [...document.querySelectorAll<HTMLElement>('.msg-assistant')].map(
+            (message) => ({
+              id: message.dataset['messageId'],
+              replies: [...message.querySelectorAll<HTMLElement>('.message-text')].map((text) => ({
+                innerText: text.innerText,
+                textContent: text.textContent,
+                primary: text.parentElement?.classList.contains('message-body'),
+              })),
+            }),
+          ),
+          calls: [...document.querySelectorAll<HTMLElement>('[data-tool-id]')].map((card) => ({
+            id: card.dataset['toolId'],
+            status: card.dataset['status'],
+            label: card.querySelector(':scope > summary .tool-name')?.textContent,
+            result: card.querySelector('.tool-result')?.textContent,
+          })),
+        }))
+        console.info(
+          'PARENT_INSTRUCTION_RETRY_DIAGNOSTIC',
+          JSON.stringify({ completion, files, dom }),
+        )
+      } catch (diagnosticError) {
+        console.info('PARENT_INSTRUCTION_RETRY_DIAGNOSTIC_UNAVAILABLE', String(diagnosticError))
+      }
+      throw error
+    }
     assertParentInstructionFiles(workspace, true)
     const groupSelector = '.tool-card-rollup .tool-card-group'
     await openToolDisclosure(groupSelector)
