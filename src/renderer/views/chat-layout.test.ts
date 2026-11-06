@@ -151,16 +151,14 @@ describe('bindChatComposerLayout', () => {
 
     // The active thread gaining a message leaves the Activity home, with no event.
     store.setState({
-      threads: store
-        .getState()
-        .threads.map((t) =>
-          t.id === 'thread-1'
-            ? {
-                ...t,
-                messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }],
-              }
-            : t,
-        ),
+      threads: store.getState().threads.map((t) =>
+        t.id === 'thread-1'
+          ? {
+              ...t,
+              messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }],
+            }
+          : t,
+      ),
     })
     assert.equal(
       document.getElementById('pane-chat')?.classList.contains('is-activity-home'),
