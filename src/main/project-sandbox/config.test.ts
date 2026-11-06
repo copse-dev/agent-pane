@@ -45,6 +45,7 @@ import {
   withoutCheckoutWrites,
   workspaceTmpDir,
 } from './config.ts'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 import {
   copseManagedPreparationCacheDirs,
   copseWorkspaceDir,
@@ -602,10 +603,111 @@ describe('resolveNodeToolchainAllowRead', () => {
       installNode(join(target, 'shims'))
       mkdirSync(join(target, 'installs'))
       symlinkSync(target, root, 'dir')
+      // A dotfile manager links the version file into home.
+      const versions = join(home, 'dotfiles', '.tool-versions')
+      mkdirSync(dirname(versions))
+      writeFileSync(versions, 'nodejs 24.0.0\n')
+      symlinkSync(versions, join(home, '.tool-versions'))
       const allow = resolveNodeToolchainAllowRead({ PATH: join(root, 'shims') }, home)
+      assert.ok(allow.includes(versions))
+      assert.ok(allow.includes(join(home, '.tool-versions')))
+      assert.ok(!allow.includes(dirname(versions)))
       assert.ok(allow.includes(`${join(target, 'installs')}/**`))
       assert.ok(!allow.includes(`${target}/**`))
       assert.ok(!allow.includes(`${root}/**`))
+      // The shell finds the shim through `~/.asdf`, so that spelling is granted
+      // too, but only the subtrees, never the whole relocated manager.
+      for (const spelling of [join(root, 'shims'), join(root, 'installs')]) {
+        assert.ok(allow.includes(spelling), spelling)
+        assert.ok(allow.includes(`${spelling}/**`), spelling)
+      }
+      // Seatbelt needs the link vnode itself; a bubblewrap bind of it would
+      // mount the entire relocated manager.
+      assert.equal(allow.includes(root), process.platform === 'darwin')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants both spellings of a PATH entry that crosses a symlinked directory in home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // fnm puts a per-shell link on PATH: ~/.local/state/fnm_multishells/<id>
+      // -> ~/.local/share/fnm/node-versions/<v>/installation.
+      const install = join(
+        home,
+        '.local',
+        'share',
+        'fnm',
+        'node-versions',
+        'v24.0.0',
+        'installation',
+      )
+      const node = installNode(join(install, 'bin'))
+      mkdirSync(join(install, 'lib', 'node_modules'), { recursive: true })
+      const multishell = join(home, '.local', 'state', 'fnm_multishells', '1234_5678')
+      mkdirSync(dirname(multishell), { recursive: true })
+      symlinkSync(install, multishell, 'dir')
+      const ssh = join(home, '.ssh')
+      mkdirSync(ssh)
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(multishell, 'bin') }, home)
+      for (const tree of [join(install, 'bin'), install, join(multishell, 'bin'), multishell]) {
+        assert.ok(allow.includes(tree), tree)
+        assert.ok(allow.includes(`${tree}/**`), tree)
+      }
+      assert.ok(allow.includes(node))
+      assert.ok(!allow.includes(join(multishell, 'bin', 'node')), 'never the node alias itself')
+      assert.deepEqual(toolchainReadExceptions(allow, [home], []), allow)
+
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: [home], allowWithinDeny: allow.map(removeTrailingGlobSuffix) },
+        writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+      })
+      // The lookup walks the link itself before reaching the canonical install.
+      assert.equal(lastReadRule(profile, multishell), 'allow')
+      assert.equal(lastReadRule(profile, node), 'allow')
+      assert.equal(lastReadRule(profile, join(ssh, 'id_ed25519')), 'deny')
+      assert.equal(lastReadRule(profile, join(home, '.local', 'state', 'other')), 'deny')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants no spelling through a home directory link into a credential store', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // A node install shape inside ~/.ssh, so only the credential rules refuse it.
+      const ssh = join(home, '.ssh')
+      installNode(join(ssh, 'bin'))
+      mkdirSync(join(ssh, 'lib', 'node_modules'), { recursive: true })
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+      const link = join(home, '.local', 'state', 'fnm_multishells', 'planted')
+      mkdirSync(dirname(link), { recursive: true })
+      symlinkSync(ssh, link, 'dir')
+      assert.deepEqual(resolveNodeToolchainAllowRead({ PATH: join(link, 'bin') }, home), [])
+
+      // A safe install reached through a credential-store link keeps only its
+      // canonical grant: the crossed link must lead somewhere safe as well.
+      const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      installNode(join(versionRoot, 'bin'))
+      mkdirSync(join(versionRoot, 'lib', 'node_modules'), { recursive: true })
+      const codex = join(home, '.codex')
+      mkdirSync(codex)
+      symlinkSync(versionRoot, join(codex, 'node'), 'dir')
+      const alias = join(home, 'tools')
+      symlinkSync(codex, alias, 'dir')
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(alias, 'node', 'bin') }, home)
+      assert.ok(allow.includes(`${versionRoot}/**`))
+      assert.deepEqual(
+        allow.filter((path) =>
+          [ssh, link, codex, alias].some((root) => path === root || path.startsWith(`${root}/`)),
+        ),
+        [],
+      )
     } finally {
       cleanup()
     }

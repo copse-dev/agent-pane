@@ -1271,11 +1271,21 @@ Shim roots and install subtrees are checked through their canonical destinations
 subtree must stay strictly inside the canonical manager root; redirecting it to home, a parent,
 the manager root itself or a credential store grants nothing through that alias. A `node` file or
 npm implementation-directory alias into a sensitive path is omitted too: leaving only its lexical
-name in the read list would still let ASRT grant the canonical target. Safe whole-manager relocation
-and ordinary fnm/nvm installs retain their bounded read grants.
+name in the read list would still let ASRT grant the canonical target. The shell looks `node` up
+through the `PATH` entry's own spelling, so a grant reached through a symlink in home (fnm's
+per-shell `~/.local/state/fnm_multishells/<id>` link to its install, a relocated `~/.asdf`, a
+dotfile-managed `~/.tool-versions`) also lists that spelling, once the canonical target and every
+directory link crossed on the way pass these checks. On macOS each crossed link is listed as
+well, because Seatbelt checks the link itself during lookup; on Linux bubblewrap creates the
+intermediate directories, and listing the link would mount its whole target. A spelling is dropped
+when a link it crosses lives where the sandbox can read or write (a checkout, scratch, an ACP
+agent's home directories), since a contained command could retarget it before ASRT mounts it. The
+`node` file's own alias is never listed. So fnm, nvm and a safely relocated version manager keep
+their bounded read grants and run contained.
 A Node target must be a regular executable file. Known Codex/Claude and configured
 Copse/XDG/Cargo credential stores and their canonical aliases are excluded too. Grants use the
-checked canonical destinations and omit toolchain exceptions already covered by the workspace.
+checked canonical destinations (plus those spellings) and omit toolchain exceptions already
+covered by the workspace.
 Replacing a canonical path or its ancestors before ASRT constructs the profile still races; these
 checks do not pin filesystem identity atomically.
 Known credential-location overrides checked in both the host and child environment are

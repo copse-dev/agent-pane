@@ -19,6 +19,7 @@ import {
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 
 export function requirePreparationSandbox(): void {
   if (!isProjectSandboxEnabled() || !['darwin', 'linux'].includes(process.platform)) {
@@ -299,6 +300,11 @@ async function runContainedPreparationProcess(
   // startup files execute ambient code before sandbox-exec/bwrap takes over.
   delete env['BASH_ENV']
   delete env['ENV']
+  const denyRead = [homedir(), tmpdir(), '/private/tmp', '/private/var/folders']
+  const readRoots = [root, scratch, ...caches]
+  const writeRoots = preparing
+    ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
+    : ['/dev/null', scratch]
   const params = {
     // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
     // scratch after those assignments, inside the confined command.
@@ -315,12 +321,17 @@ async function runContainedPreparationProcess(
     allowAllUnixSockets: false,
     allowGitConfig: false,
     readConfig: {
-      denyOnly: [homedir(), tmpdir(), '/private/tmp', '/private/var/folders'],
+      denyOnly: denyRead,
       allowWithinDeny: [
-        root,
-        scratch,
-        ...caches,
-        ...resolveNodeToolchainAllowRead(env),
+        ...readRoots,
+        // Drops spellings that cross a link this runner (or a contained
+        // command beside it) could retarget before ASRT mounts them.
+        ...toolchainReadExceptions(
+          resolveNodeToolchainAllowRead(env),
+          denyRead,
+          readRoots,
+          writeRoots,
+        ),
         ...electronRuntimeAllowReadPaths(),
         ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
         ...(options.additionalExecutables ?? []).flatMap((executable) =>
@@ -330,9 +341,7 @@ async function runContainedPreparationProcess(
       ],
     },
     writeConfig: {
-      allowOnly: preparing
-        ? ['/dev/null', scratch, ...caches, ...(projectWritable ? [root] : [])]
-        : ['/dev/null', scratch],
+      allowOnly: writeRoots,
       denyWithinAllow: [],
       // Package tarballs contain inert .idea/.vscode metadata. Protect the
       // checkout's configuration rather than denying those names in every

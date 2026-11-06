@@ -150,6 +150,45 @@ it('protects explicit known-tool credential locations and ambient host overrides
   }
 })
 
+it('keeps a lexical exception only while every link it crosses stays out of sandbox reach', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'toolchain-lexical-exceptions-')))
+  try {
+    const install = join(home, '.local', 'share', 'fnm', 'installation')
+    const workspace = join(home, 'projects', 'app')
+    const agentState = join(home, '.cursor')
+    for (const dir of [join(install, 'bin'), join(workspace, 'node_modules'), agentState]) {
+      mkdirSync(dir, { recursive: true })
+    }
+    const multishell = join(home, '.local', 'state', 'fnm_multishells', '1234')
+    mkdirSync(dirname(multishell), { recursive: true })
+    symlinkSync(install, multishell)
+    const fnm = [join(multishell, 'bin'), `${join(multishell, 'bin')}/**`]
+    // The link lives in the denied home, where no contained command can write.
+    assert.deepEqual(toolchainReadExceptions(fnm, [home], [workspace]), fnm)
+
+    // A workspace link reached through a home alias: the spelling is outside
+    // every read root, but a contained command could retarget the link.
+    symlinkSync(workspace, join(home, 'app-alias'))
+    symlinkSync(install, join(workspace, 'node_modules', 'planted'))
+    const planted = [join(home, 'app-alias', 'node_modules', 'planted', 'bin')]
+    assert.deepEqual(toolchainReadExceptions(planted, [home], []), planted)
+    assert.deepEqual(toolchainReadExceptions(planted, [home], [workspace]), [])
+    // So could an agent whose writable home dirs hold the link.
+    symlinkSync(install, join(agentState, 'node'))
+    const agent = [join(agentState, 'node', 'bin')]
+    assert.deepEqual(toolchainReadExceptions(agent, [home], []), agent)
+    assert.deepEqual(toolchainReadExceptions(agent, [home], [], [agentState]), [])
+    assert.deepEqual(toolchainReadExceptions(agent, [home], [], [`${agentState}/**`]), [])
+
+    // A spelling whose link cannot be inspected fails closed.
+    rmSync(multishell)
+    symlinkSync(join(home, 'missing'), multishell)
+    assert.deepEqual(toolchainReadExceptions(fnm, [home], [workspace]), [])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 it('matches canonical toolchain exceptions against aliased home, temp and existing read roots', () => {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'toolchain-aliased-read-roots-')))
   try {

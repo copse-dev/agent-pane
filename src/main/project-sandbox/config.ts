@@ -24,6 +24,7 @@ import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
 import {
   createToolchainReadGuard,
+  crossedSymlinks,
   type ToolchainReadGuard,
   toolchainReadExceptions,
 } from './toolchain-read-guard.ts'
@@ -622,6 +623,51 @@ function nodeVersionRootGrant(
   return shallow ? 'npm' : 'tree'
 }
 
+/** Extra spellings for an approved grant; see {@link lexicalToolchainSpellings}. */
+type LexicalSpellings = (path: string, canonical: string, tree: boolean) => string[]
+
+/**
+ * The spelling a lookup actually uses for an approved toolchain grant, when it
+ * reaches the canonical target through a symlinked directory inside home: an
+ * fnm multishell (`~/.local/state/fnm_multishells/<id>` → the install) or a
+ * relocated manager (`~/.asdf` → `~/relocated-asdf`), or a dotfile link such
+ * as `~/.tool-versions`. The shell resolves `node` through the `PATH` entry's
+ * own text, so the canonical grant alone leaves that lookup in the denied
+ * home: bubblewrap never mounts the alias, and Seatbelt checks the link vnode
+ * itself while resolving through it (see {@link ensureWorkspaceTmpDir}).
+ *
+ * `canonical` must already have passed `readTarget` for `path`, which checks
+ * both spellings. Every directory link crossed on the way must also resolve to
+ * a directory `readTarget` accepts, or nothing is added, so a link into a
+ * credential store still grants nothing. On macOS each crossed link is listed
+ * too: a Seatbelt allow on a symlink's path matches only the link, never what
+ * it points to. Linux needs only the spelling, since bubblewrap creates the
+ * intermediate directories itself, and listing the link there would mount its
+ * whole target (the entire relocated manager). `toolchainReadExceptions` then
+ * drops a spelling whose links a contained command could retarget.
+ */
+function lexicalToolchainSpellings(
+  path: string,
+  canonical: string,
+  tree: boolean,
+  homes: readonly string[],
+  readTarget: ToolchainReadGuard,
+): string[] {
+  const lexical = resolve(path)
+  if (lexical === canonical) return []
+  const home = homes.find((spelling) => placeAgainstHome(lexical, spelling) === 'inside')
+  if (home === undefined) return []
+  const links = crossedSymlinks(lexical, home)
+  if (links === null || links.length === 0) return []
+  const ancestors = links.filter((link) => link !== lexical)
+  if (ancestors.some((link) => readTarget(link, true) === null)) return []
+  return [
+    lexical,
+    ...(tree ? [`${lexical}/**`] : []),
+    ...(process.platform === 'darwin' ? ancestors : []),
+  ]
+}
+
 /**
  * The read grants a shim-based version manager needs when `binDir`, the
  * directory holding a `node` on `PATH`, is its shim directory. The shim
@@ -642,6 +688,7 @@ function shimManagerAllowRead(
   env: NodeJS.ProcessEnv,
   home: string,
   readTarget: ToolchainReadGuard,
+  spellings: LexicalSpellings,
 ): string[] {
   const root = (name: string, fallback: string): string | null => {
     const value = env[name]
@@ -652,7 +699,7 @@ function shimManagerAllowRead(
   const existingFiles = (paths: readonly string[]): string[] =>
     paths.flatMap((path) => {
       const canonical = readTarget(path, false)
-      return canonical === null ? [] : [canonical]
+      return canonical === null ? [] : [canonical, ...spellings(path, canonical, false)]
     })
   const existingTrees = (manager: string, paths: readonly string[]): string[] =>
     paths.flatMap((path) => {
@@ -665,7 +712,7 @@ function shimManagerAllowRead(
         !coversPath(canonicalRoot, canonical)
       )
         return []
-      return [canonical, `${canonical}/**`]
+      return [canonical, `${canonical}/**`, ...spellings(path, canonical, true)]
     })
 
   const volta = root('VOLTA_HOME', join(home, '.volta'))
@@ -699,6 +746,11 @@ function shimManagerAllowRead(
  * command can write (a checkout's `node_modules/.bin`) could otherwise hold
  * `node -> ~/.ssh/id_ed25519` and turn the next overlay into a grant on
  * `~/.ssh`.
+ *
+ * Grants are canonical. A grant reached through a symlinked directory in home
+ * (fnm's multishell, a relocated `~/.asdf`) also carries the spelling the
+ * lookup uses once its target has passed the guard
+ * (`lexicalToolchainSpellings`); the `node` file's own alias never does.
  */
 export function resolveNodeToolchainAllowRead(
   env: NodeJS.ProcessEnv = process.env,
@@ -708,12 +760,26 @@ export function resolveNodeToolchainAllowRead(
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
   const homes = [...new Set([home, canonicalizePathCached(home)])]
-  const readTarget = createToolchainReadGuard(env, home)
+  const guard = createToolchainReadGuard(env, home)
+  // One answer per path for this build: the canonical branch below re-checks
+  // trees the spelled branch already checked, and every check is a realpath.
+  const checked = new Map<string, string | null>()
+  const readTarget: ToolchainReadGuard = (path, recursive) => {
+    const key = `${recursive ? 'tree' : 'file'}:${path}`
+    const known = checked.get(key)
+    if (known !== undefined) return known
+    const result = guard(path, recursive)
+    checked.set(key, result)
+    return result
+  }
+  const spellings: LexicalSpellings = (path, canonical, tree) =>
+    lexicalToolchainSpellings(path, canonical, tree, homes, readTarget)
   const addTree = (path: string): void => {
     const canonical = readTarget(path, true)
     if (canonical === null) return
     allow.add(canonical)
     allow.add(`${canonical}/**`)
+    for (const spelling of spellings(path, canonical, true)) allow.add(spelling)
   }
 
   for (const dir of dirs) {
@@ -736,7 +802,9 @@ export function resolveNodeToolchainAllowRead(
     const binDir = dirname(nodePath)
     if (!coversHome(binDir, homes)) {
       addTree(binDir)
-      for (const path of shimManagerAllowRead(binDir, env, home, readTarget)) allow.add(path)
+      for (const path of shimManagerAllowRead(binDir, env, home, readTarget, spellings)) {
+        allow.add(path)
+      }
 
       // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
       const versionRoot = dirname(binDir)
@@ -1136,14 +1204,21 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   opts: { allowLocalhost?: boolean; stateDirs?: readonly string[] } | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
-  const base = workspaceSandboxOverlay(workspaceRoot, { chatStoreCarveOuts: stateDirs })
-  const fs = base.filesystem
-  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   const home = homedir()
   const configuredHomePaths = (sandbox.homeDirs ?? []).flatMap((rel) => {
     const abs = join(home, rel)
     return [abs, `${abs}/**`]
   })
+  const scratchPaths = [
+    ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
+    ...stateDirs,
+  ].flatMap((abs) => [abs, `${abs}/**`])
+  const base = workspaceSandboxOverlay(workspaceRoot, {
+    chatStoreCarveOuts: stateDirs,
+    extraWritableRoots: [...configuredHomePaths, ...scratchPaths],
+  })
+  const fs = base.filesystem
+  if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   // Never re-allow `home` itself. ASRT renders a literal allowRead entry as
   // `(subpath …)` on macOS (a read bind on Linux), and allows come after the
   // home deny, so a bare `home` re-opened the whole home tree to the agent:
@@ -1160,10 +1235,6 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
   const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
-  const scratchPaths = [
-    ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
-    ...stateDirs,
-  ].flatMap((abs) => [abs, `${abs}/**`])
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -1316,6 +1387,12 @@ export function workspaceSandboxOverlay(
   opts?: {
     /** Paths inside the chat store that keep their own grants, not its read-only mount. */
     chatStoreCarveOuts?: readonly string[]
+    /**
+     * Roots the caller makes writable on top of this overlay (an ACP agent's
+     * home dirs and scratch). Toolchain read spellings that cross a symlink
+     * inside one are dropped, as for the overlay's own write roots.
+     */
+    extraWritableRoots?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
@@ -1485,6 +1562,15 @@ export function workspaceSandboxOverlay(
     ...siblingDeny,
     ...nestedCheckoutDeny,
   ]
+  const allowWrite = [
+    root,
+    `${root}/**`,
+    tmpDir,
+    `${tmpDir}/**`,
+    ...darwinUserTempWrite,
+    ...gitAdminWrite,
+    ...agentScratch,
+  ]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1496,17 +1582,12 @@ export function workspaceSandboxOverlay(
       denyRead: deniedRead,
       allowRead: [
         ...existingRead,
-        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
+        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead, [
+          ...allowWrite,
+          ...(opts?.extraWritableRoots ?? []),
+        ]),
       ],
-      allowWrite: [
-        root,
-        `${root}/**`,
-        tmpDir,
-        `${tmpDir}/**`,
-        ...darwinUserTempWrite,
-        ...gitAdminWrite,
-        ...agentScratch,
-      ],
+      allowWrite,
       denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...siblingDeny, ...gitAdminDenyWrite],
       allowGitConfig: true,
     },
