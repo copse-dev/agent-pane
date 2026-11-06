@@ -965,6 +965,14 @@
       "sha256": "b3acd8bf4a6f3b002edbde9b798d97f8a1585baac7aa241d4dfda1ccb1204039",
       "bytes": 806711
     },
+    "browser-responsive-desktop.png": {
+      "sha256": "58d35c8e8c77b22ab97650e713ce4a068574a60c4239b02c3844ea23572603a0",
+      "bytes": 300536
+    },
+    "browser-responsive-mobile.png": {
+      "sha256": "9df55eef224f11b12012d2fe37cd7138f1c2fd26ff68f260564cb6a9e5276ac5",
+      "bytes": 252544
+    },
     "browser-session-restore-after-relaunch.png": {
       "sha256": "1d6e8c107f5f18636cd5a82f4d4b7dc8ca83d964c13e1ef4e017cc79212c05c2",
       "bytes": 375954

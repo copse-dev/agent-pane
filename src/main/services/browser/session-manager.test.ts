@@ -1,6 +1,27 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PREVIEW_ZOOM_FACTOR, capturePreviewDataUrl } from './session-manager.ts'
+import {
+  BrowserSessionManager,
+  PREVIEW_ZOOM_FACTOR,
+  capturePreviewDataUrl,
+} from './session-manager.ts'
+
+describe('browser viewport validation', () => {
+  it('rejects invalid sizes before creating a native window', async () => {
+    const manager = new BrowserSessionManager()
+    await assert.rejects(manager.resize({ width: 0, height: 844 }), /240/)
+    assert.deepEqual(manager.listTabs(), [])
+  })
+
+  it('refuses an unknown tab instead of resizing another one', async () => {
+    const manager = new BrowserSessionManager()
+    await assert.rejects(
+      manager.resize({ width: 390, height: 844 }, 'missing'),
+      /unknown browser tab/,
+    )
+    assert.deepEqual(manager.listTabs(), [])
+  })
+})
 
 interface FakeImage {
   isEmpty(): boolean

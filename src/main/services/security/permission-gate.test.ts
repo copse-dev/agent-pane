@@ -3676,6 +3676,30 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
 // Browser one-time grants belong to the running task, never to a global browser profile.
 describe('browser network approvals', () => {
+  it('resizes without a navigation grant while preserving explicit Blocked and Always ask', async () => {
+    const id = copseToolPermissionId('browser_resize')
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    try {
+      await setSetting('toolPermissionOverrides', {})
+      const check = { toolName: 'browser_resize', args: { width: 390, height: 844 } }
+      assert.equal(await ensureToolPermitted(check), true)
+      assert.equal(prompts, 0)
+      await setSetting('toolPermissionOverrides', { [id]: 'block' })
+      assert.equal(await ensureToolPermitted(check), false)
+      assert.equal(prompts, 0)
+      await setSetting('toolPermissionOverrides', { [id]: 'ask' })
+      assert.equal(await ensureToolPermitted(check), false)
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      await setSetting('toolPermissionOverrides', {})
+    }
+  })
+
   it('always allow grants browser navigation access without an approval prompt', async () => {
     const { browserAllowedOrigins, currentBrowserScope } =
       await import('../browser/browser-network-grants.ts')
