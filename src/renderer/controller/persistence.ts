@@ -916,6 +916,22 @@ export function awaitPendingThreadPersistence(): Promise<void> {
   return activeAutosave?.whenIdle() ?? Promise.resolve()
 }
 
+/**
+ * Run `task` once a thread the current write introduced exists in main.
+ *
+ * A store selection fires inside the writer's `setState`, before the writer's
+ * own `threads_changed` starts autosave's immediate `threads:create`; main
+ * rejects thread-scoped reads until that create lands ("not persisted yet").
+ * Waiting a microtask lets the emit start the create, which
+ * `awaitPendingThreadPersistence` then waits for. (`afterThreadWrites` would
+ * run at once there: nothing is queued yet.)
+ */
+export function afterPendingThreadPersistence(task: () => void): void {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task)
+  })
+}
+
 // Autosave: maps store mutations onto event-level thread-store writes.
 //
 // - Metadata changes (draft, usage, status, todos, title, branch, structural
