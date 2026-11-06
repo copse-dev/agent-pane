@@ -13,7 +13,7 @@ import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import {
   beginThreadSubmission,
   endThreadSubmission,
@@ -663,17 +663,17 @@ export function mountInputBar(
     onSelectReasoning: selectReasoning,
   })
   // Re-sync the picker whenever the active thread changes (new thread,
-  // thread switch, or thread deletion that shifts the active pointer) or its
-  // own state does, and when the project changes so ACP options hide/show with
-  // SSH workspaces. Other threads, and this thread's draft autosave, do not.
-  store.select(
-    activeProjectThreadOf,
-    () => {
-      modelPicker.refresh()
-      void refreshAutomaticCheckoutPreview()
-    },
-    sameProjectThreadBesidesDraft,
-  )
+  // thread switch, or thread deletion that shifts the active pointer), and when
+  // the project changes so ACP options hide/show with SSH workspaces.
+  // Deliberately still `threads_changed`, not a selection of the active thread:
+  // `refresh()` refetches the provider catalog for the thread's model, and the
+  // turn-start route pin (`turn_parameters`) changes that model but takes the
+  // lighter `thread_model_resolved` → `sync()` path. A selection would refetch
+  // the catalog on every auto-routed turn and relabel the picker.
+  store.on('threads_changed', () => {
+    modelPicker.refresh()
+    void refreshAutomaticCheckoutPreview()
+  })
   store.on('projects_changed', () => {
     modelPicker.refresh()
     void refreshAutomaticCheckoutPreview()
@@ -2988,17 +2988,26 @@ export function mountInputBar(
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
-    // The active thread: a switch loads its composer, and its own updates
-    // (model, mode, worktree, queue, status) repaint the footer. Other threads'
-    // updates and this thread's draft autosave do not.
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      () => {
+        syncComposerThread()
+        containerRun.refresh()
+      },
+      sameItems,
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
     store.select(
       activeProjectThreadOf,
       () => {
-        syncComposerThread()
         executionMode.refresh()
         footerOverflow.update()
         guardedYolo.refresh()
-        containerRun.refresh()
         hideBranchMismatch()
         hideDirtyWarning()
         updateState()

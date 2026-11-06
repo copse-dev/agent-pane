@@ -5008,29 +5008,32 @@ describe('composer thread scope', () => {
       activeThreadId: active.id,
       threads: [active, other],
     })
-    let previews = 0
+    const runReads: string[] = []
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      container: {
+        ...base.container,
+        getRun: async (threadId) => {
+          runReads.push(threadId)
+          return null
+        },
+      },
+    }
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(
-      host,
-      store,
-      createApi({
-        currentBranch: 'main',
-        onPreviewCheckout: async (): Promise<ThreadCheckoutPreview> => {
-          previews += 1
-          return { checkoutMode: 'shared' }
-        },
-      }),
-    )
+    mountInputBar(host, store, api)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const settled = previews
+    const settled = runReads.length
 
-    // Another thread's rename (which still emits threads_changed) and this
-    // thread's draft autosave are not checkout changes for the blank thread.
+    // Another thread's rename (which still emits threads_changed), this
+    // thread's draft autosave and its own update re-read no container run:
+    // that is per thread, so only a switch reads it again.
     setThreadTitle(store, other.id, 'Renamed elsewhere')
     setThreadDraftPrompt(store, active.id, 'half a thought')
+    setThreadTitle(store, active.id, 'Renamed here')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(previews, settled, 'no checkout preview re-run')
+    assert.equal(runReads.length, settled, 'no container run re-read')
 
     // The active thread's queue grows: the indicator follows, with no event.
     store.setState({
@@ -5047,5 +5050,10 @@ describe('composer thread scope', () => {
     assert.ok(indicator)
     assert.equal(indicator.hidden, false)
     assert.equal(indicator.textContent, '1 queued')
+
+    // A bare selection change re-reads the new thread's run.
+    store.setState({ activeThreadId: other.id })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(runReads.at(-1), other.id)
   })
 })
