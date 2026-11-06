@@ -2271,6 +2271,13 @@ dialog.settings-overlay::backdrop {
   /* Rows sit on the page rather than each in a card, so the space between
      them is what separates one plugin from the next. */
   gap: var(--spacing-xl);
+  /* Each row's "Plugin settings" summary is pulled back by --spacing-sm so its
+     label lines up with the row while its hover fill does not (see
+     .plugin-settings-summary). With no card padding to absorb that, the list
+     carries the gutter itself and gives it back outside, so nothing moves and
+     the summary stays inside the list instead of widening it. */
+  margin-inline: calc(-1 * var(--spacing-sm));
+  padding-inline: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
 /* "Active" / "Inactive" over each run of rows. Sans and small — the section's
