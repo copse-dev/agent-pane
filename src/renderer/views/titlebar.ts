@@ -15,6 +15,7 @@ import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
 import { toggleProjectsPane } from '../controller/panels.ts'
 import { isMacPlatform } from './keyboard-shortcuts-dialog.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 const PROJECTS_COLLAPSED_CLASS = 'is-projects-collapsed'
 
@@ -232,10 +233,14 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   syncBranch()
   const unsubs = [
     store.select((s) => s.projectsPaneOpen, syncSidebar),
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
     selectActiveWorkspace(store, () => {
       syncName()
-      syncBranchNow()
-      syncRunApp()
+      afterPendingThreadPersistence(() => {
+        syncBranchNow()
+        syncRunApp()
+      })
     }),
     store.on('projects_changed', syncName),
     store.on('message_added', syncProjectPicker),
@@ -253,7 +258,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
       },
       () => {
         if (store.getState().activeThreadId !== syncedThreadId) {
-          syncBranchNow()
+          afterPendingThreadPersistence(syncBranchNow)
           return
         }
         scheduleBranchSync()
@@ -263,7 +268,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     store.select(
       (s) => s.activeThreadId,
       (threadId) => {
-        if (threadId !== detectedThread) syncRunApp()
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp)
       },
     ),
     store.on('thread_checkout_changed', syncRunApp),
