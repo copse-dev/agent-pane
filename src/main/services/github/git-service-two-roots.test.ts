@@ -138,10 +138,26 @@ describe('git-service with two roots at once', { skip: !gitOk }, () => {
       assert.match(main, /init/)
       assert.doesNotMatch(main, new RegExp(`${name} commit`))
       assert.match(await getGitLogText(5, undefined, root, 'HEAD'), new RegExp(`${name} commit`))
-      assert.match(await getGitLogText(5, `${name}-committed.txt`, root, 'main'), /\(no output\)/)
+      assert.match(
+        await getGitLogText(5, `${name}-committed.txt`, root, 'main'),
+        /No commits touched file path/,
+      )
       assert.equal(await getCurrentBranchName(root), beforeBranch)
       assert.equal(await getGitStatusText(root), beforeStatus)
     }
+  })
+
+  it('explains empty file history and points branch-like file filters to ref', async () => {
+    for (const name of ['main', 'alpha-branch']) {
+      const output = await getGitLogText(5, name, repos.alpha)
+      assert.match(output, /No commits touched file path/)
+      assert.ok(output.includes(JSON.stringify({ ref: name })))
+      assert.doesNotMatch(output, /\(no output\)/)
+    }
+    const ordinaryFile = await getGitLogText(5, 'not-a-file.txt', repos.alpha)
+    assert.match(ordinaryFile, /No commits touched file path/)
+    assert.doesNotMatch(ordinaryFile, /resolves to a Git revision/)
+    assert.match(await getGitLogText(5, 'tracked.txt', repos.alpha), /init/)
   })
 
   it('rejects option-like and unresolved revisions instead of reading HEAD', async () => {

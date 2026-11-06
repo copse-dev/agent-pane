@@ -1718,7 +1718,20 @@ export async function getGitLogText(
   ]
   const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
-  const history = stdout.trim() || '(no output)'
+  let history = stdout.trim()
+  if (!history && path) {
+    history = `No commits touched file path ${JSON.stringify(path)} in this history. The file filter does not establish whether the branch has commits.`
+    if (ref === undefined) {
+      const revision = await runGitRead(
+        ['rev-parse', '--verify', '--quiet', '--end-of-options', `${path}^{commit}`],
+        root,
+      )
+      if (revision.code === 0) {
+        history += ` This path also resolves to a Git revision. To read that history, use git_log with ${JSON.stringify({ ref: path })} and omit path.`
+      }
+    }
+  }
+  if (!history) history = '(no output)'
   return commit ? `History at ${ref ?? 'HEAD'} (${commit}):\n${history}` : history
 }
 
