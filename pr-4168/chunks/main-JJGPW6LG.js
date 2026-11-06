@@ -13339,6 +13339,7 @@ function createToolCardRefresher(host) {
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
     syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
+    registerReasoningDisclosures(msgEl);
   }
   function syncRunStepTrail(thread, run4) {
     const runCard = list.querySelector(
@@ -13413,6 +13414,9 @@ var init_tool_card_refresh = __esm({
 });
 
 // src/renderer/views/transcript-rows.ts
+function sameSignature(a, b2) {
+  return a.patched === b2.patched && a.settled === b2.settled;
+}
 function planTranscriptRows(rendered, wanted) {
   const renderedByKey = /* @__PURE__ */ new Map();
   for (const row2 of rendered) {
@@ -13446,7 +13450,7 @@ function planTranscriptRows(rendered, wanted) {
     const previous = renderedByKey.get(row2.key);
     if (!previous) {
       ops.push({ kind: "insert", key: row2.key, before: insertBefore.get(row2.key) ?? null });
-    } else if (previous.signature !== row2.signature) {
+    } else if (!sameSignature(previous.signature, row2.signature)) {
       ops.push({ kind: "replace", key: row2.key });
     } else kept++;
   }
@@ -13503,36 +13507,80 @@ function previewTitles(message2, calls) {
   return titles2;
 }
 function transcriptRowSignature(store2, thread, message2) {
-  const run4 = multiStepRunFor(thread, message2.id);
+  return signRow(store2, thread, message2, multiStepRunFor(thread, message2.id));
+}
+function signRow(store2, thread, message2, run4) {
   const liveStep = liveStepMessageId(thread);
   const origin = message2.role === "user" ? message2.origin : void 0;
   markUserInterruptedCalls(thread);
   const calls = [...message2.toolCalls, ...run4?.toolCalls ?? []];
-  return renderSignature({
-    message: { ...message2, turnOutcome: void 0 },
-    run: run4 ?? null,
-    wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null,
-    interrupted: calls.map((call) => userInterruption(call) ?? null),
-    answers: calls.flatMap((call) => {
-      const answer = callAnswer(store2, thread, call);
-      return answer === void 0 ? [] : [[call.id, answer]];
+  return {
+    patched: renderSignature({
+      message: { ...message2, turnOutcome: void 0 },
+      run: run4 ?? null,
+      live: isReasoningDisclosureLive(thread, message2),
+      liveStep: liveStep !== null && run4?.memberIds.includes(liveStep) === true ? liveStep : null
     }),
-    previews: previewTitles(message2, calls).map(
-      (title) => artefactPreviewVersion(thread.id, title)
-    ),
-    // What the thread status and the message's place at the end mean for this
-    // row, rather than the raw facts: a finished reply that stops being the
-    // last message draws exactly what it drew before, and keeps its row.
-    live: isReasoningDisclosureLive(thread, message2),
-    liveStep: liveStep !== null && run4?.memberIds.includes(liveStep) === true ? liveStep : null,
-    recovery: turnRecoveryForMessage(thread, message2.id)
-  });
+    settled: renderSignature({
+      memberOf: run4 && run4.anchorId !== message2.id ? run4.anchorId : null,
+      interrupted: calls.flatMap((call) => {
+        const cause = userInterruption(call);
+        return cause === void 0 ? [] : [[call.id, cause]];
+      }),
+      sections: [
+        (message2.canvasArtefacts ?? []).map((artefact) => artefact.title),
+        (message2.visualEvidence ?? []).map((evidence) => evidence.id)
+      ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store2, thread, call);
+        return answer === void 0 ? [] : [[call.id, answer]];
+      }),
+      previews: previewTitles(message2, calls).map(
+        (title) => artefactPreviewVersion(thread.id, title)
+      ),
+      failed: message2.turnOutcome?.status === "failed",
+      recovery: turnRecoveryForMessage(thread, message2.id),
+      wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null
+    })
+  };
 }
 function wantedTranscriptRows(store2, thread, hidden) {
-  return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => ({
-    key: message2.id,
-    signature: transcriptRowSignature(store2, thread, message2)
-  }));
+  return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => {
+    const run4 = multiStepRunFor(thread, message2.id);
+    return {
+      key: message2.id,
+      signature: signRow(store2, thread, message2, run4),
+      patchedBy: run4 ? run4.memberIds : [message2.id]
+    };
+  });
+}
+function adoptPatchedSignatures(rendered, wanted, patched, drawsCurrent) {
+  if (patched.size === 0) return rendered;
+  const renderedKeys = new Set(rendered.map((row2) => row2.key));
+  const wantedByKey = new Map(wanted.map((row2) => [row2.key, row2]));
+  if (rendered.some((row2, index) => !wantedByKey.has(row2.key) || !drawsCurrent(index))) {
+    return rendered;
+  }
+  let tail = false;
+  for (const row2 of wanted) {
+    if (!renderedKeys.has(row2.key)) tail = true;
+    else if (tail) return rendered;
+  }
+  return rendered.map((row2) => {
+    const current = wantedByKey.get(row2.key);
+    if (!current?.patchedBy.some((id) => patched.has(id))) return row2;
+    return {
+      key: row2.key,
+      signature: { patched: current.signature.patched, settled: row2.signature.settled }
+    };
+  });
+}
+function sameExceptTurnOutcome(drawn, next, redrawn = []) {
+  if (drawn === next) return true;
+  const skipped = /* @__PURE__ */ new Set(["turnOutcome", ...redrawn]);
+  const nextEntries = new Map(Object.entries(next).filter(([key]) => !skipped.has(key)));
+  const drawnEntries = Object.entries(drawn).filter(([key]) => !skipped.has(key));
+  return drawnEntries.length === nextEntries.size && drawnEntries.every(([key, value]) => nextEntries.has(key) && nextEntries.get(key) === value);
 }
 function relinkReadingAnchor(list, anchor) {
   if (!anchor || anchor.element.isConnected) return anchor;
@@ -21097,6 +21145,8 @@ function mountConversation(root, store2, api2) {
   let backfillGeneration = 0;
   let backfillPending = false;
   const rowSignatures = /* @__PURE__ */ new WeakMap();
+  const rowDrawnFrom = /* @__PURE__ */ new WeakMap();
+  const patchedRows = /* @__PURE__ */ new Set();
   const transcriptScroll = createTranscriptScroll({
     list,
     scrollToBottomBtn,
@@ -21297,6 +21347,7 @@ function mountConversation(root, store2, api2) {
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
     if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store2, thread, msg));
+    rowDrawnFrom.set(msgEl, msg);
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
@@ -21375,18 +21426,14 @@ function mountConversation(root, store2, api2) {
     list.insertBefore(msgEl, before ?? tail);
     finalizeMessageEl(threadId, msgId);
   }
-  function restampRow(msgId) {
-    const thread = getActiveThread(store2);
-    if (!thread) return;
-    const run4 = multiStepRunFor(thread, msgId);
-    for (const id of run4 ? run4.memberIds : [msgId]) {
-      const message2 = thread.messages.find((candidate) => candidate.id === id);
-      const element = transcriptRowElement(list, id);
-      if (message2 && element && rowSignatures.has(element)) {
-        registerReasoningDisclosures(element);
-        rowSignatures.set(element, transcriptRowSignature(store2, thread, message2));
-      }
-    }
+  function markRowPatched(msgId, redraws = []) {
+    const message2 = locateMessage(store2, msgId)?.message;
+    const element = message2 ? transcriptRowElement(list, msgId) : null;
+    if (!message2 || !element) return;
+    const drawn = rowDrawnFrom.get(element);
+    if (drawn && !sameExceptTurnOutcome(drawn, message2, redraws)) return;
+    patchedRows.add(msgId);
+    rowDrawnFrom.set(element, message2);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -21945,18 +21992,22 @@ function mountConversation(root, store2, api2) {
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (backfillPending || !sameRowEnvironment(inputs, previous)) return false;
     if (inputs.needsHydration || inputs.hydrationFailed) return false;
-    const rendered = Array.from(
-      list.querySelectorAll(":scope > [data-message-id]"),
-      (element) => ({
-        key: element.dataset["messageId"] ?? "",
-        signature: rowSignatures.get(element) ?? ""
-      })
-    );
-    const plan = planTranscriptRows(
-      rendered,
-      wantedTranscriptRows(store2, thread, queuedMessageIds(thread))
-    );
+    const elements = Array.from(list.querySelectorAll(":scope > [data-message-id]"));
+    const wanted = wantedTranscriptRows(store2, thread, queuedMessageIds(thread));
+    const messages = new Map(thread.messages.map((message2) => [message2.id, message2]));
+    const signed = elements.map((element) => ({
+      key: element.dataset["messageId"] ?? "",
+      signature: rowSignatures.get(element) ?? UNSIGNED_ROW
+    }));
+    const rendered = adoptPatchedSignatures(signed, wanted, patchedRows, (index) => {
+      const element = elements[index];
+      const drawn = element ? rowDrawnFrom.get(element) : void 0;
+      const current = messages.get(signed[index]?.key ?? "");
+      return drawn !== void 0 && current !== void 0 && sameExceptTurnOutcome(drawn, current);
+    });
+    const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
+    patchedRows.clear();
     if (plan.ops.length > 0) {
       const wasPinned = transcriptScroll.isPinnedToBottom();
       const prevScrollTop = list.scrollTop;
@@ -21982,7 +22033,15 @@ function mountConversation(root, store2, api2) {
       syncModelLabels();
       syncUserActions();
     }
-    syncConciseThreadClasses(false);
+    const wantedByKey = new Map(wanted.map((row2) => [row2.key, row2]));
+    elements.forEach((element, index) => {
+      if (element.parentElement !== list) return;
+      const key = signed[index]?.key ?? "";
+      const row2 = wantedByKey.get(key);
+      const message2 = messages.get(key);
+      if (row2) rowSignatures.set(element, row2.signature);
+      if (message2) rowDrawnFrom.set(element, message2);
+    });
     if (thread.status === "running") disclosures.cancelCompaction(thread.id);
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     return true;
@@ -22010,6 +22069,7 @@ function mountConversation(root, store2, api2) {
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    patchedRows.clear();
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -22117,7 +22177,7 @@ function mountConversation(root, store2, api2) {
             scrollToBottom();
           }
         }
-        restampRow(mid);
+        markRowPatched(mid);
       }
     }),
     store2.on("message_canvas_artefacts_changed", (mid) => {
@@ -22126,7 +22186,7 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (thread && msg?.role === "assistant" && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, thread.id, api2);
-        restampRow(mid);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22136,7 +22196,7 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
         syncMessageVisualEvidence(msgEl, msg);
-        restampRow(mid);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22158,7 +22218,7 @@ function mountConversation(root, store2, api2) {
         registerReasoningDisclosures(msgEl);
         syncAcpResourceReferences(list, api2, store2);
         syncToolRunMemberVisibility(msgEl);
-        restampRow(mid);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22180,7 +22240,7 @@ function mountConversation(root, store2, api2) {
         hydrateAcpResourceImages(msgEl, api2, store2);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
-        restampRow(mid);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22212,15 +22272,15 @@ function mountConversation(root, store2, api2) {
         const reasoning = body?.querySelector(":scope > .message-reasoning");
         if (reasoning && !reasoning.dataset["userToggled"]) reasoning.open = false;
       }
-      if (msg?.role === "assistant" && msgEl) restampRow(mid);
+      if (msg?.role === "assistant" && msgEl) markRowPatched(mid);
     }),
     store2.on("tool_call_started", (mid) => {
       refreshToolCards(mid);
-      restampRow(mid);
+      markRowPatched(mid);
     }),
     store2.on("tool_call_updated", (mid) => {
       refreshToolCards(mid);
-      restampRow(mid);
+      markRowPatched(mid);
     }),
     store2.on("threads_changed", () => {
       rebuildForThread();
@@ -22235,12 +22295,12 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("review_changed", (tid, mid) => {
       renderMessageReview(tid, mid);
-      if (tid === store2.getState().activeThreadId) restampRow(mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["review"]);
       scrollToBottom();
     }),
     store2.on("hook_card_added", (tid, mid) => {
       renderMessageHookCards(tid, mid);
-      if (tid === store2.getState().activeThreadId) restampRow(mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid);
       scrollToBottom();
     }),
     // The trailing cards draw the active thread's report and comparison, so
@@ -22262,6 +22322,7 @@ function mountConversation(root, store2, api2) {
     store2.on("review_report_changed", (tid, mid) => {
       if (!mid) return;
       renderMessageReviewReport(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -22295,7 +22356,7 @@ function mountConversation(root, store2, api2) {
         const last = getThreadById(store2, tid)?.messages.at(-1);
         if (last) {
           renderMessageTurnRecovery(tid, last.id);
-          restampRow(last.id);
+          markRowPatched(last.id);
         }
       }
       syncAvatarMotion();
@@ -22373,7 +22434,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -22479,6 +22540,7 @@ var init_conversation = __esm({
     INITIAL_RENDER_WINDOW = 40;
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
+    UNSIGNED_ROW = { patched: "", settled: "" };
   }
 });
 
