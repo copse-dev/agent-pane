@@ -177,9 +177,17 @@
       "sha256": "bfb1d66cf6bd85a4e0ef2b35c025ab56b9dfe2fc5456c1ede6b73ea5b5969aad",
       "bytes": 19234
     },
+    "acp-startup-overflow.png": {
+      "sha256": "36e046ffc533ec4be67c136eddfe066ed46fab9a2b5c294a6821ae79dd6293c6",
+      "bytes": 47554
+    },
     "acp-startup-tools.png": {
       "sha256": "a60340869975b02670fe0cf2048503f8d2a63fea5dfa67aa23853449d6ae2536",
       "bytes": 149816
+    },
+    "acp-stop-interrupted-earlier-card.png": {
+      "sha256": "080f6c2ad94eb3a5a93d212653271018cd586e908104258edf65af84b637d5ee",
+      "bytes": 176800
     },
     "acp-subagent-visibility.png": {
       "sha256": "9d424c4b77633478be2043028aa103c30af8cff5e927025ab4779c35c385f56e",
@@ -869,6 +877,10 @@
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
     },
+    "branch-ci-status-evidence.png": {
+      "sha256": "7856473097339ef6bd4820d86e3d2e72336e96314ce8420a43f74d57965877f1",
+      "bytes": 88769
+    },
     "bridged-thread-proposals.png": {
       "sha256": "3b264fa1cd26bd7a3f25b47db0cde2f1af8b38f5440bdf087af3d5b189ed319f",
       "bytes": 97686
@@ -1192,6 +1204,10 @@
     "claude-opus-5-5-picker.png": {
       "sha256": "ffc8266797816721a2518dd2c1bb246848855bf1fbc735a66adaf4ba26c9b765",
       "bytes": 15593
+    },
+    "claude-org-check-auth-error.png": {
+      "sha256": "b9bf6e2b1051c711a6a524c3ea3ec1de65ede564b3af9e4a0b452ec729845bb0",
+      "bytes": 293358
     },
     "claude-sign-in.png": {
       "sha256": "b4ad973c94ae2cc5888034cbc04796e930651a9689557133afbc88d4c70e4388",
@@ -1681,6 +1697,10 @@
       "sha256": "3747bb819addbb1c25c628ef26c297f3fc5bd15fec8363da974eee0e0e0574bc",
       "bytes": 133913
     },
+    "exact-ci-run-evidence.png": {
+      "sha256": "5b4a701df0cd9b1d62ed5656b43d0a2a713d27b6089763cae07419e407911181",
+      "bytes": 48231
+    },
     "explainer-drawing-1-player.png": {
       "sha256": "30a3d9e98f4e3910be17ad0b43891db60dbbb98aac91150bd88fbcac821dc01e",
       "bytes": 97147
@@ -2126,8 +2146,8 @@
       "bytes": 347558
     },
     "host-read-tool-cards.png": {
-      "sha256": "55a81e65e9f0e4de112db27b1d7fbc84b7110f11dfd53be15fbfabc1aeff3d71",
-      "bytes": 308101
+      "sha256": "2871fa69f6a9c55dea2a8e8e0eea2a3304d9ea3ef51a301150d63fecea74d09b",
+      "bytes": 365016
     },
     "image-description-draft.png": {
       "sha256": "759faae8e2132c12e7d04c2b6598114a641953af2ea8bf8e5df9d792f1a1c4f6",
@@ -2618,8 +2638,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "89291d549316e3d1d63df970e0c832b5a7152ad679f8fb164ef598d52d17a237",
+      "bytes": 336849
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
@@ -3345,6 +3365,10 @@
       "sha256": "2475d759e63f7c0f7f1a2314ab2af1cd42358144e7eed22cb145289b3e41d3c5",
       "bytes": 103726
     },
+    "proposed-thread-approval-over-source.png": {
+      "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
+      "bytes": 304084
+    },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
       "bytes": 212522
@@ -3909,6 +3933,10 @@
       "sha256": "1a5a06e1753f8a9d6f9da7e7c1c6c61c6b0a599715896e679d94115f9383a836",
       "bytes": 284589
     },
+    "settings-ci-investigator-plugin.png": {
+      "sha256": "88a69be60c46e58f2840acb81ff29e94865b94e1facf0f7bcd27b5b3c953db7b",
+      "bytes": 39036
+    },
     "settings-classifier-permission-failure-detail.png": {
       "sha256": "3b49d2fe90dc3adfb41f44ffaafdb59707629b09270598413909657985a33a90",
       "bytes": 54825
@@ -4158,8 +4186,8 @@
       "bytes": 259882
     },
     "settings-gui-app-permission.png": {
-      "sha256": "e48d293e2d852e22a62300f8427750ecc5b5da1c40bc7c85f6abbc03cb69c017",
-      "bytes": 380754
+      "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
+      "bytes": 376843
     },
     "settings-load-failed.png": {
       "sha256": "84e3c4d4071fd5f69e7303f40566a422c3ce542d717c59ba576c8b6bb84c6e88",
@@ -5628,6 +5656,10 @@
     "transcript-quote-sticky-reply.png": {
       "sha256": "708d6485b25f0589cb0f11d7b8dad64a093ab97786808cc27ac521d7e0486fc6",
       "bytes": 299381
+    },
+    "transcript-row-reconcile-new-turn.png": {
+      "sha256": "a7ae2fc42339bef2b4dcd497c04a107f633fb486fc68d7096f826fc2079c873a",
+      "bytes": 209222
     },
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
