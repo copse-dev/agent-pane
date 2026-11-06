@@ -104,7 +104,7 @@ describe('thread roadmap origin chip', () => {
   it('picks up the stamp once it lands after the thread already exists', async () => {
     // "Start thread" creates and selects the thread (before the item's
     // `thread` field is stamped) and only later stamps the item —
-    // the exact race register-handlers.ts's roadmap:set-thread broadcasts
+    // the exact race roadmap-handlers.ts's roadmap:set-thread broadcasts
     // roadmap:changed for.
     const origin: Record<string, { id: string; title: string }> = {}
     const store = createStore({ activeThreadId: null })
