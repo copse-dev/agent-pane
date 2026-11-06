@@ -721,7 +721,7 @@ describe('runAgent AgentHost decoupling', () => {
           yield {
             type: 'tool_call' as const,
             toolCall: {
-              id: 'retried-edit',
+              id: 'first-edit',
               name: 'write_file',
               args: { path: 'packages/api/router.ts' },
             },
@@ -729,7 +729,7 @@ describe('runAgent AgentHost decoupling', () => {
           yield {
             type: 'tool_call' as const,
             toolCall: {
-              id: 'retried-second-edit',
+              id: 'second-edit-before-instructions',
               name: 'write_file',
               args: { path: 'packages/api/handler.ts' },
             },
@@ -792,8 +792,8 @@ describe('runAgent AgentHost decoupling', () => {
         [
           ['first-edit', true],
           ['second-edit-before-instructions', true],
-          ['retried-edit', undefined],
-          ['retried-second-edit', undefined],
+          ['first-edit', undefined],
+          ['second-edit-before-instructions', undefined],
         ],
       )
     } finally {

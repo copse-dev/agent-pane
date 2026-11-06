@@ -7,7 +7,7 @@ import { expectAssistantReply } from './helpers/mock-scenario.ts'
 import {
   assertParentInstructionFiles,
   PARENT_INSTRUCTION_DEFERRAL,
-  PARENT_INSTRUCTION_EDIT_PATHS,
+  PARENT_INSTRUCTION_EDITS,
   PARENT_INSTRUCTION_FILES,
   PARENT_INSTRUCTION_HOLD,
   PARENT_INSTRUCTION_PROMPT,
@@ -23,6 +23,26 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+
+/** Open lazy disclosures through the real summaries, including their containers. */
+async function openToolDisclosure(selector: string): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((cardSelector) => {
+        const card = document.querySelector<HTMLDetailsElement>(cardSelector)
+        if (!card) return false
+        const disclosures: HTMLDetailsElement[] = []
+        for (let parent = card.parentElement; parent; parent = parent.parentElement) {
+          if (parent instanceof HTMLDetailsElement) disclosures.unshift(parent)
+        }
+        for (const disclosure of [...disclosures, card]) {
+          if (!disclosure.open) disclosure.querySelector<HTMLElement>(':scope > summary')?.click()
+        }
+        return (card.querySelector('.tool-result')?.getBoundingClientRect().height ?? 0) > 0
+      }, selector),
+    { timeout: 15_000, timeoutMsg: 'Expected the tool disclosure to open' },
+  )
+}
 
 describe('parent instruction delivery', function () {
   this.timeout(90_000)
@@ -74,25 +94,9 @@ describe('parent instruction delivery', function () {
 
       // Open the real disclosures through their summaries, including any
       // containing rollup/group, so lazy tool bodies render as they do for users.
-      for (const [offset, path] of PARENT_INSTRUCTION_EDIT_PATHS.entries()) {
-        const selector = `[data-tool-id$="-tool-${String(offset + 1)}"]`
-        await browser.waitUntil(
-          () =>
-            browser.execute((cardSelector) => {
-              const card = document.querySelector<HTMLDetailsElement>(cardSelector)
-              if (!card) return false
-              const disclosures: HTMLDetailsElement[] = []
-              for (let parent = card.parentElement; parent; parent = parent.parentElement) {
-                if (parent instanceof HTMLDetailsElement) disclosures.unshift(parent)
-              }
-              for (const disclosure of [...disclosures, card]) {
-                if (!disclosure.open)
-                  disclosure.querySelector<HTMLElement>(':scope > summary')?.click()
-              }
-              return (card.querySelector('.tool-result')?.getBoundingClientRect().height ?? 0) > 0
-            }, selector),
-          { timeout: 15_000, timeoutMsg: 'Expected the deferred edit disclosure to open' },
-        )
+      for (const { id, path } of PARENT_INSTRUCTION_EDITS) {
+        const selector = `[data-tool-id="${id}"]`
+        await openToolDisclosure(selector)
         // Nothing was edited yet: the card names the deferral and never shows
         // the success state (the green check of a completed edit).
         await expect($(selector).$(':scope > summary .tool-name')).toHaveText(`Deferred ${path}`)
@@ -120,6 +124,24 @@ describe('parent instruction delivery', function () {
     await waitForAgentIdle(30_000)
     await expectAssistantReply(PARENT_INSTRUCTION_REPLY)
     assertParentInstructionFiles(workspace, true)
+    const groupSelector = '.tool-card-rollup .tool-card-group'
+    await openToolDisclosure(groupSelector)
+    await expect($(groupSelector).$(':scope > summary .tool-name')).toHaveText('Edited files')
+    await expect($(groupSelector).$$('[data-tool-id]')).toBeElementsArrayOfSize(2)
+    for (const { id, path } of PARENT_INSTRUCTION_EDITS) {
+      const selector = `${groupSelector} [data-tool-id="${id}"]`
+      await openToolDisclosure(selector)
+      await expect($(selector).$(':scope > summary .tool-name')).toHaveText(`Edited ${path}`)
+      await expect($(selector)).toHaveAttribute('data-status', 'done')
+      await expect($(selector).$(':scope > summary .tool-status-icon')).toHaveAttribute(
+        'aria-label',
+        'done',
+      )
+      await expect($(selector).$('.tool-result')).toHaveText(`Applied edit directly to ${path}.`)
+    }
+    const finalLabels = await $$('.tool-card-rollup .tool-name').map((name) => name.getText())
+    expect(finalLabels.some((label) => label.startsWith('Deferred'))).toBe(false)
+    await saveElementScreenshot('.tool-card-rollup', 'parent-instruction-retried-edits.png')
     server.assertComplete()
   })
 })

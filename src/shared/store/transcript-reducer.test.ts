@@ -293,3 +293,33 @@ test('a deferred tool result marks only its own card deferred', () => {
     assert.equal(applied?.deferred, undefined)
   }
 })
+
+for (const retryId of ['call_0', 'retry_1']) {
+  test(`a performed retry ${retryId} has no stale deferred marker in main or the window`, () => {
+    const write = (id: string): StreamChunk => ({
+      type: 'tool_call',
+      toolCall: { id, name: 'write_file', args: { path: 'packages/api/first.ts' } },
+    })
+    const { main, window } = reduceBoth([
+      write('call_0'),
+      {
+        type: 'tool_result',
+        toolCallId: 'call_0',
+        result: 'Edit deferred.',
+        isError: false,
+        deferred: true,
+      },
+      { type: 'text', text: 'Retrying with the instructions.' },
+      write(retryId),
+      { type: 'tool_result', toolCallId: retryId, result: 'File written.', isError: false },
+    ])
+    for (const store of [main, window]) {
+      const calls = messagesOf(store).flatMap((message) => message.toolCalls)
+      const applied = calls.find((call) => call.result === 'File written.')
+      assert.ok(applied)
+      assert.equal(applied.status, 'done')
+      assert.equal(Object.hasOwn(applied, 'deferred'), false)
+      if (retryId !== 'call_0') assert.equal(calls[0]?.deferred, true)
+    }
+  })
+}

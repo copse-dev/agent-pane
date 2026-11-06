@@ -116,6 +116,50 @@ describe('createHeadlessAutomationRun', () => {
     assert.equal(toolCall.deferred, true)
   })
 
+  for (const retryId of ['call_0', 'retry_1']) {
+    it(`clears a performed retry ${retryId} deferral on the persisted automation call`, async () => {
+      const threadId = 'thread-retry'
+      await createThread(PROJECT_ID, thread(threadId))
+      const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+      run.host.emit(threadId, {
+        type: 'tool_call',
+        toolCall: { id: 'call_0', name: 'write_file', args: { path: 'README.md' } },
+      })
+      run.host.emit(threadId, {
+        type: 'tool_result',
+        toolCallId: 'call_0',
+        result: 'Edit deferred.',
+        isError: false,
+        deferred: true,
+      })
+      await run.flush()
+      assert.equal(
+        (await getProjectThread(PROJECT_ID, threadId))?.messages[0]?.toolCalls[0]?.deferred,
+        true,
+      )
+      run.host.emit(threadId, { type: 'text', text: 'Retrying with the instructions.' })
+      run.host.emit(threadId, {
+        type: 'tool_call',
+        toolCall: { id: retryId, name: 'write_file', args: { path: 'README.md' } },
+      })
+      run.host.emit(threadId, {
+        type: 'tool_result',
+        toolCallId: retryId,
+        result: 'File written.',
+        isError: false,
+      })
+      run.host.emit(threadId, { type: 'done' })
+      await run.flush()
+      const calls = (await getProjectThread(PROJECT_ID, threadId))?.messages.flatMap(
+        (message) => message.toolCalls,
+      )
+      const applied = calls?.find((call) => call.result === 'File written.')
+      assert.ok(applied)
+      assert.equal(Object.hasOwn(applied, 'deferred'), false)
+      if (retryId !== 'call_0') assert.equal(calls?.[0]?.deferred, true)
+    })
+  }
+
   it('persists ACP agent content: thoughts, message text and non-text blocks', async () => {
     const threadId = 'thread-4'
     await createThread(PROJECT_ID, thread(threadId))

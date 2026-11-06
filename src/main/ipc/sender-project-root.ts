@@ -15,8 +15,17 @@ import { getMainWindowNavigation } from '../windows/create-main-window.ts'
  * primary window, as it did before.
  */
 export function senderProjectRoot(sender: WebContents): string | null {
-  const projectId = getMainWindowNavigation(sender).activeProjectId
+  const projectId = senderProjectId(sender)
   return projectId === null ? null : getProjectRoot(projectId)
+}
+
+/**
+ * The id of the project open in the asking window, or null when it shows none.
+ * Resolved like {@link senderProjectRoot}: from the sender's own window record,
+ * never the process-global active project (#3958).
+ */
+export function senderProjectId(sender: WebContents): string | null {
+  return getMainWindowNavigation(sender).activeProjectId
 }
 
 /**

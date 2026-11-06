@@ -39,9 +39,9 @@
 //    appending the prompt block (`agent-system-prompt.ts`), and hides the
 //    renderer Memories pane (which reads the plugin's enablement via `plugins:list`).
 //  - `ciInvestigatorPlugin` — the first-party plugin for the experimental CI
-//    investigator subagent. Declares the `investigate_ci` tool plus its
-//    deep-log `gh_run_list` / `gh_run_view` helpers; the plugin toggle atomically
-//    drops all three from the model tool list (`registry-bootstrap.ts` reads the
+//    investigator subagent. Declares only `investigate_ci`; basic workflow reads
+//    remain core tools. The plugin toggle removes the investigator from the
+//    model tool list (`registry-bootstrap.ts` reads the
 //    plugin registry, ANDing `gh` availability into the register direction) and
 //    re-points the "Investigate CI failure" follow-up.
 //  - `forcedPlanningPlugin` — the first-party plugin for the experimental

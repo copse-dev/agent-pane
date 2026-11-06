@@ -15,8 +15,11 @@ export const PARENT_INSTRUCTION_REPLY = 'Both API files now follow the workspace
 
 const FIRST_PATH = 'packages/api/first.ts'
 const SECOND_PATH = 'packages/api/second.ts'
-/** The two edits of the activating response, in tool-call order (tools 1 and 2). */
-export const PARENT_INSTRUCTION_EDIT_PATHS = [FIRST_PATH, SECOND_PATH] as const
+/** Reused on the performed retries, as providers with per-response ids do. */
+export const PARENT_INSTRUCTION_EDITS = [
+  { id: 'call_0', path: FIRST_PATH },
+  { id: 'call_1', path: SECOND_PATH },
+] as const
 const FIRST_BEFORE = "export const first = 'before';\n"
 const SECOND_BEFORE = "export const second = 'before';\n"
 const FIRST_AFTER = "export const first = 'updated';\n"
@@ -44,8 +47,8 @@ export function assertParentInstructionFiles(workspace: string, updated: boolean
 /** One response activates the scope with a read, then attempts both edits. */
 export function parentInstructionResponses(workspace: string): ConversationResponse[] {
   const retries = [
-    { name: 'write_file', args: { path: FIRST_PATH, content: FIRST_AFTER } },
-    { name: 'write_file', args: { path: SECOND_PATH, content: SECOND_AFTER } },
+    { id: 'call_0', name: 'write_file', args: { path: FIRST_PATH, content: FIRST_AFTER } },
+    { id: 'call_1', name: 'write_file', args: { path: SECOND_PATH, content: SECOND_AFTER } },
   ]
   return [
     {
