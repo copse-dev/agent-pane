@@ -1,6 +1,11 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
-import { assertMainFrameSender, parseIpcArgs, zNonEmptyString } from './ipc-guards.ts'
+import { defineHandler } from './define-handler.ts'
+import {
+  memoriesCreateArgs,
+  memoriesDeleteArgs,
+  memoriesUpdateArgs,
+} from './memory-handler-args.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import {
   addKnowledgeNote,
@@ -14,34 +19,21 @@ export function registerMemoryHandlers(win: BrowserWindow): void {
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
   // reads and edits the `Memory` notes the agent's remember/recall tools author.
   // Only the Memory type is exposed; roadmap/other knowledge types stay internal.
-  const zMemoryTitle = z.string().max(512)
-  const zMemoryBody = z.string().max(1_000_000)
-  const zMemoryTags = z.array(z.string().max(128)).max(64)
+  defineHandler(win, 'memories:list', z.tuple([]), () => loadKnowledgeNotes(MEMORY_TYPE))
 
-  ipcMain.handle('memories:list', (event) => {
-    assertMainFrameSender(event, win)
-    return loadKnowledgeNotes(MEMORY_TYPE)
-  })
-
-  ipcMain.handle(
+  defineHandler(
+    win,
     'memories:create',
-    (event, rawTitle: unknown, rawBody: unknown, rawTags: unknown) => {
-      assertMainFrameSender(event, win)
-      const title = parseIpcArgs(zMemoryTitle, [rawTitle])
-      const body = parseIpcArgs(zMemoryBody, [rawBody])
-      const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
-      return addKnowledgeNote({ type: MEMORY_TYPE, title, body, tags })
-    },
+    memoriesCreateArgs,
+    (title, body, tags) => addKnowledgeNote({ type: MEMORY_TYPE, title, body, tags }),
+    { errors: 'per-argument' },
   )
 
-  ipcMain.handle(
+  defineHandler(
+    win,
     'memories:update',
-    (event, rawId: unknown, rawTitle: unknown, rawBody: unknown, rawTags: unknown) => {
-      assertMainFrameSender(event, win)
-      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
-      const title = parseIpcArgs(zMemoryTitle, [rawTitle])
-      const body = parseIpcArgs(zMemoryBody, [rawBody])
-      const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
+    memoriesUpdateArgs,
+    (id, title, body, tags) => {
       // A user edit is a review: saving from the Memories pane clears the
       // saved-with-external-content marker (context-provenance plan, Phase 4).
       const current = getKnowledgeNote(id)
@@ -52,11 +44,8 @@ export function registerMemoryHandlers(win: BrowserWindow): void {
         : undefined
       return updateKnowledgeNote(id, { title, body, tags, ...(fields ? { fields } : {}) })
     },
+    { errors: 'per-argument' },
   )
 
-  ipcMain.handle('memories:delete', (event, rawId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
-    return deleteKnowledgeNote(id)
-  })
+  defineHandler(win, 'memories:delete', memoriesDeleteArgs, (id) => deleteKnowledgeNote(id))
 }

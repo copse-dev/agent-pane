@@ -1,36 +1,45 @@
-import { BrowserWindow, ipcMain } from 'electron'
-import { assertMainFrameSender, parseIpcArgs, mainWindowNavigationSchema } from './ipc-guards.ts'
+import type { BrowserWindow } from 'electron'
+import { z } from 'zod'
+import { defineSenderHandler } from './define-handler.ts'
+import {
+  mainWindowSetBrowserSessionArgs,
+  mainWindowSetNavigationArgs,
+} from './main-window-handler-args.ts'
 import {
   getMainWindowBrowserSession,
   getMainWindowNavigation,
   setMainWindowBrowserSession,
   setMainWindowNavigation,
 } from '../windows/create-main-window.ts'
-import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
+import { decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 
 export function registerMainWindowHandlers(win: BrowserWindow): void {
-  ipcMain.handle('main-window:get-navigation', (event) => {
-    assertMainFrameSender(event, win)
-    return getMainWindowNavigation(event.sender)
-  })
+  defineSenderHandler(win, 'main-window:get-navigation', z.tuple([]), (sender) =>
+    getMainWindowNavigation(sender),
+  )
 
-  ipcMain.handle('main-window:set-navigation', (event, rawNavigation: unknown) => {
-    assertMainFrameSender(event, win)
-    const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
-    setMainWindowNavigation(event.sender, navigation)
-  })
+  defineSenderHandler(
+    win,
+    'main-window:set-navigation',
+    mainWindowSetNavigationArgs,
+    (sender, navigation) => {
+      setMainWindowNavigation(sender, navigation)
+    },
+  )
 
   // The Browser pane's tabs, so quitting no longer throws away the canvas the
   // agent rendered. Stored per window beside its navigation and bounded by the
   // same schema the launch-time decode uses.
-  ipcMain.handle('main-window:get-browser-session', (event) => {
-    assertMainFrameSender(event, win)
-    return getMainWindowBrowserSession(event.sender)
-  })
+  defineSenderHandler(win, 'main-window:get-browser-session', z.tuple([]), (sender) =>
+    getMainWindowBrowserSession(sender),
+  )
 
-  ipcMain.handle('main-window:set-browser-session', (event, rawSession: unknown) => {
-    assertMainFrameSender(event, win)
-    const session = parseIpcArgs(browserPaneSessionSchema, [rawSession])
-    setMainWindowBrowserSession(event.sender, decodeBrowserPaneSession(session))
-  })
+  defineSenderHandler(
+    win,
+    'main-window:set-browser-session',
+    mainWindowSetBrowserSessionArgs,
+    (sender, session) => {
+      setMainWindowBrowserSession(sender, decodeBrowserPaneSession(session))
+    },
+  )
 }

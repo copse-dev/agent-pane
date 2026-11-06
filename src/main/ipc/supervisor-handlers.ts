@@ -1,20 +1,17 @@
-import { BrowserWindow, ipcMain } from 'electron'
-import { z } from 'zod'
+import type { BrowserWindow } from 'electron'
 import { peekBackgroundProcessLogs } from '../services/exec/background-process.ts'
+import { defineHandler } from './define-handler.ts'
 import {
-  assertMainFrameSender,
-  parseIpcArgs,
-  zNonEmptyString,
-  zProjectId,
-  zThreadId,
-} from './ipc-guards.ts'
+  backgroundTaskLogsArgs,
+  supervisorCancelArgs,
+  supervisorListArgs,
+  supervisorTaskArgs,
+} from './supervisor-handler-args.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
 
 export function registerSupervisorHandlers(win: BrowserWindow): void {
-  ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
+  defineHandler(win, 'supervisor:list', supervisorListArgs, async (projectId) => {
     const supervisor = getTaskSupervisor()
     await supervisor.start()
     // The trusted desktop owns a project overview, including orphaned threads.
@@ -30,47 +27,41 @@ export function registerSupervisorHandlers(win: BrowserWindow): void {
       .filter((task) => task.state !== 'completed' && task.state !== 'cancelled')
     return { tasks }
   })
-  ipcMain.handle('supervisor:cancel', async (event, rawProjectId: unknown, rawTaskId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-    const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-    const supervisor = getTaskSupervisor()
-    await supervisor.start()
-    const task = supervisor.get(projectId, taskId)
-    if (!task) return { task: null }
-    return createSupervisedTaskClient(supervisor, task).cancel(taskId)
-  })
-  ipcMain.handle(
-    'supervisor:get',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
-      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
+  defineHandler(
+    win,
+    'supervisor:cancel',
+    supervisorCancelArgs,
+    async (projectId, taskId) => {
+      const supervisor = getTaskSupervisor()
+      await supervisor.start()
+      const task = supervisor.get(projectId, taskId)
+      if (!task) return { task: null }
+      return createSupervisedTaskClient(supervisor, task).cancel(taskId)
     },
+    { errors: 'per-argument' },
+  )
+  defineHandler(
+    win,
+    'supervisor:get',
+    supervisorTaskArgs,
+    (projectId, threadId, taskId) =>
+      createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId),
+    { errors: 'per-argument' },
   )
   // A command card's "Logs" (#3956): one task's retained output, scoped to the
   // thread that started it. Reading here is not the agent observing the exit.
-  ipcMain.handle(
+  defineHandler(
+    win,
     'background-tasks:logs',
-    (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, taskId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawThreadId, rawTaskId],
-      )
-      return peekBackgroundProcessLogs(taskId, { projectId, threadId })
-    },
+    backgroundTaskLogsArgs,
+    (projectId, threadId, taskId) => peekBackgroundProcessLogs(taskId, { projectId, threadId }),
   )
-  ipcMain.handle(
+  defineHandler(
+    win,
     'supervisor:resume',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zNonEmptyString.max(256), [rawProjectId])
-      const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
-      const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
-      return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).resume(taskId)
-    },
+    supervisorTaskArgs,
+    (projectId, threadId, taskId) =>
+      createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).resume(taskId),
+    { errors: 'per-argument' },
   )
 }
