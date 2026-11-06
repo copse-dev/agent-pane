@@ -1,4 +1,11 @@
 import { el, clear } from '../dom/helpers.ts'
+import {
+  applyTranscriptRowPlan,
+  planTranscriptRows,
+  relinkReadingAnchor,
+  transcriptRowSignature,
+  wantedTranscriptRows,
+} from './transcript-rows.ts'
 import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
@@ -803,6 +810,27 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
     a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.messages, b.messages) &&
     sameItems(a.pendingMessages, b.pendingMessages) &&
+    sameItems(a.threadProposals, b.threadProposals) &&
+    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+  )
+}
+
+/**
+ * Whether the thread-wide inputs that many rows read at build time are
+ * unchanged, so a keyed row reconcile may stand in for a full rebuild. The
+ * remaining inputs are either per-row (the messages, their queue, the status
+ * the live tail reads; see transcript-rows.ts) or chrome synced on its own
+ * (todos, the working brief).
+ */
+function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
+  return (
+    a.threadId === b.threadId &&
+    a.model === b.model &&
+    a.interruptedTurnAt === b.interruptedTurnAt &&
+    a.liveProposalTargets === b.liveProposalTargets &&
+    a.needsHydration === b.needsHydration &&
+    a.hydrationFailed === b.hydrationFailed &&
+    a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.threadProposals, b.threadProposals) &&
     sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
   )
@@ -3139,6 +3167,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
+  // True while older history is still being backfilled above the window, so
+  // the list does not yet hold every row of the thread.
+  let backfillPending = false
+  // What each message row was built from (see transcript-rows.ts). A row whose
+  // signature still matches its message is kept across a reconcile.
+  const rowSignatures = new WeakMap<HTMLElement, string>()
 
   // Scroll following and reading-position preservation (see transcript-scroll.ts).
   const transcriptScroll = createTranscriptScroll({
@@ -3426,6 +3460,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg))
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
@@ -3551,6 +3586,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // hugs the transcript's tail, which can scroll the top of a long prompt
     // out of view the moment it's submitted (#2457).
     if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
+  }
+
+  /**
+   * Build a message row and insert it before `before`, or at the transcript's
+   * tail (above the activity row and trailing cards) when `before` is null.
+   * The keyed reconcile's build path; a row built here is the row the live
+   * path would have appended.
+   */
+  function insertMessageRow(threadId: string, msgId: string, before: Element | null): void {
+    const msgEl = buildMessageEl(threadId, msgId)
+    if (!msgEl) return
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard()
+    list.insertBefore(msgEl, before ?? tail)
+    finalizeMessageEl(threadId, msgId)
   }
 
   /**
@@ -4289,7 +4338,64 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
       })
+    } else backfillPending = false
+  }
+
+  /**
+   * Patch the rendered rows to match `thread` instead of rebuilding the list
+   * (see transcript-rows.ts). Returns false, having touched nothing, when the
+   * change is one a whole rebuild must handle: a thread-wide input that many
+   * rows read changed, the hydration notice is involved, older history is
+   * still backfilling, or the kept rows would have to move.
+   */
+  function reconcileTranscriptRows(
+    thread: Thread,
+    inputs: TranscriptInputs,
+    previous: TranscriptInputs,
+  ): boolean {
+    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
+    if (inputs.needsHydration || inputs.hydrationFailed) return false
+    const rendered = Array.from(
+      list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'),
+      (element) => ({
+        key: element.dataset['messageId'] ?? '',
+        signature: rowSignatures.get(element) ?? '',
+      }),
+    )
+    const plan = planTranscriptRows(
+      rendered,
+      wantedTranscriptRows(thread, queuedMessageIds(thread)),
+    )
+    if (plan.kind === 'rebuild') return false
+    if (plan.ops.length > 0) {
+      const wasPinned = transcriptScroll.isPinnedToBottom()
+      const prevScrollTop = list.scrollTop
+      const anchor = wasPinned ? null : captureReadingAnchor()
+      applyTranscriptRowPlan(plan, {
+        list,
+        insert: (key, before) => {
+          insertMessageRow(thread.id, key, before)
+        },
+      })
+      // The same batched tail work a rebuild does for its window.
+      syncModelLabels()
+      syncUserActions()
+      syncAcpResourceReferences(list, api, store)
+      finishThreadChrome(thread)
+      syncConciseTurnFooters()
+      refreshStickyImagePrompt()
+      toolCards.forgetDetachedDisclosureElements()
+      syncAvatarMotion()
+      if (wasPinned) scrollToBottom()
+      else restoreReadingAnchor(relinkReadingAnchor(list, anchor), prevScrollTop)
+    } else {
+      finishThreadChrome(thread)
+      syncModelLabels()
+      syncUserActions()
     }
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    return true
   }
 
   function rebuildForThread(): void {
@@ -4308,6 +4414,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         finishThreadChrome(thread)
         syncModelLabels()
         syncUserActions()
+        return
+      }
+      // The messages, their queue or the thread status moved: keep every row
+      // that still draws the same thing and patch only the rest.
+      if (reconcileTranscriptRows(thread, inputs, renderedInputs)) {
+        renderedInputs = inputs
         return
       }
     }
@@ -4373,6 +4485,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    backfillPending = initialStart > 0
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {

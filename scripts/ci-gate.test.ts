@@ -41,6 +41,8 @@ const successfulPr = {
   PRECHECK_RESULT: 'success',
   CHECK_RESULT: 'success',
   BASELINES_RESULT: 'success',
+  MACOS_SANDBOX_REQUIRED: 'false',
+  MACOS_SANDBOX_RESULT: 'skipped',
   MERGE_GROUP: 'false',
   BUILD_RESULT: 'success',
   REVIEW_CELL_REQUIRED: 'false',
@@ -79,6 +81,9 @@ describe('required CI gate bindings', () => {
       PRECHECK_RESULT: '${{ needs.precheck.result }}',
       CHECK_RESULT: '${{ needs.check.result }}',
       BASELINES_RESULT: '${{ needs.screenshot-baselines.result }}',
+      MACOS_SANDBOX_REQUIRED:
+        "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-macos-sandbox') && (github.event.action != 'labeled' || github.event.label.name == 'ci-macos-sandbox') }}",
+      MACOS_SANDBOX_RESULT: '${{ needs.macos-sandbox.result }}',
       MERGE_GROUP: "${{ github.event_name == 'merge_group' }}",
       BUILD_RESULT: '${{ needs.build.result }}',
       REVIEW_CELL_REQUIRED: '${{ needs.precheck.outputs.review_cell_required }}',
@@ -160,6 +165,21 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
     assert.equal(gate({ MODE: 'skip', E2E_SHARD_TOTAL: '0', E2E_RESULT: 'skipped' }), 0)
     assert.equal(gate({ E2E_SHARD_TOTAL: '0', E2E_RESULT: 'skipped' }), 0)
     assert.equal(gate({ E2E_REQUIRED: 'false', E2E_RESULT: 'skipped' }), 0)
+  })
+
+  it('requires actual native success when the macOS contract is requested, even in skip mode', () => {
+    for (const mode of ['full', 'subset', 'skip']) {
+      for (const result of ['failure', 'cancelled', 'skipped', '']) {
+        assert.equal(
+          gate({ MODE: mode, MACOS_SANDBOX_REQUIRED: 'true', MACOS_SANDBOX_RESULT: result }),
+          1,
+        )
+      }
+      assert.equal(
+        gate({ MODE: mode, MACOS_SANDBOX_REQUIRED: 'true', MACOS_SANDBOX_RESULT: 'success' }),
+        0,
+      )
+    }
   })
 
   it('requires the queue build even when the oracle skips e2e', () => {
