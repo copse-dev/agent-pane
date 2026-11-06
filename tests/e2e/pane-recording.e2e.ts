@@ -215,6 +215,9 @@ async function waitForRecordingChip(): Promise<void> {
   })
 }
 
+/** The composer's draft attachment row, not the running-recordings row before it. */
+const DRAFT_CHIPS = '.attachment-chips:not(.recording-chips)'
+
 /** Keep real clock/codec checks outside the brief, reversible capture pins. */
 async function captureRecordingState(
   capture: () => Promise<void>,
@@ -240,11 +243,11 @@ async function captureRecordingState(
       }
       // Encoder output and the start time are runtime facts, not fixture inputs.
       // Their real values have already been asserted; preserve the actual files.
+      // The pin reads the first match only, and the running-recordings row
+      // (`.recording-chips`) sits before the draft row that holds the videos.
+      restore.push(await pinTextForCapture(DRAFT_CHIPS, /\b\d+(?:\.\d+)? (?:B|KB|MB)\b/g, '42 KB'))
       restore.push(
-        await pinTextForCapture('.attachment-chips', /\b\d+(?:\.\d+)? (?:B|KB|MB)\b/g, '42 KB'),
-      )
-      restore.push(
-        await pinTextForCapture('.attachment-chips', /\d{2}-\d{2}-\d{2}\.webm/g, '12-34-56.webm'),
+        await pinTextForCapture(DRAFT_CHIPS, /\d{2}-\d{2}-\d{2}\.webm/g, '12-34-56.webm'),
       )
     }
     await capture()
