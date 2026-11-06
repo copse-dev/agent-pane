@@ -793,7 +793,10 @@ export function formatGhRunList(entries: GhRunEntry[]): string {
     .map((run) => {
       const id = run.databaseId !== undefined ? `#${String(run.databaseId)}` : '(no id)'
       const workflow = run.workflowName ?? run.name ?? 'workflow'
-      const outcome = (run.conclusion ?? run.status ?? 'unknown').toUpperCase()
+      // GitHub returns an empty conclusion while a run is queued or running.
+      const outcome = (
+        [run.conclusion, run.status].find((value) => value?.trim()) ?? 'unknown'
+      ).toUpperCase()
       const where = `${run.headBranch ?? '?'} @ ${shortSha(run.headSha)}`
       const title = run.displayTitle ? ` — ${run.displayTitle}` : ''
       const url = run.url ? `\n  ${run.url}` : ''

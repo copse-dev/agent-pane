@@ -36,3 +36,23 @@ gh availability, investigator gating and ACP exposure alongside the focused GitH
 run the standard static/full gate. Real-model evidence also depends on the nested tool-schema fix:
 without it, the local server rejects the entire native tool list before a model can use these reads.
 Record exact final results and integration revisions in the PR.
+
+The live run exposed two further evidence issues. An empty temporary Git repository cannot answer
+the recent-merge question: the scenario now copies at most 50 commits of local `origin/main` via
+file transport into an independent disposable repository, preserving its original remote. A fixture
+test checks history, remote, source immutability and absence of alternates. GitHub also returns an
+empty conclusion for active runs; workflow text now falls back to the queued/running status rather
+than printing a blank outcome. The regression fails before that formatter correction.
+
+The first integrated real-model run on the corrected history fixture passed deterministic tool
+expectations (44.3 seconds, Qwen3.6 35B A3B via LM Studio, ordinary permissions, plugin disabled).
+It correctly listed the recorded merges and used core workflow reads without shell or write calls,
+but guessed at a failure cause without reading logs. Treat that as a partial qualitative result;
+tool availability and a scorer pass do not establish reliable diagnosis.
+
+A same-model repeat failed the workflow-tool expectation: it ignored the available workflow
+reads and inferred merge ordering from PR numbers. Preserve that failure rather than relaxing
+the scorer. Final local full check: 17,062 passed, ten failed, one skipped. The ten failures are
+the same eight reproduced on unchanged main plus two CI-planning fixtures affected by an
+uncommitted checkout; rerun the latter after committing. Final static/build gates and 68 focused
+tests pass. The settings plugin Electron eval passes and all eleven captures were inspected.

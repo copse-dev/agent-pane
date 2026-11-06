@@ -43,6 +43,17 @@ describe('formatGhRunList', () => {
     assert.match(out, /#1 CI: IN_PROGRESS/)
   })
 
+  it('shows active status when GitHub returns an empty conclusion', () => {
+    for (const status of ['queued', 'in_progress']) {
+      const out = formatGhRunList([{ databaseId: 1, workflowName: 'CI', conclusion: '', status }])
+      assert.match(out, new RegExp(`#1 CI: ${status.toUpperCase()}`))
+    }
+    assert.match(
+      formatGhRunList([{ databaseId: 1, workflowName: 'CI', conclusion: '', status: '' }]),
+      /#1 CI: UNKNOWN/,
+    )
+  })
+
   it('reports an empty list', () => {
     assert.equal(formatGhRunList([]), '(no workflow runs)')
   })
