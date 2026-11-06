@@ -2169,6 +2169,13 @@ copse-ui-field input[type=password],
   font-weight: 600;
   color: var(--text-secondary);
 }
+.pr-list-host > .pane-header > .pane-header-title,
+.git-changes-header > .pane-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .git-changes-header-owner {
   font-size: var(--font-size-2xs);
   color: var(--text-tertiary, var(--text-secondary));
