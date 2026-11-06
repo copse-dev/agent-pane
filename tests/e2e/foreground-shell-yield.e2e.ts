@@ -11,7 +11,7 @@ import {
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -236,6 +236,7 @@ describe('bounded foreground command yielding', function () {
     await expect($(`${card} .tool-task-logs-output pre`)).toHaveText(
       'checkpoint saved; bounded check is running',
     )
+    await parkPointer()
     await saveAppScreenshot('foreground-shell-yield-running.png')
     const wakeCount = (await $$('.msg-machine-origin').getElements()).length
     writeFileSync(join(root, 'release.txt'), '')
@@ -277,6 +278,7 @@ describe('bounded foreground command yielding', function () {
     )
     await browser.waitUntil(async () => pids.every((pid) => !alive(pid)), { timeout: 10_000 })
     await settleReveal()
+    await parkPointer()
     await saveAppScreenshot('foreground-shell-yield-completed.png')
   })
 
@@ -297,6 +299,7 @@ describe('bounded foreground command yielding', function () {
       assert.equal(existsSync(join(root, 'dependent.txt')), false)
       await browser.waitUntil(async () => pids.every((pid) => !alive(pid)), { timeout: 10_000 })
       await settleReveal()
+      await parkPointer()
       await saveAppScreenshot(
         ending === 'deadline'
           ? 'foreground-shell-yield-deadline.png'
@@ -323,6 +326,7 @@ describe('bounded foreground command yielding', function () {
     await $('button[aria-label="Open terminal"]').click()
     await openCard()
     await expect($(`${card} .tool-command-phase[data-phase="cancelled"]`)).toBeDisplayed()
+    await parkPointer()
     await saveAppScreenshot('foreground-shell-yield-cancelled.png')
   })
 
