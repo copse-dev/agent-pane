@@ -11,7 +11,6 @@ import { copseCacheDir, copseManagedPreparationCacheDirs } from '../services/sto
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
-  resolveNodeToolchainAllowRead,
   electronRuntimeAllowReadPaths,
   sandboxRuntimeHelperAllowReadPaths,
   workspaceMandatoryWriteDenyPaths,
@@ -19,6 +18,12 @@ import {
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
+import {
+  linkPreparationNodeToolchain,
+  preparationNodeToolchainReadPaths,
+  preparationPathEnvironment,
+} from './preparation-node-toolchain.ts'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 
 export function requirePreparationSandbox(): void {
   if (!isProjectSandboxEnabled() || !['darwin', 'linux'].includes(process.platform)) {
@@ -293,12 +298,24 @@ async function runContainedPreparationProcess(
     }
   }
   const env = withSandboxShellPath(
-    withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch),
+    preparationPathEnvironment(withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch)),
   )
   // The outer wrapper shell starts before kernel confinement. Never let its
   // startup files execute ambient code before sandbox-exec/bwrap takes over.
   delete env['BASH_ENV']
   delete env['ENV']
+  const deniedRead = [homedir(), tmpdir(), '/private/tmp', '/private/var/folders']
+  const existingRead = [
+    root,
+    scratch,
+    ...caches,
+    ...electronRuntimeAllowReadPaths(),
+    ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
+    ...(options.additionalExecutables ?? []).flatMap((executable) =>
+      preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
+    ),
+    ...sandboxRuntimeHelperAllowReadPaths(),
+  ]
   const params = {
     // ASRT's proxy environment overrides spawn.env (including TMPDIR). Set
     // scratch after those assignments, inside the confined command.
@@ -315,18 +332,14 @@ async function runContainedPreparationProcess(
     allowAllUnixSockets: false,
     allowGitConfig: false,
     readConfig: {
-      denyOnly: [homedir(), tmpdir(), '/private/tmp', '/private/var/folders'],
+      denyOnly: deniedRead,
       allowWithinDeny: [
-        root,
-        scratch,
-        ...caches,
-        ...resolveNodeToolchainAllowRead(env),
-        ...electronRuntimeAllowReadPaths(),
-        ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
-        ...(options.additionalExecutables ?? []).flatMap((executable) =>
-          preparationExecutableReadPaths(executable, env, options.cargoAdapter === true),
+        ...existingRead,
+        ...toolchainReadExceptions(
+          preparationNodeToolchainReadPaths(env),
+          deniedRead,
+          existingRead,
         ),
-        ...sandboxRuntimeHelperAllowReadPaths(),
       ],
     },
     writeConfig: {
@@ -362,13 +375,20 @@ async function runContainedPreparationProcess(
       ...(options.signal ? { abortSignal: options.signal } : {}),
     })
   }
+  let toolchainLinks: string | undefined
   try {
     // Recheck after an asynchronous wrap: a disabled sandbox never earns fallback.
     requirePreparationSandbox()
     options.signal?.throwIfAborted()
+    // bwrap flattens granted PATH symlinks into copies of their targets. Run the
+    // toolchain through private symlinks in scratch (a directory bind keeps
+    // them) to the canonical executables the read grants above already cover.
+    if (process.platform === 'linux') {
+      toolchainLinks = mkdtempSync(join(scratch, 'node-toolchain-'))
+    }
     const child = spawn('/bin/bash', ['-c', wrapped], {
       cwd: root,
-      env,
+      env: toolchainLinks ? linkPreparationNodeToolchain(env, toolchainLinks) : env,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -403,6 +423,7 @@ async function runContainedPreparationProcess(
       })
     })
   } finally {
+    if (toolchainLinks) rmSync(toolchainLinks, { recursive: true, force: true })
     if (process.platform === 'linux') cleanupBwrapMountPoints()
   }
 }

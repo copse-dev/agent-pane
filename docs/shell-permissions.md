@@ -934,6 +934,33 @@ Later project-sandbox shell commands receive read-only cache access and matching
 cache variables without changing their install policy. Offline preparation blocks network for every
 subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
+npm/Corepack/package-manager implementation trees. When the command is a Volta, asdf, or mise shim
+in that manager's own shim directory, it also grants the manager's shim and install subtrees
+(Volta `bin` and `tools`; asdf `shims`, `installs`, `plugins`, `bin`, and `lib`; mise `shims`,
+`installs`, and `plugins`), read-only, since the shim runs an install it cannot otherwise reach. It
+does not grant a whole fnm registry, installation parent, manager data root, or home directory.
+Both the manager root and every subtree are checked after resolving aliases. A subtree that leaves
+the canonical manager root, resolves to that root itself, or names a credential store earns no
+recursive grant, including through its original alias. Relocate the whole manager data root rather
+than linking an individual install subtree outside it. Executable aliases into credential paths
+are not granted or linked into the preparation PATH.
+Toolchain file targets must be regular executables. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores, their aliases and ancestors are excluded. Grants name the
+checked canonical paths, omitting extra exceptions already covered by the workspace or cache.
+This is a point-in-time check: replacing a canonical path or its ancestors before ASRT constructs
+the profile still races; it does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+bubblewrap bind-mounts a granted file through its symlink, which turns fnm's `bin/npm` into a copy
+whose relative requires break, so on Linux the contained process finds these commands first through
+private symlinks in its scratch directory that point at the canonical executables.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO

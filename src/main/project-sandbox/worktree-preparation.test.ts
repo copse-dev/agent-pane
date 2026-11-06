@@ -96,6 +96,63 @@ describe('real worktree preparation containment', { skip: process.platform === '
     setProjectSandboxEnabled(true)
   })
 
+  it('starts npm and Corepack through fnm symlinks while unrelated files remain denied', async () => {
+    const installation = join(parent, 'fnm/node-versions/v24.20.0/installation')
+    const multishell = join(parent, 'fnm_multishells/session')
+    const bin = join(installation, 'bin')
+    mkdirSync(bin, { recursive: true })
+    mkdirSync(dirname(multishell), { recursive: true })
+    symlinkSync(process.execPath, join(bin, 'node'))
+    symlinkSync(installation, multishell, 'dir')
+    const unrelated = join(installation, 'unrelated.txt')
+    write(unrelated, 'must stay private')
+    for (const [name, cli, version] of [
+      ['npm', 'bin/npm-cli.js', '11.19.0'],
+      ['corepack', 'dist/corepack.js', '0.34.0'],
+    ]) {
+      assert.ok(name && cli && version)
+      const implementation = join(installation, 'lib/node_modules', name)
+      write(join(implementation, 'version.cjs'), `module.exports=${JSON.stringify(version)}`)
+      write(
+        join(implementation, cli),
+        `#!/usr/bin/env node
+const fs=require('node:fs'),assert=require('node:assert/strict');
+assert.throws(()=>fs.readFileSync(${JSON.stringify(unrelated)}),/EPERM|EACCES|ENOENT/);
+let wrote=false;
+try { fs.writeFileSync(${JSON.stringify(unrelated)},'escaped'); wrote=true }
+catch (error) { if (!['EPERM','EACCES','ENOENT','EROFS'].includes(error.code)) throw error }
+// Seatbelt must refuse the write. bwrap hides denied roots behind a disposable
+// tmpfs, so on Linux the write can land in that private layer instead; it must
+// still never reach the host file, which the test reads after both runs.
+if (wrote) {
+  assert.equal(process.platform,'linux','write outside the preparation grants succeeded');
+  assert.equal(fs.readFileSync(${JSON.stringify(unrelated)},'utf8'),'escaped');
+}
+console.log(require('../version.cjs'));
+`,
+        true,
+      )
+      symlinkSync(join('../lib/node_modules', name, cli), join(bin, name))
+    }
+    const fixtureEnv = { ...env, PATH: `${join(multishell, 'bin')}:/usr/bin:/bin` }
+    for (const [command, expected] of [
+      ['npm', '11.19.0'],
+      ['corepack', '0.34.0'],
+    ]) {
+      assert.ok(command && expected)
+      assert.equal(
+        await runWorktreePreparationProcess(command, ['--version'], {
+          root,
+          env: fixtureEnv,
+          mode: 'preflight',
+          offline: true,
+        }),
+        expected,
+      )
+    }
+    assert.equal(readFileSync(unrelated, 'utf8'), 'must stay private')
+  })
+
   it('uses disposable scratch for a read-only prepare and cleans it on success and failure', async () => {
     const symlinkRoot = join(parent, 'scratch-symlink-worktree')
     const outside = join(parent, 'scratch-symlink-target')
