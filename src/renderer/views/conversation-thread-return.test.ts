@@ -7,6 +7,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import {
   addMessage,
   addToolCall,
+  appendAcpContentBlock,
   createThread,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
@@ -236,6 +237,52 @@ describe('conversation: returning to a recently viewed thread (component)', () =
     })
     assert.ok(rowNodes(host).get(answer) !== before.get(answer))
     await assertMatchesFreshMount(store, host, 'running thread')
+  })
+
+  it('shows an image preview whose read finished while the thread was away', async () => {
+    const image = '/repo/images/shot.png'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Take a screenshot.')
+    const answer = addMessage(store, threadId, 'assistant', '')
+    appendAcpContentBlock(store, answer, 'message', {
+      type: 'resource_link',
+      uri: image,
+      name: image,
+    })
+    let finishRead: (src: string) => void = () => {}
+    const base = fakeApi({ count: 0 })
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (): Promise<string> =>
+          new Promise((resolve) => {
+            finishRead = resolve
+          }),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    cleanups.push(mountConversation(host, store, api))
+    await delay(0)
+    const row = rowNodes(host).get(answer)
+    assert.ok(row, 'expected the answer row')
+    assert.ok(row.querySelector('.acp-resource-link'), 'expected a pending image card')
+
+    // The read lands while the row is stashed, detached from the list.
+    const other = createThread(store)
+    addMessage(store, other, 'user', 'Something else')
+    store.emit('threads_changed')
+    assert.equal(row.isConnected, false)
+    finishRead('data:image/png;base64,aW1hZ2U=')
+    await delay(0)
+    store.setState({ activeThreadId: threadId })
+    store.emit('threads_changed')
+    await delay(0)
+
+    assert.ok(rowNodes(host).get(answer) === row, 'the answer row was rebuilt')
+    assert.ok(row.querySelector('.acp-resource-image img'), 'the image preview never appeared')
   })
 
   it('builds again a row that hosts an inline canvas guest', async () => {
