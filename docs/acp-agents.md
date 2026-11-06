@@ -538,6 +538,20 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
   there), `~/Library/Keychains`. It never gets the rest of the home directory:
   no `~/.ssh`, cloud credentials or other projects.
+- **A sandboxed Claude agent can read its Keychain login but not renew it.**
+  The Keychain grant is read-only, and `security` writes the login keychain
+  through a temporary file in that directory, so saving a renewed token fails
+  with `EPERM` (exit 161). When the stored access token has expired, Claude
+  renews it, can't save it, and keeps using the expired one. On a machine whose
+  managed settings set `forceLoginOrgUUID`, the start-up organization check then
+  fails with "Unable to verify organization for the current authentication
+  token" and the agent exits with code 1 (#4147). Claude prints the same
+  message when the check's single, unretried request to Anthropic fails on the
+  network, so Copse reports it as a sign-in Claude couldn't verify: usually
+  expired (with the Keychain cause only for a sandboxed agent on macOS), or a
+  network failure worth one retry. It offers `claude auth login`, since signing
+  in from a terminal saves a fresh token, and the note it leaves for the next
+  turn does not claim a re-run must fail.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

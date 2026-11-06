@@ -1,4 +1,15 @@
 import { el, clear } from '../dom/helpers.ts'
+import {
+  adoptPatchedSignatures,
+  applyTranscriptRowPlan,
+  planTranscriptRows,
+  relinkReadingAnchor,
+  sameExceptTurnOutcome,
+  transcriptRowElement,
+  transcriptRowSignature,
+  type TranscriptRowSignature,
+  wantedTranscriptRows,
+} from './transcript-rows.ts'
 import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
@@ -53,6 +64,7 @@ import {
   getThreadById,
   getActiveThread,
   getThreadProjectId,
+  locateMessage,
   setQueuePaused,
 } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
@@ -803,6 +815,27 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
     a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.messages, b.messages) &&
     sameItems(a.pendingMessages, b.pendingMessages) &&
+    sameItems(a.threadProposals, b.threadProposals) &&
+    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+  )
+}
+
+/**
+ * Whether the thread-wide inputs that many rows read at build time are
+ * unchanged, so a keyed row reconcile may stand in for a full rebuild. The
+ * remaining inputs are either per-row (the messages, their queue, the status
+ * the live tail reads; see transcript-rows.ts) or chrome synced on its own
+ * (todos, the working brief).
+ */
+function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
+  return (
+    a.threadId === b.threadId &&
+    a.model === b.model &&
+    a.interruptedTurnAt === b.interruptedTurnAt &&
+    a.liveProposalTargets === b.liveProposalTargets &&
+    a.needsHydration === b.needsHydration &&
+    a.hydrationFailed === b.hydrationFailed &&
+    a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.threadProposals, b.threadProposals) &&
     sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
   )
@@ -2591,6 +2624,8 @@ const INITIAL_RENDER_WINDOW = 40
 /** Reasoning trails the activity row can reopen; a concise bubble's are hidden. */
 const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasoning'
 const BACKFILL_CHUNK_SIZE = 30
+/** Stands in for a row built without a signature, which matches no wanted row. */
+const UNSIGNED_ROW: TranscriptRowSignature = { patched: '', settled: '' }
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
@@ -3139,6 +3174,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
+  // True while older history is still being backfilled above the window, so
+  // the list does not yet hold every row of the thread.
+  let backfillPending = false
+  // What each message row was built from (see transcript-rows.ts). A row whose
+  // signature still matches its message is kept across a reconcile.
+  const rowSignatures = new WeakMap<HTMLElement, TranscriptRowSignature>()
+  // The message object each row last drew, and the messages whose rows a
+  // streaming handler patched in place since the last reconcile (see
+  // markRowPatched and adoptPatchedSignatures).
+  const rowDrawnFrom = new WeakMap<HTMLElement, Message>()
+  const patchedRows = new Set<string>()
 
   // Scroll following and reading-position preservation (see transcript-scroll.ts).
   const transcriptScroll = createTranscriptScroll({
@@ -3426,6 +3472,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg))
+    rowDrawnFrom.set(msgEl, msg)
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
@@ -3551,6 +3599,45 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // hugs the transcript's tail, which can scroll the top of a long prompt
     // out of view the moment it's submitted (#2457).
     if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
+  }
+
+  /**
+   * Build a message row and insert it before `before`, or at the transcript's
+   * tail (above the activity row and trailing cards) when `before` is null.
+   * The keyed reconcile's build path; a row built here is the row the live
+   * path would have appended.
+   */
+  function insertMessageRow(threadId: string, msgId: string, before: Element | null): void {
+    const msgEl = buildMessageEl(threadId, msgId)
+    if (!msgEl) return
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard()
+    list.insertBefore(msgEl, before ?? tail)
+    finalizeMessageEl(threadId, msgId)
+  }
+
+  /**
+   * An incremental handler has just brought message `msgId`'s row up to date in
+   * place (for a run member, the rollup its anchor draws too). Note it, so the
+   * next reconcile keeps the row, and the link resolutions and open
+   * disclosures on it, instead of rebuilding it: that reconcile signs every
+   * row anyway, and takes what a noted row draws from its signature there (see
+   * adoptPatchedSignatures), so nothing is signed per streamed event. Only for
+   * handlers whose patched DOM equals a fresh build; the reconcile-vs-rebuild
+   * component test holds them to that.
+   *
+   * `redraws` names the fields a handler replaces the message for and redraws
+   * itself. Any other difference from what the row last drew came from outside
+   * the stream and is not on screen, so the row is not noted and keeps the
+   * message it drew: the next reconcile then adopts nothing and rebuilds it.
+   */
+  function markRowPatched(msgId: string, redraws: readonly (keyof Message)[] = []): void {
+    const message = locateMessage(store, msgId)?.message
+    const element = message ? transcriptRowElement(list, msgId) : null
+    if (!message || !element) return
+    const drawn = rowDrawnFrom.get(element)
+    if (drawn && !sameExceptTurnOutcome(drawn, message, redraws)) return
+    patchedRows.add(msgId)
+    rowDrawnFrom.set(element, message)
   }
 
   /**
@@ -4289,7 +4376,79 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
       })
+    } else backfillPending = false
+  }
+
+  /**
+   * Patch the rendered rows to match `thread` instead of rebuilding the list
+   * (see transcript-rows.ts). Returns false, having touched nothing, when the
+   * change is one a whole rebuild must handle: a thread-wide input that many
+   * rows read changed, the hydration notice is involved, older history is
+   * still backfilling, or the kept rows would have to move.
+   */
+  function reconcileTranscriptRows(
+    thread: Thread,
+    inputs: TranscriptInputs,
+    previous: TranscriptInputs,
+  ): boolean {
+    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
+    if (inputs.needsHydration || inputs.hydrationFailed) return false
+    const elements = Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'))
+    const wanted = wantedTranscriptRows(thread, queuedMessageIds(thread))
+    const messages = new Map(thread.messages.map((message) => [message.id, message]))
+    const signed = elements.map((element) => ({
+      key: element.dataset['messageId'] ?? '',
+      signature: rowSignatures.get(element) ?? UNSIGNED_ROW,
+    }))
+    const rendered = adoptPatchedSignatures(signed, wanted, patchedRows, (index) => {
+      const element = elements[index]
+      const drawn = element ? rowDrawnFrom.get(element) : undefined
+      const current = messages.get(signed[index]?.key ?? '')
+      return drawn !== undefined && current !== undefined && sameExceptTurnOutcome(drawn, current)
+    })
+    const plan = planTranscriptRows(rendered, wanted)
+    if (plan.kind === 'rebuild') return false
+    patchedRows.clear()
+    if (plan.ops.length > 0) {
+      const wasPinned = transcriptScroll.isPinnedToBottom()
+      const prevScrollTop = list.scrollTop
+      const anchor = wasPinned ? null : captureReadingAnchor()
+      applyTranscriptRowPlan(plan, {
+        list,
+        insert: (key, before) => {
+          insertMessageRow(thread.id, key, before)
+        },
+      })
+      // The same batched tail work a rebuild does for its window.
+      syncModelLabels()
+      syncUserActions()
+      syncAcpResourceReferences(list, api, store)
+      finishThreadChrome(thread)
+      syncConciseTurnFooters()
+      refreshStickyImagePrompt()
+      toolCards.forgetDetachedDisclosureElements()
+      syncAvatarMotion()
+      if (wasPinned) scrollToBottom()
+      else restoreReadingAnchor(relinkReadingAnchor(list, anchor), prevScrollTop)
+    } else {
+      finishThreadChrome(thread)
+      syncModelLabels()
+      syncUserActions()
     }
+    // A kept row now draws what it is signed with: its patched part may have
+    // been taken from the thread, and its message may carry a new outcome.
+    const wantedByKey = new Map(wanted.map((row) => [row.key, row]))
+    elements.forEach((element, index) => {
+      if (element.parentElement !== list) return
+      const key = signed[index]?.key ?? ''
+      const row = wantedByKey.get(key)
+      const message = messages.get(key)
+      if (row) rowSignatures.set(element, row.signature)
+      if (message) rowDrawnFrom.set(element, message)
+    })
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    return true
   }
 
   function rebuildForThread(): void {
@@ -4310,6 +4469,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         syncUserActions()
         return
       }
+      // The messages, their queue or the thread status moved: keep every row
+      // that still draws the same thing and patch only the rest.
+      if (reconcileTranscriptRows(thread, inputs, renderedInputs)) {
+        renderedInputs = inputs
+        return
+      }
     }
     const preservedScrollTop =
       rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null
@@ -4319,6 +4484,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     disposeInlineArtefacts(list)
     avatarMotion.setActive(null)
     clear(list)
+    patchedRows.clear()
     stickyImagePrompt = null
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -4373,6 +4539,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
+    backfillPending = initialStart > 0
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -4459,6 +4626,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         }
         // The text itself lands a frame later, through the input smoother; its
         // STREAM_PAINT_EVENT keeps the transcript following it.
+        markRowPatched(mid)
       }
     }),
     store.on('message_canvas_artefacts_changed', (mid) => {
@@ -4467,6 +4635,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (thread && msg?.role === 'assistant' && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store.getState().activeProjectId, thread.id, api)
+        markRowPatched(mid)
         scrollToBottom()
       }
     }),
@@ -4476,6 +4645,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
         syncMessageVisualEvidence(msgEl, msg)
+        markRowPatched(mid)
         scrollToBottom()
       }
     }),
@@ -4498,6 +4668,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // Rebuilt content blocks start visible and unloaded; re-cite them.
         syncAcpResourceReferences(list, api, store)
         syncToolRunMemberVisibility(msgEl)
+        markRowPatched(mid)
         scrollToBottom()
       }
     }),
@@ -4521,6 +4692,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         hydrateAcpResourceImages(msgEl, api, store)
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
+        markRowPatched(mid)
         scrollToBottom()
       }
     }),
@@ -4557,12 +4729,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const reasoning = body?.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
         if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
+      if (msg?.role === 'assistant' && msgEl) markRowPatched(mid)
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
+      markRowPatched(mid)
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
+      markRowPatched(mid)
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
@@ -4577,10 +4752,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('review_changed', (tid, mid) => {
       renderMessageReview(tid, mid)
+      if (tid === store.getState().activeThreadId) markRowPatched(mid, ['review'])
       scrollToBottom()
     }),
     store.on('hook_card_added', (tid, mid) => {
       renderMessageHookCards(tid, mid)
+      if (tid === store.getState().activeThreadId) markRowPatched(mid)
       scrollToBottom()
     }),
     store.on('comparison_changed', () => {
@@ -4588,8 +4765,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       scrollToBottom()
     }),
     store.on('review_report_changed', (tid, mid) => {
-      if (mid) renderMessageReviewReport(tid, mid)
-      else syncReviewReportCard()
+      // A report replaces its message's object; noting the row it just drew
+      // keeps that from blocking the rows the stream patched (see
+      // adoptPatchedSignatures).
+      if (mid) {
+        renderMessageReviewReport(tid, mid)
+        if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
+      } else syncReviewReportCard()
       scrollToBottom()
     }),
     store.on('settings_changed', () => {
@@ -4626,7 +4808,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           setReasoningDisclosureTitle(details, false)
         })
         const last = getThreadById(store, tid)?.messages.at(-1)
-        if (last) renderMessageTurnRecovery(tid, last.id)
+        if (last) {
+          renderMessageTurnRecovery(tid, last.id)
+          markRowPatched(last.id)
+        }
       }
       syncAvatarMotion()
     }),

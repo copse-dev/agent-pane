@@ -37,6 +37,7 @@ import { deriveThreadContext, type ThreadContextModel } from './thread-context-m
 import { mountReviewerInput } from './reviewer-input.ts'
 import { showErrorToast } from './toast.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -1064,7 +1065,7 @@ export function mountThreadContextPane(
       render()
       void refreshMentions()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       mentionedFor = null
       approvalsKey = ''
       approvalsToken++
