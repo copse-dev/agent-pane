@@ -47,6 +47,20 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
           `${child.className}${child instanceof HTMLElement && child.hidden ? '[hidden]' : ''} ${rect(child)}`,
       ),
       stickyBand: getComputedStyle(list ?? document.body).scrollPaddingTop,
+      assistants: Array.from(
+        list?.querySelectorAll<HTMLElement>(':scope > .msg-assistant') ?? [],
+        (row) => ({
+          cls: row.className,
+          links: row.querySelectorAll('a').length,
+          code: row.querySelectorAll('code').length,
+          imgs: row.querySelectorAll('img, svg').length,
+          parts: Array.from(
+            row.querySelectorAll<HTMLElement>('.message-body > *, .message-text > *'),
+            (part) =>
+              `${part.tagName.toLowerCase()}.${part.className}:${String(part.getBoundingClientRect().height)}`,
+          ),
+        }),
+      ),
       fonts: document.fonts.status,
     }
   }, selector)
