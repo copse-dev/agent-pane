@@ -1432,6 +1432,18 @@
   font-weight: 600;
   color: var(--text-secondary);
 }
+/* nowrap alone only moves the break: short of room for "Pull requests" and its
+   three icons, the title wrapped onto two lines instead and the header still
+   outgrew the band (53px against 37px at a 170px column). Truncate it instead,
+   so the header keeps its single row down to the list's 120px minimum. Changes
+   wraps, so its title only truncates in a column narrower than the title. */
+.pr-list-host > .pane-header > .pane-header-title,
+.git-changes-header > .pane-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .git-changes-header-owner {
   font-size: var(--font-size-2xs);
   color: var(--text-tertiary, var(--text-secondary));

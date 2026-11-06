@@ -87,6 +87,57 @@ async function expectSelectionKeepsTabsInPlace(
   expect(new Set(after.map((tab) => tab.weight)).size).toBe(1)
 }
 
+const PR_HEADER = '#pr-list-host .pane-header'
+
+/** The PR list header's box, wrap and row alignment, rounded to whole pixels. */
+async function prHeaderLayout(): Promise<{
+  width: number
+  height: number
+  wrap: string
+  overflows: boolean
+  titleTruncated: boolean
+  titleCentre: number
+  controlCentres: number[]
+}> {
+  const layout = await browser.execute((target) => {
+    const node = document.querySelector<HTMLElement>(target)
+    const title = node?.querySelector<HTMLElement>(':scope > .pane-header-title')
+    if (!node || !title) return null
+    const centre = (child: Element): number => {
+      const box = child.getBoundingClientRect()
+      return Math.round(box.top + box.height / 2)
+    }
+    const box = node.getBoundingClientRect()
+    return {
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+      wrap: getComputedStyle(node).flexWrap,
+      overflows: node.scrollWidth > node.clientWidth,
+      titleTruncated: title.scrollWidth > title.clientWidth,
+      titleCentre: centre(title),
+      controlCentres: [...node.children].filter((child) => child !== title).map(centre),
+    }
+  }, PR_HEADER)
+  if (!layout) throw new Error('Missing PR pane header')
+  return layout
+}
+
+/** Drag the list column's resizer, as a user would, until the PR header is `width` wide. */
+async function dragListColumnTo(width: number): Promise<void> {
+  const current = await $(PR_HEADER).getSize('width')
+  await browser
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move({ origin: await $('#resizer-tree').getElement() })
+    .down({ button: 0 })
+    .move({ origin: 'pointer', x: width - current, y: 0, duration: 200 })
+    .up({ button: 0 })
+    .perform()
+  await browser.waitUntil(async () => (await $(PR_HEADER).getSize('width')) === width, {
+    timeout: 5_000,
+    timeoutMsg: `expected the PR list column to narrow to ${String(width)}px`,
+  })
+}
+
 describe('UI consistency: PR pane, model picker and flat tabs', () => {
   before(async function () {
     this.timeout(120_000)
@@ -210,45 +261,24 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
     await browser.keys('Escape')
   })
 
-  it('keeps the icons of a narrow PR pane header beside its title, not below it', async function () {
+  it('keeps a narrow PR pane header to one band, truncating its title', async function () {
     this.timeout(60_000)
-    // Drag the list column to 170px, just short of the ~174px the title and its
-    // three icons need side by side: when every `.pane-header` wrapped, the
-    // refresh icon dropped onto a second row here.
-    await browser
-      .action('pointer', { parameters: { pointerType: 'mouse' } })
-      .move({ origin: await $('#resizer-tree').getElement() })
-      .down({ button: 0 })
-      .move({ origin: 'pointer', x: -30, y: 0, duration: 200 })
-      .up({ button: 0 })
-      .perform()
-    const header = '#pr-list-host .pane-header'
-    await browser.waitUntil(async () => (await $(header).getSize('width')) === 170, {
-      timeout: 5_000,
-      timeoutMsg: 'expected the PR list column to narrow to 170px',
-    })
+    const band = await prHeaderLayout()
+    expect(band.width).toBe(200)
+    expect(band.titleTruncated).toBe(false)
 
-    const layout = await browser.execute((target) => {
-      const node = document.querySelector<HTMLElement>(target)
-      if (!node) return null
-      const centre = (child: Element): number => {
-        const box = child.getBoundingClientRect()
-        return Math.round(box.top + box.height / 2)
-      }
-      const [title, ...controls] = [...node.children]
-      return {
-        wrap: getComputedStyle(node).flexWrap,
-        overflows: node.scrollWidth > node.clientWidth,
-        titleCentre: title ? centre(title) : null,
-        controlCentres: controls.map(centre),
-      }
-    }, header)
-    if (!layout) throw new Error('Missing PR pane header')
-    expect(layout.wrap).toBe('nowrap')
-    expect(layout.overflows).toBe(false)
-    expect(layout.controlCentres).toHaveLength(3)
-    for (const controlCentre of layout.controlCentres) {
-      expect(controlCentre).toBe(layout.titleCentre)
+    // 170px is just short of the ~174px the title and its three icons need side
+    // by side: when every `.pane-header` wrapped, the refresh icon dropped onto
+    // a second row here, and under nowrap alone the title wrapped instead.
+    await dragListColumnTo(170)
+    const narrow = await prHeaderLayout()
+    expect(narrow.height).toBe(band.height)
+    expect(narrow.wrap).toBe('nowrap')
+    expect(narrow.overflows).toBe(false)
+    expect(narrow.titleTruncated).toBe(true)
+    expect(narrow.controlCentres).toHaveLength(3)
+    for (const controlCentre of narrow.controlCentres) {
+      expect(controlCentre).toBe(narrow.titleCentre)
     }
     // Changes keeps its opt-in second row for the owner label and bulk actions.
     const changesWrap = await browser.execute(() => {
@@ -257,5 +287,14 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
     })
     expect(changesWrap).toBe('wrap')
     await saveElementScreenshot('#pane-files', 'ui-consistency-pr-header-narrow.png')
+
+    // The resizer stops at the list's 120px minimum.
+    await dragListColumnTo(120)
+    const narrowest = await prHeaderLayout()
+    expect(narrowest.height).toBe(band.height)
+    expect(narrowest.overflows).toBe(false)
+    for (const controlCentre of narrowest.controlCentres) {
+      expect(controlCentre).toBe(narrowest.titleCentre)
+    }
   })
 })
