@@ -21912,6 +21912,7 @@ function createStore(initial) {
     threads: [],
     backgroundThreads: [],
     activeThreadId: null,
+    pendingSubmissionThreadIds: [],
     panelTab: "file",
     openFile: null,
     activeDiff: null,
@@ -22235,25 +22236,21 @@ var init_model_usage = __esm({
 
 // src/shared/store/pending-submissions.ts
 function beginThreadSubmission(store, threadId) {
-  let pending = pendingByStore.get(store);
-  if (!pending) {
-    pending = /* @__PURE__ */ new Set();
-    pendingByStore.set(store, pending);
-  }
-  if (pending.has(threadId)) return false;
-  pending.add(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (pending.includes(threadId)) return false;
+  store.setState({ pendingSubmissionThreadIds: [...pending, threadId] });
   return true;
 }
 function endThreadSubmission(store, threadId) {
-  pendingByStore.get(store)?.delete(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (!pending.includes(threadId)) return;
+  store.setState({ pendingSubmissionThreadIds: pending.filter((id) => id !== threadId) });
 }
 function isThreadSubmitting(store, threadId) {
-  return pendingByStore.get(store)?.has(threadId) ?? false;
+  return store.getState().pendingSubmissionThreadIds.includes(threadId);
 }
-var pendingByStore;
 var init_pending_submissions = __esm({
   "src/shared/store/pending-submissions.ts"() {
-    pendingByStore = /* @__PURE__ */ new WeakMap();
   }
 });
 

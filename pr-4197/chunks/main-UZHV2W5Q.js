@@ -462,7 +462,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CCXZOMAI.js";
+} from "./chunk-HHZJ6HWT.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -69724,6 +69724,12 @@ ${reply}`);
     }
   });
   const unsubs = [
+    store2.select(
+      (state) => state.activeThreadId !== null && state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState();
+      }
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already
