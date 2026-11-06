@@ -399,7 +399,29 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     await waitForAgentIdle(30_000)
     await stopScenario.assertComplete()
-    await saveAppScreenshot('mobile-controls-stopped-desktop.png')
+    await saveAppScreenshot('mobile-controls-stopped-desktop.png', undefined, async () => {
+      // Stop and the capture resize can both move the reading anchor. Frame
+      // the final prompt at the settled transcript bottom, after resizing.
+      await browser.execute(() => {
+        const list = document.querySelector('.messages-list')
+        if (!list) throw new Error('Stopped conversation is missing')
+        list.scrollTop = list.scrollHeight
+      })
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const list = document.querySelector('.messages-list')
+            return list !== null && list.scrollHeight - list.clientHeight - list.scrollTop <= 1
+          }),
+        { timeout: 5_000, timeoutMsg: 'Stopped conversation did not settle at the bottom' },
+      )
+      assert.equal(
+        await browser.execute(() =>
+          [...document.querySelectorAll('.msg-user .message-text')].at(-1)?.textContent.trim(),
+        ),
+        'Wait for my phone to stop this run.',
+      )
+    })
   })
 
   it('pairs through shared auth, retains phone credentials on restart, revokes them and cancels pending consent on stop', async () => {
