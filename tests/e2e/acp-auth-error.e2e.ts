@@ -24,48 +24,6 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       composerTop: composer.top,
     }
   }, selector)
-  // TEMPORARY DIAGNOSTIC (#4177): revert before review.
-  const diag = await browser.execute((sel) => {
-    const list = document.querySelector('.messages-list')
-    const scroller = document.querySelector('.conversation-scroll')
-    const message = document.querySelector(sel)
-    const rect = (node: Element | null): string => {
-      const r = node?.getBoundingClientRect()
-      return r ? `${String(r.top)}..${String(r.bottom)} (${String(r.height)})` : 'none'
-    }
-    return {
-      message: rect(message),
-      scroller: rect(scroller),
-      list: rect(list),
-      composer: rect(document.querySelector('#input-bar')),
-      scrollTop: list?.scrollTop,
-      scrollHeight: list?.scrollHeight,
-      clientHeight: list?.clientHeight,
-      children: Array.from(
-        list?.children ?? [],
-        (child) =>
-          `${child.className}${child instanceof HTMLElement && child.hidden ? '[hidden]' : ''} ${rect(child)}`,
-      ),
-      stickyBand: getComputedStyle(list ?? document.body).scrollPaddingTop,
-      // Each assistant row's markup with its text removed: every tag, class,
-      // data-* attribute and inline style, to diff a passing launch against a
-      // failing one.
-      assistants: Array.from(
-        list?.querySelectorAll<HTMLElement>(':scope > .msg-assistant') ?? [],
-        (row) => {
-          const clone = row.cloneNode(true)
-          if (!(clone instanceof HTMLElement)) return ''
-          const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
-          const texts: Node[] = []
-          for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node)
-          for (const node of texts) node.parentNode?.removeChild(node)
-          return `${String(row.getBoundingClientRect().height)} ${clone.outerHTML}`
-        },
-      ),
-      fonts: document.fonts.status,
-    }
-  }, selector)
-  console.log(`[diag ${filename}] ${JSON.stringify(diag)}`)
   expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
   await saveElementScreenshot(selector, filename, { frame: 'document' })
