@@ -31,68 +31,9 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
       composerTop: composer.top,
     }
   }, selector)
-  // TEMPORARY DIAGNOSTIC (revert before review)
-  await logLayoutDiag(filename, 'before')
   expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
   await saveElementScreenshot(selector, filename, { frame: 'document' })
-  await logLayoutDiag(filename, 'after')
-}
-
-// TEMPORARY DIAGNOSTIC (revert before review): text, whitespace and computed
-// style of each assistant row and of the transcript list.
-async function logLayoutDiag(filename: string, phase: string): Promise<void> {
-  const diag = await browser.execute(() => {
-    const hash = (text: string): string => {
-      let h = 2166136261
-      for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619) >>> 0
-      return `${String(text.length)}:${h.toString(16)}`
-    }
-    const whitespaceNodes = (root: Element): number => {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      let count = 0
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if ((node.nodeValue ?? '').trim() === '') count++
-      }
-      return count
-    }
-    const box = (element: Element | null): string => {
-      if (!element) return 'none'
-      const style = getComputedStyle(element)
-      return [
-        style.lineHeight,
-        style.fontSize,
-        style.fontFamily.slice(0, 24),
-        `${style.paddingBlockStart}/${style.paddingBlockEnd}`,
-        `${style.marginBlockStart}/${style.marginBlockEnd}`,
-        `${style.borderBlockStartWidth}/${style.borderBlockEndWidth}`,
-      ].join(' ')
-    }
-    const list = document.querySelector<HTMLElement>('.messages-list')
-    const inline = list?.getAttribute('style') ?? ''
-    const listStyle = list ? getComputedStyle(list) : null
-    const custom = Array.from(list?.style ?? [])
-      .filter((name) => name.startsWith('--'))
-      .map((name) => `${name}=${listStyle?.getPropertyValue(name) ?? ''}`)
-    return {
-      list: { inline, custom, box: box(list), rowGap: listStyle?.rowGap, width: list?.clientWidth },
-      rows: Array.from(document.querySelectorAll('.messages-list > .msg-assistant'), (row) => ({
-        height: row.getBoundingClientRect().height,
-        text: hash(row.textContent),
-        whitespace: whitespaceNodes(row),
-        root: box(row),
-        first: box(row.firstElementChild),
-        firstHeight: row.firstElementChild?.getBoundingClientRect().height,
-        blocks: Array.from(
-          row.querySelectorAll(':scope .message-text > *'),
-          (block) =>
-            `${block.tagName.toLowerCase()}:${String(block.getBoundingClientRect().height)}`,
-        ),
-      })),
-      mutations: document.documentElement.dataset['diagMutations'] ?? 'none',
-    }
-  })
-  console.log(`[layoutdiag ${filename} ${phase}] ${JSON.stringify(diag)}`)
 }
 
 /**
@@ -148,48 +89,6 @@ describe('ACP authentication error presentation', () => {
     })
     await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
       timeout: 30_000,
-    })
-    // TEMPORARY DIAGNOSTIC (revert before review): count DOM mutations from the
-    // first settled transcript through every capture.
-    await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      const counts: Record<string, number> = {}
-      const bump = (key: string): void => {
-        counts[key] = (counts[key] ?? 0) + 1
-      }
-      new MutationObserver((records) => {
-        for (const record of records) {
-          const inList = list !== null && list.contains(record.target)
-          const where = inList ? 'list' : 'outside'
-          const target =
-            record.target instanceof Element ? record.target : record.target.parentElement
-          const label = `${target?.tagName.toLowerCase() ?? '?'}.${(target?.getAttribute('class') ?? '').split(' ').slice(0, 2).join('.')}`
-          bump(`${where}:${record.type}`)
-          if (record.type === 'attributes')
-            bump(`${where}:attr:${record.attributeName ?? ''}:${label}`)
-          if (record.type === 'childList') {
-            bump(`${where}:child:${label}`)
-            if (record.target === list) {
-              for (const node of Array.from(record.addedNodes))
-                bump(
-                  `list-row-added:${node instanceof Element ? (node.getAttribute('data-message-id') ?? node.className) : '#text'}`,
-                )
-              for (const node of Array.from(record.removedNodes))
-                bump(
-                  `list-row-removed:${node instanceof Element ? (node.getAttribute('data-message-id') ?? node.className) : '#text'}`,
-                )
-            }
-          }
-          if (record.type === 'characterData') bump(`${where}:text:${label}`)
-        }
-        document.documentElement.dataset['diagMutations'] = JSON.stringify(counts)
-      }).observe(document.body, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        characterData: true,
-      })
-      document.documentElement.dataset['diagMutations'] = '{}'
     })
   })
 
