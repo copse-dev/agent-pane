@@ -577,6 +577,10 @@
       "sha256": "a1175c2ec87a0fbd244c84eff76348df3a7251d4421f668bd3f867fb4cd7f703",
       "bytes": 67237
     },
+    "approval-thread-orchestrate.png": {
+      "sha256": "3d758e1649c38177c59ea911dc1514290dd4ea24292f2c14babd913e7f784ce6",
+      "bytes": 26338
+    },
     "approval-thread-read.png": {
       "sha256": "8dbc4e018f9a814b49bd8683caa9120eb14961148c26272c86e5506c9bf7b5c3",
       "bytes": 15711
@@ -5161,6 +5165,18 @@
       "sha256": "4e41b7a7cc4dc70adec6a9e84001d95f3d8a39b89f068c650678e9cee71461f0",
       "bytes": 97802
     },
+    "subthread-orchestration-approval.png": {
+      "sha256": "eed8ddf81698d40ef60301fb6c9e38602547dead82dccb687e06230e3c2ae7d0",
+      "bytes": 63823
+    },
+    "subthread-orchestration-permission.png": {
+      "sha256": "6a0d3565a39da413407a224ea534348311637dd317f685af5220a472650ea89e",
+      "bytes": 102271
+    },
+    "subthread-orchestration-recovered-held.png": {
+      "sha256": "c4143eeeaa85677dd3b2c4b1ffa7cdbaa4b4e45ac65fd0bda692d3038265c62a",
+      "bytes": 36745
+    },
     "supervised-tasks-resume.png": {
       "sha256": "40ae13c2582d813fa8f030ba968a281bb54cc8faa06c166495cff54ed96caa0e",
       "bytes": 285146
@@ -5448,6 +5464,10 @@
     "thread-submodule-worktree-sent.png": {
       "sha256": "4aa5e4d5fedc7ee27faf86a22bb7052260493dca11c2ff96229e7dbd72921bb3",
       "bytes": 278392
+    },
+    "thread-subthread-permissions.png": {
+      "sha256": "024f3f7d373953c1da65fc6de7cf382e924d31eb75c29a1610025be1076b82a4",
+      "bytes": 42598
     },
     "thread-switch-concise-bottom.png": {
       "sha256": "930c8dcbdba8491b4f862ee1131ab484dccaa7f628bf1f6b1e0997d72693e57e",
