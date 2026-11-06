@@ -1507,7 +1507,8 @@
    when Copse applied edits over the user's uncommitted work this session. */
 .git-changes-restore {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-bottom: 1px solid var(--border);
@@ -1520,13 +1521,14 @@
   line-height: var(--line-height-base);
 }
 .git-changes-restore-btn {
-  margin-left: auto;
+  max-width: 100%;
+  margin-left: 0;
   font-size: var(--font-size-2xs);
   padding: 2px 8px;
   border-radius: var(--radius);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  white-space: nowrap;
+  white-space: normal;
   flex-shrink: 0;
 }
 .git-changes-restore-btn:hover:not(:disabled) {

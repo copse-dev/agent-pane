@@ -1,4 +1,15 @@
-import { describe, beforeEach, afterEach, it, mock } from 'node:test'
+import { configureThreadStore } from '@copse/thread-store/environment.ts'
+let isolatedBackupStore = ''
+before(async () => {
+  isolatedBackupStore = await mkdtemp(join(tmpdir(), 'copse-backup-store-'))
+  configureThreadStore({ workspaceRoot: () => isolatedBackupStore })
+})
+after(async () => {
+  configureThreadStore()
+  if (isolatedBackupStore) await rm(isolatedBackupStore, { recursive: true, force: true })
+})
+
+import { before, after, describe, beforeEach, afterEach, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
@@ -29,7 +40,12 @@ import {
 } from './diff-queue.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { getSessionBackup, resetSessionBackup } from './worktree-backup.ts'
+import {
+  getSessionBackup,
+  resetSessionBackup,
+  restoreSessionBackup,
+  clearSessionBackupsForTest,
+} from './worktree-backup.ts'
 import { beginWorktreeWriter, withWorktreeWriter, noteWorktreeWrite } from './worktree-writers.ts'
 import { getIndex, invalidateIndex } from './search/file-index.ts'
 import {
@@ -335,6 +351,91 @@ describe('applyOrStageDiff direct-apply policy', () => {
       assert.equal(getDiffQueueForTest().length, 0)
       // The user's uncommitted file is untouched on disk and recoverable from the ref.
       assert.equal(await readFile(join(workspaceRoot, 'dirty.txt'), 'utf-8'), 'dirty\n')
+    },
+  )
+
+  ownedIt(
+    'refreshes a retained restore point before editing an owned file in a later turn',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'user draft\n', 'utf-8')
+      await applyOrStageDiff('a.txt', 'user draft\n', 'first repair\n', 'plaintext')
+      const first = getSessionBackup()
+      assert.ok(first)
+
+      resetSessionBackup(TEST_THREAD_OWNER)
+      assert.equal(getSessionBackup()?.ref, first.ref, 'a read-only turn retains its restore point')
+      const result = await applyOrStageDiff(
+        'a.txt',
+        'first repair\n',
+        'second repair\n',
+        'plaintext',
+      )
+      assert.match(result, /Applied edit directly/)
+      assert.notEqual(getSessionBackup()?.ref, first.ref)
+      assert.equal(await restoreSessionBackup(), true)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'first repair\n')
+    },
+  )
+
+  ownedIt('keeps the retained point when a changed owned file becomes a proposal', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'user draft\n', 'utf8')
+    await applyOrStageDiff('a.txt', 'user draft\n', 'first repair\n', 'plaintext')
+    const first = getSessionBackup()
+    assert.ok(first)
+    resetSessionBackup(TEST_THREAD_OWNER)
+    await writeFile(join(workspaceRoot, 'a.txt'), 'manual follow-up\n', 'utf8')
+    await writeFile(join(workspaceRoot, 'new-note.txt'), 'new user note\n', 'utf8')
+    const result = await applyOrStageDiff('a.txt', 'manual follow-up\n', 'proposal\n', 'plaintext')
+    assert.match(result, /approval is required/)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf8'), 'manual follow-up\n')
+    assert.equal(getSessionBackup()?.ref, first.ref)
+    clearSessionBackupsForTest()
+    assert.equal(getSessionBackup()?.ref, first.ref, 'restart retains the original point')
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf8'), 'user draft\n')
+    assert.equal(await readFile(join(workspaceRoot, 'new-note.txt'), 'utf8'), 'new user note\n')
+  })
+
+  ownedIt(
+    'retires an old dirty restore point after a commit and never snapshots halfway through the next turn',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'user draft\n', 'utf-8')
+      await applyOrStageDiff('a.txt', 'user draft\n', 'committed repair\n', 'plaintext')
+      assert.ok(getSessionBackup())
+      git(tempRoot, ['add', '.'])
+      git(tempRoot, ['commit', '-m', 'keep the repair'])
+      resetSessionBackup(TEST_THREAD_OWNER)
+      await applyOrStageDiff('a.txt', 'committed repair\n', 'next edit\n', 'plaintext')
+      assert.equal(getSessionBackup(), null)
+      await applyOrStageDiff('a.txt', 'next edit\n', 'refined edit\n', 'plaintext')
+      assert.equal(getSessionBackup(), null)
+      assert.equal(
+        execFileSync('git', ['show', 'HEAD:packages/app/a.txt'], {
+          cwd: tempRoot,
+          encoding: 'utf8',
+        }),
+        'committed repair\n',
+      )
+      clearSessionBackupsForTest()
+      assert.equal(getSessionBackup(), null, 'restart must not reload the obsolete draft')
+    },
+  )
+
+  ownedIt(
+    'retires an obsolete dirty pointer before a new-file-only turn after committing',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'user draft\n', 'utf-8')
+      await applyOrStageDiff('a.txt', 'user draft\n', 'committed repair\n', 'plaintext')
+      assert.ok(getSessionBackup())
+      git(tempRoot, ['add', '.'])
+      git(tempRoot, ['commit', '-m', 'keep the repair'])
+      resetSessionBackup(TEST_THREAD_OWNER)
+      await applyOrStageDiff('new.txt', '', 'new content\n', 'plaintext')
+      assert.equal(getSessionBackup(), null)
+      clearSessionBackupsForTest()
+      assert.equal(getSessionBackup(), null)
+      assert.equal(await restoreSessionBackup(), false)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf8'), 'committed repair\n')
     },
   )
 

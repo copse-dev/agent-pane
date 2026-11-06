@@ -186,6 +186,7 @@ Source files remain authoritative; deleting this cache is safe.
   product truth: dropping it loses nothing the transcript does not still hold. Legacy electron-store keys `llm-history:<threadId>` are
   migrated once at startup (after legacy thread import, before the first window)
   when ownership resolves to exactly one `(projectId, threadId)`.
+- **`session-backup.json`** records the last successful Git restore point and exact checkout root for this thread. The owner-only, atomically replaced pointer survives read-only turns and app restarts. The snapshot remains under `refs/copse/backups/*` in that repository; restore verifies the current checkout before using the pointer. The next edit refreshes a dirty point or removes the pointer when Git already holds a clean baseline, so Restore cannot jump behind a later commit. Invalid or future-version records are ignored.
 - **`acp-session.json`** is a private, versioned binding to one exact external
   ACP agent session. It stores the opaque session id plus agent, protocol,
   workspace, execution-target, and configuration-generation identity needed to
