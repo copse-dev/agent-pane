@@ -5,11 +5,17 @@
  * view anchors right after it (inline review, review report, hook cards, turn
  * recovery). Each row carries a signature of everything it was built from:
  * the message itself and the few thread facts that change what a message
- * renders (its multi-message run, live reasoning and failed-turn recovery). When the transcript's inputs change, the view plans
- * against the rows already in the list: rows whose signature still matches
- * are kept as they are, changed rows are rebuilt in place, new rows are
- * inserted at their position, rows that left the transcript are dropped and
- * rows out of order are moved, nodes and all.
+ * renders (its multi-message run, live reasoning and failed-turn recovery).
+ * When the transcript's inputs change, the view plans against the rows
+ * already in the list: rows whose signature still matches are kept as they
+ * are, changed rows are rebuilt in place, new rows are inserted at their
+ * position, rows that left the transcript are dropped and rows out of order
+ * are moved, nodes and all.
+ *
+ * The view's streaming handlers also patch rows in place between reconciles.
+ * They only note which rows they touched; {@link adoptPatchedSignatures} lets
+ * the next reconcile count such a row as drawing what its message is now,
+ * so a streamed reply is kept too, without signing anything per event.
  *
  * A kept row keeps everything that arrived after it was built — resolved
  * file-reference links, lazily built tool-card bodies, open disclosures and
@@ -23,6 +29,7 @@ import type { Message, Thread, ToolCall } from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { isReviewerInputCall, reviewerInputAnswer } from '@shared/threads/reviewer-input.ts'
+import type { ToolRun } from '@shared/tools/tool-runs.ts'
 import { artefactPreviewVersion, artefactUriFromToolResult } from '../canvas/artefact-previews.ts'
 import { disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { turnRecoveryForMessage } from '../controller/turn-recovery.ts'
@@ -38,10 +45,38 @@ import {
 } from './tool-card-refresh.ts'
 import type { ReadingAnchor } from './transcript-scroll.ts'
 
+/**
+ * What a row was built from, in the two parts a reconcile treats differently
+ * (see {@link transcriptRowSignature}).
+ */
+export interface TranscriptRowSignature {
+  /**
+   * What the view's streaming handlers keep current as they patch the row in
+   * place. A reconcile takes the current value for a row patched since the
+   * last one, instead of comparing it.
+   */
+  readonly patched: string
+  /** What changes without any handler reaching the row: always compared. */
+  readonly settled: string
+}
+
 /** A row as the planner sees it: its key (the message id) and its signature. */
 export interface TranscriptRow {
   readonly key: string
-  readonly signature: string
+  readonly signature: TranscriptRowSignature
+}
+
+/** A row the transcript should show, as {@link wantedTranscriptRows} derives it. */
+export interface WantedTranscriptRow extends TranscriptRow {
+  /**
+   * The messages whose in-place patches redraw this row: the members of its
+   * multi-message run, whose rollup the anchor draws, or the row's own message.
+   */
+  readonly patchedBy: readonly string[]
+}
+
+function sameSignature(a: TranscriptRowSignature, b: TranscriptRowSignature): boolean {
+  return a.patched === b.patched && a.settled === b.settled
 }
 
 export type TranscriptRowOp =
@@ -129,7 +164,8 @@ export function planTranscriptRows(
       continue
     }
     if (!stableKeys.has(row.key)) ops.push({ kind: 'move', key: row.key, before })
-    if (previous.signature !== row.signature) ops.push({ kind: 'replace', key: row.key })
+    if (!sameSignature(previous.signature, row.signature))
+      ops.push({ kind: 'replace', key: row.key })
     else kept++
   }
   return { kind: 'patch', ops, kept }
@@ -287,61 +323,98 @@ function previewTitles(message: Message, calls: readonly ToolCall[]): string[] {
 /**
  * The signature of `message`'s row: everything its build reads that
  * can change while the row stays in the list. Anything else a row shows
- * (concise classes, model labels, user actions, side-chat chips, hook-card
- * visibility) has its own sync pass that patches the row in place, and the
- * thread's own model is drawn only by the queued panel and the activity row,
- * which are chrome.
+ * (model labels, user actions, side-chat chips, hook-card visibility) has its
+ * own sync pass that patches the row in place, and the thread's own model is
+ * drawn only by the queued panel and the activity row, which are chrome.
  *
- * - The message itself: streamed tokens and tool calls mutate it in place.
- *   Its turn outcome is left out and signed by what it draws instead (the
- *   interruption labels and recovery below; concise classes are synced on
- *   every reconcile), so the outcome landing at the end of a turn does not
+ * `patched` holds what the streaming handlers redraw in place as they patch
+ * the row (tokens, reasoning, ACP content, tool calls, segment and turn end,
+ * canvas, visual evidence, review and hook cards):
+ *
+ * - The message itself, but its turn outcome: streamed tokens and tool calls
+ *   mutate it in place. The outcome is signed by what it draws instead (the
+ *   settled facts below), so the outcome landing at the end of a turn does not
  *   rebuild a reply that draws the same.
  * - Its multi-message run, whose rollup the anchor draws from every member.
- * - For a machine-origin prompt, the command whose wake it reports.
+ * - Whether its reasoning is live and the live step of its run: what the
+ *   thread status and the message's place at the end mean for this row,
+ *   rather than the raw facts, so a finished reply that stops being the last
+ *   message draws exactly what it drew before, and keeps its row.
+ *
+ * `settled` holds what no handler redraws, so a reconcile always compares it:
+ *
+ * - The run a non-anchor member belongs to. A member's own bubble is hidden
+ *   inside the anchor's rollup only when it is built as one, and a step joins
+ *   its run with a reasoning chunk that never repaints that bubble.
  * - Each tool call's user-interruption cause. A Stop marks the interrupted
  *   calls of every bubble in its turn, not only the bubble that carries the
  *   outcome, so an earlier bubble's cards change without its message moving.
- * - The thread-wide facts a call's card draws: the answer to a proposed thread
- *   or a reviewer question, and whether a started thread still exists.
+ *   Only causes are listed, so a call starting does not change it.
+ * - The canvas references and visual evidence the message carries. Their
+ *   handlers append each section to the bubble as it arrives, ahead of the
+ *   reply actions the segment's end adds; a build draws the actions first.
+ * - Whether the turn failed here, which the concise classes read.
+ * - The thread-wide facts a call's card draws: the answer to a proposed
+ *   thread or a reviewer question, and whether a started thread still exists.
  * - The version of each canvas thumbnail the row draws.
- * - What the thread status and the message's place in it change: whether its
- *   reasoning is live, the live step of its run, and the failed-turn recovery
- *   the last message offers (which also reads the thread's interrupted-turn
- *   marker).
+ * - The failed-turn recovery the last message offers (which also reads the
+ *   thread's interrupted-turn marker).
+ * - For a machine-origin prompt, the command whose wake it reports.
  *
  * A build that starts reading another field of the message or thread must be
  * signed here too, or a row drawn from it will be kept when it changes.
  */
-export function transcriptRowSignature(store: AppStore, thread: Thread, message: Message): string {
-  const run = multiStepRunFor(thread, message.id)
+export function transcriptRowSignature(
+  store: AppStore,
+  thread: Thread,
+  message: Message,
+): TranscriptRowSignature {
+  return signRow(store, thread, message, multiStepRunFor(thread, message.id))
+}
+
+function signRow(
+  store: AppStore,
+  thread: Thread,
+  message: Message,
+  run: ToolRun | undefined,
+): TranscriptRowSignature {
   const liveStep = liveStepMessageId(thread)
   const origin = message.role === 'user' ? message.origin : undefined
   markUserInterruptedCalls(thread)
   // A run's anchor draws every member's calls.
   const calls = [...message.toolCalls, ...(run?.toolCalls ?? [])]
-  return renderSignature({
-    message: { ...message, turnOutcome: undefined },
-    run: run ?? null,
-    wake:
-      origin?.kind === 'machine'
-        ? (backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null)
-        : null,
-    interrupted: calls.map((call) => userInterruption(call) ?? null),
-    answers: calls.flatMap((call) => {
-      const answer = callAnswer(store, thread, call)
-      return answer === undefined ? [] : [[call.id, answer]]
+  return {
+    patched: renderSignature({
+      message: { ...message, turnOutcome: undefined },
+      run: run ?? null,
+      live: isReasoningDisclosureLive(thread, message),
+      liveStep: liveStep !== null && run?.memberIds.includes(liveStep) === true ? liveStep : null,
     }),
-    previews: previewTitles(message, calls).map((title) =>
-      artefactPreviewVersion(thread.id, title),
-    ),
-    // What the thread status and the message's place at the end mean for this
-    // row, rather than the raw facts: a finished reply that stops being the
-    // last message draws exactly what it drew before, and keeps its row.
-    live: isReasoningDisclosureLive(thread, message),
-    liveStep: liveStep !== null && run?.memberIds.includes(liveStep) === true ? liveStep : null,
-    recovery: turnRecoveryForMessage(thread, message.id),
-  })
+    settled: renderSignature({
+      memberOf: run && run.anchorId !== message.id ? run.anchorId : null,
+      interrupted: calls.flatMap((call) => {
+        const cause = userInterruption(call)
+        return cause === undefined ? [] : [[call.id, cause]]
+      }),
+      sections: [
+        (message.canvasArtefacts ?? []).map((artefact) => artefact.title),
+        (message.visualEvidence ?? []).map((evidence) => evidence.id),
+      ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store, thread, call)
+        return answer === undefined ? [] : [[call.id, answer]]
+      }),
+      previews: previewTitles(message, calls).map((title) =>
+        artefactPreviewVersion(thread.id, title),
+      ),
+      failed: message.turnOutcome?.status === 'failed',
+      recovery: turnRecoveryForMessage(thread, message.id),
+      wake:
+        origin?.kind === 'machine'
+          ? (backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null)
+          : null,
+    }),
+  }
 }
 
 /** The rows the thread's transcript should show, in order, skipping `hidden` messages. */
@@ -349,13 +422,86 @@ export function wantedTranscriptRows(
   store: AppStore,
   thread: Thread,
   hidden: ReadonlySet<string>,
-): TranscriptRow[] {
+): WantedTranscriptRow[] {
   return thread.messages
     .filter((message) => !hidden.has(message.id))
-    .map((message) => ({
-      key: message.id,
-      signature: transcriptRowSignature(store, thread, message),
-    }))
+    .map((message) => {
+      const run = multiStepRunFor(thread, message.id)
+      return {
+        key: message.id,
+        signature: signRow(store, thread, message, run),
+        patchedBy: run ? run.memberIds : [message.id],
+      }
+    })
+}
+
+/**
+ * The `rendered` rows as a reconcile should compare them, given the messages
+ * the view's streaming handlers patched in place since the last reconcile.
+ *
+ * A handler that patches a row brings what the row's `patched` signature
+ * covers up to date, so a row that any of its {@link WantedTranscriptRow.patchedBy}
+ * messages patched takes that part from `wanted`; its `settled` part stays
+ * what the row was built with, so what no handler draws (an interruption
+ * landing with the turn outcome, a step joining a run) still rebuilds it.
+ *
+ * That only holds while every change since the patch reached the rows through
+ * a handler. When a message was replaced from outside the stream (an edit, a
+ * runtime snapshot) or the list itself must change shape around the rows (a
+ * row removed, or one inserted above a kept row), a patch may have drawn a
+ * run that no longer exists, so `rendered` is returned as it is and changed
+ * rows are rebuilt. `drawsCurrent(i)` says whether rendered row `i` was last
+ * drawn from the message its thread holds now; a message whose turn outcome
+ * alone changed still counts (see {@link sameExceptTurnOutcome}).
+ */
+export function adoptPatchedSignatures(
+  rendered: readonly TranscriptRow[],
+  wanted: readonly WantedTranscriptRow[],
+  patched: ReadonlySet<string>,
+  drawsCurrent: (index: number) => boolean,
+): readonly TranscriptRow[] {
+  if (patched.size === 0) return rendered
+  const renderedKeys = new Set(rendered.map((row) => row.key))
+  const wantedByKey = new Map(wanted.map((row) => [row.key, row]))
+  if (rendered.some((row, index) => !wantedByKey.has(row.key) || !drawsCurrent(index))) {
+    return rendered
+  }
+  // Rows only ever arrive at the tail, after the last row already drawn.
+  let tail = false
+  for (const row of wanted) {
+    if (!renderedKeys.has(row.key)) tail = true
+    else if (tail) return rendered
+  }
+  return rendered.map((row) => {
+    const current = wantedByKey.get(row.key)
+    if (!current?.patchedBy.some((id) => patched.has(id))) return row
+    return {
+      key: row.key,
+      signature: { patched: current.signature.patched, settled: row.signature.settled },
+    }
+  })
+}
+
+/**
+ * Whether `next` is `drawn` with at most a new turn outcome: the one field the
+ * stream sets by replacing the message rather than patching it in place, and
+ * which the row signature leaves to what it draws. `redrawn` names further
+ * fields a handler replaces the message for and redraws itself (a review, a
+ * review report), which may differ too.
+ */
+export function sameExceptTurnOutcome(
+  drawn: Message,
+  next: Message,
+  redrawn: readonly (keyof Message)[] = [],
+): boolean {
+  if (drawn === next) return true
+  const skipped = new Set<string>(['turnOutcome', ...redrawn])
+  const nextEntries = new Map(Object.entries(next).filter(([key]) => !skipped.has(key)))
+  const drawnEntries = Object.entries(drawn).filter(([key]) => !skipped.has(key))
+  return (
+    drawnEntries.length === nextEntries.size &&
+    drawnEntries.every(([key, value]) => nextEntries.has(key) && nextEntries.get(key) === value)
+  )
 }
 
 /**
