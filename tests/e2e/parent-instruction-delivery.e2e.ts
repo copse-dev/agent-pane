@@ -124,7 +124,12 @@ describe('parent instruction delivery', function () {
 
     await waitForAgentIdle(30_000)
     try {
-      await expectAssistantReply(PARENT_INSTRUCTION_REPLY)
+      // Reused provider IDs keep the host's activation notice and model answer
+      // in this assistant bubble. Assert the complete visible message exactly.
+      await expectAssistantReply(
+        'Loaded directory-scoped instructions from packages/api/AGENTS.md.\n\n' +
+          PARENT_INSTRUCTION_REPLY,
+      )
     } catch (error) {
       // Keep the native failure inspectable when its HTML/PNG artifact cannot
       // be downloaded. Only this isolated fixture's known paths and visible
@@ -181,7 +186,13 @@ describe('parent instruction delivery', function () {
         'aria-label',
         'done',
       )
-      await expect($(selector).$('.tool-result')).toHaveText(`Applied edit directly to ${path}.`)
+      // The fixture starts committed; the second write sees only Copse's first
+      // edit. Both native results therefore retain this full safety explanation.
+      await expect($(selector).$('.tool-result')).toHaveText(
+        `Applied edit directly to ${path}. ` +
+          'Git was clean except for Copse-applied edits in this session, so no approval was required. ' +
+          'You can validate with run_shell/read_file/git now.',
+      )
     }
     const finalLabels = await $$('.tool-card-rollup .tool-name').map((name) => name.getText())
     expect(finalLabels.some((label) => label.startsWith('Deferred'))).toBe(false)
