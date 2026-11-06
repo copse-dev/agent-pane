@@ -2,7 +2,7 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { defineHandler } from './define-handler.ts'
-import { defineSenderRootHandler } from './sender-project-root.ts'
+import { defineSenderProjectHandler, defineSenderRootHandler } from './sender-project-root.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
@@ -26,9 +26,8 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
-import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+import { listProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
-import { getActiveProjectId } from '../services/workspace.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
@@ -99,18 +98,27 @@ export function registerGhHandlers(win: BrowserWindow): void {
   defineHandler(win, 'gh:resolve-pr-url', z.tuple([z.url().max(2048)]), (url) =>
     resolveGithubPrRef(url),
   )
-  // Local-only legacy agent/PR associations; reads thread metadata.
-  defineHandler(win, 'gh:agent-pr-links', z.tuple([]), () => listActiveProjectAgentPrLinks(), {
-    sender: 'any',
-  })
-  defineHandler(win, 'gh:pr-thread-relationships', z.tuple([prRefSchema]), (pr) => {
-    const projectId = getActiveProjectId()
-    return projectId ? lookupPrThreadRelationships(projectId, pr) : []
-  })
-  defineHandler(win, 'gh:thread-pr-relationships', z.tuple([z.string().min(1)]), (threadId) => {
-    const projectId = getActiveProjectId()
-    return projectId ? lookupThreadPrRelationships(projectId, threadId) : []
-  })
+  // Local-only legacy agent/PR associations; reads thread metadata. These and
+  // the relationship lookups below read the asking window's project (#3958).
+  defineSenderProjectHandler(
+    win,
+    'gh:agent-pr-links',
+    z.tuple([]),
+    (projectId) => (projectId ? listProjectAgentPrLinks(projectId) : []),
+    { sender: 'any' },
+  )
+  defineSenderProjectHandler(
+    win,
+    'gh:pr-thread-relationships',
+    z.tuple([prRefSchema]),
+    (projectId, pr) => (projectId ? lookupPrThreadRelationships(projectId, pr) : []),
+  )
+  defineSenderProjectHandler(
+    win,
+    'gh:thread-pr-relationships',
+    z.tuple([z.string().min(1)]),
+    (projectId, threadId) => (projectId ? lookupThreadPrRelationships(projectId, threadId) : []),
+  )
   // PR lifecycle write actions. They mutate GitHub state, so each asserts a
   // main-frame sender (the `defineHandler` default) before acting.
   //

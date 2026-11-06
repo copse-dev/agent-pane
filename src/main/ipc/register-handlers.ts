@@ -60,7 +60,6 @@ import { workspacePreviewFileUrl } from '../services/browser/static-preview-serv
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
-  getActiveProjectId,
   getActiveProjectSshHost,
   getProjectById,
   getProjectRoot,
@@ -379,7 +378,11 @@ import {
 import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
 import { issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
-import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
+import {
+  senderInstructionRoots,
+  senderProjectId,
+  senderProjectRoot,
+} from './sender-project-root.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
@@ -1375,8 +1378,9 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
     assertMainFrameSender(event, win)
     const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
-    const activeProjectId = getActiveProjectId()
-    const project = activeProjectId ? getProjectById(activeProjectId) : null
+    // The asking window's project, never the process-global one (#3958).
+    const projectId = senderProjectId(event.sender)
+    const project = projectId ? getProjectById(projectId) : null
     if (!project) {
       throw new IpcValidationError('No active project to export a roadmap for.')
     }
@@ -2591,10 +2595,9 @@ export function registerAllHandlers(
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
       broadcastToAppWindows('mcp:status-changed', statuses)
-      if (!enabled) {
-        const activeProjectId = getActiveProjectId()
-        if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
-      }
+      // The plugin is app-wide, so turning it off stops Apple work in every
+      // project, not only the one the primary window shows (#3958).
+      if (!enabled) await getAppleDevelopmentService().cancelAllProjects()
     }
     return { plugins: getPluginService().list() }
   })

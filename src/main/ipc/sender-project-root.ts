@@ -15,8 +15,17 @@ import { getMainWindowNavigation } from '../windows/create-main-window.ts'
  * primary window, as it did before.
  */
 export function senderProjectRoot(sender: WebContents): string | null {
-  const projectId = getMainWindowNavigation(sender).activeProjectId
+  const projectId = senderProjectId(sender)
   return projectId === null ? null : getProjectRoot(projectId)
+}
+
+/**
+ * The id of the project open in the asking window, or null when it shows none.
+ * Resolved like {@link senderProjectRoot}: from the sender's own window record,
+ * never the process-global active project (#3958).
+ */
+export function senderProjectId(sender: WebContents): string | null {
+  return getMainWindowNavigation(sender).activeProjectId
 }
 
 /**
@@ -36,6 +45,26 @@ export function defineSenderRootHandler<T extends readonly z.ZodType[]>(
     channel,
     args,
     (sender, ...parsed) => fn(senderProjectRoot(sender), ...parsed),
+    options,
+  )
+}
+
+/**
+ * `defineSenderHandler` for a handler that acts on the asking window's project
+ * store: `fn` receives {@link senderProjectId} in place of the sender.
+ */
+export function defineSenderProjectHandler<T extends readonly z.ZodType[]>(
+  win: BrowserWindow,
+  channel: InvokeChannel,
+  args: z.ZodTuple<T, null>,
+  fn: (projectId: string | null, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
+  options?: IpcHandlerOptions & PositionalArgsOptions,
+): void {
+  defineSenderHandler(
+    win,
+    channel,
+    args,
+    (sender, ...parsed) => fn(senderProjectId(sender), ...parsed),
     options,
   )
 }
