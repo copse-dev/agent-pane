@@ -145,8 +145,14 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    reconcile plans only the rows below the part still to backfill, unless a
    message in that part was added or removed. Kept rows that would reorder are
    moved, the fewest of them that restore the order, rather than rebuilt. A
-   thread switch, a transcript finishing its load, and a duplicate key still
-   build the list fresh (#3962).
+   switch away from an idle, fully rendered thread with no automatic
+   disclosure pending keeps its rows (all but any hosting an inline canvas
+   guest) for the two most recently viewed threads; returning restores the
+   newest-first window from them and reconciles it with the thread as it is,
+   then the backfill reattaches each older kept row that still draws its
+   message, and the view lands at the live end as a fresh build does. A first
+   visit, a transcript finishing its load and a duplicate key still build the
+   list fresh (#3962).
 
 7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height
