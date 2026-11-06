@@ -209,12 +209,10 @@
 }
 
 .turn-recovery-title {
-  /* Plate title recipe shared with `.review-panel-header`: severity-tinted caps. */
+  /* Plate title recipe shared with `.review-panel-header`: severity-tinted, sentence case. */
   color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .turn-recovery-detail,

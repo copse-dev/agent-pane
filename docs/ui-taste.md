@@ -219,8 +219,10 @@ that for the migrated hooks.
 ### Chips and composer strips share one box each
 
 - Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
-  transcript attachment chips, roadmap attachments, thread-proposal chips — take `--radius`. They
-  are data, not calls to action, and pill geometry is reserved for primary CTAs.
+  transcript attachment chips, roadmap attachments — take `--radius`. They are data, not calls to
+  action, and pill geometry is reserved for primary CTAs. A fact that is neither an attachment
+  nor clickable (a proposed thread's "Its own checkout" and file list) takes no box at all: it is
+  muted text with its icon.
 - Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
   context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
   `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
@@ -436,12 +438,22 @@ the Changes, PR, Memories, and Roadmap lists, and the Terminal / Browser / Deskt
 products — thread rows at 40px next to PR rows at 24px was the symptom. Group headers
 (`.git-changes-section-title`, `.roadmap-category-header`) share `--spacing-xs` for the same reason.
 
-In-pane group headers — tracked caps over a list section or card (`.pane-projects-header`,
+In-pane group headers — the label over a list section or card (`.pane-projects-header`,
 `.git-changes-section-title`, `.pr-files-header`, `.agent-tasks-section-header`,
 `.roadmap-category-header`, and the plugin / review / comparison card headers) — take one recipe:
-`--group-header-font-size` (`--font-size-xs`), `--group-header-letter-spacing` (0.04em) and
+`--group-header-font-size` (`--font-size-xs`), `--group-header-letter-spacing` (`normal`) and
 `--group-header-font-weight` (600). Colour stays per surface (muted in lists, severity on review
 cards).
+
+Group headers are **sentence case**, never `text-transform: uppercase`. That covers the in-pane
+headers above and every other section label that groups a list: the command palette, model
+picker, file search and keyboard-shortcut groups, context-menu headings, the Context panel's
+permission groups, Activity, Desktop devices, roadmap filters, Memories and the Settings
+sub-headings. Tracked caps on every group label was one of the clearest generated-UI tells, and at
+10–11px they read as shouting next to the sentence-case rows beneath. A group label that was on
+`--font-size-2xs` for caps moves to `--font-size-xs`, since lowercase at 10px reads a size smaller.
+Uppercase stays only on badges (a review finding's severity, a queued-message tag), which are
+their own question.
 
 A row that needs more air should change the token, not opt out locally. Rows may still differ in
 what they stack inside that padding (memories rows are two lines, roadmap rows one).
@@ -1259,7 +1271,7 @@ answer, so they take the **hatched plate** with `--sev` set to their state hue �
 for a normal review, `--accent` for a comparison, `--warning` for turn recovery, and `--danger` when
 a review or comparison run failed. Mix the background at the component using
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch` from `global/base.css`.
-No perimeter border, no elevation, no chips. The plate's title is caps in the `--sev` hue.
+No perimeter border, no elevation, no chips. The plate's title is sentence case in the `--sev` hue.
 
 A classified failure that ends a turn is written into the message stream, so it takes the flat plate
 instead: a `> [!CAUTION]` GitHub alert built by `agentErrorNotice` (`src/main/services/agent-errors.ts`),
