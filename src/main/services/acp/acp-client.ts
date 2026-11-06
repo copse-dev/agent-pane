@@ -101,7 +101,11 @@ import {
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
-import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
+import {
+  sandboxTmpDirFor,
+  withSandboxTmpEnv,
+  withSandboxWrapTmpDir,
+} from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
@@ -616,14 +620,14 @@ export async function spawnAcpAgentProcess(
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
-      const { argv } = await SandboxManager.wrapWithSandboxArgv(
-        command,
-        shellForSandboxWrap(),
-        overlay,
+      // ASRT bakes this in as the agent's TMPDIR; the spawn env names the same
+      // directory in every other temp variable (#4149).
+      const tmpDir = sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
+      const { argv } = await withSandboxWrapTmpDir(tmpDir, () =>
+        SandboxManager.wrapWithSandboxArgv(command, shellForSandboxWrap(), overlay),
       )
       const file = argv[0]
       if (!file) throw new Error('sandbox wrap produced empty argv')
-      const tmpDir = ensureWorkspaceTmpDir()
       const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
         cwd: config.cwd,
         env: withSandboxShellPath(withSandboxTmpEnv(env, tmpDir)),
