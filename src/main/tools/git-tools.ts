@@ -209,7 +209,7 @@ export const gitShowTool = defineTool({
 export const gitLogTool = defineTool({
   name: 'git_log',
   description:
-    'Show recent commit history at HEAD or a named revision without checking it out. Use ref for main/origin/main; path only filters commits touching a file.',
+    'Show recent commit history with abbreviated SHA, ISO-8601 committer timestamp and subject at HEAD or a named revision, without checking it out. Use the timestamps for time-window questions. History comes from the local checkout and can be stale; compare its SHA with get_ci_status(branch) when validating a remote branch. If fetching is unavailable, gh_api_read can read repos/{owner}/{repo}/commits?sha=main using the current repository placeholders. Use ref for main/origin/main; path only filters commits touching a file.',
   parameters: z.object({
     max_count: z.number().int().min(1).max(50).optional().default(10),
     ref: z

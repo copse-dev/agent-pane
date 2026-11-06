@@ -11,6 +11,7 @@ describe('readonly-tools', () => {
   it('allows read/search/git/explore and staged-diff inspection tools', () => {
     for (const name of [
       'read_file',
+      'read_thread',
       'list_dir',
       'search_code',
       'search_codebase',

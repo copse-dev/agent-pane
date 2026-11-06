@@ -1711,7 +1711,7 @@ export async function getGitLogText(
   const args = [
     'log',
     `--max-count=${String(maxCount)}`,
-    '--oneline',
+    '--format=%h %cI %s',
     ...(commit ? [commit] : []),
     '--',
     ...(path ? [path] : []),
@@ -1732,7 +1732,9 @@ export async function getGitLogText(
     }
   }
   if (!history) history = '(no output)'
-  return commit ? `History at ${ref ?? 'HEAD'} (${commit}):\n${history}` : history
+  return commit
+    ? `History at ${ref ?? 'HEAD'} (${commit}):\nLocal checkout history; this does not establish the current remote tip. Compare this SHA with get_ci_status(branch) before combining history and CI evidence.\n${history}`
+    : history
 }
 
 /** Recent commits since an ISO timestamp (or the newest `maxCount` when `since` is empty). */
