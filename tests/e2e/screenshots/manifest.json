@@ -1802,12 +1802,12 @@
       "bytes": 434216
     },
     "follow-up-suggestions-demo.png": {
-      "sha256": "691e39c67022a437bd0655c2d31a3e058f544328967f4f920dbdb8423256a793",
-      "bytes": 287173
+      "sha256": "cc328c91e27a0078d4e9ef45ffab791333bfa4d7ffb863c2f36245335f05774f",
+      "bytes": 303208
     },
     "follow-up-suggestions-git-changes.png": {
-      "sha256": "6764ddc6e97329afbf1e9739f656413a8eb56868793f07f814e726aa392b1cbd",
-      "bytes": 285697
+      "sha256": "81aebad1af247408e5b68fcc73e7e3816dabb19a4874c5bb55d3ba78c95ac35b",
+      "bytes": 335584
     },
     "follow-up-suggestions-investigate-ci.png": {
       "sha256": "4a8eeb2298f89a14ac6b16ad73f2da02f9d8b6d3d2f89ee3978cd6e2736800a3",
