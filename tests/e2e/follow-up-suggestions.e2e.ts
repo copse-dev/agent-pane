@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,7 @@ import { waitForAgentIdle } from './helpers.ts'
 import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { e2eGitBranch } from './helpers/e2e-env.ts'
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -117,15 +119,26 @@ describe('follow-up suggestion bubbles', () => {
     before(async () => {
       resetUserData()
       repoRoot = seedGitChangesFixture()
+      // The app reports this fixed branch under e2e. Give it a real ref at
+      // the committed fixture HEAD so first-send checkout selection does not
+      // fall back to main and lose the committed addition from the total.
+      execFileSync('git', ['branch', '-f', e2eGitBranch(), 'HEAD'], { cwd: repoRoot })
       await browser.reloadSession()
     })
 
     after(() => {
       resetUserData()
-      if (repoRoot) cleanupGitChangesFixture(repoRoot)
+      if (repoRoot) {
+        cleanupGitChangesFixture(repoRoot)
+        execFileSync('git', ['branch', '-D', e2eGitBranch()], { cwd: repoRoot })
+      }
     })
 
     it('shows a Changes bubble from real git diff stats', async () => {
+      // Blank threads default to main. Stay on the fixture's branch so the
+      // committed addition remains part of the Changes review scope.
+      await $('.branch-picker-trigger').click()
+      await $(`.branch-picker-option-label=${e2eGitBranch()}`).click()
       // The Changes bubble needs the dirty shared checkout itself, so send on
       // top of it rather than moving to a clean isolated worktree.
       const scenario = await completeMockTurn(false, { dirtySharedCheckout: true })
@@ -134,10 +147,8 @@ describe('follow-up suggestion bubbles', () => {
       await expect(changesBubble).toBeDisplayed()
       await expect(changesBubble.$('.follow-up-label')).toHaveText('Changes')
 
-      const addText = await changesBubble.$('.follow-up-stat-add').getText()
-      const delText = await changesBubble.$('.follow-up-stat-del').getText()
-      expect(addText.startsWith('+')).toBe(true)
-      expect(delText.startsWith('-')).toBe(true)
+      await expect(changesBubble.$('.follow-up-stat-add')).toHaveText('+4')
+      await expect(changesBubble.$('.follow-up-stat-del')).toHaveText('-2')
 
       await saveAppScreenshot('follow-up-suggestions-git-changes.png')
       await scenario.assertComplete()

@@ -229,6 +229,48 @@ export function parseRemoteAgentProbe(
 
 /** A remote `npm install -g` is a network install; allow for a slow link. */
 const REMOTE_INSTALL_TIMEOUT_MS = 300_000
+// A pooled ACP process is reaped after ten idle minutes. Keep the successful
+// remote PATH result beyond that boundary so the next turn can resume the ACP
+// session without first paying 2–4 serial SSH probes again. The bounded TTL
+// still lets login-shell and version-manager changes take effect during a long
+// app run.
+const REMOTE_AGENT_PATH_CACHE_MS = 30 * 60_000
+
+interface CachedRemoteAgentPath {
+  value: string
+  expiresAt: number
+}
+
+const remoteAgentPathCache = new Map<string, CachedRemoteAgentPath>()
+
+function remoteAgentPathCacheKey(hostId: string, loginShell: string, command: string): string {
+  return `${hostId}\0${loginShell}\0${command}`
+}
+
+/** Cache only successful probes; connection failures and missing installs must retry. */
+export async function resolveCachedRemoteAgentPath(
+  hostId: string,
+  loginShell: string,
+  command: string,
+  resolvePath: () => Promise<string | null>,
+  now = Date.now(),
+): Promise<string | null> {
+  const key = remoteAgentPathCacheKey(hostId, loginShell, command)
+  const cached = remoteAgentPathCache.get(key)
+  if (cached && cached.expiresAt > now) return cached.value
+
+  remoteAgentPathCache.delete(key)
+  const value = await resolvePath()
+  if (value !== null) {
+    remoteAgentPathCache.set(key, { value, expiresAt: now + REMOTE_AGENT_PATH_CACHE_MS })
+  }
+  return value
+}
+
+/** Test seam; production entries naturally expire and are process-local. */
+export function clearRemoteAgentPathCacheForTests(): void {
+  remoteAgentPathCache.clear()
+}
 
 /**
  * The remote install command. `npmBinDir` is the version manager `bin` holding
@@ -657,12 +699,11 @@ export async function spawnRemoteAcpTransport(
     phase: 'start',
     label: `Finding ${input.command} on ${hostLabel}…`,
   })
-  const remotePath = await resolveRemoteAgentPath(
-    input.command,
+  const remotePath = await resolveCachedRemoteAgentPath(
     target.hostId,
     loginShell,
-    true,
-    signal,
+    input.command,
+    () => resolveRemoteAgentPath(input.command, target.hostId, loginShell, true, signal),
   )
 
   reportRemoteAcpSetupProgress({

@@ -14,30 +14,45 @@ import type {
  * {@link GitHubBackend} (gh CLI, REST/GraphQL API, or the in-memory mock), so
  * callers — the IPC handlers, the agent tools, the renderer — never care which
  * backend serviced the request. The adapter lives in `./backend/`.
+ *
+ * `root` is the asker's checkout (see {@link GitHubBackend}).
  */
 
-export async function getGhCliStatus(): Promise<GhCliStatus> {
-  return resolveGitHubBackend().getStatus()
+export async function getGhCliStatus(root: string | null): Promise<GhCliStatus> {
+  return resolveGitHubBackend().getStatus(root)
 }
 
-export async function listMyOpenPrs(limit = 30): Promise<GhPrSummary[] | null> {
-  return resolveGitHubBackend().listMyOpenPrs(limit)
+export async function listMyOpenPrs(
+  root: string | null,
+  limit = 30,
+): Promise<GhPrSummary[] | null> {
+  return resolveGitHubBackend().listMyOpenPrs(root, limit)
 }
 
-export async function listWorkspaceOpenPrs(limit = 20): Promise<GhPrSummary[]> {
-  return resolveGitHubBackend().listWorkspaceOpenPrs(limit)
+export async function listWorkspaceOpenPrs(
+  root: string | null,
+  limit = 20,
+): Promise<GhPrSummary[]> {
+  return resolveGitHubBackend().listWorkspaceOpenPrs(root, limit)
 }
 
-export async function getGhPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
-  return resolveGitHubBackend().getPrDetails(ref)
+export async function getGhPrDetails(root: string | null, ref: PrRef): Promise<GhPrDetails | null> {
+  return resolveGitHubBackend().getPrDetails(root, ref)
 }
 
-export async function getGhPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
-  return resolveGitHubBackend().getPrFileDiff(ref, path)
+export async function getGhPrFileDiff(
+  root: string | null,
+  ref: PrRef,
+  path: string,
+): Promise<GhPrFileDiff | null> {
+  return resolveGitHubBackend().getPrFileDiff(root, ref, path)
 }
 
-export async function getGhPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
-  return resolveGitHubBackend().getPrChecksState(ref)
+export async function getGhPrChecksState(
+  root: string | null,
+  ref: PrRef,
+): Promise<GhPrChecksState> {
+  return resolveGitHubBackend().getPrChecksState(root, ref)
 }
 
 /** Drop TTL'd GitHub reads so the next list/details fetch is live (manual refresh). */

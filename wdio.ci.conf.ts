@@ -7,7 +7,12 @@ import { config as baseConfig } from './wdio.conf.ts'
  * Skips specs that need external network, fork-local git branches, onboarding
  * setup, agent-eval LLMs, or streaming timing that is flaky on Linux runners.
  */
-const ciExclude = ['./tests/e2e/agent-eval-drive.e2e.ts', './tests/e2e/portrait-right-panel.e2e.ts']
+const ciExclude = [
+  './tests/e2e/agent-eval-drive.e2e.ts',
+  // The auto-portrait layout needs a window >=1080 logical px tall (minWidth 800
+  // x 1.35), taller than the 1600x1024 logical Xvfb desktop in run-e2e.mts.
+  './tests/e2e/portrait-right-panel.e2e.ts',
+]
 
 const outcomes = outcomeHooks(
   process.env['COPSE_E2E_OUTCOMES_DIR'],

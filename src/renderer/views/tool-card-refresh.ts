@@ -6,7 +6,7 @@
  *
  * Extracted from `mountConversation` (#3962). The card DOM builders stay in
  * `conversation.ts` and arrive through {@link ToolCardDom}; scroll anchoring
- * stays with the conversation view and arrives through {@link ToolCardRefreshHost}.
+ * (`transcript-scroll.ts`) arrives through {@link ToolCardRefreshHost}.
  */
 import type { AppStore } from '@shared/store/store.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
@@ -80,6 +80,15 @@ export function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
     return 'error'
   }
   if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
+  // A command declined or refused before launch returned normally, but nothing
+  // ran: never the green check beside "Did not start" (#3956). A rollup whose
+  // other calls did their work stays done; the declined call's own card says so.
+  if (
+    toolCalls.length > 0 &&
+    toolCalls.every((call) => call.commandPhase?.state === 'not_started')
+  ) {
+    return 'interrupted'
+  }
   return 'done'
 }
 
@@ -246,6 +255,8 @@ export interface ToolCardRefresher {
   syncRunStepTrail: (thread: Thread | undefined, run: ToolRun) => void
   /** Drop element registrations; the model's state and user choices are kept. */
   forgetDisclosureElements: () => void
+  /** Drop only the registrations of elements no longer in the document (rows a reconcile removed). */
+  forgetDetachedDisclosureElements: () => void
 }
 
 export interface ToolCardRenderOptions {
@@ -768,6 +779,11 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     syncRunStepTrail,
     forgetDisclosureElements(): void {
       disclosureElements.clear()
+    },
+    forgetDetachedDisclosureElements(): void {
+      for (const [key, details] of disclosureElements) {
+        if (!details.isConnected) disclosureElements.delete(key)
+      }
     },
   }
 }

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -28,6 +29,12 @@ async function waitForReports(expected: string[]): Promise<void> {
     timeout: 30_000,
     timeoutMsg: `The agent should report ${String(expected.length)} answer(s)`,
   })
+  // The transcript reveals streamed text gradually, so the newest report can
+  // be read part-way through ("client answered a"). Let it finish, then
+  // compare, so a wrong answer still fails with its diff.
+  await browser
+    .waitUntil(async () => isDeepStrictEqual(await agentReports(), expected), { timeout: 10_000 })
+    .catch(() => undefined)
   assert.deepEqual(await agentReports(), expected)
 }
 
