@@ -186,12 +186,10 @@ describe('projects pane thread filter (component)', () => {
     store.setState({
       projects: [...store.getState().projects, { id: 'p2', path: '/other', name: 'Other' }],
     })
-    store.emit('workspace_changed')
     assert.equal(filterValue(), 'login')
     assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
 
     store.setState({ activeProjectId: 'p2', expandedProjectId: 'p2' })
-    store.emit('workspace_changed')
     assert.equal(filterValue(), '')
   })
 })

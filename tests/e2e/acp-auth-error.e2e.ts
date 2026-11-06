@@ -79,6 +79,9 @@ describe('ACP authentication error presentation', () => {
     await $('[data-message-id="msg-assistant-codex-auth"] .message-text').waitForExist({
       timeout: 30_000,
     })
+    await $('[data-message-id="msg-assistant-claude-org-auth"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
   })
 
   after(() => {
@@ -213,6 +216,60 @@ describe('ACP authentication error presentation', () => {
     await saveAuthMessage(
       '[data-message-id="msg-assistant-codex-auth"]',
       'codex-workspace-routing-auth-error.png',
+    )
+  })
+
+  // #4147: Claude Code's organization check exits the agent with a raw -32603
+  // that reads like a network blip. The thread must say the sign-in couldn't be
+  // verified, why that is usually a stale sign-in, what to do if it was the
+  // network, and how to sign in, before the agent's own words.
+  it("explains Claude's failed organization check as an unverified sign-in", async () => {
+    const message = await $(
+      '[data-message-id="msg-assistant-claude-org-auth"] .message-text',
+    ).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
+    await expect(warning.$('strong')).toHaveText('Claude couldn’t verify its sign-in')
+    const cause = await message.$('p*=organization’s policy').getElement()
+    await expect(cause).toHaveText(
+      expect.stringContaining('can’t save the new one to the macOS Keychain'),
+    )
+    await expect(cause).toHaveText(
+      expect.stringContaining('If your network was down instead, re-send your message'),
+    )
+    await expect(message.$('ol code')).toHaveText('claude auth login')
+    await expect(message.$('pre code')).toHaveText(
+      expect.stringContaining('Unable to verify organization for the current authentication token'),
+    )
+
+    const order = await browser.execute(() => {
+      const root = document.querySelector(
+        '[data-message-id="msg-assistant-claude-org-auth"] .message-text',
+      )
+      const warningEl = root?.querySelector('.markdown-alert-warning')
+      const causeEl = [...(root?.querySelectorAll(':scope > p') ?? [])].find((p) =>
+        p.textContent.includes('organization’s policy'),
+      )
+      const steps = root?.querySelector('ol')
+      const diagnostic = root?.querySelector('pre')
+      if (!warningEl || !causeEl || !steps || !diagnostic)
+        throw new Error('missing org-check block')
+      const below = (a: Element, b: Element): boolean =>
+        a.getBoundingClientRect().bottom <= b.getBoundingClientRect().top
+      return {
+        warningBeforeCause: below(warningEl, causeEl),
+        causeBeforeSteps: below(causeEl, steps),
+        stepsBeforeDiagnostic: below(steps, diagnostic),
+      }
+    })
+    expect(order).toEqual({
+      warningBeforeCause: true,
+      causeBeforeSteps: true,
+      stepsBeforeDiagnostic: true,
+    })
+
+    await saveAuthMessage(
+      '[data-message-id="msg-assistant-claude-org-auth"]',
+      'claude-org-check-auth-error.png',
     )
   })
 })

@@ -113,7 +113,31 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    This bookkeeping lives in `src/renderer/views/transcript-scroll.ts`, extracted
    from `conversation.ts` in #3962.
 
-6. **Compare and tune.** Review the same sequence under the current behavior, the
+6. **Keep message rows by id.** When the transcript's inputs change within the
+   same thread (a new message, an edit or truncation, the status at turn start
+   and end), `src/renderer/views/transcript-rows.ts` plans against the rows
+   already in the list: a row whose signature (its message, its multi-message
+   run, each call's user-interruption cause, live reasoning and failed-turn
+   recovery) still matches is kept with its async decorations and open
+   disclosures; changed rows are rebuilt in place, new rows inserted, removed
+   rows dropped with their anchored cards. A rebuilt row under the reading
+   anchor is relinked by id. The streaming handlers (tokens, reasoning, ACP
+   content, tool calls, segment done, turn end, canvas, visual evidence, review
+   and hook cards) only note the row they patch, so a streamed event signs
+   nothing; the next reconcile takes the patched part of a noted row's
+   signature (its message and run, live reasoning) from the thread and still
+   compares the settled part no handler redraws (a step joining its run, the
+   interruption causes a Stop lands, canvas and evidence sections, a failed
+   outcome, recovery). It adopts nothing after a message was replaced outside
+   the stream or when the list changes shape around the rows. Component tests
+   hold the patched rows byte-identical to a fresh rebuild at the end of a
+   turn, for a multi-step run stopped mid-thought and the decorated cards,
+   reconciling after every chunk and only at turn end. A thread switch,
+   hydration, a pending backfill, a change to thread-wide row inputs (model,
+   proposals, reviewer answers, artefact previews, interrupted-turn marker) and
+   a reorder still rebuild the whole list (#3962).
+
+7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height
    justifies compact defaults or a bounded live preview as a separate follow-up.
    Document the chosen rule in `docs/ui-taste.md` before shipping.

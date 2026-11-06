@@ -177,9 +177,17 @@
       "sha256": "bfb1d66cf6bd85a4e0ef2b35c025ab56b9dfe2fc5456c1ede6b73ea5b5969aad",
       "bytes": 19234
     },
+    "acp-startup-overflow.png": {
+      "sha256": "36e046ffc533ec4be67c136eddfe066ed46fab9a2b5c294a6821ae79dd6293c6",
+      "bytes": 47554
+    },
     "acp-startup-tools.png": {
       "sha256": "a60340869975b02670fe0cf2048503f8d2a63fea5dfa67aa23853449d6ae2536",
       "bytes": 149816
+    },
+    "acp-stop-interrupted-earlier-card.png": {
+      "sha256": "080f6c2ad94eb3a5a93d212653271018cd586e908104258edf65af84b637d5ee",
+      "bytes": 176800
     },
     "acp-subagent-visibility.png": {
       "sha256": "9d424c4b77633478be2043028aa103c30af8cff5e927025ab4779c35c385f56e",
@@ -1188,6 +1196,10 @@
     "claude-opus-5-5-picker.png": {
       "sha256": "ffc8266797816721a2518dd2c1bb246848855bf1fbc735a66adaf4ba26c9b765",
       "bytes": 15593
+    },
+    "claude-org-check-auth-error.png": {
+      "sha256": "b9bf6e2b1051c711a6a524c3ea3ec1de65ede564b3af9e4a0b452ec729845bb0",
+      "bytes": 293358
     },
     "claude-sign-in.png": {
       "sha256": "b4ad973c94ae2cc5888034cbc04796e930651a9689557133afbc88d4c70e4388",
@@ -5628,6 +5640,10 @@
     "transcript-quote-sticky-reply.png": {
       "sha256": "708d6485b25f0589cb0f11d7b8dad64a093ab97786808cc27ac521d7e0486fc6",
       "bytes": 299381
+    },
+    "transcript-row-reconcile-new-turn.png": {
+      "sha256": "a7ae2fc42339bef2b4dcd497c04a107f633fb486fc68d7096f826fc2079c873a",
+      "bytes": 209222
     },
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",

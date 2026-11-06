@@ -1695,10 +1695,11 @@ describe('continuing into a granted worktree', () => {
     const first = dependencies.runTurn
     dependencies.runTurn = async (turnOptions): Promise<TurnResult> => {
       if (turnOptions.userPrompt !== 'fix the redirect') {
-        throw new AcpTurnFailure(new Error('agent died'), {
-          assistantText: 'half',
-          usage: { inputTokens: 5, outputTokens: 1 },
-        })
+        throw new AcpTurnFailure(
+          new Error('agent died'),
+          { assistantText: 'half', usage: { inputTokens: 5, outputTokens: 1 } },
+          { sandboxed: true },
+        )
       }
       return first(turnOptions)
     }
@@ -1707,7 +1708,10 @@ describe('continuing into a granted worktree', () => {
       (err: unknown) =>
         err instanceof AcpTurnFailure &&
         err.partial.assistantText === 'Going to edit. half' &&
-        err.partial.usage.inputTokens === 15,
+        err.partial.usage.inputTokens === 15 &&
+        // The failed turn's containment answer outlives the rewrap, so the error
+        // copy can still tell a sandboxed agent's causes from anyone else's.
+        err.sandboxed,
     )
   })
 })
