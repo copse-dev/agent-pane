@@ -876,7 +876,8 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px dashed var(--border-subtle);
-  border-radius: 999px;
+  /* A disclosure, not a call to action: the kit corner, not a pill (docs/ui-taste.md). */
+  border-radius: var(--radius);
   padding: 1px 7px;
   margin: 0;
   cursor: pointer;

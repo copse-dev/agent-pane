@@ -57,6 +57,19 @@ describe('composer notice plates', () => {
     const run = await plate('.container-run-banner')
     assert.equal(run.rule, '0px', 'no rule under the banner')
     assert.notEqual(run.color, 'rgba(0, 0, 0, 0)', 'the banner keeps its wash')
+    // The same plate recipe as every other callout: --sev over --bg-elevated.
+    const recipe = await browser.execute(() => {
+      const banner = document.querySelector('.container-run-banner')
+      if (!banner) return null
+      const sample = document.createElement('span')
+      sample.style.backgroundColor =
+        'color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated))'
+      banner.append(sample)
+      const expected = getComputedStyle(sample).backgroundColor
+      sample.remove()
+      return expected
+    })
+    assert.equal(run.color, recipe, 'the banner mixes its phase over --bg-elevated')
     await expect($('.container-run-icon')).toHaveStyle({ 'background-color': 'rgba(0,0,0,0)' })
 
     await saveElementScreenshot('.container-run-banner', 'container-run-banner-plate.png')

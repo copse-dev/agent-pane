@@ -11,7 +11,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
