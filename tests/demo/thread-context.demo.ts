@@ -68,7 +68,8 @@ describe('The thread Context panel', () => {
     )
     await expect(
       $$('[data-context-section="permissions"] [data-action^="revoke-"]'),
-    ).toBeElementsArrayOfSize(2)
+    ).toBeElementsArrayOfSize(3)
+    await expect($('[data-action="revoke-port-binding"]')).toBeDisplayed()
     await expect($('[data-action="disable-guarded-yolo"]')).toBeDisplayed()
     await expect($('[data-context-section="permissions"]')).toHaveText(
       expect.stringContaining('Outside-project reads'),
