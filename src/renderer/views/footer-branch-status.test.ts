@@ -9,7 +9,7 @@ import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { setThreadDraftPrompt, setThreadTitle } from '@shared/store/thread-helpers.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -625,6 +625,12 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 3, "another thread's rename starts no Git read")
     assert.equal(host.querySelector('.footer-branch-label'), label)
+
+    // Draft autosave replaces the active thread object; typing is not a branch change.
+    setThreadDraftPrompt(store, 'thread-2', 'still typing')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, 'a draft autosave starts no Git read')
   })
 
   it('repaints a thread switch from the store alone, with no event emitted (#3928)', async () => {

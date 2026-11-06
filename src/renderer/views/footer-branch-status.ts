@@ -19,6 +19,7 @@ import { openBrowserUrl } from '../controller/panels.ts'
 import {
   activeThreadOf,
   getActiveThreadOwner,
+  sameThreadBesidesDraft,
   type ActiveThreadOwner,
 } from '../controller/active-thread-owner.ts'
 
@@ -872,12 +873,16 @@ export function mountFooterBranchStatus(
     ),
     // The active thread's own updates (branch, worktree, PR links, blank or
     // not). Other threads' renames and turns no longer repaint the footer.
-    store.select(activeThreadOf, () => {
-      // Same-thread metadata updates are the noisy path during first-message
-      // checkout and can share the existing working-tree debounce.
-      if (switchedThisTask) renderStoreState()
-      else scheduleStoreRefresh()
-    }),
+    store.select(
+      activeThreadOf,
+      () => {
+        // Same-thread metadata updates are the noisy path during first-message
+        // checkout and can share the existing working-tree debounce.
+        if (switchedThisTask) renderStoreState()
+        else scheduleStoreRefresh()
+      },
+      sameThreadBesidesDraft,
+    ),
     store.on('thread_status_changed', scheduleStoreRefresh),
     store.on('message_added', () => {
       scheduleStoreRefresh()

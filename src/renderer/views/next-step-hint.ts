@@ -2,7 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
-import { activeThreadOf } from '../controller/active-thread-owner.ts'
+import { activeThreadOf, sameThreadBesidesDraft } from '../controller/active-thread-owner.ts'
 
 /**
  * The composer's Tab-completable next step, enabled by default.
@@ -116,7 +116,7 @@ export function mountNextStepHint(
       if (status === 'idle') void maybeFetchHint(tid)
     }),
     // The active thread: a switch, or its own last exchange or status.
-    store.select(activeThreadOf, syncActiveThread),
+    store.select(activeThreadOf, syncActiveThread, sameThreadBesidesDraft),
   ]
 
   return {
