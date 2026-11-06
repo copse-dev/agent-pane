@@ -42,6 +42,7 @@ import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -1377,7 +1378,11 @@ export function mountGitChangesPane(
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return
       // Inactive worktrees are not continuously watched. Revalidate on return
       // while showing their last known rows, rather than flashing Loading.
-      if (changesModeActive(store)) void refresh()
+      // Git reads the thread's checkout from main, which rejects a new thread
+      // until autosave has created it.
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store)) void refresh()
+      })
     }),
     // The queue alone. While Changes is open the diff-state selection below
     // repaints it; otherwise keep the list (and its count) current here.

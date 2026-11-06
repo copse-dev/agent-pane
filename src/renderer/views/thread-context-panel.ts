@@ -40,6 +40,7 @@ import { showErrorToast } from './toast.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { activeThreadOf, sameThreadBesidesDraft } from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -1085,10 +1086,15 @@ export function mountThreadContextPane(
       contextPanelInputs,
       () => {
         if (!contextModeActive(store)) return
-        const active = getActiveThread(store)?.id ?? null
         render()
-        if (active !== mentionedFor) void refreshMentions()
-        else if (storageKey !== activeStorageKey()) void refreshStorage()
+        // Change stats read the thread's checkout from main, which rejects a
+        // new thread until autosave has created it.
+        afterPendingThreadPersistence(() => {
+          if (disposed || !contextModeActive(store)) return
+          const active = getActiveThread(store)?.id ?? null
+          if (active !== mentionedFor) void refreshMentions()
+          else if (storageKey !== activeStorageKey()) void refreshStorage()
+        })
       },
       sameContextPanelInputs,
     ),

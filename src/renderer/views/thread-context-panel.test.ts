@@ -787,6 +787,8 @@ test('Storage line totals reject stale thread replies, handle clean checkouts an
   const viewer = document.createElement('div')
   const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
   createThread(store)
+  // The new thread's read waits for its create to start persisting.
+  await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(replies.length, 2)
   replies[1]?.resolve(null)
   await new Promise((resolve) => setTimeout(resolve, 0))
