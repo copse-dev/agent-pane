@@ -2614,8 +2614,8 @@
       "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
-      "sha256": "28877f36d4ae5d676e60ac4ff01d4bd2c3f2e0c24de35fef4976b4babdc01a1d",
-      "bytes": 337998
+      "sha256": "25b3b8c9cc20044309497e27e6f9631a758ef1ba15807a6f0a526fa856174ac7",
+      "bytes": 336851
     },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
@@ -3740,6 +3740,14 @@
     "roadmap-thread-reopened.png": {
       "sha256": "fe238d814ad8de133780fedb85409930db7001f86793c82a4019c386ad3ad975",
       "bytes": 346709
+    },
+    "run-agent-appended-reminder.png": {
+      "sha256": "27f31fdfce26b42fcc148c25a8040b1528434c80672c53a3be8d9e12c6451188",
+      "bytes": 145897
+    },
+    "run-agent-configured-role.png": {
+      "sha256": "d07a5fd0fefe3f393d4d105824c45a8507dddc40a3aeacae604a7dfd907c4045",
+      "bytes": 131207
     },
     "screenshot-motion-frame.png": {
       "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
