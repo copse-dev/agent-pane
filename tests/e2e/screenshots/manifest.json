@@ -873,6 +873,10 @@
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
     },
+    "branch-ci-status-evidence.png": {
+      "sha256": "7856473097339ef6bd4820d86e3d2e72336e96314ce8420a43f74d57965877f1",
+      "bytes": 88769
+    },
     "bridged-thread-proposals.png": {
       "sha256": "3b264fa1cd26bd7a3f25b47db0cde2f1af8b38f5440bdf087af3d5b189ed319f",
       "bytes": 97686
@@ -2134,8 +2138,8 @@
       "bytes": 347558
     },
     "host-read-tool-cards.png": {
-      "sha256": "55a81e65e9f0e4de112db27b1d7fbc84b7110f11dfd53be15fbfabc1aeff3d71",
-      "bytes": 308101
+      "sha256": "2871fa69f6a9c55dea2a8e8e0eea2a3304d9ea3ef51a301150d63fecea74d09b",
+      "bytes": 365016
     },
     "image-description-draft.png": {
       "sha256": "759faae8e2132c12e7d04c2b6598114a641953af2ea8bf8e5df9d792f1a1c4f6",
