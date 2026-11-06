@@ -181,6 +181,10 @@
       "sha256": "a60340869975b02670fe0cf2048503f8d2a63fea5dfa67aa23853449d6ae2536",
       "bytes": 149816
     },
+    "acp-stop-interrupted-earlier-card.png": {
+      "sha256": "080f6c2ad94eb3a5a93d212653271018cd586e908104258edf65af84b637d5ee",
+      "bytes": 176800
+    },
     "acp-subagent-visibility.png": {
       "sha256": "9d424c4b77633478be2043028aa103c30af8cff5e927025ab4779c35c385f56e",
       "bytes": 110675
