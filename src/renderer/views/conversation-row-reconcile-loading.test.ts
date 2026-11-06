@@ -4,26 +4,18 @@ import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import {
-  addMessage,
-  createThread,
-  patchThreadAnywhere,
-  setThreadReviewReport,
-} from '@shared/store/thread-helpers.ts'
-import type { Thread, ThreadReviewReport } from '@shared/types'
+import { addMessage, createThread, patchThreadAnywhere } from '@shared/store/thread-helpers.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
-import { attachThreadHydration } from '../controller/thread-hydration.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The keyed row reconcile (transcript-rows.ts) used to give up, and rebuild
-// every row, while the transcript was still loading (its notice changing as a
-// turn starts or ends, or the read failing) and while older history was still
-// backfilling above the newest-first window. Each of these now patches the
-// list in place: the rows and the chrome that did not change are the same
-// nodes afterwards, and the list draws what a fresh mount of the same store
-// draws. Kept rows that would have to move still rebuild the list: nothing in
-// the product reorders a thread's messages.
+// every row, while older history was still backfilling above the
+// newest-first window. It now patches the rows below the part the backfill has
+// yet to render: the rows that did not change are the same nodes afterwards,
+// and the list draws what a fresh mount of the same store draws. A loading
+// transcript and kept rows that would have to move still rebuild the list.
 
 function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   const base = createFakeApi()
@@ -109,100 +101,10 @@ function rowIds(host: HTMLElement): string[] {
   return [...rowNodes(host).keys()]
 }
 
-function report(): ThreadReviewReport {
-  return {
-    status: 'done',
-    startedAt: 1,
-    models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
-    lenses: ['correctness'],
-    baseRef: 'HEAD',
-    headCommit: 'abc',
-    dirtyWorkingTree: true,
-    execution: { backend: 'os-sandbox', strength: 'os-sandbox', executed: true, reason: '' },
-    checks: [],
-    notChecked: [],
-    findings: [],
-    appendix: 0,
-    refuted: 0,
-    reviewers: [],
-    verification: null,
-    durationMs: 1,
-  }
-}
-
 function patchThread(store: AppStore, threadId: string, patch: Partial<Thread>): void {
   patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, ...patch }))
   store.emit('threads_changed')
 }
-
-describe('conversation keyed row reconcile: loading transcripts (component)', () => {
-  it('patches the hydration notice in place as the loading turn ends', async () => {
-    const store = createStore()
-    const threadId = createThread(store)
-    const host = mount(store)
-    setThreadReviewReport(store, threadId, report())
-    patchThread(store, threadId, { status: 'running', messages: [], messagesLoaded: false })
-    const notice = host.querySelector('.conversation-hydrating')
-    const card = host.querySelector('[data-review-report-card]')
-    assert.ok(notice && card)
-    assert.equal(notice.textContent, 'Agent is working — loading the conversation…')
-
-    // A rename changes nothing the transcript draws: the notice is kept.
-    patchThread(store, threadId, { title: 'Renamed while loading' })
-    assert.ok(host.querySelector('.conversation-hydrating') === notice, 'the notice was redrawn')
-
-    // The turn ends while the transcript is still loading.
-    patchThread(store, threadId, { status: 'idle' })
-    const idle = host.querySelector('.conversation-hydrating')
-    assert.ok(idle)
-    assert.equal(idle.textContent, 'Loading the conversation…')
-    assert.equal(host.querySelectorAll('.conversation-hydrating').length, 1)
-    assert.ok(host.querySelector('[data-review-report-card]') === card, 'the report was redrawn')
-    assert.ok(idle.nextElementSibling?.classList.contains('agent-activity') === true)
-    await assertMatchesFreshMount(store, host, 'idle while loading')
-  })
-
-  it('swaps in the failure line in place when the read fails', async () => {
-    const store = createStore({ activeProjectId: 'p' })
-    const threadId = createThread(store)
-    const base = fakeApi()
-    const failing = fakeApi({
-      threads: { ...base.threads, loadMessages: () => Promise.reject(new Error('disk gone')) },
-    })
-    const host = mount(store, failing)
-    setThreadReviewReport(store, threadId, report())
-    cleanups.push(attachThreadHydration(store, failing))
-    // Switching into a thread that is not loaded yet is a fresh build; the
-    // read then fails asynchronously.
-    patchThread(store, threadId, { status: 'running', messages: [], messagesLoaded: false })
-    const card = host.querySelector('[data-review-report-card]')
-    const activity = host.querySelector('.agent-activity')
-    const removed: string[] = []
-    const list = host.querySelector('.messages-list')
-    assert.ok(card && activity && list)
-    assert.ok(host.querySelector('.conversation-hydrating-running'))
-    new MutationObserver((records) => {
-      for (const record of records) {
-        for (const node of Array.from(record.removedNodes)) {
-          if (node instanceof HTMLElement) removed.push(node.className || node.tagName)
-        }
-      }
-    }).observe(list, { childList: true })
-    await delay(0)
-
-    const failure = host.querySelector('.conversation-hydrating-failed')
-    assert.equal(failure?.textContent, 'Couldn’t load the conversation.')
-    assert.equal(host.querySelectorAll('.conversation-hydrating').length, 1)
-    assert.ok(host.querySelector('[data-review-report-card]') === card, 'the report was redrawn')
-    assert.ok(host.querySelector('.agent-activity') === activity)
-    assert.deepEqual(
-      removed,
-      ['conversation-hydrating conversation-hydrating-running'],
-      'only the loading notice leaves the list',
-    )
-    await assertMatchesFreshMount(store, host, 'failed read', failing)
-  })
-})
 
 describe('conversation keyed row reconcile: pending backfill and reorders (component)', () => {
   function longThread(store: AppStore, total: number): { threadId: string; ids: string[] } {

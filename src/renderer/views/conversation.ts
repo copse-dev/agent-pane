@@ -822,9 +822,7 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
 
 /**
  * Whether a keyed row reconcile may stand in for a full rebuild: the same
- * thread, and its transcript still loading or loaded on both sides. (While it
- * loads, the notice above the rows is patched to match; once it has loaded,
- * the list is built fresh, newest-first, as on a switch.) Every other input is
+ * thread, and its transcript is loaded on both sides. Every other input is
  * either signed per row (the messages, their queue, the status the live tail
  * reads, and the thread-wide facts a card draws — proposal and reviewer
  * answers, live proposal targets, canvas thumbnails, the interrupted-turn
@@ -832,7 +830,11 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
  * the queued panel shows, todos, the working brief).
  */
 function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
-  return a.threadId === b.threadId && a.needsHydration === b.needsHydration
+  return (
+    a.threadId === b.threadId &&
+    a.needsHydration === b.needsHydration &&
+    a.hydrationFailed === b.hydrationFailed
+  )
 }
 
 function summaryPreview(text: string, max = 200): string {
@@ -2610,21 +2612,6 @@ function hydrationFailureEl(): HTMLElement {
   )
 }
 
-/** What the hydration notice says for `thread`: nothing once its transcript is loaded. */
-type HydrationNotice = 'failed' | 'running' | 'loading' | null
-
-function hydrationNoticeFor(thread: Thread): HydrationNotice {
-  if (!needsHydration(thread)) return null
-  if (hydrationFailed(thread.id)) return 'failed'
-  return thread.status === 'running' ? 'running' : 'loading'
-}
-
-function buildHydrationNotice(notice: Exclude<HydrationNotice, null>): HTMLElement {
-  // A read that failed must not keep claiming "Loading…" — render the honest
-  // failure line instead (reselecting the thread retries).
-  return notice === 'failed' ? hydrationFailureEl() : hydrationNoticeEl(notice === 'running')
-}
-
 // Newest-first thread load (see rebuildForThread): render this many of the
 // most recent messages up front — enough to fill and slightly overfill a
 // typical viewport — then fill the rest of the history backwards in the
@@ -3622,13 +3609,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function insertMessageRow(threadId: string, msgId: string, before: Element | null): void {
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
-    list.insertBefore(msgEl, before ?? rowsTail())
+    const tail = activityBar.isConnected ? activityBar : firstTrailingCard()
+    list.insertBefore(msgEl, before ?? tail)
     finalizeMessageEl(threadId, msgId)
-  }
-
-  /** The node message rows end before: the activity row, else the first trailing card. */
-  function rowsTail(): Element | null {
-    return activityBar.isConnected ? activityBar : firstTrailingCard()
   }
 
   /**
@@ -4455,44 +4438,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else backfillPending = false
   }
 
-  // What the hydration notice at the top of the list says (see hydrationNoticeFor).
-  const hydrationNotices = new WeakMap<Element, HydrationNotice>()
-
-  function rememberHydrationNotice(element: HTMLElement, notice: HydrationNotice): HTMLElement {
-    hydrationNotices.set(element, notice)
-    return element
-  }
-
-  /** Whether the notice at the top of the list says something other than `thread` needs. */
-  function hydrationNoticeChanges(thread: Thread): boolean {
-    const current = list.querySelector<HTMLElement>(':scope > .conversation-hydrating')
-    return (current ? hydrationNotices.get(current) : null) !== hydrationNoticeFor(thread)
-  }
-
-  /**
-   * Bring the hydration notice in line with `thread` in place: the running
-   * label as a turn starts or ends while the transcript loads, or the failure
-   * line once the read fails. Returns whether it changed.
-   */
-  function syncHydrationNotice(thread: Thread): boolean {
-    if (!hydrationNoticeChanges(thread)) return false
-    const current = list.querySelector<HTMLElement>(':scope > .conversation-hydrating')
-    const wanted = hydrationNoticeFor(thread)
-    const next = wanted ? rememberHydrationNotice(buildHydrationNotice(wanted), wanted) : null
-    if (current && next) current.replaceWith(next)
-    else if (current) current.remove()
-    else if (next) list.prepend(next)
-    return true
-  }
-
   /**
    * Patch the rendered rows to match `thread` instead of rebuilding the list
    * (see transcript-rows.ts). Returns false, having touched nothing, when the
-   * change is one a whole rebuild must handle: another thread, a transcript
-   * finishing its load, a message the backfill has yet to render added or
-   * removed, or the list holding a key twice. Thread-wide facts a card draws
-   * are signed on its row, and a loading transcript's notice is patched in
-   * place (syncHydrationNotice).
+   * change is one a whole rebuild must handle: another thread, the hydration
+   * notice is involved, a message the backfill has yet to render added or
+   * removed, or the kept rows would have to move or a key appears twice.
+   * Thread-wide facts a card draws are signed on its row.
    *
    * While older history is still backfilling, the plan covers the rows below
    * the part the backfill has yet to render; the backfill goes on rendering
@@ -4504,6 +4456,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     previous: TranscriptInputs,
   ): boolean {
     if (!sameRowEnvironment(inputs, previous)) return false
+    if (inputs.needsHydration || inputs.hydrationFailed) return false
     const pending = backfillPending ? backfillPrefix : []
     if (pending.some((id, i) => thread.messages[i]?.id !== id)) return false
     const hidden = queuedMessageIds(thread)
@@ -4523,16 +4476,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     const plan = planTranscriptRows(rendered, wanted)
     if (plan.kind === 'rebuild') return false
-    // While the transcript loads, the list holds only the notice (and any
-    // rows streamed in meanwhile). A change that moves neither is left to the
-    // rebuild it always had, which also lands the view at the live end, so a
-    // load finishes exactly where it did before.
-    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
-      return false
-    }
     patchedRows.clear()
-    const noticeChanged = syncHydrationNotice(thread)
-    if (plan.ops.length > 0 || noticeChanged) {
+    if (plan.ops.length > 0) {
       const wasPinned = transcriptScroll.isPinnedToBottom()
       const prevScrollTop = list.scrollTop
       const anchor = wasPinned ? null : captureReadingAnchor()
@@ -4622,8 +4567,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // switch look like a dead pane, worst when the agent was still running in
     // it (#1684). Hold the space with a notice; the hydration completing emits
     // `threads_changed`, which rebuilds over it with the real messages.
-    const notice = hydrationNoticeFor(thread)
-    if (notice) list.append(rememberHydrationNotice(buildHydrationNotice(notice), notice))
+    if (needsHydration(thread)) {
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id)
+          ? hydrationFailureEl()
+          : hydrationNoticeEl(thread.status === 'running'),
+      )
+    }
     // Newest-first: render the tail the user actually lands on right away, then
     // fill the rest of the history backwards in the background (see
     // backfillOlderMessages) instead of blocking a thread switch on rendering
