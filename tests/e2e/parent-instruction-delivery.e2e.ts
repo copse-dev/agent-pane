@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
@@ -18,6 +18,7 @@ import {
   resetUserData,
   seedEmptyProject,
   seedStableWorkspace,
+  writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -36,6 +37,14 @@ describe('parent instruction delivery', function () {
     seedEmptyProject(workspace, 'e2e-parent-instruction-delivery', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+    })
+    // Nested AGENTS.md scopes only activate in a trusted workspace, so without
+    // this nothing is deferred and both edits run before the guidance arrives.
+    writeSeedConfig({
+      projects: [{ id: 'e2e-parent-instruction-delivery', path: workspace, name: 'workspace' }],
+      activeProjectId: 'e2e-parent-instruction-delivery',
+      trustedWorkspaceRoots: [realpathSync(workspace)],
+      'threads:e2e-parent-instruction-delivery': [],
     })
     writeSettings({ ...readSeededSettings(), ...server.settings })
     server.enqueue(...parentInstructionResponses(workspace))
