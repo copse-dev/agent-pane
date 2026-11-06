@@ -23,8 +23,9 @@ export const generalMarkup = `
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Best value picks the model that gives the most for what it costs on your plans.
-                  Pin one here or from the chat picker.
+                  Best value picks the model that gives the most for what it costs on your plans,
+                  and sends each turn to that model's provider. Pin one here or from the chat
+                  picker.
                 </span>
               </label>
               <label>

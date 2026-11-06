@@ -22,7 +22,7 @@ describe('Settings section copy', () => {
       'The chat model, and the models used for background tasks.',
     )
     await expect($('#settings-models-section select[name="model"] ~ .field-hint')).toHaveText(
-      'Best value picks the model that gives the most for what it costs on your plans. Pin one here or from the chat picker.',
+      "Best value picks the model that gives the most for what it costs on your plans, and sends each turn to that model's provider. Pin one here or from the chat picker.",
     )
     await saveAppScreenshot('settings-general-copy.png')
   })
