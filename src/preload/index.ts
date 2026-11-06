@@ -433,6 +433,7 @@ const api: ApiClient = {
         threadId?: string
         title: string
         body: string
+        bodyMarkdown?: string
         bodyAdvice?: string
         bodyFooter?: string
         type: string
@@ -456,6 +457,7 @@ const api: ApiClient = {
           threadId?: string
           title: string
           body: string
+          bodyMarkdown?: string
           bodyAdvice?: string
           bodyFooter?: string
           type: string
