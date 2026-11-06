@@ -12,6 +12,7 @@ import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_file',
   'list_threads',
+  'read_thread',
   'list_dir',
   'search_code',
   'search_codebase',

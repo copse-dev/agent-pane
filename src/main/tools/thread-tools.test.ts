@@ -7,9 +7,10 @@ import { createThread, deleteProjectThread } from '../services/thread-store.ts'
 import { runWithApprovalHandler } from '../services/approval.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { setSetting } from '../services/storage/settings.ts'
-import { listThreadsTool, sendThreadPromptTool } from './thread-tools.ts'
+import { listThreadsTool, readThreadTool, sendThreadPromptTool } from './thread-tools.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { hasThreadAccess } from '../services/security/thread-access.ts'
+import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -65,6 +66,99 @@ describe('conversation tools', () => {
     )
     assert.match(normalizeToolExecuteResult(result).result, /Investigate build failures/)
     assert.equal(hasThreadAccess('thread-tools-source', 'send'), false)
+    assert.match(normalizeToolExecuteResult(result).result, /"projectName":"Project"/)
+  })
+
+  it('uses separate read consent for direct transcript pages and never grants sending', async () => {
+    const args = {
+      project_id: 'thread-tools-project',
+      thread_id: 'thread-tools-destination',
+      limit: 10,
+      offset: 0,
+    }
+    const denied = await runWithApprovalHandler(
+      async () => ({ approved: false, remember: false }),
+      () =>
+        runWithActiveRunIdentity('thread-tools-source', () => readThreadTool.execute(args, signal)),
+    )
+    assert.doesNotMatch(normalizeToolExecuteResult(denied).result, /Investigate build failures/)
+    const allowed = await runWithApprovalHandler(
+      async () => ({ approved: true, remember: false }),
+      () =>
+        runWithActiveRunIdentity('thread-tools-source', () => readThreadTool.execute(args, signal)),
+    )
+    const page = safeJsonParse(
+      normalizeToolExecuteResult(allowed).result,
+      decodeWithSchema(
+        z.object({
+          title: z.string(),
+          projectName: z.string(),
+          messages: z.array(z.unknown()),
+          nextOffset: z.number().nullable(),
+        }),
+      ),
+    )
+    assert.ok(page)
+    assert.equal(page.title, 'Investigate build failures')
+    assert.equal(page.projectName, 'Project')
+    assert.deepEqual(page.messages, [])
+    assert.equal(page.nextOffset, null)
+    assert.equal(hasThreadAccess('thread-tools-source', 'send'), false)
+  })
+
+  it('rejects orphan projects, cancelled reads and unsupported page bounds', async () => {
+    await setSetting('threadReadAccess', ['thread-tools-source'])
+    const args = { project_id: 'orphan', thread_id: 'thread', limit: 10, offset: 0 }
+    const orphan = await runWithActiveRunIdentity('thread-tools-source', () =>
+      readThreadTool.execute(args, signal),
+    )
+    assert.match(normalizeToolExecuteResult(orphan).result, /unavailable/)
+    const aborted = new AbortController()
+    aborted.abort()
+    const cancelled = await runWithActiveRunIdentity('thread-tools-source', () =>
+      readThreadTool.execute({ ...args, project_id: 'thread-tools-project' }, aborted.signal),
+    )
+    assert.match(normalizeToolExecuteResult(cancelled).result, /cancelled/)
+    assert.equal(readThreadTool.parameters.safeParse({ ...args, limit: 21 }).success, false)
+    assert.equal(readThreadTool.parameters.safeParse({ ...args, offset: -1 }).success, false)
+  })
+
+  it('preserves own-thread access without prompting and rechecks removed projects after consent', async () => {
+    const args = {
+      project_id: 'thread-tools-project',
+      thread_id: 'thread-tools-destination',
+      limit: 10,
+      offset: 0,
+    }
+    const own = await runWithApprovalHandler(
+      async () => {
+        throw new Error('Own transcript must not prompt')
+      },
+      () =>
+        runWithActiveRunIdentity('thread-tools-destination', () =>
+          runWithThreadExecutionContext(
+            {
+              projectId: 'thread-tools-project',
+              threadId: 'thread-tools-destination',
+              root: '/repo',
+              projectRoot: '/repo',
+              checkoutMode: 'shared',
+              branch: 'main',
+            },
+            () => readThreadTool.execute(args, signal),
+          ),
+        ),
+    )
+    assert.match(normalizeToolExecuteResult(own).result, /Investigate build failures/)
+    const removed = await runWithApprovalHandler(
+      async () => {
+        storageSet('projects', [])
+        return { approved: true, remember: false }
+      },
+      () =>
+        runWithActiveRunIdentity('thread-tools-source', () => readThreadTool.execute(args, signal)),
+    )
+    assert.match(normalizeToolExecuteResult(removed).result, /unavailable/)
   })
 
   it('pages globally recent matches across projects, excluding the caller before slicing', async () => {

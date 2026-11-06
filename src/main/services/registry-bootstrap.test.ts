@@ -54,6 +54,16 @@ import { normalizeOpenAIToolSchema } from '@copse/llm/normalize-tool-schema.ts'
 
 installInMemorySecretCipher()
 
+it('offers bounded conversation reads to both native and ACP agents', () => {
+  const registry = createRegistry()
+  registry.validateArgs('read_thread', { project_id: 'project', thread_id: 'thread' })
+  assert.ok(registry.toLLMTools().some((tool) => tool.name === 'read_thread'))
+  assert.throws(() => {
+    registry.validateArgs('read_thread', { project_id: 'project', thread_id: 'thread', limit: 21 })
+  })
+  assert.ok(BRIDGE_TOOL_NAMES.includes('read_thread'))
+})
+
 it('exports object parameter envelopes for native tools sent to compatible local servers', () => {
   const registry = createRegistry()
   const tools = registry.toLLMTools()

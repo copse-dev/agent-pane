@@ -31,8 +31,14 @@ implemented.
   `fork-thread.ts`, `thread-sort.ts`.
 - **Store** — `thread-store.ts`: the per-project read/write API
   (`loadProjectThreads`, `saveProjectThread`, `appendMessage`,
-  `loadAgentHistory`, the catalog and agent-PR index, …) and `write-queue.ts`,
+  `loadAgentHistory`, `readThreadTranscriptPage`, the catalog and agent-PR index, …) and `write-queue.ts`,
   the per-key write serializer every writer of these paths shares.
+
+`readThreadTranscriptPage` reads at most 20 selected message bodies, returning the newest page
+in chronological order. Offset counts backward from the newest finalized message. Bodies are
+capped at 4,000 characters with explicit truncation and a guarded content path; message hashes
+are verified. Tool names/statuses are bounded summaries. Tool blobs, images, reasoning, nested
+agents and older bodies are not hydrated. Pagination is over live history, not a frozen snapshot.
 
 Left in the app deliberately: `message-model.ts` (transcript model labels, which
 need the app's model catalog), the renderer's `AppStore` mutators in

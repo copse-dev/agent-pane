@@ -135,6 +135,7 @@ describe('git-service with two roots at once', { skip: !gitOk }, () => {
       const beforeStatus = await getGitStatusText(root)
       const main = await getGitLogText(5, undefined, root, 'main')
       assert.match(main, /History at main \([a-f0-9]{40,64}\):/)
+      assert.match(main, /Local checkout history; this does not establish the current remote tip/)
       assert.match(main, /init/)
       assert.doesNotMatch(main, new RegExp(`${name} commit`))
       assert.match(await getGitLogText(5, undefined, root, 'HEAD'), new RegExp(`${name} commit`))
@@ -158,6 +159,21 @@ describe('git-service with two roots at once', { skip: !gitOk }, () => {
     assert.match(ordinaryFile, /No commits touched file path/)
     assert.doesNotMatch(ordinaryFile, /resolves to a Git revision/)
     assert.match(await getGitLogText(5, 'tracked.txt', repos.alpha), /init/)
+  })
+
+  it('returns commit timestamps with bounded history so callers can establish time windows', async () => {
+    for (const root of [repos.alpha, repos.beta]) {
+      const expected = spawnSync('git', ['show', '-s', '--format=%h %cI %s', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf8',
+      })
+      assert.equal(expected.status, 0, expected.stderr)
+      assert.equal(await getGitLogText(1, undefined, root), expected.stdout.trim())
+      assert.match(
+        expected.stdout,
+        /^[a-f0-9]+ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2}) /,
+      )
+    }
   })
 
   it('rejects option-like and unresolved revisions instead of reading HEAD', async () => {

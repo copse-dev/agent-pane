@@ -93,3 +93,94 @@ four worker scenarios also pass on macOS. All ten local captures were inspected;
 the baseline source. Final phone and running-worker captures explicitly frame the transcript after
 shell resizing and wait for scrolling to settle. Required final-head cloud checks and screenshot
 review remain prerequisites for merging.
+
+## Post-merge live evaluation
+
+The five workflow PRs (#4183, #4185, #4187, #4188, #4189) were merged before this
+follow-up. Evaluation started from main `20e805b016d8efa8646790c938c568ef6f40e289`;
+fixes were subsequently rebased onto `92c89179fdf386d262957f600de1aceb187d2cf2`.
+The original checkout and daily app profile were preserved. Tests used isolated
+visible Electron sessions, the already-loaded local Qwen3.6 35B A3B model, and
+ordinary permissions. No model was loaded/unloaded or security policy relaxed.
+
+Acceptance recorded before editing: native dated history and exact-commit CI;
+read-only CI diagnosis; globally recent chat discovery and readable progress;
+separately consented synthetic handoff; real mobile/worker/reference integration;
+and explicit distinction between Copse history and history stored only in Codex.
+The expired-SSH-prompt acceptance criterion was added when a live run reproduced
+that failure, before its implementation changed.
+
+### Product gaps reproduced and fixed
+
+- Native `git_log` lacked timestamps, causing a local shell `git log` solely to
+  answer “since last night.” Return ISO committer timestamps with each bounded
+  history row. Named history also explicitly identifies its local provenance:
+  a local main SHA can lag the current remote CI SHA. Tool guidance describes
+  comparing SHAs and reading remote commits through the existing GitHub API tool.
+- Discovery returned project IDs but no names, and reading a selected chat
+  required navigating spine references. Add project names and a native
+  `read_thread` tool: 10 messages by default, at most 20, chronological within
+  each page, backward offset and explicit next-page offset. Cap each message at
+  4,000 characters and summarize tool names/statuses without loading tool blobs.
+  Preserve integrity checks, path guards, existing thread-scoped read consent,
+  own/parent exceptions, cancellation/revocation, and separate send consent.
+  Both native and ACP agents receive the tool. It reads Copse's store only.
+- Main expired an SSH askpass request after 60 seconds but left its modal open.
+  A screenshot showed the expired modal covering the next ordinary approval.
+  Main now dismisses the exact request on its original renderer when settled;
+  renderer removes expired queued requests and advances without answering or
+  remembering a secret. Late dismissal cannot close a newer prompt. The new
+  event is protocol-additive (two additions, zero breaks; version remains 66).
+- The documented `pnpm run analyze:thread -- ...` invocation forwarded the
+  separator as a filename. Strip that leading separator while preserving
+  analyzer failure exit codes; the CLI regression exercises both forms and a
+  negative scorer result.
+
+### Live results and limits
+
+Raw traces and screenshots remain local under the isolated evaluation worktree;
+private source chats were used only to recover workflow intent. Cross-project
+fixtures contain anonymized checkpoint text, not copied private conversations.
+
+| Workflow                                                    | Evidence                                                                                             | Result                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Original “validate what landed since last night”            | `git-ci-first-class-tools-1793990785791.jsonl`                                                       | Baseline tool scorer passed, but needed local shell dates and had an inconsistent merge count.                                                                                                                                                                                                                                                               |
+| Same broad wording after dated history                      | `git-ci-first-class-tools-1793993405590.jsonl`                                                       | Failed the unchanged CI-tool assertion: used native history but omitted CI. Do not count as a successful validation.                                                                                                                                                                                                                                         |
+| Original explicit merged-history + CI wording               | `git-ci-first-class-tools-1793993527105.jsonl`                                                       | Tool scorer passed in 25.6 seconds; no shell. Qualitative limit: history was an older local SHA than the remote CI SHA, and “mostly green” overstated pending evidence. This prompted the provenance fix.                                                                                                                                                    |
+| Explicit history + CI after provenance fix                  | `git-ci-first-class-tools-1793994144019.jsonl`                                                       | Tool scorer passed in 91 seconds. Native fetch failed SSH authentication, but later GitHub log approvals and completion proceeded. It reported CI not green and real rate-limit failures. The final answer still omitted the local/remote SHA mismatch and overclaimed that the failures were not code defects; qualitative result remains partial.          |
+| Global discovery + selected progress read, same two prompts | `cross-project-workflow-main-1793991220982.jsonl`, `cross-project-workflow-main-1793992253933.jsonl` | Before: four explore calls and spine/body navigation. Final facts were correct; the old direct-read assertion failed because reads occurred inside children. After: one `list_threads`, one `read_thread`, correct project names and three remaining items, no sends/shell/writes, 27.4 seconds. One paired observation is not a reliability estimate.       |
+| CI diagnosis, original prompt, ordinary mode                | `ci-diagnose-first-class-tools-1793993615836.jsonl`                                                  | Native run/log calls and safety scorer passed in 51.8 seconds. Logs establish installation API-rate-limit 403s. The answer added unsupported quota-cause/retry/token advice and an incorrect epoch conversion; diagnosis quality is only partial. Only the scenario's explicit Guarded-YOLO opt-in was removed; assertions were preserved.                   |
+| Synthetic handoff                                           | `cross-project-handoff-main-1793993928245.jsonl`                                                     | A user-started fixture receives a separately consented send; recipient completes an acknowledgement naming all three items, keeps agents frozen, and makes no tool calls. The earlier assistant-only fixture submitted successfully but failed the local model template; retain that failed attempt rather than treating a submission receipt as completion. |
+
+The original vague validation wording and unsupported causal claims remain model
+judgment limitations; passing tool-use assertions does not establish factual
+correctness. No claim is made that all original Codex workflows now work reliably.
+The existing external-history import/connector and paired-browser window-close
+work remain separate scope; the mobile-control test does not prove #4095 is on
+main or establish physical-phone/window-close behavior.
+
+### Regression and device evidence
+
+The new date/provenance, analyzer-separator and expired-dialog tests fail against
+their prior implementations. Focused store/tool tests cover pagination, lazy
+reads, truncation, missing/tampered/symlink content, invalid bounds, denied read,
+separate sending, cancellation and project removal during consent. Registration
+and ACP tests cover the model-visible schema and readonly classification.
+
+Four real Electron specs pass (nine cases): `workflow-read-evidence`,
+`mobile-controls`, `native-isolated-workers`, and `thread-reference-picker`.
+The focused Chromium `ssh-prompt-expiry` spec passes: assert the modal opens,
+dismiss it by request ID, then type into and focus the real composer. Main
+lifecycle tests advance the actual 60-second deadline with fake timers. This
+proves the two boundaries and additive IPC contract; it is not a live SSH-server
+credential test. No credentials were entered or changed.
+
+Inspected captures include dated history, conversation title/project/checklist,
+composer usable after expiry, live before/after conversation answers, and the
+blocked SSH prompt. Local macOS captures are evidence only; Linux CI owns
+committed screenshot references. No baseline was accepted from a Mac capture.
+
+Final full-check and cloud-gate results are recorded in the follow-up PR. Keep
+publication draft until required gates and screenshot review complete. Earlier
+static runs exposed new lint/type errors in tests; those were fixed, not treated
+as host noise.

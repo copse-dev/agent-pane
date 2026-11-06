@@ -997,6 +997,87 @@ export function loadThreadMessages(projectId: string, threadId: string): Promise
   })
 }
 
+export interface ThreadTranscriptPage {
+  title: string
+  status: Thread['status']
+  updatedAt: number
+  messages: Array<{
+    id: string
+    role: Message['role']
+    createdAt: number
+    content: string
+    contentTruncated: boolean
+    unavailable: boolean
+    contentPath: string | null
+    toolCalls: Array<Pick<Message['toolCalls'][number], 'name' | 'status'>>
+    toolCallCount: number
+  }>
+  totalMessages: number
+  offset: number
+  nextOffset: number | null
+}
+
+/** Recent prose, oldest first within each page; offset counts back from the newest message.
+ * Only selected message bodies are read. Tool blobs, images, reasoning and nested agents stay lazy.
+ */
+export function readThreadTranscriptPage(
+  projectId: string,
+  threadId: string,
+  options: { limit: number; offset: number },
+): Promise<ThreadTranscriptPage | null> {
+  if (
+    !Number.isSafeInteger(options.limit) ||
+    options.limit < 1 ||
+    options.limit > 20 ||
+    !Number.isSafeInteger(options.offset) ||
+    options.offset < 0
+  ) {
+    throw new RangeError('Transcript pages require limit 1–20 and a nonnegative integer offset')
+  }
+  return runSerialized(queueKey(projectId), async () => {
+    recoverPendingHistoryEdit(projectId, threadId)
+    const dir = threadDir(projectId, threadId)
+    const meta = parseMeta(await readOrNull(join(dir, META_FILE)))
+    if (meta === null) return null
+    const spine = parseSpine((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
+    const end = Math.max(0, spine.length - options.offset)
+    const start = Math.max(0, end - options.limit)
+    const messages = await mapConcurrent(spine.slice(start, end), async (line) => {
+      const path = contentFilePath(dir, line.content.ref)
+      const raw = path === null ? null : await readOrNull(path)
+      const parsed = raw === null ? null : parseOkfMessage(raw)
+      let unavailable = true
+      let content = '[Message unavailable: missing or failed integrity check.]'
+      if (parsed !== null && sha256(parsed.body) === line.content.sha256) {
+        unavailable = false
+        content = parsed.body
+      }
+      return {
+        content: content.slice(0, 4000),
+        role: line.role,
+        createdAt: line.createdAt ?? 0,
+        id: line.id,
+        contentTruncated: content.length > 4000,
+        unavailable,
+        contentPath: path,
+        toolCalls: line.toolCalls
+          .slice(0, 20)
+          .map((call) => ({ name: call.name.slice(0, 128), status: call.status })),
+        toolCallCount: line.toolCalls.length,
+      }
+    })
+    return {
+      title: meta.title,
+      status: meta.status,
+      updatedAt: meta.updatedAt,
+      messages,
+      totalMessages: spine.length,
+      offset: options.offset,
+      nextOffset: start > 0 ? options.offset + messages.length : null,
+    }
+  })
+}
+
 async function readProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},

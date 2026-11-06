@@ -917,6 +917,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
+      onDismissed: subscribe,
       respond: resolvedVoid,
       onRequest: subscribe,
     },

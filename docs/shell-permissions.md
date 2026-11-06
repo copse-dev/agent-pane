@@ -84,8 +84,11 @@ Local shell reads also check each named target's symlink destination before reus
 outside-project path grant. A file or directory alias into another thread still requires
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
 
-`list_threads` searches conversation titles and summaries and returns paths for the existing
-read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
+`list_threads` searches Copse conversation titles and summaries, includes project names, and
+returns identifiers for `read_thread` plus paths for detailed file reads. `read_thread` resolves
+recent message prose directly, with bounded pages and explicit truncation/older-page indicators;
+it uses the same conversation-read consent, including own/direct-follow-up-parent exceptions.
+Neither tool imports history stored only in another application. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
