@@ -112,7 +112,7 @@ function threadWideChanges(
   return [
     {
       name: 'a proposal is started',
-      change: () => {
+      change: (): void => {
         setThreadProposalDecision(store, threadId, {
           id: PROPOSAL_CALL.id,
           status: 'started',
@@ -123,7 +123,7 @@ function threadWideChanges(
     },
     {
       name: 'the started thread is deleted',
-      change: () => {
+      change: (): void => {
         store.setState({
           threads: store.getState().threads.filter((thread) => thread.id !== startedThreadId),
         })
@@ -132,7 +132,7 @@ function threadWideChanges(
     },
     {
       name: 'a reviewer question is answered',
-      change: () => {
+      change: (): void => {
         setReviewerInputAnswer(store, threadId, {
           id: QUESTION_CALL.id,
           text: 'Yes',
@@ -143,14 +143,14 @@ function threadWideChanges(
     },
     {
       name: 'a canvas thumbnail lands',
-      change: () => {
+      change: (): void => {
         setArtefactPreview(threadId, 'Sales', 'data:image/png;base64,AAAA')
         store.emit('threads_changed')
       },
     },
     {
       name: 'the thread model changes',
-      change: () => {
+      change: (): void => {
         patchThreadAnywhere(store, threadId, (thread) => ({
           ...thread,
           model: 'openai:gpt-5.5',
@@ -160,7 +160,7 @@ function threadWideChanges(
     },
     {
       name: 'the app restarts mid-turn',
-      change: () => {
+      change: (): void => {
         patchThreadAnywhere(store, threadId, (thread) => ({
           ...thread,
           interruptedTurnAt: Date.now() + 1_000,
