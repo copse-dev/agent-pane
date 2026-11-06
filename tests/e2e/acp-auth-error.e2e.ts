@@ -1,11 +1,18 @@
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
-import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedAcpAuthErrorFixture, seedE2eViewport } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
+// Each capture centres one sign-in message in the transcript and requires it to
+// clear the composer. The Claude organization-check message is about 578px
+// tall, which left about 1px of room in the default 800px window, so a 2px
+// layout difference between runs failed the fit. The extra height keeps every
+// message clear; the captures are of the message alone, so they do not change.
+const AUTH_VIEWPORT = { width: 1280, height: 900 } as const
+
 async function saveAuthMessage(selector: string, filename: string): Promise<void> {
-  await prepareE2eScreenshot()
+  await prepareE2eScreenshot(AUTH_VIEWPORT)
   if (await $('#pane-projects').isDisplayed()) await $('[aria-label="Toggle sidebar"]').click()
   await $(selector).scrollIntoView({ block: 'center' })
   const bounds = await browser.execute((sel) => {
@@ -78,6 +85,7 @@ describe('ACP authentication error presentation', () => {
           : '/usr/bin:/bin',
     })
     seedAcpAuthErrorFixture(process.cwd())
+    seedE2eViewport(AUTH_VIEWPORT)
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-acp-auth"] .message-text').waitForExist({
       timeout: 30_000,
