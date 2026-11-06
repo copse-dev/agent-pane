@@ -3357,6 +3357,18 @@
       "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
       "bytes": 304084
     },
+    "provider-handoff-cancel-before-dispatch-recovered.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
+    },
+    "provider-handoff-current-request-recovered.png": {
+      "sha256": "0824e33e8adc2c272b1db7bbf220d752600410388f840b46aaa2a2779176d619",
+      "bytes": 392809
+    },
+    "provider-handoff-final-state.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
+    },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
       "bytes": 212522
