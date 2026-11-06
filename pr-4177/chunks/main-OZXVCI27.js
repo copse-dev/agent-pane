@@ -22054,10 +22054,14 @@ function mountConversation(root, store2, api2) {
     hydrationNotices.set(element, notice);
     return element;
   }
+  function hydrationNoticeChanges(thread) {
+    const current = list.querySelector(":scope > .conversation-hydrating");
+    return (current ? hydrationNotices.get(current) : null) !== hydrationNoticeFor(thread);
+  }
   function syncHydrationNotice(thread) {
+    if (!hydrationNoticeChanges(thread)) return false;
     const current = list.querySelector(":scope > .conversation-hydrating");
     const wanted = hydrationNoticeFor(thread);
-    if ((current ? hydrationNotices.get(current) : null) === wanted) return false;
     const next = wanted ? rememberHydrationNotice(buildHydrationNotice(wanted), wanted) : null;
     if (current && next) current.replaceWith(next);
     else if (current) current.remove();
@@ -22085,6 +22089,9 @@ function mountConversation(root, store2, api2) {
     });
     const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
+    if (inputs.needsHydration && plan.ops.length === 0 && !hydrationNoticeChanges(thread)) {
+      return false;
+    }
     patchedRows.clear();
     const noticeChanged = syncHydrationNotice(thread);
     if (plan.ops.length > 0 || noticeChanged) {
