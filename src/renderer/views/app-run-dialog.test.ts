@@ -2,7 +2,8 @@ import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { createAppRunPanel } from './app-run-dialog.ts'
+import { createAppRunPanel, openAppRunDialog } from './app-run-dialog.ts'
+import { createStore } from '@shared/store/store.ts'
 import type { AppRunDiscovery, AppRunOperation, AppRunSelection } from '@shared/types/app-run.ts'
 const owner = { projectId: 'project', threadId: 'thread' }
 const data: AppRunDiscovery = {
@@ -102,5 +103,33 @@ describe('Run app picker', () => {
     assert.equal(panel.element.querySelector('.app-run-error')?.textContent, 'Device disconnected')
     assert.equal(launched, false)
     assert.equal(panel.element.querySelector<HTMLButtonElement>('.app-run-run')?.disabled, true)
+  })
+  it('closes an open dialog when setState alone switches the workspace', async () => {
+    const api = createFakeApi()
+    api.appRun.discover = async (): Promise<AppRunDiscovery> => data
+    api.appRun.devices = async (): Promise<AppRunDiscovery['devices']> => []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project',
+      projects: [
+        { id: 'project', name: 'Project', path: '/repo' },
+        { id: 'other', name: 'Other', path: '/other' },
+      ],
+    })
+    openAppRunDialog(store, api)
+    cleanup.push(() => {
+      document.querySelector<HTMLDialogElement>('#app-run-dialog')?.close()
+    })
+    await settle()
+    assert.ok(document.querySelector('#app-run-dialog[open]'), 'the dialog opens')
+
+    // No store event: the selection alone must close the dialog.
+    store.setState({ activeProjectId: 'other', workspaceRoot: '/other' })
+    await settle()
+    assert.equal(
+      document.querySelectorAll('#app-run-dialog').length,
+      0,
+      'the workspace switch closes the dialog',
+    )
   })
 })
