@@ -32,6 +32,9 @@ import {
 } from '../../scripts/lib/eval-tool-expectations.mts'
 import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
 import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { errorMessage } from '@shared/errors.ts'
+import { acceptEvalProposals, selectEvalBranch } from './helpers/agent-eval-ui.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -70,13 +73,10 @@ async function approvePendingApprovalDialogs(): Promise<void> {
 }
 
 async function approvePendingDiffs(): Promise<void> {
-  const queuedCount = await browser.execute(
-    () => document.querySelectorAll('.diff-file-btn').length,
-  )
-  if (queuedCount === 0) return
-  await $('button*=Accept all').click()
-  acceptedDiffsSinceSettle = true
-  await browser.pause(200)
+  if (await acceptEvalProposals(activeProjectId())) {
+    acceptedDiffsSinceSettle = true
+    await browser.pause(200)
+  }
 }
 
 /** Longest gap between an acceptance and the hidden turn it wakes starting. */
@@ -235,14 +235,9 @@ async function typePrompt(prompt: EvalPrompt): Promise<void> {
   const text = typeof prompt === 'string' ? prompt : prompt.text
   const attachments = typeof prompt === 'string' ? [] : (prompt.attachments ?? [])
   await waitForPromptReady()
+  await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
   await attachPromptFiles(attachments)
-  await browser.execute((value) => {
-    const el = document.querySelector<HTMLElement>('.prompt-input')
-    if (!el) throw new Error('.prompt-input not found')
-    el.focus()
-    el.textContent = value
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }, text)
+  await setComposerValue(text)
 }
 
 function walkFiles(root: string): string[] {
@@ -578,11 +573,31 @@ describe('agent eval drive', () => {
     workspaceRoot = preparedWorkspace
   })
 
+  afterEach(async function () {
+    if (this.currentTest?.state !== 'failed') return
+    const prefix = join(ARTIFACTS, `${scenario.id}-${String(Date.now())}-failure`)
+    try {
+      await browser.saveScreenshot(`${prefix}.png`)
+      const state = await browser.execute(() => ({
+        composer: document.querySelector('.prompt-input')?.textContent ?? '',
+        visibleText: document.body.innerText.slice(-4_000),
+      }))
+      writeFileSync(`${prefix}.json`, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+      const thread = await readActiveThread()
+      writeFileSync(`${prefix}.jsonl`, threadToJsonl(thread), 'utf8')
+      process.stdout.write(`\nCOPSE_EVAL_FAILURE_ARTIFACT=${prefix}\n`)
+    } catch (error) {
+      process.stderr.write(`Could not preserve eval failure evidence: ${errorMessage(error)}\n`)
+    }
+  })
+
   it('runs scenario prompts against the real agent and writes JSONL artifact', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const idleTimeout = Number(process.env['COPSE_EVAL_IDLE_MS'] ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const requestedBranch = process.env['COPSE_EVAL_BRANCH']?.trim()
+    if (requestedBranch) await selectEvalBranch(requestedBranch)
     const shouldArmGuardedYolo =
       scenario.toolUse?.armGuardedYolo === true || process.env['COPSE_EVAL_GUARDED_YOLO'] === '1'
     if (shouldArmGuardedYolo) {
@@ -591,7 +606,7 @@ describe('agent eval drive', () => {
 
     for (const prompt of prompts) {
       await typePrompt(prompt)
-      await $('.submit-btn').click()
+      await submitComposer()
       await waitForEvalAgentIdle(idleTimeout)
     }
     if (scenario.backgroundWake) {
@@ -609,6 +624,17 @@ describe('agent eval drive', () => {
     const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
     writeFileSync(outPath, body, 'utf8')
     process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
+
+    const pendingPaths = await browser.execute(
+      async (owner) =>
+        (await window.api.diff.queue(owner.projectId, owner.threadId)).map((entry) => entry.path),
+      { projectId: activeProjectId(), threadId: thread.id },
+    )
+    assert.deepEqual(
+      pendingPaths,
+      [],
+      'The eval must apply all proposed files before judging the workspace',
+    )
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
     await assertShellEscalationPrompts(scenario)
