@@ -22,6 +22,7 @@ import {
   type RunTiming,
 } from './activity-model.ts'
 import { resetProjectSwitchStateForTest, setThreadCacheForTest } from './projects.ts'
+import { compactSidebarThread } from './sidebar-thread.ts'
 import type { PendingApprovalSummary } from '../views/approval-dialog.ts'
 
 afterEach(() => {
@@ -85,6 +86,35 @@ function metadataOnly(id: string, patch: Partial<Thread> = {}): Thread {
 }
 
 describe('deriveActivity', () => {
+  it('keeps normal run states while an interruption is shown honestly', () => {
+    const groups = deriveActivity(
+      input({
+        now: 100,
+        threads: [
+          info('interrupted', { settledAt: 50, interruptedTurnAt: 50 }),
+          info('legacy-interrupted', { interruptedTurnAt: 50 }),
+          info('done', { settledAt: 50 }),
+          info('error', { status: 'error', settledAt: 50, interruptedTurnAt: 40 }),
+          info('active', { status: 'running', interruptedTurnAt: 40 }),
+          info('pending', { pendingStart: true, interruptedTurnAt: 40 }),
+          info('draft'),
+        ],
+      }),
+    )
+    const rows = groups.flatMap((part) => part.rows)
+    assert.equal(rows.find((row) => row.threadId === 'interrupted')?.want, 'Run interrupted')
+    assert.equal(rows.find((row) => row.threadId === 'interrupted')?.state, 'failed')
+    assert.equal(rows.find((row) => row.threadId === 'legacy-interrupted')?.state, 'failed')
+    assert.equal(rows.find((row) => row.threadId === 'done')?.state, 'finished')
+    assert.equal(rows.find((row) => row.threadId === 'error')?.want, 'Ended with an error')
+    assert.equal(rows.find((row) => row.threadId === 'active')?.want, 'Working…')
+    assert.equal(rows.find((row) => row.threadId === 'pending')?.want, 'Starting…')
+    assert.equal(
+      rows.find((row) => row.threadId === 'draft'),
+      undefined,
+    )
+  })
+
   it('orders groups by claim on attention: needs you, working, then recent', () => {
     const runs = new Map<string, RunTiming>([
       ['old-run', { startedAt: 100 }],
@@ -355,6 +385,65 @@ describe('deriveActivity', () => {
 })
 
 describe('collectActivityThreads', () => {
+  it('keeps interruptions through active, compacted and carried metadata projections', () => {
+    const automation = { scheduleId: 's', scheduleName: 'Daily check', triggeredAt: 1 }
+    const saved: Thread = {
+      id: 'cached-interrupted',
+      title: 'Cached interrupted run',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      createdAt: 1,
+      updatedAt: 2,
+      interruptedTurnAt: 30,
+      automation,
+    }
+    const compacted = compactSidebarThread(saved)
+    const cached: Thread = {
+      id: compacted.id,
+      title: compacted.title,
+      status: compacted.status,
+      usage: saved.usage,
+      messages: [],
+      createdAt: saved.createdAt,
+      updatedAt: saved.updatedAt,
+      ...(compacted.automation ? { automation: compacted.automation } : {}),
+      ...(compacted.interruptedTurnAt !== undefined
+        ? { interruptedTurnAt: compacted.interruptedTurnAt }
+        : {}),
+    }
+    setThreadCacheForTest('p2', [cached])
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/one', name: 'one' },
+        { id: 'p2', path: '/two', name: 'two' },
+      ],
+      activeProjectId: 'p1',
+      threads: [metadataOnly('active-interrupted', { interruptedTurnAt: 20, automation })],
+      backgroundThreads: [
+        {
+          projectId: 'p2',
+          thread: metadataOnly('carried-interrupted', { interruptedTurnAt: 40, automation }),
+        },
+      ],
+    })
+    const projected = collectActivityThreads(store)
+    assert.deepEqual(
+      projected.map((thread) => [thread.id, thread.interruptedTurnAt]),
+      [
+        ['active-interrupted', 20],
+        ['cached-interrupted', 30],
+        ['carried-interrupted', 40],
+      ],
+    )
+    const rows = deriveActivity(input({ threads: projected, now: 100 }))
+      .flatMap((part) => part.rows)
+      .flatMap((row) => row.fold?.runs ?? [row])
+    assert.equal(rows.length, 3)
+    assert.ok(rows.every((row) => row.state === 'failed' && row.want === 'Run interrupted'))
+    assert.ok(rows.every((row) => row.issue?.remedy.includes('saved work')))
+  })
+
   it('does not turn model and branch edits into a new completion', () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/one', name: 'one' }],

@@ -42,6 +42,7 @@ test('compacting keeps the row fields and drops the transcript', () => {
         triggeredAt: 10,
       },
       unreadAt: 20,
+      interruptedTurnAt: 30,
     }),
   )
 
@@ -51,6 +52,8 @@ test('compacting keeps the row fields and drops the transcript', () => {
   assert.equal(compacted.messages, undefined)
   assert.equal(compacted.automation?.scheduleId, 'health')
   assert.equal(compacted.unreadAt, 20)
+  assert.equal(compacted.interruptedTurnAt, 30)
+  assert.equal(compactSidebarThread(compacted).interruptedTurnAt, 30)
 })
 
 test('compacting carries the PR scrape over, so the status chip survives it', () => {
