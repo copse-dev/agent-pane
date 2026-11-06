@@ -5913,6 +5913,7 @@ function createDemoApi(scenario2, options = {}) {
           portBindingAllowed: false
         }
       ),
+      revokeProjectPortBinding: () => resolved(void 0),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "armed"),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "off"),
       onGuardedYoloChanged: (listener) => {
@@ -7465,7 +7466,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-KKLIXI6Z.js").then(async (main) => {
+    void import("./chunks/main-ONKOT3BF.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

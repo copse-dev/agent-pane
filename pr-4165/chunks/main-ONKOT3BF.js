@@ -76395,7 +76395,38 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
     );
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "revoke-port-binding",
+          "aria-label": "Revoke local port binding for this project",
+          title: "Ask again before future tasks can bind a local port. Stop running tasks separately."
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        const state = store2.getState();
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return;
+        revoke.disabled = true;
+        void api2.security.revokeProjectPortBinding(state.activeProjectId, threadId).then(() => refreshAccess()).catch((error) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke local port permission", error);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Local port binding",
+            "Granted",
+            "Saved for this project. Revoke to ask for future tasks; stop running tasks separately."
+          ),
+          revoke
+        )
+      );
     }
     result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
     result.append(
