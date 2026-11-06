@@ -3998,15 +3998,27 @@ function approvalCopyElement(className, text) {
   flushLines();
   return root;
 }
+function approvalMarkdownBody(markdown) {
+  const host = el("div", { class: "approval-body-markdown streaming-markdown" });
+  host.innerHTML = renderMarkdown(markdown);
+  return host;
+}
+function approvalBodyChildren(req) {
+  const children = [];
+  if (req.body.trim()) children.push(req.body);
+  if (req.bodyMarkdown?.trim()) children.push(approvalMarkdownBody(req.bodyMarkdown));
+  return children;
+}
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  if (req.body.trim())
+  const children = approvalBodyChildren(req);
+  if (children.length > 0)
     parts.push(
       el(
         "div",
         { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-        req.body
+        ...children
       )
     );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
@@ -4229,8 +4241,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     dialog.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
+      const children = approvalBodyChildren(req);
+      const body = el("div", { class: bodyClass }, ...children);
+      if (children.length === 0 || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -4418,6 +4431,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId,
       title,
       body,
+      bodyMarkdown,
       bodyAdvice,
       bodyFooter,
       type,
@@ -4440,6 +4454,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         threadId,
         title,
         body,
+        bodyMarkdown,
         bodyAdvice,
         bodyFooter,
         type,
@@ -4512,6 +4527,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId: req.threadId,
       title: req.title,
       body: req.body,
+      bodyMarkdown: req.bodyMarkdown,
       bodyAdvice: req.bodyAdvice,
       bodyFooter: req.bodyFooter,
       type: req.type,
@@ -4534,6 +4550,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
 var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_settings_dialog();
     init_attention();
