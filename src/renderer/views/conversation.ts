@@ -51,7 +51,7 @@ import {
   type HookRunSection,
 } from '@shared/hooks/hook-run-detail.ts'
 import type { HookRunDetail } from '@shared/types/hooks.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { type AppStore, sameItems as sameTuple } from '@shared/store/store.ts'
 import {
   artefactPreviewRevision,
   artefactUriFromToolResult,
@@ -821,23 +821,19 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
 }
 
 /**
- * Whether the thread-wide inputs that many rows read at build time are
- * unchanged, so a keyed row reconcile may stand in for a full rebuild. The
- * remaining inputs are either per-row (the messages, their queue, the status
- * the live tail reads; see transcript-rows.ts) or chrome synced on its own
- * (todos, the working brief).
+ * Whether a keyed row reconcile may stand in for a full rebuild: the same
+ * thread, and its transcript is loaded on both sides. Every other input is
+ * either signed per row (the messages, their queue, the status the live tail
+ * reads, and the thread-wide facts a card draws — proposal and reviewer
+ * answers, live proposal targets, canvas thumbnails, the interrupted-turn
+ * marker; see transcriptRowSignature) or chrome synced on its own (the model
+ * the queued panel shows, todos, the working brief).
  */
 function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
   return (
     a.threadId === b.threadId &&
-    a.model === b.model &&
-    a.interruptedTurnAt === b.interruptedTurnAt &&
-    a.liveProposalTargets === b.liveProposalTargets &&
     a.needsHydration === b.needsHydration &&
-    a.hydrationFailed === b.hydrationFailed &&
-    a.artefactPreviewRevision === b.artefactPreviewRevision &&
-    sameItems(a.threadProposals, b.threadProposals) &&
-    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+    a.hydrationFailed === b.hydrationFailed
   )
 }
 
@@ -3472,7 +3468,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
-    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg))
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store, thread, msg))
     rowDrawnFrom.set(msgEl, msg)
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
@@ -4255,48 +4251,107 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
 
+  // The trailing cards as last drawn, with what they were drawn from. A sync
+  // that finds the same thread and the same report or comparison keeps the
+  // card (and the findings the reader opened in it) instead of recreating it.
+  let comparisonCard: { threadId: string; signature: string; element: HTMLElement } | null = null
+  let reviewReportCard: { threadId: string; signature: string; element: HTMLElement } | null = null
+
   function syncComparisonPanel(): void {
     // A retired two-model comparison from before Copse Reviewer: still
     // rendered from thread data so old threads keep their card (decision 17),
     // dismissible, no longer re-runnable. Sits after the review report.
-    list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
-    if (thread?.comparison) {
+    const comparison = thread?.comparison
+    const signature = comparison ? renderSignature(comparison) : ''
+    if (
+      !thread ||
+      !comparison ||
+      comparisonCard?.threadId !== thread.id ||
+      comparisonCard.signature !== signature
+    ) {
+      list.querySelector('[data-comparison-card]')?.remove()
+      comparisonCard = null
+    }
+    if (!thread || !comparison) return
+    if (!comparisonCard) {
       const threadId = thread.id
-      const card = createComparisonCardEl(thread.comparison, api, undefined, () => {
+      const element = createComparisonCardEl(comparison, api, undefined, () => {
         dismissComparison(store, threadId)
       })
-      card.setAttribute('data-comparison-card', '')
-      list.append(card)
+      element.setAttribute('data-comparison-card', '')
+      comparisonCard = { threadId, signature, element }
     }
+    // Only move it when it is out of place: re-inserting a connected node
+    // detaches it first.
+    const { element } = comparisonCard
+    if (element.parentNode !== list || element !== list.lastElementChild) list.append(element)
   }
 
   function syncReviewReportCard(): void {
     // The Copse Reviewer findings card renders inline as a trailing child of
     // the message list, after the post-turn review cards, so it joins the
-    // transcript flow. Replaced on every sync (status transitions, dismissals).
-    list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
+    // transcript flow. Rebuilt when the report changes (status transitions,
+    // dismissals); kept, with the findings the reader opened, otherwise.
     const thread = getActiveThread(store)
-    if (!thread?.reviewReport) return
-    const threadId = thread.id
-    const card = createReviewFindingsCardEl(thread.reviewReport, {
-      onRetry: () => {
-        startReview(store, api, threadId)
-      },
-      onDismissCard: () => {
-        dismissReviewReport(store, threadId)
-      },
-      onDismissFinding: (finding) => {
-        dismissReviewFinding(store, api, threadId, finding)
-      },
-      onRestoreFinding: (finding) => {
-        restoreReviewFinding(store, api, threadId, finding.id)
-      },
-    })
-    card.setAttribute('data-review-report-card', '')
+    const report = thread?.reviewReport
+    const signature = report ? renderSignature(report) : ''
+    if (
+      !thread ||
+      !report ||
+      reviewReportCard?.threadId !== thread.id ||
+      reviewReportCard.signature !== signature
+    ) {
+      list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
+      reviewReportCard = null
+    }
+    if (!thread || !report) return
+    if (!reviewReportCard) {
+      const threadId = thread.id
+      // Each button disables itself on click and relied on the card being
+      // drawn again. A kept card is drawn again only when the report changes,
+      // so an action that left the report as it was (a Retry while a turn is
+      // running) draws the card afresh here, with its buttons enabled.
+      const act =
+        (action: () => void): (() => void) =>
+        () => {
+          const before = getThreadById(store, threadId)?.reviewReport
+          action()
+          if (getThreadById(store, threadId)?.reviewReport !== before) return
+          if (reviewReportCard?.threadId !== threadId) return
+          reviewReportCard.element.remove()
+          reviewReportCard = null
+          syncReviewReportCard()
+        }
+      const element = createReviewFindingsCardEl(report, {
+        onRetry: act(() => {
+          startReview(store, api, threadId)
+        }),
+        onDismissCard: act(() => {
+          dismissReviewReport(store, threadId)
+        }),
+        onDismissFinding: (finding) => {
+          act(() => {
+            dismissReviewFinding(store, api, threadId, finding)
+          })()
+        },
+        onRestoreFinding: (finding) => {
+          act(() => {
+            restoreReviewFinding(store, api, threadId, finding.id)
+          })()
+        },
+      })
+      element.setAttribute('data-review-report-card', '')
+      reviewReportCard = { threadId, signature, element }
+    }
+    const { element } = reviewReportCard
     const comparison = list.querySelector('[data-comparison-card]')
-    if (comparison) list.insertBefore(card, comparison)
-    else list.append(card)
+    const inPlace =
+      element.parentNode === list &&
+      (comparison ? element.nextElementSibling === comparison : element === list.lastElementChild)
+    if (inPlace) return
+    if (comparison) list.insertBefore(element, comparison)
+    else list.append(element)
   }
 
   /** The chrome around the message list — todos, comparison, queued panel, the
@@ -4382,9 +4437,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   /**
    * Patch the rendered rows to match `thread` instead of rebuilding the list
    * (see transcript-rows.ts). Returns false, having touched nothing, when the
-   * change is one a whole rebuild must handle: a thread-wide input that many
-   * rows read changed, the hydration notice is involved, older history is
-   * still backfilling, or the kept rows would have to move.
+   * change is one a whole rebuild must handle: another thread, the hydration
+   * notice is involved, older history is still backfilling, or the kept rows
+   * would have to move. Thread-wide facts a card draws are signed on its row.
    */
   function reconcileTranscriptRows(
     thread: Thread,
@@ -4394,7 +4449,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
     if (inputs.needsHydration || inputs.hydrationFailed) return false
     const elements = Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'))
-    const wanted = wantedTranscriptRows(thread, queuedMessageIds(thread))
+    const wanted = wantedTranscriptRows(store, thread, queuedMessageIds(thread))
     const messages = new Map(thread.messages.map((message) => [message.id, message]))
     const signed = elements.map((element) => ({
       key: element.dataset['messageId'] ?? '',
@@ -4760,18 +4815,34 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (tid === store.getState().activeThreadId) markRowPatched(mid)
       scrollToBottom()
     }),
-    store.on('comparison_changed', () => {
-      syncComparisonPanel()
-      scrollToBottom()
-    }),
+    // The trailing cards draw the active thread's report and comparison, so
+    // follow those values rather than the events their writers emit. A switch
+    // to another thread is the rebuild's to draw.
+    store.select(
+      (state) => {
+        const thread =
+          state.threads.find((candidate) => candidate.id === state.activeThreadId) ??
+          state.backgroundThreads.find((carried) => carried.thread.id === state.activeThreadId)
+            ?.thread
+        return [state.activeThreadId, thread?.reviewReport, thread?.comparison] as const
+      },
+      ([threadId]) => {
+        if (threadId === null || threadId !== renderedThreadId) return
+        syncReviewReportCard()
+        syncComparisonPanel()
+        scrollToBottom()
+      },
+      sameTuple,
+    ),
     store.on('review_report_changed', (tid, mid) => {
       // A report replaces its message's object; noting the row it just drew
       // keeps that from blocking the rows the stream patched (see
       // adoptPatchedSignatures).
-      if (mid) {
-        renderMessageReviewReport(tid, mid)
-        if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
-      } else syncReviewReportCard()
+      // The thread's own report is a trailing card, which follows the state
+      // (see the store.select above).
+      if (!mid) return
+      renderMessageReviewReport(tid, mid)
+      if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
       scrollToBottom()
     }),
     store.on('settings_changed', () => {

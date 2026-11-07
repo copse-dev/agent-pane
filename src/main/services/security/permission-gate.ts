@@ -334,9 +334,13 @@ async function requestEscalationApproval(
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
+  opts: { offerTrustedCommand?: boolean } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
+  const trustable =
+    opts.offerTrustedCommand === false
+      ? null
+      : offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
@@ -587,24 +591,34 @@ export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { readGrantApplied?: boolean; requireInteractiveApproval?: boolean } = {},
+  opts: {
+    readGrantApplied?: boolean
+    requireInteractiveApproval?: boolean
+    /**
+     * Authorize exactly this one outside execution: offer no trusted-command
+     * grant, replay lease or standing read grant. For an escape requested on
+     * evidence the command itself can forge, such as a background `retry_of`,
+     * whose "always allow" would otherwise outlive the failure it answered.
+     */
+    oneShot?: boolean
+  } = {},
 ): Promise<boolean> {
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
+  const oneShot = opts.oneShot === true
   if (!forceAsk && autoApproveShell(command, 'external')) return true
   // An agent rerunning the same demo or harness after each fix is blocked the
   // same way every time. A runner-verified block of bounded opaque local
   // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`
   // offers. A forced ask, which includes a block matched only from forgeable
   // command output, always reaches the user and never offers one.
-  const leaseIdentity = forceAsk
-    ? null
-    : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
+  const leaseIdentity =
+    forceAsk || oneShot ? null : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  if (!forceAsk && opts.readGrantApplied !== true) {
+  if (!forceAsk && !oneShot && opts.readGrantApplied !== true) {
     const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
     if (readOutside !== null) return readOutside
   }
@@ -615,6 +629,7 @@ export async function promptUnsandboxedShell(
     'shell-sandbox-retry',
     signal,
     leaseIdentity ?? undefined,
+    { offerTrustedCommand: !oneShot },
   )
 }
 
@@ -627,13 +642,21 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { source?: 'agent' | 'prior-denial'; executionRoot?: string | null } = {},
+  opts: {
+    source?: 'agent' | 'prior-denial'
+    executionRoot?: string | null
+    requireInteractiveApproval?: boolean
+  } = {},
 ): Promise<boolean> {
   // An agent rerunning the same browser demo or test harness after each fix asks
   // to leave the sandbox with the same command every time. Bounded opaque local
   // execution may carry the same exact-command replay lease a verified-block
   // escalation offers; nothing else is eligible.
-  const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
+  const forceAsk =
+    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
+  const leaseIdentity = forceAsk
+    ? null
+    : expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
