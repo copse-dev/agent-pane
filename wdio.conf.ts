@@ -17,6 +17,7 @@ import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/setting
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort } from './tests/e2e/helpers/debug-port.ts'
+import { settleContextEstimateBeforeCapture } from './tests/e2e/helpers/context-estimate-settled.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
@@ -327,6 +328,9 @@ export const config: WebdriverIO.Config = {
     }
   },
   async beforeCommand(commandName) {
+    // Every reference capture waits for the composer's context estimate, so the
+    // footer's context wheel never races main's reply.
+    await settleContextEstimateBeforeCapture(commandName)
     // beforeSession runs once per worker, but every spec calls
     // browser.reloadSession() (196 call sites) and reloadSession re-launches
     // Electron from the capabilities captured back then — so without this every

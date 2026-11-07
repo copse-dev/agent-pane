@@ -1770,7 +1770,14 @@ export function mountInputBar(
 
   let estimateTimer: ReturnType<typeof setTimeout> | null = null
   let estimateSeq = 0
+  /** The request awaiting main's reply; superseded once `estimateSeq` moves on. */
+  let estimateInFlight: number | null = null
   let estimateEnabled = true
+
+  /** The wheel is busy while an estimate is scheduled or its reply is still due. */
+  function syncEstimateBusy(): void {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq)
+  }
 
   function stopContextEstimates(): void {
     estimateEnabled = false
@@ -1779,6 +1786,7 @@ export function mountInputBar(
       clearTimeout(estimateTimer)
       estimateTimer = null
     }
+    syncEstimateBusy()
   }
 
   /** Skills and agents as one `/name` namespace; skills win a collision. */
@@ -1812,6 +1820,14 @@ export function mountInputBar(
   }
 
   async function runContextEstimate(): Promise<void> {
+    try {
+      await requestContextEstimate()
+    } finally {
+      syncEstimateBusy()
+    }
+  }
+
+  async function requestContextEstimate(): Promise<void> {
     if (!estimateEnabled) return
     // The external agent owns its system prompt, tools, skills, and cache. A
     // Copse-native estimate would describe the wrong prompt; wait for ACP's
@@ -1843,10 +1859,13 @@ export function mountInputBar(
     const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
+    estimateInFlight = seq
     try {
       breakdown = await api.agent.estimateContext(projectId, id, payload)
     } catch {
       return
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null
     }
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
@@ -1862,6 +1881,7 @@ export function mountInputBar(
       estimateTimer = null
       void runContextEstimate()
     }, delay)
+    syncEstimateBusy()
   }
 
   submitBtn.addEventListener('click', () => {

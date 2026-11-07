@@ -293,12 +293,18 @@ async function flush(): Promise<void> {
   await settle()
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+} {
   let resolve: (value: T) => void = () => {}
-  const promise = new Promise<T>((innerResolve) => {
+  let reject: (error: Error) => void = () => {}
+  const promise = new Promise<T>((innerResolve, innerReject) => {
     resolve = innerResolve
+    reject = innerReject
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 afterEach(() => {
@@ -4625,6 +4631,72 @@ describe('input bar context wheel across a model change', () => {
     await flush()
     await flush()
 
+    assert.equal(wheel(host).hidden, true)
+  })
+
+  it('is busy only while an estimate is due, including after a failed reply', async () => {
+    const replies = [deferred<ContextBreakdown>(), deferred<ContextBreakdown>()]
+    let call = 0
+    const { host } = mount('gpt-4o-mini', () => {
+      const reply = replies[call]
+      call += 1
+      assert.ok(reply)
+      return reply.promise
+    })
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'busy while scheduled')
+    await flush()
+    assert.equal(call, 1)
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'busy while in flight')
+
+    replies[0]?.resolve(breakdown(30_000))
+    await flush()
+    await flush()
+    assert.ok(wheel(host).classList.contains('has-breakdown'))
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'settled once the reply lands')
+  })
+
+  it('stays busy for a newer estimate when a superseded reply lands', async () => {
+    const replies = [deferred<ContextBreakdown>(), deferred<ContextBreakdown>()]
+    let call = 0
+    const { host, store } = mount('gpt-4o-mini', () => {
+      const reply = replies[call]
+      call += 1
+      assert.ok(reply)
+      return reply.promise
+    })
+    await flush()
+    assert.equal(call, 1)
+
+    // A finished run re-estimates while the first reply is still due.
+    store.emit('thread_status_changed', 'thread-1', 'idle')
+    await flush()
+    assert.equal(call, 2)
+
+    replies[0]?.resolve(breakdown(10_000))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'the newer request is still due')
+
+    replies[1]?.reject(new Error('main is gone'))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'a failed reply settles too')
+  })
+
+  it('settles when the native reply lands after a move to an ACP model', async () => {
+    const pending = deferred<ContextBreakdown>()
+    const { host, store, api } = mount('gpt-4o-mini', () => pending.promise)
+    await flush()
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true')
+
+    commitThreadModelSelection(store, api, 'thread-1', 'user', 'gpt-4o-mini', ACP_MODEL)
+    await flush()
+    await flush()
+    // The native reply is still due until main answers; then it settles unused.
+    pending.resolve(breakdown(30_000))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'ACP owns the figures')
     assert.equal(wheel(host).hidden, true)
   })
 })
