@@ -1,6 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { withoutProviderState } from './provider-state.ts'
-import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMProvider,
+  LLMMessage,
+  LLMTool,
+  LLMStreamOptions,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
@@ -40,6 +46,7 @@ export class AnthropicProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     const { client, model } = this
     const self = this
@@ -94,7 +101,13 @@ export class AnthropicProvider implements LLMProvider {
           })),
         }
         const reportCache = self.cacheDiagnostics.begin(request.system, request.tools)
-        const stream = client.messages.stream(request, { signal })
+        signal?.throwIfAborted()
+        await options?.beforeRequest?.()
+        signal?.throwIfAborted()
+        const stream = client.messages.stream(request, {
+          signal,
+          ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
+        })
 
         let currentToolId = ''
         let currentToolName = ''

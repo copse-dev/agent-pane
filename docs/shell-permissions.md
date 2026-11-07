@@ -12,6 +12,42 @@ model, or a classifier connection chosen for safety screening) is never an autho
 project sandbox is active. Explicit trusted-command grants and Guarded YOLO are separate policies;
 neither supplies OS containment when the sandbox is absent.
 
+## Automation model allowance prototype
+
+Automations remain experimental and disabled by default. A cron schedule may opt into a
+**model allowance per run (USD estimate)**. The scheduler snapshots it before publishing the
+new thread, including Run now. Changing or removing the schedule's limit affects future runs
+only; later human turns and machine continuations in an existing run keep its original allowance.
+This does not grant any shell, file, MCP, review or other tool permission.
+
+The initial supported route is a catalogue Anthropic model through the native API adapter.
+Before **each HTTP attempt**, including retries, the host atomically persists a conservative
+reservation: the full catalogue input window at the highest input/cache rate (at least twice
+the input rate), plus the adapter's capped maximum output at the catalogue output rate.
+SDK retries are disabled for these requests. Parallel native helpers and in-loop subagents
+share the serialized allowance. No reservation is refunded after failure, cancellation,
+missing usage or restart. A request that cannot fit, or whose allowance cannot be read or
+written, does not start. Usage accounting remains separate and reports observed usage.
+Thread-owned title and terminal labels, tool summaries, follow-up and next-step suggestions,
+PR descriptions, image handoffs and manually requested reviews re-enter the same persisted
+allowance outside the dispatcher. A project-only terminal has no automation run owner.
+
+This is a ceiling on **catalogue-priced reservations**, not a guarantee about a provider invoice:
+catalogue prices or context limits may be stale, and tool-initiated spending is outside its scope.
+Full-context reservations intentionally stop earlier than an actual-usage budget would. There
+is no daily/schedule aggregate or allowance top-up. ACP, remote/plugin agents, other providers,
+container/isolated-desktop runs and detached worker threads are refused for a budgeted run.
+Native helper providers constructed before the run are checked when called. Event automations
+do not yet expose this control. Legacy schedules remain unchanged.
+
+Main owns the records under `user-data/automation-budgets/<projectId>/<threadId>.json`, separate
+from renderer-editable thread metadata and the best-effort usage ledger. Atomic replacement and
+the shared in-process write queue protect normal restarts and parallel requests within the
+desktop main process; multi-process writers and power-loss durability need separate validation.
+Records are retained when threads are deleted in this prototype. The permission-contract review,
+default-on migration, exact durable approval resolution and broader spend support remain gates
+for #3071; this prototype does not satisfy or bypass those review gates.
+
 ## Permission modes and grants
 
 Approval, containment, network authority and credential access are separate properties. The

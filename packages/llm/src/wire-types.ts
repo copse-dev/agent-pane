@@ -267,6 +267,9 @@ export interface MalformedToolCallInfo {
 // ── The provider contract ────────────────────────────────────────────────────
 
 export interface LLMStreamOptions {
+  /** Awaited before each HTTP attempt by Anthropic; disables SDK-level retries.
+   * Hosts must refuse providers that do not implement this admission boundary. */
+  readonly beforeRequest?: (() => Promise<void>) | undefined
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
   /**

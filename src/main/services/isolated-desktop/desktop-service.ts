@@ -1,4 +1,5 @@
 import { recoverIsolatedDesktops } from './desktop-recovery.ts'
+import { rejectExternalAutomationBudget } from '../automations/automation-budget.ts'
 import { randomUUID } from 'node:crypto'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
 import { DesktopSession, type DesktopInput } from './desktop-session.ts'
@@ -19,6 +20,7 @@ export async function startIsolatedDesktop(
   signal: AbortSignal,
   lifetimeSignal: AbortSignal = signal,
 ): Promise<string> {
+  await rejectExternalAutomationBudget(owner.projectId, owner.threadId)
   signal.throwIfAborted()
   lifetimeSignal.throwIfAborted()
   if (

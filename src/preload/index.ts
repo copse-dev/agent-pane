@@ -381,19 +381,20 @@ const api: ApiClient = {
     clearHistory: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('agent:clear-history', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refresh-model-context'),
-    suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggest-title', text),
-    suggestTerminalTitle: (text: string) =>
-      ipcRenderer.invoke('agent:suggest-terminal-title', text),
-    suggestCommandSummary: (commands: string[]) =>
-      ipcRenderer.invoke('agent:suggest-command-summary', commands),
-    suggestToolTurnSummary: (actions: string[]) =>
-      ipcRenderer.invoke('agent:suggest-tool-turn-summary', actions),
+    suggestTitle: (text, projectId, threadId) =>
+      ipcRenderer.invoke('agent:suggest-title', text, projectId, threadId),
+    suggestTerminalTitle: (text, projectId, threadId) =>
+      ipcRenderer.invoke('agent:suggest-terminal-title', text, projectId, threadId),
+    suggestCommandSummary: (commands, projectId, threadId) =>
+      ipcRenderer.invoke('agent:suggest-command-summary', commands, projectId, threadId),
+    suggestToolTurnSummary: (actions, projectId, threadId) =>
+      ipcRenderer.invoke('agent:suggest-tool-turn-summary', actions, projectId, threadId),
     suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
       ipcRenderer.invoke('agent:suggest-follow-ups', projectId, threadId, contextJson),
     suggestPrBody: (projectId: string, threadId: string, contextJson: string) =>
       ipcRenderer.invoke('agent:suggest-pr-body', projectId, threadId, contextJson),
-    suggestNextStep: (contextJson: string) =>
-      ipcRenderer.invoke('agent:suggest-next-step', contextJson),
+    suggestNextStep: (contextJson, projectId, threadId) =>
+      ipcRenderer.invoke('agent:suggest-next-step', contextJson, projectId, threadId),
     replayPendingDecisions: () => ipcRenderer.invoke('agent:replay-pending-decisions'),
     attachTranscripts: (projectId, threadIds) =>
       ipcRenderer.invoke('agent:attach-transcripts', projectId, threadIds),

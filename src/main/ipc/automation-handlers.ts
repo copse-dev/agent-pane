@@ -17,6 +17,7 @@ const zAutomationScheduleInput = z.object({
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
+  maxRunCostUsd: z.number().min(0.01).max(10_000).nullable().optional(),
   maxLiveWorktrees: z
     .union([z.number().int().positive().max(Number.MAX_SAFE_INTEGER), z.literal('unlimited')])
     .optional(),
@@ -84,6 +85,7 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
       prompt: input.prompt,
       model: input.model,
       enabled: input.enabled,
+      ...(input.maxRunCostUsd !== undefined ? { maxRunCostUsd: input.maxRunCostUsd } : {}),
       ...(input.maxLiveWorktrees !== undefined ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
       ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })

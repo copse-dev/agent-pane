@@ -34,6 +34,8 @@ import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
+import { withAutomationBudget } from './services/automations/automation-budget.ts'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
 import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
@@ -1056,7 +1058,9 @@ app
         describeImagesSchema,
         rawArgs,
       )
-      return describeImagesForHandoff({ projectId, threadId, model, userPrompt, images })
+      return withAutomationBudget(projectId, threadId, () =>
+        describeImagesForHandoff({ projectId, threadId, model, userPrompt, images }),
+      )
     })
 
     ipcMain.handle(
@@ -1198,14 +1202,20 @@ app
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
-        if (!executionContext) return
-        const prior = await hydrateHistory(projectId, threadId)
-        await runWithThreadExecutionContext(executionContext, () =>
-          runWithActiveRunIdentity(threadId, () =>
-            retryPostTurnReview(threadId, prior, agentHost, registry, parseRetryPayload(payload)),
-          ),
-        )
+        await withAutomationBudget(projectId, threadId, async () => {
+          const executionContext = await prepareThreadExecutionContext(
+            projectId,
+            threadId,
+            agentHost,
+          )
+          if (!executionContext) return
+          const prior = await hydrateHistory(projectId, threadId)
+          await runWithThreadExecutionContext(executionContext, () =>
+            runWithActiveRunIdentity(threadId, () =>
+              retryPostTurnReview(threadId, prior, agentHost, registry, parseRetryPayload(payload)),
+            ),
+          )
+        })
       },
     )
 
@@ -1221,24 +1231,30 @@ app
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
-        if (!executionContext) return
-        await runWithThreadExecutionContext(executionContext, () =>
-          runWithActiveRunIdentity(threadId, () =>
-            runReviewForThread(threadId, agentHost, parseRetryPayload(payload), (result) =>
-              recordUserReview(projectId, threadId, result, {
-                loadHistory: loadAgentHistory,
-                saveHistory: saveAgentHistory,
-                loadThread: getProjectThread,
-                forgetHistory: (pid, tid) => {
-                  agentDispatcher.forgetHistory(pid, tid)
-                },
-                withExclusiveHistory: (pid, tid, op) =>
-                  agentDispatcher.withExclusiveHistory(pid, tid, op),
-              }),
+        await withAutomationBudget(projectId, threadId, async () => {
+          const executionContext = await prepareThreadExecutionContext(
+            projectId,
+            threadId,
+            agentHost,
+          )
+          if (!executionContext) return
+          await runWithThreadExecutionContext(executionContext, () =>
+            runWithActiveRunIdentity(threadId, () =>
+              runReviewForThread(threadId, agentHost, parseRetryPayload(payload), (result) =>
+                recordUserReview(projectId, threadId, result, {
+                  loadHistory: loadAgentHistory,
+                  saveHistory: saveAgentHistory,
+                  loadThread: getProjectThread,
+                  forgetHistory: (pid, tid) => {
+                    agentDispatcher.forgetHistory(pid, tid)
+                  },
+                  withExclusiveHistory: (pid, tid, op) =>
+                    agentDispatcher.withExclusiveHistory(pid, tid, op),
+                }),
+              ),
             ),
-          ),
-        )
+          )
+        })
       },
     )
 
@@ -1256,25 +1272,54 @@ app
       restoreReviewFinding(findingId)
     })
 
-    ipcMain.handle('agent:suggest-title', (event, text: string) => {
-      assertMainFrameSender(event, win)
-      return suggestThreadTitle(text)
-    })
+    // Renderer helpers run outside the dispatcher. Re-establish their durable
+    // thread allowance, including when they arrive after the main turn stopped.
+    const withSuggestionBudget = async <T>(
+      projectIdArg: unknown,
+      threadIdArg: unknown,
+      run: () => Promise<T>,
+    ): Promise<T> => {
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      if (!(await getProjectThread(projectId, threadId)))
+        throw new Error('Unknown suggestion owner')
+      return withAutomationBudget(projectId, threadId, run)
+    }
 
-    ipcMain.handle('agent:suggest-terminal-title', (event, text: string) => {
-      assertMainFrameSender(event, win)
-      return suggestTerminalTitle(text)
-    })
+    ipcMain.handle(
+      'agent:suggest-title',
+      (event, text: string, projectId: unknown, threadId: unknown) => {
+        assertMainFrameSender(event, win)
+        return withSuggestionBudget(projectId, threadId, () => suggestThreadTitle(text))
+      },
+    )
 
-    ipcMain.handle('agent:suggest-command-summary', (event, commands: string[]) => {
-      assertMainFrameSender(event, win)
-      return suggestCommandSummary(commands)
-    })
+    ipcMain.handle(
+      'agent:suggest-terminal-title',
+      (event, text: string, projectId: unknown, threadId: unknown) => {
+        assertMainFrameSender(event, win)
+        // A project-only shell has no run owner. Missing/invalid ownership on a
+        // thread shell is rejected rather than silently dropping its allowance.
+        if (threadId === null) return suggestTerminalTitle(text)
+        return withSuggestionBudget(projectId, threadId, () => suggestTerminalTitle(text))
+      },
+    )
 
-    ipcMain.handle('agent:suggest-tool-turn-summary', (event, actions: string[]) => {
-      assertMainFrameSender(event, win)
-      return suggestToolTurnSummary(actions)
-    })
+    ipcMain.handle(
+      'agent:suggest-command-summary',
+      (event, commands: string[], projectId: unknown, threadId: unknown) => {
+        assertMainFrameSender(event, win)
+        return withSuggestionBudget(projectId, threadId, () => suggestCommandSummary(commands))
+      },
+    )
+
+    ipcMain.handle(
+      'agent:suggest-tool-turn-summary',
+      (event, actions: string[], projectId: unknown, threadId: unknown) => {
+        assertMainFrameSender(event, win)
+        return withSuggestionBudget(projectId, threadId, () => suggestToolTurnSummary(actions))
+      },
+    )
 
     ipcMain.handle(
       'agent:suggest-follow-ups',
@@ -1282,20 +1327,16 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        let rawContext: unknown
-        try {
-          rawContext = JSON.parse(contextJson)
-        } catch {
-          throw new Error('agent:suggest-follow-ups: context is not valid JSON')
-        }
-        const parsed = followUpContextSchema.safeParse(rawContext)
-        if (!parsed.success) {
+        const context = safeJsonParse(contextJson, decodeWithSchema(followUpContextSchema))
+        if (!context) {
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
         const thread = await getProjectThread(projectId, threadId)
         const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
-        return suggestFollowUps(parsed.data, root, executor)
+        return withAutomationBudget(projectId, threadId, () =>
+          suggestFollowUps(context, root, executor),
+        )
       },
     )
 
@@ -1309,35 +1350,26 @@ app
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        let rawContext: unknown
-        try {
-          rawContext = JSON.parse(contextJson)
-        } catch {
-          throw new Error('agent:suggest-pr-body: context is not valid JSON')
-        }
-        const parsed = followUpContextSchema.safeParse(rawContext)
-        if (!parsed.success) {
+        const context = safeJsonParse(contextJson, decodeWithSchema(followUpContextSchema))
+        if (!context) {
           throw new Error('agent:suggest-pr-body: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        return suggestPrBody(parsed.data, root)
+        return withAutomationBudget(projectId, threadId, () => suggestPrBody(context, root))
       },
     )
 
-    ipcMain.handle('agent:suggest-next-step', (event, contextJson: string) => {
-      assertMainFrameSender(event, win)
-      let rawContext: unknown
-      try {
-        rawContext = JSON.parse(contextJson)
-      } catch {
-        throw new Error('agent:suggest-next-step: context is not valid JSON')
-      }
-      const parsed = followUpContextSchema.safeParse(rawContext)
-      if (!parsed.success) {
-        throw new Error('agent:suggest-next-step: context failed validation')
-      }
-      return suggestNextStep(parsed.data)
-    })
+    ipcMain.handle(
+      'agent:suggest-next-step',
+      (event, contextJson: string, projectId: unknown, threadId: unknown) => {
+        assertMainFrameSender(event, win)
+        const context = safeJsonParse(contextJson, decodeWithSchema(followUpContextSchema))
+        if (!context) {
+          throw new Error('agent:suggest-next-step: context failed validation')
+        }
+        return withSuggestionBudget(projectId, threadId, () => suggestNextStep(context))
+      },
+    )
 
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
