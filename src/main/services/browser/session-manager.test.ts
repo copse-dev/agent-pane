@@ -179,6 +179,83 @@ describe('capturePreviewDataUrl', () => {
     assert.equal(tab.debugger.isAttached(), false)
   })
 
+  it('bounds a stalled readiness IPC and ignores its late acknowledgement', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let readinessStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      readinessStarted = resolve
+    })
+    let acknowledge: ((value: unknown) => void) | undefined
+    const tab = contents(undefined, 1.25)
+    tab.executeJavaScript = (): Promise<unknown> => {
+      tab.events.push('stalled layout')
+      readinessStarted?.()
+      return new Promise<unknown>((resolve) => {
+        acknowledge = resolve
+      })
+    }
+    let outcome: string | null | undefined
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    void capture.then((value) => {
+      outcome = value
+    })
+    await started
+    t.mock.timers.tick(5000)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(outcome, null, 'the main process must bound the readiness IPC')
+    assert.equal(await capture, null)
+    assert.deepEqual(tab.events, ['attach', 'zoom 2', 'stalled layout', 'zoom 1.25', 'detach'])
+    acknowledge?.(undefined)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(
+      tab.events.some((event) => event.startsWith('capture at')),
+      false,
+    )
+    tab.executeJavaScript = (): Promise<unknown> => Promise.resolve()
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), 'data:image/png;base64,1280')
+    assert.equal(tab.zoom(), 1.25)
+    assert.equal(tab.events.filter((event) => event.startsWith('capture at')).length, 1)
+  })
+
+  it('retains separate five-second budgets for readiness and the screenshot', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let readinessStarted: (() => void) | undefined
+    const ready = new Promise<void>((resolve) => {
+      readinessStarted = resolve
+    })
+    let captureStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      captureStarted = resolve
+    })
+    const tab = contents(() => {
+      captureStarted?.()
+      return new Promise<unknown>(() => {})
+    })
+    tab.executeJavaScript = (): Promise<unknown> => {
+      readinessStarted?.()
+      return new Promise<unknown>((resolve) => {
+        setTimeout(() => {
+          resolve(undefined)
+        }, 4000)
+      })
+    }
+    let settled = false
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    void capture.then(() => {
+      settled = true
+    })
+    await ready
+    t.mock.timers.tick(4000)
+    await started
+    t.mock.timers.tick(1000)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(settled, false, 'readiness must not consume the screenshot budget')
+    t.mock.timers.tick(4000)
+    assert.equal(await capture, null)
+    assert.equal(tab.zoom(), 1)
+    assert.equal(tab.debugger.isAttached(), false)
+  })
+
   it('does not detach a debugger that was already attached', async () => {
     const tab = contents(undefined, 1, true)
     assert.equal(await capturePreviewDataUrl(tab, decodeImage), 'data:image/png;base64,1280')

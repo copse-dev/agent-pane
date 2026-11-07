@@ -55,6 +55,23 @@ function previewLayoutScript(width: number): string {
   })()`
 }
 
+/** Bound native IPC even when the renderer cannot run its own deadline. */
+async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('Preview capture timed out'))
+        }, 5000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * The latest preview capture queued on each tab. Two quick re-renders of one
  * artefact can capture the same tab at once, and each capture restores the
@@ -92,7 +109,6 @@ async function captureAtPreviewZoom(
 ): Promise<string | null> {
   const zoom = wc.getZoomFactor()
   let attachedHere = false
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     if (!wc.debugger.isAttached()) {
       wc.debugger.attach('1.3')
@@ -104,22 +120,17 @@ async function captureAtPreviewZoom(
     // immediate captures can therefore both copy the unzoomed frame (#3240).
     // Use the window's content size: a previous zoom restoration may itself
     // still be pending in the renderer, so its current innerWidth is not a base.
-    await wc.executeJavaScript(previewLayoutScript(viewportWidth), false)
+    await waitForPreviewOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
     // Page.captureScreenshot requests a fresh compositor frame. capturePage()
     // can return the same cached pre-zoom (or blank) surface twice, even after
     // the DOM reports the new viewport. This works in native and headless mode.
-    const response: unknown = await Promise.race([
+    const response: unknown = await waitForPreviewOperation(
       wc.debugger.sendCommand('Page.captureScreenshot', {
         format: 'png',
         fromSurface: true,
         captureBeyondViewport: false,
       }),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('Preview capture timed out'))
-        }, 5000)
-      }),
-    ])
+    )
     const data = expectString(expectRecord(response, 'preview screenshot')['data'], 'preview PNG')
     const image = decodeImage(`data:image/png;base64,${data}`)
     if (image.isEmpty()) return null
@@ -130,7 +141,6 @@ async function captureAtPreviewZoom(
   } catch {
     return null
   } finally {
-    clearTimeout(timer)
     try {
       wc.setZoomFactor(zoom)
     } catch {
