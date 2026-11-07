@@ -39,7 +39,7 @@ describe('browser-hosted light-theme contrast', () => {
         row.style.cssText = 'position: fixed; top: 100px; left: 400px; z-index: 10000;'
         const badge = document.createElement('span')
         badge.className = 'message-queued-badge'
-        badge.textContent = 'HELD'
+        badge.textContent = 'Held'
         row.append(badge)
         document.body.append(row)
       }, theme)
