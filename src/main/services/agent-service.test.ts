@@ -362,7 +362,11 @@ describe('runAgent AgentHost decoupling', () => {
       assert.equal(settled.result, ACP_CANCELLED_TOOL_CALL_RESULT)
       assert.ok(
         received.some(
-          (chunk) => chunk.type === 'text' && chunk.text === 'Five pull requests landed this week.',
+          (chunk) =>
+            chunk.type === 'acp_content' &&
+            chunk.channel === 'message' &&
+            chunk.content.type === 'text' &&
+            chunk.content.text === 'Five pull requests landed this week.',
         ),
         'the final answer should remain intact',
       )

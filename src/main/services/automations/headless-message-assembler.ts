@@ -160,6 +160,8 @@ export function createHeadlessAutomationRun(
           } else if (chunk.channel === 'thought') {
             appendReasoning(store, bubbleAfterTools(), chunk.content.text)
           } else {
+            // Match the shared reducer: only an ACP message boundary splits text.
+            toolSinceText = false
             appendText(chunk.content.text)
           }
           rememberAcpOwner(chunk.channel, chunk.messageId)
