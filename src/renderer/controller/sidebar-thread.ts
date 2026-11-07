@@ -112,10 +112,9 @@ export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
 export function isAutomationPendingStart(
   thread: SidebarThread & Partial<Pick<Thread, 'draftPrompt'>>,
 ): boolean {
-  return (
-    thread.automationPendingStart === true ||
-    (thread.automation !== undefined && automationRunBlock(thread) === 'pending-start')
-  )
+  // Ordinary editable drafts also have draftPrompt, but nothing is starting.
+  if (thread.automation === undefined) return false
+  return thread.automationPendingStart === true || automationRunBlock(thread) === 'pending-start'
 }
 
 /** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */

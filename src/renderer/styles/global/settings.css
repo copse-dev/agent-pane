@@ -2268,7 +2268,16 @@ dialog.settings-overlay::backdrop {
 .plugins-group {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  /* Rows sit on the page rather than each in a card, so the space between
+     them is what separates one plugin from the next. */
+  gap: var(--spacing-xl);
+  /* Each row's "Plugin settings" summary is pulled back by --spacing-sm so its
+     label lines up with the row while its hover fill does not (see
+     .plugin-settings-summary). With no card padding to absorb that, the list
+     carries the gutter itself and gives it back outside, so nothing moves and
+     the summary stays inside the list instead of widening it. */
+  margin-inline: calc(-1 * var(--spacing-sm));
+  padding-inline: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
 /* "Active" / "Inactive" over each run of rows. Sans and small — the section's
@@ -2286,18 +2295,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
-/* One plugin reads as a card: it is a discrete object you act on, with a title,
-   a body, and its own settings folded inside. Elevated and roomier than the
-   flat groups around it, per the card convention at the top of this file. */
+/* One plugin is a mark, a name line, a description and its folded settings,
+   sitting on the page without a frame of its own: the gap in `.plugins-group`
+   separates the rows (docs/ui-taste.md, "A plugin row sits on the page"). */
 .plugin-row {
-  background: var(--bg-elevated);
-  /* `--border`, not `--border-subtle`: these cards are the primary object of the
-     section and each one is a decision (on or off), so the edge that says where
-     one plugin ends and the next begins should be legible rather than implied.
-     #333 on the #252526 card was close enough to vanish. */
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -2310,9 +2311,8 @@ dialog.settings-overlay::backdrop {
   align-items: flex-start;
   gap: var(--spacing-md);
 }
-/* The plugin's mark. Sized to span the eyebrow + name pair beside it, with the
-   app-icon tile's corner treatment so the two read as the same family of
-   object. */
+/* The plugin's mark, with the app-icon tile's corner treatment so the two read
+   as the same family of object. */
 .plugin-icon {
   flex: none;
   display: flex;
@@ -2371,17 +2371,17 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
-/* The publisher eyebrow is a caption over the name, not a badge: no frame and
-   wide-tracked caps. It is not a status either, so it stays in text colours —
-   Copse's own plugins are told apart by the mark beside them, not by a warning
-   hue on everyone else's. */
+/* The publisher is part of the name line, after the version ("1.2.3 · Copse"):
+   not a badge, not a caption over the name, and not a status, so it stays in
+   text colours. Copse's own plugins are told apart by the mark beside them, not
+   by a warning hue on everyone else's. */
 .plugin-badge {
   flex: none;
-  align-self: flex-start;
-  font-size: var(--badge-font-size);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.plugin-name-separator {
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .plugin-badge-first-party {
@@ -2389,7 +2389,7 @@ dialog.settings-overlay::backdrop {
 }
 /* User-installed and Cursor-installed name an owner Copse does not control. The
    row itself is styled identically to every other one: origin belongs in the
-   eyebrow, not in a different-shaped card. */
+   name line, not in a different-shaped row. */
 .plugin-badge-user,
 .plugin-badge-cursor {
   color: var(--text-muted);
@@ -2431,8 +2431,8 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
   font-weight: 600;
 }
-/* Inset within the plugin card, so it takes the base surface — matching
-   `--bg-elevated` to the card it sits in would leave it invisible. */
+/* A framed inset under the plugin's name: a review someone has to read before
+   switching the plugin on, so it keeps its own edge on the base surface. */
 .plugin-source-review {
   display: flex;
   flex-direction: column;
@@ -2469,13 +2469,11 @@ dialog.settings-overlay::backdrop {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
-/* Stability sits next to the plugin's name as a `.ui-badge` — a label on the
-   thing, not a shouted status. `plugin.stability` arrives lowercase; the badge
-   recipe supplies the capital. Stable is the default, so it keeps the quiet
-   neutral outline rather than a success hue. */
-/* Experimental is the one thing on the card you must read before flipping the
-   switch, so it takes the interaction accent rather than a status hue — the
-   documented exception in docs/ui-taste.md. */
+/* Only Experimental gets a stability badge — Stable is the default and goes
+   unlabelled. It is a `.ui-badge` beside the name (`plugin.stability` arrives
+   lowercase; the badge recipe supplies the capital) and the one thing on the row
+   you must read before flipping the switch, so it takes the interaction accent
+   rather than a status hue — the documented exception in docs/ui-taste.md. */
 .plugin-badge-experimental {
   color: var(--accent);
   border-color: var(--accent);
@@ -2499,18 +2497,26 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   padding: 2px var(--spacing-sm);
 }
+/* Inside a plugin row the capability counts ("Tools × 2") are facts about the
+   plugin, not things to press, so they read as muted text spaced apart. */
+.plugin-row .plugin-chips {
+  gap: var(--spacing-xs) var(--spacing-md);
+}
+.plugin-row .plugin-chip {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+}
 .plugin-chips-empty {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
   font-style: italic;
 }
-/* "Plugin settings ⌄" — one fold per card holding the manifest fields and any
+/* "Plugin settings ⌄" — one fold per row holding the manifest fields and any
    first-party detail panel. Closed by default: a list of plugins is for deciding
-   which ones you want, and every plugin's form unrolled at once buries that. */
-.plugin-settings-fold {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--spacing-sm);
-}
+   which ones you want, and every plugin's form unrolled at once buries that. The
+   chevron row is its own boundary, so it takes no rule above it. */
 .plugin-settings-summary,
 .settings-disclosure-summary {
   display: flex;
@@ -2964,7 +2970,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-permission-kind {
   flex: none;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 1px 5px;
   color: var(--text-secondary);
   font-size: var(--font-size-3xs);
