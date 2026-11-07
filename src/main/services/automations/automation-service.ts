@@ -52,6 +52,7 @@ import { parseMcpToolName } from '../mcp/mcp-config.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
 import { reviewAutomationPreparation } from './preparation-permission.ts'
+import { createAutomationBudget } from './automation-budget.ts'
 import {
   getTaskSupervisor,
   type EnqueueSupervisedTaskInput,
@@ -238,6 +239,11 @@ function isSchedule(value: unknown): value is AutomationSchedule {
     typeof value['prompt'] === 'string' &&
     typeof value['model'] === 'string' &&
     typeof value['enabled'] === 'boolean' &&
+    (value['maxRunCostUsd'] === undefined ||
+      (typeof value['maxRunCostUsd'] === 'number' &&
+        Number.isFinite(value['maxRunCostUsd']) &&
+        value['maxRunCostUsd'] >= 0.01 &&
+        value['maxRunCostUsd'] <= 10_000)) &&
     (maxLiveWorktrees === undefined ||
       maxLiveWorktrees === 'unlimited' ||
       (typeof maxLiveWorktrees === 'number' &&
@@ -987,6 +993,11 @@ export function createAutomationService(
         createdAt: triggeredAt,
         updatedAt: triggeredAt,
       }
+      // Persist before publishing the draft: both renderer and headless starts
+      // must find the same allowance, including Run now and later continuations.
+      if (schedule.maxRunCostUsd !== undefined) {
+        await createAutomationBudget(schedule.projectId, threadId, schedule.maxRunCostUsd)
+      }
       await dependencies.createProjectThread(schedule.projectId, thread)
       if (signal.aborted) {
         await abandonLateRun(schedule.projectId, threadId, provenance)
@@ -1091,6 +1102,15 @@ export function createAutomationService(
     },
     async upsert(projectId, input) {
       validateCronExpression(input.cron)
+      if (
+        input.maxRunCostUsd !== undefined &&
+        input.maxRunCostUsd !== null &&
+        (!Number.isFinite(input.maxRunCostUsd) ||
+          input.maxRunCostUsd < 0.01 ||
+          input.maxRunCostUsd > 10_000)
+      ) {
+        throw new Error('Model allowance must be between $0.01 and $10,000')
+      }
       const existing = input.id
         ? readSchedules().find(
             (schedule) => schedule.id === input.id && schedule.projectId === projectId,
@@ -1098,6 +1118,8 @@ export function createAutomationService(
         : undefined
       if (input.id && !existing) throw new Error('Automation schedule not found in this project')
       const now = dependencies.now()
+      const maxRunCostUsd =
+        input.maxRunCostUsd === undefined ? existing?.maxRunCostUsd : input.maxRunCostUsd
       const maxLiveWorktrees = input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1
       const permissions = normalizePermissions(input.permissions ?? existing?.permissions ?? [])
       const selectable = new Set(
@@ -1128,6 +1150,7 @@ export function createAutomationService(
         prompt: input.prompt.trim(),
         model: input.model.trim(),
         enabled: input.enabled,
+        ...(maxRunCostUsd != null ? { maxRunCostUsd } : {}),
         maxLiveWorktrees,
         ...(permissions.length > 0 ? { permissions } : {}),
         createdAt: existing?.createdAt ?? now,

@@ -9,6 +9,10 @@ import { createChatGptPlanProvider } from './chatgpt-plan-provider.ts'
 import { getChatGptPlanService, type ChatGptPlanService } from './chatgpt-plan-service.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
+import {
+  assertAutomationBudgetModel,
+  guardAutomationProvider,
+} from '../automations/automation-budget.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { hostRoutedNamespace, type HostRoutedNamespace } from '@copse/llm/model-selection.ts'
@@ -314,12 +318,19 @@ export async function buildProvider(
   promptCacheKey?: string,
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
+  assertAutomationBudgetModel(model)
   if (isIsolatedDesktopGuest()) {
     if (model !== DESKTOP_PARENT_MODEL)
       throw new Error('This isolated desktop can use only the approved parent model')
     return desktopGuestProvider()
   }
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return guardAutomationProvider(createProvider(model, {}, promptCacheKey), {
+      kind: 'anthropic',
+      model,
+      params: resolveTurnParameters(model, opts),
+    })
+  }
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {
     assertModelMakerAllowed(model)
@@ -343,9 +354,19 @@ export function buildResolvedChatGptPlanProvider(
   params: ModelParameters,
   promptCacheKey?: string,
 ): LLMProvider {
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
-  return redactedRemoteProvider(
-    createChatGptPlanProvider(service, selection, model, params, promptCacheKey),
+  assertAutomationBudgetModel(model)
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return guardAutomationProvider(createProvider(model, {}, promptCacheKey), {
+      kind: 'openai',
+      model,
+      params,
+    })
+  }
+  return guardAutomationProvider(
+    redactedRemoteProvider(
+      createChatGptPlanProvider(service, selection, model, params, promptCacheKey),
+    ),
+    { kind: 'openai', model, params },
   )
 }
 
@@ -363,7 +384,10 @@ export function buildResolvedProvider(
   const local =
     description.kind === 'lm-studio' ||
     (description.kind === 'openai-compatible' && description.local)
-  return local ? provider : redactedRemoteProvider(provider, apiKey ? [apiKey] : [])
+  return guardAutomationProvider(
+    local ? provider : redactedRemoteProvider(provider, apiKey ? [apiKey] : []),
+    description,
+  )
 }
 
 /** The stored key a description is used with, or null when there is none. */

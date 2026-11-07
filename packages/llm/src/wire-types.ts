@@ -282,6 +282,9 @@ export interface PromptCatalogFootprint {
 export interface LLMStreamOptions {
   /** Local diagnostics only; adapters must never serialize this into a request. */
   readonly promptCatalog?: PromptCatalogFootprint | undefined
+  /** Awaited before each HTTP attempt by Anthropic; disables SDK-level retries.
+   * Hosts must refuse providers that do not implement this admission boundary. */
+  readonly beforeRequest?: (() => Promise<void>) | undefined
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
   /**

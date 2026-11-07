@@ -22,6 +22,7 @@ import { storageGet, storageSet } from '../storage/storage.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { copseToolPermissionId } from '../security/tool-permissions.ts'
 import { readWorktreePreparationPlan } from '../worktree-preparation-plan.ts'
+import { storageReadFile } from '../storage/user-data-files.ts'
 import { createThread, getThreadMeta, updateMetaOrThrow } from '../thread-store.ts'
 import {
   createAutomationService,
@@ -281,6 +282,54 @@ describe('AutomationService', () => {
       await setSetting('toolPermissionOverrides', previousOverrides)
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('snapshots an allowance before publishing both cron and manual runs', async () => {
+    const published: string[] = []
+    const service = createAutomationService({
+      now: () => new Date(2026, 6, 27, 9, 0, 5).getTime(),
+      isPluginEnabled: () => true,
+      createProjectThread: async (projectId, thread) => {
+        const budget = await storageReadFile(`automation-budgets/${projectId}/${thread.id}.json`)
+        assert.ok(budget?.includes('"limitMicroUsd":10000000'))
+        published.push(thread.id)
+      },
+      loadProjectThreadMetas: async () => [],
+      releasePreviousRun: async () => ({ released: true }),
+    })
+    const input: AutomationScheduleInput = {
+      name: 'Limited review',
+      cron: '* * * * *',
+      prompt: 'Review',
+      model: 'claude-haiku-4-5',
+      enabled: true,
+      maxRunCostUsd: 10,
+    }
+    const schedule = await service.upsert('budget-project', input)
+    await service.tick()
+    await service.runNow('budget-project', schedule.id)
+    assert.equal(published.length, 2)
+    const unchangedInput = { ...input, id: schedule.id }
+    delete unchangedInput.maxRunCostUsd
+    const preserved = await service.upsert('budget-project', unchangedInput)
+    assert.equal(preserved.maxRunCostUsd, 10)
+    const removed = await service.upsert('budget-project', {
+      ...input,
+      id: schedule.id,
+      maxRunCostUsd: null,
+    })
+    assert.equal(removed.maxRunCostUsd, undefined)
+    for (const id of published) {
+      assert.ok(
+        (await storageReadFile(`automation-budgets/budget-project/${id}.json`))?.includes(
+          '"limitMicroUsd":10000000',
+        ),
+      )
+    }
+    await assert.rejects(
+      service.upsert('budget-project', { ...input, maxRunCostUsd: NaN }),
+      /Model allowance/,
+    )
   })
 
   it('keeps schedules project-scoped and preserves the chosen model', async () => {

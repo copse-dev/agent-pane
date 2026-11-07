@@ -1,4 +1,5 @@
 import { storageCleanup } from '../storage-cleanup.ts'
+import { rejectExternalAutomationBudget } from '../automations/automation-budget.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -407,6 +408,7 @@ export class ContainerRunService {
 
     let checkout: ThreadExecutionContext
     try {
+      await rejectExternalAutomationBudget(request.projectId, request.threadId)
       plan = await resolveContainerProvider(model, {
         useAgentLogin: request.useAgentLogin === true,
         threadId: request.threadId,

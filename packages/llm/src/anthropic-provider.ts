@@ -121,7 +121,13 @@ export class AnthropicProvider implements LLMProvider {
         let cacheCreationTokens: number | undefined
         let receivedUsage = false
         try {
-          const stream = client.messages.stream(request, { signal })
+          signal?.throwIfAborted()
+          await options?.beforeRequest?.()
+          signal?.throwIfAborted()
+          const stream = client.messages.stream(request, {
+            signal,
+            ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
+          })
           for await (const event of stream) {
             if (event.type === 'message_start') {
               receivedUsage = true

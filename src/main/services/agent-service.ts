@@ -1,5 +1,6 @@
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { shellReplayLeaseStore } from './security/capability-lease.ts'
+import { assertAutomationBudgetModel } from './automations/automation-budget.ts'
 import { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } from './agent-turn-scheduler.ts'
 import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
@@ -926,6 +927,7 @@ async function runAgentWithInlineCanvas(
   )
   admission.signal.throwIfAborted()
   let model = resolved.model
+  assertAutomationBudgetModel(model)
   recordThreadModel(threadId, model)
   // Persist the resolved model so a turn that fails before any usage (e.g. a
   // provider rejecting the model) still leaves the concrete id in meta.json —
