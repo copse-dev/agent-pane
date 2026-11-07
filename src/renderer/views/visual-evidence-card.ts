@@ -86,8 +86,13 @@ export function createVisualEvidenceSection(
   evidence: readonly VisualEvidenceRef[],
 ): HTMLElement | null {
   if (evidence.length === 0) return null
+  // A named group, not a bare div: a generic element cannot carry an
+  // accessible name, and with no visible eyebrow the group's label is what
+  // tells assistive technology this block is visual evidence. A group, not a
+  // region, so each card does not add a landmark to the transcript.
   const section = el('div', {
     class: 'message-visual-evidence',
+    role: 'group',
     'aria-label': 'Visual evidence',
   })
   for (const item of evidence) {

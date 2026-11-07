@@ -61,11 +61,13 @@ describe('assistant visual evidence card', () => {
     assert.equal(card.open, false)
     assert.equal(card.dataset['toolCallId'], 'tool-1')
     // The caption leads the heading: no "Visual evidence" eyebrow above it, and the
-    // section's accessible name still says what kind of block this is.
+    // section's accessible name still says what kind of block this is. The name
+    // sits on a group: a generic div's aria-label is not exposed.
     assert.equal(
       section.querySelector('.visual-evidence-heading > :first-child')?.textContent,
       'The mobile toolbar no longer overlaps the editor',
     )
+    assert.equal(section.getAttribute('role'), 'group')
     assert.equal(section.getAttribute('aria-label'), 'Visual evidence')
     assert.equal(section.querySelector('.visual-evidence-kind')?.textContent, 'Before / After')
     assert.equal(section.querySelectorAll('.visual-evidence-thumbnails img').length, 2)
