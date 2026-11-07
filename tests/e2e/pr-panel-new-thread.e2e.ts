@@ -82,6 +82,11 @@ describe('PR panel new thread (mock gh)', () => {
     await expect(await $('.chat-row.selected .chat-title').getElement()).toHaveText(
       expect.stringMatching(/^PR #42:/),
     )
+    // This is an editable draft; no user prompt or automation has started.
+    await expect($('.chat-row.selected')).not.toHaveElementClass('is-running')
+    await expect($('.chat-row.selected .chat-running-status')).not.toExist()
+    await expect($('.messages-list .msg-user')).not.toExist()
+    await expect($('.stop-btn')).not.toBeDisplayed()
 
     await saveElementScreenshot('#app', 'pr-panel-new-thread-composer.png')
   })
