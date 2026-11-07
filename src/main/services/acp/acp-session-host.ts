@@ -4,6 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { recordNetworkDenial } from '../../project-sandbox/network-scope.ts'
 import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
+import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { perfMark } from '../diagnostics/perf-trace.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
@@ -77,7 +78,8 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
     const child = spawn(process.execPath, [acpSessionHostWorkerPath()], {
       cwd: config.cwd,
       env: {
-        ...process.env,
+        // A wrap in flight here must not hand its scratch dir to the host (#4149).
+        ...withoutSandboxWrapTmpPin(process.env),
         ELECTRON_RUN_AS_NODE: '1',
         [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify(request),
       },
