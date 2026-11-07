@@ -187,8 +187,8 @@ export function markNavigationRestored(restored: MainWindowNavigation): void {
  * project-scoped reads (`roadmap:list` and the rest of the project store) resolve
  * their directory from, and the switch repaints without awaiting its final
  * navigation write. So the outgoing project, written mid-switch, was what those
- * reads saw on `workspace_changed`: the roadmap listed the previous project's
- * notes. While held, a write naming any other project is dropped, which keeps
+ * reads saw when the switch selected the workspace: the roadmap listed the
+ * previous project's notes. While held, a write naming any other project is dropped, which keeps
  * the persisted selection on the target from dispatch onwards.
  */
 let navigationHeldFor: string | null = null
@@ -216,7 +216,37 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
     return (writeChains.get('mainWindow:navigation') ?? Promise.resolve()).then(() => undefined)
   }
   lastNavigation = navigation
-  return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
+  return sendNavigation(api, navigation)
+}
+
+/**
+ * Send a navigation write to main at once, rather than queueing it behind the
+ * one in flight. Main applies `setNavigation` synchronously in arrival order,
+ * so the last value sent is the one that sticks. Queueing here kept the newest
+ * write out of preload's navigation barrier until the previous write settled,
+ * so a project-store read the barrier released could run against the outgoing
+ * project. The chain still covers every outstanding write, so a caller that
+ * awaits navigation waits for all of them.
+ */
+function sendNavigation(api: ApiClient, navigation: MainWindowNavigation): Promise<void> {
+  const key = 'mainWindow:navigation'
+  const prev = writeChains.get(key)
+  let write: Promise<void>
+  try {
+    write = api.windowState.setNavigation(navigation)
+  } catch (error) {
+    write = Promise.reject(error instanceof Error ? error : new Error(String(error)))
+  }
+  const next = prev
+    ? Promise.all([prev.catch(() => undefined), write]).then(() => undefined)
+    : write
+  writeChains.set(key, next)
+  void next
+    .finally(() => {
+      if (writeChains.get(key) === next) writeChains.delete(key)
+    })
+    .catch(() => undefined)
+  return next
 }
 
 // All writes for one thread (create / appendMessage / updateMeta / delete) share
@@ -653,6 +683,11 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
 
 const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
 
+/** Revision shared by in-flight reads and resident project snapshots. */
+export function projectThreadLoadRevision(api: ApiClient, projectId: string): number {
+  return threadLoadRevisions.get(api)?.get(projectId) ?? 0
+}
+
 /** Discard metadata responses that started before a main-process archive/restore. */
 export function invalidateProjectThreadLoads(api: ApiClient, projectId: string): void {
   let revisions = threadLoadRevisions.get(api)
@@ -879,6 +914,22 @@ let activeAutosave: Autosave | null = null
  */
 export function awaitPendingThreadPersistence(): Promise<void> {
   return activeAutosave?.whenIdle() ?? Promise.resolve()
+}
+
+/**
+ * Run `task` once a thread the current write introduced exists in main.
+ *
+ * A store selection fires inside the writer's `setState`, before the writer's
+ * own `threads_changed` starts autosave's immediate `threads:create`; main
+ * rejects thread-scoped reads until that create lands ("not persisted yet").
+ * Waiting a microtask lets the emit start the create, which
+ * `awaitPendingThreadPersistence` then waits for. (`afterThreadWrites` would
+ * run at once there: nothing is queued yet.)
+ */
+export function afterPendingThreadPersistence(task: () => void): void {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task)
+  })
 }
 
 // Autosave: maps store mutations onto event-level thread-store writes.

@@ -34,7 +34,7 @@ function matchOffsets(haystack: string, needle: string): number[] {
  */
 export function oldStringNotFoundMessage(path: string, exploreMode: boolean): string {
   if (exploreMode) {
-    return `old_string was not found in the file. Copy old_string byte-for-byte from a "${EXPLORE_EXCERPTS_HEADING}" block for ${path} in an explore result, not from the prose summary above it. If no excerpt covers those lines, call explore with paths: ["${path}"] naming the function or lines you will change.`
+    return `old_string was not found in the file. Copy old_string byte-for-byte from a "${EXPLORE_EXCERPTS_HEADING}" block for ${path} in an explore result, not from the prose summary above it. If no excerpt covers those lines, call read_explored on ${path} with the lines; if exploration never read them, call explore with paths: ["${path}"] naming the function or lines you will change.`
   }
   return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
 }

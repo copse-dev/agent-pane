@@ -37,6 +37,7 @@ import type { DialectAdapter } from './dialect-adapter.ts'
 import { cursorAdapter } from './cursor-adapter.ts'
 import { claudeAdapter } from './claude-adapter.ts'
 import { copseAdapter } from './copse-adapter.ts'
+import { ownedIt } from '../thread-execution-context.test-support.ts'
 
 /** Committed golden fixture, resolved from the repo root (tests run with cwd = repo root). */
 const SNAPSHOT_PATH = join(
@@ -316,7 +317,7 @@ describe('hook payload snapshots (G4, decision 14)', () => {
     restoreRoot()
   })
 
-  it('every dialect wire request payload matches the committed golden fixture', async () => {
+  ownedIt('every dialect wire request payload matches the committed golden fixture', async () => {
     const snapshot = buildSnapshot()
     const serialized = serialize(snapshot)
 

@@ -66,6 +66,7 @@ function setup(
   messages: (id?: string) => Message[]
   gitBranchChanged: number[]
   finishedAlerts: Array<{ threadId: string; title: string }>
+  attachCalls: Array<[projectId: string, threadIds: string[]]>
   showDiff: (
     projectId: string,
     threadId: string,
@@ -102,6 +103,7 @@ function setup(
   const messageDone: string[] = []
   const gitBranchChanged: number[] = []
   const finishedAlerts: Array<{ threadId: string; title: string }> = []
+  const attachCalls: Array<[projectId: string, threadIds: string[]]> = []
   store.on('message_done', (id) => messageDone.push(id))
   store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
@@ -116,6 +118,9 @@ function setup(
           return () => {}
         },
         run: async (): Promise<void> => {},
+        attachTranscripts: async (projectId: string, threadIds: string[]): Promise<void> => {
+          attachCalls.push([projectId, threadIds])
+        },
         onChunk: (h: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void) => {
           chunkHandler = h
           return (): void => {}
@@ -239,6 +244,7 @@ function setup(
     messages,
     gitBranchChanged,
     finishedAlerts,
+    attachCalls,
     showDiff,
     queueDiffs,
   }
@@ -272,9 +278,8 @@ test('diff events stay scoped to their owning project and thread', () => {
 test('opening Changes for a staged diff unhides the pane before panel sync events', () => {
   // Layout must win the race against Monaco's whenDiffHostVisible wait: the
   // Changes pane hears the mode change (and #pane-files is synced) before the
-  // diff-state selection and staged_diffs_changed, which kick the Changes
-  // viewer. main.ts selects `filesPaneOpen` for #pane-files before any pane
-  // subscribes.
+  // diff-state selection, which kicks the Changes viewer. main.ts selects
+  // `filesPaneOpen` for #pane-files before any pane subscribes.
   const { store, showDiff, queueDiffs } = setup()
   const pane = document.createElement('div')
   pane.id = 'pane-files'
@@ -291,9 +296,6 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
   selectRightPanelMode(store, 'changes', () => {
     events.push(`changes:${pane.hidden ? 'hidden' : 'open'}`)
   })
-  store.on('staged_diffs_changed', () => {
-    events.push(`staged:${pane.hidden ? 'hidden' : 'open'}`)
-  })
   store.select(
     (s) => [s.activeDiff, s.stagedDiffs] as const,
     () => {
@@ -309,8 +311,7 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
   events.length = 0
   queueDiffs('project-1', 't1', [{ path: 'a.ts', language: 'typescript' }])
   assert.equal(pane.hidden, false)
-  // The selection runs inside the queue's setState, ahead of the event.
-  assert.deepEqual(events, ['panel:open', 'staged:open'])
+  assert.deepEqual(events, ['panel:open'])
 
   pane.remove()
 })
@@ -324,6 +325,23 @@ test('a queue-only diff update does not open Changes or construct an editor surf
   assert.equal(store.getState().filesPaneOpen, false)
   assert.equal(store.getState().rightPanelMode, 'browser')
   assert.deepEqual(store.getState().stagedDiffs, [{ path: 'a.ts', language: 'typescript' }])
+})
+
+test('a workspace switch from setState alone attaches the new project transcripts', () => {
+  const { store, attachCalls } = setup()
+  assert.deepEqual(attachCalls, [['project-1', ['t1']]])
+
+  store.setState({
+    activeProjectId: 'project-2',
+    workspaceRoot: '/repo/two',
+    threads: [thread('p2-a'), thread('p2-b')],
+    activeThreadId: 'p2-a',
+  })
+
+  assert.deepEqual(attachCalls, [
+    ['project-1', ['t1']],
+    ['project-2', ['p2-a', 'p2-b']],
+  ])
 })
 
 test('text chunks create one assistant message and accumulate tokens', () => {

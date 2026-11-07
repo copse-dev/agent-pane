@@ -23,8 +23,12 @@ import {
   runWithActiveRunIdentity,
   setActiveRunThread,
 } from '../thread-models.ts'
+import {
+  threadExecutionContextStorage,
+  type ThreadExecutionContext,
+} from '../thread-execution-context-store.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { readDecisionLog } from './decision-log-store.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { ensureShellCommandPermitted } from './permission-gate.ts'
@@ -176,19 +180,44 @@ describe('shell gate replay', () => {
     const project = `gate-replay-project-${String(replays)}`
     const thread = `gate-replay-thread-${String(replays)}`
     storageSet('activeProjectId', project)
+    // The decision log is read back below, so the replay runs as a turn of
+    // `project` does: decisions are recorded on the turn's own project.
+    const turn: ThreadExecutionContext = {
+      projectId: project,
+      threadId: thread,
+      projectRoot: workspace,
+      root: workspace,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    return threadExecutionContextStorage.run(turn, () =>
+      replayInRun(situation, testCase, project, thread),
+    )
+  }
+
+  async function replayInRun(
+    situation: Situation,
+    testCase: CorpusCase,
+    project: string,
+    thread: string,
+  ): Promise<Outcome> {
     return runWithActiveRunIdentity(thread, async () => {
       if (situation.guardedYolo) armGuardedYolo(thread)
       setActiveRunThread(thread)
       try {
-        const permitted = await ensureShellCommandPermitted(
-          // Corpus /workspace is an unrelated outside tree, even when the actual
-          // checkout lives below /workspace. One pass prevents rewriting the
-          // physical paths introduced for the anonymised home.
-          testCase.command.replace(
-            /\/Users\/dev(?=$|\/|[\s'";|&<>),])|\/workspace(?=$|\/|[\s'";|&<>),])/g,
-            (path) => (path === ANONYMISED_HOME ? home : outsideWorkspace),
+        // The gate reads the run's project root (trust, `origin` remotes); a run
+        // names it explicitly rather than borrowing the window's (#3958).
+        const permitted = await runWithWorkspaceRoot(workspace, () =>
+          ensureShellCommandPermitted(
+            // Corpus /workspace is an unrelated outside tree, even when the actual
+            // checkout lives below /workspace. One pass prevents rewriting the
+            // physical paths introduced for the anonymised home.
+            testCase.command.replace(
+              /\/Users\/dev(?=$|\/|[\s'";|&<>),])|\/workspace(?=$|\/|[\s'";|&<>),])/g,
+              (path) => (path === ANONYMISED_HOME ? home : outsideWorkspace),
+            ),
+            { sandboxEnabled: situation.sandboxEnabled, executionRoot: workspace },
           ),
-          { sandboxEnabled: situation.sandboxEnabled, executionRoot: workspace },
         )
         const log = await readDecisionLog(project)
         if (!permitted) return `prompt:${prompts.join('+') || 'declined'}`

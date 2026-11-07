@@ -6,14 +6,16 @@ import { contextMenuClosedByPressOn, showContextMenu } from '../dom/context-menu
 import { el } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { setTooltip } from '../dom/tooltip.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountOpenInEditor } from './open-in-editor.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { activeThreadOf, getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
 import { toggleProjectsPane } from '../controller/panels.ts'
 import { isMacPlatform } from './keyboard-shortcuts-dialog.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 const PROJECTS_COLLAPSED_CLASS = 'is-projects-collapsed'
 
@@ -226,30 +228,49 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   // Titlebar mounts before persisted projects restore on boot; sync on mount
-  // for the no-project case, then again when restoreProject emits workspace_changed.
+  // for the no-project case, then again when restoreProject selects the workspace.
   syncName()
   syncBranch()
   const unsubs = [
     store.select((s) => s.projectsPaneOpen, syncSidebar),
-    store.on('workspace_changed', () => {
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
+    selectActiveWorkspace(store, () => {
       syncName()
-      syncBranchNow()
-      syncRunApp()
+      afterPendingThreadPersistence(() => {
+        syncBranchNow()
+        syncRunApp()
+      })
     }),
     store.on('projects_changed', syncName),
     store.on('message_added', syncProjectPicker),
     store.on('thread_status_changed', syncProjectPicker),
-    store.on('threads_changed', () => {
-      syncProjectPicker()
-      if (store.getState().activeThreadId !== syncedThreadId) {
-        syncBranchNow()
-        return
-      }
-      scheduleBranchSync()
-    }),
-    store.on('threads_changed', () => {
-      if (store.getState().activeThreadId !== detectedThread) syncRunApp()
-    }),
+    // The picker locks once the active thread stops being blank.
+    store.select((s) => {
+      const thread = activeThreadOf(s)
+      return s.projects.length === 0 || (thread !== undefined && !isBlankThread(thread))
+    }, syncProjectPicker),
+    // The branch label follows the active thread and its own branch binding.
+    store.select(
+      (s) => {
+        const thread = activeThreadOf(s)
+        return [s.activeThreadId, thread?.gitBranch, thread?.worktree?.path] as const
+      },
+      () => {
+        if (store.getState().activeThreadId !== syncedThreadId) {
+          afterPendingThreadPersistence(syncBranchNow)
+          return
+        }
+        scheduleBranchSync()
+      },
+      sameItems,
+    ),
+    store.select(
+      (s) => s.activeThreadId,
+      (threadId) => {
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp)
+      },
+    ),
     store.on('thread_checkout_changed', syncRunApp),
     store.on('message_done', syncRunApp),
     store.on('git_branch_changed', scheduleBranchSync),

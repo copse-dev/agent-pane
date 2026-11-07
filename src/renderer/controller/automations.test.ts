@@ -394,7 +394,6 @@ test('a trigger for an inactive project remains persisted until that project ope
     workspaceRoot: '/repo/b',
     threads: [created],
   })
-  store.emit('workspace_changed')
   await tick()
 
   assert.equal(harness.prepared.length, 1)
@@ -435,7 +434,10 @@ test('a run whose start failed is not started again when the workspace reloads',
   await tick()
   assert.equal(checkouts, 1)
 
-  store.emit('workspace_changed')
+  // Leave the project and come back: each selection re-runs the pending scan.
+  store.setState({ activeProjectId: 'project-b', workspaceRoot: '/repo/b' })
+  await tick()
+  store.setState({ activeProjectId: 'project-a', workspaceRoot: '/repo' })
   await tick()
 
   assert.equal(checkouts, 1)

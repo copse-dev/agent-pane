@@ -10,7 +10,7 @@ import {
   signalColours,
 } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Settings → Plugins list — P3 of docs/plans/hooks-and-feature-packs.md.
@@ -67,7 +67,7 @@ describe('settings plugins (about:addons)', function () {
         runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       }),
     )
-    seedEmptyProject(process.cwd(), 'e2e-settings-plugins', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-settings-plugins', {
       pluginSources: [localPluginRoot],
       model: 'plugin-model:personal.reference-tools:reference-judge',
     })
@@ -155,6 +155,12 @@ describe('settings plugins (about:addons)', function () {
     assert.equal(await ciInvestigatorRow.$('.plugin-name').getText(), 'CI investigator')
     await expect(ciInvestigatorRow.$('.plugin-badge-first-party')).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
+    await expect(ciInvestigatorRow.$('.plugin-chip')).toHaveText('Tools × 1')
+    await ciInvestigatorRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.ci-investigator"]',
+      'settings-ci-investigator-plugin.png',
+    )
 
     // PII redaction plugin: listed, default-OFF (ships disabled).
     const pluginRow = plugins.$('.plugin-row[data-plugin-id="copse.pii-redaction"]')
