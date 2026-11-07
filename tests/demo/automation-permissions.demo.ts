@@ -40,18 +40,28 @@ describe('browser-hosted automation permission preferences', () => {
     await detail.$('.automation-row .automation-row-btn').click()
     const form = detail.$('.automation-form')
     await expect(form).toBeDisplayed()
-    await expect(form.$('.automation-permission-row[title="gh_pr_approve"] input')).toBeChecked()
     await expect(
-      form.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),
+      form.$('.automation-permission-row[data-tool-name="gh_pr_approve"] input'),
+    ).toBeChecked()
+    await expect(
+      form.$(
+        '.automation-permission-unavailable[data-tool-name="mcp__reports__publish_weekly"] input',
+      ),
     ).toBeChecked()
     assert.match(await form.$('.automation-permissions').getText(), /Allowed without asking/)
     assert.match(await form.$('.automation-permissions').getText(), /11 permissions/)
+    const permissionText = await form.$('.automation-permissions').getText()
+    assert.match(permissionText, /Approve pull requests/)
+    assert.match(permissionText, /Reports \/ Publish weekly/)
+    assert.doesNotMatch(permissionText, /gh_pr_|mcp__|publish_weekly/)
+    assert.equal((await form.$$('.automation-permission-row[title]').getElements()).length, 0)
+    assert.equal((await form.$$('.automation-permission-id').getElements()).length, 0)
     assert.equal((await form.$$('.automation-permission-row').getElements()).length, 11)
     assert.equal((await form.$$('.automation-permission-switch').getElements()).length, 11)
     await expect(
-      form.$('.automation-permission-row[title="gh_pr_approve"] .toggle-switch-track'),
+      form.$('.automation-permission-row[data-tool-name="gh_pr_approve"] .toggle-switch-track'),
     ).toBeDisplayed()
-    const approveRow = form.$('.automation-permission-row[title="gh_pr_approve"]')
+    const approveRow = form.$('.automation-permission-row[data-tool-name="gh_pr_approve"]')
     const headingPosition = await approveRow.$('.automation-permission-heading').getLocation()
     const switchPosition = await approveRow.$('.automation-permission-switch').getLocation()
     assert.ok(
@@ -65,13 +75,15 @@ describe('browser-hosted automation permission preferences', () => {
     await saveElementScreenshot('.automation-permissions', 'automation-permission-editor.png')
 
     const filter = form.$('.automation-permission-filter')
-    await filter.setValue('publish_weekly')
+    await filter.setValue('publish weekly')
     await browser.waitUntil(
       async () => (await form.$$('.automation-permission-row').getElements()).length === 1,
     )
     assert.match(await form.$('.automation-permissions').getText(), /1 of 11 permissions/)
     await expect(
-      form.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),
+      form.$(
+        '.automation-permission-unavailable[data-tool-name="mcp__reports__publish_weekly"] input',
+      ),
     ).toBeChecked()
     await saveElementScreenshot('.automation-permissions', 'automation-permission-filtered.png')
   })

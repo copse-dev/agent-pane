@@ -1,6 +1,6 @@
 // Independent ACP producer: its clock keeps advancing if the renderer stalls.
 // Exercise the normal provider boundary without adding a product test hook.
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 import { writeFile } from 'node:fs/promises'

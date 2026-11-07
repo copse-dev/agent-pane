@@ -282,14 +282,18 @@ describe('settings automations plugin', function () {
       'Every weekday at 09:00 · local time',
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
-    await expect(detail.$('.automation-permission-row[title="gh_pr_approve"] input')).toBeChecked()
     await expect(
-      detail.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"] input'),
     ).toBeChecked()
     await expect(
-      detail.$('.automation-permission-row[title="gh_pr_approve"] .toggle-switch-track'),
+      detail.$(
+        '.automation-permission-unavailable[data-tool-name="mcp__reports__publish_weekly"] input',
+      ),
+    ).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"] .toggle-switch-track'),
     ).toBeDisplayed()
-    const approveRow = detail.$('.automation-permission-row[title="gh_pr_approve"]')
+    const approveRow = detail.$('.automation-permission-row[data-tool-name="gh_pr_approve"]')
     const headingPosition = await approveRow.$('.automation-permission-heading').getLocation()
     const switchPosition = await approveRow.$('.automation-permission-switch').getLocation()
     assert.ok(
@@ -300,7 +304,28 @@ describe('settings automations plugin', function () {
     assert.match(await detail.$('.automation-permissions').getText(), /Allowed without asking/)
     assert.match(await detail.$('.automation-permissions').getText(), /Copse action/)
     const filter = detail.$('.automation-permission-filter')
-    await filter.setValue('publish_weekly')
+    for (const tool of [
+      'git_push',
+      'gh_pr_merge',
+      'gh_pr_comment',
+      'gh_pr_resolve_review_thread',
+    ]) {
+      const row = detail.$(`.automation-permission-row[data-tool-name="${tool}"]`)
+      await expect(row).toExist()
+      await expect(row.$('input')).not.toBeChecked()
+    }
+    await filter.setValue('push branches')
+    await browser.waitUntil(
+      async () => (await detail.$$('.automation-permission-row')).length === 1,
+    )
+    await detail
+      .$('.automation-permission-row[data-tool-name="git_push"] .automation-permission-switch')
+      .click()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="git_push"] input'),
+    ).toBeChecked()
+    await saveElementScreenshot('.automation-permissions', 'settings-automation-push-grant.png')
+    await filter.setValue('publish weekly')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row').getElements()).length === 1,
     )
@@ -325,6 +350,26 @@ describe('settings automations plugin', function () {
     assert.ok(formActions.buttons[0]?.classes.includes('ui-btn-primary'), 'Save is the primary')
     assert.ok(formActions.buttons[1]?.classes.includes('ui-btn-secondary'), 'Cancel is secondary')
     await saveSettingsSection('.automation-form', 'settings-automation-form.png')
+    await detail.$('.automation-save-btn').click()
+    // Saving hides the form (it is reused, not removed). A rejected save keeps
+    // it open with an error status; report that status.
+    const saved = await browser
+      .waitUntil(async () => !(await detail.$('.automation-form').isDisplayed()), {
+        timeout: 10_000,
+      })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!saved)
+      assert.fail(`schedule save failed: ${await detail.$('.automation-status').getText()}`)
+    await detail.$('.automation-row .automation-row-btn').click()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="git_push"] input'),
+    ).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[data-tool-name="gh_pr_merge"] input'),
+    ).not.toBeChecked()
     await detail.$('.automation-cancel-btn').click()
     await expect(dialog.$('.settings-buttons')).toBeDisplayed()
   })

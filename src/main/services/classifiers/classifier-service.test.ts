@@ -18,6 +18,10 @@ import {
   saveClassifierProfile,
   testClassifierProfile,
 } from './classifier-service.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+import { seedHandEditedSetting } from '../storage/settings.test-support.ts'
+
+installInMemorySecretCipher()
 
 function preset(id: string): ClassifierProfile {
   const profile = CLASSIFIER_PRESETS.find((entry) => entry.id === id)
@@ -69,7 +73,7 @@ describe('configured classifiers', () => {
   })
 
   it('ignores corrupt/unknown-version configuration and rejects invalid profiles', async () => {
-    await setSetting('classifierProviders', { version: 2, profiles: [preset('kev')] })
+    await seedHandEditedSetting('classifierProviders', { version: 2, profiles: [preset('kev')] })
     assert.deepEqual(listClassifierProfiles(), [])
     await assert.rejects(saveClassifierProfile({ ...preset('kev'), id: '../openai' }))
     assert.throws(() => getClassifierProfile('kev'), /not configured/)

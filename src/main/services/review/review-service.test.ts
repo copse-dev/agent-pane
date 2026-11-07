@@ -101,6 +101,8 @@ describe('review service', () => {
     chunks: StreamChunk[]
     reports: ThreadReviewReport[]
     result: Awaited<ReturnType<typeof runThreadReview>>
+    providerCalls: string[]
+    spendRequests: number
   }
 
   async function run(options: {
@@ -110,10 +112,16 @@ describe('review service', () => {
     registryEnabled?: boolean
     reviewer?: LLMProvider
     signal?: AbortSignal
+    billable?: boolean
+    approve?: boolean
+    resolveDistinctModels?: ReviewHostServices['resolveDistinctModels']
   }): Promise<Run> {
     const chunks: StreamChunk[] = []
+    const providerCalls: string[] = []
+    let spendRequests = 0
     const providers = new Map<string, LLMProvider>()
     const providerFor = (model: string): Promise<LLMProvider> => {
+      providerCalls.push(model)
       if (model === 'reviewer-model' && options.reviewer) return Promise.resolve(options.reviewer)
       const script =
         model === 'challenger-model'
@@ -128,10 +136,15 @@ describe('review service', () => {
     }
     const services: ReviewHostServices = {
       providerFor,
-      isBillable: () => false,
-      resolveDistinctModels: (values) => Promise.resolve([...values]),
+      isBillable: () => options.billable ?? false,
+      resolveDistinctModels:
+        options.resolveDistinctModels ??
+        ((values): Promise<string[]> => Promise.resolve([...values])),
       estimateCost: () => '~$0.00',
-      requestSpendApproval: () => Promise.resolve({ approved: true, remember: false }),
+      requestSpendApproval: () => {
+        spendRequests++
+        return Promise.resolve({ approved: options.approve ?? true, remember: false })
+      },
       containerBackend: () => Promise.resolve({ backend: null, reason: 'no docker in tests' }),
     }
     const registry = createFirstPartyPluginRegistry()
@@ -152,7 +165,7 @@ describe('review service', () => {
     const reports = chunks.flatMap((chunk) =>
       chunk.type === 'review_report' ? [chunk.report] : [],
     )
-    return { chunks, reports, result }
+    return { chunks, reports, result, providerCalls, spendRequests }
   }
 
   it('reviews a branch against its base read-only when there is no OS sandbox, and reports findings', async () => {
@@ -197,6 +210,16 @@ describe('review service', () => {
     assert.equal(worktreeCount(repo), 1)
   })
 
+  it('makes no provider calls when an agent-requested paid review is declined', async () => {
+    const denied = await run({ initiator: 'agent', billable: true, approve: false })
+    assert.equal(denied.spendRequests, 1)
+    assert.deepEqual(denied.providerCalls, [])
+    assert.equal(denied.result.report.error, 'Review declined.')
+    const local = await run({ initiator: 'agent', billable: false })
+    assert.equal(local.spendRequests, 0)
+    assert.ok(local.providerCalls.length > 0)
+  })
+
   it('records who asked for the run on every report it emits (#2519)', async () => {
     const byUser = await run({ initiator: 'user' })
     assert.deepEqual(
@@ -236,6 +259,41 @@ describe('review service', () => {
     const { result } = await run({ reviewer, signal: controller.signal })
     assert.equal(result.report.status, 'error')
     assert.equal(result.report.error, 'Review cancelled.')
+  })
+
+  it('reports cancellation while the models are still being resolved', async () => {
+    const controller = new AbortController()
+    const { reports, result, providerCalls, spendRequests } = await run({
+      signal: controller.signal,
+      resolveDistinctModels: (_values, signal) => {
+        controller.abort(new Error('stop review'))
+        signal.throwIfAborted()
+        return Promise.resolve([])
+      },
+    })
+    assert.equal(result.report.status, 'error')
+    assert.equal(result.report.error, 'Review cancelled.')
+    assert.deepEqual(
+      reports.map((report) => report.status),
+      ['error'],
+    )
+    assert.equal(result.report.reviewers.length, 0)
+    assert.deepEqual(providerCalls, [])
+    assert.equal(spendRequests, 0)
+  })
+
+  it('reports a model that cannot be resolved instead of rejecting', async () => {
+    const { reports, result } = await run({
+      resolveDistinctModels: () =>
+        Promise.reject(new Error('openrouter:x:batch is not a callable workflow route.')),
+    })
+    assert.equal(result.report.status, 'error')
+    assert.match(result.report.error ?? '', /not a callable workflow route/)
+    assert.match(result.summary, /^Review failed: /)
+    assert.deepEqual(
+      reports.map((report) => report.status),
+      ['error'],
+    )
   })
 
   it('drops a finding the challenger refutes, and counts it', async () => {

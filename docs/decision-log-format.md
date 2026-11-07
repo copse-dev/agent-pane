@@ -25,8 +25,10 @@ Optional argv / Guarded-YOLO extras live next to tool results:
 
 - Same store root as the rest of the thread; override with `COPSE_WORKSPACE_DIR`
   ([`copse-paths.ts`](../src/main/services/storage/copse-paths.ts)).
-- Decisions without an active project **and** thread are dropped (there is no
-  `_global` bucket).
+- A writer names the project, or records inside the thread's own turn, whose
+  project is then used. It never falls back to the window's active project.
+  Decisions without a project **and** thread are dropped (there is no `_global`
+  bucket).
 - Append-only: one JSON object per line
   ([`decision-log.ts`](../src/shared/threads/decision-log.ts) +
   [`spine-schema.ts`](../src/shared/threads/spine-schema.ts)), written through

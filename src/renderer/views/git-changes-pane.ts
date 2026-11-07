@@ -6,7 +6,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
   GitChange,
@@ -21,7 +21,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { uiActions } from '../ui/actions.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
-import type { ActiveDiff } from '@shared/types/state.ts'
+import type { ActiveDiff, StagedDiffEntry } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
   resolveStagedDiffView,
@@ -40,6 +40,9 @@ import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -124,6 +127,12 @@ function getFirstGitChange(status: GitStatusResult): { path: string; staged: boo
   const unstaged = status.unstaged[0]
   if (unstaged) return { path: unstaged.path, staged: false }
   return null
+}
+
+/** Whether a staged or unstaged path in `prev` is missing from `next`. */
+function workingTreePathLeft(prev: GitStatusResult, next: GitStatusResult): boolean {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path))
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path))
 }
 
 function defaultProposedPath(
@@ -351,6 +360,8 @@ export function mountGitChangesPane(
   // they see, because this pane mounts behind the Monaco bundle.
   let loaded = false
   let committedPending = false
+  let hasSettledGitRead = false
+  let renderedListKey: string | null = null
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
@@ -381,6 +392,11 @@ export function mountGitChangesPane(
   // has a queue to judge against, whether or not the path survived in it.
   let seededProposedPath: string | null = null
   const snapshotsByOwner = new Map<string, GitChangesSnapshot>()
+  // The last key built, with what it was built from: most updates leave the
+  // checkout unchanged and reuse it instead of serialising again.
+  let lastOwnerParts: readonly unknown[] = []
+  let lastOwnerKey = ''
+
   let displayedOwnerKey = activeOwnerKey()
   let ownerNeedsRefresh = false
 
@@ -405,7 +421,7 @@ export function mountGitChangesPane(
       ? threads.find((candidate) => candidate.id === threadId)
       : undefined
     const worktree = thread?.worktree
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -415,14 +431,18 @@ export function mountGitChangesPane(
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt,
-    ])
+    ]
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey
+    lastOwnerParts = parts
+    lastOwnerKey = JSON.stringify(parts)
+    return lastOwnerKey
   }
 
   /** Keep known rows per checkout, never carry another thread's rows or viewer. */
   function adoptActiveOwner(): boolean {
     const nextKey = activeOwnerKey()
     if (nextKey === displayedOwnerKey) return false
-    if (displayedOwnerKey && loaded && gitAvailable) {
+    if (displayedOwnerKey && hasSettledGitRead && gitAvailable) {
       snapshotsByOwner.delete(displayedOwnerKey)
       snapshotsByOwner.set(displayedOwnerKey, {
         status,
@@ -442,6 +462,7 @@ export function mountGitChangesPane(
     selectRequestId++
     const known = nextKey ? snapshotsByOwner.get(nextKey) : undefined
     loaded = known !== undefined
+    hasSettledGitRead = loaded
     committedPending = false
     gitAvailable = loaded
     status = known?.status ?? null
@@ -636,6 +657,20 @@ export function mountGitChangesPane(
   function renderList(): void {
     const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
+    // Compare the list's inputs by value: IPC returns fresh objects even when
+    // nothing changed. Keep row identity, focus and the empty state intact.
+    const key = JSON.stringify([
+      displayedOwnerKey,
+      loaded,
+      gitAvailable,
+      committedPending,
+      status,
+      committed,
+      queue.map((entry) => entry.path),
+      selection,
+    ])
+    if (key === renderedListKey) return
+    renderedListKey = key
     clear(listBody)
 
     renderProposedSection(queue)
@@ -1036,7 +1071,9 @@ export function mountGitChangesPane(
     emptyState.hidden = false
     if (!loaded) setInlineStatus(emptyState, 'pending', 'Loading changes…')
     else if (committedPending) setInlineStatus(emptyState, 'pending', 'Checking committed changes…')
-    else emptyState.textContent = 'Select a changed file'
+    else if (emptyState.textContent !== 'Select a changed file') {
+      emptyState.textContent = 'Select a changed file'
+    }
     diffWrap.hidden = true
     imageWrap.hidden = true
     dirWrap.hidden = true
@@ -1160,9 +1197,10 @@ export function mountGitChangesPane(
     if (!owner) {
       // No thread yet — the usual cause is the launch window before threads
       // hydrate, so this is "not known yet", not "no repo". Stay in the loading
-      // state; the `threads_changed` that selects a thread refreshes again.
+      // state; the owner selection that picks up a thread refreshes again.
       gitAvailable = false
       loaded = false
+      hasSettledGitRead = false
       renderList()
       return
     }
@@ -1187,6 +1225,7 @@ export function mountGitChangesPane(
       if (!availabilityFailed) gitFailureLogged = false
       loaded = true
       committedPending = false
+      hasSettledGitRead = false
       status = null
       committed = null
       sessionBackup = null
@@ -1201,23 +1240,32 @@ export function mountGitChangesPane(
     const backupRead = settleRead(api.git.sessionBackup(owner.projectId, owner.threadId))
     let nextStatus
     let nextCommitted
-    let selectedEarly: boolean
+    let selectedEarly = false
     try {
       nextStatus = await api.git.status(owner.projectId, owner.threadId)
       if (requestId !== refreshRequestId) return
-      status = nextStatus
-      loaded = true
-      committedPending = true
-      renderList()
-      if (!selection) clearViewer()
-      // A committed-file navigation must wait for that section to arrive;
-      // syncing it now would consume pendingNavigate before it can match.
-      selectedEarly =
-        !pendingNavigate &&
-        selection?.kind !== 'committed' &&
-        nextStatus !== null &&
-        getFirstGitChange(nextStatus) !== null
-      if (selectedEarly) void syncSelection()
+      // First load can show working-tree rows early. Once settled, retain the
+      // complete view while revalidating rather than flashing a loading row or
+      // briefly losing a file that moved from working-tree to committed work.
+      if (!hasSettledGitRead) {
+        status = nextStatus
+        loaded = true
+        committedPending = true
+        renderList()
+        if (!selection) clearViewer()
+        // A committed-file navigation must wait for that section to arrive.
+        selectedEarly =
+          !pendingNavigate &&
+          selection?.kind !== 'committed' &&
+          nextStatus !== null &&
+          getFirstGitChange(nextStatus) !== null
+        if (selectedEarly) void syncSelection()
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        // Nothing left the working tree, so no row can be on its way into
+        // committed changes: show new rows now, not behind the PR lookup.
+        status = nextStatus
+        renderList()
+      }
       const committedResult = await committedRead
       if (requestId !== refreshRequestId) return
       if (!committedResult.ok) throw committedResult.error
@@ -1232,6 +1280,7 @@ export function mountGitChangesPane(
       gitAvailable = false
       loaded = true
       committedPending = false
+      hasSettledGitRead = false
       renderRestoreBanner()
       renderList()
       clearViewer()
@@ -1241,6 +1290,7 @@ export function mountGitChangesPane(
     // A clean working tree is only "No changes" once committed work is known.
     loaded = true
     committedPending = false
+    hasSettledGitRead = true
     status = nextStatus
     committed = nextCommitted
     renderList()
@@ -1256,8 +1306,22 @@ export function mountGitChangesPane(
     renderRestoreBanner()
   }
 
+  /** The proposed diff and its queue are unchanged; a fresh empty queue is no change. */
+  function sameDiffState(
+    a: readonly [ActiveDiff | null, StagedDiffEntry[]],
+    b: readonly [ActiveDiff | null, StagedDiffEntry[]],
+  ): boolean {
+    return a[0] === b[0] && sameQueue(a[1], b[1])
+  }
+
+  /** The same queue; a fresh empty queue is no change. */
+  function sameQueue(a: StagedDiffEntry[], b: StagedDiffEntry[]): boolean {
+    return a === b || (a.length === 0 && b.length === 0)
+  }
+
   async function syncFromStore(): Promise<void> {
-    // switchThread can emit panel_changed before threads_changed.
+    // A thread switch resets the diff state inside its setState, so this can
+    // run before threads_changed.
     adoptActiveOwner()
     renderList()
     await syncSelection()
@@ -1283,56 +1347,82 @@ export function mountGitChangesPane(
         : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
     if (paths[0]) {
       store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
       selection = { kind: 'proposed', path: paths[0] }
       void syncFromStore()
     }
   })
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
-      if (changesModeActive(store)) void refresh()
+    selectRightPanelMode(store, 'changes', (active) => {
+      if (active) void refresh()
     }),
     store.on('git_change_navigate', (path) => {
       adoptActiveOwner()
       pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('files_pane_changed', () => {
-      if (changesModeActive(store)) void refresh()
-    }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       adoptActiveOwner()
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('threads_changed', () => {
-      syncOwnerLabel()
-      // Titles, hydration, and updates to other threads do not change this
-      // checkout. Preserve its DOM/selection and avoid redundant Git IPC.
+    // The pop-out header names the active thread and its branch.
+    store.select(
+      (s) => {
+        const thread = s.threads.find((candidate) => candidate.id === s.activeThreadId)
+        return [
+          s.activeProjectId,
+          thread?.id,
+          thread?.title,
+          thread?.worktree?.branch,
+          thread?.gitBranch,
+        ] as const
+      },
+      syncOwnerLabel,
+      sameItems,
+    ),
+    // The checkout this pane shows (owner, root, branch, worktree). Titles,
+    // hydration, and updates to other threads do not change it, so they keep
+    // its DOM/selection and skip Git IPC.
+    store.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return
       // Inactive worktrees are not continuously watched. Revalidate on return
       // while showing their last known rows, rather than flashing Loading.
-      if (changesModeActive(store)) void refresh()
+      // Git reads the thread's checkout from main, which rejects a new thread
+      // until autosave has created it.
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store)) void refresh()
+      })
     }),
-    store.on('staged_diffs_changed', () => {
-      const queue = store.getState().stagedDiffs
-      if (queue.length === 0) conflictBanner.hidden = true
-      if (changesModeActive(store)) void syncFromStore()
-      else renderList()
-      // Approving or rejecting a diff writes (or restores) the file, so the git
-      // sections below are now stale. The main window usually catches this via
-      // the `fs:changed` watcher on the open file; nothing did in a second
-      // window, which is half of "the changes don't align between the 2
-      // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
-      scheduleRefresh()
-    }),
-    store.on('panel_changed', () => {
-      if (changesModeActive(store)) void syncFromStore()
-    }),
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true
+        if (!changesModeActive(store)) renderList()
+        // Approving or rejecting a diff writes (or restores) the file, so the
+        // git sections below are now stale. The main window usually catches
+        // this via the `fs:changed` watcher on the open file; nothing did in a
+        // second window, which is half of "the changes don't align between the
+        // 2 windows" (#1704). Debounced, so a multi-file approve-all coalesces.
+        scheduleRefresh()
+      },
+      sameQueue,
+    ),
+    // Only the diff state: an ordinary thread switch is the owner selection's job.
+    store.select(
+      (s) => [s.activeDiff, s.stagedDiffs] as const,
+      () => {
+        if (changesModeActive(store)) void syncFromStore()
+      },
+      sameDiffState,
+    ),
     store.on('settings_changed', syncReviewGate),
     store.on('thread_status_changed', syncReviewButton),
-    store.on('threads_changed', syncReviewButton),
+    store.select((s) => {
+      const thread = s.threads.find((t) => t.id === s.activeThreadId)
+      return thread === undefined || thread.status === 'running'
+    }, syncReviewButton),
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),
@@ -1349,9 +1439,8 @@ export function mountGitChangesPane(
 
   // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
   // right panel is already in "changes" mode by the time we mount (the common
-  // case, since the mode is restored before Monaco loads), no
-  // right_panel_mode_changed event will arrive to trigger the first refresh — so
-  // catch up to the current state here, or the diff never renders. See #459.
+  // case, since the mode is restored before Monaco loads), no mode change will
+  // arrive to trigger the first refresh — so catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
   const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {

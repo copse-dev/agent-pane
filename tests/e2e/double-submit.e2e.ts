@@ -77,6 +77,9 @@ describe('double submit guard', function () {
     await saveAppScreenshot('double-submit-single-queued.png')
 
     await scenario.release('parser-review')
+    // The agent can briefly read as idle after the first reply, before the
+    // queued prompt dispatches. Wait for every scripted response to be served.
+    await scenario.waitForComplete(60_000)
     await waitForAgentIdle(60_000)
     await scenario.assertComplete()
 

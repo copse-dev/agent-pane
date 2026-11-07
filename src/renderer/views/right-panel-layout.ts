@@ -95,10 +95,9 @@ export function mountRightPanelLayout(store: AppStore): () => void {
   syncLayout()
   syncMaximized()
   const unsubs = [
-    store.on('right_panel_mode_changed', syncLayout),
-    store.on('files_pane_changed', syncLayout),
-    store.on('files_pane_changed', syncMaximized),
-    store.on('right_panel_maximized_changed', syncMaximized),
+    store.select((s) => s.rightPanelMode, syncLayout),
+    store.select((s) => s.filesPaneOpen, syncLayout),
+    store.select(() => isRightPanelMaximized(store), syncMaximized),
   ]
 
   return () => {

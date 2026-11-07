@@ -117,6 +117,40 @@ describe('automation modal from the project row menu', function () {
     await expect(dialog).not.toBeDisplayed()
   })
 
+  it('saves and reopens minute and hourly schedules with larger or unlimited worktree limits', async () => {
+    await $(PROJECT_MENU).click()
+    await $('.context-menu-item=Automations').click()
+    const dialog = $('#automation-dialog')
+    for (const [repeat, limit, description] of [
+      ['minute', '10', 'Every minute'],
+      ['hourly', 'unlimited', 'Every hour at minute 15'],
+    ] as const) {
+      await dialog.$('.automation-row-btn=Edit').click()
+      await dialog.$('.automation-repeat-select').selectByAttribute('value', repeat)
+      if (repeat === 'hourly') await dialog.$('.automation-hourly-minute-input').setValue('15')
+      await expect(dialog.$('.automation-time-input')).not.toBeDisplayed()
+      await expect(dialog.$('.automation-schedule-summary')).toHaveText(
+        `${description} · local time`,
+      )
+      await dialog.$('.automation-worktree-limit-select').selectByAttribute('value', limit)
+      await saveAppScreenshot(`automation-${repeat}-schedule.png`)
+      await dialog.$('.automation-save-btn').click()
+      await expect(dialog.$('.automation-row-schedule')).toHaveText(description)
+      await expect(dialog.$('.automation-row-meta')).toHaveText(
+        expect.stringContaining(
+          limit === 'unlimited' ? 'Unlimited live worktrees' : '10 live worktrees max',
+        ),
+      )
+      await dialog.$('.automation-row-btn=Edit').click()
+      await expect(dialog.$('.automation-repeat-select')).toHaveValue(repeat)
+      await expect(dialog.$('.automation-worktree-limit-select')).toHaveValue(limit)
+      if (repeat === 'hourly')
+        await expect(dialog.$('.automation-hourly-minute-input')).toHaveValue('15')
+      await dialog.$('.automation-cancel-btn').click()
+    }
+    await dialog.$('[aria-label="Close automations"]').click()
+  })
+
   it('opens the collapsed project’s automation editor from its own row', async () => {
     const other = $(`.project-entry[data-project-id="${OTHER_PROJECT_ID}"]`)
     await expect(other.$('.project-row')).not.toHaveElementClass('active')

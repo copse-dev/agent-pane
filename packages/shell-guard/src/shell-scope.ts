@@ -309,6 +309,7 @@ const EXTERNAL_PATTERNS: Array<{
   {
     re: new RegExp(`${CMD_POS}open\\b`, 'i'),
     reason: REASON_OPEN,
+    commandWord: true,
   },
   { re: /\bxdg-open\b/i, reason: REASON_XDG_OPEN, commandWord: true },
   {
@@ -612,6 +613,14 @@ function tokenBasedExternalReasons(command: string): {
       addReason(opener)
       hasHard = true
     }
+    // CoreSimulator is a host XPC service even when argv contains only a
+    // simulator UUID. A contained delete/list cannot establish device cleanup.
+    const simulatorArgs =
+      exe === 'simctl' ? args : exe === 'xcrun' && args[0] === 'simctl' ? args.slice(1) : null
+    if (simulatorArgs && !['help', '-h', '--help'].includes(simulatorArgs[0] ?? 'help')) {
+      addReason('simulator management requires host CoreSimulator services')
+      hasHard = true
+    }
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
@@ -878,8 +887,20 @@ const TEXT_TO_ACTION_HEADS: ReadonlySet<string> = new Set([
   ...CODE_INTERPRETERS,
 ])
 
-/** A path the scanner can compare verbatim: no quoting, escapes, globs or expansion. */
-const PLAIN_PATH = /^\/[\w.@%+,:/-]*$/
+/** Text no expansion can change: no variable, substitution or brace expansion. */
+const UNEXPANDED_TEXT = /^[^$`{}]*$/
+
+/**
+ * A backslash escaping anything but `/`, or ending the token. `/etc/x\ y` splits
+ * at the escaped space, so the token `/etc/x\` matches no live word in either
+ * form even when `cat /etc/x\ y` opens it.
+ */
+const NON_SLASH_ESCAPE = /\\(?!\/)/
+
+/** A word as the shell reads it once backslash escapes are removed (`\/api\/` → `/api/`). */
+function unescapeShellText(text: string): string {
+  return text.replace(/\\(.)/g, '$1')
+}
 
 /**
  * Blank out absolute paths that appear only as text a program never opens: the
@@ -890,7 +911,10 @@ const PLAIN_PATH = /^\/[\w.@%+,:/-]*$/
  *
  * A path is masked only when every word that contains it is inert. The same path
  * in any other word — a file operand, a redirect target, a flag value — keeps it,
- * so `echo /etc/x; cat /etc/x` still reports `/etc/x`. Substitution, backticks,
+ * so `echo /etc/x; cat /etc/x` still reports `/etc/x`, and an escaped pattern
+ * (`sed -n '/^\/api\//p'`) is kept when a live word holds it with or without
+ * its escapes. A `../` in inert text is masked only when no live word holds `..`
+ * at all, so `rg '../x' ../other` still climbs. Substitution, backticks,
  * process substitution, and any head that turns text into commands or paths
  * (`xargs`, a shell, an interpreter) disable masking for the whole line.
  */
@@ -940,13 +964,21 @@ function maskInertOperandPaths(command: string): string {
   }
   if (!flush(false)) return command
   if (inert.length === 0) return command
-  return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
-    PLAIN_PATH.test(path) &&
-    inert.some((word) => word.includes(path)) &&
-    !live.some((word) => word.includes(path))
+  const masked = command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) => {
+    if (!UNEXPANDED_TEXT.test(path) || NON_SLASH_ESCAPE.test(path)) return match
+    const unescaped = unescapeShellText(path)
+    return inert.some((word) => word.includes(path)) &&
+      !live.some((word) => word.includes(path) || word.includes(unescaped))
       ? `${lead}inert-operand`
-      : match,
-  )
+      : match
+  })
+  // `../` is only text when no word the command opens climbs out at all. The
+  // parser expands `$x` and `${x:-../..}` away, so any `$` keeps the traversal.
+  const climbsOnlyInText =
+    !command.includes('$') &&
+    inert.some((word) => word.includes('../')) &&
+    !live.some((word) => word.includes('..'))
+  return climbsOnlyInText ? masked.replaceAll('../', 'inert-parent/') : masked
 }
 
 /** A `PATH=` assignment, bare or exported, with its value. */
@@ -1396,6 +1428,9 @@ const SCOPE_REASON_TEXT = {
     "Runs a file from the project directly, so Copse can't tell what it does",
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)':
     'Runs a build tool that needs caches or build services outside the project',
+
+  'simulator management requires host CoreSimulator services':
+    'Uses the Mac’s Simulator service and device data outside the project',
 
   // Files outside the project
   'home directory path (~/)': 'Reads or writes in your home directory, outside the project',

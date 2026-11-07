@@ -200,7 +200,7 @@ describe('Coding agents list in Settings', () => {
     await $('[data-testid="connections-add-toggle"]').click()
   })
 
-  it('shows Ready after Re-scan when only the adapter-bundled Codex CLI is signed in', async function () {
+  it('requires connection verification after the adapter-bundled Codex CLI reports sign-in', async function () {
     this.timeout(60_000)
     // The npm adapter installs no `codex` on PATH; its bundled CLI is the one
     // the agent runs on, so its signed-in answer is the one that counts.
@@ -210,6 +210,8 @@ describe('Coding agents list in Settings', () => {
     const fieldset = $('[data-testid="models-agents-fieldset"]')
     await fieldset.$('button=Re-scan').click()
     const codex = $('[data-testid="models-agents-list"] .acp-row[data-agent="codex-acp"]')
+    await expect(codex.$('.acp-row-chip')).toHaveText('Not verified', { wait: 15_000 })
+    await codex.$('button=Verify connection').click()
     await expect(codex.$('.acp-row-chip')).toHaveText('Ready', { wait: 15_000 })
     await expect(codex.$('button=Sign in')).not.toExist()
     await expect(fieldset.$('[data-testid="connections-scan-status"]')).toHaveText(

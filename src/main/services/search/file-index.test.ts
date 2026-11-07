@@ -18,6 +18,7 @@ import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { setRgAvailableForTest } from '../tool-availability.ts'
+import { stopExecutionRootIndexing } from './workspace-indexing.ts'
 
 describe('file-index', () => {
   let tempRoot = ''
@@ -37,6 +38,122 @@ describe('file-index', () => {
     invalidateIndex()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
+
+  type WrappedCommand = Awaited<ReturnType<typeof SandboxManager.wrapWithSandboxArgv>>
+  interface DeferredListing {
+    entered: ReturnType<typeof Promise.withResolvers<undefined>>
+    result: ReturnType<typeof Promise.withResolvers<WrappedCommand>>
+    resolvePaths(paths: string[]): void
+  }
+
+  function deferredListing(): DeferredListing {
+    const result = Promise.withResolvers<WrappedCommand>()
+    return {
+      entered: Promise.withResolvers<undefined>(),
+      result,
+      resolvePaths(paths): void {
+        result.resolve({
+          argv: [
+            '/bin/sh',
+            '-c',
+            'printf %s "$0"',
+            paths.map((path) => join(tempRoot, path)).join('\n') + '\n',
+          ],
+          env: { ...process.env },
+        })
+      },
+    }
+  }
+
+  async function withRetiredBuild(
+    run: (builds: {
+      obsolete: Promise<void>
+      current: Promise<void>
+      oldListing: DeferredListing
+      newListing: DeferredListing
+    }) => Promise<void>,
+  ): Promise<void> {
+    const oldListing = deferredListing()
+    const newListing = deferredListing()
+    const listings = [oldListing, newListing]
+    let attempts = 0
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', (): Promise<WrappedCommand> => {
+      const listing = listings[attempts++]
+      assert.ok(listing, 'a pending replacement must be shared instead of starting a third listing')
+      listing.entered.resolve(undefined)
+      return listing.result.promise
+    })
+    setRgAvailableForTest(true)
+    setProjectSandboxEnabled(true)
+    resetWorkspaceIndexStatusForTest()
+    setIndexForTest(['previous.ts'], tempRoot)
+    const obsolete = buildIndex(tempRoot)
+    void obsolete.catch(() => undefined)
+    await oldListing.entered.promise
+    stopExecutionRootIndexing(tempRoot)
+    assert.equal(getIndex(tempRoot), null)
+    const current = buildIndex(tempRoot)
+    void current.catch(() => undefined)
+    try {
+      // Awaiting the obsolete build here would deadlock before the regression
+      // assertion. Promise identity proves a fresh registration owns fresh work.
+      assert.notEqual(current, obsolete)
+      await newListing.entered.promise
+      await run({ obsolete, current, oldListing, newListing })
+    } finally {
+      oldListing.resolvePaths([])
+      newListing.resolvePaths([])
+      await Promise.allSettled([obsolete, current])
+      setProjectSandboxEnabled(false)
+      setRgAvailableForTest(null)
+      mock.restoreAll()
+    }
+  }
+
+  for (const failed of [false, true]) {
+    it(
+      `keeps a replacement build owned when a retired listing ${failed ? 'fails' : 'completes'}`,
+      { timeout: 5_000 },
+      async () => {
+        await withRetiredBuild(async ({ obsolete, current, oldListing, newListing }) => {
+          if (failed) {
+            oldListing.result.reject(new Error('retired listing failed'))
+            await assert.rejects(obsolete, /retired listing failed/)
+          } else {
+            oldListing.resolvePaths(['obsolete.ts'])
+            await obsolete
+          }
+          assert.equal(getIndex(tempRoot), null, 'retired work must not republish its listing')
+          assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'building')
+          const shared = buildIndex(tempRoot)
+          void shared.catch(() => undefined)
+          assert.equal(shared, current, 'old finally must not remove the replacement flight')
+          newListing.resolvePaths(['current.ts'])
+          await current
+          assert.deepEqual(getIndex(tempRoot)?.paths, ['current.ts'])
+          assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'ready')
+        })
+      },
+    )
+  }
+
+  it(
+    'does not let a discarded success erase the replacement build error',
+    { timeout: 5_000 },
+    async () => {
+      await withRetiredBuild(async ({ obsolete, current, oldListing, newListing }) => {
+        newListing.result.reject(new Error('current listing failed'))
+        await assert.rejects(current, /current listing failed/)
+        assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'building')
+        oldListing.resolvePaths(['obsolete.ts'])
+        await obsolete
+        assert.equal(getIndex(tempRoot), null)
+        assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'error')
+      })
+    },
+  )
 
   it('reports a complete listing as untruncated scale evidence', async () => {
     await buildIndex(tempRoot)

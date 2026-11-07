@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { hostReachReasons, type HostReachContext } from './host-reach.ts'
+import {
+  commandPackageRegistries,
+  hostReachReasons,
+  sshDestinationHosts,
+  type HostReachContext,
+} from './host-reach.ts'
 
 const base: HostReachContext = { workspaceRoot: '/work/project' }
 
@@ -274,7 +279,17 @@ describe('hostReachReasons — code fetched at run time', () => {
     path === '/work/project/node_modules/.bin/tool'
 
   it('lets npx run a project dependency binary', () => {
-    for (const command of ['npx tsc --noEmit', 'npm exec tsc', 'npx @scope/tool --check']) {
+    for (const command of [
+      'npx tsc --noEmit',
+      'npm exec tsc',
+      'npm -s exec tsc',
+      'npm exe tsc',
+      'corepack npm@11.0.0 exec tsc',
+      'npx @scope/tool --check',
+      'corepack npx tsc',
+      // `pnpm exec` never fetches: it runs a command from PATH.
+      'pnpm exec serve dist',
+    ]) {
       assert.deepEqual(reasons(command, { pathExists }), [], command)
     }
   })
@@ -286,7 +301,26 @@ describe('hostReachReasons — code fetched at run time', () => {
       'npx tsc@5 --noEmit',
       'npx -p tsc tsc',
       'npx --package=cowsay cowsay hi',
+      'npm -s exec serve dist',
+      'npm --silent x serve dist',
+      'corepack npx serve dist',
+      // npm resolves a unique abbreviation: `exe` is `exec`.
+      'npm exe serve dist',
+      'npm -s exe serve dist',
+      'npm --prefix /tmp --silent exec serve dist',
+      'corepack npm@11.0.0 exec serve dist',
+      'corepack pnpm dlx create-vite',
+      'corepack pnpm@10.0.0 dlx create-vite',
+      'corepack yarn@4.5.0 dlx create-vite',
+      // `yarnpkg` is Yarn's other executable name.
+      'yarnpkg dlx create-vite',
+      'yarnpkg create vite',
+      'corepack yarnpkg dlx create-vite',
+      'corepack yarnpkg@4.5.0 dlx create-vite',
       'pnpm dlx create-vite',
+      // `pnpx` is `pnpm dlx`, which downloads even a name the project installs.
+      'pnpx tsc',
+      'corepack pnpx tsc',
       'yarn dlx create-vite',
       'npm create vite@latest',
       'npm init vite@latest',
@@ -300,12 +334,52 @@ describe('hostReachReasons — code fetched at run time', () => {
     ]) {
       assert.ok(reaches(command, { pathExists }), command)
     }
+    // A global option before the subcommand does not hide it.
+    for (const command of [
+      'pnpm --silent dlx create-vite',
+      'pnpm -s dlx create-vite',
+      'corepack pnpm --silent dlx create-vite',
+      'pnpm -C sub dlx create-vite',
+      'pnpm --config.registry=x dlx create-vite',
+      'yarn --cwd sub dlx create-vite',
+      'pnpm --silent create vite',
+      'npm -s init vite',
+      'npm --silent create vite',
+      'bun --silent x cowsay',
+      'bun --bun create vite',
+      'pipx --verbose run black .',
+    ]) {
+      assert.ok(reaches(command, { pathExists }), command)
+    }
+    // npm resolves `cr` and `innit` to `init`, and an option before the
+    // initializer does not stop it running `create-<initializer>`.
+    for (const command of [
+      'npm cr vite',
+      'npm innit vite',
+      'npm init -y vite',
+      'npm init --force vite',
+    ]) {
+      assert.ok(reaches(command, { pathExists }), command)
+    }
     // Without a workspace there is no project dependency to run.
     assert.ok(reaches('npx tsc', { pathExists, workspaceRoot: null }))
   })
 
   it('leaves the local npm package-initialization forms alone', () => {
-    for (const command of ['npm init', 'npm init -y', 'npm init --yes']) {
+    for (const command of [
+      'npm init',
+      'npm init -y',
+      'npm init --yes',
+      'npm -s init -y',
+      'npm init --scope=@me',
+      // A subcommand that does not download, even with a download word after it.
+      'npm run create',
+      'pnpm run dlx',
+      'pnpm --silent install',
+      'yarn --cwd sub install',
+      'bun run x',
+      'pipx install black',
+    ]) {
       assert.deepEqual(reasons(command), [], command)
     }
   })
@@ -394,5 +468,63 @@ describe('hostReachReasons — shell history', () => {
     assert.ok(!reaches('history; rg token src'))
     assert.ok(!reaches('history && grep -rn PASSWORD src'))
     assert.ok(reaches('history 50 | tail -20 | grep -i secret'))
+  })
+})
+
+describe('sshDestinationHosts', () => {
+  it('lists the normalized hosts each SSH-family client names', () => {
+    assert.deepEqual(sshDestinationHosts('ssh deploy@Build-Box.local uptime'), ['build-box.local'])
+    assert.deepEqual(sshDestinationHosts('scp a.txt box:/tmp/ && rsync -a dir/ other:/srv/'), [
+      'box',
+      'other',
+    ])
+    assert.deepEqual(sshDestinationHosts('ssh -J jump target true'), ['jump', 'target'])
+    assert.deepEqual(sshDestinationHosts('grep ssh notes.md'), [])
+  })
+})
+
+describe('trusted package registries', () => {
+  const REGISTRY = /package registry other than the default/
+  const trusted: HostReachContext = {
+    workspaceRoot: '/w',
+    trustedPackageRegistries: ['https://npm.corp.example', 'https://proxy.corp.example'],
+  }
+  const untrusted: HostReachContext = { workspaceRoot: '/w' }
+  const asks = (command: string, context: HostReachContext): boolean =>
+    hostReachReasons(command, context).some((reason) => REGISTRY.test(reason))
+
+  it('lets an install from a trusted registry through', () => {
+    for (const command of [
+      'npm install left-pad --registry https://npm.corp.example/',
+      'npm install left-pad --registry=npm.corp.example',
+      'GOPROXY=https://proxy.corp.example go mod download',
+      'GOPROXY=https://proxy.corp.example|https://npm.corp.example go mod download',
+    ]) {
+      assert.equal(asks(command, untrusted), true, command)
+      assert.equal(asks(command, trusted), false, command)
+    }
+  })
+
+  it('keeps asking when any registry is untrusted or verification is turned off', () => {
+    for (const command of [
+      'npm install x --registry https://evil.example',
+      'GOPROXY=https://proxy.corp.example,direct go mod download',
+      'GOPROXY=off go build',
+      'GOSUMDB=off go mod download',
+      'pip install x --trusted-host npm.corp.example',
+      'npm install x --registry http://npm.corp.example',
+    ]) {
+      assert.equal(asks(command, trusted), true, command)
+    }
+  })
+
+  it('lists the registry origins a command selects', () => {
+    assert.deepEqual(
+      commandPackageRegistries(
+        'npm i a --registry https://npm.corp.example/x && pip install b --index-url https://pypi.corp.example/simple --trusted-host pypi.corp.example',
+      ),
+      ['https://npm.corp.example', 'https://pypi.corp.example'],
+    )
+    assert.deepEqual(commandPackageRegistries('npm install left-pad'), [])
   })
 })

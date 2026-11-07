@@ -48,6 +48,41 @@ describe('extractSkillFileReferences', () => {
     assert.deepEqual(extractSkillFileReferences(text), [])
   })
 
+  it('ignores paths in illustrative TSV audit records, retaining real supporting references', () => {
+    const text =
+      'Read `references/real.md`.\n\n```\n' +
+      'ts\tphase\tdecision\twhy\tevidence\tresult\n' +
+      '2026-05-24T09:40:00Z\tharness\ttook screenshots\tcompare versions\tscripts/snapshot.sh, baseline/\tsaved screenshots\n' +
+      '```\n\nRun:\n```sh\nbash scripts/required.sh\n```'
+    assert.deepEqual(extractSkillFileReferences(text), [
+      'references/real.md',
+      'scripts/required.sh',
+    ])
+    assert.deepEqual(extractSkillFileReferences(text.replaceAll('```', '~~~~')), [
+      'references/real.md',
+      'scripts/required.sh',
+    ])
+    assert.deepEqual(extractSkillFileReferences(text.replaceAll('\n', '\r\n')), [
+      'references/real.md',
+      'scripts/required.sh',
+    ])
+  })
+
+  it('does not discard non-tabular code or prose that uses tabs', () => {
+    assert.deepEqual(extractSkillFileReferences('```sh\ncommand\targ\tscripts/required.sh\n```'), [
+      'scripts/required.sh',
+    ])
+    assert.deepEqual(extractSkillFileReferences('Read\tthe file\tscripts/required.sh'), [
+      'scripts/required.sh',
+    ])
+    assert.deepEqual(
+      extractSkillFileReferences(
+        '```tsv\nstep\tcommand\tresult\nsetup\tbash scripts/required.sh\tready\n```',
+      ),
+      ['scripts/required.sh'],
+    )
+  })
+
   it('strips trailing sentence punctuation', () => {
     assert.deepEqual(extractSkillFileReferences('See references/patterns.md.'), [
       'references/patterns.md',

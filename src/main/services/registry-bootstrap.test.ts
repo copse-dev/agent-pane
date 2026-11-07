@@ -5,33 +5,36 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   createRegistry,
-  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
   syncModelClassifierTools,
   syncOkfMemoryTools,
   syncOrchestrationStrategyTools,
-  syncParallelSearchTools,
   syncWebSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
+import {
+  COMPUTER_USE_PLUGIN_ID,
+  COMPUTER_USE_TOOL_NAMES,
+} from '@copse/agent/plugins/computer-use-plugin.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { deleteApiKey, setApiKey, setSetting } from './storage/settings.test-shim.ts'
+import { deleteApiKey, setApiKey, setSetting } from './storage/settings.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
 import {
   getDefaultPluginRegistry,
   setDefaultPluginRegistry,
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
-import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
+import { BRIDGE_TOOL_NAMES, isAgentInputSchema } from './acp/acp-native-bridge.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -39,7 +42,6 @@ import {
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import {
   CI_INVESTIGATOR_PLUGIN_ID,
   CI_INVESTIGATOR_PLUGIN_TOOL_NAMES,
@@ -47,13 +49,37 @@ import {
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
+import { installInMemorySecretCipher } from './storage/secret-cipher.test-support.ts'
+import { normalizeOpenAIToolSchema } from '@copse/llm/normalize-tool-schema.ts'
+
+installInMemorySecretCipher()
+
+it('exports object parameter envelopes for native tools sent to compatible local servers', () => {
+  const registry = createRegistry()
+  const tools = registry.toLLMTools()
+  const invalid = tools
+    .filter((tool) => normalizeOpenAIToolSchema(tool.parameters)['type'] !== 'object')
+    .map((tool) => tool.name)
+  assert.deepEqual(invalid, [], 'a single invalid schema prevents every tool from being used')
+  registry.validateArgs('isolated_copse', { action: 'start' })
+  registry.validateArgs('isolated_copse', { action: 'screenshot' })
+  registry.validateArgs('isolated_copse', { action: 'click', x: 10, y: 20, button: 1 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
+  })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
+  })
+})
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('bundledCursorSkillsEnabled', false)
+    await setSetting('bundledCursorSkillsEnabled', false)
     setBundledCursorSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-registry-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
@@ -73,14 +99,14 @@ description: Demo skill for tests
   })
 
   afterEach(async () => {
-    setSetting('skillsEnabled', true)
+    await setSetting('skillsEnabled', true)
     restoreWorkspace?.()
     setSkillsForTest([])
     resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('registers model-only skills while respecting the master switch', () => {
+  it('registers model-only skills while respecting the master switch', async () => {
     setSkillsForTest([
       {
         name: 'model-only',
@@ -102,7 +128,7 @@ description: Demo skill for tests
       buildSkillsCatalogBlock(registry.toLLMTools().map((tool) => tool.name)),
       /model-only/,
     )
-    setSetting('skillsEnabled', false)
+    await setSetting('skillsEnabled', false)
     registerSkillTools(registry)
     assert.equal(registry.has('read_skill'), false)
   })
@@ -241,6 +267,38 @@ describe('syncOkfMemoryTools', () => {
   })
 })
 
+describe('syncComputerUseTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers every declared desktop tool only while the plugin is on, on macOS', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
+
+    plugins.enable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => !registry.has(name)),
+      [],
+    )
+
+    syncComputerUseTools(registry, 'linux')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
+  })
+})
+
 describe('syncAppleDevelopmentTools', () => {
   afterEach(() => {
     setDefaultPluginRegistry(null)
@@ -282,22 +340,22 @@ describe('syncAppleDevelopmentTools', () => {
 })
 
 describe('syncReadTerminalTools', () => {
-  afterEach(() => {
-    setSetting('readTerminalEnabled', true)
+  afterEach(async () => {
+    await setSetting('readTerminalEnabled', true)
   })
 
-  it('registers by default and removes when disabled', () => {
+  it('registers by default and removes when disabled', async () => {
     const registry = new ToolRegistry()
 
-    setSetting('readTerminalEnabled', true)
+    await setSetting('readTerminalEnabled', true)
     syncReadTerminalTools(registry)
     assert.equal(registry.has('read_terminal'), true)
 
-    setSetting('readTerminalEnabled', false)
+    await setSetting('readTerminalEnabled', false)
     syncReadTerminalTools(registry)
     assert.equal(registry.has('read_terminal'), false)
 
-    setSetting('readTerminalEnabled', true)
+    await setSetting('readTerminalEnabled', true)
     syncReadTerminalTools(registry)
     assert.equal(registry.has('read_terminal'), true)
   })
@@ -382,22 +440,22 @@ describe('syncImageGenerationTools', () => {
 })
 
 describe('syncWebSearchTools', () => {
-  afterEach(() => {
-    setSetting('webSearchProvider', 'none')
+  afterEach(async () => {
+    await setSetting('webSearchProvider', 'none')
     deleteApiKey('tavily')
     deleteApiKey('parallel')
   })
 
-  it('withholds search at startup but keeps URL fetching available', () => {
-    setSetting('webSearchProvider', 'none')
+  it('withholds search at startup but keeps URL fetching available', async () => {
+    await setSetting('webSearchProvider', 'none')
     const registry = createRegistry()
     assert.equal(registry.has('web_search'), false)
     assert.equal(registry.has('fetch_url'), true)
   })
 
-  it('adds and removes search when the selected account changes without restarting', () => {
+  it('adds and removes search when the selected account changes without restarting', async () => {
     const registry = new ToolRegistry()
-    setSetting('webSearchProvider', 'tavily')
+    await setSetting('webSearchProvider', 'tavily')
     syncWebSearchTools(registry)
     assert.equal(registry.has('web_search'), false)
     setApiKey('tavily', 'tavily-fixture')
@@ -413,37 +471,12 @@ describe('syncWebSearchTools', () => {
       false,
       'a different provider key does not enable search',
     )
-    setSetting('webSearchProvider', 'parallel')
+    await setSetting('webSearchProvider', 'parallel')
     syncWebSearchTools(registry)
     assert.equal(registry.has('web_search'), true)
-    setSetting('webSearchProvider', 'none')
+    await setSetting('webSearchProvider', 'none')
     syncWebSearchTools(registry)
     assert.equal(registry.has('web_search'), false)
-  })
-})
-
-describe('syncParallelSearchTools', () => {
-  afterEach(() => {
-    deleteApiKey('parallel')
-    setDefaultPluginRegistry(null)
-  })
-
-  it('requires both an enabled plugin and a configured key', () => {
-    const plugins = createFirstPartyPluginRegistry()
-    setDefaultPluginRegistry(plugins)
-    const registry = new ToolRegistry()
-
-    plugins.enable(PARALLEL_SEARCH_PLUGIN_ID)
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), false)
-
-    setApiKey('parallel', 'test-key')
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), true)
-
-    plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), false)
   })
 })
 
@@ -456,7 +489,29 @@ describe('syncCiInvestigatorTools', () => {
   const registered = (registry: ToolRegistry): boolean[] =>
     CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
 
-  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+  it('keeps basic workflow reads available independently of the investigator plugin', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    for (const enabled of [false, true, false]) {
+      if (enabled) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+      else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+      syncCiInvestigatorTools(registry)
+      assert.equal(registry.has('gh_run_list'), true)
+      assert.equal(registry.has('gh_run_view'), true)
+      assert.equal(registry.has('investigate_ci'), enabled)
+    }
+    setGhAvailableForTest(false)
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+    assert.equal(registry.has('gh_run_list'), false)
+    assert.equal(registry.has('gh_run_view'), false)
+    assert.equal(registry.has('investigate_ci'), false)
+  })
+
+  it('registers the investigator only with the plugin on and gh usable', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -465,36 +520,36 @@ describe('syncCiInvestigatorTools', () => {
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
-    // gh probe answers: all three appear.
+    // gh probe answers: the investigator appears.
     setGhAvailableForTest(true)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
     // Idempotent while enabled.
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
-    // Plugin off drops all three even though gh is still usable.
+    // Plugin off drops the investigator even though gh is still usable.
     plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
     // Re-enable, then gh goes away: the tools follow gh too.
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
   })
 })
 
 describe('experimental setting tool syncs', () => {
-  afterEach(() => {
-    setSetting('modelClassifierEnabled', false)
-    setSetting('orchestrationStrategyEnabled', false)
+  afterEach(async () => {
+    await setSetting('modelClassifierEnabled', false)
+    await setSetting('orchestrationStrategyEnabled', false)
   })
 
   const cases = [
@@ -507,13 +562,13 @@ describe('experimental setting tool syncs', () => {
   ] as const
 
   for (const { setting, tool, sync } of cases) {
-    it(`${tool} follows ${setting} live in both directions`, () => {
-      setSetting(setting, false)
+    it(`${tool} follows ${setting} live in both directions`, async () => {
+      await setSetting(setting, false)
       const registry = createRegistry()
       assert.equal(registry.has(tool), false, 'off at boot')
 
       // The Settings checkbox writes the setting; settings:set then resyncs.
-      setSetting(setting, true)
+      await setSetting(setting, true)
       sync(registry)
       assert.equal(registry.has(tool), true, 'on without a restart')
 
@@ -521,53 +576,31 @@ describe('experimental setting tool syncs', () => {
       sync(registry)
       assert.equal(registry.has(tool), true)
 
-      setSetting(setting, false)
+      await setSetting(setting, false)
       sync(registry)
       assert.equal(registry.has(tool), false, 'off without a restart')
     })
 
-    it(`createRegistry registers ${tool} when ${setting} is on at boot`, () => {
-      setSetting(setting, true)
+    it(`createRegistry registers ${tool} when ${setting} is on at boot`, async () => {
+      await setSetting(setting, true)
       assert.equal(createRegistry().has(tool), true)
     })
   }
 })
 
-describe('pluginEnableRefusal', () => {
-  afterEach(() => {
-    deleteApiKey('parallel')
-  })
-
-  it('refuses to enable Parallel Search without a resolvable key', () => {
-    deleteApiKey('parallel')
-    assert.match(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true) ?? '', /Parallel API key/)
-  })
-
-  it('allows enabling Parallel Search once a key is stored', () => {
-    setApiKey('parallel', 'test-key')
-    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true), null)
-  })
-
-  it('never blocks disabling, and ignores other plugins', () => {
-    deleteApiKey('parallel')
-    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, false), null)
-    assert.equal(pluginEnableRefusal(OKF_MEMORIES_PLUGIN_ID, true), null)
-  })
-})
-
 describe('ACP bridge exposure decisions', () => {
-  afterEach(() => {
-    setSetting('modelClassifierEnabled', false)
-    setSetting('orchestrationStrategyEnabled', false)
+  afterEach(async () => {
+    await setSetting('modelClassifierEnabled', false)
+    await setSetting('orchestrationStrategyEnabled', false)
     deleteApiKey('openai')
     setGhAvailableForTest(null)
     setDefaultPluginRegistry(null)
   })
 
-  it('classifies every registered core tool as bridged or deliberately native-only', () => {
+  it('classifies every registered core tool as bridged or deliberately native-only', async () => {
     setDefaultPluginRegistry(createFirstPartyPluginRegistry())
-    setSetting('modelClassifierEnabled', true)
-    setSetting('orchestrationStrategyEnabled', true)
+    await setSetting('modelClassifierEnabled', true)
+    await setSetting('orchestrationStrategyEnabled', true)
     setApiKey('openai', 'test-key')
     setGhAvailableForTest(true)
     const registry = createRegistry()
@@ -580,13 +613,17 @@ describe('ACP bridge exposure decisions', () => {
     // or a separate exposure review because they access user data or spend money.
     const nativeOnly = new Set([
       'ask_user',
+      'run_readonly_workers',
+      'run_isolated_workers',
       'explore',
+      // Quotes what this native run's explore subagents read; it has nothing
+      // to serve over the bridge.
+      'read_explored',
       'investigate_ci',
       'delegate_step',
       'update_todos',
       'update_thread_plan',
       'report_plan_completion',
-      'read_skill',
       'request_write_access',
       'read_terminal',
       'run_checkup',
@@ -608,9 +645,23 @@ describe('ACP bridge exposure decisions', () => {
           !nativeOnly.has(name),
       )
     assert.deepEqual(undecided, [], 'review ACP exposure when adding a core tool')
+    assert.ok(BRIDGE_TOOL_NAMES.includes('read_skill'), 'skill reads use an explicit run binding')
     for (const name of nativeOnly) {
       assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
     }
+  })
+
+  it('gives every bridged core tool an input schema agents accept (#4142)', () => {
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+    const rejected = createRegistry()
+      .toMcpTools()
+      .filter(
+        (tool) => BRIDGE_TOOL_NAMES.includes(tool.name) && !isAgentInputSchema(tool.inputSchema),
+      )
+      .map((tool) => tool.name)
+    assert.deepEqual(rejected, [], 'a bridged tool needs a top-level object input schema')
+    assert.equal(isAgentInputSchema({ anyOf: [{ type: 'object' }] }), false)
+    assert.equal(isAgentInputSchema({ type: 'object', anyOf: [] }), false)
   })
 
   it('classifies every first-party plugin tool for ACP exposure', () => {

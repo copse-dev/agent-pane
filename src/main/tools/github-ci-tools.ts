@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { getCiFailureLogs, getCiStatus } from '../services/github/github-ci-service.ts'
+import { getCiFailureLogs } from '../services/github/github-ci-service.ts'
+import { getInteractiveCiStatus } from '../services/github/branch-ci-status.ts'
 import { scheduleCiWatch } from '../services/github/ci-watch-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import {
   getThreadExecutionContext,
   requireThreadExecutionOwner,
@@ -19,14 +21,24 @@ export const getCiStatusTool = defineTool({
   name: 'get_ci_status',
   provenance: 'external',
   description:
-    'Read GitHub pull request CI check status for the current branch or a specific PR number. Prefer this over run_shell + gh. For branch/main workflow runs without an open PR, prefer gh_run_list / gh_run_view. ' +
-    'Use after pushing to see whether remote checks are pending, passing, or failing.',
-  parameters: z.object({
-    pr_number: prNumberSchema,
-  }),
-  execute: async ({ pr_number }, _signal) => {
-    const context = getThreadExecutionContext()
-    const status = await getCiStatus(pr_number, context?.root)
+    'Read GitHub CI status. Select branch for push-triggered workflows at its exact remote tip, or pr_number for PR checks. With neither, use the current open PR, falling back to current-branch push workflows when there is no open PR. The response states its scope; pending or unknown evidence cannot establish green CI. Prefer over run_shell + gh.',
+  parameters: z
+    .object({
+      pr_number: prNumberSchema,
+      branch: z
+        .string()
+        .trim()
+        .min(1)
+        .optional()
+        .describe(
+          'Remote branch whose tip push workflows to inspect, such as main. Mutually exclusive with pr_number.',
+        ),
+    })
+    .refine((args) => args.pr_number === undefined || args.branch === undefined, {
+      message: 'Choose either branch or pr_number.',
+    }),
+  execute: async ({ pr_number, branch }, _signal) => {
+    const status = await getInteractiveCiStatus(pr_number, getAgentExecutionRoot(), branch)
     return JSON.stringify(status, null, 2)
   },
 })
@@ -91,7 +103,6 @@ export const getCiFailureLogsTool = defineTool({
       .describe('Workflow run database id. Omit to use the latest run for the PR head commit.'),
   }),
   execute: async ({ pr_number, run_id }, _signal) => {
-    const context = getThreadExecutionContext()
-    return getCiFailureLogs({ prNumber: pr_number, runId: run_id, cwd: context?.root })
+    return getCiFailureLogs({ prNumber: pr_number, runId: run_id, cwd: getAgentExecutionRoot() })
   },
 })

@@ -7,9 +7,10 @@ export const mcpMarkup = `
               Model Context Protocol servers expose external tools to the agent. This section is
               the whole picture of what Copse talks to over MCP, servers you configured, servers
               the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Configure your own in <code>.cursor/mcp.json</code> (project),
-              <code>.mcp.json</code> (project), or <code>~/.cursor/mcp.json</code> (global), then
-              reload. Plugins are installed and turned on under Customise.
+              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
+              its own config. It also reads <code>.cursor/mcp.json</code> and
+              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
+              you edit yourself. Plugins are installed and turned on under Customise.
             </p>
 
             <fieldset>
@@ -20,11 +21,15 @@ export const mcpMarkup = `
                 Off servers are not started on reload.
               </p>
               <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-primary" id="mcp-add-btn">
+                  Add server
+                </button>
                 <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
                   Reload servers
                 </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
+              <div id="mcp-server-editor" class="mcp-server-editor" hidden></div>
             </fieldset>
 
             <fieldset id="mcp-declared-fieldset" hidden>

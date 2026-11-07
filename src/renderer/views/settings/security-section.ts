@@ -17,7 +17,13 @@ import {
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 import { parseTrustedSshHosts, sanitizeTrustedSshHosts } from '@shared/trusted-ssh-hosts.ts'
+import {
+  parseTrustedPackageRegistries,
+  sanitizeTrustedPackageRegistries,
+} from '@shared/trusted-package-registries.ts'
+import { parseProductionTargets, sanitizeProductionTargets } from '@shared/production-targets.ts'
 import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
+import { openEnvironmentSetupReview } from '../environment-setup.ts'
 
 export interface SecuritySection {
   load(snapshot: SettingsSnapshot): void
@@ -32,6 +38,31 @@ export function createSecuritySection(
   getLocalUrl: () => string,
 ): SecuritySection {
   wireSafetySliders(form)
+  // Environment setup writes these settings in main; show what it wrote
+  // without reloading the rest of the form over unsaved edits.
+  const refreshSuggestedSettings = async (): Promise<void> => {
+    const snapshot = await api.settings.getSnapshot()
+    textareaControl(form, 'webAllowedOrigins').value = (
+      snapshot.webAllowedOrigins?.length ? snapshot.webAllowedOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
+    ).join('\n')
+    textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
+      sanitizeTrustedCommands(snapshot.trustedShellCommands),
+    )
+    textareaControl(form, 'trustedSshHosts').value = sanitizeTrustedSshHosts(
+      snapshot.trustedSshHosts,
+    ).join('\n')
+    textareaControl(form, 'trustedPackageRegistries').value = sanitizeTrustedPackageRegistries(
+      snapshot.trustedPackageRegistries,
+    ).join('\n')
+    selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
+      snapshot.shellAutoApprovalLevel,
+    )
+  }
+  form.querySelector('#environment-setup-review')?.addEventListener('click', () => {
+    void openEnvironmentSetupReview(api, () => {
+      void refreshSuggestedSettings()
+    })
+  })
   const names = [
     'localServerUrl',
     'safetyModel',
@@ -64,6 +95,12 @@ export function createSecuritySection(
       )
       textareaControl(form, 'trustedSshHosts').value = sanitizeTrustedSshHosts(
         snapshot.trustedSshHosts,
+      ).join('\n')
+      textareaControl(form, 'trustedPackageRegistries').value = sanitizeTrustedPackageRegistries(
+        snapshot.trustedPackageRegistries,
+      ).join('\n')
+      textareaControl(form, 'productionTargets').value = sanitizeProductionTargets(
+        snapshot.productionTargets,
       ).join('\n')
       selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
         snapshot.shellAutoApprovalLevel,
@@ -134,6 +171,16 @@ export function createSecuritySection(
         await api.settings.set(
           'trustedSshHosts',
           parseTrustedSshHosts(formDataString(data, 'trustedSshHosts')),
+        )
+      if (dirty.has('trustedPackageRegistries'))
+        await api.settings.set(
+          'trustedPackageRegistries',
+          parseTrustedPackageRegistries(formDataString(data, 'trustedPackageRegistries')),
+        )
+      if (dirty.has('productionTargets'))
+        await api.settings.set(
+          'productionTargets',
+          parseProductionTargets(formDataString(data, 'productionTargets')),
         )
     },
   }

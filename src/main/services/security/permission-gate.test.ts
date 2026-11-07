@@ -36,10 +36,10 @@ import {
   promptUnsandboxedShell,
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler } from '../approval.ts'
+import { setApprovalHandler, supportsInteractiveClientApproval } from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -53,8 +53,7 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
+import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -69,11 +68,17 @@ import {
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { AutomationPermission } from '@shared/types'
 import { getAutomationService } from '../automations/automation-service.ts'
 import { isMcpToolRemembered } from '../mcp/mcp-registry.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+import { execFileSync } from 'node:child_process'
+import { runWithToolAvailability } from '../tool-availability.ts'
+
+installInMemorySecretCipher()
 
 const AUTOMATIONS_STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 
@@ -121,7 +126,7 @@ describe('shell prompt audit evidence', () => {
     { cause: 'shell-sandbox-retry', prompt: promptUnsandboxedShell },
   ]) {
     it(`preserves structured reasons for ${cause}`, async () => {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       const reasons = ['OS denied the requested network access']
       setApprovalHandler(async (request) => {
         assert.equal(request.cause, cause)
@@ -152,8 +157,8 @@ describe('package command approval scope', () => {
     const command =
       './node_modules/.bin/tsc --noEmit -p tsconfig.node.json 2>&1 | tail -60; echo "NODE_EXIT=$?"'
     const requests: Array<{ title: string; cause?: string; scope?: string }> = []
-    setSetting('safetyClassifierEnabled', false)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
     setApprovalHandler(async ({ title, cause, scope }) => {
       requests.push({ title, ...(cause ? { cause } : {}), ...(scope ? { scope } : {}) })
       return { approved: false, remember: false }
@@ -188,8 +193,8 @@ describe('package command approval scope', () => {
       setPermissionGateForTests(null)
       const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
       const restore = setWorkspaceRootForTest(root)
-      setSetting('safetyClassifierEnabled', false)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting('safetyClassifierEnabled', false)
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       let prompts = 0
       setApprovalHandler(async (request) => {
         prompts += 1
@@ -219,8 +224,8 @@ describe('package command approval scope', () => {
     setPermissionGateForTests(null)
     const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
     const restore = setWorkspaceRootForTest(root)
-    setSetting('safetyClassifierEnabled', false)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
     const requests: { title: string; cause: string | undefined }[] = []
     setApprovalHandler(async ({ title, cause }) => {
       requests.push({ title, cause })
@@ -263,6 +268,7 @@ describe('prepare_worktree permission', () => {
     setApprovalHandler(async (request) => {
       prompts += 1
       assert.equal(request.title, 'Prepare this worktree?')
+      assert.equal(request.interactiveClientApproval, 'once')
       assert.equal(request.cause, 'shell-package-install')
       assert.equal(request.allowRemember, false)
       assert.match(request.bodyAdvice ?? '', /lifecycle scripts disabled/)
@@ -273,9 +279,11 @@ describe('prepare_worktree permission', () => {
     })
     try {
       assert.equal(
-        await ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        await runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         true,
       )
@@ -285,18 +293,22 @@ describe('prepare_worktree permission', () => {
         return { approved: false, remember: false }
       })
       assert.equal(
-        await ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        await runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         false,
       )
       assert.equal(prompts, 2)
       writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.20.0"}')
       await assert.rejects(
-        ensureToolPermitted(
-          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
-          new AbortController().signal,
+        runWithWorkspaceRoot(root, () =>
+          ensureToolPermitted(
+            { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+            new AbortController().signal,
+          ),
         ),
         /plan changed/,
       )
@@ -346,7 +358,7 @@ describe('ensureToolPermitted', () => {
 
   it('blocks an explicit tool policy before prompts or auto-allow branches', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'block' })
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'block' })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -360,13 +372,13 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
   it('asks on every invocation even for a normally auto-allowed tool', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'ask' })
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'ask' })
     let prompts = 0
     setApprovalHandler(async (request) => {
       prompts++
@@ -380,7 +392,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -392,7 +404,7 @@ describe('ensureToolPermitted', () => {
       toolName: 'send_mail',
       origin: 'user',
     })
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -403,7 +415,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
     }
   })
@@ -411,7 +423,7 @@ describe('ensureToolPermitted', () => {
   it('rechecks block after a pending approval resolves', async () => {
     setPermissionGateForTests(null)
     const id = copseToolPermissionId('read_skill')
-    setSetting('toolPermissionOverrides', { [id]: 'ask' })
+    await setSetting('toolPermissionOverrides', { [id]: 'ask' })
     let release: (() => void) | undefined
     let started: (() => void) | undefined
     const promptStarted = new Promise<void>((resolve) => {
@@ -432,12 +444,12 @@ describe('ensureToolPermitted', () => {
         args: { name: 'demo-skill' },
       })
       await promptStarted
-      setSetting('toolPermissionOverrides', { [id]: 'block' })
+      await setSetting('toolPermissionOverrides', { [id]: 'block' })
       release?.()
       assert.equal(await pending, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -455,8 +467,8 @@ describe('ensureToolPermitted', () => {
     const url = new URL('https://example.com/resource')
     const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
       await import('./web-origin-policy.ts')
-    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
@@ -474,8 +486,43 @@ describe('ensureToolPermitted', () => {
     } finally {
       clearWebOriginGrant(webOriginKey(url))
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
-      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    }
+  })
+
+  it('lets a paired client approve one web-origin request without saving the origin', async () => {
+    setPermissionGateForTests(null)
+    const url = new URL('https://paired-client.example/resource')
+    const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
+      await import('./web-origin-policy.ts')
+    const originalWebApproval = getSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    setApprovalHandler(async (request) => {
+      assert.equal(request.cause, 'web-origin')
+      assert.equal(supportsInteractiveClientApproval(request), true)
+      assert.equal(request.body, url.toString())
+      return { approved: true, remember: false, grantScope: 'once' }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'fetch_url', args: { url: url.toString() } }),
+        true,
+      )
+      assert.doesNotThrow(() => {
+        assertWebOriginAllowed(url, [])
+      })
+      assert.deepEqual(getSetting(WEB_ALLOWED_ORIGINS_SETTING, []), [])
+      clearWebOriginGrant(webOriginKey(url))
+      assert.throws(() => {
+        assertWebOriginAllowed(url, [])
+      })
+    } finally {
+      clearWebOriginGrant(webOriginKey(url))
+      setApprovalHandler(null)
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, originalWebApproval)
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })
 
@@ -517,6 +564,10 @@ describe('ensureToolPermitted', () => {
   it('prompts for mutating GitHub PR tools instead of auto-running them', async () => {
     setPermissionGateForTests(null)
     const writeTools = [
+      'git_push',
+      'gh_pr_merge',
+      'gh_pr_comment',
+      'gh_pr_resolve_review_thread',
       'gh_pr_approve',
       'gh_push',
       'gh_pr_create',
@@ -531,6 +582,10 @@ describe('ensureToolPermitted', () => {
         return { approved: false, remember: false }
       })
       try {
+        await runWithAgentRunReadonly(true, async () => {
+          assert.equal(await ensureToolPermitted({ toolName, args: { number: 1 } }), false)
+          assert.equal(prompted, false)
+        })
         // Denied at the prompt → the call must not proceed.
         assert.equal(
           await ensureToolPermitted({ toolName, args: { number: 1 } }),
@@ -544,9 +599,45 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('resolves an implicit publication target at the active turn boundary', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'copse-publication-target-'))
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], {
+      cwd: root,
+    })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.match(request.body, /Repository: acme\/widgets/)
+      assert.equal(request.bodyMarkdown, '## Complete description\n\nPublish exactly this.')
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await runWithToolAvailability({ git: true, gh: false, rg: false }, () =>
+          runWithWorkspaceRoot(root, () =>
+            ensureToolPermitted({
+              toolName: 'gh_pr_create',
+              args: {
+                title: 'Fix the parser',
+                body: '## Complete description\n\nPublish exactly this.',
+              },
+            }),
+          ),
+        ),
+        false,
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('prompts for every host GUI launch even with a stale allow override', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', {
+    await setSetting('toolPermissionOverrides', {
       [copseToolPermissionId('launch_gui_app')]: 'allow',
     })
     let prompts = 0
@@ -573,7 +664,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 1)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -679,6 +770,39 @@ describe('ensureToolPermitted', () => {
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
     }
   })
+
+  for (const toolName of [
+    'git_push',
+    'gh_pr_merge',
+    'gh_pr_comment',
+    'gh_pr_resolve_review_thread',
+  ]) {
+    it(`honours only the exact schedule grant for ${toolName} and retains explicit policy`, async () => {
+      setPermissionGateForTests(null)
+      seedAutomationSchedule([{ kind: 'copse-action', toolName }])
+      let prompts = 0
+      setApprovalHandler(async () => {
+        prompts++
+        return { approved: false, remember: false }
+      })
+      const check = (): Promise<boolean> => ensureToolPermitted({ toolName, args: { number: 1 } })
+      try {
+        assert.equal(await underAutomation(check), true)
+        assert.equal(prompts, 0)
+        assert.equal(await check(), false, 'ordinary threads do not inherit a schedule grant')
+        await setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'ask' })
+        assert.equal(await underAutomation(check), false)
+        assert.equal(prompts, 2)
+        await setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'block' })
+        assert.equal(await underAutomation(check), false)
+        assert.equal(prompts, 2, 'blocked actions never prompt')
+      } finally {
+        setApprovalHandler(null)
+        await setSetting('toolPermissionOverrides', {})
+        storageSet(AUTOMATIONS_STORAGE_KEY, [])
+      }
+    })
+  }
 
   it('rejects a renderer-spoofed automation claim that is not the recorded run', async () => {
     setPermissionGateForTests(null)
@@ -824,7 +948,7 @@ describe('ensureToolPermitted', () => {
       { kind: 'mcp-tool', toolName },
       { kind: 'copse-action', toolName: 'gh_pr_approve' },
     ])
-    setSetting('toolPermissionOverrides', {
+    await setSetting('toolPermissionOverrides', {
       [mcpId]: 'ask',
       [copseToolPermissionId('gh_pr_approve')]: 'ask',
     })
@@ -848,22 +972,65 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
     }
   })
 
-  it('asks for the selected web search origin and explains API-credit usage', async () => {
+  it('auto-allows the configured web search origin but still hard-denies when approvals are off', async () => {
     setPermissionGateForTests(null)
     await setSetting('webSearchProvider', 'tavily')
     setApiKey('tavily', 'fixture-key')
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    setApprovalHandler(async (request) => {
-      assert.equal(request.subject, 'https://api.tavily.com:443')
-      assert.equal(request.cause, 'web-origin')
-      assert.match(request.bodyAdvice ?? '', /Tavily.*paid API credits/)
+    const { clearWebOriginGrant } = await import('./web-origin-policy.ts')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      // Selecting Tavily and saving its key is consent: no web-origin prompt.
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        true,
+      )
+      assert.equal(prompted, 0)
+      // The real tool handler clears this per-call grant in its own `finally`
+      // (`webSearch()` in `web-search/provider.ts`) once the request completes;
+      // this test checks permission only, without running the handler, so it
+      // must clear the grant itself before the next call — otherwise this
+      // test's own prior grant would make the origin look "already allowed"
+      // and mask the hard deny below.
+      clearWebOriginGrant('https://api.tavily.com:443')
+      // A hard "no new web approvals" stop still applies regardless of consent.
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
+      await assert.rejects(
+        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        /Web search denied/,
+      )
+      assert.equal(prompted, 0)
+    } finally {
+      clearWebOriginGrant('https://api.tavily.com:443')
+      await setSetting('webSearchProvider', 'none')
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      deleteApiKey('tavily')
+      setApprovalHandler(null)
+    }
+  })
+
+  it('still asks every time when web_search has an explicit Always ask override', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'fixture-key')
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('web_search')]: 'ask' })
+    const { clearWebOriginGrant } = await import('./web-origin-policy.ts')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
       return { approved: false, remember: false }
     })
     try {
@@ -871,14 +1038,11 @@ describe('ensureToolPermitted', () => {
         await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
         false,
       )
-      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
-      await assert.rejects(
-        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
-        /Web search denied/,
-      )
+      assert.equal(prompted, 1)
     } finally {
+      clearWebOriginGrant('https://api.tavily.com:443')
       await setSetting('webSearchProvider', 'none')
-      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      await setSetting('toolPermissionOverrides', {})
       deleteApiKey('tavily')
       setApprovalHandler(null)
     }
@@ -907,61 +1071,6 @@ describe('ensureToolPermitted', () => {
     } finally {
       await setSetting('toolPermissionOverrides', {})
       setApprovalHandler(null)
-    }
-  })
-
-  it('auto-allows a direct Parallel Search request while its plugin is enabled', async () => {
-    setPermissionGateForTests(null)
-    // A fresh first-party seed enables every plugin, so `copse.parallel-search`
-    // declares the tool here (default-OFF is a plugin-service migration concern).
-    const registry = createFirstPartyPluginRegistry()
-    setDefaultPluginRegistry(registry)
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
-    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    let prompted = false
-    setApprovalHandler(async () => {
-      prompted = true
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
-        true,
-      )
-      assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-      setDefaultPluginRegistry(null)
-    }
-  })
-
-  it('prompts before sending a direct Parallel Search request while its plugin is disabled', async () => {
-    const registry = createFirstPartyPluginRegistry()
-    registry.disable(PARALLEL_SEARCH_PLUGIN_ID)
-    setDefaultPluginRegistry(registry)
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
-    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    let approvalBody = ''
-    let approvalAdvice = ''
-    let approvalCause: string | undefined
-    setApprovalHandler(async (request) => {
-      approvalBody = request.body
-      approvalAdvice = request.bodyAdvice ?? ''
-      approvalCause = request.cause
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
-        false,
-      )
-      assert.match(approvalBody, /api\.parallel\.ai/)
-      assert.equal(approvalCause, 'web-origin')
-      assert.match(approvalAdvice, /paid API credits/i)
-      assert.match(approvalAdvice, /Zero Data Retention/i)
-    } finally {
-      setApprovalHandler(null)
-      setDefaultPluginRegistry(null)
     }
   })
 
@@ -1170,7 +1279,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     clearGitRemotesCache()
     const restore = setWorkspaceRootForTest(root)
     setWorkspaceTrusted(root, true)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
     // This suite asserts the deterministic auto-approval assessor, not the
     // optional LM Studio scope classifier (which only adds connect timeouts here).
     await setSetting('safetyClassifierEnabled', false)
@@ -1180,15 +1289,18 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       return Promise.resolve({ approved: false, remember: false })
     })
     try {
-      const permitted = await ensureShellCommandPermitted(command, {
-        sandboxEnabled: opts.sandboxEnabled ?? false,
-        autoRun: true,
-        executionRoot: root,
-      })
+      // The gate runs inside a run that names its root (#3958).
+      const permitted = await runWithWorkspaceRoot(root, () =>
+        ensureShellCommandPermitted(command, {
+          sandboxEnabled: opts.sandboxEnabled ?? false,
+          autoRun: true,
+          executionRoot: root,
+        }),
+      )
       return { permitted, prompted }
     } finally {
       setApprovalHandler(null)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       await setSetting('safetyClassifierEnabled', false)
       setWorkspaceTrusted(root, false)
       restore()
@@ -1286,7 +1398,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     writeFileSync(join(root, '.git', 'config'), '[remote "origin"]\n\turl = https://e.com/x.git\n')
     clearGitRemotesCache()
     const restore = setWorkspaceRootForTest(root)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
     let prompted = false
     setApprovalHandler(() => {
       prompted = true
@@ -1301,7 +1413,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       assert.equal(prompted, true)
     } finally {
       setApprovalHandler(null)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       restore()
       clearGitRemotesCache()
       rmSync(root, { recursive: true, force: true })
@@ -1315,7 +1427,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-gate-deny-'))
     const restore = setWorkspaceRootForTest(root)
     setWorkspaceTrusted(root, true)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
     try {
       // `rm -rf` is destructive, so it is never a recognised shape either way.
       const permitted = await ensureShellCommandPermitted('rm -rf /', {
@@ -1325,7 +1437,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       })
       assert.equal(permitted, false)
     } finally {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       setWorkspaceTrusted(root, false)
       restore()
       rmSync(root, { recursive: true, force: true })
@@ -1680,7 +1792,20 @@ describe('run_background permission', () => {
       assert.equal(await start('/tmp/port-binding-other-project', 'third'), true)
       assert.equal(portPrompts, 2, 'another project must obtain its own consent')
       // A shared checkout uses the same project grant as its worktrees.
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      assert.equal(
+        await runWithThreadExecutionContext(
+          {
+            projectId: '/tmp/port-binding-project',
+            projectRoot: '/tmp/port-binding-project',
+            threadId: 'shared',
+            root: '/tmp/port-binding-project',
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => ensureToolPermitted({ toolName: 'run_background', args }),
+        ),
+        true,
+      )
       assert.equal(portPrompts, 2)
     } finally {
       await setSetting('portBindingAllowedRoots', [])
@@ -1727,7 +1852,12 @@ describe('run_background permission', () => {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
       // Plugin enabled → the relaxation is declared → the grant is offered and, on
       // approval, the start proceeds.
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
+      const inRun = <T>(fn: () => Promise<T>): Promise<T> =>
+        runWithWorkspaceRoot('/tmp/loopback-gated-project', fn)
+      assert.equal(
+        await inRun(() => ensureToolPermitted({ toolName: 'run_background', args })),
+        true,
+      )
 
       // Disable the plugin → `isPermissionDeclared('loopback-bind')` flips false in
       // the same flag flip, so the gate refuses the relaxation (a thrown error
@@ -1736,10 +1866,12 @@ describe('run_background permission', () => {
       registry.disable(BACKGROUND_TASKS_PLUGIN_ID)
       await assert.rejects(
         () =>
-          ensureToolPermitted({
-            toolName: 'run_background',
-            args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
-          }),
+          inRun(() =>
+            ensureToolPermitted({
+              toolName: 'run_background',
+              args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
+            }),
+          ),
         /copse\.background-tasks|loopback|disabled/i,
       )
     } finally {
@@ -1765,7 +1897,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.equal(prompted, false)
@@ -1785,7 +1921,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.match(approvalBody, /full user account, filesystem, and network/i)
@@ -1807,6 +1947,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: false,
@@ -1831,6 +1972,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1854,6 +1996,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1876,6 +2019,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1893,7 +2037,11 @@ describe('ensureTerminalPermitted', () => {
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         false,
       )
     } finally {
@@ -1913,7 +2061,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: true }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: true,
+        }),
         true,
       )
       assert.match(approvalTitle, /remote terminal/i)
@@ -1924,10 +2076,29 @@ describe('ensureTerminalPermitted', () => {
     }
   })
 
-  it('throws when no workspace is open', async () => {
+  it('throws when the requesting project does not resolve, whatever the window workspace', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    try {
+      await assert.rejects(
+        () => ensureTerminalPermitted({ projectRoot: null }),
+        /No workspace open/,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('judges the requesting project, not the process-global workspace (#3958)', async () => {
     const restore = setWorkspaceRootForTest(null)
     try {
-      await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
+      assert.equal(
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: false,
+        }),
+        true,
+      )
     } finally {
       restore()
     }
@@ -2224,6 +2395,162 @@ describe('turn-tree shell replay leases', () => {
       setApprovalHandler(null)
     }
   })
+  it('offers a verified sandbox block the outside replay lease and honours it', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ lease?: boolean; label?: string; subject?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        ...(request.allowTurnTreeLease === undefined ? {} : { lease: request.allowTurnTreeLease }),
+        ...(request.turnTreeLeaseLabel === undefined ? {} : { label: request.turnTreeLeaseLabel }),
+        ...(request.turnTreeLeaseSubject === undefined
+          ? {}
+          : { subject: request.turnTreeLeaseSubject }),
+      })
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = 'node scripts/run-demo.mts'
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+      })
+      assert.deepEqual(requests, [
+        {
+          lease: true,
+          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          subject: command,
+        },
+      ])
+      // Another turn tree, or a changed command, asks again.
+      await runInTree('tree-2', () => promptUnsandboxedShell(command, ['sandbox violation']))
+      await runInTree('tree-1', () =>
+        promptUnsandboxedShell(`${command} --headed`, ['sandbox violation']),
+      )
+      assert.equal(requests.length, 3)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('leases a whole multi-segment command line from a verified sandbox block', async () => {
+    shellReplayLeaseStore.clear()
+    const demo =
+      'C=.cache/demo; export DEMO_BINARY="$PWD/$C/chrome"; node scripts/run-demo.mts > $TMPDIR/demo.log 2>&1; echo exit=$?'
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowTurnTreeLease, true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await promptUnsandboxedShell(demo, ['sandbox violation']), true)
+        assert.equal(await promptUnsandboxedShell(demo, ['sandbox violation']), true)
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers or spends a lease when the retry must be answered interactively', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = 'node scripts/run-demo.mts'
+    try {
+      await runInTree('tree-1', async () => {
+        // A lease already granted for this exact command...
+        await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+          executionRoot: root,
+        })
+        // ...does not answer a block matched from command output.
+        for (let i = 0; i < 2; i++) {
+          assert.equal(
+            await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
+              requireInteractiveApproval: true,
+            }),
+            true,
+          )
+          assert.equal(
+            await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+              executionRoot: root,
+              requireInteractiveApproval: true,
+            }),
+            true,
+          )
+        }
+        await setSetting('toolPermissionOverrides', { 'copse:run_shell': 'ask' })
+        assert.equal(
+          await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+            executionRoot: root,
+          }),
+          true,
+        )
+      })
+      assert.deepEqual(offered, [true, false, false, false, false, false])
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('spends an agent-requested escape lease on a later verified block', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = './scripts/e2e.sh'
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(
+          await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+            executionRoot: root,
+          }),
+          true,
+        )
+        // The agent drops `expects_sandbox_block`; the verified block still replays.
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers a verified sandbox block a lease for network, deletion or installs', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        for (const command of [
+          'gh api repos/o/r',
+          'rm -rf x && node scripts/run-demo.mts',
+          'npm install && node scripts/run-demo.mts',
+        ]) {
+          await promptUnsandboxedShell(command, ['sandbox violation'])
+          await promptUnsandboxedShell(command, ['sandbox violation'])
+        }
+      })
+      assert.deepEqual(offered, [false, false, false, false, false, false])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
 })
 
 describe('decideShellPermission', () => {
@@ -2504,6 +2831,37 @@ describe('shell prompt execution boundary', () => {
 })
 
 describe('formatGithubWritePrompt', () => {
+  it('renders the push branch, origin, and fast-forward restriction without JSON', () => {
+    const prompt = formatGithubWritePrompt('git_push', { branch: 'fix/parser' })
+    assert.equal(prompt.title, 'Push branch to origin?')
+    assert.equal(prompt.approveLabel, 'Push branch')
+    assert.equal(prompt.body, 'Branch: fix/parser\nRemote: origin\nPush mode: Fast-forward only')
+    assert.match(prompt.bodyAdvice, /without replacing existing remote history/)
+    assert.equal(prompt.bodyFooter, 'Approval covers this push once.')
+  })
+  it('exposes the full remote commit and history replacement for a leased push', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    const prompt = formatGithubWritePrompt('git_push', {
+      branch: 'fix/parser',
+      expected_remote_sha: sha,
+    })
+    assert.equal(
+      prompt.body,
+      `Branch: fix/parser\nRemote: origin\nPush mode: Force with lease\nExpected remote commit: ${sha}`,
+    )
+    assert.match(prompt.bodyAdvice, /can replace remote history only if/)
+  })
+  it('keeps unexpected or malformed push arguments visible', () => {
+    for (const args of [
+      { branch: 'fix/parser', extra: true },
+      { branch: 'fix/parser', expected_remote_sha: 123 },
+      { branch: 'fix/parser', expected_remote_sha: '' },
+      { branch: '' },
+      {},
+    ]) {
+      assert.equal(formatGithubWritePrompt('git_push', args).body, JSON.stringify(args, null, 2))
+    }
+  })
   it('names concrete effects while keeping the PR target visible', () => {
     const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
     assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')
@@ -2525,6 +2883,9 @@ describe('formatGithubWritePrompt', () => {
       /CI resources or secrets/,
     )
   })
+  it('labels the thread-branch push button by its action', () => {
+    assert.equal(formatGithubWritePrompt('gh_push', {}).approveLabel, 'Push branch')
+  })
   it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
@@ -2539,20 +2900,36 @@ describe('formatGithubWritePrompt', () => {
       owner: 'acme',
       repo: 'widgets',
     })
-    for (const value of [
-      'acme/widgets',
-      'Fix the parser',
-      'Review all changes',
-      'fix/parser',
-      'develop',
-      'Draft: yes',
-    ])
+    for (const value of ['acme/widgets', 'Fix the parser', 'fix/parser', 'develop', 'Draft: yes'])
       assert.ok(prompt.body.includes(value))
+    assert.equal(prompt.bodyMarkdown, 'Review all changes')
     assert.match(prompt.bodyAdvice, /people with access/)
     assert.match(prompt.bodyFooter, /once/)
     const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
     assert.match(implicit.body, /current branch \(will be pushed\)/)
     assert.match(implicit.body, /repository default branch/)
+  })
+  it('fills only omitted target halves using the repository resolved by main', () => {
+    const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' }, 'acme/widgets')
+    assert.match(implicit.body, /Repository: acme\/widgets/)
+    const otherOwner = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', owner: 'another-owner' },
+      'acme/widgets',
+    )
+    assert.match(otherOwner.body, /Repository: another-owner\/widgets/)
+    const otherRepo = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', repo: 'another-repo' },
+      'acme/widgets',
+    )
+    assert.match(otherRepo.body, /Repository: acme\/another-repo/)
+    const explicit = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', owner: 'other', repo: 'target' },
+      'acme/widgets',
+    )
+    assert.match(explicit.body, /Repository: other\/target/)
   })
 })
 
@@ -2912,7 +3289,8 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
     try {
-      return await fn(root, readDir)
+      // The gate runs inside a run that names its root (#3958).
+      return await runWithWorkspaceRoot(root, () => fn(root, readDir))
     } finally {
       // Decision recording is deliberately fire-and-forget. Drain it while the
       // throwaway store is still selected so an async physical append cannot
@@ -3119,12 +3497,26 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root, readDir) => {
-      const granted = await runWithActiveRunIdentity('thread-audit', () =>
+      // A turn of the logged project: the covered read is recorded on the
+      // turn's own project.
+      const inTurn = <T>(fn: () => Promise<T>): Promise<T> =>
+        threadExecutionContextStorage.run(
+          {
+            projectId: 'proj-read-outside',
+            threadId: 'thread-audit',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => runWithActiveRunIdentity('thread-audit', fn),
+        )
+      const granted = await inTurn(() =>
         runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
       assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
-      await runWithActiveRunIdentity('thread-audit', () =>
+      await inTurn(() =>
         runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
       )
 
@@ -3163,9 +3555,23 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  /** A turn of the logged project: the approval is recorded on the turn's own project. */
+  const inLoggedTurn = <T>(threadId: string, root: string, fn: () => Promise<T>): Promise<T> =>
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'proj-read-outside',
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, fn),
+    )
+
   it('records a one-command approval as a decision that granted nothing', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-once', () =>
+      await inLoggedTurn('thread-audit-once', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       const [event] = await recordedDecisions()
@@ -3177,7 +3583,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   it('records a refusal to widen read access', async () => {
     await withRoot(async (root) => {
-      await runWithActiveRunIdentity('thread-audit-denied', () =>
+      await inLoggedTurn('thread-audit-denied', root, () =>
         runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       const [event] = await recordedDecisions()
@@ -3297,8 +3703,8 @@ describe('browser network approvals', () => {
       branch: null,
     }
     const id = copseToolPermissionId('browser_navigate')
-    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
@@ -3318,8 +3724,8 @@ describe('browser network approvals', () => {
       assert.equal(prompts, 0)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
-      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })
 

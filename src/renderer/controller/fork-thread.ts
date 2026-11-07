@@ -63,7 +63,6 @@ export async function forkThread(
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
 
   const projectId = store.getState().activeProjectId
   if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false }

@@ -1,0 +1,238 @@
+diff --git a/build/mcp/tools/device/build_device.js b/build/mcp/tools/device/build_device.js
+--- a/build/mcp/tools/device/build_device.js
++++ b/build/mcp/tools/device/build_device.js
+@@ -22,6 +22,7 @@
+ import { filterTestProductsPathArgs } from "../../../utils/test-source.js";
+ import {
+   createDefaultTestProductsPath,
++  withTestProductsExtension,
+   findXctestrunPaths,
+   markTestProductsPathCompleted
+ } from "../../../utils/test-products-path.js";
+@@ -29,7 +30,7 @@
+ function prepareBuildDeviceExecution(params) {
+   const buildForTesting = params.buildForTesting ?? false;
+   const isManagedTestProductsPath = buildForTesting && params.testProductsPath === void 0;
+-  const testProductsPath = buildForTesting ? resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_device") : void 0;
++  const testProductsPath = buildForTesting ? withTestProductsExtension(resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_device")) : void 0;
+   const sharedBuildParams = testProductsPath ? {
+     ...params,
+     extraArgs: [
+diff --git a/build/mcp/tools/macos/build_macos.js b/build/mcp/tools/macos/build_macos.js
+--- a/build/mcp/tools/macos/build_macos.js
++++ b/build/mcp/tools/macos/build_macos.js
+@@ -24,6 +24,7 @@
+ import { filterTestProductsPathArgs } from "../../../utils/test-source.js";
+ import {
+   createDefaultTestProductsPath,
++  withTestProductsExtension,
+   findXctestrunPaths,
+   markTestProductsPathCompleted
+ } from "../../../utils/test-products-path.js";
+@@ -31,7 +32,7 @@
+ function prepareBuildMacOSExecution(params) {
+   const buildForTesting = params.buildForTesting ?? false;
+   const isManagedTestProductsPath = buildForTesting && params.testProductsPath === void 0;
+-  const testProductsPath = buildForTesting ? resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_macos") : void 0;
++  const testProductsPath = buildForTesting ? withTestProductsExtension(resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_macos")) : void 0;
+   const sharedBuildParams = testProductsPath ? {
+     ...params,
+     extraArgs: [
+diff --git a/build/mcp/tools/session-management/session_set_defaults.js b/build/mcp/tools/session-management/session_set_defaults.js
+--- a/build/mcp/tools/session-management/session_set_defaults.js
++++ b/build/mcp/tools/session-management/session_set_defaults.js
+@@ -16,7 +16,7 @@
+ import { toErrorMessage } from "../../../utils/errors.js";
+ const schemaObj = sessionDefaultsSchema.extend({
+   profile: z.string().min(1).optional().describe("Set defaults for this named profile and make it active for the current session."),
+-  createIfNotExists: z.boolean().optional().default(false).describe("Create the named profile if it does not exist. Defaults to false."),
++  createIfNotExists: z.boolean().optional().default(false).describe("Create the named session-defaults profile only; requires profile. Does not create Simulator devices. Defaults to false."),
+   persist: z.boolean().optional().describe("Persist provided defaults to .xcodebuildmcp/config.yaml")
+ });
+ function createSessionDefaultsProfile(defaults) {
+@@ -67,6 +67,11 @@
+     try {
+       let activeProfile = sessionStore.getActiveProfile();
+       const { persist, profile: rawProfile, createIfNotExists = false, ...rawParams } = params;
++      if (createIfNotExists && rawProfile === void 0) {
++        return createSessionDefaultsResult(
++          "createIfNotExists requires a named session-defaults profile; it does not create a Simulator. Create a Simulator separately with xcrun simctl create, then set simulatorId."
++        );
++      }
+       if (rawProfile !== void 0) {
+         const profile = rawProfile.trim();
+         if (profile.length === 0) {
+diff --git a/build/mcp/tools/simulator/build_sim.js b/build/mcp/tools/simulator/build_sim.js
+--- a/build/mcp/tools/simulator/build_sim.js
++++ b/build/mcp/tools/simulator/build_sim.js
+@@ -27,6 +27,7 @@
+ import { filterTestProductsPathArgs } from "../../../utils/test-source.js";
+ import {
+   createDefaultTestProductsPath,
++  withTestProductsExtension,
+   findXctestrunPaths,
+   markTestProductsPathCompleted
+ } from "../../../utils/test-products-path.js";
+@@ -76,7 +77,7 @@
+   const platformName = detectedPlatform.replace(" Simulator", "");
+   const buildForTesting = params.buildForTesting ?? false;
+   const isManagedTestProductsPath = buildForTesting && params.testProductsPath === void 0;
+-  const testProductsPath = buildForTesting ? resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_sim") : void 0;
++  const testProductsPath = buildForTesting ? withTestProductsExtension(resolvePathFromCwd(params.testProductsPath) ?? createDefaultTestProductsPath("build_sim")) : void 0;
+   const sharedBuildParams = testProductsPath ? {
+     ...params,
+     configuration,
+diff --git a/build/utils/command.js b/build/utils/command.js
+--- a/build/utils/command.js
++++ b/build/utils/command.js
+@@ -1,3 +1,4 @@
++import { requestSignalStorage, bindRequestProcess } from "./request-cancellation.js";
+ import { spawn } from "child_process";
+ import { createWriteStream, existsSync } from "fs";
+ import * as fsPromises from "fs/promises";
+@@ -6,6 +7,8 @@
+ import { transcriptEmitterStorage } from "./transcript-context.js";
+ import { shellEscapeArg } from "./shell-escape.js";
+ async function defaultExecutor(command, logPrefix, useShell = false, opts, detached = false) {
++  const signal = requestSignalStorage.getStore();
++  signal?.throwIfAborted();
+   let executable = command[0];
+   let args = command.slice(1);
+   if (useShell) {
+@@ -29,7 +32,8 @@
+     const spawnOpts = {
+       stdio: ["ignore", "pipe", "pipe"],
+       env: opts?.env ? { ...process.env, ...opts.env } : process.env,
+-      cwd: opts?.cwd
++      cwd: opts?.cwd,
++      detached: Boolean(signal) && process.platform !== "win32"
+     };
+     log("debug", `defaultExecutor PATH: ${process.env.PATH ?? ""}`);
+     const logSpawnError = (err) => {
+@@ -45,6 +49,7 @@
+       log("error", `Spawn error details: ${JSON.stringify(errorDetails, null, 2)}`);
+     };
+     const childProcess = spawn(executable, args, spawnOpts);
++    bindRequestProcess(childProcess, signal);
+     let stdout = "";
+     let stderr = "";
+     const streamClosers = [];
+diff --git a/build/utils/execution/interactive-process.js b/build/utils/execution/interactive-process.js
+--- a/build/utils/execution/interactive-process.js
++++ b/build/utils/execution/interactive-process.js
+@@ -1,3 +1,4 @@
++import { requestSignalStorage, bindRequestProcess } from "../request-cancellation.js";
+ import { spawn } from "node:child_process";
+ class DefaultInteractiveProcess {
+   process;
+@@ -34,12 +35,16 @@
+   if (command.length === 0) {
+     throw new Error("Command array must not be empty");
+   }
++  const signal = requestSignalStorage.getStore();
++  signal?.throwIfAborted();
+   const [executable, ...args] = command;
+   const childProcess = spawn(executable, args, {
+     stdio: ["pipe", "pipe", "pipe"],
+     env: { ...process.env, ...opts?.env ?? {} },
+-    cwd: opts?.cwd
++    cwd: opts?.cwd,
++    detached: Boolean(signal) && process.platform !== "win32"
+   });
++  bindRequestProcess(childProcess, signal);
+   return new DefaultInteractiveProcess(childProcess);
+ }
+ let _testInteractiveSpawnerOverride = null;
+diff --git a/build/utils/renderers/domain-result-text.js b/build/utils/renderers/domain-result-text.js
+--- a/build/utils/renderers/domain-result-text.js
++++ b/build/utils/renderers/domain-result-text.js
+@@ -675,6 +675,12 @@
+ }
+ function createSessionDefaultsItems(rawResult) {
+   const result = rawResult;
++  if (result.didError) {
++    return [
++      createHeader("Session Defaults"),
++      createStatus("error", result.error ?? "Failed to update session defaults.")
++    ];
++  }
+   const mode = inferSessionDefaultsMode(result);
+   const activeProfile = result.profiles[result.currentProfile] ?? result.profiles["(default)"] ?? result.profiles[Object.keys(result.profiles)[0]];
+   if (mode === "show") {
+diff --git a/build/utils/request-cancellation.js b/build/utils/request-cancellation.js
+new file mode 100644
+--- /dev/null
++++ b/build/utils/request-cancellation.js
+@@ -0,0 +1,21 @@
++import { AsyncLocalStorage } from "node:async_hooks";
++export const requestSignalStorage = new AsyncLocalStorage();
++export function bindRequestProcess(child, signal) {
++  if (!signal) return;
++  const terminate = (killSignal) => {
++    try {
++      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, killSignal);
++      else child.kill(killSignal);
++    } catch (error) {
++      if (error.code !== "ESRCH") throw error;
++    }
++  };
++  const abort = () => {
++    terminate("SIGTERM");
++    const timer = setTimeout(() => terminate("SIGKILL"), 500);
++    timer.unref();
++  };
++  signal.addEventListener("abort", abort, { once: true });
++  if (signal.aborted) abort();
++  child.once("close", () => signal.removeEventListener("abort", abort));
++}
+diff --git a/build/utils/test-products-path.js b/build/utils/test-products-path.js
+--- a/build/utils/test-products-path.js
++++ b/build/utils/test-products-path.js
+@@ -27,6 +27,9 @@
+ }
+ function isTestProductsCompletionMarkerTempName(name) {
+   return name.includes(`${TEST_PRODUCTS_COMPLETION_MARKER_SUFFIX}.`) && name.endsWith(".tmp");
++}
++function withTestProductsExtension(outputPath) {
++  return outputPath.endsWith(".xctestproducts") ? outputPath : `${outputPath}.xctestproducts`;
+ }
+ function createDefaultTestProductsPath(toolName) {
+   const testProductsDir = getWorkspaceFilesystemLayout(resolveWorkspaceKey()).testProducts;
+@@ -101,6 +104,7 @@
+ export {
+   TEST_PRODUCTS_COMPLETION_MARKER_SUFFIX,
+   createDefaultTestProductsPath,
++  withTestProductsExtension,
+   findXctestrunPaths,
+   getManagedTestProductsOwnerPid,
+   getTestProductsCompletionMarkerPath,
+diff --git a/build/utils/tool-registry.js b/build/utils/tool-registry.js
+--- a/build/utils/tool-registry.js
++++ b/build/utils/tool-registry.js
+@@ -1,3 +1,4 @@
++import { requestSignalStorage } from "./request-cancellation.js";
+ import {} from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { server } from "../server/server-state.js";
+ import { log } from "./logger.js";
+@@ -237,7 +238,7 @@
+       ...outputSchema ? { outputSchema } : {},
+       annotations: toolManifest.annotations
+     },
+-    (args) => invokeRegisteredTool(toolName, toolModule, args)
++    (args, extra) => requestSignalStorage.run(extra.signal, () => invokeRegisteredTool(toolName, toolModule, args))
+   );
+   registryState.tools.set(toolName, registeredTool);
+ }
+diff --git a/build/utils/typed-tool-factory.js b/build/utils/typed-tool-factory.js
+--- a/build/utils/typed-tool-factory.js
++++ b/build/utils/typed-tool-factory.js
+@@ -139,7 +139,8 @@
+       if (sanitizedArgs.deviceId === void 0 && (sanitizedArgs.buildForTesting === true || clearSessionDeviceIdUnlessPrepared)) {
+         delete sessionDefaults.deviceId;
+       }
+-      const hasExplicitPreparedSource = sanitizedArgs.testProductsPath !== void 0 || sanitizedArgs.xctestrunPath !== void 0;
++      // During build-for-testing, testProductsPath is an output, not a prepared input.
++      const hasExplicitPreparedSource = sanitizedArgs.buildForTesting !== true && (sanitizedArgs.testProductsPath !== void 0 || sanitizedArgs.xctestrunPath !== void 0);
+       if (hasExplicitPreparedSource) {
+         for (const key of [
+           "projectPath",

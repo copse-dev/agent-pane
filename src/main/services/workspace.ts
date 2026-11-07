@@ -15,9 +15,17 @@ const PROJECTS_KEY = 'projects'
 const ACTIVE_PROJECT_KEY = 'activeProjectId'
 const LINKED_WORKTREE_REGISTRATION_TIMEOUT_MS = 2_000
 
-const storedWorkspaceRoot = storageGet(WORKSPACE_KEY)
-let workspaceRoot: string | null =
-  typeof storedWorkspaceRoot === 'string' ? storedWorkspaceRoot : null
+// `undefined` until first needed: the persisted root is read on first use rather
+// than when this module loads, so importing it does not touch storage.
+let workspaceRoot: string | null | undefined
+
+function processWorkspaceRoot(): string | null {
+  if (workspaceRoot === undefined) {
+    const stored = storageGet(WORKSPACE_KEY)
+    workspaceRoot = typeof stored === 'string' ? stored : null
+  }
+  return workspaceRoot
+}
 
 const explicitWorkspace = new AsyncLocalStorage<{ readonly root: string }>()
 
@@ -371,8 +379,17 @@ export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRootsReady = Promise.resolve()
 }
 
+/**
+ * The root a headless run scoped with {@link runWithWorkspaceRoot}, or null
+ * outside one. Never the process-global workspace, so a caller can tell "this
+ * run names a root" apart from "some window has a project open" (#3958).
+ */
+export function getExplicitWorkspaceRoot(): string | null {
+  return explicitWorkspace.getStore()?.root ?? null
+}
+
 export function getWorkspaceRoot(): string | null {
-  return explicitWorkspace.getStore()?.root ?? workspaceRoot
+  return explicitWorkspace.getStore()?.root ?? processWorkspaceRoot()
 }
 
 /**

@@ -77,6 +77,47 @@ describe('Side chats beside the main thread', () => {
     await saveElementScreenshot('#body', 'side-chat-beside-main-thread.png')
   })
 
+  it("sets a side-chat reply's markdown in the main transcript's prose type", async () => {
+    // The reply's markdown renders into the bubble's text node, as in the main conversation.
+    const reply = $('.side-chat-msg.is-assistant .side-chat-msg-text')
+    await reply.waitForDisplayed({ timeout: 10_000 })
+    await expect(reply).toHaveElementClass('streaming-markdown')
+    await expect(reply.$$('ul > li')).toBeElementsArrayOfSize(2)
+    const type = await browser.execute(() => {
+      const side = document.querySelector('.side-chat-msg.is-assistant .side-chat-msg-text')
+      const main = document.querySelector(
+        '[data-message-id="sc-assistant-1"] .message-body > .message-text',
+      )
+      const items = side?.querySelectorAll('ul > li')
+      const list = side?.querySelector('ul')
+      const bold = side?.querySelector('li strong')
+      if (!side || !main || !items?.[1] || !list || !bold) throw new Error('reply markdown missing')
+      const pick = (
+        node: Element,
+      ): { fontFamily: string; fontSize: string; lineHeight: string; color: string } => {
+        const style = getComputedStyle(node)
+        return {
+          fontFamily: style.fontFamily,
+          fontSize: style.fontSize,
+          lineHeight: style.lineHeight,
+          color: style.color,
+        }
+      }
+      return {
+        side: pick(side),
+        main: pick(main),
+        boldWeight: getComputedStyle(bold).fontWeight,
+        itemGap: getComputedStyle(items[1]).marginTop,
+        listIndent: getComputedStyle(list).paddingInlineStart,
+      }
+    })
+    expect(type.side).toEqual(type.main)
+    expect(type.boldWeight).toBe('600')
+    expect(Number.parseFloat(type.itemGap)).toBeGreaterThan(0)
+    expect(Number.parseFloat(type.listIndent)).toBeGreaterThan(0)
+    await saveElementScreenshot('.side-chat-body-host', 'side-chat-reply-prose.png')
+  })
+
   it('asks a question in the side chat and gets the reply there, not in the main thread', async () => {
     const mainMessages = await $$('#conversation .msg-user').length
     await $('.side-chat-input').setValue('Is waitForDisplayed enough on its own?')

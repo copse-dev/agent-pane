@@ -89,6 +89,14 @@ before the checkout IPC needs it. A failed checkout leaves an empty thread
 — no user message, no dispatch, and the offer still standing on the card that
 made it.
 
+The new thread starts in the background: the user stays on the thread that
+offered it. So its approval prompts surface over that offering thread too, named
+by an origin line (_From the thread “…”_), as a side chat's do over its parent.
+On any other thread they wait behind the bell on the proposed thread's own
+sidebar row. Left there unseen, a coding agent's bridged tool call outlives its
+MCP client's timeout (300 s for Codex), and the agent gives up before the user
+ever sees the question.
+
 ### When isolation is not available
 
 The repository has the last word. Current main fails an explicit `worktree`

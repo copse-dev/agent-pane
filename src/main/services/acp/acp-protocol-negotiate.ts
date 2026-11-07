@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { PROTOCOL_VERSION as V2_PROTOCOL_VERSION } from '@agentclientprotocol/sdk/experimental/v2'
 import { isRecord } from '../../../shared/unknown-value.mts'
 

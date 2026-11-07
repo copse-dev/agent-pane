@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getSetting } from '../services/storage/settings.ts'
 import { getSimulatorDesktopService } from '../services/simulator-desktop/simulator-desktop-service.ts'
-import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
+import { showSimulatorDesktopWithFrame } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { DESKTOP_VIEWER_SETTING_LOCATION } from '@shared/desktop-viewer.ts'
 
@@ -18,7 +18,7 @@ export const openSimulatorDesktopTool = defineTool({
       .optional()
       .describe('Booted Simulator UDID. May be omitted when exactly one Simulator is booted.'),
   }),
-  async execute({ udid }) {
+  async execute({ udid }, signal) {
     if (!getSetting<boolean>('vncEnabled', false)) {
       throw new Error(
         'The Desktop viewer is off, so Copse cannot show the Simulator. Ask the user to turn on ' +
@@ -37,7 +37,7 @@ export const openSimulatorDesktopTool = defineTool({
         `UDIDs:\n${devices.map((candidate) => `${candidate.name}: ${candidate.udid}`).join('\n')}`
       )
     }
-    showSimulatorDesktop(device.udid)
+    await showSimulatorDesktopWithFrame(device.udid, signal)
     return `Asked the Desktop panel to connect to ${device.name} (${device.runtime}).`
   },
 })

@@ -1,7 +1,11 @@
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedContextWheelFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedContextWheelFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // While a run is in flight the caller passes `breakdown: null` on purpose — the
@@ -15,7 +19,7 @@ describe('context wheel hover while running', () => {
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
     resetUserData()
-    seedContextWheelFixture(process.cwd())
+    seedContextWheelFixture(seedStableWorkspace())
     await browser.reloadSession()
   })
 

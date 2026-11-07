@@ -13,6 +13,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { closeIcon, playIcon, refreshIcon } from '../dom/icons.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const isBusy = (operation: AppRunOperation): boolean =>
   !['running', 'succeeded', 'failed', 'cancelled', 'stopped'].includes(operation.stage)
@@ -512,10 +513,13 @@ export function openAppRunDialog(
     ),
     panel.element,
   )
-  const unsubscribe = store.on('workspace_changed', close)
-  const unsubscribeThread = store.on('threads_changed', () => {
-    if (store.getState().activeThreadId !== (owner.threadId ?? null)) close()
-  })
+  const unsubscribe = selectActiveWorkspace(store, close)
+  const unsubscribeThread = store.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close()
+    },
+  )
   dialog.addEventListener(
     'close',
     () => {

@@ -89,4 +89,21 @@ describe('agentActivityLabel', () => {
     const t = thread([{ id: 'r1', name: 'run_shell', args: {}, status: 'running', result: null }])
     assert.equal(agentActivityLabel(t, false), 'Running command…')
   })
+
+  it('says a command is waiting or starting until it is actually running', () => {
+    const shell = (state: 'awaiting_approval' | 'starting' | 'running'): Thread =>
+      thread([
+        {
+          id: 'r1',
+          name: 'run_shell',
+          args: {},
+          status: 'running',
+          result: null,
+          commandPhase: { state, since: 1, launched: state === 'running' },
+        },
+      ])
+    assert.equal(agentActivityLabel(shell('awaiting_approval'), false), 'Waiting for approval…')
+    assert.equal(agentActivityLabel(shell('starting'), false), 'Starting command…')
+    assert.equal(agentActivityLabel(shell('running'), false), 'Running command…')
+  })
 })

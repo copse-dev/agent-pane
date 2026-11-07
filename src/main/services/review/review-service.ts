@@ -105,8 +105,11 @@ export interface ReviewHostServices {
   /** Build the provider for a model; `threadId` scopes its prompt cache. */
   readonly providerFor: (model: string, threadId: string) => Promise<LLMProvider>
   readonly isBillable: (model: string) => boolean
-  /** Expand dynamic selectors to concrete, mutually distinct model ids. */
-  readonly resolveDistinctModels: (values: readonly string[]) => Promise<string[]>
+  /** Resolve callable routes, preferring different model identities when available. */
+  readonly resolveDistinctModels: (
+    values: readonly string[],
+    signal: AbortSignal,
+  ) => Promise<string[]>
   /** Human-readable cost for the run's usage, or `''` when unknown. */
   readonly estimateCost: (byModel: Record<string, ModelUsage>) => string
   readonly requestSpendApproval: (
@@ -126,7 +129,7 @@ let appServices: Promise<ReviewHostServices> | null = null
 function appHostServices(): Promise<ReviewHostServices> {
   appServices ??= Promise.all([
     import('../providers/provider-selection.ts'),
-    import('../providers/dynamic-model.ts'),
+    import('../providers/workflow-models.ts'),
     import('../providers/model-pricing-store.ts'),
     import('../approval.ts'),
     import('./container-backend.ts'),
@@ -135,8 +138,17 @@ function appHostServices(): Promise<ReviewHostServices> {
     providerFor: (model, threadId): Promise<LLMProvider> =>
       providers.buildProvider(model, threadId),
     isBillable: (model): boolean => providers.isBillableModel(model),
-    resolveDistinctModels: (values): Promise<string[]> =>
-      dynamic.resolveDistinctDynamicModelIds(values),
+    resolveDistinctModels: (values, signal): Promise<string[]> =>
+      dynamic.resolveWorkflowReviewerModels(values, signal).then((panel) => {
+        if (panel.diversityNotice) console.warn(`[review] ${panel.diversityNotice}`)
+        for (const member of panel.members) {
+          for (const rejected of member.fallback)
+            console.warn(
+              `[review] ${rejected.selection}: ${rejected.reason}; using ${member.model}`,
+            )
+        }
+        return panel.members.map((member) => member.model)
+      }),
     estimateCost: (byModel): string => estimateUsageCost(byModel, pricing.resolveModelPricing()),
     requestSpendApproval: (req, signal): Promise<{ approved: boolean; remember: boolean }> =>
       approval.requestApproval(
@@ -179,25 +191,36 @@ function defaultReadSetting(key: string): unknown {
   return readPluginSettingValue(REVIEW_PLUGIN_ID, key)
 }
 
+/** The reviewer and challenger selections, from settings then defaults, before expansion. */
+function reviewModelSelections(
+  chatModel: string,
+  readSetting: (key: string) => unknown,
+): ReviewModels {
+  return {
+    reviewer:
+      settingString(readSetting, REVIEWER_MODEL_SETTING_ID) ||
+      inheritableChatModel(chatModel) ||
+      BEST_VALUE_MODEL_SELECTOR,
+    challenger:
+      settingString(readSetting, CHALLENGER_MODEL_SETTING_ID) || DEFAULT_CHALLENGER_MODEL_ID,
+  }
+}
+
 /**
  * The reviewer and challenger selections (settings, then defaults), expanded
- * to concrete, distinct model ids. Expanded before the spend decision so a
- * prompt names what it bills for, and distinct so "most capable" on the
- * challenger never collapses onto the reviewer.
+ * to callable model ids. Expanded before the spend decision so a prompt names
+ * what it bills for. An automatic challenger prefers different weights; a
+ * one-model setup can repeat the reviewer with an explicit diversity warning.
  */
 export async function resolveReviewModels(
   chatModel: string,
   readSetting: (key: string) => unknown = defaultReadSetting,
-  resolveDistinct: ReviewHostServices['resolveDistinctModels'] = async (values) =>
-    (await appHostServices()).resolveDistinctModels(values),
+  resolveDistinct: ReviewHostServices['resolveDistinctModels'] = async (values, signal) =>
+    (await appHostServices()).resolveDistinctModels(values, signal),
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<ReviewModels> {
-  const reviewer =
-    settingString(readSetting, REVIEWER_MODEL_SETTING_ID) ||
-    inheritableChatModel(chatModel) ||
-    BEST_VALUE_MODEL_SELECTOR
-  const challenger =
-    settingString(readSetting, CHALLENGER_MODEL_SETTING_ID) || DEFAULT_CHALLENGER_MODEL_ID
-  const [a, b] = await resolveDistinct([reviewer, challenger])
+  const { reviewer, challenger } = reviewModelSelections(chatModel, readSetting)
+  const [a, b] = await resolveDistinct([reviewer, challenger], signal)
   return { reviewer: a ?? reviewer, challenger: b ?? challenger }
 }
 
@@ -422,14 +445,29 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
   const services = options.services ?? (await appHostServices())
   const providerFor = (model: string): Promise<LLMProvider> =>
     services.providerFor(model, options.threadId)
-  const models = await resolveReviewModels(
-    options.chatModel,
-    readSetting,
-    services.resolveDistinctModels,
-  )
   const lensSpec = resolveReviewLensSpec(readSetting)
   const lenses = resolveLenses(lensSpec)
   const lensIds = lenses.map((lens) => lens.id)
+  let models: ReviewModels
+  try {
+    models = await resolveReviewModels(
+      options.chatModel,
+      readSetting,
+      services.resolveDistinctModels,
+      options.signal,
+    )
+  } catch (err) {
+    // Resolution checks routes and catalogs under the run's signal: a cancel
+    // or an unusable route here is reported like one in any later stage.
+    const selections = reviewModelSelections(options.chatModel, readSetting)
+    const report = errorReport(
+      runningReviewReport(selections, lensIds, startedAt, options.initiator),
+      options.signal.aborted ? 'Review cancelled.' : errorMessage(err),
+      now(),
+    )
+    options.onChunk({ type: 'review_report', report })
+    return { report, summary: `Review failed: ${report.error ?? ''}` }
+  }
   const placeholder = runningReviewReport(models, lensIds, startedAt, options.initiator)
 
   if (!getDefaultPluginRegistry().isEnabled(REVIEW_PLUGIN_ID)) {

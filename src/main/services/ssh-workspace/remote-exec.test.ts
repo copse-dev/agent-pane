@@ -37,6 +37,27 @@ describe('remote exec quoting', () => {
   })
 })
 
+describe('buildRemoteShellCommand with an exec line', () => {
+  it('passes the env as shell assignments, since env cannot run the exec builtin', () => {
+    const cmd = buildRemoteShellCommand('exec "$HOME/.copse/bin/watcher"', '/repo', {
+      LANG: 'en_GB.UTF-8',
+      TERM: 'xterm-256color',
+    })
+    assert.equal(cmd.includes('env '), false)
+    assert.match(
+      cmd,
+      /^cd '\/repo' && LANG='en_GB\.UTF-8' TERM='xterm-256color' exec "\$HOME\/\.copse\/bin\/watcher"$/,
+    )
+  })
+
+  it('keeps the env prefix for a line that does not exec', () => {
+    assert.match(
+      buildRemoteShellCommand('npm test', undefined, { LANG: 'C' }),
+      /^env LANG='C' npm test$/,
+    )
+  })
+})
+
 describe('buildRemotePtyCommand', () => {
   it('uses shell assignments before builtin exec, never env … exec', () => {
     const cmd = buildRemotePtyCommand('/bin/bash', '/srv/app', {

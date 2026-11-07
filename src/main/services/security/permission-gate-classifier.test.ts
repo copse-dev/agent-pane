@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 
@@ -115,6 +115,32 @@ describe('ask_classifier permission', () => {
       true,
     )
     assert.deepEqual(prompts, [])
+  })
+
+  it('tells Always ask that a paired-machine classifier sends the question off this machine', async () => {
+    await setSetting('classifierProviders', {
+      version: 1,
+      profiles: [
+        {
+          id: 'paired-kev',
+          label: 'Paired Kev',
+          model: 'kev',
+          timeoutMs: 5000,
+          connection: {
+            type: 'machine',
+            machineId: '156d9a5e-9322-482d-8aa4-d4be5f21190e',
+            profileId: 'kev',
+          },
+        },
+      ],
+    })
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'ask',
+    })
+    const args = { ...ARGS, classifier: 'paired-kev' }
+    assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args }), true)
+    assert.equal(prompts.length, 1)
+    assert.match(prompts[0]?.bodyAdvice ?? '', /will be sent to a hosted classifier/)
   })
 
   it('honours an explicit override: ask prompts even for loopback, allow skips the prompt', async () => {

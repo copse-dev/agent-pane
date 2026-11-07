@@ -24,10 +24,14 @@ const mine: AcpAgentConfig = { id: 'mine', title: 'Mine', command: 'mine', enabl
 
 describe('agentChip', () => {
   it('maps sign-in state and never claims a state it could not read', () => {
-    assert.equal(agentChip('signed-in'), 'ready')
+    assert.equal(agentChip('signed-in'), 'unverified')
+    assert.equal(agentChip('signed-in', true), 'ready')
+    // An API key can work while the CLI reports signed out, so a verified session wins.
+    assert.equal(agentChip('signed-out', true), 'ready')
+    assert.equal(agentChip('unknown', true), 'ready')
     assert.equal(agentChip('signed-out'), 'needs-sign-in')
-    assert.equal(agentChip('unknown'), null)
-    assert.equal(agentChip(undefined), null)
+    assert.equal(agentChip('unknown'), 'unverified')
+    assert.equal(agentChip(undefined), 'unverified')
   })
 })
 
@@ -42,7 +46,7 @@ describe('listedAgents', () => {
     )
     assert.equal(rows[0]?.chip, 'needs-sign-in')
     assert.equal(rows[0].signInCommand, 'claude auth login')
-    assert.equal(rows[1]?.chip, null)
+    assert.equal(rows[1]?.chip, 'unverified')
     assert.equal(rows[1].signInCommand, null)
   })
 

@@ -7,7 +7,7 @@ import {
   PROTOCOL_VERSION,
   RequestError,
   type PromptRequest,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import {
   classifyReportedCwd,
   probeAgentContinuity,

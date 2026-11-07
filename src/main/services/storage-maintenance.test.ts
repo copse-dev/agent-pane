@@ -43,10 +43,16 @@ test('automatic expiry obeys disabled policy and configured profile roots', asyn
     await utimes(file, old, old)
     await utimes(build, old, old)
     saveStorageRetention({ enabled: false, days: 30 })
-    await expireStorageData()
+    const cutoffs: number[] = []
+    const cleanImages = async (cutoff: number): Promise<void> => {
+      cutoffs.push(cutoff)
+    }
+    await expireStorageData(cleanImages)
+    assert.equal(cutoffs.length, 0)
     await access(build)
     saveStorageRetention({ enabled: true, days: 30 })
-    await expireStorageData()
+    await expireStorageData(cleanImages)
+    assert.equal(cutoffs.length, 1)
     await assert.rejects(access(build), { code: 'ENOENT' })
   } finally {
     await rm(root, { recursive: true, force: true })

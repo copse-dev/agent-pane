@@ -1,6 +1,8 @@
 # Tool-output handling: evidence-preserving caps, spill, and stubbing
 
-Status: PRs A and B implemented on `claude/tool-output-evidence-cap`; C–F are designs.
+Status: **Partially implemented.** PRs A and B shipped in
+[#3415](https://github.com/copse-dev/agent-pane/pull/3415). A2 (`runCommand` still uses
+`appendFlatCapped`) and C–F are open designs.
 Inspired by the SoL-Pi paper's _ObservationPack_ and evidence-preserving reducer: a
 tool observation the model sees should be bounded, should say exactly what was left
 out, and should keep the lines most likely to matter.
@@ -50,10 +52,10 @@ This sized the evidence budget of PR A at one eighth of the cap (12.5 KiB at 100
 | read_file                                | 150 lines / 12,000 chars                     | paging                            | Already a handle-style tool.                                                          |
 | list_dir                                 | 1,000 entries                                | head                              | No byte cap.                                                                          |
 | search_code                              | 50–500 matches                               | head                              | Unbounded line width (minified files).                                                |
-| git_show / git_diff / gh_*               | runCommand 100 KiB per process               | head only (see gap 1)             | git_diff appends one runCommand result per untracked file, so its total is unbounded. |
-| gh_run_view                              | last 20,000 chars                            | tail, of head-capped input        | Tail is not the real end of the log (gap 1).                                          |
-| get_ci_failure_logs                      | 100 KiB                                      | head + tail, of head-capped input | Same gap.                                                                             |
-| parallel_search                          | 25,000 bytes                                 | head + tail                       |                                                                                       |
+| git_show / git_diff / gh_*               | runCommand 100 KiB per process               | head + tail                       | git_diff appends one runCommand result per untracked file, so its total is unbounded. |
+| gh_run_view                              | last 20,000 chars                            | tail, of head + tail input        | Real end of the log since A2.                                                         |
+| get_ci_failure_logs                      | 100 KiB                                      | head + tail, of head + tail input | No evidence pass-through yet (A2 follow-up).                                          |
+| web_search                               | 25,000 bytes                                 | head + tail                       |                                                                                       |
 | fetch_url                                | none (2 MiB download limit, which errors)    | —                                 | **B:** 100 KiB head + tail, no evidence.                                              |
 | MCP tools                                | none                                         | —                                 | **B:** 100 KiB head + tail with evidence.                                             |
 | explore / delegate_step / investigate_ci | none                                         | —                                 | Bounded only by the model's output tokens.                                            |
@@ -61,10 +63,10 @@ This sized the evidence budget of PR A at one eighth of the cap (12.5 KiB at 100
 
 There is no generic cap in `ToolRegistry.execute` or the agent loop.
 
-**Gap 1:** `runCommand` (`src/main/services/exec/command-runner.ts`) stops appending once
-its raw byte count reaches the cap. That guard was added to avoid quadratic re-truncation.
-The side effect is that everything after about 100 KiB is silently dropped, and the
-"tail" any caller later keeps is really text from around the 100 KiB mark.
+**Gap 1 (closed by A2):** `runCommand` (`src/main/services/exec/command-runner.ts`) stopped
+appending once its raw byte count reached the cap. That guard was added to avoid quadratic re-truncation.
+The side effect was that everything after about 100 KiB was silently dropped, and the
+"tail" any caller later kept was really text from around the 100 KiB mark.
 
 ## PR plan (smallest first, each independently shippable)
 
@@ -117,7 +119,10 @@ Risk:
 
 Risk: low. The largest real result seen for either tool is 43 KB.
 
-### A2. runCommand keeps the real tail (small, recommended next)
+### A2. runCommand keeps the real tail (runCommand part done)
+
+Done: `runCommand` accumulates with `CappedOutputAccumulator`, evidence off. Remaining:
+the two bullets below. Original plan:
 
 Replace `appendFlatCapped` in `runCommand` with `CappedOutputAccumulator`, evidence off.
 Appends are O(chunk) amortised, so the GC-thrash guard is no longer needed. Then:

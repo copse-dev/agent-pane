@@ -350,6 +350,10 @@ const STRATEGY_TO_GQL: Record<AutoMergeStrategy, string> = {
  * `gh` subprocess), authenticating with an env token or `gh auth token`. Used
  * when the user selects the `api` backend, or automatically when `gh` is not
  * installed but a token is present.
+ *
+ * A checkout matters only where the repository comes from its origin remote
+ * (the "workspace" reads); every other method addresses its repository
+ * explicitly and ignores `root`.
  */
 export const githubApiBackend: GitHubBackend = {
   kind: 'api',
@@ -371,7 +375,7 @@ export const githubApiBackend: GitHubBackend = {
     return { installed: true, authenticated: true, username: login, message: null }
   },
 
-  async listMyOpenPrs(limit: number): Promise<GhPrSummary[] | null> {
+  async listMyOpenPrs(_root: string | null, limit: number): Promise<GhPrSummary[] | null> {
     // GraphQL `viewer.pullRequests` spends the GraphQL point budget, not the
     // Search API's 30 req/min cap, and includes CI rollup in the same query.
     const result = await graphql(MY_OPEN_PRS_QUERY, { limit })
@@ -381,8 +385,8 @@ export const githubApiBackend: GitHubBackend = {
     return graphqlPullNodesToSummaries(viewerPullNodes(result.data), null)
   },
 
-  async listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
-    const slug = await getGithubRepoSlug()
+  async listWorkspaceOpenPrs(root: string | null, limit: number): Promise<GhPrSummary[]> {
+    const slug = await getGithubRepoSlug(root)
     if (!slug) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo) return []
@@ -391,8 +395,8 @@ export const githubApiBackend: GitHubBackend = {
     return graphqlPullNodesToSummaries(workspacePullNodes(result.data), { owner, repo })
   },
 
-  async listWorkspaceOpenIssues(page: number, pageSize: number) {
-    const slug = await getGithubRepoSlug()
+  async listWorkspaceOpenIssues(root: string | null, page: number, pageSize: number) {
+    const slug = await getGithubRepoSlug(root)
     if (!slug) return { issues: [], hasMore: false }
     const [owner, repo] = slug.split('/')
     if (!owner || !repo) return { issues: [], hasMore: false }
@@ -433,7 +437,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+  async getIssue(_root: string | null, ref: PrRef): Promise<GhIssueSummary | null> {
     const result = await rest(`/repos/${ref.owner}/${ref.repo}/issues/${String(ref.number)}`)
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load issue.')
@@ -457,8 +461,12 @@ export const githubApiBackend: GitHubBackend = {
     return summary
   },
 
-  async searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
-    const slug = await getGithubRepoSlug()
+  async searchWorkspaceIssues(
+    root: string | null,
+    query: string,
+    limit: number,
+  ): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug(root)
     if (!slug) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo) return []
@@ -487,11 +495,11 @@ export const githubApiBackend: GitHubBackend = {
       .filter(isNonNull)
   },
 
-  listStacks(owner: string, repo: string): Promise<GhRepoStacks> {
+  listStacks(_root: string | null, owner: string, repo: string): Promise<GhRepoStacks> {
     return loadRepoStacks(fetchStacksPath, owner, repo)
   },
 
-  async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
+  async getPrDetails(_root: string | null, ref: PrRef): Promise<GhPrDetails | null> {
     // The pull, its files, and its review decision are independent — fetch
     // concurrently rather than serially. reviewDecision is GraphQL-only (the
     // REST pulls payload omits it) and best-effort: a failure just drops the
@@ -543,7 +551,11 @@ export const githubApiBackend: GitHubBackend = {
     return details
   },
 
-  async getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
+  async getPrFileDiff(
+    _root: string | null,
+    ref: PrRef,
+    path: string,
+  ): Promise<GhPrFileDiff | null> {
     const pull = await getPull(ref)
     if (!pull.ok) return null
     const data = parseRestPull(pull.json)
@@ -567,7 +579,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
+  async getPrChecksState(_root: string | null, ref: PrRef): Promise<GhPrChecksState> {
     // Contract: this read never throws — a missing token or network error
     // degrades to 'no_checks', matching the CLI backend and the old service.
     // One GraphQL query replaces REST pull + check-runs (and matches `gh pr view`).
@@ -584,7 +596,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
+  async rerunFailedRuns(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const pull = await getPull(ref)
     if (!pull.ok) return restError(pull)
     const branch = parseRestPull(pull.json).head?.ref
@@ -632,7 +644,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async createPr(input: PrCreateInput): Promise<PrCreateResult> {
+  async createPr(_root: string | null, input: PrCreateInput): Promise<PrCreateResult> {
     const result = await rest(`/repos/${input.owner}/${input.repo}/pulls`, {
       method: 'POST',
       body: {
@@ -691,7 +703,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async approvePr(ref: PrRef): Promise<PrActionResult> {
+  async approvePr(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const result = await rest(
       `/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}/reviews`,
       {
@@ -703,7 +715,7 @@ export const githubApiBackend: GitHubBackend = {
     return { ok: true, backend: 'api', message: `Approved PR #${String(ref.number)}.` }
   },
 
-  async markPrReady(ref: PrRef): Promise<PrActionResult> {
+  async markPrReady(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const pull = await getPull(ref)
     if (!pull.ok) return restError(pull)
     const data = parseRestPull(pull.json)
@@ -729,7 +741,7 @@ export const githubApiBackend: GitHubBackend = {
     }
   },
 
-  async enableAutoMerge(ref: PrRef): Promise<PrActionResult> {
+  async enableAutoMerge(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const repo = await rest(`/repos/${ref.owner}/${ref.repo}`)
     if (!repo.ok) return restError(repo)
     const repoData = isRecord(repo.json) ? repo.json : {}
