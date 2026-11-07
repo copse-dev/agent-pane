@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -289,7 +289,51 @@ describe('profileInspector', { timeout: 30_000 }, () => {
         ])
         assert.equal(result.code, 1, result.stderr)
         assert.match(result.stderr, /did not become available/)
-        assert.doesNotMatch(result.stderr, /cleanup could not be confirmed|may still be open/)
+        let cleanupDiagnostic: string | undefined
+        if (/cleanup could not be confirmed|may still be open/.test(result.stderr)) {
+          let pidProbe = 'signal zero succeeded'
+          try {
+            process.kill(target.child.pid, 0)
+          } catch (error) {
+            pidProbe = error instanceof Error ? error.message : String(error)
+          }
+          const listeners = spawnSync('lsof', ['-nP', '-p', String(target.child.pid), '-F0pfPnT'], {
+            encoding: 'utf8',
+            timeout: 2000,
+            maxBuffer: 64 * 1024,
+          })
+          const processStatus =
+            process.platform === 'linux'
+              ? await readFile(`/proc/${String(target.child.pid)}/status`, 'utf8').catch(
+                  (error: unknown) => (error instanceof Error ? error.message : String(error)),
+                )
+              : 'not Linux'
+          cleanupDiagnostic = JSON.stringify(
+            {
+              targetPid: target.child.pid,
+              targetExitCode: target.child.exitCode,
+              targetSignalCode: target.child.signalCode,
+              targetStderr: target.stderr(),
+              pidProbe,
+              processStatus,
+              repeatedLsof: {
+                status: listeners.status,
+                signal: listeners.signal,
+                stdout: listeners.stdout,
+                stderr: listeners.stderr,
+                error: listeners.error?.message,
+              },
+              profilerStderr: result.stderr,
+            },
+            null,
+            2,
+          )
+        }
+        assert.doesNotMatch(
+          result.stderr,
+          /cleanup could not be confirmed|may still be open/,
+          cleanupDiagnostic ?? result.stderr,
+        )
         assert.equal(
           target.stderr().match(/Debugger listening on /g)?.length,
           2,
