@@ -1,5 +1,6 @@
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
+import type { Thread } from '@shared/types'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { withIdleAcpSession } from './acp/acp-session-pool.ts'
 import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
@@ -37,6 +38,16 @@ function hasCheckoutResources(projectId: string, threadId: string, root: string)
   )
 }
 
+/**
+ * Whether the Git side of PR parking must wait. An automation's draft is a run
+ * that has not started yet; an ordinary chat's draft is only unsent text and
+ * holds nothing, matching how the sidebar reads it.
+ */
+function parkingDeferred(meta: Pick<Thread, 'status' | 'draftPrompt' | 'automation'>): boolean {
+  if (meta.automation === undefined) return meta.status === 'running'
+  return automationRunBlock(meta) !== null
+}
+
 /** Remember a successful `gh pr create` result until its agent turn completes. */
 export function recordCreatedPullRequest(command: string, output: string): void {
   if (!/(?:^|[;&|]\s*)gh\s+pr\s+create(?:\s|$)/i.test(command)) return
@@ -65,14 +76,17 @@ export async function parkCompletedPullRequestWorktree(
       if (createdPrByThread.get(key) === createdPrUrl) createdPrByThread.delete(key)
       return
     }
-    if (automationRunBlock(meta) !== null) return
 
+    // Record the PR even when the checkout itself must wait: only the Git
+    // change is deferred. A URL held in memory until a later recheck would be
+    // lost if the app quit first.
     let worktree: ThreadWorktree = meta.worktree
     if (createdPrUrl && worktree.pullRequestUrl !== createdPrUrl) {
       worktree = { ...worktree, pullRequestUrl: createdPrUrl }
       await updateMeta(projectId, threadId, { worktree })
     }
     if (createdPrByThread.get(key) === createdPrUrl) createdPrByThread.delete(key)
+    if (parkingDeferred(meta)) return
     if (!worktree.pullRequestUrl || worktree.retiredAt !== undefined) return
     if (hasCheckoutResources(projectId, threadId, worktree.path)) return
 
@@ -80,7 +94,7 @@ export async function parkCompletedPullRequestWorktree(
       const current = await getThreadMeta(projectId, threadId)
       if (
         !current?.worktree ||
-        automationRunBlock(current) !== null ||
+        parkingDeferred(current) ||
         current.worktree.path !== worktree.path ||
         current.worktree.retiredAt !== undefined ||
         hasCheckoutResources(projectId, threadId, worktree.path)

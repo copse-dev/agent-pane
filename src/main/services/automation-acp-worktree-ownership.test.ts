@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import { configureThreadStore } from '@copse/thread-store/environment.ts'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { buildAcpAgentApp, type AcpTurnContext } from './acp/acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers } from './acp/acp-client.ts'
 import {
@@ -51,6 +52,7 @@ import {
 import { __testInjectTerminalSession, destroyAllTerminalSessions } from './exec/terminal-service.ts'
 
 const NOW = Date.parse('2026-11-06T12:00:00Z')
+type CreatedPullRequestState = Pick<Thread, 'status' | 'draftPrompt' | 'automation'>
 type Activity =
   | 'idle'
   | 'prompt'
@@ -440,92 +442,132 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     await prompt
   }
 
-  for (const block of ['running', 'draft'] satisfies Array<'running' | 'draft'>) {
-    it(`remembers a created PR across a ${block} parking recheck until the thread becomes idle`, async () => {
-      const projectId = `created-pr-${block}`
-      const threadId = 'created-pr'
-      const repo = join(scratch, 'created-pr-repo')
-      const remote = join(scratch, 'created-pr-remote.git')
-      await mkdir(repo)
-      git(repo, ['init', '-q', '-b', 'main'])
-      await writeFile(join(repo, 'README.md'), 'Pull request work\n')
-      git(repo, ['add', '.'])
-      git(repo, ['commit', '-q', '-m', 'base'])
-      git(scratch, ['init', '-q', '--bare', remote])
-      git(repo, ['remote', 'add', 'origin', remote])
-      git(repo, ['push', '-q', '-u', 'origin', 'main'])
-      storageSet('projects', [{ id: projectId, path: repo }])
-      const worktree = await allocateThreadWorktree({
+  async function createdPullRequestThread(
+    projectId: string,
+    state: CreatedPullRequestState,
+  ): Promise<{
+    threadId: string
+    worktree: ThreadWorktree
+    url: string
+    disposed: () => number
+    isClosed: () => boolean
+  }> {
+    const threadId = 'created-pr'
+    const repo = join(scratch, `${projectId}-repo`)
+    const remote = join(scratch, `${projectId}-remote.git`)
+    await mkdir(repo)
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'Pull request work\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'base'])
+    git(scratch, ['init', '-q', '--bare', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', '-u', 'origin', 'main'])
+    storageSet('projects', [{ id: projectId, path: repo }])
+    const worktree = await allocateThreadWorktree({
+      projectId,
+      threadId,
+      projectRoot: repo,
+      prompt: 'Create a pull request',
+      baseBranch: 'main',
+    })
+    git(worktree.path, ['push', '-q', '-u', 'origin', worktree.branch])
+    await saveProjectThread(projectId, {
+      id: threadId,
+      title: 'Created pull request',
+      ...state,
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      worktree,
+      createdAt: 1,
+      updatedAt: 2,
+    })
+    let disposed = 0
+    const { entry } = await acquireAcpSession({
+      projectId,
+      threadId,
+      config: { command: 'controlled-created-pr', cwd: worktree.path },
+      createTransport: async () => {
+        const c2a = new TransformStream<Uint8Array, Uint8Array>()
+        const a2c = new TransformStream<Uint8Array, Uint8Array>()
+        const connection = buildAcpAgentApp(async () => ({ stopReason: 'end_turn' })).connect(
+          ndJsonStream(a2c.writable, c2a.readable),
+        )
+        return {
+          stream: ndJsonStream(c2a.writable, a2c.readable),
+          dispose: async (): Promise<void> => {
+            disposed++
+            connection.close()
+          },
+        }
+      },
+    })
+    const url = 'https://github.com/example/project/pull/1'
+    runWithThreadExecutionContext(
+      {
         projectId,
         threadId,
         projectRoot: repo,
-        prompt: 'Create a pull request',
-        baseBranch: 'main',
-      })
-      git(worktree.path, ['push', '-q', '-u', 'origin', worktree.branch])
-      await saveProjectThread(projectId, {
-        id: threadId,
-        title: 'Created pull request',
-        status: block === 'running' ? 'running' : 'idle',
-        draftPrompt: block === 'draft' ? 'An unsent next step' : '',
-        messages: [],
-        usage: { inputTokens: 0, outputTokens: 0 },
-        worktree,
-        createdAt: 1,
-        updatedAt: 2,
-      })
-      let disposed = 0
-      const { entry } = await acquireAcpSession({
-        projectId,
-        threadId,
-        config: { command: 'controlled-created-pr', cwd: worktree.path },
-        createTransport: async () => {
-          const c2a = new TransformStream<Uint8Array, Uint8Array>()
-          const a2c = new TransformStream<Uint8Array, Uint8Array>()
-          const connection = buildAcpAgentApp(async () => ({ stopReason: 'end_turn' })).connect(
-            ndJsonStream(a2c.writable, c2a.readable),
-          )
-          return {
-            stream: ndJsonStream(c2a.writable, a2c.readable),
-            dispose: async (): Promise<void> => {
-              disposed++
-              connection.close()
-            },
-          }
-        },
-      })
-      const url = 'https://github.com/example/project/pull/1'
-      runWithThreadExecutionContext(
-        {
-          projectId,
-          threadId,
-          projectRoot: repo,
-          root: worktree.path,
-          checkoutMode: 'worktree',
-          branch: worktree.branch,
-        },
-        () => {
-          recordCreatedPullRequest('gh pr create --title "Created pull request"', `${url}\n`)
-        },
-      )
+        root: worktree.path,
+        checkoutMode: 'worktree',
+        branch: worktree.branch,
+      },
+      () => {
+        recordCreatedPullRequest('gh pr create --title "Created pull request"', `${url}\n`)
+      },
+    )
+    return { threadId, worktree, url, disposed: () => disposed, isClosed: entry.open.isClosed }
+  }
 
-      await parkCompletedPullRequestWorktree(projectId, threadId)
-      assert.equal((await getThreadMeta(projectId, threadId))?.worktree?.pullRequestUrl, undefined)
-      assert.equal((await getThreadMeta(projectId, threadId))?.worktree?.retiredAt, undefined)
-      assert.equal(await exists(worktree.path), true)
-      assert.equal(disposed, 0)
-      assert.equal(entry.open.isClosed(), false)
+  const deferredParking = {
+    running: { status: 'running', draftPrompt: '' },
+    'automation draft': {
+      status: 'idle',
+      draftPrompt: 'The run has not started yet',
+      automation: { scheduleId: 'schedule', scheduleName: 'Schedule', triggeredAt: NOW },
+    },
+  } satisfies Record<string, CreatedPullRequestState>
+  for (const [block, state] of Object.entries(deferredParking)) {
+    it(`persists a created PR at once but parks a ${block} thread only once it is idle`, async () => {
+      const projectId = `created-pr-${block.replace(' ', '-')}`
+      const created = await createdPullRequestThread(projectId, state)
 
-      await updateMeta(projectId, threadId, { status: 'idle', draftPrompt: '' })
-      await parkCompletedPullRequestWorktree(projectId, threadId)
-      const retired = await getThreadMeta(projectId, threadId)
-      assert.equal(retired?.worktree?.pullRequestUrl, url)
+      await parkCompletedPullRequestWorktree(projectId, created.threadId)
+      const recorded = await getThreadMeta(projectId, created.threadId)
+      // Only the Git change waits: the URL must survive the app quitting now.
+      assert.equal(recorded?.worktree?.pullRequestUrl, created.url)
+      assert.equal(recorded.worktree.retiredAt, undefined)
+      assert.equal(await exists(created.worktree.path), true)
+      assert.equal(created.disposed(), 0)
+      assert.equal(created.isClosed(), false)
+
+      await updateMeta(projectId, created.threadId, { status: 'idle', draftPrompt: '' })
+      await parkCompletedPullRequestWorktree(projectId, created.threadId)
+      const retired = await getThreadMeta(projectId, created.threadId)
+      assert.equal(retired?.worktree?.pullRequestUrl, created.url)
       assert.ok(retired.worktree.retiredAt)
-      assert.equal(await exists(worktree.path), false)
-      assert.equal(disposed, 1)
-      assert.equal(entry.open.isClosed(), true)
+      assert.equal(await exists(created.worktree.path), false)
+      assert.equal(created.disposed(), 1)
+      assert.equal(created.isClosed(), true)
     })
   }
+
+  it('parks an ordinary chat whose follow-up is still an unsent draft', async () => {
+    const projectId = 'created-pr-ordinary-draft'
+    // An ordinary chat's draft is editable text, not a run waiting to start.
+    const created = await createdPullRequestThread(projectId, {
+      status: 'idle',
+      draftPrompt: 'A follow-up typed while the PR was created',
+    })
+
+    await parkCompletedPullRequestWorktree(projectId, created.threadId)
+    const retired = await getThreadMeta(projectId, created.threadId)
+    assert.equal(retired?.worktree?.pullRequestUrl, created.url)
+    assert.ok(retired.worktree.retiredAt)
+    assert.equal(retired.draftPrompt, 'A follow-up typed while the PR was created')
+    assert.equal(await exists(created.worktree.path), false)
+    assert.equal(created.disposed(), 1)
+  })
 
   for (const operation of [
     'handover',

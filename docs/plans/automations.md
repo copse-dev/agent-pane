@@ -183,6 +183,11 @@ MCP call, contain every checkout and do not block. Completed native background r
 retained logs do not by themselves block a later clean run; their existing running-process policy
 remains unchanged. This adds no permission, continuation grant, cap increase or automatic replay.
 
+PR parking records a PR the turn created (`gh pr create`) in the thread's metadata as soon as
+the turn reports in. Only the Git change waits, while the thread is running or an automation
+run's draft has not started; an ordinary chat's unsent draft is editable text and defers
+nothing.
+
 The same-root writer check is advisory: this is not a global checkout-writer mutex through
 awaited Git operations. A foreign-thread or unscoped writer that starts after the last check is
 outside this ACP-specific guarantee. The old owner's resource fence and ACP pool operation,
