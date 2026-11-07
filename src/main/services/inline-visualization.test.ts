@@ -4,6 +4,9 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { setCanvasArtefactMirror, setCanvasArtefactSink } from './canvas-dispatch.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 
@@ -12,6 +15,7 @@ const roots: string[] = []
 afterEach(async () => {
   setCanvasArtefactSink(null)
   setCanvasArtefactMirror(null)
+  setDefaultPluginRegistry(null)
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -70,5 +74,20 @@ describe('dispatchInlineVisualization', () => {
       dispatchInlineVisualization({ path: textPath }, { root, threadId: 'thread-a' }),
       /HTML file/,
     )
+  })
+
+  it('refuses to render while the mcp-ui-canvas plugin is disabled', async () => {
+    const { root, htmlPath } = await fixture()
+    const registry = createFirstPartyPluginRegistry()
+    registry.disable(MCP_UI_CANVAS_PLUGIN_ID)
+    setDefaultPluginRegistry(registry)
+    const seen: CanvasArtefact[] = []
+    setCanvasArtefactSink((artefact) => seen.push(artefact))
+
+    await assert.rejects(
+      dispatchInlineVisualization({ path: htmlPath }, { root, threadId: 'thread-a' }),
+      /disabled/i,
+    )
+    assert.deepEqual(seen, [], 'a disabled plugin must not reach the canvas sink')
   })
 })

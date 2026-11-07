@@ -156,7 +156,8 @@ Read the **confidence line** before trusting the subset:
 - **LOW** — some changed source has no importing test and no selector match.
   The subset can't cover it; the listed unmapped files are your blind spot.
 - **broad** — a cross-cutting file changed (build scripts, store, preload,
-  `index.html`). The oracle recommends everything, and means it.
+  `index.html`, the dependency manifest or lockfile). The oracle recommends
+  everything, and means it.
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
@@ -180,6 +181,14 @@ dependency/lockfile, release/update/packaging, CI/test/oracle, cross-cutting, or
 Those categories are mandatory because the oracle only knows imports and selectors: behavior
 reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
 be invisible to it. When classification is unclear, take the full path.
+
+For slow suites, the [draft/cloud-validation exception](../AGENTS.md#before-committing) allows
+committing and opening a draft PR after focused investigation and checks, with suitable suites run
+on available cloud CI resources. Explicitly cite this route and its reason in the PR's Validation
+section, including local results, deferred commands, cloud run links, and on-device evidence or
+remaining work. Run focused on-device checks wherever CI is insufficient or additional evidence is
+needed. Inspect cloud results and resolve failures; keep the PR draft until required gates and
+device evidence pass. A pending cloud run is not passing evidence.
 
 That mandate is about catching failures the oracle would have missed, not about clearing a
 locally-unachievable zero-failure bar. Some unit tests fail for reasons that have nothing to do
@@ -485,6 +494,33 @@ Rules for anything that lands in a captured frame:
   a demo trace holds the trace at a checkpoint instead of racing its pacing:
   bundle an entry that injects the trace player's `sleep` with
   `buildDemoFixturePage` (`tests/demo/helpers/demo-fixture-page.ts`).
+  The helpers also re-measure the subject straight after the capture and
+  retake it if it moved while ChromeDriver grabbed the frame: a late scroll on
+  a loaded runner once cropped `guarded-yolo-hard-deny.png` 4px off its card.
+  Copy the app recomputes after the DOM first matches (the composer's
+  "about N tokens" estimate) needs `waitForStableText` before the capture, and
+  a "while running" frame holds the mock run at a `waitFor` checkpoint
+  (`context-wheel-live-running.png`) rather than racing its usage updates.
+  Never stand in a fixed `browser.pause` for any of these.
+- **Direct captures.** Don't call WebDriver's `saveScreenshot` from a spec: it
+  skips the layout, motion and index waits. When the shell resize in
+  `saveAppScreenshot` / `saveElementScreenshot` would undo the state under
+  test (it returns focus to the composer and closes hover popovers), use
+  `saveFramedElementScreenshot` inside `withCaptureFrame`, or
+  `savePreparedAppScreenshot` for a shell the spec already framed.
+- **Agent runs on the checkout.** A spec that sends a message in a project
+  seeded on `process.cwd()` runs the real thread-checkout transaction against
+  the runner's own repository: `context-wheel.e2e.ts` used to switch the
+  checkout to `main` for every later spec on that runner. Seed
+  `seedStableWorkspace()` for any spec that starts a run.
+- **Index builds.** The workspace watcher rebuilds the file index after every
+  write, including the PNGs e2e saves into the checkout, and the footer shows
+  `Indexing… <elapsed>` for a build that outlives its show delay. The capture
+  helpers hold each screenshot until `index.status()` reports nothing building
+  (`withSettledIndex` in `tests/e2e/helpers/screenshot.ts`); a build that
+  outlasts the bounded wait stays in frame with its seconds pinned. A spec that
+  calls WebDriver's `saveScreenshot` directly on a frame holding the footer gets
+  neither, so go through a helper.
 - **Synced data.** Scheduled bot PRs rewrite data the app prints, such as the
   intellect scores `sync-intellect.yml` writes into `packages/llm`. A capture
   that shows one of those numbers changes every time the sync lands, so assert

@@ -18,6 +18,7 @@
     "check:a11y-baseline": "node scripts/check-a11y-baseline.mts",
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
+    "build:remote-watcher": "node scripts/stage-remote-watcher.mts",
     "build:demo": "node scripts/build.mts --demo",
     "build:servo": "node scripts/build.mts --servo",
     "servo": "node scripts/run-servo.mts",
@@ -30,6 +31,7 @@
     "probe:acp:behavior": "node scripts/run-probe-acp-behavior.mts",
     "probe:acp:long": "node scripts/run-probe-acp-long-run.mts",
     "watch:acp-v2": "node scripts/acp-v2-watch.mts",
+    "contracts:boundary": "node scripts/run-boundary-contracts.mts",
     "ci:base-freshness": "node scripts/base-freshness.mts",
     "probe:openai-agents": "node scripts/run-probe-openai-agents.mts",
     "probe:plan-usage": "node scripts/probe-plan-usage.mts",
@@ -101,6 +103,9 @@
     "eval:autonomy:host": "node scripts/run-autonomy-regression.mts",
     "eval:autonomy:ui": "node scripts/run-autonomy-regression.mts --ui",
     "thread:container": "node scripts/run-thread-container.mts",
+    "probe:apple-desktop": "node scripts/run-probe-apple-desktop.mts",
+    "build:apple-desktop": "node scripts/build-apple-desktop.mts",
+    "smoke:apple-desktop": "node scripts/run-smoke-apple-desktop.mts",
     "test:e2e:a11y": "node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/accessibility.e2e.ts",
     "test:e2e:markdown": "node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/markdown-ordered-list-spacing.e2e.ts --spec tests/e2e/markdown-streaming-table.e2e.ts --spec tests/e2e/markdown-streaming-list.e2e.ts --spec tests/e2e/markdown-streaming-heading.e2e.ts --spec tests/e2e/markdown-streaming-blockquote.e2e.ts --spec tests/e2e/markdown-nbsp-metadata.e2e.ts",
     "analyze:thread": "node scripts/run-analyze-thread.mts",
@@ -160,12 +165,14 @@
       "!dist/renderer/mermaid-frame.js"
     ],
     "asarUnpack": [
+      "dist/resources/process-memory",
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
       "**/node_modules/xcodebuildmcp/**/*",
       "dist/resources/gortex/**",
-      "dist/resources/licenses/**"
+      "dist/resources/licenses/**",
+      "dist/resources/remote-watcher/**"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,
@@ -246,7 +253,7 @@
     "@nationaldesignstudio/rampart": "0.1.3"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "^1.8.0",
+    "@agentclientprotocol/sdk": "2.2.0",
     "@anthropic-ai/sdk": "^0.133.0",
     "@copse/agent": "workspace:*",
     "@copse/hooks-dialects": "workspace:*",

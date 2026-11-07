@@ -1,16 +1,19 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
+import { createWorkspaceNavigation } from './workspace-navigation.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
 installPreloadPerfTracing()
 exposePerfBridge()
+ipcRenderer.invoke = createWorkspaceNavigation(ipcRenderer.invoke.bind(ipcRenderer))
 
 // Typed against the contract so the facade cannot drift from `ApiClient`: a
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
@@ -247,6 +250,8 @@ const api: ApiClient = {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
     getContextPermissions: (projectId: string, threadId: string, projectRoot: string) =>
       ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, projectRoot),
+    revokeProjectPortBinding: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('security:revoke-project-port-binding', projectId, threadId),
     enableGuardedYolo: (threadId: string) =>
       ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>
@@ -430,6 +435,7 @@ const api: ApiClient = {
         threadId?: string
         title: string
         body: string
+        bodyMarkdown?: string
         bodyAdvice?: string
         bodyFooter?: string
         type: string
@@ -453,6 +459,7 @@ const api: ApiClient = {
           threadId?: string
           title: string
           body: string
+          bodyMarkdown?: string
           bodyAdvice?: string
           bodyFooter?: string
           type: string
@@ -805,6 +812,12 @@ const api: ApiClient = {
     signIn: (name: string) => ipcRenderer.invoke('mcp:sign-in', name),
     cancelSignIn: (name: string) => ipcRenderer.invoke('mcp:cancel-sign-in', name),
     signOut: (name: string) => ipcRenderer.invoke('mcp:sign-out', name),
+    listUserServers: () => ipcRenderer.invoke('mcp:list-user-servers'),
+    saveUserServer: (
+      input: import('@shared/types/mcp-user-servers.ts').McpUserServerInput,
+      previousName?: string,
+    ) => ipcRenderer.invoke('mcp:save-user-server', input, previousName),
+    removeUserServer: (name: string) => ipcRenderer.invoke('mcp:remove-user-server', name),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {
@@ -914,6 +927,9 @@ const api: ApiClient = {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
+    searchRequests: (projectId: string, query: string) =>
+      ipcRenderer.invoke('threads:search-requests', projectId, query),
+    cancelRequestSearch: () => ipcRenderer.invoke('threads:cancel-request-search'),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (
@@ -1197,8 +1213,8 @@ const api: ApiClient = {
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) =>
       ipcRenderer.invoke('remote-agent:download-artifact', agentId, path),
-    artifactImageDataUrl: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remote-agent:artifact-image-data-url', agentId, path),
+    artifactImageDataUrl: (request: RemoteArtifactImageRequest) =>
+      ipcRenderer.invoke('remote-agent:artifact-image-data-url', request),
     models: () => ipcRenderer.invoke('remote-agent:models'),
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>
@@ -1527,6 +1543,10 @@ const api: ApiClient = {
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
     findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
+  },
+  backgroundTasks: {
+    logs: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('background-tasks:logs', projectId, threadId, taskId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
@@ -1919,6 +1939,9 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     },
     requestAcpPackageInstallApproval(scenario: 'install' | 'upgrade' | 'mixed' = 'install') {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
+    },
+    requestRemoteWatcherInstallApproval() {
+      return ipcRenderer.invoke('test:requestRemoteWatcherInstallApproval')
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

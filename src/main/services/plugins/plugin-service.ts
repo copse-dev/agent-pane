@@ -60,6 +60,8 @@ import {
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
@@ -117,15 +119,16 @@ const PLUGINS_SEEN_KEY = 'pluginsSeen'
  * This seed only reaches a profile with no list. A plugin added later is off on
  * an existing profile only if a one-time `migrate*Enablement` seed below adds it.
  *
- * The capability plugins added in #1188 remain experimental because each took
- * over a retired opt-in boolean (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`).
- * No migration ever read those booleans: a profile that already had a disable
- * list when the plugins arrived got them enabled, whatever the old boolean said.
- * They, and `copse.forced-planning`, deliberately have no upgrade seed now —
- * one would switch off features established profiles have been running with.
+ * The capability plugins added in #1188 took over a retired opt-in boolean
+ * (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`). No migration ever read
+ * those booleans: a profile that already had a disable list when the plugins
+ * arrived got them enabled, whatever the old boolean said. `copse.devtools-shortcut`
+ * and `copse.forced-planning` deliberately have no upgrade seed now — one would
+ * switch off features established profiles have been running with.
  * `copse.background-tasks` graduated to stable/default-on: its ordinary sandboxed
  * process support needs no extra authority, while `loopback-bind` still requires
- * a separate per-project grant at the point of use.
+ * a separate per-project grant at the point of use. `copse.mcp-ui-canvas`
+ * graduated the same way, via `migrateMcpUiCanvasStable()` below.
  *
  * `copse.forced-planning` never had a standalone setting to be opt-in through,
  * but belongs here for the same reason: it rewrites the system prompt of every
@@ -135,6 +138,9 @@ const DEFAULT_DISABLED_PLUGIN_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_
 
 /** One-time graduation from opt-in experiment to stable/default-on primitive. */
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
+
+/** One-time graduation of MCP-UI canvas from experimental/default-off to stable/default-on. */
+const MCP_UI_CANVAS_STABLE_MIGRATION_KEY = 'pluginMigration.mcpUiCanvasStable'
 
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
@@ -146,6 +152,9 @@ const ENGINEERING_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.engineeringEnablem
 
 /** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
 const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
+
+/** One-time default-off seed for computer use on upgraded profiles. */
+const COMPUTER_USE_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.computerUseEnablement'
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -288,6 +297,21 @@ function migrateBackgroundTasksStable(): void {
 }
 
 /**
+ * Graduate MCP-UI canvas from experimental/default-off to stable/default-on, the
+ * same shape as {@link migrateBackgroundTasksStable}. Existing profiles cannot
+ * distinguish the old seeded disable from an explicit opt-out, so the
+ * graduation removes it once; a disable made after this migration remains
+ * user-owned because the marker prevents re-entry.
+ */
+function migrateMcpUiCanvasStable(): void {
+  if (storageGet(MCP_UI_CANVAS_STABLE_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.delete(MCP_UI_CANVAS_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(MCP_UI_CANVAS_STABLE_MIGRATION_KEY, true)
+}
+
+/**
  * Automations have no retired standalone toggle to migrate. Seed the new plugin
  * disabled exactly once so an upgrade never starts a clock-driven feature
  * without an explicit opt-in; subsequent user toggles own the disable set.
@@ -342,6 +366,20 @@ function migrateDarkFactoryEnablement(): void {
   disabled.add(DARK_FACTORY_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * `copse.computer-use` drives other Mac apps, so it must never start enabled.
+ * Manifest stability only reaches fresh profiles; an existing profile owns a
+ * disable list that predates the plugin. Seed it off exactly once, and leave a
+ * later opt-in to the user.
+ */
+function migrateComputerUseEnablement(): void {
+  if (storageGet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(COMPUTER_USE_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -902,12 +940,14 @@ export function getPluginService(): PluginService {
   }
   migrateAgentsMdInstructionFiles(existingPluginProfile)
   migrateBackgroundTasksStable()
+  migrateMcpUiCanvasStable()
   migratePluginModelSettings()
   migrateAutomationsEnablement()
   migrateArtifactCheckpointEnablement()
   migrateReviewerInputEnablement()
   migrateEngineeringEnablement()
   migrateDarkFactoryEnablement()
+  migrateComputerUseEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()

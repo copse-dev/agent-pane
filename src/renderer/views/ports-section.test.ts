@@ -238,10 +238,14 @@ describe('ports section', () => {
     assert.equal(calls, 1)
 
     store.setState({ rightPanelMode: 'explorer' })
-    store.emit('right_panel_mode_changed')
     await settle()
     // Leaving the pane must not trigger another scan; each one spawns subprocesses.
     assert.equal(calls, 1)
+
+    // Coming back is a state change alone, with no event emitted.
+    store.setState({ rightPanelMode: 'terminal' })
+    await settle()
+    assert.equal(calls, 2)
   })
 
   it('does not overlap scans when one outlasts the polling interval', async () => {

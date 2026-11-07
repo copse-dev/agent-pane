@@ -1,5 +1,5 @@
 import type * as Monaco from 'monaco-editor'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
 import type { GitFileDiff } from '@shared/types/git.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -134,8 +134,8 @@ export function mountContextPanel(
     return md ? 'preview' : 'source'
   }
 
-  // Tracks the content already rendered into previewContainer so unrelated
-  // `panel_changed` events (e.g. an agent staging a diff elsewhere) don't
+  // Tracks the content already rendered into previewContainer so a repeat
+  // render of the same file (e.g. reopening it) doesn't
   // tear down and rebuild the DOM — including every link — for a file that
   // hasn't actually changed.
   let renderedPreviewContent: string | null = null
@@ -364,25 +364,30 @@ export function mountContextPanel(
   let watched: { projectId: string; threadId: string; path: string } | null = null
 
   const unsubs = [
-    store.on('panel_changed', () => {
-      updatePanel()
-      void refreshWorkingDiff()
-      const { openFile } = store.getState()
-      const owner = getActiveThreadOwner(store)
-      if (
-        watched &&
-        (watched.path !== openFile?.path ||
-          watched.projectId !== owner?.projectId ||
-          watched.threadId !== owner.threadId)
-      ) {
-        void api.fs.unwatch(watched.projectId, watched.threadId, watched.path)
-        watched = null
-      }
-      if (openFile && owner && !watched) {
-        void api.fs.watch(owner.projectId, owner.threadId, openFile.path)
-        watched = { ...owner, path: openFile.path }
-      }
-    }),
+    // The open file and the thread it belongs to; staging a diff is not a change.
+    store.select(
+      (s) => [s.openFile, s.activeProjectId, s.activeThreadId] as const,
+      () => {
+        updatePanel()
+        void refreshWorkingDiff()
+        const { openFile } = store.getState()
+        const owner = getActiveThreadOwner(store)
+        if (
+          watched &&
+          (watched.path !== openFile?.path ||
+            watched.projectId !== owner?.projectId ||
+            watched.threadId !== owner.threadId)
+        ) {
+          void api.fs.unwatch(watched.projectId, watched.threadId, watched.path)
+          watched = null
+        }
+        if (openFile && owner && !watched) {
+          void api.fs.watch(owner.projectId, owner.threadId, openFile.path)
+          watched = { ...owner, path: openFile.path }
+        }
+      },
+      sameItems,
+    ),
   ]
 
   const unsubFsChanged = api.fs.onChanged((projectId, threadId, path, newContent) => {

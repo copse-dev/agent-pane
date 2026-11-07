@@ -14,19 +14,24 @@ import {
   environmentSetupStatus,
   reviewEnvironmentSetup,
   undoEnvironmentSetup,
+  type EnvironmentSetupProject,
 } from './environment-setup.ts'
 
 let previousStore: string | undefined
 let tmp: string
 let workspace: string
+let otherWorkspace: string
+let ambientWorkspace: string
+let project: EnvironmentSetupProject
+let otherProject: EnvironmentSetupProject
 let restoreRoot: () => void
 let previousProject: unknown
 
-/** Five approved escalations of `command` and five of a web origin, over two threads. */
-function seedThreads(): void {
+/** Three approved escalations of `command` and three of a web origin per thread. */
+function seedThreads(projectId: string, threadIds: readonly string[]): void {
   const now = Date.now()
-  for (const threadId of ['t1', 't2']) {
-    const dir = join(tmp, 'store', 'proj', threadId)
+  for (const threadId of threadIds) {
+    const dir = join(tmp, 'store', projectId, threadId)
     mkdirSync(dir, { recursive: true })
     const lines: unknown[] = []
     const calls: unknown[] = []
@@ -87,16 +92,27 @@ describe('environment setup', () => {
     previousStore = process.env['COPSE_WORKSPACE_DIR']
     process.env['COPSE_WORKSPACE_DIR'] = join(tmp, 'store')
     workspace = join(tmp, 'project')
-    mkdirSync(workspace, { recursive: true })
-    restoreRoot = setWorkspaceRootForTest(workspace)
-    setWorkspaceTrusted(workspace, true)
+    otherWorkspace = join(tmp, 'other-project')
+    ambientWorkspace = join(tmp, 'ambient-project')
+    for (const dir of [workspace, otherWorkspace, ambientWorkspace]) {
+      mkdirSync(dir, { recursive: true })
+      setWorkspaceTrusted(dir, true)
+    }
+    project = { projectId: 'proj', root: workspace }
+    otherProject = { projectId: 'proj2', root: otherWorkspace }
+    // The process-global workspace names a third project with no history: the
+    // service must use only the project it is given.
+    restoreRoot = setWorkspaceRootForTest(ambientWorkspace)
     previousProject = storageGet('activeProjectId')
-    storageSet('activeProjectId', 'proj')
-    seedThreads()
+    storageSet('activeProjectId', 'ambient')
+    seedThreads('proj', ['t1', 't2'])
+    seedThreads('proj2', ['t3', 't4', 't5'])
   })
 
   after(() => {
-    setWorkspaceTrusted(workspace, false)
+    for (const dir of [workspace, otherWorkspace, ambientWorkspace]) {
+      setWorkspaceTrusted(dir, false)
+    }
     restoreRoot()
     storageSet('activeProjectId', previousProject)
     if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
@@ -112,23 +128,23 @@ describe('environment setup', () => {
   })
 
   it('offers itself once enough approved prompts would have been removed', async () => {
-    assert.deepEqual(await environmentSetupStatus(), { offer: true, promptCount: 12 })
+    assert.deepEqual(await environmentSetupStatus(project), { offer: true, promptCount: 12 })
     await dismissEnvironmentSetup(false)
-    assert.equal((await environmentSetupStatus()).offer, false)
+    assert.equal((await environmentSetupStatus(project)).offer, false)
   })
 
   it('stays hidden in an untrusted workspace', async () => {
     setWorkspaceTrusted(workspace, false)
     try {
-      assert.deepEqual(await environmentSetupStatus(), { offer: false, promptCount: 0 })
-      assert.deepEqual((await reviewEnvironmentSetup()).suggestions, [])
+      assert.deepEqual(await environmentSetupStatus(project), { offer: false, promptCount: 0 })
+      assert.deepEqual((await reviewEnvironmentSetup(project)).suggestions, [])
     } finally {
       setWorkspaceTrusted(workspace, true)
     }
   })
 
   it('applies only ticked suggestions, with values computed in main', async () => {
-    const review = await reviewEnvironmentSetup()
+    const review = await reviewEnvironmentSetup(project)
     const command = review.suggestions.find((s) => s.kind === 'trusted-command')
     const origin = review.suggestions.find((s) => s.kind === 'web-origin')
     assert.ok(command && origin)
@@ -136,7 +152,7 @@ describe('environment setup', () => {
     assert.equal(command.checked, false)
     assert.equal(origin.checked, true)
 
-    const result = await applyEnvironmentSetup(review.reviewId, [origin.id, 'not-an-issued-id'])
+    const result = await applyEnvironmentSetup('proj', review.reviewId, [origin.id, 'not-an-id'])
     assert.deepEqual(
       result.applied.map((change) => change.value),
       ['https://docs.example.com'],
@@ -147,13 +163,13 @@ describe('environment setup', () => {
     const log = (await storageReadFile('environment-setup.jsonl')) ?? ''
     assert.match(log, /"action":"apply".*"value":"https:\/\/docs.example.com"/)
 
-    await assert.rejects(applyEnvironmentSetup(review.reviewId, [command.id]), /expired/)
+    await assert.rejects(applyEnvironmentSetup('proj', review.reviewId, [command.id]), /expired/)
   })
 
   it('undoes exactly what it added and keeps later manual changes', async () => {
-    const review = await reviewEnvironmentSetup()
+    const review = await reviewEnvironmentSetup(project)
     const ids = review.suggestions.map((s) => s.id)
-    const { undoId } = await applyEnvironmentSetup(review.reviewId, ids)
+    const { undoId } = await applyEnvironmentSetup('proj', review.reviewId, ids)
     assert.ok(undoId)
     assert.deepEqual(getSetting<string[]>('trustedShellCommands', []), ['xcodebuild'])
 
@@ -165,5 +181,48 @@ describe('environment setup', () => {
     assert.deepEqual(getSetting<string[]>('trustedShellCommands', []), ['swift'])
     assert.ok(!getSetting<string[]>('webAllowedOrigins', []).includes('https://docs.example.com'))
     assert.deepEqual(await undoEnvironmentSetup(undoId), [])
+  })
+
+  it('resolves two projects concurrently, each from its own history and root', async () => {
+    const [status, otherStatus] = await Promise.all([
+      environmentSetupStatus(project),
+      environmentSetupStatus(otherProject),
+    ])
+    assert.deepEqual(status, { offer: true, promptCount: 12 })
+    assert.deepEqual(otherStatus, { offer: true, promptCount: 18 })
+
+    setWorkspaceTrusted(otherWorkspace, false)
+    try {
+      const [review, otherReview] = await Promise.all([
+        reviewEnvironmentSetup(project),
+        reviewEnvironmentSetup(otherProject),
+      ])
+      assert.ok(review.suggestions.length > 0)
+      // Trust is checked on the project's own root, not the ambient workspace.
+      assert.deepEqual(otherReview.suggestions, [])
+    } finally {
+      setWorkspaceTrusted(otherWorkspace, true)
+    }
+  })
+
+  it('keeps one review per project and applies it only for that project', async () => {
+    const [review, otherReview] = await Promise.all([
+      reviewEnvironmentSetup(project),
+      reviewEnvironmentSetup(otherProject),
+    ])
+    const ids = review.suggestions.map((s) => s.id)
+    await assert.rejects(applyEnvironmentSetup('proj2', review.reviewId, ids), /expired/)
+    await assert.rejects(applyEnvironmentSetup(null, review.reviewId, ids), /expired/)
+
+    // Reviewing the second project did not expire the first.
+    const result = await applyEnvironmentSetup('proj', review.reviewId, ids)
+    assert.deepEqual(result.applied.map((change) => change.value).sort(), [
+      'https://docs.example.com',
+      'xcodebuild',
+    ])
+    const otherIds = otherReview.suggestions.map((s) => s.id)
+    const otherResult = await applyEnvironmentSetup('proj2', otherReview.reviewId, otherIds)
+    // The first project's apply already added both values.
+    assert.deepEqual(otherResult, { applied: [], undoId: null })
   })
 })

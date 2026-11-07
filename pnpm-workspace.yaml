@@ -48,6 +48,7 @@ overrides:
   undici@8: 8.12.3
   source-map-js@<1.2.2: 1.2.2
   body-parser@2: 2.4.0
+  node-forge: 1.4.2
 
 # Dependabot's `cooldown.default-days: 7` (.github/dependabot.yml) runs pnpm
 # with --config.minimumReleaseAge=10080, which makes pnpm refuse to resolve
@@ -78,6 +79,7 @@ minimumReleaseAgeExclude:
   - undici
   - source-map-js
   - body-parser
+  - node-forge
 
 # adm-zip 0.6.1 fixes the declared-size allocation advisory and includes the
 # destination-symlink protections previously carried as a local patch. The
@@ -128,16 +130,6 @@ patchedDependencies:
   # Real factory/renderer/registered-handler coverage: xcodebuildmcp.test.ts.
   xcodebuildmcp@2.7.0: patches/xcodebuildmcp@2.7.0.patch
 
-# GHSA-86w9-cpqp-85rv (node-forge <=1.4.0, RSA PKCS#1 v1.5 signature
-# verification accepts extra DigestAlgorithm elements) has no patched release,
-# and the latest @anthropic-ai/sandbox-runtime still depends on node-forge
-# ^1.4.0, so no override or bump clears it. It is only reachable by calling
-# forge's RSA verify on attacker-supplied signatures. sandbox-runtime uses
-# node-forge solely to build the local CA and leaf certificates for its
-# `network.mitmProxy` mode (signing goes through native crypto), never calls
-# verify, and Copse never enables `mitmProxy`. Remove this once node-forge
-# publishes a patched version.
-#
 # GHSA-ch52-4w7c-c8xp (http-cache-semantics <=4.2.0, max-stale can reuse
 # security-zeroed shared-cache responses) has no patched npm release as of
 # 2026-10-03. It is only pulled in by @electron/get via got/cacheable-request
@@ -166,7 +158,6 @@ patchedDependencies:
 # @lmstudio/sdk moves to zod >=4.6.6 or zod 3 gets a patched release.
 auditConfig:
   ignoreGhsas:
-    - GHSA-86w9-cpqp-85rv
     - GHSA-ch52-4w7c-c8xp
     - GHSA-vfj7-8cjw-p6xm
     - GHSA-mrhx-c7xc-m3w5

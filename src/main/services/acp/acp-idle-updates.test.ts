@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnContext, type AcpTurnRunner } from './acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers } from './acp-client.ts'
@@ -121,6 +121,7 @@ describe('acp between-turn updates (issue #588)', () => {
         id: 'bg1',
         name: 'background_review',
         title: 'background_review',
+        programmaticName: 'background_review',
         args: { scope: 'diff' },
       },
       'the background tool call must surface while idle',

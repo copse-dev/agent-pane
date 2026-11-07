@@ -9,6 +9,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
+import { installSafeTerminalPaste } from '../terminal/safe-paste.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -33,6 +34,7 @@ import {
   watchEditorTheme,
   xtermThemeFromTokens,
 } from '../dom/editor-theme.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 /* xterm only renders whole rows, so the fit addon leaves a few pixels of
    remainder at the bottom of the pane. xterm 6 paints the theme background on
@@ -154,8 +156,8 @@ export function mountTerminalsPane(
   const tabs = new Map<string, TerminalTab>()
   let activeTabId: string | null = null
   let tabCounter = 0
-  // Which thread's shells are currently shown. Tracked so we only re-scope when
-  // the active thread actually changes (threads_changed fires for many reasons).
+  // Which thread's shells are currently shown. Tracked so the workspace switch
+  // (which may land on the same thread id) only re-scopes on a real change.
   let lastThreadId: string | null = store.getState().activeThreadId
 
   const unsubOutput = api.terminal.onOutput((id, data) => {
@@ -458,6 +460,9 @@ export function mountTerminalsPane(
   }
 
   function wireTabInput(tab: TerminalTab): void {
+    const paste = installSafeTerminalPaste(tab.term, tab.container, () =>
+      tabs.get(tab.id) === tab ? tab.sessionId : null,
+    )
     // Cmd/Ctrl+L attaches the terminal's current selection to the chat so
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
@@ -497,12 +502,12 @@ export function mountTerminalsPane(
           label: 'Paste',
           disabled: !tab.sessionId,
           onSelect: (): void => {
-            void navigator.clipboard.readText().then((text) => {
-              if (text && tab.sessionId) {
-                tab.term.paste(text)
-                focusTab(tab)
-              }
-            })
+            void navigator.clipboard
+              .readText()
+              .then((text) => paste(text))
+              .catch((error: unknown) => {
+                console.warn('Could not paste into terminal', error)
+              })
           },
         },
       ])
@@ -534,8 +539,7 @@ export function mountTerminalsPane(
 
   // Creating a shell is asynchronous (xterm loads on first use), and more than
   // one listener can ask for "a shell for this scope" before the first lands:
-  // opening the pane fires `files_pane_changed` and `right_panel_mode_changed`
-  // in the same tick. Share the in-flight creation per scope so they get one.
+  // opening the pane and switching thread can both ask in the same tick. Share the in-flight creation per scope so they get one.
   const pendingScopeTabs = new Map<string | null, Promise<string>>()
   // Every tab still waiting on xterm, by scope — including ones a command run, a
   // code-block run or "+" started — so the scope is not given an extra empty one.
@@ -827,7 +831,7 @@ export function mountTerminalsPane(
   }
 
   // Theme, tint and accent all land on <html>; follow them there rather than on
-  // `theme_changed`, which tint and accent changes never emit.
+  // the store's `theme`, which tint and accent changes never touch.
   const unwatchTheme = watchEditorTheme((tokens) => {
     const theme = xtermThemeFromTokens(tokens)
     for (const tab of tabs.values()) {
@@ -863,8 +867,6 @@ export function mountTerminalsPane(
     await addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
     if (!wasActive) {
       store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
-      store.emit('files_pane_changed')
-      store.emit('right_panel_mode_changed')
     }
   }
 
@@ -912,9 +914,8 @@ export function mountTerminalsPane(
     }
   }
 
-  // Only re-scope when the active thread actually changed. `threads_changed`
-  // fires for many unrelated reasons (streaming, renames), and `workspace_changed`
-  // also swaps the active thread when the project switches — both funnel here.
+  // Only re-scope when the active thread actually changed. A project switch
+  // swaps the active thread in the same write the selection below hears.
   function onThreadMaybeChanged(): void {
     const threadId = currentThreadId()
     if (threadId === lastThreadId) return
@@ -961,15 +962,13 @@ export function mountTerminalsPane(
   }
 
   const unsubs = [
-    store.on('right_panel_mode_changed', onTerminalModeChange),
-    store.on('files_pane_changed', onTerminalModeChange),
+    selectRightPanelMode(store, 'terminal', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('settings_changed', onFontSizeChange),
-    store.on('threads_changed', onThreadMaybeChanged),
+    store.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store.on('thread_checkout_changed', (threadId) => {
       void onThreadCheckoutChanged(threadId)
     }),
-    store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', (command, options) => {
       void runCommandInNewShell(command, options)
     }),

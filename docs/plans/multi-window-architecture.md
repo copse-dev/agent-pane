@@ -266,6 +266,8 @@ Each full `BrowserWindow` loads the normal renderer and creates its own `AppStor
 
 Renderer persistence must stop writing process-global active-project or active-thread keys as the authority. This migration includes `src/main/services/workspace.ts`, the renderer persistence controller, storage-key guards, and startup hydration—not just the in-memory `AppStore`. Navigation updates are written through window-scoped IPC using the sender-derived context.
 
+Main-process services name their root explicitly instead of reading the process-global workspace (#3958). Agent paths read the running turn's roots through `getAgentExecutionRoot()` / `getAgentProjectRoot()` (`src/main/services/execution-root.ts`), which resolve only the thread execution context or a headless `runWithWorkspaceRoot` scope and return null otherwise. An IPC handler takes its root from the sender's own window record (`senderProjectRoot` in `src/main/ipc/sender-project-root.ts`) or from the thread it names (`resolveThreadExecutionContext`, or `inspectThreadCheckoutRoot` for read-only probes). `git-service` and `GitHubBackend` take the root as a parameter and never default it.
+
 Shared mutations, such as adding a project, emit a broadcast so every renderer refreshes or applies the change. Window-local mutations do not broadcast.
 
 Thread execution and cancellation remain thread-scoped. Existing running-thread and abort coordination must enforce one active run per thread across every window; a second renderer must not bypass that guard by presenting a separate UI owner.

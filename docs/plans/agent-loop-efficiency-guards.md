@@ -10,12 +10,18 @@ thread `178909d1` ("Cmd+L Select Browser URL") — 43 minutes and 3.38M input to
 produce a 7-line change that did not work ([#1427](https://github.com/copse-dev/agent-pane/pull/1427),
 fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
 
-Status: **Partially implemented.** Fixes 1–3 landed in
+Status: **Resolved** for #1433's scope (Fixes 0, 0b, 1–5). Fixes 1–3 landed in
 [#2837](https://github.com/copse-dev/agent-pane/pull/2837) and Fix 7 in
 [#3277](https://github.com/copse-dev/agent-pane/pull/3277); the split-out #1436, #1437 and #1438 are
-closed. Fix 0/0b, Fix 4 and Fix 5 remain open under #1433. Fix 0 was reworked after review: the original
-"give the parent a `read_file`" options are superseded by structured explore returns, which
-keep `read_file` off the parent's tool list entirely.
+closed. Fix 5's "check attached in the completing call" hold also landed
+(`holdChecksAttachedAtCompletion`), and step 0, the rename, is done: the guard set is
+`DUPLICATE_GUARDED_TOOL_NAMES` and the subagent allow-list is `SUBAGENT_ALLOWED_TOOL_NAMES`.
+Fix 0 (structured explore returns), Fix 0b (routed reads), Fix 4 and the rest of Fix 5 are
+implemented; see their sections. Follow-ups, separate work: the Fix 0 eval scenario
+(`maxExplore: 3`, `maxInputTokens`), excerpting search hits, and a model-run eval of the Fix 4
+finalize. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
+structured explore returns, which keep `read_file` off the parent's tool list entirely. Code
+references below describe the code as it was when the plan was written.
 
 ## Why
 
@@ -119,6 +125,30 @@ away".
 
 ### Fix 0 — explore returns structured results
 
+**Status: implemented.** As built:
+
+- The bytes are captured where `read_file` produces them rather than by re-parsing
+  `session.messages[].toolCalls[].result`: `read_file` reports each span it returned to an
+  `AsyncLocalStorage` recorder that only `runExploreSubagent` installs
+  (`src/main/services/explore-read-recorder.ts`). Parsing the result string would have meant
+  re-deriving the range from the paging footer and stripping the staged-diff note, and any
+  drift there silently corrupts the one thing this fix exists to keep exact. Parallel explores
+  each see only their own reads.
+- Pure merging, budgeting and rendering live in `packages/agent/src/explore-excerpts.ts`.
+  Overlapping or adjacent reads of a file merge into one span. Spans the summary names by
+  path go first. The budget is the subagent's own per-read `maxChars`, so one explore result
+  costs the parent at most one read's worth of excerpt. A span that does not fit is dropped
+  whole and named, with its range, in a closing note.
+- No span is recorded for a read shadowed by a pending staged diff (`str_replace` edits the
+  proposed content, not the on-disk bytes), for an empty or binary read, or for a
+  char-truncated single line that may be only a prefix.
+- The explore-mode `str_replace` not-found message and the explore-without-read nudge (now
+  given `readFileOffered` on the `stepBoundary` payload) point at the excerpts, not at
+  `read_file`.
+- `search_code` / `search_codebase` hits are not excerpted. The optional provenance-labelled
+  half is deferred until runs show excerpts from reads are not enough.
+- The specialist-review evidence path still receives only the summary.
+
 `explore` returns one document with two halves, and `read_file` stays hidden from the
 parent entirely:
 
@@ -162,6 +192,19 @@ change is to stop discarding it and to render it. Blast radius is smaller than a
 that alters the parent's tool list.
 
 ### Fix 0b — route parent reads through the child's session (follow-on)
+
+**Status: implemented** as the parent tool `read_explored` (`src/main/tools/read-explored-tool.ts`),
+offered only in explore mode (`SUBAGENT_ONLY_TOOLS`). Every span the run's explore subagents
+read — including those Fix 0's budget left out of the excerpts — is retained on the run's
+explore-mode scope (`retainExploredSpans`). `quoteExploredLines` (pure, `explore-excerpts.ts`)
+looks lines up in those spans only: an unread path answers "not explored yet — call explore
+first", an unread range answers with the explored ranges, and a partly read range quotes the read
+part and names the rest. There is no disk fallback. Each quote is compared with the text
+`str_replace` would match today (pending staged diff, else disk), and a mismatch answers "changed
+since it was explored", so an edit never yields stale bytes. Retention is per run: a new turn
+starts empty and the parent explores again. `read_explored` counts as an exact read for the
+duplicate guard and the explore-without-read streak, is read-only-mode safe, and is native-only
+for ACP.
 
 Once the session is retained, a parent-side read request can be served from it rather than
 from disk. Two readings of "route through the child" behave very differently and only one
@@ -380,6 +423,18 @@ fingerprint bookkeeping in `run-agent-loop.ts`.
 
 ## Fix 4 — no stop condition once the goal is reached
 
+**Status: implemented.** "Goal met" is defined without reference to PRs: one step's
+`update_todos` closed the last open todo, and every item that step completed carries an
+acceptance `check` (`planClosedByVerifiedChecks`). Fix 5 is what makes that trustworthy:
+checks are executed before `completed` is accepted. The `plan-verified-finalize`
+`stepBoundary` hook then selects one tool-free finalize turn (hooks plan decision 32). Plans
+closed without checks finish as before. Repeat-verification damping (`RepeatVerificationTracker`)
+keys whole-suite `run_shell` commands (test/check/lint/typecheck/build through a package manager,
+make, or a direct runner; output filters ignored; writing flags and redirections excluded) and
+skips an identical re-run while only read-only tools or read-only shell inspection
+(`git status|diff|show|log`, `ls`, `cat`, …) ran since. Any edit, unrecognised command, thrown
+tool, or history trim re-arms it.
+
 **Problem.** The PR was created at t=1795s. The run continued **800 more seconds**:
 `git status`, `git diff origin/main --stat` (38KB of output), `git show --stat`, two more
 full `npm run check` runs, a `git stash`/`stash pop` cycle, and a force-push returning
@@ -411,6 +466,14 @@ creation. Piece (2) is independently shippable and lower risk.
 ---
 
 ## Fix 5 — todo state can be rewritten to look complete
+
+**Status: implemented.** Checks are executed before `completed` is accepted
+(`gateCompletedStatus`), a check first attached in the completing call is held
+(`holdChecksAttachedAtCompletion`), and `cancelled` → `completed` without a check is refused
+(`refuseUncheckedRevivalOfCancelled`). The corpus fixture is a replay of `t3` reconstructed from
+the issue, since the run's own calls were not kept. Known limit: a check that passes but does
+not test the item — `t3`'s `gh pr view` for a fetch — still passes once committed to in an
+earlier call; no harness rule can judge a check's relevance.
 
 **Problem.** 9 `update_todos` calls on a 4-item list, including a zod rejection (`{id,
 status}` with no `content`). More seriously, `t3` went `cancelled` → `completed` **and

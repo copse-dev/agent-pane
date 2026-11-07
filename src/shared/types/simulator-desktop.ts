@@ -1,3 +1,5 @@
+export const SIMULATOR_REMOVED_DETAIL = 'Simulator deleted'
+
 export interface SimulatorDesktopDevice {
   udid: string
   name: string

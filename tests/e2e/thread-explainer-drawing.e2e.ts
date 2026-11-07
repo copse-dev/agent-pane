@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { ToolCall } from '../../src/shared/types/index.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
-import { browser, $ } from '@wdio/globals'
+import { browser } from '@wdio/globals'
 import { drawingStory, textAlignmentStory } from '../fixtures/explainer-drawing.ts'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
@@ -12,7 +12,12 @@ import { submitComposer } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  savePreparedAppScreenshot,
+} from './helpers/screenshot.ts'
+import { frameInTranscript, stickyPromptCollisions } from './helpers/sticky-prompt.ts'
 
 async function turn(prompt: string, name: string, args: Record<string, unknown>): Promise<void> {
   const scenario = await prepareMockToolTurn(
@@ -73,7 +78,15 @@ async function capture(index: number, name: string, playerName: string): Promise
     join(E2E_SCREENSHOT_DIR, `${playerName}.png`),
     Buffer.from(png.split(',')[1] ?? '', 'base64'),
   )
-  await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `${name}.png`))
+  // Frame the answer around the card below the pinned prompt (the capture's
+  // scrollIntoView above does not reserve its band), then prove it is clear.
+  await frameInTranscript(['.msg:has(.canvas-inline-artefact)'], index)
+  const pinned = await stickyPromptCollisions({
+    selector: '.msg:has(.canvas-inline-artefact)',
+    nth: index,
+  })
+  assert.deepEqual(pinned.collisions, [], `${name}: ${JSON.stringify(pinned.geometry)}`)
+  await savePreparedAppScreenshot(`${name}.png`)
   await browser.execute((item) => {
     const card = document.querySelectorAll('.canvas-inline-artefact')[item]
     if (!card) throw new Error('Expected a drawing card')

@@ -256,6 +256,9 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
 
   openImpl = (): void => {
     if (dialog.open) return
+    // A search scheduled before closing must not replace this open's seed results.
+    if (debounce) clearTimeout(debounce)
+    debounce = null
     input.value = ''
     results = []
     selectedIdx = 0

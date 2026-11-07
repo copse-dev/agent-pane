@@ -6,6 +6,7 @@ import { setTerminalCommandLauncher } from '../exec/terminal-launch.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { ownedIt } from '../thread-execution-context.test-support.ts'
 
 describe('offerAcpReauth', () => {
   let launched: string[] = []
@@ -80,6 +81,23 @@ describe('offerAcpReauth', () => {
     assert.match(asked, /claude auth login/)
     assert.match(asked, /re-send your message/)
     assert.doesNotMatch(asked, /claude-agent-acp|SDK|ACP|--sso/)
+  })
+
+  // Claude's failed organization check (#4147) reads the same for a stale token
+  // and for a network failure, so the offer must not claim the sign-in expired.
+  it('does not call an unverified sign-in expired', async () => {
+    let asked = ''
+    await withAnswer(
+      (question) => {
+        asked = question
+        return 'Not now'
+      },
+      () => offerAcpReauth({ agentId: 'claude-acp', kind: 'unverified' }),
+    )
+    assert.match(asked, /Claude couldn’t verify its saved sign-in/)
+    assert.match(asked, /Unless your network was down/)
+    assert.match(asked, /claude auth login/)
+    assert.doesNotMatch(asked, /has expired|is not signed in/)
   })
 
   it('launches nothing when the user declines', async () => {
@@ -171,7 +189,7 @@ describe('offerAcpReauth on an SSH workspace', () => {
     await setSetting('acpOverSshEnabled', false)
   })
 
-  it('launches the guarded login command for the tab that opens on the host', async () => {
+  ownedIt('launches the guarded login command for the tab that opens on the host', async () => {
     const command = await runWithAskUserHandler(
       (req) => Promise.resolve({ answers: req.questions.map(() => 'yes') }),
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
@@ -187,17 +205,20 @@ describe('offerAcpReauth on an SSH workspace', () => {
     assert.ok(!/\bssh\b/.test(cmd), 'no ssh nesting in the typed command')
   })
 
-  it('names the host in the question so the user knows where the sign-in happens', async () => {
-    let asked = ''
-    await runWithAskUserHandler(
-      (req) => {
-        asked = req.questions[0]?.question ?? ''
-        return Promise.resolve({ answers: req.questions.map(() => 'Not now') })
-      },
-      () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'required' }),
-    )
-    assert.match(asked, /SSH host dev/)
-    assert.match(asked, /claude auth login/)
-    assert.deepEqual(launched, [])
-  })
+  ownedIt(
+    'names the host in the question so the user knows where the sign-in happens',
+    async () => {
+      let asked = ''
+      await runWithAskUserHandler(
+        (req) => {
+          asked = req.questions[0]?.question ?? ''
+          return Promise.resolve({ answers: req.questions.map(() => 'Not now') })
+        },
+        () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'required' }),
+      )
+      assert.match(asked, /SSH host dev/)
+      assert.match(asked, /claude auth login/)
+      assert.deepEqual(launched, [])
+    },
+  )
 })

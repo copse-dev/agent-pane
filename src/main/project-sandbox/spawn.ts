@@ -20,7 +20,7 @@ import {
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
-import { withSandboxTmpEnv } from './tmp-env.ts'
+import { sandboxTmpDirFor, withSandboxTmpEnv, withSandboxWrapTmpDir } from './tmp-env.ts'
 import {
   detachForGroupKill,
   formatArgvForShell,
@@ -71,14 +71,34 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
 }
 
 /**
- * Point the shell's temp-dir env vars at the workspace-owned scratch dir so
- * commands using $TMPDIR (mktemp, build tools, test runners) write to a path the
- * seatbelt allows instead of the system /tmp it denies (issue #481). An explicit
- * `opts.env` override still wins via {@link mergeSpawnEnv}. No-op outside the
- * sandbox, where the system temp dir is fully writable.
+ * The temp directory a command wrapped with `overlay` can write: the
+ * workspace-owned scratch dir when the overlay grants it, so commands using
+ * $TMPDIR (mktemp, build tools, test runners) stay off the system /tmp the
+ * seatbelt denies (issue #481), and ASRT's own scratch dir otherwise (a
+ * read-only overlay). Unsandboxed spawns keep the host's temp dir.
  */
-function withWorkspaceTmpEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return withSandboxTmpEnv(env, ensureWorkspaceTmpDir())
+function sandboxTmpDir(overlay: Partial<SandboxRuntimeConfig>): string {
+  return sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
+}
+
+/**
+ * Wrap `command` with ASRT, baking `tmpDir` in as the child's `TMPDIR` (#4149).
+ * Pair it with {@link withSandboxTmpEnv} over the same `tmpDir`, applied after
+ * any caller `env`: ASRT's `TMPDIR` beats the spawn env, so a caller's `TMP` or
+ * `TEMP` could only disagree with it.
+ */
+function wrapForSandbox(
+  command: string,
+  shell: string,
+  overlay: Partial<SandboxRuntimeConfig>,
+  tmpDir: string,
+  signal?: AbortSignal,
+  cwd?: string,
+  options?: Parameters<typeof SandboxManager.wrapWithSandboxArgv>[5],
+): ReturnType<typeof SandboxManager.wrapWithSandboxArgv> {
+  return withSandboxWrapTmpDir(tmpDir, () =>
+    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal, cwd, options),
+  )
 }
 
 /**
@@ -105,14 +125,15 @@ async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
 }
 
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  // A captured target is authoritative, including local. Cwd recovery only
+  // applies to callers that did not already resolve their execution owner.
+  if (explicit) return explicit
   // Inside an agent turn the turn's own project decides, not whichever project
   // the window shows now: the gate and the spawn resolve the same answer even
   // if the user switches projects between them.
-  if (!explicit) {
-    const threadTarget = threadProjectExecutionTarget()
-    if (threadTarget) return threadTarget
-  }
-  const target = resolveExecutionTarget(explicit)
+  const threadTarget = threadProjectExecutionTarget()
+  if (threadTarget) return threadTarget
+  const target = resolveExecutionTarget(undefined)
   if (isSshExecutionTarget(target)) return target
   // Activation races can leave activeProjectId without sshHost while cwd is already
   // a remote project path — recover instead of applying a local seatbelt to /etc/….
@@ -188,11 +209,13 @@ export async function spawnInProjectSandbox(
 
   const command = shellCommand(executable, args)
   const customConfig = opts.sandboxConfig ?? workspaceSandboxOverlay(opts.cwd)
+  const tmpDir = sandboxTmpDir(customConfig)
 
-  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+  const { argv, env } = await wrapForSandbox(
     command,
     shellForSandboxWrap(),
     customConfig,
+    tmpDir,
     opts.signal,
   )
 
@@ -206,7 +229,9 @@ export async function spawnInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
+    env: withSandboxShellPath(
+      withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
+    ),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -277,10 +302,12 @@ export async function spawnShellInProjectSandbox(
   const customConfig = opts.readonlyCheckout
     ? withoutCheckoutWrites(baseConfig, opts.cwd)
     : baseConfig
-  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+  const tmpDir = sandboxTmpDir(customConfig)
+  const { argv, env } = await wrapForSandbox(
     shellCommandLine,
     shellForSandboxWrap(),
     customConfig,
+    tmpDir,
     opts.signal,
   )
 
@@ -288,7 +315,9 @@ export async function spawnShellInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
+    env: withSandboxShellPath(
+      withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
+    ),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -317,6 +346,10 @@ export async function spawnBackgroundProcess(
     allowPortBinding?: boolean
     /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
     unsandboxed?: boolean
+    /** Named read targets derived from the command approved by the tool gate. */
+    readGrantTargets?: readonly string[]
+    /** Unique host-owned attempt id for runner-side violation attribution. */
+    violationId?: string
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -343,9 +376,15 @@ export async function spawnBackgroundProcess(
     })
   }
 
-  const overlay = opts.allowPortBinding
-    ? portBindingSandboxOverlay(opts.cwd)
-    : workspaceSandboxOverlay(opts.cwd)
+  const readGrantTargets = opts.readGrantTargets ?? []
+  const base =
+    readGrantTargets.length > 0
+      ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
+      : workspaceSandboxOverlay(opts.cwd)
+  const bindingNetwork = opts.allowPortBinding
+    ? portBindingSandboxOverlay(opts.cwd).network
+    : undefined
+  const overlay = bindingNetwork ? { ...base, network: bindingNetwork } : base
   // Only a port-binding task needs the global network scope widened; a contained
   // task keeps the deny-all base, so acquiring a no-op scope would be misleading.
   const release = opts.allowPortBinding
@@ -356,16 +395,23 @@ export async function spawnBackgroundProcess(
       })
     : (): void => {}
   try {
-    const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+    const tmpDir = sandboxTmpDir(overlay)
+    const { argv, env } = await wrapForSandbox(
       shellCommandLine,
       shellForSandboxWrap(),
       overlay,
+      tmpDir,
+      undefined,
+      opts.cwd,
+      opts.violationId ? { commandId: opts.violationId } : undefined,
     )
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')
     const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
       cwd: opts.cwd,
-      env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
+      env: withSandboxShellPath(
+        withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
+      ),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
@@ -466,11 +512,13 @@ export async function spawnPtyInProjectSandbox(
 
   const customConfig = { ...workspaceSandboxOverlay(opts.cwd), allowPty: true }
   const innerCommand = `exec ${quote.quote([shell])} -il`
+  const tmpDir = sandboxTmpDir(customConfig)
   // cwd is handed to pty.spawn via ptyOpts; no main-process chdir during wrap (#74).
-  const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
+  const { argv, env } = await wrapForSandbox(
     innerCommand,
     shellForSandboxWrap(shell),
     customConfig,
+    tmpDir,
   )
 
   const file = argv[0]
@@ -480,6 +528,6 @@ export async function spawnPtyInProjectSandbox(
     // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
     // sandbox-wrapped, so the system temp dir is denied (issue #481). The wrap env is
     // process.env verbatim on POSIX, so scrub it too (#579) — termEnv is already scrubbed.
-    env: withSandboxShellPath(withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv })),
+    env: withSandboxShellPath(withSandboxTmpEnv({ ...strippedBaseEnv(env), ...termEnv }, tmpDir)),
   })
 }

@@ -205,6 +205,20 @@ describe('headless-contract: projectStreamChunk', () => {
     assert.doesNotThrow(() => headlessEventSchema.parse(ev))
   })
 
+  it('projects text replacement as an upsert of the current assistant item', () => {
+    const localCtx = { turnId: 'turn-replace', mintItemId: (): string => 'message-1' }
+    const [initial] = projectStreamChunk({ type: 'text', text: 'draft <marker>' }, localCtx)
+    const [replacement] = projectStreamChunk(
+      { type: 'text_replace', text: 'draft cleaned' },
+      localCtx,
+    )
+
+    assert.ok(initial?.type === 'message')
+    assert.ok(replacement?.type === 'message')
+    assert.equal(replacement.itemId, initial.itemId)
+    assert.equal(replacement.text, 'draft cleaned')
+  })
+
   it('maps a tool_call chunk, reusing the tool-call id as the item id', () => {
     const chunk: AgentStreamChunk = {
       type: 'tool_call',

@@ -13,7 +13,7 @@ import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import {
   beginThreadSubmission,
   endThreadSubmission,
@@ -119,7 +119,11 @@ import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeProjectThreadOf,
+  getActiveThreadOwner,
+  sameProjectThreadBesidesDraft,
+} from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
@@ -132,6 +136,7 @@ import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 interface MountInputBarOptions {
   /**
@@ -661,6 +666,11 @@ export function mountInputBar(
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
+  // Deliberately still `threads_changed`, not a selection of the active thread:
+  // `refresh()` refetches the provider catalog for the thread's model, and the
+  // turn-start route pin (`turn_parameters`) changes that model but takes the
+  // lighter `thread_model_resolved` → `sync()` path. A selection would refetch
+  // the catalog on every auto-routed turn and relabel the picker.
   store.on('threads_changed', () => {
     modelPicker.refresh()
     void refreshAutomaticCheckoutPreview()
@@ -1760,7 +1770,14 @@ export function mountInputBar(
 
   let estimateTimer: ReturnType<typeof setTimeout> | null = null
   let estimateSeq = 0
+  /** The request awaiting main's reply; superseded once `estimateSeq` moves on. */
+  let estimateInFlight: number | null = null
   let estimateEnabled = true
+
+  /** The wheel is busy while an estimate is scheduled or its reply is still due. */
+  function syncEstimateBusy(): void {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq)
+  }
 
   function stopContextEstimates(): void {
     estimateEnabled = false
@@ -1769,6 +1786,7 @@ export function mountInputBar(
       clearTimeout(estimateTimer)
       estimateTimer = null
     }
+    syncEstimateBusy()
   }
 
   /** Skills and agents as one `/name` namespace; skills win a collision. */
@@ -1802,6 +1820,14 @@ export function mountInputBar(
   }
 
   async function runContextEstimate(): Promise<void> {
+    try {
+      await requestContextEstimate()
+    } finally {
+      syncEstimateBusy()
+    }
+  }
+
+  async function requestContextEstimate(): Promise<void> {
     if (!estimateEnabled) return
     // The external agent owns its system prompt, tools, skills, and cache. A
     // Copse-native estimate would describe the wrong prompt; wait for ACP's
@@ -1833,10 +1859,13 @@ export function mountInputBar(
     const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
+    estimateInFlight = seq
     try {
       breakdown = await api.agent.estimateContext(projectId, id, payload)
     } catch {
       return
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null
     }
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
@@ -1852,6 +1881,7 @@ export function mountInputBar(
       estimateTimer = null
       void runContextEstimate()
     }, delay)
+    syncEstimateBusy()
   }
 
   submitBtn.addEventListener('click', () => {
@@ -2031,7 +2061,7 @@ export function mountInputBar(
   refreshClientActions = clientActionOffers.refresh
   composer.el.addEventListener('input', refreshClientActions)
   const stopClientActions = [
-    store.on('threads_changed', refreshClientActions),
+    store.select(activeProjectThreadOf, refreshClientActions, sameProjectThreadBesidesDraft),
     store.on('thread_status_changed', refreshClientActions),
   ]
 
@@ -2884,7 +2914,7 @@ export function mountInputBar(
     refreshSkillsCache()
     scheduleContextEstimate(0)
   }
-  const unsubWorkspace = store.on('workspace_changed', onSkillsChanged)
+  const unsubWorkspace = selectActiveWorkspace(store, onSkillsChanged)
   window.addEventListener('copse:skills-changed', onSkillsChanged)
 
   const skillPicker = initSkillPicker({
@@ -2915,6 +2945,14 @@ export function mountInputBar(
   })
 
   const unsubs = [
+    store.select(
+      (state) =>
+        state.activeThreadId !== null &&
+        state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState()
+      },
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already
@@ -2979,18 +3017,34 @@ export function mountInputBar(
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
-    store.on('threads_changed', () => {
-      syncComposerThread()
-      executionMode.refresh()
-      footerOverflow.update()
-      guardedYolo.refresh()
-      containerRun.refresh()
-      hideBranchMismatch()
-      hideDirtyWarning()
-      updateState()
-      updateFooter()
-      updateQueueIndicator()
-    }),
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      () => {
+        syncComposerThread()
+        containerRun.refresh()
+      },
+      sameItems,
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
+    store.select(
+      activeProjectThreadOf,
+      () => {
+        executionMode.refresh()
+        footerOverflow.update()
+        guardedYolo.refresh()
+        hideBranchMismatch()
+        hideDirtyWarning()
+        updateState()
+        updateFooter()
+        updateQueueIndicator()
+      },
+      sameProjectThreadBesidesDraft,
+    ),
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
@@ -3008,7 +3062,7 @@ export function mountInputBar(
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {

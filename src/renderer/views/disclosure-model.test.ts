@@ -166,6 +166,38 @@ describe('disclosure model', () => {
     assert.deepEqual(h.revealed, ['long'], 'revealed twice')
   })
 
+  it('cancels a pending reveal when the card loses eligibility (absorbed into a rollup)', () => {
+    const { model, clock, h } = setup()
+    assert.equal(model.update(T, 'absorbed', tool('running')), false)
+    clock.advance(100)
+    // Still running, but now a rollup child: it may not reveal itself.
+    const nested: DisclosureUpdate = { kind: 'tool', status: 'running', autoRevealEligible: false }
+    assert.equal(model.update(T, 'absorbed', nested), false)
+    clock.advance(1_000)
+    assert.deepEqual(h.revealed, [], 'an ineligible card popped open after the delay')
+    assert.equal(model.isAutoOpen('absorbed'), false)
+  })
+
+  it('cancels a pending reveal when the card becomes a group entry', () => {
+    const { model, clock, h } = setup()
+    model.update(T, 'grouped', tool('running'))
+    clock.advance(100)
+    // Same key, now one call inside a group: entries only open on failure.
+    const entry: DisclosureUpdate = { kind: 'entry', status: 'running', autoRevealEligible: false }
+    assert.equal(model.update(T, 'grouped', entry), false)
+    clock.advance(1_000)
+    assert.deepEqual(h.revealed, [])
+  })
+
+  it('keeps a pending reveal across an eligible running refresh', () => {
+    const { model, clock, h } = setup()
+    model.update(T, 'steady', tool('running'))
+    clock.advance(200)
+    model.update(T, 'steady', tool('running'))
+    clock.advance(100)
+    assert.deepEqual(h.revealed, ['steady'], 'a refresh restarted or dropped the reveal delay')
+  })
+
   it('does not reveal while the reader is scrolled up', () => {
     const { model, clock, h } = setup()
     h.pinned = false

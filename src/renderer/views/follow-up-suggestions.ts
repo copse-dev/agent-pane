@@ -19,8 +19,6 @@ import { showErrorToast, showToast } from './toast.ts'
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
   store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 /**
@@ -398,6 +396,11 @@ export function mountFollowUpSuggestions(
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)
     }),
+    // Deliberately still `threads_changed`, not a selection. The bubbles on
+    // screen during and after a turn come back through the metadata writes
+    // that emit it mid-turn (the reference screenshots show them). A selection
+    // of the active thread also fires on the send itself and bills a fetch for
+    // the message just sent; one keyed on the switch alone drops the bubbles.
     store.on('threads_changed', () => {
       showForActiveThread()
     }),

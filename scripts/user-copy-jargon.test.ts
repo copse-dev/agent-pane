@@ -329,6 +329,12 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.mcpTransport,
   },
   {
+    file: 'src/main/services/mcp/mcp-user-config.ts',
+    term: 'stdio',
+    count: 4,
+    reason: REASON.mcpTransport,
+  },
+  {
     file: 'src/main/services/plugins/agent-plugin-mcp-runtime.ts',
     term: 'stdio',
     count: 2,
@@ -344,6 +350,12 @@ const ALLOWED: readonly Allowance[] = [
     file: 'src/main/services/plugins/plugin-service.ts',
     term: 'stdio',
     count: 2,
+    reason: REASON.mcpTransport,
+  },
+  {
+    file: 'src/renderer/views/settings/mcp-server-editor.ts',
+    term: 'stdio',
+    count: 8,
     reason: REASON.mcpTransport,
   },
   {

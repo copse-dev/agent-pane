@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { assembleMacosRelease } from './assemble-macos-release.mts'
+import { feedProblems, parseUpdateFeed } from './release-promotion.mts'
 
 const version = '1.2.3-beta.4'
 let root = ''
@@ -64,6 +65,18 @@ describe('assembleMacosRelease', () => {
     assert.match(checksums, / {2}Copse-1\.2\.3-beta\.4-arm64\.dmg$/m)
     assert.match(checksums, / {2}Copse-1\.2\.3-beta\.4-x64\.zip\.blockmap$/m)
     assert.match(checksums, / {2}beta-mac\.yml$/m)
+
+    // Stable promotion re-reads this exact feed shape against the published bytes.
+    const published = new Map<string, { sha512: string; size: number }>()
+    for (const name of readdirSync(output)) {
+      const bytes = readFileSync(join(output, name))
+      const sha512 = createHash('sha512').update(bytes).digest('base64')
+      published.set(name, { sha512, size: bytes.byteLength })
+    }
+    assert.deepEqual(
+      feedProblems('beta-mac.yml', parseUpdateFeed(metadata), version, published),
+      [],
+    )
   })
 
   it('fails closed when an architecture artifact is incomplete', async () => {

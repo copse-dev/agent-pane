@@ -27,6 +27,7 @@ overrides:
   undici@8: 8.12.3
   source-map-js@<1.2.2: 1.2.2
   body-parser@2: 2.4.0
+  node-forge: 1.4.2
 
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
@@ -69,8 +70,8 @@ importers:
         version: 2.7.0(patch_hash=ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^1.8.0
-        version: 1.8.0(zod@4.6.7)
+        specifier: 2.2.0
+        version: 2.2.0(zod@4.6.7)
       '@anthropic-ai/sdk':
         specifier: ^0.133.0
         version: 0.133.0(zod@4.6.7)
@@ -491,10 +492,14 @@ importers:
 
 packages:
 
-  '@agentclientprotocol/sdk@1.8.0':
-    resolution: {integrity: sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg==}
+  '@agentclientprotocol/sdk@2.2.0':
+    resolution: {integrity: sha512-o1+eDQVb05yzPY+5v54awHyONU1oeLsbLVavkwrMQaZDuJDh/38pQiXJS4ix4d6QA3Y4bU0lHFRjwg99KKKSaQ==}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      '@modelcontextprotocol/server': ^2.4.0
+      zod: ^3.25.76 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
 
   '@antfu/install-pkg@2.1.0':
     resolution: {integrity: sha512-sdg9NxU3zR4Mnawfbc/x6GB5Wf17WYud5qOuEuxXjaKpYpMkISSJEjItGebXJ2bQ4DIcly4NYH23mtkGJjvKUw==}
@@ -4180,8 +4185,8 @@ packages:
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
-  node-forge@1.4.0:
-    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+  node-forge@1.4.2:
+    resolution: {integrity: sha512-rRtAR5XLJ8gCKd9du4qrKAsgCG1ObGP4gLeNJMa4vYSeq4bmBMOJk5IHkrviBV0q7uoAJlVd8HEQYQSVUb4FGQ==}
     engines: {node: '>= 6.13.0'}
 
   node-gyp@12.4.0:
@@ -5424,7 +5429,7 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/sdk@1.8.0(zod@4.6.7)':
+  '@agentclientprotocol/sdk@2.2.0(zod@4.6.7)':
     dependencies:
       zod: 4.6.7
 
@@ -5438,7 +5443,7 @@ snapshots:
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0
-      node-forge: 1.4.0
+      node-forge: 1.4.2
       zod: 3.25.76
 
   '@anthropic-ai/sdk@0.133.0(zod@4.6.7)':
@@ -9463,7 +9468,7 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  node-forge@1.4.0: {}
+  node-forge@1.4.2: {}
 
   node-gyp@12.4.0:
     dependencies:
