@@ -8,7 +8,7 @@ import {
   seedAcpUsageUpdateFixture,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, waitForSettledLayout } from './helpers/screenshot.ts'
 
 describe('ACP usage_update context wheel', () => {
   before(async () => {
@@ -49,7 +49,7 @@ describe('ACP usage_update context wheel', () => {
       /^Context 40% used, 80\.0k of 200\.0k tokens; Usage: 829 tokens/,
     )
 
-    await browser.pause(500)
+    await waitForSettledLayout('.input-footer')
     await wheel.moveTo()
     const popover = wheel.$('.context-wheel-popover')
     await expect(popover).toBeDisplayed()
@@ -63,6 +63,13 @@ describe('ACP usage_update context wheel', () => {
       $('.chat-row[data-thread-id="e2e-acp-usage-update-thread"] .chat-changes-status'),
     ).toHaveAttribute('aria-label', 'Uncommitted changes')
 
-    await saveAppScreenshot('acp-usage-update-context.png')
+    // Pinning the shell resizes it under a hovering pointer; capture only if
+    // the popover is still the one asserted above.
+    await saveAppScreenshot('acp-usage-update-context.png', undefined, async () => {
+      await expect(popover).toBeDisplayed()
+      await expect(popover.$('.context-wheel-popover-header')).toHaveText(
+        'Context · 80.0k / 200.0k (40%)',
+      )
+    })
   })
 })
