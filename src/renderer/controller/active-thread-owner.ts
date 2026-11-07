@@ -58,3 +58,18 @@ export function sameThreadBesidesDraft(a: Thread | undefined, b: Thread | undefi
     left.every(([key, value]) => right.has(key) && Object.is(value, right.get(key)))
   )
 }
+
+/** The active project and thread together: a project switch can reuse a thread id. */
+export function activeProjectThreadOf(
+  state: AppState,
+): readonly [string | null, Thread | undefined] {
+  return [state.activeProjectId, activeThreadOf(state)]
+}
+
+/** `select` equality for {@link activeProjectThreadOf}, ignoring draft autosaves. */
+export function sameProjectThreadBesidesDraft(
+  a: readonly [string | null, Thread | undefined],
+  b: readonly [string | null, Thread | undefined],
+): boolean {
+  return a[0] === b[0] && sameThreadBesidesDraft(a[1], b[1])
+}
