@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   accessSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -10,8 +11,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import os, { homedir, tmpdir } from 'node:os'
+import { syncBuiltinESMExports } from 'node:module'
+import { delimiter, dirname, join, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
@@ -43,6 +45,7 @@ import {
   withoutCheckoutWrites,
   workspaceTmpDir,
 } from './config.ts'
+import { toolchainReadExceptions } from './toolchain-read-guard.ts'
 import {
   copseManagedPreparationCacheDirs,
   copseWorkspaceDir,
@@ -338,11 +341,11 @@ describe('resolveNodeToolchainAllowRead', () => {
       }
     }
     assert.ok(nodePath, 'node must be on PATH for this test environment')
-    assert.ok(allow.includes(nodePath))
+    assert.ok(allow.includes(realpathSync(nodePath)))
 
     const binDir = dirname(nodePath)
-    assert.ok(allow.includes(binDir))
-    assert.ok(allow.some((p) => p === `${binDir}/**`))
+    assert.ok(allow.includes(realpathSync(binDir)))
+    assert.ok(allow.some((p) => p === `${realpathSync(binDir)}/**`))
   })
 
   function fakeHome(): { home: string; cleanup: () => void } {
@@ -359,6 +362,7 @@ describe('resolveNodeToolchainAllowRead', () => {
     mkdirSync(binDir, { recursive: true })
     const node = join(binDir, 'node')
     writeFileSync(node, '')
+    chmodSync(node, 0o755)
     return node
   }
 
@@ -418,7 +422,7 @@ describe('resolveNodeToolchainAllowRead', () => {
       mkdirSync(join(home, 'bin'))
       symlinkSync(node, join(home, 'bin', 'node'))
       const linked = resolveNodeToolchainAllowRead({ PATH: join(home, 'bin') }, home)
-      assert.ok(linked.includes(join(home, 'bin', 'node')))
+      assert.ok(!linked.includes(join(home, 'bin', 'node')))
       assert.ok(linked.includes(node))
       assert.ok(linked.includes(`${versionRoot}/**`))
       assert.ok(!linked.includes(home))
@@ -445,7 +449,7 @@ describe('resolveNodeToolchainAllowRead', () => {
         rmSync(join(pathDir, 'node'), { force: true })
         symlinkSync(target, join(pathDir, 'node'))
         const allow = resolveNodeToolchainAllowRead({ PATH: pathDir }, home)
-        assert.ok(allow.includes(join(pathDir, 'node')))
+        assert.ok(!allow.includes(join(pathDir, 'node')), 'the alias itself must not be granted')
         assert.deepEqual(
           allow.filter((p) => p === ssh || p.startsWith(`${ssh}/`)),
           [],
@@ -526,6 +530,248 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
+  it('keeps redirected shim subtrees outside the rendered read grants', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const credentials = join(home, '.ssh')
+      mkdirSync(credentials)
+      for (const [name, shimsName, subtreeName] of [
+        ['.asdf', 'shims', 'installs'],
+        ['.volta', 'bin', 'tools'],
+      ]) {
+        assert.ok(name && shimsName && subtreeName)
+        const root = join(home, name)
+        const shims = join(root, shimsName)
+        installNode(shims)
+        const subtree = join(root, subtreeName)
+        for (const target of [home, dirname(home), credentials, root]) {
+          symlinkSync(target, subtree, 'dir')
+          const allow = resolveNodeToolchainAllowRead({ PATH: shims }, home)
+          const profile = wrapCommandWithSandboxMacOS({
+            command: 'true',
+            needsNetworkRestriction: false,
+            readConfig: {
+              denyOnly: [home],
+              allowWithinDeny: allow.map(removeTrailingGlobSuffix),
+            },
+            writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+          })
+          assert.equal(lastReadRule(profile, join(credentials, 'id_ed25519')), 'deny', target)
+          assert.ok(!allow.includes(subtree), subtree)
+          assert.ok(!allow.includes(`${subtree}/**`), subtree)
+          rmSync(subtree)
+        }
+      }
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects shim managers and npm implementation directories redirected into credentials', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const credentials = join(home, '.ssh')
+      const node = installNode(join(credentials, 'shims'))
+      const installs = join(credentials, 'installs')
+      mkdirSync(installs)
+      const root = join(home, '.asdf')
+      symlinkSync(credentials, root, 'dir')
+      const allow = resolveNodeToolchainAllowRead(
+        { PATH: join(root, 'shims'), ASDF_DATA_DIR: root },
+        home,
+      )
+      assert.deepEqual(allow, [], node)
+
+      const bin = join(home, '.local', 'bin')
+      installNode(bin)
+      const npmTree = join(home, '.local', 'lib', 'node_modules')
+      mkdirSync(dirname(npmTree), { recursive: true })
+      symlinkSync(credentials, npmTree, 'dir')
+      const npmAllow = resolveNodeToolchainAllowRead({ PATH: bin }, home)
+      assert.ok(!npmAllow.includes(npmTree))
+      assert.ok(!npmAllow.includes(`${npmTree}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('retains a safe relocated manager without granting its parent', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const target = join(home, 'relocated-asdf')
+      const root = join(home, '.asdf')
+      installNode(join(target, 'shims'))
+      mkdirSync(join(target, 'installs'))
+      symlinkSync(target, root, 'dir')
+      // A dotfile manager links the version file into home.
+      const versions = join(home, 'dotfiles', '.tool-versions')
+      mkdirSync(dirname(versions))
+      writeFileSync(versions, 'nodejs 24.0.0\n')
+      symlinkSync(versions, join(home, '.tool-versions'))
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(root, 'shims') }, home)
+      assert.ok(allow.includes(versions))
+      assert.ok(allow.includes(join(home, '.tool-versions')))
+      assert.ok(!allow.includes(dirname(versions)))
+      assert.ok(allow.includes(`${join(target, 'installs')}/**`))
+      assert.ok(!allow.includes(`${target}/**`))
+      assert.ok(!allow.includes(`${root}/**`))
+      // The shell finds the shim through `~/.asdf`, so that spelling is granted
+      // too, but only the subtrees, never the whole relocated manager.
+      for (const spelling of [join(root, 'shims'), join(root, 'installs')]) {
+        assert.ok(allow.includes(spelling), spelling)
+        assert.ok(allow.includes(`${spelling}/**`), spelling)
+      }
+      // Seatbelt needs the link vnode itself; a bubblewrap bind of it would
+      // mount the entire relocated manager.
+      assert.equal(allow.includes(root), process.platform === 'darwin')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants both spellings of a PATH entry that crosses a symlinked directory in home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // fnm puts a per-shell link on PATH: ~/.local/state/fnm_multishells/<id>
+      // -> ~/.local/share/fnm/node-versions/<v>/installation.
+      const install = join(
+        home,
+        '.local',
+        'share',
+        'fnm',
+        'node-versions',
+        'v24.0.0',
+        'installation',
+      )
+      const node = installNode(join(install, 'bin'))
+      mkdirSync(join(install, 'lib', 'node_modules'), { recursive: true })
+      const multishell = join(home, '.local', 'state', 'fnm_multishells', '1234_5678')
+      mkdirSync(dirname(multishell), { recursive: true })
+      symlinkSync(install, multishell, 'dir')
+      const ssh = join(home, '.ssh')
+      mkdirSync(ssh)
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(multishell, 'bin') }, home)
+      for (const tree of [join(install, 'bin'), install, join(multishell, 'bin'), multishell]) {
+        assert.ok(allow.includes(tree), tree)
+        assert.ok(allow.includes(`${tree}/**`), tree)
+      }
+      assert.ok(allow.includes(node))
+      assert.ok(!allow.includes(join(multishell, 'bin', 'node')), 'never the node alias itself')
+      assert.deepEqual(toolchainReadExceptions(allow, [home], []), allow)
+
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: [home], allowWithinDeny: allow.map(removeTrailingGlobSuffix) },
+        writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+      })
+      // The lookup walks the link itself before reaching the canonical install.
+      assert.equal(lastReadRule(profile, multishell), 'allow')
+      assert.equal(lastReadRule(profile, node), 'allow')
+      assert.equal(lastReadRule(profile, join(ssh, 'id_ed25519')), 'deny')
+      assert.equal(lastReadRule(profile, join(home, '.local', 'state', 'other')), 'deny')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('grants no spelling through a home directory link into a credential store', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // A node install shape inside ~/.ssh, so only the credential rules refuse it.
+      const ssh = join(home, '.ssh')
+      installNode(join(ssh, 'bin'))
+      mkdirSync(join(ssh, 'lib', 'node_modules'), { recursive: true })
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+      const link = join(home, '.local', 'state', 'fnm_multishells', 'planted')
+      mkdirSync(dirname(link), { recursive: true })
+      symlinkSync(ssh, link, 'dir')
+      assert.deepEqual(resolveNodeToolchainAllowRead({ PATH: join(link, 'bin') }, home), [])
+
+      // A safe install reached through a credential-store link keeps only its
+      // canonical grant: the crossed link must lead somewhere safe as well.
+      const versionRoot = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      installNode(join(versionRoot, 'bin'))
+      mkdirSync(join(versionRoot, 'lib', 'node_modules'), { recursive: true })
+      const codex = join(home, '.codex')
+      mkdirSync(codex)
+      symlinkSync(versionRoot, join(codex, 'node'), 'dir')
+      const alias = join(home, 'tools')
+      symlinkSync(codex, alias, 'dir')
+      const allow = resolveNodeToolchainAllowRead({ PATH: join(alias, 'node', 'bin') }, home)
+      assert.ok(allow.includes(`${versionRoot}/**`))
+      assert.deepEqual(
+        allow.filter((path) =>
+          [ssh, link, codex, alias].some((root) => path === root || path.startsWith(`${root}/`)),
+        ),
+        [],
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects Codex and configured Copse data aliases and does not re-resolve a replaced node alias', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const pathDir = join(home, 'bin')
+      mkdirSync(pathDir)
+      const alias = join(pathDir, 'node')
+      const profileRoot = join(home, 'custom-profile')
+      const codex = join(home, '.codex', 'auth.json')
+      const credentials = [codex, join(profileRoot, 'user-data', 'config.json')]
+      for (const target of credentials) {
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, 'synthetic credential\n')
+        chmodSync(target, 0o755)
+        symlinkSync(target, alias)
+        assert.deepEqual(
+          resolveNodeToolchainAllowRead({ PATH: pathDir, COPSE_DIR: profileRoot }, home),
+          [],
+          target,
+        )
+        rmSync(alias)
+      }
+      const node = installNode(join(home, '.nvm', 'versions', 'node', 'v24.0.0', 'bin'))
+      symlinkSync(node, alias)
+      const allow = resolveNodeToolchainAllowRead({ PATH: pathDir }, home)
+      rmSync(alias)
+      symlinkSync(codex, alias)
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: [home], allowWithinDeny: allow.map(removeTrailingGlobSuffix) },
+        writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+      })
+      assert.equal(lastReadRule(profile, codex), 'deny')
+      assert.equal(lastReadRule(profile, node), 'allow')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('does not treat non-executable files or directories as a Node runtime', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const bin = join(home, 'bin')
+      const config = join(home, '.config')
+      const document = join(home, 'private-document.txt')
+      mkdirSync(bin)
+      mkdirSync(config)
+      writeFileSync(document, 'synthetic private document\n')
+      for (const target of [config, document]) {
+        const alias = join(bin, 'node')
+        symlinkSync(target, alias)
+        assert.deepEqual(resolveNodeToolchainAllowRead({ PATH: bin }, home), [], target)
+        rmSync(alias)
+      }
+    } finally {
+      cleanup()
+    }
+  })
+
   it('needs npm beside a version root before re-allowing it', () => {
     const { home, cleanup } = fakeHome()
     try {
@@ -534,6 +780,30 @@ describe('resolveNodeToolchainAllowRead', () => {
       const allow = resolveNodeToolchainAllowRead({ PATH: join(versionRoot, 'bin') }, home)
       assert.ok(!allow.includes(versionRoot))
       assert.ok(!allow.includes(`${versionRoot}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rechecks a Node install alias before deciding whether to expose its whole root', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      const deep = join(home, '.nvm', 'versions', 'node', 'v24.0.0')
+      const shallow = join(home, '.local')
+      for (const root of [deep, shallow]) {
+        installNode(join(root, 'bin'))
+        mkdirSync(join(root, 'lib', 'node_modules'), { recursive: true })
+      }
+      const alias = join(home, 'tools', 'current')
+      mkdirSync(dirname(alias), { recursive: true })
+      symlinkSync(deep, alias)
+      const env = { PATH: join(alias, 'bin') }
+      assert.ok(resolveNodeToolchainAllowRead(env, home).includes(`${deep}/**`))
+      rmSync(alias)
+      symlinkSync(shallow, alias)
+      const allow = resolveNodeToolchainAllowRead(env, home)
+      assert.ok(!allow.includes(`${shallow}/**`), 'a stale deep install must not expose ~/.local')
+      assert.ok(allow.includes(`${join(shallow, 'lib', 'node_modules')}/**`))
     } finally {
       cleanup()
     }
@@ -559,7 +829,7 @@ describe('resolveNodeToolchainAllowRead', () => {
         assert.ok(!allow.includes(root), `${root} must not be granted`)
         assert.ok(!allow.includes(`${root}/**`), `${root}/** must not be granted`)
       }
-      assert.ok(allow.includes(`${join(alias, '.local', 'lib', 'node_modules')}/**`))
+      assert.ok(allow.includes(`${join(home, '.local', 'lib', 'node_modules')}/**`))
     } finally {
       cleanup()
     }
@@ -574,7 +844,7 @@ describe('resolveNodeToolchainAllowRead', () => {
       mkdirSync(join(realHome, 'lib', 'node_modules'), { recursive: true })
       symlinkSync(realHome, linkedHome, 'dir')
       const allow = resolveNodeToolchainAllowRead({ PATH: join(linkedHome, 'bin') }, linkedHome)
-      assert.ok(allow.includes(join(linkedHome, 'bin', 'node')))
+      assert.ok(allow.includes(join(realHome, 'bin', 'node')))
       for (const home of [realHome, linkedHome]) {
         assert.ok(!allow.includes(home))
         assert.ok(!allow.includes(`${home}/**`))
@@ -813,17 +1083,65 @@ describe('workspaceSandboxOverlay', () => {
     assert.equal(network.allowLocalBinding, false)
   })
 
-  it('re-allows node toolchain paths alongside the workspace', () => {
-    const overlay = workspaceSandboxOverlay('/tmp/project')
-    const allowRead = overlay.filesystem?.allowRead ?? []
-    assert.ok(allowRead.includes('/tmp/project'))
-    assert.ok(allowRead.some((p) => p.includes('/tmp/project/**')))
+  for (const location of ['denied home', 'outside home', 'workspace'] as const) {
+    it(`keeps a Node toolchain readable in ${location} without redundant exceptions`, (t) => {
+      const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-overlay-toolchain-')))
+      const home = join(fixture, 'home')
+      const workspace = join(home, 'project')
+      const nodeRoot =
+        location === 'denied home'
+          ? join(home, '.nvm', 'versions', 'node', 'v24')
+          : location === 'workspace'
+            ? join(workspace, 'node-install')
+            : join(fixture, 'outside-node')
+      const bin = join(nodeRoot, 'bin')
+      const node = join(bin, 'node')
+      const credential = join(home, '.ssh', 'id_ed25519')
+      mkdirSync(workspace, { recursive: true })
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(join(nodeRoot, 'lib', 'node_modules'), { recursive: true })
+      mkdirSync(dirname(credential), { recursive: true })
+      writeFileSync(node, '#!/bin/sh\n', { mode: 0o755 })
+      writeFileSync(credential, 'synthetic credential\n', { mode: 0o600 })
+      const previousPath = process.env['PATH']
+      const mockHome = t.mock.method(os, 'homedir', () => home)
+      syncBuiltinESMExports()
+      process.env['PATH'] = `${bin}${delimiter}${previousPath ?? ''}`
+      try {
+        const toolchain = resolveNodeToolchainAllowRead(process.env)
+        assert.ok(toolchain.includes(node), 'the synthetic Node install was discovered')
+        const filesystem = workspaceSandboxOverlay(workspace).filesystem
+        assert.ok(filesystem)
+        const allowRead = filesystem.allowRead ?? []
+        assert.ok(allowRead.includes(workspace))
+        assert.ok(allowRead.includes(`${workspace}/**`))
+        assert.ok(filesystem.denyRead.includes(home))
+        const hasNodeException = allowRead.some(
+          (path) => path === nodeRoot || path.startsWith(`${nodeRoot}${sep}`),
+        )
+        assert.equal(hasNodeException, location === 'denied home')
 
-    const toolchain = resolveNodeToolchainAllowRead(process.env)
-    if (toolchain.length > 0) {
-      assert.ok(toolchain.every((p) => allowRead.includes(p)))
-    }
-  })
+        const profile = wrapCommandWithSandboxMacOS({
+          command: 'true',
+          needsNetworkRestriction: false,
+          readConfig: {
+            denyOnly: filesystem.denyRead,
+            allowWithinDeny: allowRead.map(removeTrailingGlobSuffix),
+          },
+          writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+        })
+        assert.equal(lastReadRule(profile, node), 'allow')
+        assert.equal(lastReadRule(profile, join(home, 'unrelated.txt')), 'deny')
+        assert.equal(lastReadRule(profile, credential), 'deny')
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        mockHome.mock.restore()
+        syncBuiltinESMExports()
+        rmSync(fixture, { recursive: true, force: true })
+      }
+    })
+  }
 
   it('denies home reads but re-allows git config files', () => {
     const overlay = workspaceSandboxOverlay('/Users/me/project')
@@ -864,6 +1182,47 @@ describe('workspaceSandboxOverlay', () => {
     assert.equal(lastReadRule(profile, join(home, '.ssh/id_ed25519')), 'deny')
   })
 
+  it('does not add a redundant mutable workspace node file exception', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'toolchain-mutable-workspace-')))
+    const previousHome = process.env['HOME']
+    const previousPath = process.env['PATH']
+    try {
+      process.env['HOME'] = home
+      const project = join(home, 'project')
+      const bin = join(project, 'node_modules', '.bin')
+      const node = join(bin, 'node')
+      const credential = join(home, '.codex', 'auth.json')
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(dirname(credential), { recursive: true })
+      writeFileSync(credential, 'synthetic credential\n')
+      writeFileSync(node, '')
+      chmodSync(node, 0o755)
+      process.env['PATH'] = `${bin}:/usr/bin:/bin`
+      const filesystem = workspaceSandboxOverlay(project).filesystem
+      assert.ok(filesystem)
+      assert.ok(!filesystem.allowRead?.includes(node), 'the workspace grant already covers node')
+      rmSync(node)
+      symlinkSync(credential, node)
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        binShell: '/bin/bash',
+        needsNetworkRestriction: false,
+        readConfig: {
+          denyOnly: filesystem.denyRead.map(removeTrailingGlobSuffix),
+          allowWithinDeny: (filesystem.allowRead ?? []).map(removeTrailingGlobSuffix),
+        },
+        writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+      })
+      assert.equal(lastReadRule(profile, credential), 'deny')
+    } finally {
+      if (previousHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previousHome
+      if (previousPath === undefined) delete process.env['PATH']
+      else process.env['PATH'] = previousPath
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   describe('with node installed under the home directory', () => {
     function withHomeNode(
       layout: (home: string) => string,
@@ -875,6 +1234,7 @@ describe('workspaceSandboxOverlay', () => {
         const binDir = layout(home)
         mkdirSync(binDir, { recursive: true })
         writeFileSync(join(binDir, 'node'), '')
+        chmodSync(join(binDir, 'node'), 0o755)
         process.env['HOME'] = home
         process.env['PATH'] = `${binDir}:${saved.path ?? ''}`
         check(workspaceSandboxOverlay('/tmp/project').filesystem?.allowRead ?? [], home)
