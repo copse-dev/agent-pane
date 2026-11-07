@@ -371,6 +371,11 @@ export function createAutomationPluginSettings(
     },
     'Review worktree setup',
   )
+  const preparationProposalHint = el(
+    'p',
+    { class: 'automation-hint automation-preparation-proposal-hint', hidden: true },
+    'These fields are for another setup review. Saved setup permissions below keep their listed folder and network scope.',
+  )
   permissionsFieldset.append(
     el('legend', {}, 'Allowed without asking'),
     el(
@@ -381,6 +386,7 @@ export function createAutomationPluginSettings(
     el(
       'div',
       { class: 'automation-preparation-setup' },
+      preparationProposalHint,
       el(
         'label',
         { class: 'automation-label' },
@@ -811,6 +817,13 @@ export function createAutomationPluginSettings(
     permissionFilterInput.value = ''
     preparationDirectory.value = '.'
     preparationNetwork.value = 'allowed'
+    const hasSavedPreparation =
+      schedule?.permissions?.some((permission) => permission.kind === 'worktree-preparation') ??
+      false
+    preparationProposalHint.hidden = !hasSavedPreparation
+    reviewPreparationButton.textContent = hasSavedPreparation
+      ? 'Review another setup'
+      : 'Review worktree setup'
     reviewPreparationButton.disabled = false
     setPermissionChoices(schedule?.permissions ?? [])
     // An existing schedule keeps whatever it stored (including a model pinned

@@ -947,7 +947,10 @@ explicit Always ask/Blocked policy require review or a policy change before savi
 replaces an earlier selection for the same folder and network scope. Editing an existing schedule
 does not require reviewing unchanged saved permissions again; stale grants remain visible and
 removable, and cannot match changed setup at runtime. There is no receipt expiry or generic setup
-allow switch. The first unattended turn defers approvals instead of displaying a remember checkbox;
+allow switch. When saved preparation grants exist, **Review another setup** and its hint distinguish
+the proposal fields from the saved permissions below. Changing those fields alone does not alter
+the saved folder or network scope. The first unattended turn defers approvals instead of displaying a
+remember checkbox;
 the editor therefore provides the setup path in advance. A later human turn can also approve and
 remember the exact plan through the ordinary prompt.
 

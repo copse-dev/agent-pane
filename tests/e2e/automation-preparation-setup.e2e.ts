@@ -86,6 +86,77 @@ async function assertSaveErrorVisible(): Promise<void> {
   )
 }
 
+async function assertSavedSetupReviewVisible(): Promise<void> {
+  const bounds = await browser.execute(() => {
+    const dialog = document.getElementById('automation-dialog')
+    const viewport = dialog?.querySelector('.automation-dialog-body')?.getBoundingClientRect()
+    const app = document.getElementById('app')?.getBoundingClientRect()
+    const group = dialog?.querySelector('.automation-preparation-setup')
+    const hint = dialog?.querySelector('.automation-preparation-proposal-hint')
+    const saved = Array.from(dialog?.querySelectorAll('.automation-permission-row') ?? []).find(
+      (row) => row.textContent.includes('Prepare worktree (packages/app)'),
+    )
+    const detail = saved?.querySelector('.automation-permission-detail')
+    const list = saved?.closest('.automation-permission-list')?.getBoundingClientRect()
+    if (!viewport || !app || !group || !hint || !saved || !detail || !list)
+      throw new Error('Missing saved setup review frame')
+    const top = Math.max(0, viewport.top, app.top)
+    const bottom = Math.min(innerHeight, viewport.bottom, app.bottom)
+    const left = Math.max(0, viewport.left, app.left)
+    const right = Math.min(innerWidth, viewport.right, app.right)
+    const innerTop = Math.max(top, list.top)
+    const innerBottom = Math.min(bottom, list.bottom)
+    const innerLeft = Math.max(left, list.left)
+    const innerRight = Math.min(right, list.right)
+    const boundsOf = (
+      element: Element,
+    ): Record<'top' | 'bottom' | 'left' | 'right' | 'width' | 'height', number> => {
+      const rect = element.getBoundingClientRect()
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+      }
+    }
+    const elements = [group, hint].map(boundsOf)
+    const savedElements = [saved, detail].map(boundsOf)
+    return {
+      viewport: { top, bottom, left, right },
+      innerViewport: { top: innerTop, bottom: innerBottom, left: innerLeft, right: innerRight },
+      elements,
+      savedElements,
+      savedScope: detail.textContent,
+      visible:
+        elements.every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.top >= top &&
+            rect.bottom <= bottom &&
+            rect.left >= left &&
+            rect.right <= right,
+        ) &&
+        savedElements.every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.top >= innerTop &&
+            rect.bottom <= innerBottom &&
+            rect.left >= innerLeft &&
+            rect.right <= innerRight,
+        ),
+    }
+  })
+  console.info('[automation-preparation-setup] saved review frame', bounds)
+  assert.ok(
+    bounds.visible,
+    `new-review guidance and the saved grant must fit together: ${JSON.stringify(bounds)}`,
+  )
+}
+
 async function reviewAndSelect(capture = false): Promise<void> {
   const editor = $('#automation-dialog')
   await editor.$('.automation-preparation-directory').setValue('packages/app')
@@ -210,11 +281,25 @@ describe('upfront automation worktree setup', function () {
     await expect(row.$('input')).toBeSelected()
     await expect(row).toHaveText(expect.stringContaining('Offline'))
     await expect(row).toHaveText(expect.stringContaining('packages/app'))
+    await row.scrollIntoView({ block: 'center' })
+    await expect(editor.$('.automation-preparation-review-btn')).toHaveText('Review another setup')
+    await expect(editor.$('.automation-preparation-proposal-hint')).toHaveText(
+      'These fields are for another setup review. Saved setup permissions below keep their listed folder and network scope.',
+    )
     await saveElementScreenshot('#automation-dialog', 'automation-preparation-setup-saved.png', {
       beforeCapture: async () => {
-        await row.scrollIntoView({ block: 'center' })
+        await row.scrollIntoView({ block: 'end' })
+        await editor.$('.automation-preparation-setup').scrollIntoView({ block: 'start' })
+        await browser.execute(() => {
+          const list = document.querySelector<HTMLElement>(
+            '#automation-dialog .automation-permission-list',
+          )
+          if (!list) throw new Error('Missing saved setup permissions list')
+          list.scrollTop = list.scrollHeight
+        })
         await parkPointer()
         await assertDialogFits('#automation-dialog')
+        await assertSavedSetupReviewVisible()
       },
     })
     await row.scrollIntoView({ block: 'center' })

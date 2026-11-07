@@ -211,6 +211,10 @@ describe('automation plugin settings detail', () => {
     assert.ok(review, 'the first unattended turn cannot establish the setup grant through a modal')
     assert.equal(review.textContent, 'Review worktree setup')
     assert.equal(review.disabled, false)
+    assert.equal(
+      root.querySelector<HTMLElement>('.automation-preparation-proposal-hint')?.hidden,
+      true,
+    )
   })
 
   it('shows the exact setup and requires confirmation and Save before retaining its permission', async () => {
@@ -741,6 +745,74 @@ describe('automation plugin settings detail', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()
     assert.deepEqual(upserts[0]?.input.permissions, [])
+  })
+
+  it('distinguishes another review from multiple saved setup permissions without changing them', async () => {
+    const permissions: AutomationPermission[] = [
+      { ...PREPARATION_REVIEW.permission },
+      {
+        kind: 'worktree-preparation',
+        toolName: 'prepare_worktree',
+        directory: 'packages/service',
+        planFingerprint: 'c'.repeat(64),
+        offline: false,
+      },
+    ]
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api, upserts } = stubApi([schedule])
+    let reviews = 0
+    api.automations.reviewPreparation = (): Promise<AutomationPreparationReview> => {
+      reviews++
+      return Promise.resolve(PREPARATION_REVIEW)
+    }
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true, schedule.id)
+    document.body.append(root)
+    await tick()
+    const review = root.querySelector<HTMLButtonElement>('.automation-preparation-review-btn')
+    const hint = root.querySelector<HTMLElement>('.automation-preparation-proposal-hint')
+    const directory = root.querySelector<HTMLInputElement>('.automation-preparation-directory')
+    const network = root.querySelector<HTMLSelectElement>('.automation-preparation-network')
+    assert.ok(review && hint && directory && network)
+    assert.equal(review.textContent, 'Review another setup')
+    assert.equal(hint.hidden, false)
+    assert.match(
+      hint.textContent,
+      /Saved setup permissions below keep their listed folder and network scope/,
+    )
+    const rows = [...root.querySelectorAll<HTMLElement>('.automation-permission-row')].filter(
+      (row) => row.textContent.includes('Prepare worktree'),
+    )
+    assert.equal(rows.length, 2)
+    assert.ok(rows.every((row) => row.querySelector<HTMLInputElement>('input')?.checked))
+    assert.equal(directory.value, '.', 'do not arbitrarily prefill one of several saved grants')
+    assert.equal(network.value, 'allowed')
+    directory.value = 'packages/new'
+    network.value = 'offline'
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.equal(reviews, 0, 'proposal fields require an explicit review action')
+    assert.deepEqual(upserts[0]?.input.permissions, permissions)
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    assert.equal(review.textContent, 'Review worktree setup')
+    assert.equal(hint.hidden, true, 'a new automation has no saved setup permissions')
   })
 
   it('opens the schedule a sidebar heading linked to', async () => {

@@ -2836,6 +2836,10 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   grid-column: 1 / -1;
   justify-self: start;
 }
+.automation-preparation-proposal-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 .automation-preparation-review {
   overflow-wrap: anywhere;
 }
