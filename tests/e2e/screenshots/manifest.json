@@ -2138,8 +2138,8 @@
       "bytes": 54496
     },
     "guarded-yolo-hard-deny.png": {
-      "sha256": "74e15a8af3b2a5975d83c60591f0f65f35923ed8d843ce6514f2264a6119bb74",
-      "bytes": 1872389
+      "sha256": "6cd59411e04bfbe6f88cc456ddfa14566b6743199a351323d0d25d513a6dca28",
+      "bytes": 1876608
     },
     "guarded-yolo-harm-prompt.png": {
       "sha256": "b2ebe62cb5d764c888614fdfc9f54d29d39a9c2e0da2d96a2811f0f78f38c7b6",
@@ -2318,12 +2318,12 @@
       "bytes": 364546
     },
     "markdown-bold-glob-architecture.png": {
-      "sha256": "e762bbd64143451163e8f3e9215b7df6e5816f1769f4e83c50265a49dca7a2ad",
-      "bytes": 498676
+      "sha256": "f9390d55b305a8682f0a44a68c76b0fec6dffb90189ced5ed21ff5e9ee069a85",
+      "bytes": 499226
     },
     "markdown-bold-glob-full.png": {
-      "sha256": "e762bbd64143451163e8f3e9215b7df6e5816f1769f4e83c50265a49dca7a2ad",
-      "bytes": 498676
+      "sha256": "f9390d55b305a8682f0a44a68c76b0fec6dffb90189ced5ed21ff5e9ee069a85",
+      "bytes": 499226
     },
     "markdown-conformance-quickwins.png": {
       "sha256": "340b5a1d0feed5d90cf81d558f67cce8ada6eccf48a6cd68ecaea1203c1f0baf",
