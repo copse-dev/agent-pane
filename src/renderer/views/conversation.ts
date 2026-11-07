@@ -3173,6 +3173,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // True while older history is still being backfilled above the window, so
   // the list does not yet hold every row of the thread.
   let backfillPending = false
+  // The ids, in order, of the messages the backfill has yet to render at the
+  // top of the list. A reconcile leaves these to the backfill.
+  let backfillPrefix: readonly string[] = []
   // What each message row was built from (see transcript-rows.ts). A row whose
   // signature still matches its message is kept across a reconcile.
   const rowSignatures = new WeakMap<HTMLElement, TranscriptRowSignature>()
@@ -4427,6 +4430,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const delta = list.scrollHeight - heightBefore
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     updateScrollButton()
+    backfillPrefix = backfillPrefix.slice(0, chunkStart)
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
@@ -4438,18 +4442,27 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * Patch the rendered rows to match `thread` instead of rebuilding the list
    * (see transcript-rows.ts). Returns false, having touched nothing, when the
    * change is one a whole rebuild must handle: another thread, the hydration
-   * notice is involved, older history is still backfilling, or the kept rows
-   * would have to move. Thread-wide facts a card draws are signed on its row.
+   * notice is involved, a message the backfill has yet to render added or
+   * removed, or the kept rows would have to move or a key appears twice.
+   * Thread-wide facts a card draws are signed on its row.
+   *
+   * While older history is still backfilling, the plan covers the rows below
+   * the part the backfill has yet to render; the backfill goes on rendering
+   * that part above them.
    */
   function reconcileTranscriptRows(
     thread: Thread,
     inputs: TranscriptInputs,
     previous: TranscriptInputs,
   ): boolean {
-    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
+    if (!sameRowEnvironment(inputs, previous)) return false
     if (inputs.needsHydration || inputs.hydrationFailed) return false
+    const pending = backfillPending ? backfillPrefix : []
+    if (pending.some((id, i) => thread.messages[i]?.id !== id)) return false
+    const hidden = queuedMessageIds(thread)
+    for (const id of pending) hidden.add(id)
     const elements = Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'))
-    const wanted = wantedTranscriptRows(store, thread, queuedMessageIds(thread))
+    const wanted = wantedTranscriptRows(store, thread, hidden)
     const messages = new Map(thread.messages.map((message) => [message.id, message]))
     const signed = elements.map((element) => ({
       key: element.dataset['messageId'] ?? '',
@@ -4595,6 +4608,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     backfillPending = initialStart > 0
+    backfillPrefix = thread.messages.slice(0, initialStart).map((message) => message.id)
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
