@@ -67,7 +67,12 @@ failed before that change.
 
 ### 2. Background tasks cannot explicitly request a runtime escape
 
-**Still open; separate follow-up.** The `run_background` schema has no `expects_sandbox_block`.
+**Addressed by [PR #4159](https://github.com/copse-dev/agent-pane/pull/4159).** `run_background`
+now accepts `expects_sandbox_block` and an explicit `retry_of` for a failed contained task; both
+ask afresh and authorize one outside attempt, with no trusted-command grant or replay lease. The
+original audit text follows.
+
+The `run_background` schema has no `expects_sandbox_block`.
 Its runner also lacks `run_shell`'s verified-failure retry and operation-denial cache. An opaque
 local script that discovers a network, device or filesystem need only after startup can still
 fail with no equivalent background consent path. The fix in this branch covers routes already

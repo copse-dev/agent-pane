@@ -139,7 +139,24 @@ describe('saved reviewer input', () => {
     await expect($('.reviewer-input-toggle')).toHaveText('3 questions')
     await expect(panel.$$('.reviewer-input-item')).toBeElementsArrayOfSize(3)
     await expect(panel.$('.reviewer-input-context')).not.toExist()
-    await saveAppScreenshot('reviewer-input-list.png')
+    await saveAppScreenshot('reviewer-input-list.png', undefined, async () => {
+      // This reference documents the saved questions, not automatic scrolling.
+      // Opening Context and resizing for capture change the transcript width;
+      // choose the latest-message frame explicitly after both have settled.
+      await browser.execute(() => {
+        const list = document.querySelector('.messages-list')
+        if (!list) throw new Error('Reviewer transcript is missing')
+        list.scrollTop = list.scrollHeight
+      })
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const list = document.querySelector('.messages-list')
+            return list !== null && list.scrollHeight - list.clientHeight - list.scrollTop <= 1
+          }),
+        { timeout: 5_000, timeoutMsg: 'Reviewer transcript did not settle at the capture bottom' },
+      )
+    })
 
     await panel.$('[data-reviewer-input-id="request-tokens"] .reviewer-input-origin').click()
     const origin = $('.reviewer-input-card[data-tool-id="request-tokens"]')

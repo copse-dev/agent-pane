@@ -1,3 +1,4 @@
+import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
@@ -991,7 +992,9 @@ async function runAcpAgentTurn(
     }
     const promptBlocks = buildAcpPromptContent(
       options.userPrompt,
-      fresh ? options.priorMessages : [],
+      fresh
+        ? options.priorMessages
+        : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
         readonlyCheckout,
@@ -1008,7 +1011,7 @@ async function runAcpAgentTurn(
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(
+      const outcome = await runAcpSessionPrompt(
         entry.open,
         promptBlocks,
         model,
@@ -1016,6 +1019,16 @@ async function runAcpAgentTurn(
         ACP_CANCEL_GRACE_MS,
         { onStaleModel },
       )
+      // Stop may cancel a model/config switch before any prompt is sent. Keep
+      // the last confirmed prefix on cancellation or a transport failure so a
+      // retry conservatively includes context the agent may never have seen.
+      if (outcome.stopReason !== 'cancelled') {
+        entry.transcriptCheckpoint = checkpointAcpTranscript(
+          options.priorMessages,
+          options.userPrompt,
+        )
+      }
+      return outcome
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
@@ -1862,8 +1875,8 @@ function acpCopseToolsSteering(sandboxed: boolean): string {
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
  * transcript replay and the session notes are only needed when the session is
- * FRESH — a reused session already carries both in its own context, and
- * re-sending them every turn would waste the agent's tokens (`includeNotes:
+ * FRESH — a reused session carries its own turns, while turns from another
+ * provider are caught up from the transcript checkpoint. Re-sending everything every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
  * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
  */
