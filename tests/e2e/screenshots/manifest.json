@@ -2070,8 +2070,8 @@
       "bytes": 12485
     },
     "git-changes-review-button.png": {
-      "sha256": "a99101f66746b2f49758bbde24f3ffceddc1aaa305a8cb994e2925035cc15b43",
-      "bytes": 362184
+      "sha256": "46e57d7889d4af089d8041d5e45fd334d3db2d3a737269ca0dd7101a3873b6d1",
+      "bytes": 294539
     },
     "git-changes-thread-retention.png": {
       "sha256": "ca93e571bd70eabf4bd699ddd0073b65f0d06183e100c56db52e92cc54413120",
@@ -3280,6 +3280,10 @@
     "product-announcement-narrow.png": {
       "sha256": "45d278df556354446d3c45b18711c5f95e98ae83075fd71fdf90c24a9db9783f",
       "bytes": 25254
+    },
+    "project-menu-after-updates.png": {
+      "sha256": "bfdc90df2514eb120f7ccb16501565ad65006e3027f0be1508e68fde2cbddb67",
+      "bytes": 284056
     },
     "project-port-grant-asks-again.png": {
       "sha256": "d9d51d36917f96728cd70a824cd45a2690b7f4d781cf7ce62337fcfc62298286",
