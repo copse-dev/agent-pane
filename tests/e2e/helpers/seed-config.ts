@@ -1587,6 +1587,80 @@ export function seedThreadWideReconcileFixture(workspaceRoot: string): void {
   writeSettings({ subagentsEnabled: false })
 }
 
+export const THREAD_RETURN_THREAD = 'e2e-thread-return-thread'
+export const THREAD_RETURN_OTHER_THREAD = 'e2e-thread-return-other-thread'
+
+/**
+ * The keyed-reconcile thread beside a second, short thread, so the reader can
+ * switch away and come back. A return used to build every row again.
+ */
+export function seedThreadReturnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-thread-return-project'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: THREAD_RETURN_THREAD,
+    [`threads:${projectId}`]: [
+      {
+        id: THREAD_RETURN_THREAD,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now,
+      },
+      {
+        id: THREAD_RETURN_OTHER_THREAD,
+        title: 'Release notes',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-return-other-user',
+            role: 'user',
+            content: 'Draft the release notes.',
+            createdAt: now - 4000,
+          },
+          {
+            id: 'msg-return-other-assistant',
+            role: 'assistant',
+            content: 'Drafted them under the Unreleased heading.',
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 4000,
+        updatedAt: now - 3000,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
+}
+
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
 export function seedMarkdownConformanceFixture(workspaceRoot: string): void {
   const projectId = 'e2e-markdown-conformance-project'
