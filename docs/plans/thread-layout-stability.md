@@ -117,13 +117,38 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    same thread (a new message, an edit or truncation, the status at turn start
    and end), `src/renderer/views/transcript-rows.ts` plans against the rows
    already in the list: a row whose signature (its message, its multi-message
-   run, live reasoning and failed-turn recovery) still matches is kept with its
-   async decorations and open disclosures; changed rows are rebuilt in place,
-   new rows inserted, removed rows dropped with their anchored cards. A rebuilt
-   row under the reading anchor is relinked by id. A thread switch, hydration,
-   a pending backfill, a change to thread-wide row inputs (model, proposals,
-   reviewer answers, artefact previews, interrupted-turn marker) and a reorder
-   still rebuild the whole list (#3962).
+   run, each call's user-interruption cause, live reasoning and failed-turn
+   recovery) still matches is kept with its async decorations and open
+   disclosures; changed rows are rebuilt in place, new rows inserted, removed
+   rows dropped with their anchored cards. A rebuilt row under the reading
+   anchor is relinked by id. The streaming handlers (tokens, reasoning, ACP
+   content, tool calls, segment done, turn end, canvas, visual evidence, review
+   and hook cards) only note the row they patch, so a streamed event signs
+   nothing; the next reconcile takes the patched part of a noted row's
+   signature (its message and run, live reasoning) from the thread and still
+   compares the settled part no handler redraws (a step joining its run, the
+   interruption causes a Stop lands, canvas and evidence sections, a failed
+   outcome, recovery). It adopts nothing after a message was replaced outside
+   the stream or when the list changes shape around the rows. Component tests
+   hold the patched rows byte-identical to a fresh rebuild at the end of a
+   turn, for a multi-step run stopped mid-thought and the decorated cards,
+   reconciling after every chunk and only at turn end. The thread-wide facts a
+   card draws are signed on the rows that draw them: a proposal's answer (and
+   whether the thread it started still exists), a reviewer question's answer,
+   the version of each canvas thumbnail, and the interrupted-turn marker through
+   the recovery it offers. The thread model is drawn only by chrome (the queued
+   panel), so none of these rebuild the whole list any more. The trailing review
+   report and comparison cards follow the active thread's report and comparison
+   through `store.select` and are recreated only when those change. While older
+   history is still backfilling, the reconcile plans only the rows below the
+   part still to backfill, unless a message in that part was added or removed.
+   A thread switch, a transcript that is still loading or failed to load, kept
+   rows that would reorder (nothing in the product reorders a thread's
+   messages) and a duplicate key still build the list fresh (#3962).
+   Reconciling while a transcript loads (patching its notice in place) was
+   tried and deferred: it changed how code blocks lay out once the load
+   finished, by 0.5–1px per block, with identical DOM, styles and widths
+   (#4177).
 
 7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height

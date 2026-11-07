@@ -35,6 +35,20 @@ export function setCanvasArtefactMirror(next: CanvasArtefactMirror | null): void
   mirror = next
 }
 
+/**
+ * Where the main-process sink saves a copy of `artefact` so it outlives its
+ * window: the project the producing turn stamped as `owner`, and its thread.
+ * Null when it has no owner (produced outside any turn) or no thread. Never
+ * the project some window happens to show (#3958).
+ */
+export function canvasArtefactSaveTarget(
+  artefact: CanvasArtefact,
+): { projectId: string; threadId: string } | null {
+  const projectId = artefact.owner?.projectId
+  if (!projectId || !artefact.threadId) return null
+  return { projectId, threadId: artefact.threadId }
+}
+
 /** Mirror and publish one already-resolved canvas artefact. */
 export async function dispatchCanvasArtefact(artefact: CanvasArtefact): Promise<void> {
   const context = getThreadExecutionContext()

@@ -2925,6 +2925,14 @@ export function mountInputBar(
   })
 
   const unsubs = [
+    store.select(
+      (state) =>
+        state.activeThreadId !== null &&
+        state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState()
+      },
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already

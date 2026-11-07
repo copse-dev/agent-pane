@@ -28,6 +28,8 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { installTooltips } from '../dom/tooltip.ts'
+import { acceptMobileChat } from '../controller/mobile-chat.ts'
+import { acceptThreadPrompt } from '../controller/thread-prompts.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -301,6 +303,51 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('composer observes external submission completion', () => {
+  for (const source of ['phone', 'thread prompt'] as const) {
+    it(`re-enables after a ${source} queues without a later store update`, async () => {
+      const active: Thread = { ...thread(), status: 'running', worktreeChoice: 'automatic' }
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: active.id,
+        threads: [active],
+      })
+      const api = createApi({ currentBranch: 'main' })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const bar = mountInputBar(host, store, api)
+      try {
+        await flush()
+        const button = host.querySelector<HTMLButtonElement>('.submit-btn')
+        assert.ok(button)
+        assert.equal(button.disabled, false)
+        const command = {
+          id: 'external-submit',
+          projectId: 'project-1',
+          text: 'Check the build',
+          expiresAt: Date.now() + 60_000,
+        }
+        const result =
+          source === 'phone'
+            ? await acceptMobileChat(store, api, { ...command, threadId: active.id })
+            : await acceptThreadPrompt(store, api, {
+                ...command,
+                sourceThreadId: 'another-thread',
+                thread: active,
+              })
+        assert.equal(result.ok, true)
+        assert.equal(getThreadById(store, active.id)?.pendingMessages?.length, 1)
+        // No flush, token, git-status event or unrelated state write repairs this.
+        assert.equal(button.disabled, false)
+      } finally {
+        bar.unmount()
+      }
+    })
+  }
 })
 
 describe('input bar resolved model label', () => {
