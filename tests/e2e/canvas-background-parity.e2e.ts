@@ -131,12 +131,12 @@ async function previewMaxLuminance(title: string): Promise<number> {
 }
 
 /**
- * Rightmost text pixel in the preview, as a fraction of its width. The probe's
+ * Rightmost and bottommost text pixels as fractions of the preview dimensions. The probe's
  * one-line paragraph ends about a third of the way across a 1280px layout, which
  * a transcript card then shrank to unreadable text (#3240). Laid out at the
  * narrower preview viewport, the same line reaches well past the middle.
  */
-async function previewTextRightEdge(title: string): Promise<number> {
+async function previewTextBounds(title: string): Promise<{ right: number; bottom: number }> {
   return browser.execute((expectedTitle) => {
     const card = Array.from(document.querySelectorAll('.canvas-preview-card')).find(
       (candidate) =>
@@ -152,15 +152,19 @@ async function previewTextRightEdge(title: string): Promise<number> {
     context.drawImage(image, 0, 0)
     const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
     let right = 0
+    let bottom = 0
     for (let index = 0; index < data.length; index += 4) {
       const value =
         0.2126 * (data[index] ?? 0) +
         0.7152 * (data[index + 1] ?? 0) +
         0.0722 * (data[index + 2] ?? 0)
       const x = (index / 4) % canvas.width
-      if (value > 150 && x > right) right = x
+      if (value > 150) {
+        right = Math.max(right, x)
+        bottom = Math.max(bottom, Math.floor(index / 4 / canvas.width))
+      }
     }
-    return right / canvas.width
+    return { right: right / canvas.width, bottom: bottom / canvas.height }
   }, title)
 }
 
@@ -380,7 +384,12 @@ describe('canvas background parity', () => {
     expect(await previewMaxLuminance(TITLE)).toBeGreaterThan(150)
     // The thumbnail reflows at a reading-column width instead of the agent
     // tab's 1280px desktop viewport, so its text stays legible in the card.
-    expect(await previewTextRightEdge(TITLE)).toBeGreaterThan(0.5)
+    const textBounds = await previewTextBounds(TITLE)
+    expect(textBounds.right).toBeGreaterThan(0.5)
+    // An accidentally tiny hidden viewport produces huge cropped text, which
+    // also passes the right-edge check. Both fixture lines must fit in the top
+    // half of the preview, leaving the intended blank canvas below them.
+    expect(textBounds.bottom).toBeLessThan(0.5)
     await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png', TITLE)
 
     await browser.execute((title) => {

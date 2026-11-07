@@ -30,12 +30,15 @@ function mockProfilerHost(
   context: TestContext,
   snapshots: (string | Error)[],
   inspectors = new Map([[OPENED_PORT, HOST_PID]]),
+  notifyServerClose = true,
 ): {
   closedInspectors: number[]
+  clientDisconnects: number[]
   methods: string[]
   signals: { pid: number; signal: NodeJS.Signals | number | undefined }[]
 } {
   const closedInspectors: number[] = []
+  const clientDisconnects: number[] = []
   const methods: string[] = []
   const signals: { pid: number; signal: NodeJS.Signals | number | undefined }[] = []
   let clock = 0
@@ -74,6 +77,7 @@ function mockProfilerHost(
     'WebSocket',
     class extends EventTarget {
       readonly port: number
+      private serverClosed = false
 
       constructor(url: string) {
         super()
@@ -91,6 +95,12 @@ function mockProfilerHost(
         } else if (request.params?.expression?.includes('inspector')) {
           closedInspectors.push(this.port)
           inspectors.delete(this.port)
+          if (notifyServerClose) {
+            setImmediate(() => {
+              this.serverClosed = true
+              this.dispatchEvent(new Event('close'))
+            })
+          }
         } else if (request.method === 'Profiler.stop') {
           result = { profile: { nodes: [], samples: [], timeDeltas: [] } }
         }
@@ -100,14 +110,31 @@ function mockProfilerHost(
       }
 
       close = (): void => {
+        if (!this.serverClosed) clientDisconnects.push(this.port)
         this.dispatchEvent(new Event('close'))
       }
     },
   )
-  return { closedInspectors, methods, signals }
+  return { closedInspectors, clientDisconnects, methods, signals }
 }
 
 describe('profileProcess activation cleanup', { skip: process.platform === 'win32' }, () => {
+  it('lets the verified inspector close its socket before client disconnect', async (context) => {
+    const host = mockProfilerHost(context, [], new Map([[REQUESTED_PORT, HOST_PID]]))
+    await profileProcess(HOST_PID, REQUESTED_PORT, 1)
+    assert.deepEqual(host.closedInspectors, [REQUESTED_PORT])
+    assert.deepEqual(host.clientDisconnects, [], 'client close must not race target shutdown')
+  })
+
+  it('bounds a missing server close event and disconnects the stalled session', async (context) => {
+    const host = mockProfilerHost(context, [], new Map([[REQUESTED_PORT, HOST_PID]]), false)
+    await assert.rejects(
+      profileProcess(HOST_PID, REQUESTED_PORT, 1),
+      /Inspector session did not close/,
+    )
+    assert.deepEqual(host.clientDisconnects, [REQUESTED_PORT])
+  })
+
   it('confirms closure after a transient socket reset instead of reporting the inspector unconfirmed', async (context) => {
     const host = mockProfilerHost(context, [listenerSnapshot(), listenerSnapshot([OPENED_PORT])])
     const fetchBoundary = globalThis.fetch

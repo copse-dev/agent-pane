@@ -160,6 +160,12 @@ test('compaction records from metadata alone whether a thread ever ran', () => {
   assert.equal(once.updatedAt, 5)
 })
 
+test('keeps an ordinary draft idle before and after sidebar compaction', () => {
+  const draft = thread({ status: 'idle', draftPrompt: 'Help with PR #42.' })
+  assert.equal(isAutomationPendingStart(draft), false)
+  assert.equal(isAutomationPendingStart(compactSidebarThread(draft)), false)
+})
+
 test('isAutomationPendingStart reads a live thread directly and a compacted one from its precomputed flag', () => {
   const live = thread({
     status: 'idle',

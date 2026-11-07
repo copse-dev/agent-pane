@@ -83,6 +83,10 @@ describe('PR panel new thread (mock gh)', () => {
       expect.stringMatching(/^PR #42:/),
     )
 
+    // An unsent PR draft is idle, including while its sidebar metadata hydrates.
+    await expect(await $('.chat-row.selected').getElement()).not.toHaveElementClass('is-running')
+    await expect(await $('.chat-row.selected .chat-running-status').getElement()).not.toExist()
+
     await saveElementScreenshot('#app', 'pr-panel-new-thread-composer.png')
   })
 })

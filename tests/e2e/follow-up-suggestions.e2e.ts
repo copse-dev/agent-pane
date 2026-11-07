@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,8 @@ import { waitForAgentIdle } from './helpers.ts'
 import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { e2eGitBranch } from './helpers/e2e-env.ts'
+import { expectAssistantReply } from './helpers/mock-scenario.ts'
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -98,14 +101,10 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()
-      const assistantMessages = await $$(
-        '.messages-list .msg-assistant .message-text',
-      ).getElements()
-      const finalReply = assistantMessages.at(-1)
-      if (!finalReply) throw new Error('expected the Debug CI follow-up reply')
-      await expect(finalReply).toHaveText(
+      // Idle can arrive before the new reply mounts. Re-read the last reply
+      // while waiting instead of retaining the preceding turn's DOM element.
+      await expectAssistantReply(
         'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
-        { containing: true },
       )
       await scenario.assertComplete()
     })
@@ -117,25 +116,36 @@ describe('follow-up suggestion bubbles', () => {
     before(async () => {
       resetUserData()
       repoRoot = seedGitChangesFixture()
+      // The app reports this fixed branch under e2e. Give it a real ref at
+      // the committed fixture HEAD so first-send checkout selection does not
+      // fall back to main and lose the committed addition from the total.
+      execFileSync('git', ['branch', '-f', e2eGitBranch(), 'HEAD'], { cwd: repoRoot })
       await browser.reloadSession()
     })
 
     after(() => {
       resetUserData()
-      if (repoRoot) cleanupGitChangesFixture(repoRoot)
+      if (repoRoot) {
+        cleanupGitChangesFixture(repoRoot)
+        execFileSync('git', ['branch', '-D', e2eGitBranch()], { cwd: repoRoot })
+      }
     })
 
     it('shows a Changes bubble from real git diff stats', async () => {
-      const scenario = await completeMockTurn()
+      // Blank threads default to main. Stay on the fixture's branch so the
+      // committed addition remains part of the Changes review scope.
+      await $('.branch-picker-trigger').click()
+      await $(`.branch-picker-option-label=${e2eGitBranch()}`).click()
+      // The Changes bubble needs the dirty shared checkout itself, so send on
+      // top of it rather than moving to a clean isolated worktree.
+      const scenario = await completeMockTurn(false, { dirtySharedCheckout: true })
 
       const changesBubble = await $('.follow-up-bubble-changes').getElement()
       await expect(changesBubble).toBeDisplayed()
       await expect(changesBubble.$('.follow-up-label')).toHaveText('Changes')
 
-      const addText = await changesBubble.$('.follow-up-stat-add').getText()
-      const delText = await changesBubble.$('.follow-up-stat-del').getText()
-      expect(addText.startsWith('+')).toBe(true)
-      expect(delText.startsWith('-')).toBe(true)
+      await expect(changesBubble.$('.follow-up-stat-add')).toHaveText('+4')
+      await expect(changesBubble.$('.follow-up-stat-del')).toHaveText('-2')
 
       await saveAppScreenshot('follow-up-suggestions-git-changes.png')
       await scenario.assertComplete()

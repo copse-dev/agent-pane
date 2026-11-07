@@ -89,6 +89,11 @@ async function startTarget(observeSignal = true): Promise<Target> {
   }
 }
 
+function assertTargetAlive(target: Target): void {
+  assert.equal(target.child.exitCode, null, target.stderr())
+  assert.equal(target.child.signalCode, null, target.stderr())
+}
+
 async function inspectorIsListening(url: string): Promise<boolean> {
   try {
     await fetch(`http://${new URL(url).host}/json/list`, { signal: AbortSignal.timeout(500) })
@@ -170,7 +175,7 @@ describe('profileInspector', { timeout: 30_000 }, () => {
       )
       // Give any stray deferred callback time to run before judging the target.
       await new Promise((resolve) => setTimeout(resolve, 200))
-      assert.equal(target.child.exitCode, null, target.stderr())
+      assertTargetAlive(target)
       assert.doesNotMatch(target.stderr(), /uncaughtException/)
     } finally {
       await target.dispose()
@@ -182,7 +187,7 @@ describe('profileInspector', { timeout: 30_000 }, () => {
     try {
       await assert.rejects(profileInspector(target.url, 10, process.pid), /not requested process/)
       assert.equal(await inspectorIsListening(target.url), true)
-      assert.equal(target.child.exitCode, null, target.stderr())
+      assertTargetAlive(target)
       assert.ok(target.child.pid)
       const profile = await profileInspector(target.url, 10, target.child.pid)
       assert.ok(profile.samples.length > 0)
@@ -216,8 +221,8 @@ describe('profileInspector', { timeout: 30_000 }, () => {
         assert.match(result.stderr, /not requested process/)
         assert.equal(await inspectorIsListening(unrelated.url), true)
         assert.equal(await inspectorIsListening(requested.url), true)
-        assert.equal(unrelated.child.exitCode, null, unrelated.stderr())
-        assert.equal(requested.child.exitCode, null, requested.stderr())
+        assertTargetAlive(unrelated)
+        assertTargetAlive(requested)
         assert.doesNotMatch(requested.stderr(), /\[signal\] SIGUSR1/)
         await assert.rejects(access(output), { code: 'ENOENT' })
       } finally {
@@ -252,7 +257,7 @@ describe('profileInspector', { timeout: 30_000 }, () => {
         assert.equal(result.code, 0, result.stderr)
         assert.match(await readFile(output, 'utf8'), /"samples":\[/)
         assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
-        assert.equal(target.child.exitCode, null, target.stderr())
+        assertTargetAlive(target)
       } finally {
         await Promise.all([target.dispose(), rm(dir, { recursive: true, force: true })])
       }
@@ -296,7 +301,7 @@ describe('profileInspector', { timeout: 30_000 }, () => {
           'SIGUSR1 must actually reopen the inspector before cleanup is accepted',
         )
         assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
-        assert.equal(target.child.exitCode, null, target.stderr())
+        assertTargetAlive(target)
         assert.doesNotMatch(target.stderr(), /uncaughtException/)
         await assert.rejects(access(output), { code: 'ENOENT' })
       } finally {
