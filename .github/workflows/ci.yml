@@ -1051,6 +1051,76 @@ jobs:
       # The build is validated once in the dedicated `build` job below (whose
       # dist artifact the e2e shards reuse), so it no longer runs here.
 
+  # Opt-in kernel evidence for macOS filesystem policy. This is separate from
+  # Linux full CI and release signing; no secret or write token reaches PR code.
+  # The existing `labeled` trigger makes this usable before this change lands.
+  macos-sandbox:
+    name: macOS Seatbelt contract
+    needs: precheck
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'ci-macos-sandbox') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'ci-macos-sandbox')
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Run native Node toolchain contract
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/sandbox-exec
+          {
+            printf 'Candidate: `%s`\n\n' "$EXPECTED_HEAD"
+            sw_vers
+            uname -m
+            node --version
+          } | tee native-sandbox-environment.txt >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'NODE' | tee -a native-sandbox-environment.txt "$GITHUB_STEP_SUMMARY"
+          import { execFileSync } from 'node:child_process'
+          import { isAbsolute } from 'node:path'
+          let normalizedAbsolute = false
+          if (process.platform === 'darwin') {
+            try {
+              const raw = execFileSync('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], {
+                encoding: 'utf8',
+                timeout: 2_000,
+                env: {},
+              }).trim()
+              const normalized = raw.replace(/\/+$/, '')
+              normalizedAbsolute = normalized.length > 0 && isAbsolute(normalized)
+            } catch {}
+          }
+          console.log(JSON.stringify({
+            platform: process.platform,
+            normalizedAbsolute,
+            helperEligible: process.platform === 'darwin' && normalizedAbsolute,
+          }))
+          NODE
+          # These tests execute real ASRT-wrapped Node processes. A permission
+          # error during sandbox startup fails; only denied fixture syscalls pass.
+          pnpm test -- src/main/project-sandbox/node-toolchain-sandbox.test.ts toolchain-read-guard script-replay-native script-replay-scope capability-lease permission-gate
+      - name: Upload native sandbox evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-sandbox-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: |
+            native-sandbox-environment.txt
+            unit-tests.tap
+          if-no-files-found: error
+          retention-days: 14
+
   # Boot the actual no-network reviewer cell whenever its implementation or CI
   # wiring changes. Unit tests cover the broker with a fake engine; this is the
   # small hosted proof that the built image enforces the declared boundary and
@@ -2585,7 +2655,17 @@ jobs:
     # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
     needs:
-      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
+      [
+        precheck,
+        screenshot-baselines,
+        check,
+        macos-sandbox,
+        review-cell,
+        bench,
+        build,
+        e2e,
+        screenshot-artifacts,
+      ]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
@@ -2605,6 +2685,8 @@ jobs:
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           BASELINES_RESULT: ${{ needs.screenshot-baselines.result }}
+          MACOS_SANDBOX_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-macos-sandbox') && (github.event.action != 'labeled' || github.event.label.name == 'ci-macos-sandbox') }}
+          MACOS_SANDBOX_RESULT: ${{ needs.macos-sandbox.result }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
           QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
           BENCH_RESULT: ${{ needs.bench.result }}
@@ -2641,6 +2723,10 @@ jobs:
           if [ "$CHECK_RESULT" != "success" ]; then
             echo "Required unit check did not complete successfully."
             printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$MACOS_SANDBOX_REQUIRED" = "true" ] && [ "$MACOS_SANDBOX_RESULT" != "success" ]; then
+            echo "Requested macOS Seatbelt contract did not complete successfully."
             exit 1
           fi
           case "$MODE" in

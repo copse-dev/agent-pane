@@ -20,29 +20,23 @@ const identity: ShellReplayLeaseIdentity = {
 }
 
 describe('ShellReplayLeaseStore', () => {
-  it('permits only the bounded number of exact replays', () => {
+  it('permits only the bounded number of exact replays', async () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
     store.issue(identity, 'npm test -- permission-gate')
 
     for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
-      assert.deepEqual(
-        store.consume(identity, 'npm test -- permission-gate', () => false),
-        {
-          matched: true,
-          leaseId: 'lease-1',
-          companionSegments: [],
-        },
-      )
+      assert.deepEqual(await store.consume(identity, 'npm test -- permission-gate', () => false), {
+        matched: true,
+        leaseId: 'lease-1',
+        companionSegments: [],
+      })
     }
-    assert.deepEqual(
-      store.consume(identity, 'npm test -- permission-gate', () => false),
-      {
-        matched: false,
-      },
-    )
+    assert.deepEqual(await store.consume(identity, 'npm test -- permission-gate', () => false), {
+      matched: false,
+    })
   })
 
-  it('gives an outside-sandbox lease its own replay bound and a longer window', () => {
+  it('gives an outside-sandbox lease its own replay bound and a longer window', async () => {
     let now = 1_000
     const store = new ShellReplayLeaseStore({ now: (): number => now })
     const external: ShellReplayLeaseIdentity = { ...identity, containment: 'external' }
@@ -53,15 +47,12 @@ describe('ShellReplayLeaseStore', () => {
     assert.ok(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS > SHELL_REPLAY_LEASE_TTL_MS)
     // Past the sandbox window, still inside its own.
     now += SHELL_REPLAY_LEASE_TTL_MS + 60_000
-    assert.equal(store.consume(external, 'npm test', () => true).matched, true)
+    assert.equal((await store.consume(external, 'npm test', () => true)).matched, true)
     now = 1_000 + SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS
-    assert.deepEqual(
-      store.consume(external, 'npm test', () => true),
-      { matched: false },
-    )
+    assert.deepEqual(await store.consume(external, 'npm test', () => true), { matched: false })
   })
 
-  it('binds a lease to project, thread, turn tree, and execution root', () => {
+  it('binds a lease to project, thread, turn tree, and execution root', async () => {
     const changedIdentities: ShellReplayLeaseIdentity[] = [
       { ...identity, projectId: 'project-2' },
       { ...identity, threadId: 'thread-2' },
@@ -73,14 +64,11 @@ describe('ShellReplayLeaseStore', () => {
     for (const changed of changedIdentities) {
       const store = new ShellReplayLeaseStore()
       store.issue(identity, 'npm test')
-      assert.deepEqual(
-        store.consume(changed, 'npm test', () => true),
-        { matched: false },
-      )
+      assert.deepEqual(await store.consume(changed, 'npm test', () => true), { matched: false })
     }
   })
 
-  it('expires fail closed and supports explicit revocation', () => {
+  it('expires fail closed and supports explicit revocation', async () => {
     let now = 1_000
     const store = new ShellReplayLeaseStore({
       now: (): number => now,
@@ -88,30 +76,28 @@ describe('ShellReplayLeaseStore', () => {
     })
     store.issue(identity, 'npm test')
     now += SHELL_REPLAY_LEASE_TTL_MS
-    assert.deepEqual(
-      store.consume(identity, 'npm test', () => true),
-      { matched: false },
-    )
+    assert.deepEqual(await store.consume(identity, 'npm test', () => true), { matched: false })
 
     now = 1_000
     const lease = store.issue(identity, 'npm test')
     assert.equal(store.revoke(lease.id), true)
-    assert.deepEqual(
-      store.consume(identity, 'npm test', () => true),
-      { matched: false },
-    )
+    assert.deepEqual(await store.consume(identity, 'npm test', () => true), { matched: false })
   })
 
-  it('allows independently authorized output filters after the exact leased command', () => {
+  it('allows independently authorized output filters after the exact leased command', async () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
     store.issue(identity, 'npm test -- permission-gate')
     const seen: string[] = []
 
     assert.deepEqual(
-      store.consume(identity, 'npm test -- permission-gate | rg failed | head -20', (segment) => {
-        seen.push(segment)
-        return segment === 'rg failed' || segment === 'head -20'
-      }),
+      await store.consume(
+        identity,
+        'npm test -- permission-gate | rg failed | head -20',
+        (segment) => {
+          seen.push(segment)
+          return segment === 'rg failed' || segment === 'head -20'
+        },
+      ),
       {
         matched: true,
         leaseId: 'lease-1',
@@ -121,13 +107,13 @@ describe('ShellReplayLeaseStore', () => {
     assert.deepEqual(seen, ['rg failed', 'head -20'])
   })
 
-  it('composes an exact lease with independently authorized commands', () => {
+  it('composes an exact lease with independently authorized commands', async () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
     store.issue(identity, 'npm test -- permission-gate')
     const allowed = new Set(['cd /workspace/project', 'ls artifacts', 'rg failed'])
 
     assert.deepEqual(
-      store.consume(
+      await store.consume(
         identity,
         'cd /workspace/project && npm test -- permission-gate; ls artifacts | rg failed',
         (segment) => allowed.has(segment),
@@ -154,7 +140,7 @@ describe('ShellReplayLeaseStore', () => {
     )
   })
 
-  it('rejects altered, piped input, unsupported control flow, and unauthorized companions', () => {
+  it('rejects altered, piped input, unsupported control flow, and unauthorized companions', async () => {
     const rejected = [
       'npm test',
       'env DEBUG=1 npm test -- permission-gate',
@@ -169,7 +155,7 @@ describe('ShellReplayLeaseStore', () => {
       const store = new ShellReplayLeaseStore()
       store.issue(identity, 'npm test -- permission-gate')
       assert.deepEqual(
-        store.consume(identity, command, (segment) => segment.startsWith('rg')),
+        await store.consume(identity, command, (segment) => segment.startsWith('rg')),
         { matched: false },
         command,
       )

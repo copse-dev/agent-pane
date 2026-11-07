@@ -2368,6 +2368,123 @@ describe('turn-tree shell replay leases', () => {
     }
   })
 
+  it(
+    'offers argument changes explicitly and reuses the grant through both escalation paths',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const localRoot = mkdtempSync(join(tmpdir(), 'gate-script-lease-'))
+      writeFileSync(join(localRoot, 'audit.mjs'), '')
+      writeFileSync(join(localRoot, 'other.mjs'), '')
+      const localContext = { ...context, root: localRoot, projectRoot: localRoot }
+      const run = (fn: () => Promise<void>): Promise<void> =>
+        runWithThreadExecutionContext(localContext, () =>
+          runWithActiveRunIdentity(context.threadId, () => {
+            setActiveRunTurnTreeId(asTurnTreeId('script-tree'))
+            return fn()
+          }),
+        )
+      try {
+        for (const verifiedBlock of [false, true]) {
+          shellReplayLeaseStore.clear()
+          const requests: string[] = []
+          setApprovalHandler(async (request) => {
+            requests.push(request.turnTreeLeaseLabel ?? '')
+            assert.equal(request.turnTreeLeaseDefault, false)
+            return { approved: true, remember: false, grantScope: 'turn-tree' }
+          })
+          const ask = (command: string): Promise<boolean> =>
+            verifiedBlock
+              ? promptUnsandboxedShell(command, ['sandbox violation'])
+              : promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+                  executionRoot: localRoot,
+                })
+          await run(async () => {
+            assert.equal(await ask('node audit.mjs \'document.querySelectorAll("dialog")\''), true)
+            assert.equal(
+              await ask('node audit.mjs \'Array.from(document.querySelectorAll("iframe"))\''),
+              true,
+            )
+            assert.equal(requests.length, 1)
+            assert.match(
+              requests[0] ?? '',
+              /this script with different arguments outside the sandbox/,
+            )
+            await ask('node other.mjs next')
+            assert.equal(requests.length, 2)
+          })
+        }
+        shellReplayLeaseStore.clear()
+        let prompts = 0
+        setApprovalHandler(async () => {
+          prompts++
+          return { approved: true, remember: false, grantScope: 'once' }
+        })
+        await run(async () => {
+          for (const arg of ['first', 'second']) {
+            await promptExpectedSandboxBlock(
+              'node audit.mjs ' + arg,
+              ['runs a local script'],
+              undefined,
+              {
+                executionRoot: localRoot,
+              },
+            )
+          }
+        })
+        assert.equal(prompts, 2)
+      } finally {
+        shellReplayLeaseStore.clear()
+        setApprovalHandler(null)
+        rmSync(localRoot, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it(
+    'rejects an argument grant when the script changes while approval is pending',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const localRoot = mkdtempSync(join(tmpdir(), 'gate-script-change-'))
+      const script = join(localRoot, 'audit.mjs')
+      writeFileSync(script, '// approved version\n')
+      const localContext = { ...context, root: localRoot, projectRoot: localRoot }
+      const run = (fn: () => Promise<void>): Promise<void> =>
+        runWithThreadExecutionContext(localContext, () =>
+          runWithActiveRunIdentity(context.threadId, () => {
+            setActiveRunTurnTreeId(asTurnTreeId('script-change-tree'))
+            return fn()
+          }),
+        )
+      try {
+        for (const verifiedBlock of [false, true]) {
+          shellReplayLeaseStore.clear()
+          let prompts = 0
+          setApprovalHandler(async () => {
+            prompts++
+            writeFileSync(script, '// changed during approval ' + String(prompts) + '\n')
+            return { approved: true, remember: false, grantScope: 'turn-tree' }
+          })
+          const ask = (command: string): Promise<boolean> =>
+            verifiedBlock
+              ? promptUnsandboxedShell(command, ['sandbox violation'])
+              : promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+                  executionRoot: localRoot,
+                })
+          await run(async () => {
+            assert.equal(await ask('node audit.mjs first'), false)
+            assert.equal(prompts, 1)
+            assert.equal(await ask('node audit.mjs second'), false)
+            assert.equal(prompts, 2)
+          })
+        }
+      } finally {
+        shellReplayLeaseStore.clear()
+        setApprovalHandler(null)
+        rmSync(localRoot, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('never offers an agent-requested escape a lease for network, deletion or installs', async () => {
     shellReplayLeaseStore.clear()
     const offered: boolean[] = []
@@ -3341,7 +3458,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         const temp = (darwinUserTempDir() ?? '').replace(/^\/private(?=\/)/, '')
         const log = `${temp}/rbe.log`
         const slice = String.raw`tr -d '\000' < "$L" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '1770,1850p' | cut -c1-300`
-        const { permitted, prompt } = await runWithActiveRunIdentity('thread-temp-read', () =>
+        const { permitted, prompt } = await inLoggedTurn('thread-temp-read', root, () =>
           runGate(`L=${log}; ${slice}`, { approved: false, remember: false }, root),
         )
         assert.equal(permitted, true)
