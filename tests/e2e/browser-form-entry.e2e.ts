@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -132,6 +132,7 @@ describe('native browser form entry', () => {
     const capturedPage = await image.getAttribute('src')
     assert.ok(capturedPage)
     assert.ok(capturedPage.startsWith('data:image/png;base64,'))
+    mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
     writeFileSync(
       join(process.cwd(), '.tmp/browser-form-captured-page.png'),
       Buffer.from(capturedPage.slice('data:image/png;base64,'.length), 'base64'),
