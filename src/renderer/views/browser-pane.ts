@@ -1923,7 +1923,6 @@ export function mountBrowserPane(
   })
 
   const unsubs = [
-    store.on('threads_changed', onThreadMaybeChanged),
     store.select(
       (s) => [s.activeProjectId, s.activeThreadId] as const,
       onThreadMaybeChanged,
