@@ -36,6 +36,7 @@ import {
   acpDelegatePrompt,
   activateMobileProject,
   activateWorkspaceReference,
+  activeThreadOf,
   addHookCard,
   addMessage,
   addMessageCanvasArtefact,
@@ -45,6 +46,7 @@ import {
   addRemoteProject,
   addToolCall,
   addUsageDelta,
+  afterPendingThreadPersistence,
   agentActivityLabel,
   announcementCatalog,
   appendAcpContentBlock,
@@ -387,6 +389,7 @@ import {
   reviewerInputAnswer,
   reviewerInputRequests,
   sameItems,
+  sameThreadBesidesDraft,
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
@@ -446,6 +449,7 @@ import {
   threadPrRelationships,
   threadProposalFileSummary,
   threadProposalStatus,
+  threadRelationsKey,
   toggleFilesPane,
   toggleFilesPaneWithWorkspace,
   toggleProjectsPane,
@@ -463,7 +467,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Y76MMWI7.js";
+} from "./chunk-CHT54NWT.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2174,7 +2178,17 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncSideChatBadge();
     }),
     store2.select((s) => s.stagedDiffs.length, syncChangesBadge),
-    store2.on("threads_changed", syncSideChatBadge),
+    // The badge's count and unread state for the open thread's side chats.
+    store2.select(
+      (s) => {
+        const active = activeThreadOf(s);
+        const mainId = active?.sideChat?.parentThreadId ?? active?.id;
+        const rows = mainId === void 0 ? [] : sideChatsOf(s.threads, mainId);
+        return [rows.length, rows.filter((row2) => row2.unread).length];
+      },
+      syncSideChatBadge,
+      sameItems
+    ),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
   return {
@@ -2197,11 +2211,13 @@ var init_panel_mode_controls = __esm({
     init_icons();
     init_outline_icon();
     init_tooltip();
+    init_store();
     init_panels();
     init_side_chat();
     init_portrait_panel_bar_overflow();
     init_roadmap_plans_plugin();
     init_okf_memories_plugin();
+    init_active_thread_owner();
     PANEL_CONTROL_DEFS = [
       {
         id: "explorer",
@@ -2633,25 +2649,44 @@ function mountTitlebar(root, store2, api2) {
   syncBranch();
   const unsubs = [
     store2.select((s) => s.projectsPaneOpen, syncSidebar),
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
     selectActiveWorkspace(store2, () => {
       syncName();
-      syncBranchNow();
-      syncRunApp();
+      afterPendingThreadPersistence(() => {
+        syncBranchNow();
+        syncRunApp();
+      });
     }),
     store2.on("projects_changed", syncName),
     store2.on("message_added", syncProjectPicker),
     store2.on("thread_status_changed", syncProjectPicker),
-    store2.on("threads_changed", () => {
-      syncProjectPicker();
-      if (store2.getState().activeThreadId !== syncedThreadId) {
-        syncBranchNow();
-        return;
+    // The picker locks once the active thread stops being blank.
+    store2.select((s) => {
+      const thread = activeThreadOf(s);
+      return s.projects.length === 0 || thread !== void 0 && !isBlankThread(thread);
+    }, syncProjectPicker),
+    // The branch label follows the active thread and its own branch binding.
+    store2.select(
+      (s) => {
+        const thread = activeThreadOf(s);
+        return [s.activeThreadId, thread?.gitBranch, thread?.worktree?.path];
+      },
+      () => {
+        if (store2.getState().activeThreadId !== syncedThreadId) {
+          afterPendingThreadPersistence(syncBranchNow);
+          return;
+        }
+        scheduleBranchSync();
+      },
+      sameItems
+    ),
+    store2.select(
+      (s) => s.activeThreadId,
+      (threadId) => {
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp);
       }
-      scheduleBranchSync();
-    }),
-    store2.on("threads_changed", () => {
-      if (store2.getState().activeThreadId !== detectedThread) syncRunApp();
-    }),
+    ),
     store2.on("thread_checkout_changed", syncRunApp),
     store2.on("message_done", syncRunApp),
     store2.on("git_branch_changed", scheduleBranchSync),
@@ -2680,6 +2715,7 @@ var init_titlebar = __esm({
     init_helpers();
     init_outline_icon();
     init_tooltip();
+    init_store();
     init_open_in_editor();
     init_panel_mode_controls();
     init_active_thread_owner();
@@ -2687,6 +2723,7 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     init_active_workspace();
+    init_persistence();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
@@ -4500,11 +4537,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
   api2.agent.onApprovalCancelled(({ id }) => {
     removeCancelled(id);
   });
-  store2.on("threads_changed", () => {
-    withdrawUnshowable();
-    if (active) appendToOpen();
-    else show2();
-  });
+  store2.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)],
+    () => {
+      withdrawUnshowable();
+      if (active) appendToOpen();
+      else show2();
+    },
+    sameItems
+  );
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       withdrawUnshowable();
@@ -4556,6 +4597,7 @@ var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
     init_dist();
     init_helpers();
+    init_store();
     init_settings_dialog();
     init_attention();
     init_projects();
@@ -13736,7 +13778,9 @@ function createThreadArchiveReview(store2, api2) {
     void refresh();
   };
   const unsubs = [
-    store2.on("threads_changed", sync),
+    // Readiness is keyed on the active project (selected below) and the active
+    // thread itself (its `updatedAt` and draft).
+    store2.select(activeThreadOf, sync),
     store2.on("thread_status_changed", sync),
     selectActiveWorkspace(store2, sync),
     store2.on("settings_changed", () => {
@@ -13768,6 +13812,7 @@ var init_thread_archive_review = __esm({
     init_helpers();
     init_toast();
     init_thread_archive_toast();
+    init_active_thread_owner();
     init_active_workspace();
   }
 });
@@ -64915,10 +64960,16 @@ function mountFooterBranchStatus(host, store2, api2) {
         });
       }
     ),
-    store2.on("threads_changed", () => {
-      if (switchedThisTask) renderStoreState();
-      else scheduleStoreRefresh();
-    }),
+    // The active thread's own updates (branch, worktree, PR links, blank or
+    // not). Other threads' renames and turns no longer repaint the footer.
+    store2.select(
+      activeThreadOf,
+      () => {
+        if (switchedThisTask) renderStoreState();
+        else scheduleStoreRefresh();
+      },
+      sameThreadBesidesDraft
+    ),
     store2.on("thread_status_changed", scheduleStoreRefresh),
     store2.on("message_added", () => {
       scheduleStoreRefresh();
@@ -66361,6 +66412,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
     }),
+    // Deliberately still `threads_changed`, not a selection. The bubbles on
+    // screen during and after a turn come back through the metadata writes
+    // that emit it mid-turn (the reference screenshots show them). A selection
+    // of the active thread also fires on the send itself and bills a fetch for
+    // the message just sent; one keyed on the switch alone drops the bubbles.
     store2.on("threads_changed", () => {
       showForActiveThread();
     }),
@@ -66446,6 +66502,17 @@ function mountNextStepHint(store2, api2, onChanged) {
     }
     refreshDisplayed();
   }
+  function syncActiveThread() {
+    const activeId = store2.getState().activeThreadId;
+    if (activeId && getThreadById(store2, activeId)?.status === "idle") {
+      const exchange = lastExchange(store2, activeId);
+      if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
+        void maybeFetchHint(activeId);
+        return;
+      }
+    }
+    refreshDisplayed();
+  }
   const unsubs = [
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
@@ -66456,17 +66523,17 @@ function mountNextStepHint(store2, api2, onChanged) {
       }
       if (status === "idle") void maybeFetchHint(tid);
     }),
-    store2.on("threads_changed", () => {
-      const activeId = store2.getState().activeThreadId;
-      if (activeId && getThreadById(store2, activeId)?.status === "idle") {
-        const exchange = lastExchange(store2, activeId);
-        if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
-          void maybeFetchHint(activeId);
-          return;
-        }
-      }
-      refreshDisplayed();
-    })
+    // Only a switch, or the transcript landing after one, can start a fetch.
+    // Sending a message changes the thread while it is still idle; asking then
+    // would bill a hint for the message just sent.
+    store2.select(
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded],
+      syncActiveThread,
+      sameItems
+    ),
+    // Any other change to the active thread only re-checks what is shown: a
+    // new or edited message retires a hint for the previous exchange.
+    store2.select(activeThreadOf, refreshDisplayed, sameThreadBesidesDraft)
   ];
   return {
     current: () => displayed,
@@ -66491,8 +66558,10 @@ function mountNextStepHint(store2, api2, onChanged) {
 }
 var init_next_step_hint = __esm({
   "src/renderer/views/next-step-hint.ts"() {
+    init_store();
     init_thread_helpers();
     init_last_exchange();
+    init_active_thread_owner();
   }
 });
 
@@ -85318,11 +85387,15 @@ function mountAskUserDialog(api2, store2) {
     if (idx !== -1) queue.splice(idx, 1);
     syncAttention();
   });
-  store2.on("threads_changed", () => {
-    withdrawIfUnshowable();
-    showNext();
-    syncAttention();
-  });
+  store2.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)],
+    () => {
+      withdrawIfUnshowable();
+      showNext();
+      syncAttention();
+    },
+    sameItems
+  );
   return {
     pending: () => [...active ? [active] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
       id: req.id,
@@ -85348,6 +85421,7 @@ var init_ask_user_dialog = __esm({
     init_helpers();
     init_dist();
     init_inline_markdown();
+    init_store();
     init_attention();
     init_projects();
     init_side_chat2();
@@ -89521,7 +89595,11 @@ function bindChatComposerLayout(store2, onActivityHome) {
   const observer = new ResizeObserver(sync);
   observer.observe(input);
   window.addEventListener("resize", sync, { passive: true });
-  const unsubs = [store2.on("threads_changed", sync), store2.on("message_added", sync)];
+  const unsubs = [
+    // Which thread, and whether it is the empty Activity home.
+    store2.select((s) => [s.activeThreadId, isActiveThreadEmpty(store2)], sync, sameItems),
+    store2.on("message_added", sync)
+  ];
   return () => {
     unsubs.forEach((u3) => {
       u3();
@@ -89532,6 +89610,7 @@ function bindChatComposerLayout(store2, onActivityHome) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+    init_store();
     init_thread_hydration();
   }
 });
