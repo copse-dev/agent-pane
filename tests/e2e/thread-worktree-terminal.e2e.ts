@@ -281,6 +281,12 @@ describe('isolated thread terminal cwd', () => {
 
     const helper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea').getElement()
     await helper.waitForExist({ timeout: 30_000 })
+    // The textarea exists before the shell finishes initializing. Typing then
+    // can capture both the PTY's startup echo and the shell's command echo.
+    await browser.waitUntil(async () => /\$\s*$/.test(await activeXtermText()), {
+      timeout: 30_000,
+      timeoutMsg: 'expected the recovery shell prompt before typing',
+    })
     await helper.click()
     await browser.keys(['clear', '\uE007'])
     await browser.keys(['git', ' ', 'status', ' ', '--short', ' ', '--branch', '\uE007'])
@@ -288,6 +294,8 @@ describe('isolated thread terminal cwd', () => {
       timeout: 30_000,
       timeoutMsg: 'expected the recovery terminal to show the detached rebase checkout',
     })
+    assert.equal((await activeXtermText()).split('git status --short --branch').length - 1, 1)
+    await expect($('.chat-running-status')).not.toExist()
 
     await assertNoErrorToasts('interrupted rebase recovery terminal')
     // Leave the canvas cursor unfocused at its steady outline for capture.
