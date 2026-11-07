@@ -9,10 +9,14 @@ import {
   createThread,
   getThreadById,
   appendReasoning,
+  patchThreadAnywhere,
   setMessageTurnOutcome,
+  setReviewerInputAnswer,
+  setThreadProposalDecision,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
+import { resetArtefactPreviewsForTest, setArtefactPreview } from '../canvas/artefact-previews.ts'
 import {
   adoptPatchedSignatures,
   applyTranscriptRowPlan,
@@ -145,7 +149,9 @@ describe('transcriptRowSignature', () => {
     store: ReturnType<typeof createStore>,
     threadId: string,
   ): TranscriptRowSignature[] {
-    return wantedTranscriptRows(thread(store, threadId), new Set()).map((row) => row.signature)
+    return wantedTranscriptRows(store, thread(store, threadId), new Set()).map(
+      (row) => row.signature,
+    )
   }
 
   it('changes only the live tail when the thread status flips', () => {
@@ -204,15 +210,15 @@ describe('transcriptRowSignature', () => {
     const t = thread(store, threadId)
     const anchorMessage = t.messages.find((message) => message.id === anchor)
     assert.ok(anchorMessage)
-    const before = transcriptRowSignature(t, anchorMessage)
+    const before = transcriptRowSignature(store, t, anchorMessage)
     const memberMessage = t.messages.find((message) => message.id === member)
     const call = memberMessage?.toolCalls[0]
     assert.ok(call)
     // The anchor's rollup draws the member's calls: a member change re-signs it.
     call.result = 'changed'
-    assert.notDeepEqual(transcriptRowSignature(t, anchorMessage), before)
+    assert.notDeepEqual(transcriptRowSignature(store, t, anchorMessage), before)
     // The patch that redrew the member redrew the anchor: both are patched by either.
-    const runRows = wantedTranscriptRows(t, new Set()).filter(
+    const runRows = wantedTranscriptRows(store, t, new Set()).filter(
       (row) => row.key === anchor || row.key === member,
     )
     assert.deepEqual(
@@ -239,7 +245,7 @@ describe('transcriptRowSignature', () => {
     // A step that has not streamed anything yet is not part of the run.
     const step = addMessage(store, threadId, 'assistant', '')
     const stepRow = (): TranscriptRowSignature => {
-      const found = wantedTranscriptRows(thread(store, threadId), new Set()).find(
+      const found = wantedTranscriptRows(store, thread(store, threadId), new Set()).find(
         (row) => row.key === step,
       )
       assert.ok(found)
@@ -264,7 +270,7 @@ describe('transcriptRowSignature', () => {
   it('signs a turn outcome only by what it draws', () => {
     const { store, threadId, ids } = seed()
     const replyRow = (): TranscriptRowSignature => {
-      const found = wantedTranscriptRows(thread(store, threadId), new Set()).find(
+      const found = wantedTranscriptRows(store, thread(store, threadId), new Set()).find(
         (row) => row.key === ids[1],
       )
       assert.ok(found)
@@ -287,9 +293,110 @@ describe('transcriptRowSignature', () => {
     assert.notEqual(replyRow().settled, before.settled)
   })
 
+  it('signs the thread-wide facts a card draws on the rows that draw them only', () => {
+    // Each of these used to force a rebuild of the whole list. Now only the
+    // row whose card draws the fact is re-signed; the other rows keep theirs.
+    resetArtefactPreviewsForTest()
+    const store = createStore()
+    const other = createThread(store)
+    // Not blank, so creating the next thread does not prune it.
+    addMessage(store, other, 'user', 'The proposed work')
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Look around')
+    const proposing = addMessage(store, threadId, 'assistant', 'One for later.')
+    addToolCall(store, proposing, {
+      id: 'call-propose',
+      name: 'propose_thread',
+      args: { title: 'Later', summary: 'Do it later.', prompt: 'Do the later thing.' },
+      status: 'done',
+      result: 'Offered to the user.',
+    })
+    const asking = addMessage(store, threadId, 'assistant', 'A question.')
+    addToolCall(store, asking, {
+      id: 'call-ask',
+      name: 'request_review_input',
+      args: { question: 'Keep it?', context: 'It is old.', options: ['Yes', 'No'] },
+      status: 'done',
+      result: 'Asked.',
+    })
+    const drawing = addMessage(store, threadId, 'assistant', 'A chart.')
+    addToolCall(store, drawing, {
+      id: 'call-canvas',
+      name: 'canvas_render',
+      args: { title: 'Sales' },
+      status: 'done',
+      result: 'Rendered ui://canvas/Sales',
+    })
+    const last = addMessage(store, threadId, 'user', 'Thanks')
+    const changedRows = (change: () => void): number[] => {
+      const before = signatures(store, threadId)
+      change()
+      const after = signatures(store, threadId)
+      return after.flatMap((signature, i) =>
+        JSON.stringify(signature) === JSON.stringify(before[i]) ? [] : [i],
+      )
+    }
+
+    assert.deepEqual(
+      changedRows(() => {
+        setThreadProposalDecision(store, threadId, {
+          id: 'call-propose',
+          status: 'started',
+          decidedAt: 1,
+          threadId: other,
+        })
+      }),
+      [1],
+      'answering a proposal re-signs its row only',
+    )
+    assert.deepEqual(
+      changedRows(() => {
+        store.setState({
+          threads: store.getState().threads.filter((candidate) => candidate.id !== other),
+        })
+      }),
+      [1],
+      'the started thread going away re-signs the proposal row only',
+    )
+    assert.deepEqual(
+      changedRows(() => {
+        setReviewerInputAnswer(store, threadId, {
+          id: 'call-ask',
+          text: 'Yes',
+          answeredAt: 2,
+          messageId: last,
+        })
+      }),
+      [2],
+      'answering a reviewer question re-signs its row only',
+    )
+    assert.deepEqual(
+      changedRows(() => {
+        setArtefactPreview(threadId, 'Sales', 'data:image/png;base64,AAAA')
+      }),
+      [3],
+      'a new thumbnail re-signs the row that draws it only',
+    )
+    assert.deepEqual(
+      changedRows(() => {
+        patchThreadAnywhere(store, threadId, (t) => ({ ...t, model: 'openai:gpt-5.5' }))
+      }),
+      [],
+      'no row draws the thread model',
+    )
+    assert.deepEqual(
+      changedRows(() => {
+        patchThreadAnywhere(store, threadId, (t) => ({ ...t, interruptedTurnAt: Date.now() }))
+      }),
+      [4],
+      'the interrupted-turn marker re-signs the last row, whose recovery reads it',
+    )
+    resetArtefactPreviewsForTest()
+  })
+
   it('leaves hidden (queued) messages out of the wanted rows', () => {
     const { store, threadId, ids } = seed()
-    const wanted = wantedTranscriptRows(thread(store, threadId), new Set([ids[2] ?? '']))
+    const wanted = wantedTranscriptRows(store, thread(store, threadId), new Set([ids[2] ?? '']))
     assert.deepEqual(
       wanted.map((row) => row.key),
       [ids[0], ids[1], ids[3]],

@@ -132,10 +132,16 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    the stream or when the list changes shape around the rows. Component tests
    hold the patched rows byte-identical to a fresh rebuild at the end of a
    turn, for a multi-step run stopped mid-thought and the decorated cards,
-   reconciling after every chunk and only at turn end. A thread switch,
-   hydration, a pending backfill, a change to thread-wide row inputs (model,
-   proposals, reviewer answers, artefact previews, interrupted-turn marker) and
-   a reorder still rebuild the whole list (#3962).
+   reconciling after every chunk and only at turn end. The thread-wide facts a
+   card draws are signed on the rows that draw them: a proposal's answer (and
+   whether the thread it started still exists), a reviewer question's answer,
+   the version of each canvas thumbnail, and the interrupted-turn marker
+   through the recovery it offers. The thread model is drawn only by chrome
+   (the queued panel), so none of these rebuild the whole list any more. The
+   trailing review report and comparison cards follow the active thread's
+   report and comparison through `store.select` and are recreated only when
+   those change. A thread switch, hydration, a pending backfill and a reorder
+   still rebuild the whole list (#3962).
 
 7. **Compare and tune.** Review the same sequence under the current behavior, the
    held-open prototype, and the compact alternative. Decide whether long-run height
