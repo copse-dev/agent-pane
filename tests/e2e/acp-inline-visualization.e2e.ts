@@ -263,7 +263,24 @@ describe('ACP inline visualization reference', () => {
       if (preview) preview.style.visibility = 'visible'
     })
 
-    await savePreparedElementScreenshot('.messages-list', 'acp-inline-visualization-reference.png')
+    // Frame the answer row itself (text, card, caption and footer), not the
+    // transcript box: the capture prep turns the list's overflow visible, so
+    // that box shows the thread's first list-height of content and the
+    // reserved navigation row below it would cut the answer's foot off.
+    const answerRow = '[data-message-id="inline-vis-assistant"]'
+    await savePreparedElementScreenshot(answerRow, 'acp-inline-visualization-reference.png')
+    const answerFit = await browser.execute((selector) => {
+      const row = document.querySelector(selector)?.getBoundingClientRect()
+      const previews = document
+        .querySelector(`${selector} .message-canvas-previews`)
+        ?.getBoundingClientRect()
+      if (!row || !previews) return null
+      return {
+        cardInsideRow: previews.bottom <= row.bottom + 0.5,
+        rowInsideWindow: row.top >= -0.5 && row.bottom <= window.innerHeight + 0.5,
+      }
+    }, answerRow)
+    expect(answerFit).toEqual({ cardInsideRow: true, rowInsideWindow: true })
 
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.canvas-preview-open')?.click()

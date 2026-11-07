@@ -129,6 +129,8 @@ export interface AppState {
   /** Threads with live runs whose project is not active (see {@link BackgroundThread}). */
   backgroundThreads: BackgroundThread[]
   activeThreadId: string | null
+  /** Session-only submission ownership before dispatch; never restored from disk. */
+  pendingSubmissionThreadIds: readonly string[]
   panelTab: PanelTab
   openFile: OpenFile | null
   activeDiff: ActiveDiff | null

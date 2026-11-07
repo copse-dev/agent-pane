@@ -1,0 +1,132 @@
+name: Halt release
+
+# Withdraw a bad release from both update channels, or restore one halted in
+# error. Halting turns the GitHub Release back into a draft: drafts are absent
+# from `releases.atom` (the beta check) and `releases/latest` (the stable
+# check), and their assets stop downloading, so no client is offered it and no
+# new user downloads it. If it was the latest stable release, the newest
+# remaining stable release becomes latest again, so the stable download link
+# and feed fall back to it. Installed copies stay where they are: Copse never
+# downgrades, so a halted version is replaced by a corrective newer release.
+# The bytes are kept in the draft for investigation, never deleted.
+#
+# `resume` republishes a halted release unchanged, for a halt raised in error.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release to halt, or halted release to resume (v<version>)
+        required: true
+        type: string
+      action:
+        description: halt withdraws the release; resume republishes it unchanged
+        required: true
+        default: halt
+        type: choice
+        options: [halt, resume]
+      reason:
+        description: Why (recorded in the tracking issue)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-channel-change
+  cancel-in-progress: false
+
+jobs:
+  change:
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_REPOSITORY: copse-dev/copse-releases
+      TAG: ${{ inputs.tag }}
+      ACTION: ${{ inputs.action }}
+      REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+      - name: Mint a token scoped to the public release repository
+        uses: actions/create-github-app-token@v3
+        id: release-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: copse-dev
+          repositories: copse-releases
+          permission-contents: write
+      - name: Change the release's visibility
+        id: change
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Fails closed on an alpha, RC, or malformed tag.
+          node scripts/release-channel.mts --release-type "${TAG#v}" > /dev/null
+          list_releases() {
+            gh api --paginate --slurp "repos/$RELEASE_REPOSITORY/releases?per_page=100" | jq '[.[][]]' > "$RUNNER_TEMP/releases.json"
+          }
+          # The list, unlike the by-tag lookup, includes drafts for this token.
+          list_releases
+          jq -e --arg tag "$TAG" '[.[] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("no single release for \($tag)") end' \
+            "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/release.json"
+          prerelease="$(jq -r .prerelease "$RUNNER_TEMP/release.json")"
+          if [ "$ACTION" = halt ]; then
+            node scripts/release-promotion.mts check-halt "$RUNNER_TEMP/release.json"
+            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=true
+            list_releases
+            fallback="$(node scripts/release-promotion.mts fallback-latest "$RUNNER_TEMP/releases.json" "$TAG")"
+            if [ "$prerelease" = false ] && [ -n "$fallback" ]; then
+              gh release edit "$fallback" --repo "$RELEASE_REPOSITORY" --latest
+            fi
+            state=halted
+            summary="**$TAG** was halted on $(date -u +%Y-%m-%d): no update channel offers it. A corrective release follows."
+          else
+            if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" != true ]; then
+              echo "$TAG is not halted"
+              exit 1
+            fi
+            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=false
+            list_releases
+            # Only the newest stable release may be latest again.
+            state=listed
+            if [ "$prerelease" = false ] &&
+              [ "$(node scripts/release-promotion.mts fallback-latest "$RUNNER_TEMP/releases.json" '')" = "$TAG" ]; then
+              gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --latest
+              state=promoted
+            fi
+            summary="**$TAG** was restored on $(date -u +%Y-%m-%d) after a halt."
+          fi
+          {
+            echo '# Latest Copse release'
+            echo
+            echo "$summary"
+            echo
+            echo "- All releases: https://github.com/$RELEASE_REPOSITORY/releases"
+          } > "$RUNNER_TEMP/LATEST.md"
+          bash scripts/record-release-note.sh "$RELEASE_REPOSITORY" "$RUNNER_TEMP/LATEST.md" "${ACTION^} $TAG"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+      - name: Confirm what an anonymous client sees
+        env:
+          STATE: ${{ steps.change.outputs.state }}
+        run: bash scripts/verify-public-release-state.sh "$RELEASE_REPOSITORY" "$TAG" "$STATE"
+      - name: Record the change on the tracking issue
+        if: always() && steps.change.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Release halted: $TAG"
+          body="$(printf '%s of %s by %s.\n\nReason: %s\n\nRun: %s\n\nSee docs/releasing-macos.md#halting-a-release. Close this once a corrective release is published or the halt is resumed.' \
+            "${ACTION^}" "$TAG" "$GITHUB_ACTOR" "$REASON" "$RUN_URL")"
+          number="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label area:release --search "$title in:title" --json number,title |
+            jq -r --arg title "$title" 'map(select(.title == $title)) | .[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label area:release --body "$body"
+          fi

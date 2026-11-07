@@ -10,6 +10,8 @@ import { config as baseConfig } from './wdio.conf.ts'
 const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
   './tests/e2e/follow-up-suggestions.e2e.ts',
+  // The auto-portrait layout needs a window >=1080 logical px tall (minWidth 800
+  // x 1.35), taller than the 1600x1024 logical Xvfb desktop in run-e2e.mts.
   './tests/e2e/portrait-right-panel.e2e.ts',
 ]
 

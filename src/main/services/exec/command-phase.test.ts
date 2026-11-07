@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import type { CommandPhase, CommandPhaseState } from '@copse/agent/wire-types.ts'
 import {
   beginCommandApprovalWait,
+  captureLateCommandPhaseReport,
   isPhasedCommandCall,
   queuedCommandPhase,
   reportCommandPhase,
   runWithCommandPhaseReporter,
+  setLateCommandPhaseRecorder,
 } from './command-phase.ts'
 import { runShellOnce } from './foreground-shell-process.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
@@ -122,6 +124,94 @@ describe('command phases', () => {
     assert.ok('error' in outcome)
     assert.deepEqual(states(phases), ['running', 'cancelled'])
     assert.equal(phases.at(-1)?.launched, true)
+  })
+})
+
+describe('a background task ending after its call returned', () => {
+  const owner = { projectId: 'p-late', threadId: 't-late' }
+  type LateReport = ReturnType<typeof captureLateCommandPhaseReport>
+  let late: { toolCallId: string; phase: CommandPhase }[]
+
+  beforeEach(() => {
+    late = []
+    setLateCommandPhaseRecorder((_owner, toolCallId, phase) => {
+      late.push({ toolCallId, phase })
+      return Promise.resolve()
+    })
+  })
+  afterEach(() => {
+    setLateCommandPhaseRecorder(null)
+  })
+
+  /** Start a background command under call `tc-bg`, returning its stages and late reporter. */
+  async function startTask(
+    during: (reportEnd: LateReport) => Promise<void> = () => Promise.resolve(),
+  ): Promise<{ phases: CommandPhase[]; reportEnd: LateReport }> {
+    const phases: CommandPhase[] = []
+    let reportEnd: LateReport | undefined
+    await runWithCommandPhaseReporter(
+      (phase) => phases.push(phase),
+      QUEUED,
+      async () => {
+        reportEnd = captureLateCommandPhaseReport(owner)
+        reportCommandPhase('starting')
+        await during(reportEnd)
+        reportCommandPhase('running', { backgroundTaskId: 'bg-9' })
+        return 'Started.'
+      },
+      describeOutcome,
+      'tc-bg',
+    )
+    assert.ok(reportEnd)
+    return { phases, reportEnd }
+  }
+
+  it('writes the exit onto the same tool call, keeping the task id', async () => {
+    const { phases, reportEnd } = await startTask()
+    assert.deepEqual(states(phases), ['starting', 'running'])
+    await reportEnd('exited', { exitCode: 2 })
+    assert.equal(late.length, 1)
+    const [ending] = late
+    assert.ok(ending)
+    assert.equal(ending.toolCallId, 'tc-bg')
+    assert.equal(ending.phase.state, 'exited')
+    assert.equal(ending.phase.exitCode, 2)
+    assert.equal(ending.phase.backgroundTaskId, 'bg-9')
+    assert.equal(ending.phase.launched, true)
+  })
+
+  it('keeps only the first ending and ignores anything that is not an ending', async () => {
+    const { reportEnd } = await startTask()
+    await reportEnd('running')
+    await reportEnd('timed_out')
+    await reportEnd('cancelled')
+    assert.deepEqual(
+      late.map((entry) => entry.phase.state),
+      ['timed_out'],
+    )
+  })
+
+  it('reports an ending that beats the call through the call itself', async () => {
+    const { phases } = await startTask((reportEnd) => reportEnd('exited', { exitCode: 0 }))
+    // The in-call `running` that follows must not undo the exit it already saw.
+    assert.deepEqual(states(phases), ['starting', 'exited'])
+    assert.equal(late.length, 0)
+  })
+
+  it('does nothing for a call that named no tool call', async () => {
+    let reportEnd: LateReport | undefined
+    await runWithCommandPhaseReporter(
+      () => undefined,
+      QUEUED,
+      () => {
+        reportEnd = captureLateCommandPhaseReport(owner)
+        reportCommandPhase('running', { backgroundTaskId: 'bg-1' })
+        return Promise.resolve('Started.')
+      },
+      describeOutcome,
+    )
+    await reportEnd?.('exited', { exitCode: 0 })
+    assert.equal(late.length, 0)
   })
 })
 

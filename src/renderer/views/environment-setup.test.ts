@@ -163,6 +163,38 @@ describe('environment setup offer', () => {
     offer.destroy()
   })
 
+  it('asks main again when setState alone switches the project', async () => {
+    const store = createStore({ activeProjectId: 'quiet', workspaceRoot: '/quiet' })
+    const probedFor: Array<string | null> = []
+    const base = api([]).client
+    const client: ApiClient = {
+      ...base,
+      environmentSetup: {
+        ...base.environmentSetup,
+        status: () => {
+          const projectId = store.getState().activeProjectId
+          probedFor.push(projectId)
+          return Promise.resolve(
+            projectId === 'busy'
+              ? { offer: true, promptCount: 4 }
+              : { offer: false, promptCount: 0 },
+          )
+        },
+      },
+    }
+    const offer = mountEnvironmentSetupOffer(store, client)
+    await tick()
+    assert.deepEqual(probedFor, ['quiet'])
+    assert.equal(offer.element.hidden, true)
+
+    store.setState({ activeProjectId: 'busy', workspaceRoot: '/busy' })
+    await tick()
+    assert.deepEqual(probedFor, ['quiet', 'busy'])
+    assert.equal(offer.element.hidden, false)
+    assert.match(offer.element.textContent, /asked you 4 times this week/)
+    offer.destroy()
+  })
+
   it('stays hidden when main does not offer', async () => {
     const { client } = api([], { offer: false, promptCount: 0 })
     const store = createStore({ activeProjectId: 'p', activeThreadId: 't' })

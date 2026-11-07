@@ -135,6 +135,7 @@ export interface SettingsValues {
       | {
           allowedDomains: Array<string>
           allowMacOsTrustd?: boolean | undefined
+          allowMacOsKeychain?: boolean | undefined
           homeDirs?: Array<string> | undefined
           scratchPaths?: Array<string> | undefined
         }
@@ -174,6 +175,7 @@ export interface SettingsValues {
   sshStrictHostKeys: 'accept-new' | 'strict'
   sshWorkspaceEnabled: boolean
   acpOverSshEnabled: boolean
+  sshWatcherMode: 'auto' | 'poll' | 'off'
   sshWorkspaceHosts: Array<{
     id: string
     label: string
@@ -209,6 +211,7 @@ export interface SettingsValues {
   webAllowedOrigins: Array<string>
   webAllowUserApproval: boolean
   browserAllowUserApproval: boolean
+  desktopControlAllowedApps: Array<string>
   approvedProviderHosts: Array<string>
   providerAllowUserApproval: boolean
   extraProviders: Array<{
@@ -273,6 +276,7 @@ type DedicatedSettingKey =
   | 'webAllowedOrigins'
   | 'webAllowUserApproval'
   | 'browserAllowUserApproval'
+  | 'desktopControlAllowedApps'
   | 'approvedProviderHosts'
   | 'providerAllowUserApproval'
   | 'extraProviders'

@@ -100,12 +100,14 @@ function runWorker(
   workerPath: string,
   request: unknown,
   cwd: string,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [workerPath], {
       cwd,
       env: {
         ...process.env,
+        ...env,
         ELECTRON_RUN_AS_NODE: '1',
         [ACP_PROBE_REQUEST_ENV]: JSON.stringify(request),
       },
@@ -159,6 +161,27 @@ describe('acp probe worker', () => {
     assert.deepEqual(probe.modes?.choices, [{ value: 'default', label: 'Default' }])
   })
 
+  it("leaves an unsandboxed agent the user's own CLAUDE_CODE_TMPDIR (#4149)", async () => {
+    const dir = makeBundleDir('tmp-')
+    const workerPath = bundleWorker(dir)
+    const agentPath = join(dir, 'fake-agent.mjs')
+    // The agent names its first model after the temp dir it inherited.
+    writeFileSync(
+      agentPath,
+      FAKE_AGENT.replace("name: 'Fast'", 'name: String(process.env.CLAUDE_CODE_TMPDIR)'),
+    )
+
+    const { stdout } = await runWorker(
+      workerPath,
+      { config: { command: process.execPath, args: [agentPath], cwd: dir }, timeoutMs: 10_000 },
+      dir,
+      { CLAUDE_CODE_TMPDIR: '/user/own/tmp' },
+    )
+
+    const probe = parseProbeWorkerOutput(stdout)
+    assert.equal(probe?.models?.choices[0]?.label, '/user/own/tmp')
+  })
+
   it('reports a failing agent as a structured error rather than hanging', async () => {
     const dir = makeBundleDir('fail-')
     const workerPath = bundleWorker(dir)
@@ -202,6 +225,21 @@ describe('parseProbeRequest', () => {
         }),
       )
       assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+    }
+  })
+
+  it('preserves an explicit keychain grant and rejects truthy non-boolean values', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const request = parseProbeRequest(
+        JSON.stringify({
+          config: {
+            command: 'claude-agent-acp',
+            cwd: '/workspace',
+            sandbox: { allowedDomains: ['api.anthropic.com'], allowMacOsKeychain: value },
+          },
+        }),
+      )
+      assert.equal(request?.config.sandbox?.allowMacOsKeychain, value === true ? true : undefined)
     }
   })
 

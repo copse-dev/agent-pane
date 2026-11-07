@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
+import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import {
@@ -17,8 +19,36 @@ import {
   parsePositionalIpcArgs,
   positionalIpcHandler,
   senderCheck,
+  senderPositionalIpcHandler,
   type PositionalArgsOptions,
 } from './ipc-handler.ts'
+import {
+  classifierIdArgs,
+  classifierIdOrNullArgs,
+  classifierSaveArgs,
+  environmentSetupApplyArgs,
+  environmentSetupDismissArgs,
+  environmentSetupUndoArgs,
+  toolPermissionsResetArgs,
+  toolPermissionsSetArgs,
+} from './security-handler-args.ts'
+import {
+  memoriesCreateArgs,
+  memoriesDeleteArgs,
+  memoriesUpdateArgs,
+} from './memory-handler-args.ts'
+import {
+  backgroundTaskLogsArgs,
+  supervisorCancelArgs,
+  supervisorListArgs,
+  supervisorTaskArgs,
+} from './supervisor-handler-args.ts'
+import {
+  mainWindowSetBrowserSessionArgs,
+  mainWindowSetNavigationArgs,
+} from './main-window-handler-args.ts'
+import { browserPaneSessionSchema } from '../windows/main-window-state.ts'
+import { mainWindowNavigationSchema } from './ipc-guards.ts'
 
 /** A sender check that accepts only the event `'app'`, standing in for `assertMainFrameSender`. */
 function appOnly(event: string): void {
@@ -281,6 +311,277 @@ describe('single-argument channels adopted in this round match parseIpcArgs(sche
       }
     })
   }
+})
+
+describe('environment-setup, tool-permissions and classifier channels match their hand-written parse', () => {
+  const UUID = '0b6f2ac6-9c1c-4b65-8e47-7d0f3a5f1c11'
+  const values: unknown[] = [
+    undefined,
+    null,
+    '',
+    42,
+    true,
+    false,
+    'ollama',
+    'Not-A-Key',
+    'k'.repeat(53),
+    'k'.repeat(54),
+    UUID,
+    [UUID],
+    Array.from({ length: 65 }, () => UUID),
+    { toolIds: ['mcp:a'], policy: 'allow' },
+    { toolIds: ['mcp:a'], policy: 'sometimes' },
+    { toolIds: [''] },
+    { toolIds: ['mcp:a'] },
+    { id: 'my-classifier' },
+  ]
+
+  // What each handler did before: `parseIpcArgs(schema, [raw])` with the schema
+  // it spelled inline, which the adopted tuple must match argument for argument.
+  const zClassifierId = z
+    .string()
+    .regex(/^[a-z0-9-]{1,64}$/)
+    .max(53)
+  const zToolIds = z.array(z.string().min(1).max(8192)).max(2_000)
+  const singleArgument: [string, z.ZodTuple<[z.ZodType], null>, z.ZodType][] = [
+    ['environment-setup:undo', environmentSetupUndoArgs, z.uuid()],
+    ['environment-setup:dismiss', environmentSetupDismissArgs, z.boolean()],
+    [
+      'tool-permissions:set',
+      toolPermissionsSetArgs,
+      z.object({
+        toolIds: zToolIds,
+        policy: z.enum(TOOL_PERMISSION_POLICIES),
+      }),
+    ],
+    ['tool-permissions:reset', toolPermissionsResetArgs, z.object({ toolIds: zToolIds })],
+    ['classifiers:save', classifierSaveArgs, classifierProfileSchema],
+    ['classifiers:remove, classifiers:test, local-classifiers:*', classifierIdArgs, zClassifierId],
+    [
+      'classifiers:set-screening, classifiers:set-background',
+      classifierIdOrNullArgs,
+      zClassifierId.nullable(),
+    ],
+  ]
+  for (const [name, adopted, handWrittenSchema] of singleArgument) {
+    it(name, () => {
+      for (const raw of values) {
+        for (const rawArgs of [[raw], [raw, 'extra'], [[raw]]]) {
+          assert.deepEqual(
+            outcome(() => parsePositionalIpcArgs(adopted, rawArgs)[0]),
+            outcome(() => parseIpcArgs(handWrittenSchema, [rawArgs[0]])),
+            JSON.stringify(rawArgs),
+          )
+        }
+      }
+      assert.deepEqual(
+        outcome(() => parsePositionalIpcArgs(adopted, [])[0]),
+        outcome(() => parseIpcArgs(handWrittenSchema, [undefined])),
+      )
+    })
+  }
+
+  it('environment-setup:apply (reviewId, ids): parseIpcArgs(tuple, [a, b])', () => {
+    const handWritten = z.tuple([z.uuid(), z.array(z.uuid()).max(64)])
+    const lists: unknown[][] = [...ARGUMENT_LISTS]
+    for (const a of values) for (const b of values) lists.push([a, b], [a, b, 'extra'])
+    lists.push([[UUID, [UUID]]])
+    for (const rawArgs of lists) {
+      assert.deepEqual(
+        outcome(() => parsePositionalIpcArgs(environmentSetupApplyArgs, rawArgs)),
+        outcome(() => parseIpcArgs(handWritten, [rawArgs[0], rawArgs[1]])),
+        JSON.stringify(rawArgs),
+      )
+    }
+    assert.deepEqual(parsePositionalIpcArgs(environmentSetupApplyArgs, [UUID, [UUID]]), [
+      UUID,
+      [UUID],
+    ])
+  })
+})
+
+describe('memories, supervisor and main-window channels match their hand-written parse', () => {
+  const perArgument: PositionalArgsOptions = { errors: 'per-argument' }
+  // Each hand-written handler below is the parse the channel did before it
+  // adopted defineHandler, with the schemas it spelled inline.
+  const zMemoryId = zNonEmptyString.max(128)
+  const zMemoryTitle = z.string().max(512)
+  const zMemoryBody = z.string().max(1_000_000)
+  const zMemoryTags = z.array(z.string().max(128)).max(64)
+  const zSupervisorId = zNonEmptyString.max(256)
+  const values: unknown[] = [
+    undefined,
+    null,
+    '',
+    42,
+    PROJECT,
+    'x'.repeat(129),
+    'x'.repeat(257),
+    'x'.repeat(513),
+    [],
+    ['tag'],
+    ['t'.repeat(129)],
+    Array.from({ length: 65 }, () => 'tag'),
+    { activeProjectId: PROJECT, activeThreadId: THREAD },
+    { activeProjectId: null, activeThreadId: null },
+    { activeProjectId: 42, activeThreadId: null },
+    { tabs: [], activeTabIndex: 0, paneOpen: true },
+    { tabs: [{ url: 'data:text/html,x' }], activeTabIndex: 0, paneOpen: true },
+    { tabs: [], activeTabIndex: -1, paneOpen: true },
+  ]
+  // Every argument list of `length` drawn from `values`, a short and a long
+  // list, and the whole list wrapped in one array.
+  function argumentLists(length: number): unknown[][] {
+    let lists: unknown[][] = [[]]
+    for (let i = 0; i < length; i++)
+      lists = lists.flatMap((list) => values.map((v) => [...list, v]))
+    // Keep the cross product bounded; a stride still mixes every position's values.
+    const sampled = lists.filter(
+      (_, index) => index % Math.max(1, Math.floor(lists.length / 4000)) === 0,
+    )
+    const valid = Array.from({ length }, () => PROJECT)
+    return [...ARGUMENT_LISTS, ...sampled, [...valid, 'extra'], [valid], valid.slice(1)]
+  }
+
+  const cases: {
+    channel: string
+    adopted: z.ZodTuple<readonly z.ZodType[], null>
+    options?: PositionalArgsOptions
+    handWritten: (...raw: unknown[]) => unknown
+  }[] = [
+    {
+      channel: 'memories:create',
+      adopted: memoriesCreateArgs,
+      options: perArgument,
+      handWritten: (rawTitle, rawBody, rawTags) => [
+        parseIpcArgs(zMemoryTitle, [rawTitle]),
+        parseIpcArgs(zMemoryBody, [rawBody]),
+        parseIpcArgs(zMemoryTags.optional(), [rawTags]),
+      ],
+    },
+    {
+      channel: 'memories:update',
+      adopted: memoriesUpdateArgs,
+      options: perArgument,
+      handWritten: (rawId, rawTitle, rawBody, rawTags) => [
+        parseIpcArgs(zMemoryId, [rawId]),
+        parseIpcArgs(zMemoryTitle, [rawTitle]),
+        parseIpcArgs(zMemoryBody, [rawBody]),
+        parseIpcArgs(zMemoryTags.optional(), [rawTags]),
+      ],
+    },
+    {
+      channel: 'memories:delete',
+      adopted: memoriesDeleteArgs,
+      handWritten: (rawId) => [parseIpcArgs(zMemoryId, [rawId])],
+    },
+    {
+      channel: 'supervisor:list',
+      adopted: supervisorListArgs,
+      handWritten: (rawProjectId) => [parseIpcArgs(zSupervisorId, [rawProjectId])],
+    },
+    {
+      channel: 'supervisor:cancel',
+      adopted: supervisorCancelArgs,
+      options: perArgument,
+      handWritten: (rawProjectId, rawTaskId) => [
+        parseIpcArgs(zSupervisorId, [rawProjectId]),
+        parseIpcArgs(zSupervisorId, [rawTaskId]),
+      ],
+    },
+    {
+      channel: 'supervisor:get, supervisor:resume',
+      adopted: supervisorTaskArgs,
+      options: perArgument,
+      handWritten: (rawProjectId, rawThreadId, rawTaskId) => [
+        parseIpcArgs(zSupervisorId, [rawProjectId]),
+        parseIpcArgs(zSupervisorId, [rawThreadId]),
+        parseIpcArgs(zSupervisorId, [rawTaskId]),
+      ],
+    },
+    {
+      channel: 'background-tasks:logs',
+      adopted: backgroundTaskLogsArgs,
+      handWritten: (rawProjectId, rawThreadId, rawTaskId) =>
+        parseIpcArgs(z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]), [
+          rawProjectId,
+          rawThreadId,
+          rawTaskId,
+        ]),
+    },
+    {
+      channel: 'main-window:set-navigation',
+      adopted: mainWindowSetNavigationArgs,
+      handWritten: (rawNavigation) => [parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])],
+    },
+    {
+      channel: 'main-window:set-browser-session',
+      adopted: mainWindowSetBrowserSessionArgs,
+      handWritten: (rawSession) => [parseIpcArgs(browserPaneSessionSchema, [rawSession])],
+    },
+  ]
+  for (const { channel, adopted, options, handWritten } of cases) {
+    it(channel, () => {
+      const arity = adopted.def.items.length
+      let accepted = 0
+      for (const rawArgs of argumentLists(arity)) {
+        const expected = outcome(() => handWritten(...rawArgs.slice(0, arity)))
+        if (!isError(expected)) accepted++
+        assert.deepEqual(
+          outcome(() => parsePositionalIpcArgs(adopted, rawArgs, options)),
+          expected,
+          JSON.stringify(rawArgs).slice(0, 200),
+        )
+      }
+      assert.ok(accepted > 0, 'no argument list was accepted, so the check proves nothing')
+    })
+  }
+
+  it('the no-argument channels (memories:list, main-window:get-*) ignore every argument list', () => {
+    for (const rawArgs of argumentLists(1)) {
+      assert.deepEqual(parsePositionalIpcArgs(z.tuple([]), rawArgs), [])
+    }
+  })
+})
+
+describe('senderPositionalIpcHandler', () => {
+  const event = (name: string): { name: string; sender: string } => ({
+    name,
+    sender: `${name}-contents`,
+  })
+  const check = (e: { name: string }): void => {
+    appOnly(e.name)
+  }
+
+  it('passes event.sender ahead of the parsed arguments, after the sender check and parse', () => {
+    const listener = senderPositionalIpcHandler(check, z.tuple([zProjectId]), (sender, pid) => [
+      sender,
+      pid,
+    ])
+    assert.deepEqual(listener(event('app'), PROJECT, 'extra'), ['app-contents', PROJECT])
+    assert.throws(() => listener(event('app'), 42), IpcValidationError)
+  })
+
+  it('rejects the sender before parsing or calling the handler', () => {
+    let calls = 0
+    const listener = senderPositionalIpcHandler(check, z.tuple([zProjectId]), () => ++calls)
+    assert.throws(() => listener(event('webview'), 42), /did not come from the app window/)
+    assert.throws(() => listener(event('webview'), PROJECT), /did not come from the app window/)
+    assert.equal(calls, 0)
+  })
+
+  it('parses like positionalIpcHandler for every argument list', () => {
+    const args = z.tuple([zProjectId, zThreadId])
+    const withSender = senderPositionalIpcHandler(check, args, (_sender, ...parsed) => parsed)
+    const plain = positionalIpcHandler(check, args, (...parsed) => parsed)
+    for (const rawArgs of ARGUMENT_LISTS) {
+      assert.deepEqual(
+        outcome(() => withSender(event('app'), ...rawArgs)),
+        outcome(() => plain(event('app'), ...rawArgs)),
+        JSON.stringify(rawArgs),
+      )
+    }
+  })
 })
 
 describe('argumentListIpcHandler matches parseIpcArgs(schema, rawArgs)', () => {

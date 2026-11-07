@@ -21,6 +21,7 @@ import {
   getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
+  parseDiffQueueOwner,
   runWithStagedDiffResolver,
   setStagedDiffResolver,
   stageDiff,
@@ -79,12 +80,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     'writes the after content when on-disk content still matches the staged before',
     async () => {
       await writeFile(join(tempRoot, 'a.txt'), 'original\n', 'utf-8')
-      const result = await applyDiffEntry({
-        path: 'a.txt',
-        before: 'original\n',
-        after: 'updated\n',
-        language: 'plaintext',
-      })
+      const result = await applyDiffEntry(
+        {
+          path: 'a.txt',
+          before: 'original\n',
+          after: 'updated\n',
+          language: 'plaintext',
+        },
+        tempRoot,
+        tempRoot,
+      )
       assert.deepEqual(result, { status: 'written' })
       assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'updated\n')
     },
@@ -95,12 +100,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     async () => {
       // Staged against 'original', but something else wrote 'formatted' to disk.
       await writeFile(join(tempRoot, 'a.txt'), 'formatted\n', 'utf-8')
-      const result = await applyDiffEntry({
-        path: 'a.txt',
-        before: 'original\n',
-        after: 'updated\n',
-        language: 'plaintext',
-      })
+      const result = await applyDiffEntry(
+        {
+          path: 'a.txt',
+          before: 'original\n',
+          after: 'updated\n',
+          language: 'plaintext',
+        },
+        tempRoot,
+        tempRoot,
+      )
       assert.deepEqual(result, { status: 'conflict', current: 'formatted\n' })
       // The intervening change must NOT be discarded.
       assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'formatted\n')
@@ -108,12 +117,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   )
 
   ownedIt('writes a brand new file when none existed at staging or approval', async () => {
-    const result = await applyDiffEntry({
-      path: 'new.txt',
-      before: '',
-      after: 'hello\n',
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'new.txt',
+        before: '',
+        after: 'hello\n',
+        language: 'plaintext',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'hello\n')
   })
@@ -123,12 +136,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     mock.method(localWorkspaceFs, 'readFile', async () => {
       throw Object.assign(new Error('read failed'), { code: 'EIO' })
     })
-    const result = await applyDiffEntry({
-      path: 'a.txt',
-      before: '',
-      after: 'replacement\n',
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'a.txt',
+        before: '',
+        after: 'replacement\n',
+        language: 'plaintext',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.equal(result.status, 'error')
     assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'valuable work\n')
   })
@@ -158,12 +175,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     const after = Buffer.from('89504e470d0a1a0a00020390fe', 'hex')
     await writeFile(join(tempRoot, 'image.png'), before)
 
-    const result = await applyDiffEntry({
-      path: 'image.png',
-      before: before.toString('latin1'),
-      after: after.toString('latin1'),
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'image.png',
+        before: before.toString('latin1'),
+        after: after.toString('latin1'),
+        language: 'plaintext',
+      },
+      tempRoot,
+      tempRoot,
+    )
 
     assert.deepEqual(result, { status: 'written' })
     assert.deepEqual(await readFile(join(tempRoot, 'image.png')), after)
@@ -172,23 +193,31 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   ownedIt('reports a conflict when a file was created between staging and approval', async () => {
     // Staged as a new file (before ''), but another writer created it first.
     await writeFile(join(tempRoot, 'new.txt'), 'someone else\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'new.txt',
-      before: '',
-      after: 'hello\n',
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'new.txt',
+        before: '',
+        after: 'hello\n',
+        language: 'plaintext',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.deepEqual(result, { status: 'conflict', current: 'someone else\n' })
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'someone else\n')
   })
 
   ownedIt('creates missing parent directories for a new nested path (#120)', async () => {
-    const result = await applyDiffEntry({
-      path: 'src/feature/new/index.ts',
-      before: '',
-      after: 'export const x = 1\n',
-      language: 'typescript',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'src/feature/new/index.ts',
+        before: '',
+        after: 'export const x = 1\n',
+        language: 'typescript',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     assert.equal(
       await readFile(join(tempRoot, 'src/feature/new/index.ts'), 'utf-8'),
@@ -199,12 +228,16 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
   ownedIt('reports an error result instead of throwing when the write fails (#118)', async () => {
     // A directory occupies the target path, so writeFile fails (EISDIR).
     await mkdir(join(tempRoot, 'busy'), { recursive: true })
-    const result = await applyDiffEntry({
-      path: 'busy',
-      before: '',
-      after: 'data\n',
-      language: 'plaintext',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'busy',
+        before: '',
+        after: 'data\n',
+        language: 'plaintext',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.equal(result.status, 'error')
     // `assert.equal` (strict mode) narrows `result` to the error variant.
     assert.match(result.error, /EISDIR|illegal|directory/i)
@@ -212,13 +245,17 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
 
   ownedIt('deletes a file whose on-disk content still matches the staged before', async () => {
     await writeFile(join(tempRoot, 'gone.txt'), 'bye\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'gone.txt',
-      before: 'bye\n',
-      after: '',
-      language: 'plaintext',
-      op: 'delete',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'gone.txt',
+        before: 'bye\n',
+        after: '',
+        language: 'plaintext',
+        op: 'delete',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
     await assert.rejects(readFile(join(tempRoot, 'gone.txt'), 'utf-8'))
   })
@@ -227,13 +264,17 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     // The file was staged for deletion but is no longer on disk at approval
     // time. The desired end state (gone) already holds, so accept-all must not
     // fail on it.
-    const result = await applyDiffEntry({
-      path: 'already-gone.txt',
-      before: 'whatever\n',
-      after: '',
-      language: 'plaintext',
-      op: 'delete',
-    })
+    const result = await applyDiffEntry(
+      {
+        path: 'already-gone.txt',
+        before: 'whatever\n',
+        after: '',
+        language: 'plaintext',
+        op: 'delete',
+      },
+      tempRoot,
+      tempRoot,
+    )
     assert.deepEqual(result, { status: 'written' })
   })
 })
@@ -1483,5 +1524,28 @@ describe('index refresh after an applied edit', () => {
     // that has to know about the file the agent just wrote. Refreshing the
     // project tree instead re-listed a checkout the edit never touched.
     assert.ok(getIndex(worktreeRoot)?.paths.includes('created-in-worktree.ts'))
+  })
+})
+
+describe('parseDiffQueueOwner', () => {
+  it("accepts each window's own project and refuses the other window's", () => {
+    // Two windows show two projects at once; each may manage only its own
+    // diffs, whatever the process-global active project is (#3958).
+    assert.deepEqual(parseDiffQueueOwner('project-a', 'project-a', 'thread-a'), {
+      projectId: 'project-a',
+      threadId: 'thread-a',
+    })
+    assert.deepEqual(parseDiffQueueOwner('project-b', 'project-b', 'thread-b'), {
+      projectId: 'project-b',
+      threadId: 'thread-b',
+    })
+    assert.throws(
+      () => parseDiffQueueOwner('project-a', 'project-b', 'thread-b'),
+      /inactive project "project-b"/,
+    )
+    assert.throws(
+      () => parseDiffQueueOwner(null, 'project-a', 'thread-a'),
+      /inactive project "project-a"/,
+    )
   })
 })

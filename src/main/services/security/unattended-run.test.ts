@@ -244,7 +244,10 @@ describe('shell gate matrix: command class × containment tier × unattended', (
     assert.equal(await gate(outward), 'deferred')
     assert.equal(await gate(escape), 'blocked')
 
-    const queue = await readPendingDeferrals({ threadId: THREAD })
+    const queue = await readPendingDeferrals({
+      projectId: null,
+      threadId: THREAD,
+    })
     assert.equal(queue.length, 1)
     assert.equal(queue[0]?.cause, 'shell-outward-effect')
   })
@@ -280,7 +283,7 @@ describe('shell gate matrix: command class × containment tier × unattended', (
     } finally {
       restore()
     }
-    assert.equal((await readPendingDeferrals({ threadId: THREAD })).length, 0)
+    assert.equal((await readPendingDeferrals({ projectId: null, threadId: THREAD })).length, 0)
   })
 
   it('unattended on the desktop tier keeps the desktop rules, only non-blocking', async () => {

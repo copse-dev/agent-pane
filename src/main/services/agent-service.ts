@@ -153,6 +153,7 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
+import { SUBAGENT_ONLY_TOOLS } from './subagent-only-tools.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -344,14 +345,14 @@ function toolSchemaReserveForModel(model: string): number {
  * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
  * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
  * and a larger threshold additionally skips trivial edits. Measures the exact diff
- * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * the review sees — `getGitDiffText` (unstaged tracked changes + untracked new
  * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
  * additions live in that diff even though `git diff --numstat` omits them). An
  * unmeasurable diff (git unavailable) falls through to running the review.
  */
 async function changedLinesBelow(min: number): Promise<boolean> {
   if (!isGitAvailable()) return false
-  const diff = await getGitDiffText()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   return countDiffChangedLines(diff) < min
 }
 
@@ -402,9 +403,6 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-/** Tools that only function as subagent entry points; hidden when subagents are off. */
-const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
-
 /**
  * Only a thread still reading the user's checkout has write access to ask for,
  * so `request_write_access` is offered to deferred threads alone. Shared with
@@ -446,7 +444,7 @@ function parentTools(
   }
   if (!subagentsEnabled) {
     tools = tools
-      .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
+      .filter((t) => !SUBAGENT_ONLY_TOOLS.has(t.name))
       .map((t) =>
         t.name === 'read_file'
           ? {
@@ -1397,7 +1395,7 @@ async function runAgentWithInlineCanvas(
                 model: executorModel,
                 registry,
                 signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
                 resolvePluginSetting,
                 recordHookRun: recordFunctionHookRun,
               }),
@@ -1553,7 +1551,12 @@ async function runAgentWithInlineCanvas(
         authFailure,
         acpAgentId: acpRunAgentId,
       })
-      const msg = agentErrorNotice(classifyAgentError(err, { acpAgentId: acpRunAgentId }))
+      const msg = agentErrorNotice(
+        classifyAgentError(err, {
+          acpAgentId: acpRunAgentId,
+          acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
+        }),
+      )
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
@@ -2027,7 +2030,7 @@ async function runAgentWithInlineCanvas(
       },
       {
         signal: controller.signal,
-        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
         resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },
@@ -2592,6 +2595,7 @@ async function runAgentWithInlineCanvas(
                 'value' in outcome
                   ? normalizeToolExecuteResult(outcome.value).result
                   : errorMessage(outcome.error),
+              toolCallId,
             )
           }
           return registry.executeNormalized(name, args, signal)

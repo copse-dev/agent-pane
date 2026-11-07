@@ -7,6 +7,7 @@ import {
   createRegistry,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
@@ -19,6 +20,10 @@ import {
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
+import {
+  COMPUTER_USE_PLUGIN_ID,
+  COMPUTER_USE_TOOL_NAMES,
+} from '@copse/agent/plugins/computer-use-plugin.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
@@ -29,7 +34,7 @@ import {
   setDefaultPluginRegistry,
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
-import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
+import { BRIDGE_TOOL_NAMES, isAgentInputSchema } from './acp/acp-native-bridge.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -45,8 +50,29 @@ import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-developm
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
 import { installInMemorySecretCipher } from './storage/secret-cipher.test-support.ts'
+import { normalizeOpenAIToolSchema } from '@copse/llm/normalize-tool-schema.ts'
 
 installInMemorySecretCipher()
+
+it('exports object parameter envelopes for native tools sent to compatible local servers', () => {
+  const registry = createRegistry()
+  const tools = registry.toLLMTools()
+  const invalid = tools
+    .filter((tool) => normalizeOpenAIToolSchema(tool.parameters)['type'] !== 'object')
+    .map((tool) => tool.name)
+  assert.deepEqual(invalid, [], 'a single invalid schema prevents every tool from being used')
+  registry.validateArgs('isolated_copse', { action: 'start' })
+  registry.validateArgs('isolated_copse', { action: 'screenshot' })
+  registry.validateArgs('isolated_copse', { action: 'click', x: 10, y: 20, button: 1 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
+  })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
+  })
+})
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -241,6 +267,38 @@ describe('syncOkfMemoryTools', () => {
   })
 })
 
+describe('syncComputerUseTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers every declared desktop tool only while the plugin is on, on macOS', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
+
+    plugins.enable(COMPUTER_USE_PLUGIN_ID)
+    syncComputerUseTools(registry, 'darwin')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => !registry.has(name)),
+      [],
+    )
+
+    syncComputerUseTools(registry, 'linux')
+    assert.deepEqual(
+      COMPUTER_USE_TOOL_NAMES.filter((name) => registry.has(name)),
+      [],
+    )
+  })
+})
+
 describe('syncAppleDevelopmentTools', () => {
   afterEach(() => {
     setDefaultPluginRegistry(null)
@@ -431,7 +489,29 @@ describe('syncCiInvestigatorTools', () => {
   const registered = (registry: ToolRegistry): boolean[] =>
     CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
 
-  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+  it('keeps basic workflow reads available independently of the investigator plugin', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    for (const enabled of [false, true, false]) {
+      if (enabled) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+      else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+      syncCiInvestigatorTools(registry)
+      assert.equal(registry.has('gh_run_list'), true)
+      assert.equal(registry.has('gh_run_view'), true)
+      assert.equal(registry.has('investigate_ci'), enabled)
+    }
+    setGhAvailableForTest(false)
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+    assert.equal(registry.has('gh_run_list'), false)
+    assert.equal(registry.has('gh_run_view'), false)
+    assert.equal(registry.has('investigate_ci'), false)
+  })
+
+  it('registers the investigator only with the plugin on and gh usable', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -440,29 +520,29 @@ describe('syncCiInvestigatorTools', () => {
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
-    // gh probe answers: all three appear.
+    // gh probe answers: the investigator appears.
     setGhAvailableForTest(true)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
     // Idempotent while enabled.
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
-    // Plugin off drops all three even though gh is still usable.
+    // Plugin off drops the investigator even though gh is still usable.
     plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
     // Re-enable, then gh goes away: the tools follow gh too.
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
   })
 })
 
@@ -536,6 +616,9 @@ describe('ACP bridge exposure decisions', () => {
       'run_readonly_workers',
       'run_isolated_workers',
       'explore',
+      // Quotes what this native run's explore subagents read; it has nothing
+      // to serve over the bridge.
+      'read_explored',
       'investigate_ci',
       'delegate_step',
       'update_todos',
@@ -566,6 +649,19 @@ describe('ACP bridge exposure decisions', () => {
     for (const name of nativeOnly) {
       assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
     }
+  })
+
+  it('gives every bridged core tool an input schema agents accept (#4142)', () => {
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+    const rejected = createRegistry()
+      .toMcpTools()
+      .filter(
+        (tool) => BRIDGE_TOOL_NAMES.includes(tool.name) && !isAgentInputSchema(tool.inputSchema),
+      )
+      .map((tool) => tool.name)
+    assert.deepEqual(rejected, [], 'a bridged tool needs a top-level object input schema')
+    assert.equal(isAgentInputSchema({ anyOf: [{ type: 'object' }] }), false)
+    assert.equal(isAgentInputSchema({ type: 'object', anyOf: [] }), false)
   })
 
   it('classifies every first-party plugin tool for ACP exposure', () => {

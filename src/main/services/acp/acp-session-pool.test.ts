@@ -13,6 +13,7 @@ import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from '
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
+import { checkpointAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { listAcpSessionProcesses } from './acp-process-registry.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
@@ -404,6 +405,8 @@ describe('acp-session-pool', () => {
     const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     first.entry.open.handlers.current = sink([])
     await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+    const checkpoint = checkpointAcpTranscript([], 'one')
+    first.entry.transcriptCheckpoint = checkpoint
     const originalSessionId = first.entry.open.session.sessionId
 
     // Idle reaper tears down the live process but keeps the opaque session ID
@@ -415,6 +418,7 @@ describe('acp-session-pool', () => {
     assert.equal(resumed.fresh, false)
     assert.equal(resumed.entry.open.resumed, true)
     assert.equal(resumed.entry.open.session.sessionId, originalSessionId)
+    assert.deepEqual(resumed.entry.transcriptCheckpoint, checkpoint)
     resumed.entry.open.handlers.current = sink([])
     await runAcpSessionPrompt(resumed.entry.open, 'two', undefined)
     assert.equal(log.spawns, 2)
