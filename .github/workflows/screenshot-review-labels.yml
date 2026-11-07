@@ -305,10 +305,10 @@ jobs:
             const expectedHead = outcome === 'accept' ? process.env.COMPARE_COMMIT : sha;
             const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (parent.state === 'open' && parent.head.sha === expectedHead && parent.head.repo?.full_name === `${owner}/${repo}`) {
-              // Stack tips rerun combined e2e on the PNG-only follow-up.
-              // Preserve the explicit review decision; coverage is earned later.
-              if (outcome === 'accept' && parent.body?.includes('<!-- copse-screenshot-stack:') &&
-                  parent.body.includes(`tip=#${number} -->`)) {
+              // The exact validated follow-up carries the human decision, even
+              // when its ordinary CI plan skips another render. Stack coverage
+              // is still earned separately by the new tip's combined run.
+              if (outcome === 'accept') {
                 await setDecision(`Accepted by @${actor}; screenshot-only follow-up of ${sha12}`, expectedHead);
               }
               try {
