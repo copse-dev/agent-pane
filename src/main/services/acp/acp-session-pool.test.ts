@@ -15,6 +15,7 @@ import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { checkpointAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { listAcpSessionProcesses } from './acp-process-registry.ts'
+import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   clearUnrepairableOpenFileFault,
@@ -26,6 +27,7 @@ import {
   acpSessionPoolSize,
   disposeAcpSession,
   disposeAllAcpSessions,
+  hasActiveAcpTurn,
   reapIdleAcpSessions,
 } from './acp-session-pool.ts'
 
@@ -111,6 +113,52 @@ const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/pool-test' }
 describe('acp-session-pool', () => {
   afterEach(async () => {
     await disposeAllAcpSessions()
+  })
+
+  it('reports a self-started lease and pending tools after the prompt has returned', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'self-started',
+      config: CONFIG,
+      createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(hasActiveAcpTurn('self-started'), false, 'a warm idle session is not a turn')
+    const lease = createAgentInitiatedTurnLease({
+      projectId: 'project',
+      threadId: 'self-started',
+      bridge: {
+        setExecutionContext: () => {},
+        setTurnSignal: () => {},
+        setPendingExecutionContext: () => {},
+      },
+      resolveContext: async () => 'context',
+      confirmContinue: async () => false,
+      beginWriter: () => (): void => {},
+      getAuthority: () => null,
+    })
+    entry.open.agentInitiated = lease
+    lease.begin()
+    assert.equal(entry.open.turnStop, null, 'no Copse prompt owns this turn')
+    assert.equal(hasActiveAcpTurn('self-started'), true)
+    lease.end()
+    assert.equal(hasActiveAcpTurn('self-started'), false)
+    delete entry.open.agentInitiated
+    entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'pending-helper',
+      title: 'Background helper',
+      status: 'in_progress',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(hasActiveAcpTurn('self-started'), true)
+    entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'pending-helper',
+      status: 'completed',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(hasActiveAcpTurn('self-started'), false)
+    assert.equal(hasActiveAcpTurn('another-thread'), false)
   })
 
   it('registers the local agent process with its thread until disposal', async () => {
