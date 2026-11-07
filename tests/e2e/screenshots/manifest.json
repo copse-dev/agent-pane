@@ -3501,6 +3501,10 @@
       "sha256": "fffed8dd4804ad2417e88edd4dc40eac77a7a0ef4681edf5a0fad056e3b35531",
       "bytes": 15395
     },
+    "reasoning-raised-plate.png": {
+      "sha256": "0f690b9ac18518bf11acaef1ce09856c35bc8bdc492675b358f5f6a0fb038f84",
+      "bytes": 6119
+    },
     "reasoning-responsiveness.png": {
       "sha256": "39123ef85a9ab15f6bef4a039eb6c3ebc6232b4785748d868faab34252226365",
       "bytes": 330980
