@@ -378,7 +378,6 @@ describe('Pop-out header labels the thread it is showing', () => {
     )
     await settle()
     store.setState({ threads: [threadWithBranch('thread-1', 'Renamed thread', 'feature/changes')] })
-    store.emit('threads_changed')
     await settle()
     const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
     assert.equal(owner?.textContent, 'Renamed thread · feature/changes')

@@ -1,7 +1,14 @@
 import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
+import {
+  isProjectSandboxEnabled,
+  sandboxViolationCountForCommand,
+  spawnBackgroundProcess,
+} from '../../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
+import { detectSandboxFailure } from '../security/sandbox-failure.ts'
+import { sandboxDenialRetryClassification } from '../security/sandbox-denial-signatures.ts'
 import { currentAgentRoots, getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -15,12 +22,16 @@ import {
   requireThreadExecutionOwner,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
-import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
-import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import {
+  shellReadGrantTargets,
+  shellRunsOutsideSandbox,
+} from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { captureBackgroundEditAdoption } from '../diff-queue.ts'
+import { packageFirewallLauncher } from '../security/package-firewall-launcher.ts'
+import { prepareShellCommand } from './prepare-shell-command.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -61,6 +72,10 @@ interface BackgroundProcess {
   onCancelled?: (info: BackgroundProcessInfo) => void
   /** True when the process runs without the local project sandbox. */
   unsandboxed: boolean
+  violationId: string | null
+  violationCount: number
+  retryAllowed: boolean
+  retryUsed: boolean
   owner: ThreadExecutionOwner
 }
 
@@ -186,6 +201,10 @@ function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
 
 export interface StartBackgroundProcessOptions {
   command: string
+  /** Host-owned, set only after an explicit escape approval. */
+  unsandboxed?: boolean
+  /** A declined up-front escape must not immediately ask again on failure. */
+  suppressSandboxRetry?: boolean
   cwd?: string
   /** Escalate the sandbox to allow binding a loopback port, and detect the URL. */
   allowPortBinding?: boolean
@@ -231,6 +250,10 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
     portBinding: false,
     unsandboxed: opts.unsandboxed,
+    violationId: null,
+    violationCount: 0,
+    retryAllowed: false,
+    retryUsed: false,
     url: null,
     urlRemote: false,
     exited: false,
@@ -320,10 +343,21 @@ export async function startBackgroundProcess(
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
   const owner = opts.owner ?? requireThreadExecutionOwner()
-  const unsandboxed =
+  // The tool gate already obtained shell consent for this raw command. Use the
+  // same routing as run_shell: an approved outside command does not require
+  // Guarded YOLO as well. A read-access answer remains narrower than an escape.
+  const roots = currentAgentRoots()
+  let unsandboxed =
+    opts.unsandboxed === true ||
     !isProjectSandboxEnabled() ||
-    (currentRunUsesGuardedYolo(owner.threadId) &&
-      shellRunsOutsideSandbox(command, currentAgentRoots()))
+    shellRunsOutsideSandbox(command, roots, 'run_background')
+  const readGrantTargets =
+    unsandboxed && opts.unsandboxed !== true
+      ? shellReadGrantTargets(command, roots, cwd, 'run_background')
+      : null
+  if (readGrantTargets) unsandboxed = false
+  const prepared = prepareShellCommand(command, cwd, packageFirewallLauncher)
+  if ('refused' in prepared) throw new Error(prepared.refused)
 
   const adoptEdits = await captureBackgroundEditAdoption(cwd, owner).catch((error: unknown) => {
     console.warn('[background-process] edit ownership snapshot failed:', error)
@@ -340,15 +374,19 @@ export async function startBackgroundProcess(
     return settleEdits
   }
   const entry = await createThreadResource(owner, async () => {
-    const proc = await spawnBackgroundProcess(command, {
+    const id = nextBackgroundOperationId()
+    const violationId = !unsandboxed && !spawnRunsOnSshTarget(cwd) ? id : null
+    const proc = await spawnBackgroundProcess(prepared.command, {
       cwd,
-      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
+      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess(prepared.env)),
       allowPortBinding: portBinding,
       unsandboxed,
+      ...(violationId ? { violationId } : {}),
+      ...(readGrantTargets ? { readGrantTargets } : {}),
     })
 
     const entry: BackgroundProcess = {
-      id: nextBackgroundOperationId(),
+      id,
       command,
       cwd,
       proc,
@@ -356,6 +394,10 @@ export async function startBackgroundProcess(
       output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
       portBinding,
       unsandboxed,
+      violationId,
+      violationCount: 0,
+      retryAllowed: opts.suppressSandboxRetry !== true,
+      retryUsed: false,
       url: null,
       urlRemote: false,
       exited: false,
@@ -369,6 +411,7 @@ export async function startBackgroundProcess(
       ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
       owner,
     }
+    if (prepared.banner) entry.output.append(prepared.banner)
     processes.set(entry.id, entry)
 
     if (opts.timeoutMs !== undefined) {
@@ -405,6 +448,12 @@ export async function startBackgroundProcess(
       if (entry.url !== null) done()
     })
     const finish = (code: number | null): void => {
+      if (entry.violationId) {
+        entry.violationCount = Math.max(
+          entry.violationCount,
+          sandboxViolationCountForCommand(entry.violationId),
+        )
+      }
       // Cancelled/timed-out work has no complete result to attribute. Release
       // first so even an ownership audit already in flight fails its epoch guard.
       if (entry.cancelled || entry.timedOut || code === null) releaseWriter()
@@ -430,6 +479,59 @@ export async function startBackgroundProcess(
 function observe(entry: BackgroundProcess): BackgroundProcess {
   if (entry.exited) entry.exitObserved = true
   return entry
+}
+
+/** Evidence only: a failed task never restarts itself or authorizes an escape. */
+export function backgroundSandboxRetryReasons(
+  id: string,
+  command: string,
+  cwd: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): string[] | null {
+  const entry = ownedProcess(id, owner)
+  if (
+    !entry ||
+    entry.command !== command.trim() ||
+    entry.cwd !== cwd ||
+    !entry.exited ||
+    entry.exitCode === null ||
+    entry.exitCode === 0 ||
+    entry.cancelled ||
+    entry.timedOut ||
+    entry.unsandboxed ||
+    !entry.violationId ||
+    !entry.retryAllowed ||
+    entry.retryUsed ||
+    !isProjectSandboxEnabled() ||
+    spawnRunsOnSshTarget(cwd)
+  )
+    return null
+  entry.violationCount = Math.max(
+    entry.violationCount,
+    sandboxViolationCountForCommand(entry.violationId),
+  )
+  const detection = detectSandboxFailure({
+    exitCode: entry.exitCode,
+    violationCount: entry.violationCount,
+    spawnFailed: false,
+  })
+  if (detection.likely) return detection.reasons
+  const signature = sandboxDenialRetryClassification(entry.output.toString(), entry.command)
+  return signature ? [signature.advice] : null
+}
+
+/** Claim after consent, synchronously: concurrent approvals cannot replay one failed task twice. */
+export function claimBackgroundSandboxRetry(
+  id: string,
+  command: string,
+  cwd: string,
+  owner: ThreadExecutionOwner,
+): boolean {
+  if (!backgroundSandboxRetryReasons(id, command, cwd, owner)) return false
+  const entry = ownedProcess(id, owner)
+  if (!entry) return false
+  entry.retryUsed = true
+  return true
 }
 
 /** The owner's tasks. Reading an exited task here counts as observing its exit. */

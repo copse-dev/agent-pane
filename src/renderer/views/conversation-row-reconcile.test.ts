@@ -12,10 +12,14 @@ import {
   patchThreadAnywhere,
   setMessageReviewReport,
   setMessageTurnOutcome,
+  setReviewerInputAnswer,
+  setThreadProposalDecision,
+  setThreadReviewReport,
   setThreadStatus,
   setThreadTitle,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
+import { resetArtefactPreviewsForTest, setArtefactPreview } from '../canvas/artefact-previews.ts'
 import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '@shared/tools/tool-interruption.ts'
 import {
@@ -23,7 +27,7 @@ import {
   recordedTurn,
   threadWith,
 } from '@shared/store/transcript-stream.test-support.ts'
-import type { StreamChunk, ThreadReviewReport } from '@shared/types'
+import type { StreamChunk, ThreadReviewReport, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -63,7 +67,150 @@ const unmounts: (() => void)[] = []
 afterEach(() => {
   for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
+  resetArtefactPreviewsForTest()
 })
+
+/** A propose_thread call, a reviewer question and a canvas render, all finished. */
+const PROPOSAL_CALL: ToolCall = {
+  id: 'call-propose',
+  name: 'propose_thread',
+  args: {
+    title: 'Split the palette',
+    summary: 'Move palette ranking into its own module.',
+    prompt: 'Move the ranking out of command-palette.ts.',
+  },
+  status: 'done',
+  result: 'Offered to the user.',
+}
+const QUESTION_CALL: ToolCall = {
+  id: 'call-ask',
+  name: 'request_review_input',
+  args: { question: 'Keep the old ranking?', context: 'Two callers use it.', options: ['Yes'] },
+  status: 'done',
+  result: 'Asked.',
+}
+const CANVAS_CALL: ToolCall = {
+  id: 'call-canvas',
+  name: 'canvas_render',
+  args: { title: 'Sales' },
+  status: 'done',
+  result: 'Rendered ui://canvas/Sales',
+}
+
+/** Rows whose cards draw thread-wide facts: a proposal, a question and a canvas. */
+function addThreadWideRows(store: ReturnType<typeof createStore>, threadId: string): string[] {
+  return [PROPOSAL_CALL, QUESTION_CALL, CANVAS_CALL].map((call) => {
+    const id = addMessage(store, threadId, 'assistant', `Reply with ${call.name}.`)
+    addToolCall(store, id, call)
+    return id
+  })
+}
+
+/** Each thread-wide input a row draws, changed the way the app changes it. */
+function threadWideChanges(
+  store: ReturnType<typeof createStore>,
+  threadId: string,
+  startedThreadId: string,
+): { name: string; change: () => void }[] {
+  return [
+    {
+      name: 'a proposal is started',
+      change: (): void => {
+        setThreadProposalDecision(store, threadId, {
+          id: PROPOSAL_CALL.id,
+          status: 'started',
+          decidedAt: 1,
+          threadId: startedThreadId,
+        })
+      },
+    },
+    {
+      name: 'the started thread is deleted',
+      change: (): void => {
+        store.setState({
+          threads: store.getState().threads.filter((thread) => thread.id !== startedThreadId),
+        })
+        store.emit('threads_changed')
+      },
+    },
+    {
+      name: 'a reviewer question is answered',
+      change: (): void => {
+        setReviewerInputAnswer(store, threadId, {
+          id: QUESTION_CALL.id,
+          text: 'Yes',
+          answeredAt: 2,
+          messageId: 'answer-message',
+        })
+      },
+    },
+    {
+      name: 'a canvas thumbnail lands',
+      change: (): void => {
+        setArtefactPreview(threadId, 'Sales', 'data:image/png;base64,AAAA')
+        store.emit('threads_changed')
+      },
+    },
+    {
+      name: 'the thread model changes',
+      change: (): void => {
+        patchThreadAnywhere(store, threadId, (thread) => ({
+          ...thread,
+          model: 'openai:gpt-5.5',
+        }))
+        store.emit('threads_changed')
+      },
+    },
+    {
+      name: 'the app restarts mid-turn',
+      change: (): void => {
+        patchThreadAnywhere(store, threadId, (thread) => ({
+          ...thread,
+          interruptedTurnAt: Date.now() + 1_000,
+        }))
+        store.emit('threads_changed')
+      },
+    },
+  ]
+}
+
+function reviewReport(overrides: Partial<ThreadReviewReport> = {}): ThreadReviewReport {
+  return {
+    status: 'done',
+    startedAt: 1,
+    models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
+    lenses: ['correctness'],
+    baseRef: 'HEAD',
+    headCommit: 'abc',
+    dirtyWorkingTree: true,
+    execution: { backend: 'os-sandbox', strength: 'os-sandbox', executed: true, reason: '' },
+    checks: [],
+    notChecked: [],
+    findings: [
+      {
+        id: '0123456789abcdef',
+        path: 'src/math.ts',
+        startLine: 3,
+        endLine: 3,
+        claim: 'add subtracts its second argument.',
+        class: 'contract',
+        severity: 'high',
+        confidence: 'high',
+        verdict: { status: 'confirmed', reason: 'The reproducer fails on head.' },
+        raisedBy: ['gpt-5 (correctness)'],
+        corroboratedBy: [],
+        challengedBy: [],
+        evidence: [],
+      },
+    ],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 1,
+    ...overrides,
+  }
+}
 
 interface Seeded {
   store: ReturnType<typeof createStore>
@@ -71,6 +218,7 @@ interface Seeded {
   prompt: string
   answer: string
   resolveCalls: { count: number }
+  host: HTMLElement
 }
 
 /** One finished turn: a prompt, and an answer with a file path and a tool card. */
@@ -97,7 +245,7 @@ async function seed(): Promise<Seeded> {
   document.body.append(host)
   unmounts.push(mountConversation(host, store, fakeApi(resolveCalls)))
   await delay(0)
-  return { store, threadId, prompt, answer, resolveCalls }
+  return { store, threadId, prompt, answer, resolveCalls, host }
 }
 
 function row(id: string): HTMLElement | null {
@@ -111,10 +259,11 @@ function row(id: string): HTMLElement | null {
 async function assertDrawnAsRebuilt(
   store: ReturnType<typeof createStore>,
   live: HTMLElement,
+  label = 'reconciled',
 ): Promise<void> {
   const fresh = document.createElement('div')
   document.body.append(fresh)
-  unmounts.push(mountConversation(fresh, store, fakeApi({ count: 0 })))
+  const unmount = mountConversation(fresh, store, fakeApi({ count: 0 }))
   await delay(0)
   // The activity row outlives every rebuild, so it is the view's, not a row.
   const rows = (host: HTMLElement): string[] =>
@@ -124,12 +273,15 @@ async function assertDrawnAsRebuilt(
     )
   const reconciled = rows(live)
   const rebuilt = rows(fresh)
-  assert.equal(reconciled.length, rebuilt.length)
+  // Unmounted so later changes in the same test reach only the live view.
+  unmount()
+  fresh.remove()
+  assert.equal(reconciled.length, rebuilt.length, `${label}: row count`)
   const firstDifference = reconciled.findIndex((html, i) => html !== rebuilt[i])
   assert.equal(
     firstDifference,
     -1,
-    `row ${String(firstDifference)} differs from a rebuild:\n${reconciled[firstDifference] ?? ''}\n${rebuilt[firstDifference] ?? ''}`,
+    `${label}: row ${String(firstDifference)} differs from a rebuild:\n${reconciled[firstDifference] ?? ''}\n${rebuilt[firstDifference] ?? ''}`,
   )
 }
 
@@ -694,5 +846,151 @@ describe('conversation streamed-row bookkeeping cost (component)', () => {
       many.update <= few.update * 1.25 + slack,
       `a tool update encoded ${String(many.update)} characters over 40 steps, ${String(few.update)} over 10`,
     )
+  })
+})
+
+describe('conversation keyed row reconcile: thread-wide inputs (component)', () => {
+  it('keeps every row a thread-wide change does not draw, links and disclosures intact', async () => {
+    const { store, threadId, answer } = await seed()
+    // A thread the proposal can start; not blank, so it is not pruned.
+    const started = createThread(store)
+    addMessage(store, started, 'user', 'The proposed work')
+    store.setState({ activeThreadId: threadId })
+    store.emit('threads_changed')
+    const [proposing = '', asking = '', drawing = ''] = addThreadWideRows(store, threadId)
+    store.emit('threads_changed')
+    await delay(0)
+    const answerNode = row(answer)
+    assert.ok(answerNode)
+    const link = answerNode.querySelector('a.file-reference-link')
+    assert.ok(link, 'expected the inline path to resolve into a file-reference link')
+    const card = qsRequired<HTMLDetailsElement>(answerNode, '[data-tool-id="tc-read"]')
+    qsRequired(card, ':scope > summary').click()
+    assert.equal(card.open, true)
+
+    const drawsIt: Record<string, string | null> = {
+      'a proposal is started': proposing,
+      'the started thread is deleted': proposing,
+      'a reviewer question is answered': asking,
+      'a canvas thumbnail lands': drawing,
+      'the thread model changes': null,
+      'the app restarts mid-turn': drawing,
+    }
+    for (const { name, change } of threadWideChanges(store, threadId, started)) {
+      const before = new Map(rowIds().map((id) => [id, row(id)]))
+      change()
+      await delay(0)
+      const rebuiltRows = rowIds().filter((id) => row(id) !== before.get(id))
+      const expected = drawsIt[name]
+      assert.deepEqual(rebuiltRows, expected ? [expected] : [], `${name}: rebuilt rows`)
+      assert.ok(row(answer) === answerNode, `${name}: the answer row was rebuilt`)
+      assert.ok(answerNode.querySelector('a.file-reference-link') === link, `${name}: link lost`)
+      assert.ok(answerNode.querySelector('[data-tool-id="tc-read"]') === card, `${name}: card`)
+      assert.equal(card.open, true, `${name}: the open disclosure was closed`)
+    }
+
+    // The rebuilt rows draw the new facts.
+    assert.equal(
+      row(proposing)?.querySelector<HTMLElement>('.thread-proposal')?.dataset['proposalStatus'],
+      'started',
+    )
+    assert.match(row(asking)?.textContent ?? '', /Your answer: Yes/)
+    // The canvas card builds its body, thumbnail included, when opened.
+    const canvas = qsRequired<HTMLDetailsElement>(document.body, '[data-tool-id="call-canvas"]')
+    qsRequired(canvas, ':scope > summary').click()
+    assert.ok(canvas.querySelector('.canvas-preview-image'), 'the thumbnail is drawn')
+    assert.ok(document.querySelector(`[data-turn-recovery-for="${drawing}"]`))
+  })
+
+  it('draws each thread-wide change exactly as a fresh rebuild would', async () => {
+    const { store, threadId, host } = await seed()
+    const started = createThread(store)
+    addMessage(store, started, 'user', 'The proposed work')
+    store.setState({ activeThreadId: threadId })
+    store.emit('threads_changed')
+    addThreadWideRows(store, threadId)
+    store.emit('threads_changed')
+    await delay(0)
+    for (const { name, change } of threadWideChanges(store, threadId, started)) {
+      change()
+      await delay(0)
+      await assertDrawnAsRebuilt(store, host, name)
+    }
+  })
+})
+
+describe('conversation trailing cards (component)', () => {
+  it('keeps the review report card, and the finding the reader opened, across chrome syncs', async () => {
+    const { store, threadId, host } = await seed()
+    setThreadReviewReport(store, threadId, reviewReport())
+    const report = qsRequired(
+      document.body,
+      '[data-review-report-card]:not([data-review-report-for])',
+    )
+    const finding = qsRequired<HTMLDetailsElement>(report, '.review-finding-details')
+    qsRequired(finding, ':scope > summary').click()
+    assert.equal(finding.open, true)
+
+    // A rename, a new turn and a full same-thread sync each used to recreate it.
+    setThreadTitle(store, threadId, 'Renamed')
+    const next = addMessage(store, threadId, 'user', 'And the tests?')
+    setThreadStatus(store, threadId, 'running')
+    setThreadStatus(store, threadId, 'idle')
+    store.emit('threads_changed')
+    await delay(0)
+
+    const list = qsRequired(document.body, '.messages-list')
+    assert.ok(
+      list.querySelector('[data-review-report-card]:not([data-review-report-for])') === report,
+      'the report card was recreated',
+    )
+    assert.equal(finding.open, true, 'the opened finding was closed')
+    assert.ok(list.lastElementChild === report, 'the report stays the trailing card')
+    assert.ok(
+      row(next)?.compareDocumentPosition(report) === Node.DOCUMENT_POSITION_FOLLOWING,
+      'the new prompt sits above the report',
+    )
+    // A fresh view draws the finding closed; close it to compare the rest.
+    finding.open = false
+    await assertDrawnAsRebuilt(store, host, 'kept')
+  })
+
+  it('leaves Retry usable when a retry changes nothing', async () => {
+    // A kept card is drawn again only when its report changes, but its buttons
+    // disable themselves on click. A Retry while a turn is running is a no-op
+    // (startReview waits for the turn), so it must not leave Retry disabled.
+    const { store, threadId } = await seed()
+    setThreadReviewReport(store, threadId, reviewReport({ status: 'error', error: 'Declined.' }))
+    setThreadStatus(store, threadId, 'running')
+    store.emit('threads_changed')
+    const retry = (): HTMLButtonElement =>
+      qsRequired<HTMLButtonElement>(
+        document.body,
+        '[data-review-report-card]:not([data-review-report-for]) .card-retry-button',
+      )
+    retry().click()
+    assert.equal(retry().disabled, false, 'Retry stayed disabled after a no-op retry')
+    setThreadStatus(store, threadId, 'idle')
+    store.emit('threads_changed')
+    assert.equal(retry().disabled, false, 'Retry is disabled once the turn ends')
+  })
+
+  it('redraws the report card when the report changes, without an event', async () => {
+    const { store, threadId } = await seed()
+    setThreadReviewReport(store, threadId, reviewReport())
+    const report = qsRequired(document.body, '[data-review-report-card]')
+    // Write the store directly: the card follows the state, not the event.
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      reviewReport: reviewReport({ status: 'error', error: 'Review declined.' }),
+    }))
+    const redrawn = qsRequired(document.body, '[data-review-report-card]')
+    assert.ok(redrawn !== report, 'a changed report must redraw its card')
+    assert.equal(redrawn.getAttribute('data-status'), 'error')
+    patchThreadAnywhere(store, threadId, (thread) => {
+      const { reviewReport: _dropped, ...rest } = thread
+      return rest
+    })
+    assert.equal(document.querySelector('[data-review-report-card]'), null)
   })
 })
