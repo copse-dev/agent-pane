@@ -823,6 +823,11 @@ class AcpUpdateQueue {
   } | null = null
   private failure: Error | null = null
 
+  /** Includes an update already handed to the pump's not-yet-resumed waiter. */
+  hasPendingUpdates(): boolean {
+    return this.pending.length > 0 || (this.failure === null && this.waiter === null)
+  }
+
   enqueue(update: SessionUpdate): void {
     if (this.failure !== null) return
     const waiter = this.waiter

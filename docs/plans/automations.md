@@ -159,6 +159,28 @@ of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
 - the project checkout is clean, so a fresh allocation would not have seeded anything this one
   lacks.
 
+A returned ACP prompt is not proof that the checkout is unused. A self-started turn,
+reported unfinished tool, cancellation acknowledgement or in-progress session operation keeps
+automatic hand-over, completed-run release and PR parking blocked. Idle session disposal and
+the checkout mutation share the pool's existing per-thread operation: activity is rechecked
+immediately before closing the connection, and a new acquire waits until the checkout mutation
+finishes. An uncertain shutdown keeps the existing pool entry through idle reaping and failed
+replacement acquisition, and cannot authorize a later automatic mutation. A replacement can be
+requested by a machine wake, so it is not an implicit human override. Explicit Stop and archive
+behavior is unchanged. Reaping still reports a failed shutdown after processing unrelated idle
+sessions, so retaining one uncertain writer cannot prevent safe resource cleanup elsewhere.
+
+These paths also hold the old owner's existing thread-resource fence, re-read settled metadata
+and check native resources and writers of the same root before touching Git. Completed native
+background records and their retained logs do not by themselves block a later clean run; their
+existing running-process policy remains unchanged. This adds no permission, continuation grant,
+cap increase or automatic replay.
+
+The same-root writer check is advisory: this is not a global checkout-writer mutex through
+awaited Git operations. A foreign-thread or unscoped writer that starts after the last check is
+outside this ACP-specific guarantee. The old owner's resource fence and ACP pool operation,
+unlike that advisory check, remain held through the checkout mutation.
+
 The result is meant to be indistinguishable from a fresh allocation: every ignored file is
 deleted (confined to the checkout's real path), the branch and tree move to the current base
 tip with `git switch -C`, the checkout is `git worktree move`d to the new thread's path (paths
