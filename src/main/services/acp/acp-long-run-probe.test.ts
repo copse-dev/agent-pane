@@ -6,7 +6,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type PromptRequest,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import {
   defaultBlockingReadPrompt,
   defaultLongRunPrompt,

@@ -81,7 +81,6 @@ export async function startSideChat(
       stagedDiffs: [],
     })
     store.emit('threads_changed')
-    store.emit('panel_changed')
   } else {
     // The main thread stays active; autosave sees the new id and flushes its create.
     store.setState({ threads: [side, ...store.getState().threads] })
@@ -206,7 +205,6 @@ export async function promoteSideChat(
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
   archiveThread(store, sideThreadId)
 
   const projectId = store.getState().activeProjectId

@@ -1,6 +1,7 @@
 # Recoverable edits without repeated file approvals
 
-Status: implemented and validated, 9 September 2026.
+Status: **Resolved** — implemented and validated, 9 September 2026
+([#2629](https://github.com/copse-dev/agent-pane/pull/2629)).
 
 ## Problem and evidence
 

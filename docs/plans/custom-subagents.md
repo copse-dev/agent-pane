@@ -3,9 +3,12 @@
 Status: **Active (P1 + P2 landed)**. Discovery, Settings visibility, and explicit
 `/name` invocation are implemented. Automatic delegation (P4) and the remaining phases
 are still design only. A gap review against Claude Code (2026-09-25) is recorded in
-[Gaps against Claude Code](#gaps-against-claude-code-2026-09-25). Owns
+[Gaps against Claude Code](#gaps-against-claude-code-2026-09-25). Originally owned
 [#1819](https://github.com/copse-dev/agent-pane/issues/1819) ("I want to use agents that
-are in my `~/.claude/agents` when using copse").
+are in my `~/.claude/agents` when using copse"), now closed; P3–P8 need a new tracking issue.
+Native named workers shipped in [#3897](https://github.com/copse-dev/agent-pane/pull/3897)
+([`native-readonly-workers.md`](native-readonly-workers.md),
+[`native-writable-workers.md`](native-writable-workers.md)).
 
 Related: [orchestration-pattern.md](orchestration-pattern.md) (the `delegate_step` worker
 seam this reuses), [advisor-strategy.md](advisor-strategy.md),

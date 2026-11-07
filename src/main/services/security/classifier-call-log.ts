@@ -1,6 +1,5 @@
 import { CLASSIFIER_CALL_KIND, type ClassifierSubject } from '@shared/usage/classifier-use.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { recordDecision } from './decision-log-store.ts'
 
@@ -29,19 +28,16 @@ function wholeNumber(value: number): number {
  * Record one screening attempt on the active thread's decision log, as a
  * `classifier-call` line. Best-effort like every decision: a thread-less call
  * (no active run) is dropped silently rather than warned about, since a
- * classifier can be asked outside any thread.
+ * classifier can be asked outside any thread. Without an explicit project the
+ * call needs the thread's own turn to name one.
  */
 export function recordClassifierCall(call: ClassifierCall): void {
   const context = currentThreadExecutionContext()
   const threadId = call.threadId ?? context?.threadId ?? getActiveRunThread()
-  // A supplied thread must not borrow the project of an unrelated active run.
+  // A thread borrows only its own turn's project: never an unrelated run's, nor
+  // the window's active project.
   const projectId =
-    call.projectId ??
-    (context?.threadId === threadId
-      ? context.projectId
-      : call.threadId === undefined
-        ? getActiveProjectId()
-        : undefined)
+    call.projectId ?? (context?.threadId === threadId ? context.projectId : undefined)
   if (!threadId || !projectId) return
   recordDecision({
     kind: CLASSIFIER_CALL_KIND,

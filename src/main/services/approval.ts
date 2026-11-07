@@ -36,9 +36,9 @@ import {
   humanDecisionSource,
   type HumanDecisionPrincipal,
 } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { beginCommandApprovalWait } from './exec/command-phase.ts'
 
 /**
  * Abort reason a transport passes when the CALLER went away but the user's
@@ -102,13 +102,19 @@ export interface ApprovalRequest {
   timeoutMs?: number
   title: string
   body: string
+  /**
+   * A markdown section (e.g. a PR description) rendered separately from
+   * {@link body}'s plain-text block, so it parses as markdown instead of
+   * showing literal `#`/`*` characters.
+   */
+  bodyMarkdown?: string
   /** Explanatory copy rendered outside the monospaced command block when set. */
   bodyAdvice?: string
   /** Call-to-action or trailing context rendered below the command block when set. */
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
-  /** Host producer certifies that approval authorizes only this concrete request. */
+  /** Host producer certifies that an approve-once response authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Initial checkbox state; never changes a user's choice on a live batch. */
@@ -198,9 +204,7 @@ export interface ApprovalRequest {
 export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
   return (
     (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
-    (req.interactiveClientApproval === 'once' &&
-      req.allowRemember === false &&
-      req.turnTreeLeaseDefault !== true)
+    (req.interactiveClientApproval === 'once' && req.turnTreeLeaseDefault !== true)
   )
 }
 
@@ -230,6 +234,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     timeoutMs: req.timeoutMs ?? null,
     title: req.title,
     body: req.body,
+    bodyMarkdown: req.bodyMarkdown ?? '',
     bodyAdvice: req.bodyAdvice ?? '',
     bodyFooter: req.bodyFooter ?? '',
     type: req.type,
@@ -644,7 +649,7 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
-  projectId: string | undefined,
+  projectId: string | null,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
@@ -662,7 +667,7 @@ async function deferInsteadOfPrompting(
       // The run's own project, not whichever one the window has open: a
       // schedule can fire in a background project, and Context and the status
       // tool read the queue by the thread's project.
-      projectId !== undefined ? { projectId } : {},
+      { projectId },
     )
     entryId = entry.id
   } catch (error) {
@@ -676,7 +681,43 @@ async function deferInsteadOfPrompting(
   )
 }
 
+type ApprovalResolution = NonNullable<ApprovalResponse['resolution']>
+
+/** How the last prompt opened inside {@link observeApprovalResolutions} settled. */
+interface ApprovalResolutionObserver {
+  last?: ApprovalResolution
+}
+
+const resolutionObserver = new AsyncLocalStorage<ApprovalResolutionObserver>()
+
+/**
+ * Run `fn` and report how the last approval prompt it opened settled, if any.
+ * Gates collapse a prompt to a boolean, so this is how a caller tells a user's
+ * "no" from a prompt that closed with no answer at all.
+ */
+export async function observeApprovalResolutions<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; lastResolution: ApprovalResolution | undefined }> {
+  const observer: ApprovalResolutionObserver = {}
+  const value = await resolutionObserver.run(observer, fn)
+  return { value, lastResolution: observer.last }
+}
+
 export function requestApproval(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  const observer = resolutionObserver.getStore()
+  const response = requestApprovalUnobserved(req, signal)
+  if (!observer) return response
+  return response.then((settled) => {
+    // An external handler that omits the resolution answered as the user.
+    observer.last = settled.resolution ?? 'user'
+    return settled
+  })
+}
+
+function requestApprovalUnobserved(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
@@ -687,25 +728,46 @@ export function requestApproval(
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
   }
-  const context = getThreadExecutionContext()
-  const projectId = context?.projectId ?? getActiveProjectId()
+  // The turn's own project. Outside a turn there is none: the request is
+  // audited only if a turn's thread later records it, and it can never defer
+  // (deferral needs a run thread, and every run thread runs inside a turn).
+  const projectId = getThreadExecutionContext()?.projectId ?? null
   const threadId = getActiveRunThread()
   approvalAuditIdentities.set(req, {
     ...(projectId ? { projectId } : {}),
     ...(threadId ? { threadId } : {}),
   })
   if (signal?.aborted) return Promise.resolve(DENIED)
+  // A command tool call shows that it is waiting on this answer (#3956).
+  const settleCommandWait = beginCommandApprovalWait()
+  const answered = (response: Promise<ApprovalResponse>): Promise<ApprovalResponse> =>
+    settleCommandWait === null
+      ? response
+      : response.then(
+          (value) => {
+            settleCommandWait(value.approved)
+            return value
+          },
+          (error: unknown) => {
+            settleCommandWait(false)
+            throw error
+          },
+        )
   // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
   // is the one choke point every gate already funnels through, so intercepting
   // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
-      requestApprovalInteractive(req, signal),
+    // The same project the audit identity above resolved: the turn's, else
+    // the no-project bucket. Never the window's active project.
+    return answered(
+      deferInsteadOfPrompting(req, deferringThread, projectId, () =>
+        requestApprovalInteractive(req, signal),
+      ),
     )
   }
-  return requestApprovalInteractive(req, signal)
+  return answered(requestApprovalInteractive(req, signal))
 }
 
 function requestApprovalInteractive(
@@ -1001,7 +1063,7 @@ export function initApproval(
         // (`renderer-prompt-target.ts`).
         const dest = resolveRendererPromptTarget(win.webContents)
         if (dest.isDestroyed()) {
-          resolve(DENIED)
+          resolve({ ...DENIED, resolution: 'window-closed' })
           return
         }
         const send = (): void => {
@@ -1023,7 +1085,9 @@ export function initApproval(
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })
-        const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+        // The asking turn's project; outside a turn the prompt stays on the
+        // desktop, never filed under whichever project the window shows.
+        const projectId = getThreadExecutionContext()?.projectId
         const removeDecision =
           projectId && threadId
             ? humanDecisions.register(

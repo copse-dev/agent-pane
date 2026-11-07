@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { getIndex } from './file-index.ts'
+import { getIndex, resolveFileIndexTarget } from './file-index.ts'
 import { getWorkspaceRoot, resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 
 export interface FileReferenceResolution {
@@ -114,9 +114,10 @@ export async function resolveFileReferences(
   candidates: string[],
   root: string | null = getWorkspaceRoot(),
   workspaceLinkContext?: WorkspaceLinkResolutionContext,
+  target = resolveFileIndexTarget(),
 ): Promise<FileReferenceResolution[]> {
   if (!root) return []
-  const paths = getIndex(root)?.paths ?? []
+  const paths = getIndex(root, target)?.paths ?? []
 
   const exactPaths = new Set(paths)
   const pathsByBasename = new Map<string, string[]>()

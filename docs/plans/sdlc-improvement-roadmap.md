@@ -1,6 +1,6 @@
 # Shipping quality roadmap
 
-Status: **Tracked in [#1373]; first implementation slices of R01–R03, R11 cancellation protection, and R12 runtime reinstatement have merged.** Adoption, exclusion cleanup, and the remaining merge controls are still open. Repository permission and merge-rule changes remain proposals.
+Status: **Active — tracked in [#1373]; first implementation slices of R01–R03, R11 cancellation protection, and R12 runtime reinstatement have merged. R01 ([#2718]) and R11 ([#2520], via [#3536](https://github.com/copse-dev/agent-pane/pull/3536)) are closed as of 2026-10-30.** Adoption, exclusion cleanup, and the remaining merge controls are still open. Repository permission and merge-rule changes remain proposals.
 
 Based on the [20 September 2026 shipping quality assessment](../sdlc-review-2026-09-20.md), which reviewed `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b` and live GitHub evidence. The document paths retain their original names so existing links keep working. Recheck the relevant source and issue before starting each item.
 

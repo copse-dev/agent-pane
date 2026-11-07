@@ -304,6 +304,29 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
+      # The accessibility baseline only shrinks (docs/accessibility.md). The e2e
+      # lane pins it to what the app renders; this step refuses a PR or queue
+      # candidate that tolerates more than its base. Nothing to compare on
+      # schedule / branch-create runs.
+      - name: Accessibility baseline only shrinks
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # A PR checkout is refs/pull/N/merge; its first parent is the base it
+          # actually merges into, which an event's base.sha can lag behind.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            BASE_SHA="$(git rev-parse HEAD^1)"
+          fi
+          if [ -z "${BASE_SHA:-}" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base sha for ${GITHUB_EVENT_NAME} -> skipping the accessibility baseline comparison"
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          node scripts/check-a11y-baseline.mts --base "$BASE_SHA"
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
@@ -420,7 +443,7 @@ jobs:
       # specs it can affect; on a push to main it maps vs the previous main
       # commit. The nightly `schedule` always runs the full suite. The output
       # drives the `e2e` job below:
-      #   mode=full    → all 8 shards run the whole CI suite
+      #   mode=full    → all 9 shards run the whole CI suite
       #   mode=subset  → only the listed specs run, distributed across the shards
       #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
       # subset is used only for confident, UI-coupled diffs; LOW-confidence
@@ -509,6 +532,7 @@ jobs:
           # The drift refresh PR's diff is empty, so the oracle would skip it.
           SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: |
+          echo "screenshot_scope=render" >> "$GITHUB_OUTPUT"
           BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
@@ -537,9 +561,10 @@ jobs:
           # does not turn the reviewed follow-up into another expensive full run.
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
+            if printf '%s\n' "$changed" | grep -qxF 'tests/e2e/screenshots/manifest.json' &&
+              ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
-              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; echo "screenshot_scope=reference-followup"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
@@ -585,6 +610,9 @@ jobs:
           plan_file=$(mktemp "$RUNNER_TEMP/oracle-plan.XXXXXX")
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee "$plan_file"
           grep -E '^(mode|specs|unit_mode|unit_specs)=' "$plan_file" >> "$GITHUB_OUTPUT"
+          if grep -qxF 'mode=skip' "$plan_file"; then
+            echo "screenshot_scope=no-eligible" >> "$GITHUB_OUTPUT"
+          fi
           { echo '### e2e oracle plan'; echo '```'; cat "$plan_file"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Advisory only: capture the effective plan after every early-return path.
       - name: Record plan and small gate shadow
@@ -627,7 +655,7 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
-      # Keep every full e2e run at 8 shards. This was sized when both runner
+      # Keep every full e2e run at 9 shards. Eight was sized when both runner
       # classes had a tight memory ceiling: the private-repo hosted runner was
       # 7 GB and each self-hosted `copse-e2e` container is capped at 6 GB. Public
       # repos now get 4-vCPU / 16 GiB hosted runners, so on the default runner
@@ -637,6 +665,10 @@ jobs:
       # container launch too many sequential Electron sessions; accumulated
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
       # The run step's duration-balanced split still partitions specs disjointly.
+      # The ninth shard (October 2026) is for time, not memory: at eight, the
+      # recorded weights put every shard within a second of the 600s spec
+      # budget, so no new spec could be added. More shards only lower each
+      # one's Electron launch count, so this stays inside #339's memory bound.
       - id: shards
         env:
           PLAN_MODE: ${{ steps.plan.outputs.mode }}
@@ -664,7 +696,7 @@ jobs:
           if [ "$PLAN_MODE" = "subset" ]; then
             # SHARD_TOTAL is the shard count the run step splits across, so total and
             # the list must agree or specs would be assigned to shards that were
-            # never dispatched. Cap at 8 (the memory ceiling from #339).
+            # never dispatched. Cap at the full run's 9 shards.
             #
             # Pack SPECS_PER_SHARD specs onto each shard rather than one. Every
             # shard pays ~3 minutes of checkout, setup and dist download before
@@ -681,13 +713,27 @@ jobs:
               exit 0
             fi
             n=$(( (specs + SPECS_PER_SHARD - 1) / SPECS_PER_SHARD ))
-            [ "$n" -gt 8 ] && n=8
+            [ "$n" -gt 9 ] && n=9
             list="$(seq -s, 1 "$n")"
             echo "mode=subset -> $specs spec(s) on $n shard(s)"
             { echo "total=$n"; echo "list=[$list]"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
+          { echo "total=9"; echo "list=[1,2,3,4,5,6,7,8,9]"; } >> "$GITHUB_OUTPUT"
+
+      # This successful step is an explicit publisher input in GitHub's job
+      # metadata, not the advisory selected-plan/shard measurement artifacts.
+      # Drafts keep their real plan; suppressing their jobs cannot attest coverage.
+      - name: 'Screenshot evidence plan: ${{ steps.plan.outputs.screenshot_scope }} / ${{ steps.plan.outputs.mode }} / ${{ steps.shards.outputs.total }} shards'
+        env:
+          SCOPE: ${{ steps.plan.outputs.screenshot_scope }}
+          MODE: ${{ steps.plan.outputs.mode }}
+          SHARDS: ${{ steps.shards.outputs.total }}
+        run: |
+          case "$SCOPE:$MODE:$SHARDS" in
+            render:full:9|render:subset:[1-9]|no-eligible:skip:0|reference-followup:skip:0) ;;
+            *) echo '::error::Invalid screenshot evidence plan'; exit 1 ;;
+          esac
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
   # Prettier `--write` — and commit the result back onto the head branch. This
@@ -1396,14 +1442,17 @@ jobs:
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
       # main/preload IPC. Skip screenshot-only heads: their parent already ran
       # this tier and attached its immutable render evidence.
-      - run: npm run build:demo
+      - name: Build browser reference app
+        run: npm run build:demo
         if: needs.precheck.outputs.mode != 'skip'
       # Keep the frame-by-frame motion eval off the other Chrome workers: CPU
       # contention delays RAF callbacks and creates catch-up scroll steps that
       # do not measure the renderer's idle motion. Keep its strict limits.
-      - run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
+      - name: Render browser reference screenshots
+        run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
         if: needs.precheck.outputs.mode != 'skip'
-      - run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
+      - name: Render isolated browser motion screenshots
+        run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
         if: needs.precheck.outputs.mode != 'skip'
       - name: Collect changed browser reference screenshots
         if: >-
@@ -1418,7 +1467,8 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} browser screenshot(s)"
-      - uses: actions/upload-artifact@v7
+      - name: Upload rendered browser screenshots
+        uses: actions/upload-artifact@v7
         if: >-
           success() && github.event_name == 'pull_request' &&
           needs.precheck.outputs.mode != 'skip'
@@ -1524,12 +1574,13 @@ jobs:
     # duration-balanced slice of specs. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Every full run uses 8 shards. Each shard runs its slice as one sequential
+    # Every full run uses 9 shards. Each shard runs its slice as one sequential
     # wdio process, relaunching Electron per spec. Both the hosted runner (7 GB)
     # and self-hosted container (6 GB cap) eventually exhaust memory when a shard
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
-    # 8 shards stays under that limit even in the densest spec range.
+    # 8 shards stays under that limit even in the densest spec range, so more
+    # shards (fewer launches each) stay under it too.
     # The per-attempt `timeout` is 840s (step cap 31 min: two attempts plus
     # cleanup and diagnostics). The ten-minute budget interrupted otherwise
     # passing 44-spec shards at the tail (exit 124); by October 2026 full
@@ -1540,9 +1591,11 @@ jobs:
     # bounded headroom without changing individual test caps. The job's
     # 55-minute timeout covers that 31-minute step plus setup, which took 18-20
     # minutes on slow hosted runners, so a retried shard still reaches its digest.
-    # Keep eight shards as the memory ceiling (#339). Shards are balanced by
-    # recorded spec durations; refresh them with `pnpm run e2e:shard-weights`
-    # (and speed up specs) before raising this budget.
+    # Eight shards is the memory floor (#339): never pack the suite into fewer.
+    # The ninth was added when the suite outgrew 8 x 600s of recorded spec time.
+    # Shards are balanced by recorded spec durations; refresh them with
+    # `pnpm run e2e:shard-weights` (and speed up specs) before raising this
+    # budget or adding another shard.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
@@ -1579,6 +1632,58 @@ jobs:
       # e2e wall minutes without an Actions API token.
       - name: Record shard start
         run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-job-started"
+      # Disk headroom on a cramped hosted runner. Hosted `ubuntu-24.04` jobs do
+      # not all get the same disk. Most get a 145 GB root with ~75 GB free, which
+      # is why an unconditional cleanup that cost ~1.6 minutes a shard was
+      # dropped (#3180). Some get a 72 GB copy-on-write root
+      # (`/dev/mapper/cow-root`) with ~11 GB free by the time specs run: e2e 5
+      # of runs 41920013687 and 41943898797. settings-classifiers-install needs
+      # more. It drives the real "Download and run" flow with fake tools that
+      # download nothing, but the product's preflight (`assertDiskSpace`,
+      # src/main/services/classifiers/local-classifier-manager.ts) still reads
+      # the cache volume, /tmp here, and refuses below downloadGb x
+      # DISK_HEADROOM: about 15.6 GB for Winnow-12B. Moving the spec's cache to
+      # `/mnt` would only help if the cramped layout has a second disk there;
+      # deleting works on either layout. Both `df` logs include `/mnt`, so a
+      # shard's log shows which layout it got.
+      #
+      # So, only below E2E_MIN_FREE_GB, delete preinstalled toolchains that no
+      # spec and no Linux product path uses. The deletion runs in the background
+      # and overlaps checkout and setup; "Join disk cleanup" waits for it before
+      # the suite and logs `df -h` again. A roomy runner pays one `df`.
+      # Hosted-only: never delete system directories on a self-hosted box.
+      - name: Free disk on a cramped hosted runner
+        if: runner.environment == 'github-hosted'
+        env:
+          # The classifier spec needs ~15.6 GB free when it runs, and setup plus
+          # the specs before it use several GB first. 40 GB clears both with
+          # margin and still skips the ~75 GB-free layout.
+          E2E_MIN_FREE_GB: '40'
+        run: |
+          set -euo pipefail
+          tmp="${TMPDIR:-/tmp}"
+          echo "## disk before cleanup"
+          df -h / "$tmp" /mnt || true
+          # Decimal GB, the unit the product's preflight reports.
+          free_gb=$(( $(df --output=avail -B1 "$tmp" | tail -n 1) / 1000000000 ))
+          if [ "$free_gb" -ge "$E2E_MIN_FREE_GB" ]; then
+            echo "${free_gb} GB free at ${tmp}: no cleanup needed (threshold ${E2E_MIN_FREE_GB} GB)"
+            exit 0
+          fi
+          echo "${free_gb} GB free at ${tmp}, under ${E2E_MIN_FREE_GB} GB: removing unused toolchains in the background"
+          cleanup="$RUNNER_TEMP/disk-cleanup"
+          date -u +%FT%TZ > "$cleanup.started"
+          # Every stream is redirected, so the step ends now rather than when
+          # the deletion does. `wait` with no operand always succeeds: a
+          # directory that could not be removed shows up in the `df` after.
+          (
+            for dir in /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+              /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift; do
+              sudo rm -rf "$dir" &
+            done
+            wait
+            date -u +%FT%TZ > "$cleanup.done"
+          ) </dev/null >"$cleanup.log" 2>&1 &
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
@@ -1589,13 +1694,6 @@ jobs:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
           restore-keys: screenshot-r2-v1-
-      # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
-      # and prune Docker images because shards hit "No space left on device" on
-      # the private-repo hosted runner (14 GB SSD). The public-repo runner's root
-      # is 145 GB: 107 GB free after that cleanup, so ~75 GB without it. The
-      # cleanup cost ~1.6 minutes per shard, about a quarter of e2e minutes. The
-      # run step still logs `df -h` in its diagnostics if space becomes a
-      # question again.
       # Outer retry: actions/download-artifact marks intermittent CDN 403s
       # ("Error from intermediary") as non-retryable, and with fail-fast:true a
       # single shard's download flake cancels the whole e2e matrix (see
@@ -1685,6 +1783,39 @@ jobs:
           needs.precheck.outputs.mode == 'subset'
         continue-on-error: true
         run: node scripts/screenshot-identity.mts prepare
+      # Joins "Free disk on a cramped hosted runner" and logs the space the
+      # suite starts with, on every hosted shard, cleaned or not.
+      - name: Join disk cleanup and log free space
+        if: runner.environment == 'github-hosted'
+        env:
+          # Winnow-12B's preflight: downloadGb 12.5 x DISK_HEADROOM 1.25.
+          E2E_CLASSIFIER_NEEDS_GB: '15.6'
+        run: |
+          set -euo pipefail
+          tmp="${TMPDIR:-/tmp}"
+          cleanup="$RUNNER_TEMP/disk-cleanup"
+          if [ -e "$cleanup.started" ]; then
+            # Bounded, so a stuck deletion cannot eat the job's budget. It keeps
+            # running if this gives up, and the warning below names any shortfall.
+            waited=0
+            while [ ! -e "$cleanup.done" ] && [ "$waited" -lt 300 ]; do
+              sleep 1
+              waited=$((waited + 1))
+            done
+            if [ -e "$cleanup.done" ]; then
+              echo "disk cleanup ran $(cat "$cleanup.started") to $(cat "$cleanup.done"); this step waited ${waited}s"
+            else
+              echo "::warning title=e2e disk cleanup still running::Stopped waiting after ${waited}s; the suite starts while toolchains are still being deleted."
+            fi
+            if [ -s "$cleanup.log" ]; then cat "$cleanup.log"; fi
+          fi
+          echo "## disk after cleanup"
+          df -h / "$tmp" /mnt || true
+          free_bytes=$(df --output=avail -B1 "$tmp" | tail -n 1)
+          if awk -v free="$free_bytes" -v need="$E2E_CLASSIFIER_NEEDS_GB" \
+            'BEGIN { exit !(free < need * 1000000000) }'; then
+            echo "::warning title=Too little free disk for the classifier e2e::$(awk -v f="$free_bytes" 'BEGIN { printf "%.1f", f / 1e9 }') GB free at ${tmp}; settings-classifiers-install.e2e.ts needs about ${E2E_CLASSIFIER_NEEDS_GB} GB there for the product's install preflight."
+          fi
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
@@ -1695,7 +1826,7 @@ jobs:
       # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
       # suite; `subset` distributes only the planned specs by duration across the
-      # same 8 shards (so no shard exceeds the per-shard memory budget the count
+      # same 9 shards (so no shard exceeds the per-shard memory budget the count
       # is tuned for); `skip` runs nothing. Every shard still reports a status, so
       # this composes with any required check without depending on an aggregate
       # gate first.
@@ -2122,7 +2253,8 @@ jobs:
           SUITE_STARTED_FILE="$RUNNER_TEMP/shard-suite-started" \
             node scripts/screenshot-metrics.mts shard-record > "changed/.shard-${{ matrix.shard }}" \
             || : > "changed/.shard-${{ matrix.shard }}"
-      - uses: actions/upload-artifact@v7
+      - name: Upload rendered screenshot shard
+        uses: actions/upload-artifact@v7
         if: success() && github.event_name == 'pull_request'
         with:
           name: screenshots-shard-${{ matrix.shard }}
@@ -2249,6 +2381,28 @@ jobs:
           pattern: screenshots-*
           merge-multiple: true
           path: candidates
+      # A rerun can download only the longer-lived demo artifact after raw
+      # shards expire. A successful download alone cannot prove zero changes.
+      # Only sentinel existence is evidence; their contents remain advisory.
+      - name: Verify complete screenshot producer inputs
+        env:
+          SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
+        run: |
+          set -euo pipefail
+          case "$SHARD_TOTAL" in
+            [1-9]) ;;
+            *) echo '::error::Missing or invalid expected screenshot shard count'; exit 1 ;;
+          esac
+          if [ ! -f candidates/.demo ]; then
+            echo '::error::Missing downloaded browser screenshot input'
+            exit 1
+          fi
+          for (( shard=1; shard<=SHARD_TOTAL; shard++ )); do
+            if [ ! -f "candidates/.shard-$shard" ]; then
+              echo "::error::Missing downloaded screenshot shard $shard/$SHARD_TOTAL"
+              exit 1
+            fi
+          done
       # Reference PNGs are pixel-rendered on the runner, so a re-render of an
       # UNCHANGED screen still differs by a handful of anti-aliased pixels. Left
       # unfiltered every PR ships a candidate set of near-wholesale re-renders —

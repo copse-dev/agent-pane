@@ -5,6 +5,7 @@ import {
   applyTodoUpdate,
   gateCompletedStatus,
   holdChecksAttachedAtCompletion,
+  refuseUncheckedRevivalOfCancelled,
   shouldRouteToLocal,
   shouldSteerTodos,
   todoProgress,
@@ -73,6 +74,92 @@ describe('todo-logic', () => {
       const held = holdChecksAttachedAtCompletion(before, after)
       assert.deepEqual(held.todos, after)
       assert.deepEqual(held.messages, [])
+    })
+  })
+
+  describe('refuseUncheckedRevivalOfCancelled', () => {
+    const prCheck = { kind: 'shell', command: 'gh pr view --json url', expectExit: 0 } as const
+
+    it('keeps a cancelled item cancelled when it is marked completed without a check', () => {
+      const before: TodoItem[] = [{ id: 't3', content: 'Fetch and rebase', status: 'cancelled' }]
+      const after: TodoItem[] = [{ id: 't3', content: 'Fetch and rebase', status: 'completed' }]
+      const refused = refuseUncheckedRevivalOfCancelled(before, after)
+      assert.deepEqual(refused.todos, before)
+      assert.equal(refused.messages.length, 1)
+      assert.match(
+        refused.messages[0] ?? '',
+        /cannot be marked completed without an acceptance check/,
+      )
+    })
+
+    it('lets a cancelled item with its earlier check through to the gate, which runs it', () => {
+      const before: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'cancelled', check: prCheck },
+      ]
+      const after: TodoItem[] = [
+        { id: 't3', content: 'Fetch and rebase', status: 'completed', check: prCheck },
+      ]
+      assert.deepEqual(refuseUncheckedRevivalOfCancelled(before, after), {
+        todos: after,
+        messages: [],
+      })
+    })
+
+    it('allows reopening a cancelled item and leaves other transitions alone', () => {
+      const before: TodoItem[] = [
+        { id: 'a', content: 'Reopen', status: 'cancelled' },
+        { id: 'b', content: 'Normal', status: 'in_progress' },
+      ]
+      const after: TodoItem[] = [
+        { id: 'a', content: 'Reopen', status: 'in_progress' },
+        { id: 'b', content: 'Normal', status: 'completed' },
+        { id: 'c', content: 'New', status: 'completed' },
+      ]
+      assert.deepEqual(refuseUncheckedRevivalOfCancelled(before, after), {
+        todos: after,
+        messages: [],
+      })
+    })
+  })
+
+  describe('#1433 t3 replay (reconstructed from the issue; the run did not keep its calls)', () => {
+    // The update_todos pipeline as todo-tool.ts runs it, with the shell check's
+    // outcome injected: the `gh pr view` check would have passed, because a PR
+    // existed — it just verified nothing about the fetch.
+    function update(
+      before: TodoItem[],
+      incoming: Parameters<typeof applyTodoUpdate>[1],
+      checkPasses: boolean,
+    ): TodoItem[] {
+      const held = holdChecksAttachedAtCompletion(before, applyTodoUpdate(before, incoming, true))
+      const revived = refuseUncheckedRevivalOfCancelled(before, held.todos)
+      return revived.todos.map((item) =>
+        item.status === 'completed' && item.check
+          ? { ...item, status: gateCompletedStatus(item, checkPasses).status }
+          : item,
+      )
+    }
+    const content = 'Fetch origin/main and rebase branch onto latest'
+    const prCheck = {
+      kind: 'shell',
+      command: "gh pr view --json number,url | jq -r '.url'",
+      expectExit: 0,
+    } as const
+
+    it('never records t3 completed by a check it attached in the completing call', () => {
+      let plan: TodoItem[] = [{ id: 't3', content, status: 'pending' }]
+      plan = update(plan, [{ id: 't3', content, status: 'in_progress' }], true)
+      // Both fetches 403'd; the run gave up on the item.
+      plan = update(plan, [{ id: 't3', content, status: 'cancelled' }], true)
+      // The recorded call: cancelled -> completed, acquiring a check at once.
+      plan = update(plan, [{ id: 't3', content, status: 'completed', check: prCheck }], true)
+      assert.equal(plan[0]?.status, 'in_progress')
+    })
+
+    it('never records t3 completed straight from cancelled without a check', () => {
+      let plan: TodoItem[] = [{ id: 't3', content, status: 'cancelled' }]
+      plan = update(plan, [{ id: 't3', content, status: 'completed' }], true)
+      assert.equal(plan[0]?.status, 'cancelled')
     })
   })
 

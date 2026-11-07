@@ -1,6 +1,8 @@
 # PR panel: GitHub parity in small PRs
 
-Audited 2026-09-09; implementation rebased onto current main before opening the PR. Start with visibility into feedback and CI; add writes as separate,
+Status: **Active** — PR 1 (pull request activity tabs) landed in 3580a0f19; PRs 2–8 are planned.
+
+Audited 2026-09-09. Start with visibility into feedback and CI; add writes as separate,
 reviewable changes. This is a sequence of proposed PRs, not opened GitHub PRs.
 
 ## Current coverage and gaps
@@ -17,8 +19,8 @@ reviewable changes. This is a sequence of proposed PRs, not opened GitHub PRs.
 
 ## Delivery order
 
-Each item should be independently reviewable and include focused validation. PR 1 is the
-implementation in this worktree; the remaining items are planned. Avoid bundling all of them
+Each item should be independently reviewable and include focused validation. PR 1 has
+landed (3580a0f19); the remaining items are planned. Avoid bundling all of them
 into one feature branch.
 
 ### PR 1 — Read comments and check results (implemented)

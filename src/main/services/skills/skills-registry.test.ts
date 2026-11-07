@@ -21,7 +21,7 @@ import {
 } from './skills-registry.ts'
 import { preflightSkill } from './skill-preflight.ts'
 import { buildInvokedSkillsBlock } from './skill-prompt.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   resetBundledCursorSkillsRootForTest,
@@ -38,9 +38,9 @@ describe('skills-registry', () => {
   beforeEach(async () => {
     __resetPluginServiceForTests()
     setSkillsForTest([])
-    setSetting('skillsEnabled', true)
-    setSetting('skillPluginPaths', [])
-    setSetting('bundledCursorSkillsEnabled', false)
+    await setSetting('skillsEnabled', true)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('bundledCursorSkillsEnabled', false)
     setBundledCursorSkillsRootForTest(null)
     // First-party skills ship from dist/assets at runtime; pin off so this
     // suite's discovery is fully controlled by the temp roots it creates.
@@ -135,7 +135,7 @@ Read references/actual.md.
     assert.ok(meta)
     const parent = { ...meta, dependencies: ['demo-skill'] }
     assert.equal(preflightSkill(parent, skillPreflightEnvironment()).checks[0]?.state, 'supported')
-    setSetting('skillsEnabled', false)
+    await setSetting('skillsEnabled', false)
     const result = preflightSkill(parent, skillPreflightEnvironment())
     assert.equal(result.status, 'blocked')
     assert.equal(result.checks[0]?.state, 'disabled')
@@ -295,7 +295,7 @@ description: Installed by the Codex CLI
     )
     const nonFolder = join(tempRoot, 'not-a-folder')
     await writeFile(nonFolder, 'ordinary file')
-    setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing'), nonFolder])
+    await setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing'), nonFolder])
     await refreshSkillsRegistry()
     const before = listSkillSources()
     assert.equal(before.reload, 'manual')
@@ -492,7 +492,7 @@ description: Bundled skill for tests
       'utf-8',
     )
 
-    setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledCursorSkillsEnabled', true)
     setBundledCursorSkillsRootForTest(bundledRoot)
     await refreshSkillsRegistry()
     const skill = listSkills().find((s) => s.name === 'bundled-skill')
@@ -531,7 +531,7 @@ description: Run a Copse setup health check
       join(vendor, 'plugins/cursor-sdk/skills/cursor-sdk/SKILL.md'),
       'utf8',
     )
-    setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledCursorSkillsEnabled', true)
     setBundledCursorSkillsRootForTest(vendor)
     await refreshSkillsRegistry()
     assert.equal(getSkill('cursor-sdk')?.source, 'bundled')
@@ -549,7 +549,7 @@ description: Run a Copse setup health check
     const projectFolder = join(tempRoot, '.github/skills/cursor-sdk')
     await mkdir(projectFolder, { recursive: true })
     await writeFile(join(projectFolder, 'SKILL.md'), original)
-    setSetting('bundledCursorSkillsEnabled', false)
+    await setSetting('bundledCursorSkillsEnabled', false)
     await refreshSkillsRegistry()
     assert.equal(getSkill('cursor-sdk'), null)
     assert.ok(
@@ -668,15 +668,15 @@ description: Project override checkup
           'utf8',
         )
       }
-      setSetting('bundledCursorSkillsEnabled', true)
-      setSetting('bundledSkillPluginOverrides', overrides)
+      await setSetting('bundledCursorSkillsEnabled', true)
+      await setSetting('bundledSkillPluginOverrides', overrides)
       setBundledCursorSkillsRootForTest(bundledRoot)
       await refreshSkillsRegistry()
       return bundledRoot
     }
 
-    afterEach(() => {
-      setSetting('bundledSkillPluginOverrides', {})
+    afterEach(async () => {
+      await setSetting('bundledSkillPluginOverrides', {})
     })
 
     it('honors an explicit bundled-plugin disable', async () => {
@@ -697,12 +697,12 @@ description: Project override checkup
       const root = await seedBundledPlugin({ pstack: false })
       try {
         setBundledCursorSkillsRootForTest(null)
-        setSetting('skillPluginPaths', [join(root, 'plugins', 'pstack-folder')])
+        await setSetting('skillPluginPaths', [join(root, 'plugins', 'pstack-folder')])
         await refreshSkillsRegistry()
         assert.equal((await readSkill('pstack/how')).name, 'how')
         assert.equal(getSkill('how')?.plugin, 'pstack')
       } finally {
-        setSetting('skillPluginPaths', [])
+        await setSetting('skillPluginPaths', [])
         await rm(root, { recursive: true, force: true })
       }
     })
@@ -782,7 +782,7 @@ description: Bundled skill for tests
       'utf-8',
     )
 
-    setSetting('bundledCursorSkillsEnabled', false)
+    await setSetting('bundledCursorSkillsEnabled', false)
     setBundledCursorSkillsRootForTest(bundledRoot)
     await refreshSkillsRegistry()
     assert.equal(

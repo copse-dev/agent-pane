@@ -11,6 +11,7 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { perfCount, perfSpan } from './diagnostics/perf-trace.ts'
 import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import { storageGet } from './storage/storage.ts'
+import { threadRequestSearchChanged } from './thread-request-search.ts'
 
 configureThreadStore({
   workspaceRoot: () => copseWorkspaceDir(),
@@ -20,4 +21,5 @@ configureThreadStore({
       return typeof id === 'string' && id.length > 0 ? [id] : []
     }),
   perf: { count: perfCount, span: perfSpan },
+  onProjectWrite: threadRequestSearchChanged,
 })

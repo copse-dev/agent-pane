@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -71,6 +71,7 @@ describe('new thread default branch checkout', () => {
         },
       ],
     })
+    writeSettings({ model: 'claude-sonnet-4-6', subagentsEnabled: false })
     // Real Git and real checkout IPC; only inference and GitHub are fixture dependencies.
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     await browser.reloadSession()
@@ -174,6 +175,13 @@ describe('new thread default branch checkout', () => {
           timeoutMsg: 'titlebar must show the settled actual checkout branch',
         },
       )
+      if (mode === 'explicit') {
+        // The committed feature diff arrives separately from checkout/titlebar
+        // discovery. Capture the settled composer, not whichever response wins.
+        await expect($('.follow-up-bubble-changes')).toBeDisplayed({ wait: 15_000 })
+        await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1')
+        await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-0')
+      }
       await saveAppScreenshot(`new-thread-default-branch-${mode}-sent.png`)
     })
   }

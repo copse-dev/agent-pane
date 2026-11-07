@@ -1,6 +1,6 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
+import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
@@ -95,6 +95,12 @@ const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
 export interface GithubWritePrompt {
   title: string
   body: string
+  /**
+   * The PR/comment body, kept out of {@link body}'s plain-text block so the
+   * renderer can parse it as markdown instead of showing literal `#`/`*`
+   * characters.
+   */
+  bodyMarkdown?: string
   bodyAdvice: string
   bodyFooter: string
   approveLabel: string
@@ -106,7 +112,22 @@ export interface GithubWritePrompt {
  * Unrecognised args fall back to pretty-printed JSON so the user still sees what
  * would run.
  */
-export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
+export function formatGithubWritePrompt(
+  toolName: string,
+  args: unknown,
+  workspaceRepositorySlug: string | null = null,
+): GithubWritePrompt {
+  if (toolName === 'git_push' && isRecord(args)) {
+    const branch = nonEmptyStringArg(args, 'branch')
+    const expectedRemoteSha = nonEmptyStringArg(args, 'expected_remote_sha')
+    if (
+      branch &&
+      (args['expected_remote_sha'] === undefined || expectedRemoteSha) &&
+      Object.keys(args).every((key) => key === 'branch' || key === 'expected_remote_sha')
+    ) {
+      return gitPushApproval(branch, expectedRemoteSha ?? undefined)
+    }
+  }
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
   const effects: Record<string, string> = {
     gh_pr_create:
@@ -120,17 +141,24 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
     gh_pr_enable_auto_merge:
       'This allows GitHub to merge the pull request when its requirements are met, using the repository’s preferred merge strategy.',
   }
+  const { body, bodyMarkdown } = formatGithubWritePromptBody(
+    toolName,
+    args,
+    workspaceRepositorySlug,
+  )
   return {
     title,
     approveLabel:
       {
+        gh_push: 'Push branch',
         gh_pr_create: 'Publish pull request',
         gh_pr_rerun_failed_ci: 'Re-run CI',
         gh_pr_approve: 'Submit approving review',
         gh_pr_mark_ready: 'Mark ready for review',
         gh_pr_enable_auto_merge: 'Enable auto-merge',
       }[toolName] ?? 'Run GitHub action',
-    body: formatGithubWritePromptBody(toolName, args),
+    body,
+    ...(bodyMarkdown !== undefined ? { bodyMarkdown } : {}),
     bodyAdvice: effects[toolName] ?? 'This changes state on GitHub using your account.',
     bodyFooter: 'Approval covers this GitHub action once.',
   }
@@ -141,45 +169,60 @@ function nonEmptyStringArg(args: Record<string, unknown>, key: string): string |
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function formatGithubWritePromptBody(toolName: string, args: unknown): string {
+function formatGithubWritePromptBody(
+  toolName: string,
+  args: unknown,
+  workspaceRepositorySlug: string | null,
+): { body: string; bodyMarkdown?: string } {
   if (toolName === 'gh_push')
-    return 'Push the current thread branch to origin, updating any existing pull request. No force push.'
-  if (!isRecord(args)) return JSON.stringify(args, null, 2)
+    return {
+      body: 'Push the current thread branch to origin, updating any existing pull request. No force push.',
+    }
+  if (!isRecord(args)) return { body: JSON.stringify(args, null, 2) }
   // Maintenance actions must expose the body, lease/head guard, or exact thread
   // being authorized, not just the PR number.
   if (
     ['git_push', 'gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'].includes(toolName)
   ) {
-    return JSON.stringify(args, null, 2)
+    return { body: JSON.stringify(args, null, 2) }
   }
   // gh_pr_create has no PR number yet — show the title, and the target repo
   // when one was passed explicitly, so a retargeted create is visible in the
   // modal before it is approved.
   if (toolName === 'gh_pr_create') {
     const title = nonEmptyStringArg(args, 'title')
-    if (!title) return JSON.stringify(args, null, 2)
-    const owner = nonEmptyStringArg(args, 'owner')
-    const repo = nonEmptyStringArg(args, 'repo')
+    if (!title) return { body: JSON.stringify(args, null, 2) }
+    let owner = nonEmptyStringArg(args, 'owner')
+    let repo = nonEmptyStringArg(args, 'repo')
+    // Main resolves the workspace repository before calling this pure formatter.
+    // Fill omitted halves exactly as gh-pr-action-tools.ts's resolveOwnerRepo does.
+    if (!owner || !repo) {
+      const [slugOwner, slugRepo] = workspaceRepositorySlug?.split('/') ?? []
+      owner = owner ?? slugOwner ?? null
+      repo = repo ?? slugRepo ?? null
+    }
     const head = nonEmptyStringArg(args, 'head')
     const base = nonEmptyStringArg(args, 'base')
     const body = nonEmptyStringArg(args, 'body')
-    return [
-      `Repository: ${owner ?? '(current owner)'}/${repo ?? '(current repository)'}`,
-      `Title: ${title}`,
-      `Head: ${head ?? 'current branch (will be pushed)'}`,
-      `Base: ${base ?? 'repository default branch'}`,
-      `Draft: ${args['draft'] === true ? 'yes' : 'no'}`,
-      `Body:\n${body ?? '(empty)'}`,
-    ].join('\n')
+    return {
+      body: [
+        `Repository: ${owner ?? '(current owner)'}/${repo ?? '(current repository)'}`,
+        `Title: ${title}`,
+        `Head: ${head ?? 'current branch (will be pushed)'}`,
+        `Base: ${base ?? 'repository default branch'}`,
+        `Draft: ${args['draft'] === true ? 'yes' : 'no'}`,
+      ].join('\n'),
+      ...(body !== null ? { bodyMarkdown: body } : {}),
+    }
   }
   const number = args['number']
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
-    return JSON.stringify(args, null, 2)
+    return { body: JSON.stringify(args, null, 2) }
   }
   const owner = nonEmptyStringArg(args, 'owner')
   const repo = nonEmptyStringArg(args, 'repo')
-  if (owner && repo) return `${owner}/${repo}#${String(number)}`
-  return `PR #${String(number)}`
+  if (owner && repo) return { body: `${owner}/${repo}#${String(number)}` }
+  return { body: `PR #${String(number)}` }
 }
 
 export interface PermissionCheck {
@@ -194,6 +237,50 @@ export interface PermissionCheck {
    * (or approved-`ask`) gate.
    */
   injectContext?: string
+  /**
+   * **Output** field, populated by the gate (never by the caller): who refused
+   * the call when nobody declined a prompt for it. Absent on a refused call means
+   * the user declined. The tool runner reads it to word the result, so the agent
+   * never tells the user they rejected something they did not (#1745).
+   */
+  denial?: ToolPermissionDenial
+}
+
+/** A refusal that was not the user declining this call's prompt. */
+export type ToolPermissionDenial =
+  | { by: 'policy' }
+  | { by: 'hook' }
+  | { by: 'unanswered'; resolution: 'timeout' | 'window-closed' | 'unavailable' }
+  | { by: 'cancelled' }
+
+const UNANSWERED_PROMPT_REASONS: Record<
+  Extract<ToolPermissionDenial, { by: 'unanswered' }>['resolution'],
+  string
+> = {
+  timeout: 'its approval prompt timed out',
+  'window-closed': 'the Copse window closed while its approval prompt was open',
+  unavailable: 'no approval prompt could be shown',
+}
+
+/**
+ * The tool result for a refused call. Only a missing `denial` is attributed to
+ * the user; every other refusal says so, so the agent does not report a hook,
+ * a permission setting or a cancelled turn as the user's decision.
+ */
+export function toolPermissionDeniedMessage(
+  toolName: string,
+  denial: ToolPermissionDenial | undefined,
+): string {
+  if (denial === undefined) return `User rejected the ${toolName} tool call.`
+  const reason =
+    denial.by === 'policy'
+      ? 'it is set to Block in tool permission settings'
+      : denial.by === 'hook'
+        ? 'a hook denied it'
+        : denial.by === 'cancelled'
+          ? 'the call was cancelled before it ran (the turn stopped or its client abandoned it)'
+          : UNANSWERED_PROMPT_REASONS[denial.resolution]
+  return `Tool ${toolName} blocked: ${reason}. It did not run. The user did not reject this call.`
 }
 
 export type ShellPermissionDecision =

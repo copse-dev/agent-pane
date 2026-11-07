@@ -8,7 +8,10 @@ import {
 } from './aa-live-intellect.ts'
 import { expectStringRecord } from '@shared/unknown-value.ts'
 import { jsonResponse } from './test-response.ts'
-import { setApiKey } from '../storage/settings.test-shim.ts'
+import { setApiKey } from '../storage/settings.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 /** A fake fetch that records the request init and returns a canned response. */
 function fakeFetch(response: {

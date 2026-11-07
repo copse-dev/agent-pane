@@ -98,14 +98,11 @@ it('removes the review when the same thread starts running or gains a draft', as
   await settle()
   assert.equal(view.element.hidden, false)
   store.setState({ threads: [{ ...thread, status: 'running' }] })
-  store.emit('threads_changed')
   assert.equal(view.element.hidden, true)
   store.setState({ threads: [{ ...thread }] })
-  store.emit('threads_changed')
   await settle()
   assert.equal(view.element.hidden, false)
   store.setState({ threads: [{ ...thread, draftPrompt: 'More work' }] })
-  store.emit('threads_changed')
   assert.equal(view.element.hidden, true)
 })
 
@@ -119,5 +116,24 @@ it('rechecks a visible review when auto-archive settings change', async () => {
   })
   store.emit('settings_changed')
   await settle()
+  assert.equal(view.element.hidden, true)
+})
+
+it('re-reads review candidates for the new project when setState alone switches it', async () => {
+  const { view, store, api } = mount(async () => true)
+  await settle()
+  assert.equal(view.element.hidden, false)
+  const reads: string[] = []
+  api.threads.archiveState = async (
+    projectId,
+  ): ReturnType<ApiClient['threads']['archiveState']> => {
+    reads.push(projectId)
+    return { archived: [], review: [] }
+  }
+
+  // No store event: the selection alone must run the refresh.
+  store.setState({ activeProjectId: 'other-project', workspaceRoot: '/other' })
+  await settle()
+  assert.deepEqual(reads, ['other-project'])
   assert.equal(view.element.hidden, true)
 })

@@ -6,7 +6,7 @@ import {
   type RequestPermissionRequest,
   type SessionUpdate,
   type Stream,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
 

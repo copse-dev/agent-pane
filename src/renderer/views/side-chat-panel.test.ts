@@ -460,12 +460,42 @@ test('the mounted panel pins only its selected transcript and releases it when h
     assert.equal(store.getState().threads.find((t) => t.id === 'side-0')?.messagesLoaded, false)
     // Closing releases the latest pin; the next loads can evict it normally.
     store.setState({ filesPaneOpen: false })
-    store.emit('files_pane_changed')
     for (let i = 0; i < 13; i++) await ensureThreadMessages('project-1', `side-${String(i)}`)
     assert.equal(store.getState().threads.find((t) => t.id === 'side-13')?.messagesLoaded, false)
   } finally {
     dispose()
     detach()
+    document.body.replaceChildren()
+  }
+})
+
+test('the mounted panel repaints when it opens from the store alone, with no event emitted', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'project-1',
+    activeThreadId: 'main',
+    filesPaneOpen: false,
+    rightPanelMode: 'explorer',
+    threads: [thread('main'), thread('a', { sideChat: link })],
+  })
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  const dispose = mountSideChatPane(list, viewer, store, createFakeApi())
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+  try {
+    await settle()
+    // A side chat lands while the panel is closed, with no event announcing it.
+    const { threads } = store.getState()
+    store.setState({ threads: [...threads, thread('b', { sideChat: link, createdAt: 2 })] })
+    await settle()
+    assert.equal(list.querySelector('[data-side-chat-id="b"]'), null)
+
+    store.setState({ filesPaneOpen: true, rightPanelMode: 'side-chat' })
+    await settle()
+    assert.ok(list.querySelector('[data-side-chat-id="b"]'))
+  } finally {
+    dispose()
     document.body.replaceChildren()
   }
 })

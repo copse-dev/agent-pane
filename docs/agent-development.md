@@ -198,6 +198,24 @@ The instance stays open after the turn ends; quit it from the Dock or menu when 
 macOS-only and unavailable in SSH workspaces. It is a manual look, not visual evidence: user-visible
 changes still need a focused WebdriverIO spec (see [Visual validation](#visual-validation)).
 
+## Cloning another repo from an agent session
+
+An agent's own shell tool (not Copse's `run_shell`) is sandboxed separately: it is wrapped by its own
+egress proxy with no allowlist for arbitrary external hosts, and the command never runs through
+Copse's spawn path, so none of `run_shell`'s sandbox-denial-signature handling (which auto-retries a
+known denial with elevation) ever sees it. A `git clone`/`fetch` of another repo run directly in that
+shell fails with:
+
+```
+fatal: unable to access 'https://github.com/...': CONNECT tunnel failed, response 403
+```
+
+That is sandbox containment, not an app bug, and retrying the same command in the same shell fails the
+same way. For the current project's own origin, use the `copse` MCP server's `git_fetch` tool. To
+clone or fetch a different repo entirely, use its `run_shell` tool instead (set
+`expects_sandbox_block: true` to ask up front) — both run through Copse's host command path with real
+network access, subject to the usual approval.
+
 ## Per-model behaviour
 
 Do not branch on a model id string (`startsWith('gpt')`). Ask `modelCapabilities(selection)` from

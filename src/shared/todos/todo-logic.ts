@@ -120,6 +120,35 @@ export function holdChecksAttachedAtCompletion(
   return { todos, messages }
 }
 
+/**
+ * Refuses `cancelled` → `completed` unless an acceptance check will verify it
+ * (#1433, item 5). Cancelling records that the work was abandoned; reviving the
+ * item straight into `completed` rewrites history with nothing to back it. In
+ * the motivating run, "fetch origin/main and rebase" was cancelled after two
+ * failed fetches and later flipped to completed without the fetch ever
+ * succeeding. An item that still carries the check it had before the update is
+ * let through, because `gateCompletedStatus` then executes that check and only
+ * a pass keeps it completed; a check first attached in this call has already
+ * been held by `holdChecksAttachedAtCompletion`. Without a check the item stays
+ * cancelled — reopening it as pending or in_progress is always allowed.
+ */
+export function refuseUncheckedRevivalOfCancelled(
+  before: readonly TodoItem[],
+  after: readonly TodoItem[],
+): { todos: TodoItem[]; messages: string[] } {
+  const beforeById = new Map(before.map((t) => [t.id, t]))
+  const messages: string[] = []
+  const todos = after.map((item) => {
+    if (item.status !== 'completed' || item.check) return item
+    if (beforeById.get(item.id)?.status !== 'cancelled') return item
+    messages.push(
+      `${item.content}: a cancelled item cannot be marked completed without an acceptance check, so it stays cancelled. If the work was actually done, reopen it as in_progress with a check, then complete it in a later update_todos call.`,
+    )
+    return { ...item, status: 'cancelled' as const }
+  })
+  return { todos, messages }
+}
+
 export function gateCompletedStatus(
   item: TodoItem,
   checkPassed: boolean | null,

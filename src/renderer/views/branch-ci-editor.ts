@@ -1,4 +1,5 @@
 import type {
+  AutomationLiveWorktreeLimit,
   BranchCiAutomation,
   BranchCiAutomationInput,
   EventAutomationTrigger,
@@ -25,7 +26,7 @@ export interface AutomationCreationDraft {
   prompt: string
   model: string
   enabled: boolean
-  maxLiveWorktrees: 1 | 2 | 3
+  maxLiveWorktrees: AutomationLiveWorktreeLimit
 }
 
 export interface BranchCiEditor {
@@ -145,6 +146,10 @@ export function mountBranchCiEditor(options: {
     el('option', { value: '1' }, '1 — wait for prior work'),
     el('option', { value: '2' }, '2 — allow one retained checkout'),
     el('option', { value: '3' }, '3 — allow two retained checkouts'),
+    el('option', { value: '5' }, '5 live worktrees'),
+    el('option', { value: '10' }, '10 live worktrees'),
+    el('option', { value: '25' }, '25 live worktrees'),
+    el('option', { value: 'unlimited' }, 'Unlimited'),
   )
   const enabled = el('input', { type: 'checkbox', class: 'automation-ci-enabled' })
   const matches = el('ul', { class: 'automation-ci-matches', hidden: true })
@@ -306,7 +311,11 @@ export function mountBranchCiEditor(options: {
       trigger?.kind === 'github-pr-changed' ? trigger.transition : 'ready-for-review'
     label.value = trigger?.kind === 'github-issue-labeled' ? trigger.label : ''
     prompt.value = definition?.prompt ?? draft?.prompt ?? ''
-    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
+    const savedLimit = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
+    if (!Array.from(worktrees.options).some((option) => option.value === savedLimit)) {
+      worktrees.append(el('option', { value: savedLimit }, `${savedLimit} live worktrees`))
+    }
+    worktrees.value = savedLimit
     enabled.checked = definition?.enabled ?? draft?.enabled ?? true
     matches.hidden = true
     updateSummary()
@@ -548,7 +557,7 @@ export function mountBranchCiEditor(options: {
         prompt: prompt.value,
         model: model.value || BEST_VALUE_CHAT_MODEL,
         enabled: enabled.checked,
-        maxLiveWorktrees: worktrees.value === '3' ? 3 : worktrees.value === '2' ? 2 : 1,
+        maxLiveWorktrees: worktrees.value === 'unlimited' ? 'unlimited' : Number(worktrees.value),
       })
       return
     }
@@ -594,7 +603,7 @@ export function mountBranchCiEditor(options: {
       prompt: prompt.value,
       model: model.value,
       enabled: enabled.checked,
-      maxLiveWorktrees: worktrees.value === '3' ? 3 : worktrees.value === '2' ? 2 : 1,
+      maxLiveWorktrees: worktrees.value === 'unlimited' ? 'unlimited' : Number(worktrees.value),
     }
     void api.automations
       .upsertBranchCi(projectId, input)

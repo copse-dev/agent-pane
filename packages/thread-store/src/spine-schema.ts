@@ -102,6 +102,8 @@ export interface SpineToolCall {
   appendedReminderLengths?: number[]
   /** Image data is persisted out of line; this list retains order and labels. */
   images?: SpineToolResultImage[]
+  /** Last observed command lifecycle stage (`run_shell` / `run_background`). Small, inline. */
+  commandPhase?: import('@copse/agent/wire-types.ts').CommandPhase
   subagent?: SpineSubagentRef
 }
 

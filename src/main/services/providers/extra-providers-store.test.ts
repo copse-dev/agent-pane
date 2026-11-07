@@ -9,6 +9,9 @@ import {
 import { getSetting, setSetting, setApiKey, hasApiKey, deleteApiKey } from '../storage/settings.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@copse/llm/extra-providers.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const slugs = (): string[] => getResolvedExtraProviders().map((p) => p.id)
 const PRESETS = [...BUILTIN_EXTRA_PROVIDER_SLUGS]

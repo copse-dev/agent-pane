@@ -30,7 +30,7 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
-import { setSetting } from './storage/settings.test-shim.ts'
+import { setSetting } from './storage/settings.ts'
 import { SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 
 describe('branchStatusLookupKey', () => {
@@ -475,26 +475,26 @@ describe('debug-ci deterministic bubble', () => {
   }
   const turn = { userMessage: 'fix ci', assistantMessage: 'Done.', toolNames: [] }
 
-  afterEach(() => {
+  afterEach(async () => {
     setDefaultPluginRegistry(null)
     setGhAvailableForTest(null)
-    setSetting(SUBAGENTS_ENABLED_SETTING, false)
-    setSetting('defaultReadonlyMode', false)
+    await setSetting(SUBAGENTS_ENABLED_SETTING, false)
+    await setSetting('defaultReadonlyMode', false)
   })
 
-  function ciBubble(
+  async function ciBubble(
     plugin: boolean,
     gh: boolean,
     subagents: boolean,
     readonly: boolean,
-  ): { label: string; prompt: string } {
+  ): Promise<{ label: string; prompt: string }> {
     const plugins = createFirstPartyPluginRegistry()
     if (plugin) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
     setDefaultPluginRegistry(plugins)
     setGhAvailableForTest(gh)
-    setSetting(SUBAGENTS_ENABLED_SETTING, subagents)
-    setSetting('defaultReadonlyMode', readonly)
+    await setSetting(SUBAGENTS_ENABLED_SETTING, subagents)
+    await setSetting('defaultReadonlyMode', readonly)
     const ci = buildDeterministicFollowUps(failingPr, turn).find((s) => s.id === 'debug-ci')
     assert.ok(ci, 'a failing PR should offer the CI bubble')
     return { label: ci.label, prompt: ci.prompt ?? '' }
@@ -517,12 +517,12 @@ describe('debug-ci deterministic bubble', () => {
     assert.deepEqual(followUpExecutorForModels(undefined, undefined), { nativeTools: false })
   })
 
-  it('omits investigate_ci for an external executor even when native tools are enabled', () => {
+  it('omits investigate_ci for an external executor even when native tools are enabled', async () => {
     const plugins = createFirstPartyPluginRegistry()
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setDefaultPluginRegistry(plugins)
     setGhAvailableForTest(true)
-    setSetting(SUBAGENTS_ENABLED_SETTING, true)
+    await setSetting(SUBAGENTS_ENABLED_SETTING, true)
     const ci = buildDeterministicFollowUps(failingPr, turn, { nativeTools: false }).find(
       (s) => s.id === 'debug-ci',
     )
@@ -540,8 +540,8 @@ describe('debug-ci deterministic bubble', () => {
       for (const subagents of [false, true]) {
         for (const readonly of [false, true]) {
           const offered = plugin && gh && subagents && !readonly
-          it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagents)} readonly=${String(readonly)} ${offered ? 'names' : 'omits'} investigate_ci`, () => {
-            const ci = ciBubble(plugin, gh, subagents, readonly)
+          it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagents)} readonly=${String(readonly)} ${offered ? 'names' : 'omits'} investigate_ci`, async () => {
+            const ci = await ciBubble(plugin, gh, subagents, readonly)
             if (offered) {
               assert.equal(ci.label, 'Investigate CI failure')
               assert.match(ci.prompt, /investigate_ci/)

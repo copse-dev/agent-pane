@@ -11,9 +11,9 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 //
 // Making Monaco load asynchronously (#378) moved mountGitChangesPane behind
 // `loadMonaco().then(...)`, so it now mounts a turn *after* the layout. The
-// right panel is normally already in "changes" mode by then, so the
-// `right_panel_mode_changed` event that used to trigger the first refresh has
-// already fired before this pane subscribed — and the diff never rendered.
+// right panel is normally already in "changes" mode by then, so the mode
+// change that triggers the first refresh has already happened before this pane
+// subscribed — and the diff never rendered.
 //
 // The fix has the pane catch up to the current state on mount: when changes
 // mode is already active, it refreshes itself. This test mounts the pane with
@@ -105,7 +105,7 @@ describe('git changes pane catches up on async mount (#459)', () => {
 
     // Mounting alone — without emitting any store event — must kick off the
     // initial refresh, because the deferred (async) mount missed the original
-    // right_panel_mode_changed event.
+    // mode change.
     mountGitChangesPane(listRoot, viewerRoot, store, api, null)
 
     // refresh() awaits isAvailable() then status(); let those microtasks settle.
@@ -167,7 +167,6 @@ describe('git changes pane catches up on async mount (#459)', () => {
     assert.equal(calls.status, 2, 'the recursive change should re-read git status')
 
     store.setState({ rightPanelMode: 'explorer' })
-    store.emit('right_panel_mode_changed')
     listener.current('/workspace/project-1')
     await new Promise<void>((resolve) => setTimeout(resolve, 550))
     assert.equal(calls.status, 2, 'events should not refresh while Changes is closed')

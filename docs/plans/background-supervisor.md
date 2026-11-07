@@ -2,7 +2,7 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Implemented through the #1081 supervisor contract.** Design contract originated in [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+**Status: Resolved.** Implemented through the #1081 supervisor contract; #1081 is closed. Design contract originated in [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
 The transport-independent service owns persistence, scheduling, bounded execution,
 recovery, and client operations. Long-horizon continuations, CI watches, automation
 ticks, event preparation, and background processes are consumers. The phases below

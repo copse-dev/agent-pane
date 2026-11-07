@@ -82,7 +82,6 @@ describe('automation dialog', () => {
     openAutomationDialog(store, api)
     await tick()
     store.setState({ activeProjectId: 'other' })
-    store.emit('workspace_changed')
     assert.equal(
       document.querySelector<HTMLDialogElement>('#automation-dialog')?.open ?? false,
       false,

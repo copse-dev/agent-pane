@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from './store.ts'
+import { createStore, sameItems } from './store.ts'
 import {
   createThread,
   addMessage,
@@ -116,12 +116,20 @@ describe('store.select', () => {
     store.select(
       (s) => [s.rightPanelMode, String(s.filesPaneOpen)],
       (next) => seen.push(next),
-      (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
+      sameItems,
     )
     // A fresh array every time: without the equality this would always fire.
     store.setState({ theme: 'light' })
     store.setState({ filesPaneOpen: true })
     assert.deepEqual(seen, [['browser', 'true']])
+  })
+
+  it('sameItems compares tuples item by item', () => {
+    const diff = { path: 'a.ts' }
+    assert.equal(sameItems(['p', diff], ['p', diff]), true)
+    assert.equal(sameItems(['p', diff], ['p', { path: 'a.ts' }]), false)
+    assert.equal(sameItems(['p'], ['p', null]), false)
+    assert.equal(sameItems([Number.NaN], [Number.NaN]), true)
   })
 
   it('stops notifying after unsubscribe', () => {

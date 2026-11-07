@@ -6,7 +6,7 @@ import {
   PROTOCOL_VERSION,
   type AgentApp,
   type SessionConfigOption,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { StreamChunk } from '@shared/types'
 import type { AcpClientHandlers, AcpTransportFactory } from './acp-client.ts'
 import {

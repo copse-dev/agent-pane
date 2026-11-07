@@ -327,6 +327,54 @@ test('round-trips the lengths of system-reminder blocks appended to a result', (
   }
 })
 
+test('round-trips a command phase and drops a malformed one', () => {
+  // The card's last observed stage must survive a reload (#3956); a hand-edited
+  // or drifted value must not reach the renderer as a bogus stage.
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc1',
+          name: 'run_shell',
+          args: { command: 'npm test' },
+          status: 'error',
+          result: 'Command timed out after 1000ms.',
+          commandPhase: { state: 'timed_out', since: 7, launched: true },
+        },
+        {
+          id: 'tc2',
+          name: 'run_shell',
+          args: { command: 'npm ci' },
+          status: 'done',
+          result: 'Refused.',
+          commandPhase: { state: 'not_started', since: 8, launched: false, reason: 'Refused.' },
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+
+  const { spine, files } = explodeThread(messages, hash)
+  const call = spine[0]?.toolCalls[0]
+  ok(call)
+  for (const malformed of [
+    { state: 'sleeping', since: 1, launched: true },
+    { state: 'exited', since: '1', launched: true },
+    { state: 'exited', since: 1 },
+    'running',
+  ]) {
+    const tampered = parseSpine(
+      JSON.stringify({ ...spine[0], toolCalls: [{ ...call, commandPhase: malformed }] }),
+    )
+    const folded = foldThread(meta(), tampered, resolverFor(files), { hash })
+    strictEqual(folded.messages[0]?.toolCalls[0]?.commandPhase, undefined)
+  }
+})
+
 test('round-trips tool-result images through referenced blobs', () => {
   const dataUrl = 'data:image/png;base64,aW1hZ2UtYnl0ZXM='
   const messages: Message[] = [

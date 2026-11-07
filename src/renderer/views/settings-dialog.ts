@@ -66,7 +66,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -104,6 +104,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       </div>
     </div>
   `
+  // A <dialog> takes no name from its heading; screen readers announce this one.
+  overlay.setAttribute('aria-labelledby', 'settings-dialog-title')
   bindSettingsDialog(overlay)
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields)
   qsRequired(overlay, '#settings-close').append(closeIcon('ui-icon'))
