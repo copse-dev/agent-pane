@@ -12,6 +12,12 @@ import { isNonEmptyString } from '@shared/nullish.ts'
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
   acpAgentId?: string
+  /**
+   * The failed turn ran the agent under Copse's own OS sandbox on this machine
+   * (`AcpTurnFailure.sandboxed`). Only then may the copy blame a cause that
+   * sandbox creates, such as the read-only macOS Keychain.
+   */
+  acpSandboxed?: boolean
 }
 
 interface JsonRpcError {
@@ -196,8 +202,12 @@ export function turnErrorDetail(err: unknown): TurnErrorDetail {
  * been signed in / its key was refused"; `expired` is "it *was* signed in and
  * the stored credential is no longer good" — a different user fix (sign in
  * again) and the only one that says so, which is why the two are not collapsed.
+ * `unverified` is "the agent could not confirm its saved sign-in, and its own
+ * words do not say whether the credential went bad or the check never reached
+ * the server": usually an expiry, but a network failure reads the same, so a
+ * re-run can help and the copy must not promise that it won't.
  */
-export type AcpAuthFailureKind = 'required' | 'expired'
+export type AcpAuthFailureKind = 'required' | 'expired' | 'unverified'
 
 /**
  * A credential that was working and no longer is, however the agent words it.
@@ -213,6 +223,27 @@ export type AcpAuthFailureKind = 'required' | 'expired'
  */
 const EXPIRED_AUTH_RE =
   /re-?authenticat|re-?sign[\s_-]*in|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?(?:expired|been\s+revoked|was\s+rejected)|(?:expired|revoked|rejected)[\s:_-]*(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:workos\s+)?[\w-]*(?:token|session|credentials?)/i
+
+/**
+ * Claude Code's start-up organization check failed (#4147). It runs only when
+ * managed settings pin `forceLoginOrgUUID`, and asks Anthropic which
+ * organization the saved OAuth token belongs to; a token it cannot validate
+ * kills the process with exit 1 before the first prompt.
+ *
+ * In a sandboxed Claude agent on macOS the usual cause is an expired access
+ * token. Claude refreshes it, but the Keychain is read-only inside the
+ * sandbox, so the refreshed token is never saved (`security` exits 161 with
+ * EPERM) and the check runs against the expired one.
+ *
+ * The message is the CLI's catch-all, though, not evidence of an expiry. Its
+ * start-up check makes one `/api/oauth/validate` request (10 s timeout, no
+ * retry) and prints the same text whether that request was refused (401/403)
+ * or never completed (timeout, DNS, connection reset, 5xx); the reason goes
+ * only to Claude's debug log. Its own stderr says "This may be a network
+ * error, or the token may have been revoked." So it is `unverified`, not
+ * `expired`, unless the same text also carries an explicit expiry.
+ */
+const CLAUDE_ORG_VERIFY_RE = /unable to verify organization for the current authentication token/i
 
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =
@@ -284,6 +315,9 @@ export function classifyAcpAuthFailure(
   // Expiry wins over the generic signals: an expired token also reports
   // "Failed to authenticate", and only the expiry reading names the right fix.
   if (EXPIRED_AUTH_RE.test(text)) return 'expired'
+  // After the expiry check, so explicit evidence of one still reads as one:
+  // the organization check alone cannot tell a dead token from a dead network.
+  if (CLAUDE_ORG_VERIFY_RE.test(text)) return 'unverified'
   if (rpc?.code === -32000) return 'required'
   if (AUTH_FAILURE_RE.test(text)) return 'required'
   if (status === 401 || type === 'authentication_error' || text.includes('Unauthorized'))
@@ -314,7 +348,9 @@ export type AcpTurnInterruption = AcpAuthFailureKind | 'nested_sandbox' | 'abort
  * watched the full diagnosis stream past. So each variant says whether
  * re-running would help: a credentials failure fails identically until someone
  * signs in, and calling that "transient" sends the next turn off retrying a
- * dead token instead of reporting the one action that fixes it.
+ * dead token instead of reporting the one action that fixes it. An
+ * `unverified` sign-in is the exception: a network failure reads the same, so
+ * its marker must not claim a re-run is hopeless either.
  */
 export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?: string): string {
   const agentName = acpAgentDisplayName(agentId)
@@ -325,6 +361,8 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
       return `[This turn failed: ${agentName}’s sign-in is no longer valid. Re-running it will fail the same way until the user signs in again.]`
     case 'required':
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
+    case 'unverified':
+      return `[This turn failed: ${agentName} couldn’t verify its sign-in when it started. Usually the sign-in has expired, but a network failure looks the same, so re-running it may work; if it fails this way again, the user needs to sign in again.]`
     case 'nested_sandbox':
       return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside the one Copse runs it under, which macOS does not allow. Do not retry it — the same turn will fail the same way. Tell the user what failed.]`
     case 'error':
@@ -424,13 +462,31 @@ function markdownCodeBlock(value: string): string {
   return `${fence}text\n${value}\n${fence}`
 }
 
+function acpAuthNoticeWords(
+  agentName: string,
+  kind: AcpAuthFailureKind,
+): { title: string; explanation: string } {
+  switch (kind) {
+    case 'expired':
+      return {
+        title: `${agentName} sign-in expired`,
+        explanation: `This turn couldn’t run because ${agentName}’s saved credentials are no longer valid.`,
+      }
+    case 'unverified':
+      return {
+        title: `${agentName} couldn’t verify its sign-in`,
+        explanation: `This turn couldn’t run because ${agentName} couldn’t confirm its saved sign-in.`,
+      }
+    case 'required':
+      return {
+        title: `${agentName} needs authentication`,
+        explanation: `This turn couldn’t run because ${agentName} is not signed in.`,
+      }
+  }
+}
+
 function acpAuthNotice(agentName: string, kind: AcpAuthFailureKind): string {
-  const title =
-    kind === 'expired' ? `${agentName} sign-in expired` : `${agentName} needs authentication`
-  const explanation =
-    kind === 'expired'
-      ? `This turn couldn’t run because ${agentName}’s saved credentials are no longer valid.`
-      : `This turn couldn’t run because ${agentName} is not signed in.`
+  const { title, explanation } = acpAuthNoticeWords(agentName, kind)
   return `> [!WARNING]\n> **${title}**\n>\n> ${explanation}`
 }
 
@@ -457,22 +513,57 @@ function acpTechnicalDetails(rpc: JsonRpcError | null): string | null {
   return `**Technical details**\n\n${markdownCodeBlock(report)}`
 }
 
+/**
+ * What Claude's failed organization check usually means, and what else it can
+ * mean (see {@link CLAUDE_ORG_VERIFY_RE}). The agent's own message reads like a
+ * network blip and never mentions expiry, so without this note "sign in again"
+ * looks like the wrong fix; and it can be a network failure, so the note says
+ * what to do then as well.
+ *
+ * The Keychain cause exists only where Copse's sandbox keeps the Keychain
+ * read-only: a seatbelted agent on macOS. Anywhere else it would send the user
+ * after a cause their setup cannot have.
+ */
+function acpOrgCheckCauseNote(
+  signalText: string,
+  agentName: string,
+  sandboxed: boolean,
+): string | null {
+  if (!CLAUDE_ORG_VERIFY_RE.test(signalText)) return null
+  const expiry =
+    sandboxed && process.platform === 'darwin'
+      ? 'When that fails, its access token has usually expired: inside Copse’s sandbox it can ' +
+        'renew the token but can’t save the new one to the macOS Keychain.'
+      : 'When that fails, its sign-in has usually expired.'
+  return (
+    `${agentName} checks its sign-in against your organization’s policy when it starts. ` +
+    `${expiry} If your network was down instead, re-send your message once it’s back.`
+  )
+}
+
 function formatAcpAuthError(
   rpc: JsonRpcError | null,
   kind: AcpAuthFailureKind,
-  agentId?: string,
+  ctx: ClassifyAgentErrorContext | undefined,
+  signalText: string,
 ): string {
+  const agentId = ctx?.acpAgentId
   const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   const agentName = acpAgentDisplayName(agentId)
 
   // An expired credential is a *different* message: the agent is configured and
   // was working, so install/first-run guidance would send the user the wrong
   // way. Lead with the one action that fixes it, and keep the raw ACP code
-  // (often an unhelpful `-32603 Internal error`) below the fold.
-  if (kind === 'expired') {
+  // (often an unhelpful `-32603 Internal error`) below the fold. An unverified
+  // sign-in is usually an expired one, so it gets the same fix, plus a note
+  // that says what else it can be.
+  if (kind === 'expired' || kind === 'unverified') {
     const reauth = acpReauthCommand(known)
     return [
       acpAuthNotice(agentName, kind),
+      kind === 'unverified'
+        ? acpOrgCheckCauseNote(signalText, agentName, ctx?.acpSandboxed === true)
+        : null,
       acpAuthSteps(reauth),
       acpCredentialsNote(known),
       acpTechnicalDetails(rpc),
@@ -549,7 +640,7 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   const detail = message ?? raw
 
   const authFailure = classifyAcpAuthFailure(err, ctx)
-  if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId)
+  if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx, acpSignalText(rpc, detail))
 
   // Straight after credentials, in the same order as `acpTurnInterruptionFor`:
   // a helper that cannot nest a second seatbelt dies before any provider call,

@@ -1,9 +1,10 @@
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId, proposingThreadId } from '../controller/projects.ts'
+import { attentionThreadId, proposingThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { uiActions } from '../ui/actions.ts'
@@ -80,6 +81,30 @@ function approvalCopyElement(className: string, text: string): HTMLElement {
 }
 
 /**
+ * The dynamic part of a request body (a PR/comment description) rendered as
+ * real markdown instead of literal `#`/`*` characters. Nested inside the same
+ * `.approval-body` scroll box as the plain-text header lines above it, rather
+ * than a second box, so the request still reads — and scrolls — as one thing.
+ */
+function approvalMarkdownBody(markdown: string): HTMLElement {
+  const host = el('div', { class: 'approval-body-markdown streaming-markdown' })
+  host.innerHTML = renderMarkdown(markdown)
+  return host
+}
+
+/** The plain header lines plus, when present, the rendered markdown body — as the
+ * single child list of one `.approval-body` box. */
+function approvalBodyChildren(req: {
+  body: string
+  bodyMarkdown: string | undefined
+}): (Node | string)[] {
+  const children: (Node | string)[] = []
+  if (req.body.trim()) children.push(req.body)
+  if (req.bodyMarkdown?.trim()) children.push(approvalMarkdownBody(req.bodyMarkdown))
+  return children
+}
+
+/**
  * One request exactly as a single-request prompt presents it, fully expanded:
  * the advice, the whole body (monospaced for shell), then the footer. Shared
  * with the Activity panel so a request is never approved from a view that shows
@@ -87,18 +112,20 @@ function approvalCopyElement(className: string, text: string): HTMLElement {
  */
 export function approvalRequestDetails(req: {
   body: string
+  bodyMarkdown: string | undefined
   bodyAdvice: string | undefined
   bodyFooter: string | undefined
   type: string
 }): HTMLElement[] {
   const parts: HTMLElement[] = []
   if (req.bodyAdvice) parts.push(approvalCopyElement('approval-advice', req.bodyAdvice))
-  if (req.body.trim())
+  const children = approvalBodyChildren(req)
+  if (children.length > 0)
     parts.push(
       el(
         'div',
         { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
-        req.body,
+        ...children,
       ),
     )
   if (req.bodyFooter) parts.push(approvalCopyElement('approval-footer', req.bodyFooter))
@@ -161,6 +188,7 @@ export interface PendingApprovalSummary {
   threadId: string | undefined
   title: string
   body: string
+  bodyMarkdown: string | undefined
   bodyAdvice: string | undefined
   bodyFooter: string | undefined
   type: string
@@ -278,6 +306,7 @@ export function mountApprovalDialog(
     threadId: string | undefined
     title: string
     body: string
+    bodyMarkdown: string | undefined
     bodyAdvice: string | undefined
     bodyFooter: string | undefined
     type: string
@@ -507,8 +536,9 @@ export function mountApprovalDialog(
       // Shell commands stay monospaced; other prompts (PR targets, origins) use the
       // interface font so they don't read as a raw JSON dump in a <pre>.
       const bodyClass = req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
-      const body = el('div', { class: bodyClass }, req.body)
-      if (!req.body.trim() || (collapseDetails && !detailsExpanded)) body.hidden = true
+      const children = approvalBodyChildren(req)
+      const body = el('div', { class: bodyClass }, ...children)
+      if (children.length === 0 || (collapseDetails && !detailsExpanded)) body.hidden = true
       return body
     }
 
@@ -796,6 +826,7 @@ export function mountApprovalDialog(
       threadId,
       title,
       body,
+      bodyMarkdown,
       bodyAdvice,
       bodyFooter,
       type,
@@ -818,6 +849,7 @@ export function mountApprovalDialog(
         threadId,
         title,
         body,
+        bodyMarkdown,
         bodyAdvice,
         bodyFooter,
         type,
@@ -883,13 +915,17 @@ export function mountApprovalDialog(
   // When the user switches threads, the prompt on screen has to follow the
   // focus: requests for the thread just left are withdrawn, and a
   // previously-backgrounded request for the now-focused thread surfaces.
-  // `threads_changed` also fires on project switches, so this covers
-  // cross-project focus changes too.
-  store.on('threads_changed', () => {
-    withdrawUnshowable()
-    if (active) appendToOpen()
-    else show()
-  })
+  // A project switch changes the active thread too. A request's showability
+  // also depends on which thread it surfaces over (side-chat parent, proposer).
+  store.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)] as const,
+    () => {
+      withdrawUnshowable()
+      if (active) appendToOpen()
+      else show()
+    },
+    sameItems,
+  )
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt
@@ -934,6 +970,7 @@ export function mountApprovalDialog(
           threadId: req.threadId,
           title: req.title,
           body: req.body,
+          bodyMarkdown: req.bodyMarkdown,
           bodyAdvice: req.bodyAdvice,
           bodyFooter: req.bodyFooter,
           type: req.type,

@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import { addMessage, createThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountNextStepHint } from './next-step-hint.ts'
@@ -132,11 +132,14 @@ describe('next-step hint controller', () => {
   it('fetches lazily when switching to an idle thread restored with a finished turn', async () => {
     const { store, threadId } = storeWithFinishedTurn()
     const { api, fetches } = fakeApi({ enabled: true, hint: 'Run the tests' })
-    const mount = mountNextStepHint(store, api, () => {})
+    // On reload the composer mounts before the project restores its selection.
+    store.setState({ activeThreadId: null })
+    let changes = 0
+    const mount = mountNextStepHint(store, api, () => changes++)
 
-    // No idle transition was ever observed (e.g. app reload); the switch event
-    // is the first sight of this thread.
-    store.emit('threads_changed')
+    // No idle transition was ever observed; the restored selection, with no
+    // event, is the first sight of this thread.
+    store.setState({ activeThreadId: threadId })
     await flush()
 
     assert.equal(fetches.length, 1)
@@ -144,17 +147,30 @@ describe('next-step hint controller', () => {
 
     // The other thread has no finished exchange, so nothing is offered there.
     const emptyThreadId = createThread(store)
+    // The selection alone re-syncs, with no event.
     store.setState({ activeThreadId: emptyThreadId })
-    store.emit('threads_changed')
     await flush()
     assert.equal(mount.current(), null)
 
     // Switching back shows the cached hint without a second call.
     store.setState({ activeThreadId: threadId })
-    store.emit('threads_changed')
     await flush()
     assert.equal(fetches.length, 1)
     assert.equal(mount.current(), 'Run the tests')
+
+    // Another thread's rename does not touch the shown hint.
+    changes = 0
+    setThreadTitle(store, emptyThreadId, 'Renamed elsewhere')
+    await flush()
+    assert.equal(changes, 0)
+    assert.equal(fetches.length, 1)
+
+    // Sending a message retires the hint at once and asks for nothing: the
+    // thread is still idle until the turn starts, but this is not a new turn.
+    addMessage(store, threadId, 'user', 'Run the tests')
+    await flush()
+    assert.equal(mount.current(), null)
+    assert.equal(fetches.length, 1, 'no hint is billed for the message just sent')
     mount.destroy()
   })
 })

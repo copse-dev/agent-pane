@@ -184,6 +184,7 @@ jobs:
   ground:
     outputs:
       ready: ${{ steps.ground.outputs.ready }}
+      artifact-id: ${{ steps.ground.outputs.artifact-id }}
     needs: authorize
     if: ${{ needs.authorize.outputs.request != '' }}
     runs-on: ubuntu-24.04
@@ -232,6 +233,7 @@ jobs:
       - uses: ./.copse-reviewer/.github/actions/review-findings
         with:
           request: ${{ needs.authorize.outputs.request }}
+          ground-artifact-id: ${{ needs.ground.outputs.artifact-id }}
           preparation: ${{ inputs.preparation }}
           model-api-key: ${{ secrets.model-api-key }}
           provider: ${{ inputs.provider }}
@@ -268,6 +270,7 @@ jobs:
       - uses: ./.copse-reviewer/.github/actions/review-findings
         with:
           request: ${{ needs.authorize.outputs.request }}
+          ground-artifact-id: ${{ needs.ground.outputs.artifact-id }}
           preparation: copse-pnpm
           profile: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
           model-api-key: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}

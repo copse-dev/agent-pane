@@ -24,6 +24,7 @@
  * | prompt contains  | behaviour                                                      |
  * | ---------------- | -------------------------------------------------------------- |
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
+ * | `stop-mid-command` | start an `execute` call, reply while it runs, end on cancel |
  * | `ask-execute`    | request an `execute` permission with no command or title       |
  * | `run-kindless`   | request permission for `rm -rf build` with no tool `kind`      |
  * | `ask`            | request permission, then report the client's answer            |
@@ -65,6 +66,8 @@ function promptText(blocks) {
 }
 
 let nextSessionId = 0
+/** Turns parked until the client cancels them (`stop-mid-command`). */
+const awaitingCancel = new Set()
 
 agent({ name: 'mock-acp-agent' })
   .onRequest('initialize', () => ({
@@ -102,6 +105,29 @@ agent({ name: 'mock-acp-agent' })
       })
       await say(`client-read-result:\n${response.content}`)
       return { stopReason: 'end_turn' }
+    }
+
+    // Checked before the substring branches for the same reason as
+    // `report-env:`. The command never runs: the call stays in progress until
+    // the client's Stop cancels the turn, so the reply below lands in a later
+    // bubble than the call it interrupts.
+    if (text.includes('stop-mid-command')) {
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'mock-tool-long-check',
+          title: 'Run the long check',
+          kind: 'execute',
+          status: 'in_progress',
+          rawInput: { command: 'pnpm run check' },
+        },
+      })
+      await say('The long check is running; it takes a few minutes.')
+      await new Promise((resolve) => {
+        awaitingCancel.add(resolve)
+      })
+      return { stopReason: 'cancelled' }
     }
 
     if (text.includes('crash')) {
@@ -170,5 +196,8 @@ agent({ name: 'mock-acp-agent' })
     await say(`echo:${text}`)
     return { stopReason: 'end_turn' }
   })
-  .onNotification('session/cancel', () => {})
+  .onNotification('session/cancel', () => {
+    for (const resolve of awaitingCancel) resolve()
+    awaitingCancel.clear()
+  })
   .connect(ndJsonStream(Writable.toWeb(process.stdout), readableFrom(process.stdin)))
