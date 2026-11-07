@@ -156,8 +156,8 @@ export function mountTerminalsPane(
   const tabs = new Map<string, TerminalTab>()
   let activeTabId: string | null = null
   let tabCounter = 0
-  // Which thread's shells are currently shown. Tracked so we only re-scope when
-  // the active thread actually changes (threads_changed fires for many reasons).
+  // Which thread's shells are currently shown. Tracked so the workspace switch
+  // (which may land on the same thread id) only re-scopes on a real change.
   let lastThreadId: string | null = store.getState().activeThreadId
 
   const unsubOutput = api.terminal.onOutput((id, data) => {
@@ -914,9 +914,8 @@ export function mountTerminalsPane(
     }
   }
 
-  // Only re-scope when the active thread actually changed. `threads_changed`
-  // fires for many unrelated reasons (streaming, renames), and `workspace_changed`
-  // also swaps the active thread when the project switches — both funnel here.
+  // Only re-scope when the active thread actually changed. A project switch
+  // swaps the active thread in the same write the selection below hears.
   function onThreadMaybeChanged(): void {
     const threadId = currentThreadId()
     if (threadId === lastThreadId) return
@@ -966,11 +965,10 @@ export function mountTerminalsPane(
     selectRightPanelMode(store, 'terminal', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('settings_changed', onFontSizeChange),
-    store.on('threads_changed', onThreadMaybeChanged),
+    store.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store.on('thread_checkout_changed', (threadId) => {
       void onThreadCheckoutChanged(threadId)
     }),
-    store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', (command, options) => {
       void runCommandInNewShell(command, options)
     }),

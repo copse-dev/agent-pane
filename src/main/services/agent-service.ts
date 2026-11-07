@@ -1529,7 +1529,12 @@ async function runAgentWithInlineCanvas(
         authFailure,
         acpAgentId: acpRunAgentId,
       })
-      const msg = agentErrorNotice(classifyAgentError(err, { acpAgentId: acpRunAgentId }))
+      const msg = agentErrorNotice(
+        classifyAgentError(err, {
+          acpAgentId: acpRunAgentId,
+          acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
+        }),
+      )
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer

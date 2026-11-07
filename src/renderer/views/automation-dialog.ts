@@ -52,9 +52,12 @@ export function openAutomationDialog(
   body.append(status)
   dialog.append(header, body)
   // Do not let a project change behind the modal redirect an in-progress edit.
-  const unsubscribe = store.on('workspace_changed', () => {
-    if (store.getState().activeProjectId !== activeProjectId) close()
-  })
+  const unsubscribe = store.select(
+    (s) => s.activeProjectId,
+    (projectId) => {
+      if (projectId !== activeProjectId) close()
+    },
+  )
   dialog.addEventListener(
     'close',
     () => {

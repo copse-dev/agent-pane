@@ -9,10 +9,13 @@ name: Screenshot review push
 # push lands, and drops `screenshots-need-review` until the new head's own
 # evidence asks for a decision again.
 #
-# It writes no `Screenshot review` status. A head without one reads as waiting,
+# A synchronize event writes no status. A head without one reads as waiting,
 # and screenshot-review-labels.yml and screenshot-review-selection.yml refuse a
 # decision on a head with no status, so nobody can accept or decline before the
 # new head is rendered.
+# A ready transition keeps the same SHA, so it resets legacy draft/no-render
+# success to pending. Only a recorded decision or a trusted publisher's explicit
+# eligible-evidence result is reusable; a skipped completion cannot mint one.
 #
 # Left alone:
 #   - a comment that already names the pushed head: the publisher got there
@@ -29,7 +32,7 @@ name: Screenshot review push
 # and the script only calls the API.
 on:
   pull_request:
-    types: [synchronize]
+    types: [synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -49,13 +52,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      actions: read
+      contents: read
       pull-requests: write
+      statuses: write
     steps:
+      - name: Load trusted screenshot stack policy
+        if: github.event.action == 'ready_for_review'
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: screenshot-stack-policy
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/screenshot-stack.mts
+            scripts/lib/safe-json.mts
+          sparse-checkout-cone-mode: false
       - name: Retire the previous head's screenshot evidence
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -73,9 +91,160 @@ jobs:
               return;
             }
             const body = pr.body || '';
-            if (body.includes('<!-- copse-screenshot-stack:') && !body.includes(`tip=#${number} -->`)) {
+            const ready = process.env.EVENT_ACTION === 'ready_for_review';
+            if (!ready && body.includes('<!-- copse-screenshot-stack:') && !body.includes(`tip=#${number} -->`)) {
               core.notice('Lower stack layers are reconciled by screenshot-stack.yml.');
               return;
+            }
+
+            if (ready) {
+              let statuses = [];
+              try {
+                const { data } = await github.rest.repos.listCommitStatusesForRef({
+                  owner, repo, ref: head, per_page: 100,
+                });
+                if (!Array.isArray(data)) throw new Error('Screenshot review statuses unavailable');
+                statuses = data;
+              } catch (error) {
+                core.notice(`Could not read screenshot review provenance; resetting pending: ${error.message}`);
+              }
+              const latest = statuses.find((status) => status?.context === 'Screenshot review');
+              const trusted = latest?.creator?.login === 'github-actions[bot]' && latest.creator.id === 41898282;
+              const decision = /^(?:Accepted|Declined) by @/.test(latest?.description || '');
+              const declaredStack = body.includes('<!-- copse-screenshot-stack:');
+              let stack;
+              let stackPolicy;
+              if (declaredStack) {
+                try {
+                  stackPolicy = require(`${process.env.GITHUB_WORKSPACE}/screenshot-stack-policy/scripts/screenshot-stack.mts`);
+                  stack = await stackPolicy.verifyScreenshotStack(github, { owner, repo, number });
+                } catch (error) {
+                  core.notice(`Could not verify the current screenshot stack; resetting pending: ${error.message}`);
+                }
+              }
+              const zero = !declaredStack && latest?.state === 'success' &&
+                ['No changed reference screenshots', 'No eligible reference screenshot specs (oracle plan)']
+                  .includes(latest.description);
+              const candidates = !declaredStack && latest?.state === 'pending' &&
+                /^[1-9][0-9]* changed screenshots? awaits? review: label accept-screenshots or decline-screenshots$/
+                  .test(latest.description || '');
+              const stackPending = stack && !stack.lower && latest?.state === 'pending' &&
+                latest.description === 'Combined stack needs explicit screenshot review' &&
+                latest.target_url === stack.coverageSourceRunUrl;
+              const stackDeferred = stack?.lower && stack.approved && latest?.state === 'success' &&
+                latest.description === `Stack deferred to approved tip #${stack.declaration.tip} at ${stack.tipHead.slice(0, 12)}` &&
+                latest.target_url === stack.coverageSourceRunUrl;
+              const stackReviewed = stack && !stack.lower && stack.approved && latest?.state === 'success' && decision;
+              const sourceUrl = declaredStack ? stack?.coverageSourceRunUrl : latest?.target_url;
+              const source = new RegExp(`^https://github\\.com/${owner}/${repo}/actions/runs/([1-9][0-9]*)$`)
+                .exec(sourceUrl || '');
+              let coverage = false;
+              if (trusted && (zero || candidates || stackPending || stackDeferred || stackReviewed) && source) {
+                try {
+                  const runId = Number(source[1]);
+                  if (!Number.isSafeInteger(runId)) throw new Error('Invalid source run id');
+                  const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runId });
+                  const expectedHead = stack ? stack.tipHead : head;
+                  const expectedNumber = stack ? stack.declaration.tip : number;
+                  const current = run.id === runId && run.status === 'completed' &&
+                    ['success', 'failure', 'timed_out'].includes(run.conclusion) &&
+                    run.event === 'pull_request' && run.name === 'CI' && run.path === '.github/workflows/ci.yml' &&
+                    run.head_sha === expectedHead && run.repository?.full_name === `${owner}/${repo}` &&
+                    run.head_repository?.full_name === `${owner}/${repo}` &&
+                    run.pull_requests?.length === 1 && run.pull_requests[0].number === expectedNumber &&
+                    run.pull_requests[0].head?.sha === expectedHead;
+                  if (current) {
+                    const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                      owner, repo, run_id: runId, filter: 'latest', per_page: 100,
+                    });
+                    const successfulStep = (job, name) => {
+                      const matches = (job.steps || []).filter((step) => step.name === name);
+                      return matches.length === 1 && matches[0].conclusion === 'success';
+                    };
+                    const prechecks = jobs.filter((job) => job.name === 'precheck');
+                    const plans = prechecks.flatMap((job) => (job.steps || [])
+                      .filter((step) => step.name.startsWith('Screenshot evidence plan:')));
+                    const plan = prechecks.length === 1 && prechecks[0].conclusion === 'success' &&
+                      plans.length === 1 && plans[0].conclusion === 'success'
+                        ? /^Screenshot evidence plan: (render|no-eligible|reference-followup) \/ (full|subset|skip) \/ ([0-9]+) shards$/.exec(plans[0].name)
+                        : undefined;
+                    const expectedShards = Number(plan?.[3]);
+                    let kind = '';
+                    let candidateUpload = '';
+                    if (plan?.[1] === 'render' &&
+                      ((plan[2] === 'full' && expectedShards === 9) ||
+                       (plan[2] === 'subset' && expectedShards >= 1 && expectedShards <= 9))) {
+                      const shards = jobs.flatMap((job) => (job.steps || []).flatMap((step) => {
+                        const match = /^e2e shard ([1-9])\/([1-9]) \(oracle-gated, retry on flaky session startup\)$/.exec(step.name);
+                        return match ? [{ job, step, index: Number(match[1]), total: Number(match[2]) }] : [];
+                      }));
+                      const collections = jobs.filter((job) => job.name === 'screenshot-artifacts');
+                      const builds = jobs.filter((job) => job.name === 'build');
+                      const uploads = collections.length === 1 ? (collections[0].steps || [])
+                        .filter((step) => step.name === 'Upload immutable screenshot candidates') : [];
+                      if (shards.length === expectedShards &&
+                        new Set(shards.map((shard) => shard.index)).size === expectedShards &&
+                        shards.every((shard) => shard.total === expectedShards && shard.index <= expectedShards &&
+                          shard.job.conclusion === 'success' && shard.step.conclusion === 'success' &&
+                          successfulStep(shard.job, 'Collect changed reference screenshots') &&
+                          successfulStep(shard.job, 'Upload rendered screenshot shard')) &&
+                        builds.length === 1 && builds[0].conclusion === 'success' &&
+                        ['Build browser reference app', 'Render browser reference screenshots',
+                          'Render isolated browser motion screenshots', 'Collect changed browser reference screenshots',
+                          'Upload rendered browser screenshots'].every((name) => successfulStep(builds[0], name)) &&
+                        collections.length === 1 && collections[0].conclusion === 'success' &&
+                        ['Download rendered screenshot candidates', 'Verify complete screenshot producer inputs',
+                          'Drop render noise from the candidate set',
+                          'Summarize candidate screenshots'].every((name) => successfulStep(collections[0], name)) &&
+                        uploads.length === 1 && ['success', 'skipped'].includes(uploads[0].conclusion)) {
+                        kind = 'render';
+                        candidateUpload = uploads[0].conclusion;
+                      }
+                    } else if (run.conclusion === 'success' && plan?.[1] === 'no-eligible' &&
+                      plan[2] === 'skip' && expectedShards === 0) kind = 'no-eligible';
+                    const expectedKind = latest.description === 'No eligible reference screenshot specs (oracle plan)'
+                      ? 'no-eligible' : 'render';
+                    if (kind === expectedKind) {
+                      const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                        owner, repo, run_id: runId, per_page: 100,
+                      });
+                      const matching = artifacts.filter((artifact) => artifact.name === `reference-screenshot-candidates-${runId}`);
+                      const artifactStateValid = kind === 'no-eligible' ? matching.length === 0 :
+                        candidateUpload === 'success'
+                          ? matching.length === 1 && matching[0].expired === false
+                          : candidateUpload === 'skipped' && matching.length === 0;
+                      coverage = !declaredStack && artifactStateValid &&
+                        (candidates ? candidateUpload === 'success' : matching.length === 0);
+                      if (declaredStack) {
+                        // Reuse the existing trusted validator for live declarations,
+                        // pins and ancestry. The attester already checked this exact
+                        // source run's bounded manifest before recording its digest.
+                        const currentStack = await stackPolicy.verifyScreenshotStack(github, { owner, repo, number });
+                        const stackArtifacts = artifacts.filter((artifact) => artifact.name === `screenshot-stack-coverage-${runId}`);
+                        coverage = run.conclusion === 'success' && plan?.[2] === 'full' && expectedShards === 9 &&
+                          currentStack && currentStack.lower === stack.lower && currentStack.head === head &&
+                          currentStack.tipHead === expectedHead &&
+                          currentStack.declaration.digest === stack.declaration.digest &&
+                          currentStack.coverageSourceRunUrl === sourceUrl &&
+                          (!stackDeferred && !stackReviewed || currentStack.approved) &&
+                          stackArtifacts.length === 1 && stackArtifacts[0].expired === false &&
+                          artifactStateValid;
+                      }
+                    }
+                  }
+                } catch (error) {
+                  core.notice(`Could not verify the screenshot evidence source; resetting pending: ${error.message}`);
+                }
+              }
+              if (trusted && ((!declaredStack && latest?.state === 'success' && decision) || coverage)) {
+                core.info('Keeping the current-head review decision or complete eligible evidence.');
+                return;
+              }
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: head, context: 'Screenshot review', state: 'pending',
+                description: 'Ready for review: waiting for complete eligible screenshot evidence',
+                target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+              });
             }
 
             const marker = '<!-- copse-e2e-screenshot-review -->';
@@ -92,7 +261,7 @@ jobs:
               core.info('No screenshot evidence has been published on this PR.');
               return;
             }
-            if (evidence.body.includes(sha12)) {
+            if (!ready && evidence.body.includes(sha12)) {
               core.info(`The screenshot evidence comment already describes ${sha12}.`);
               return;
             }
@@ -106,8 +275,10 @@ jobs:
                 '### Screenshot evidence',
                 '',
                 '<!-- copse-screenshot-review-state -->',
-                `**Waiting for CI on \`${sha12}\`.** A push replaced the head the previous evidence was ` +
-                  'rendered for, so its candidates and any decision on them no longer apply. This head\'s ' +
+                `**Waiting for CI on \`${sha12}\`.** ` +
+                  (ready ? 'The PR became ready; a draft run with skipped renderers does not establish screenshot coverage. ' :
+                    'A push replaced the head the previous evidence was rendered for, so its candidates and any decision on them no longer apply. ') +
+                  'This head\'s ' +
                   'evidence and `Screenshot review` check replace this notice when its CI run finishes.',
                 '<!-- /copse-screenshot-review-state -->',
               ].join('\n'),

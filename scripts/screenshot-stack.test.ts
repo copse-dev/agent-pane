@@ -20,6 +20,7 @@ import {
 const LOWER = 'a'.repeat(40)
 const TIP = 'b'.repeat(40)
 const BASE = 'c'.repeat(40)
+const SOURCE_RUN_URL = 'https://github.com/copse-dev/agent-pane/actions/runs/99'
 const TEXT = `<!-- copse-screenshot-stack: #1@${LOWER} tip=#2 -->`
 const input = { owner: 'copse-dev', repo: 'agent-pane', number: 1 }
 const tipInput = { ...input, number: 2 }
@@ -42,8 +43,22 @@ function status(
   description = 'Declined by @reviewer; no candidate committed',
   state = 'success',
   author = 41898282,
-): { context: string; id: number; description: string; state: string; creator: { id: number } } {
-  return { context, id, description, state, creator: { id: author } }
+): {
+  context: string
+  id: number
+  description: string
+  state: string
+  creator: { id: number }
+  target_url?: string
+} {
+  return {
+    context,
+    id,
+    description,
+    state,
+    creator: { id: author },
+    ...(context === STACK_COVERAGE ? { target_url: SOURCE_RUN_URL } : {}),
+  }
 }
 /** GitHub's combined-status endpoint uses status-simple, which omits creator. */
 function compactStatus(value: unknown): Record<string, unknown> {
@@ -285,7 +300,9 @@ describe('combined stack review gates', () => {
   it('does not append duplicate trusted statuses and returns the verified outcome', async () => {
     const f = fixture()
     const description = `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`
-    f.statuses.set(LOWER, [status('Screenshot review', 4, description)])
+    f.statuses.set(LOWER, [
+      { ...status('Screenshot review', 4, description), target_url: SOURCE_RUN_URL },
+    ])
     assert.deepEqual(await reconcileScreenshotStack(f.github, input), {
       head: LOWER,
       state: 'success',
@@ -313,7 +330,12 @@ describe('combined stack review gates', () => {
     const f = fixture()
     f.statuses.set(TIP, [])
     const description = 'Stack waiting for covered screenshot approval on tip #2'
-    f.statuses.set(LOWER, [status('Screenshot review', 4, description, 'pending')])
+    f.statuses.set(LOWER, [
+      {
+        ...status('Screenshot review', 4, description, 'pending'),
+        target_url: 'https://github.com/copse-dev/agent-pane/pull/1',
+      },
+    ])
     assert.equal((await reconcileScreenshotStack(f.github, input))?.state, 'pending')
     assert.deepEqual(f.writes, [])
   })
@@ -450,8 +472,11 @@ describe('stack coverage attestation', () => {
   const manifest = JSON.stringify({ declaration: TEXT, number: 2, head: TIP, base: BASE })
   it('binds successful source-run coverage to the exact live tip and declaration', async () => {
     const f = fixture()
-    await attestScreenshotStack(f.github, tipInput, TIP, manifest)
-    assert.equal(f.writes[0]?.context, STACK_COVERAGE)
+    await attestScreenshotStack(f.github, tipInput, TIP, manifest, SOURCE_RUN_URL)
+    const coverage = f.writes[0]
+    assert.ok(coverage)
+    assert.equal(coverage.context, STACK_COVERAGE)
+    assert.equal(coverage.target_url, SOURCE_RUN_URL)
     assert.equal(f.writes.at(-1)?.sha, TIP)
     assert.equal(f.writes.at(-1)?.description, `Stack coverage ${DIGEST}`)
   })
@@ -460,7 +485,7 @@ describe('stack coverage attestation', () => {
     f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
       data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
     })
-    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest)
+    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest, SOURCE_RUN_URL)
     assert.equal(result.needsReview, false)
     assert.deepEqual(
       f.writes.map((write) => write.context),
@@ -474,14 +499,68 @@ describe('stack coverage attestation', () => {
       status(STACK_COVERAGE, 2, `Stack coverage ${DIGEST}`),
     ])
     assert.equal((await verifyScreenshotStack(f.github, tipInput))?.approved, false)
-    assert.equal((await attestScreenshotStack(f.github, tipInput, TIP, manifest)).needsReview, true)
+    assert.equal(
+      (await attestScreenshotStack(f.github, tipInput, TIP, manifest, SOURCE_RUN_URL)).needsReview,
+      true,
+    )
   })
   it('requires explicit tip review even when CI found no new candidates', async () => {
     const f = fixture()
     f.statuses.set(TIP, [status('Screenshot review', 1, 'No changed reference screenshots')])
-    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest)
+    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest, SOURCE_RUN_URL)
     assert.equal(result.needsReview, true)
     assert.equal(f.writes.at(-1)?.context, 'Screenshot review')
+    assert.equal(f.writes.at(-1)?.state, 'pending')
+    assert.equal(f.writes.at(-1)?.target_url, SOURCE_RUN_URL)
+  })
+  it('rejects missing or mismatched source CI URLs before writing any attestation', async () => {
+    for (const url of [
+      '',
+      'https://github.com/other/repo/actions/runs/99',
+      'https://github.com/copse-dev/agent-pane/pull/99',
+      'https://github.com/copse-dev/agent-pane/actions/runs/9007199254740992',
+    ]) {
+      const f = fixture()
+      await assert.rejects(attestScreenshotStack(f.github, tipInput, TIP, manifest, url))
+      assert.deepEqual(f.writes, [])
+    }
+  })
+  it('propagates validated tip source provenance to lower deferrals and migrates an older target URL', async () => {
+    const f = fixture()
+    const current = f.statuses.get(TIP) ?? []
+    f.statuses.set(TIP, [
+      { ...status(STACK_COVERAGE, 10, `Stack coverage ${DIGEST}`), target_url: SOURCE_RUN_URL },
+      ...current,
+    ])
+    assert.equal(
+      (await verifyScreenshotStack(f.github, input))?.coverageSourceRunUrl,
+      SOURCE_RUN_URL,
+    )
+    f.statuses.set(LOWER, [
+      {
+        ...status(
+          'Screenshot review',
+          11,
+          `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`,
+        ),
+        target_url: 'https://github.com/copse-dev/agent-pane/pull/1',
+      },
+    ])
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.at(-1)?.target_url, SOURCE_RUN_URL)
+  })
+  it('keeps legacy unknown coverage unapproved until normal validated attestation supplies source provenance', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [
+      { ...status(STACK_COVERAGE, 10, `Stack coverage ${DIGEST}`), target_url: '' },
+      status('Screenshot review', 11),
+      status(STACK_DECISION, 12, `Stack decision ${DIGEST}`),
+    ])
+    const stack = await verifyScreenshotStack(f.github, input)
+    assert.ok(stack)
+    assert.equal(stack.coverageSourceRunUrl, null)
+    assert.equal(stack.approved, false)
+    await reconcileScreenshotStack(f.github, input)
     assert.equal(f.writes.at(-1)?.state, 'pending')
   })
   it('rejects moved heads, edited declarations, wrong PRs, malformed and oversized artifacts', async () => {
@@ -494,12 +573,12 @@ describe('stack coverage attestation', () => {
       JSON.stringify({ declaration: TEXT.replace('#1@', '#3@'), number: 2, head: TIP, base: BASE }),
     ]) {
       const f = fixture()
-      await assert.rejects(attestScreenshotStack(f.github, tipInput, TIP, text))
+      await assert.rejects(attestScreenshotStack(f.github, tipInput, TIP, text, SOURCE_RUN_URL))
       assert.equal(f.writes.length, 0)
     }
     const f = fixture()
     f.pulls.set(2, pull(2, BASE))
-    await assert.rejects(attestScreenshotStack(f.github, tipInput, TIP, manifest))
+    await assert.rejects(attestScreenshotStack(f.github, tipInput, TIP, manifest, SOURCE_RUN_URL))
   })
 })
 
@@ -874,7 +953,10 @@ describe('stack workflow integration', () => {
     f.github.rest.repos.createCommitStatus = async (value): Promise<void> => {
       await write(value)
       f.statuses.set(value.sha, [
-        status(value.context, 20 + f.writes.length, value.description, value.state),
+        {
+          ...status(value.context, 20 + f.writes.length, value.description, value.state),
+          target_url: value.target_url,
+        },
         ...(f.statuses.get(value.sha) ?? []).filter(
           (entry) => z.object({ context: z.string() }).parse(entry).context !== value.context,
         ),
