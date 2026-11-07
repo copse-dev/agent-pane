@@ -841,6 +841,14 @@
       "sha256": "edeebe61332df27a58c2041060db57e0dd8b06551a6bf6ca193e6e582844af6a",
       "bytes": 87379
     },
+    "background-sandbox-cleanup.png": {
+      "sha256": "a2654f227a835ba5967075ab2e7ac5e50338383da4ef1c15a4c091fefa01bc01",
+      "bytes": 292108
+    },
+    "background-start-rejected.png": {
+      "sha256": "3de743c20e8ea70edecd6d4b326796f2000cd5fee55c7bb480f20078c8d17432",
+      "bytes": 299638
+    },
     "background-task-completion-wake.png": {
       "sha256": "4b93c2c968174dda4f88af5035314c441d6bd957180efadac3479e0f4547f38f",
       "bytes": 346627
@@ -2122,8 +2130,8 @@
       "bytes": 54496
     },
     "guarded-yolo-hard-deny.png": {
-      "sha256": "c23f7a1517be19af9ecdb8530878a215786e1bc7edc55634f049d745f52558d3",
-      "bytes": 32131
+      "sha256": "74e15a8af3b2a5975d83c60591f0f65f35923ed8d843ce6514f2264a6119bb74",
+      "bytes": 1872389
     },
     "guarded-yolo-harm-prompt.png": {
       "sha256": "b2ebe62cb5d764c888614fdfc9f54d29d39a9c2e0da2d96a2811f0f78f38c7b6",
@@ -3178,8 +3186,8 @@
       "bytes": 137163
     },
     "pr-panel-new-thread-composer.png": {
-      "sha256": "6c360503763acc9775ebfff9ff4adf530391f36bc23ad5810085b445b3742821",
-      "bytes": 402262
+      "sha256": "998b6a66ebb5fbe59a6e59e8495e4a896b684cad5097ac18ab43731172eabfbb",
+      "bytes": 401892
     },
     "pr-panel-no-thread-relationships.png": {
       "sha256": "42cfa8b805628b2b94fdada233ee90a331da8cf3e19fb136d4e5767584ca4306",
@@ -3274,8 +3282,8 @@
       "bytes": 25254
     },
     "project-port-grant-asks-again.png": {
-      "sha256": "6796a3c16b97ca2f7936021a06de90293143a0e21b2c91492080a20145dcce36",
-      "bytes": 332248
+      "sha256": "d9d51d36917f96728cd70a824cd45a2690b7f4d781cf7ce62337fcfc62298286",
+      "bytes": 327066
     },
     "project-port-grant-before-revoke.png": {
       "sha256": "828e80acdac0f67be4934eb7da8512c8362d388095f1fac6b0a28e1b511e8769",
