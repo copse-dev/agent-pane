@@ -52,7 +52,8 @@ briefing or persistent cache. Existing OKF parsing is shared with the knowledge 
 Only message bodies and declared textual tool-result files are evidence sources. Reasoning,
 provider history, credentials, session bindings, tool arguments, images and nested subagent
 stores are not indexed. Archived threads and notes marked deleted/forgotten/superseded
-are excluded. Unknown memory schema versions are omitted.
+are excluded. Legacy notes and memory schema versions 1 and 2 remain readable;
+unknown memory schema versions are omitted.
 Existing knowledge-index deletion tombstones exclude leftover files, even after orphan
 healing. Missing indexes permit legacy notes; corrupt, inaccessible or oversized indexes
 fail closed for memories. The index is rechecked before publishing memory results.
