@@ -837,6 +837,10 @@
       "sha256": "51f70b488e43b3bb4f79bf1b70cf5fed9cdfc163a8fe9e2f649f04b5d83ecf77",
       "bytes": 78007
     },
+    "background-expected-block-approval.png": {
+      "sha256": "edeebe61332df27a58c2041060db57e0dd8b06551a6bf6ca193e6e582844af6a",
+      "bytes": 87379
+    },
     "background-task-completion-wake.png": {
       "sha256": "4b93c2c968174dda4f88af5035314c441d6bd957180efadac3479e0f4547f38f",
       "bytes": 346627
@@ -3381,6 +3385,18 @@
       "sha256": "f143baab5010031c1abb07b21e106d688646fc5f054d8584d155e63b199a19c0",
       "bytes": 304084
     },
+    "provider-handoff-cancel-before-dispatch-recovered.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
+    },
+    "provider-handoff-current-request-recovered.png": {
+      "sha256": "0824e33e8adc2c272b1db7bbf220d752600410388f840b46aaa2a2779176d619",
+      "bytes": 392809
+    },
+    "provider-handoff-final-state.png": {
+      "sha256": "fd2592eda492e3da7c5bd2c9ad98e06c932c150ca051550153f00848b260e1b1",
+      "bytes": 363577
+    },
     "provider-model-exact-role-settings.png": {
       "sha256": "62400d56624a47e19d6f3b05ff7bd3dcfd94e699d4d1f582d80d0a28c04dd8a0",
       "bytes": 212522
@@ -5677,6 +5693,10 @@
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
       "bytes": 128662
     },
+    "transcript-thread-wide-reconcile.png": {
+      "sha256": "48d58f606513d442d0e5b849584020147dd63706723dbf274a62e8f6a51c09e4",
+      "bytes": 350675
+    },
     "truncated-tool-call-inspector.png": {
       "sha256": "3afafb6a7ed1dfebed1e34ce8f39286bd3db6764eb31f8197b9b0e7ce616fdad",
       "bytes": 375432
@@ -5692,6 +5712,26 @@
     "two-step-stop-armed.png": {
       "sha256": "7552ae35f0240f75bf6d3a6b65fa7b5ce5dad28aaabfcb5cc319abfd934290fb",
       "bytes": 23920
+    },
+    "ui-consistency-pr-header-narrow.png": {
+      "sha256": "be9496b298d52e69c3ecb12ba75ab9dadcd550c1daa9c0106d0874d3dd8b8200",
+      "bytes": 138350
+    },
+    "ui-consistency-pr-prose.png": {
+      "sha256": "76a317c68ad5ae2c5ead45ea7eaa1ce4af74340272adc126185efcf0c08aa598",
+      "bytes": 137356
+    },
+    "ui-consistency-pr-tabs.png": {
+      "sha256": "8d695ae2b3fe66f14e173c548da55139fc4e094dec04a99bef39b60c3a6b7191",
+      "bytes": 8076
+    },
+    "ui-consistency-process-manager-tabs.png": {
+      "sha256": "39645fb7e93b18136bd01d1a06cb43ff599552db3de561afa6be982c6605de2f",
+      "bytes": 5804
+    },
+    "ui-consistency-superseded-model.png": {
+      "sha256": "9c7f6cd39d9db5c54eec0554bd6ec6f1792b318753d3a8f72dffa9c03c987c07",
+      "bytes": 43367
     },
     "ui-kit-confirm-dialog-light.png": {
       "sha256": "22d03114390c6b6e0481ffd02d3420275070fc20a6b2acfdbc94a24462cb210b",
