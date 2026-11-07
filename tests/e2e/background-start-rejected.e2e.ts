@@ -84,6 +84,7 @@ describe('truthful rejected background-start caption', function () {
   this.timeout(90_000)
   before(async () => {
     root = mkdtempSync(join(tmpdir(), 'copse-background-caption-'))
+    writeFileSync(join(root, '.gitignore'), 'starts.txt\n')
     writeFileSync(
       join(root, 'server.cjs'),
       [
@@ -172,8 +173,25 @@ describe('truthful rejected background-start caption', function () {
     assert.equal(rejected.commandPhase?.state, 'not_started')
     assert.equal(rejected.commandPhase.launched, false)
     assert.equal(readFileSync(join(root, 'starts.txt'), 'utf8'), 'start')
+    const humanDirty = thread.messages
+      .filter((message) => message.role === 'user')
+      .map((message) => message.dirty)
+    assert.deepEqual(humanDirty, [false, false])
+    const gitStatus = execFileSync('git', ['status', '--porcelain'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+    assert.equal(gitStatus, '')
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const changeStats = await browser.execute(
+      async ({ project, thread }) => window.api.git.changeStats(project, thread),
+      { project: PROJECT, thread: THREAD },
+    )
+    assert.equal(changeStats, null)
+    await expect($('.follow-up-bubble-changes')).not.toExist()
+    await expect($('.follow-up-suggestions')).not.toBeDisplayed()
+    await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Message…')
     const approvedCard = $(`[data-tool-id="${approved.id}"]`)
     const rejectedCard = $(`[data-tool-id="${rejected.id}"]`)
     await expect(approvedCard).toHaveAttribute('data-status', 'done')
@@ -221,6 +239,11 @@ describe('truthful rejected background-start caption', function () {
           approved,
           rejected,
           starts: readFileSync(join(root, 'starts.txt'), 'utf8'),
+          humanDirty,
+          gitStatus,
+          changeStats,
+          followUpsVisible: await $('.follow-up-suggestions').isDisplayed(),
+          composerPlaceholder: await $('.prompt-input').getAttribute('data-placeholder'),
           labels,
           nativeCardStatus: await rejectedCard.getAttribute('data-status'),
         },
