@@ -69,8 +69,10 @@ it('exports object parameter envelopes for native tools sent to compatible local
   assert.throws(() => {
     registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
   })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
   assert.throws(() => {
-    registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
   })
 })
 
