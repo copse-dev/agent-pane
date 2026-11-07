@@ -1,5 +1,6 @@
 import { runWithWorkerDispatchSlots } from './agents/isolated-worker-scope.ts'
 import { runWithThreadPlan } from './thread-plan-context.ts'
+import { withAutomationBudget } from './automations/automation-budget.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
@@ -659,7 +660,9 @@ export class AgentDispatcher {
         deliver(threadId, chunk)
       },
     }
-    const running = run(terminalDeferringHost)
+    const running = withAutomationBudget(request.projectId, request.threadId, () =>
+      run(terminalDeferringHost),
+    )
     this.active.set(key, running)
     let committed = false
     try {

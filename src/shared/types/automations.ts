@@ -35,6 +35,8 @@ export interface AutomationSchedule {
   prompt: string
   model: string
   enabled: boolean
+  /** Conservative catalogue-priced model allowance for each new run, in USD. */
+  maxRunCostUsd?: number
   /** Maximum unresolved linked checkouts, or no retention cap. Defaults to 1. */
   maxLiveWorktrees?: AutomationLiveWorktreeLimit
   /** Exact tools/actions explicitly allowed to run unattended for this schedule. */
@@ -87,6 +89,8 @@ export interface AutomationScheduleInput {
   prompt: string
   model: string
   enabled: boolean
+  /** null removes the limit for future runs; omission preserves an existing value. */
+  maxRunCostUsd?: number | null
   maxLiveWorktrees?: AutomationLiveWorktreeLimit
   permissions?: AutomationPermission[]
 }

@@ -1,6 +1,7 @@
 import type {
   LLMMessage,
   LLMProvider,
+  LLMStreamOptions,
   LLMTool,
   ProviderStreamChunk,
   ToolResult,
@@ -120,7 +121,10 @@ export class MockLLMProvider implements LLMProvider {
     allMessages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
+    signal?.throwIfAborted()
+    await options?.beforeRequest?.()
     const messages = withoutProviderState(allMessages)
     if (__COPSE_TEST_SCENARIOS__) {
       const scenario = streamScenarioResponse(this.scope, messages, tools, signal)

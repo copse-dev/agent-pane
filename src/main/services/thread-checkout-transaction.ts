@@ -1,4 +1,5 @@
 import { realpath } from 'node:fs/promises'
+import { withAutomationBudget } from './automations/automation-budget.ts'
 import type { Project } from '@shared/types/state.ts'
 import type { Thread } from '@shared/types/thread.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
@@ -734,7 +735,11 @@ const defaultBranchRenameDependencies: ThreadWorktreeBranchRenameDependencies = 
   restore: restoreThreadWorktreeBranch,
 }
 
-export const prepareThreadCheckout = createThreadCheckoutTransaction(defaultDependencies)
+const prepareCheckout = createThreadCheckoutTransaction(defaultDependencies)
+export const prepareThreadCheckout = (
+  input: PrepareThreadCheckoutInput,
+): Promise<PreparedThreadCheckout> =>
+  withAutomationBudget(input.projectId, input.threadId, () => prepareCheckout(input))
 export const previewThreadCheckout = createThreadCheckoutPreview(defaultDependencies)
 export const allocateDeferredThreadWorktree = createDeferredWorktreeAllocation(defaultDependencies)
 export const renameThreadWorktreeBranchAfterTitle = createThreadWorktreeBranchRename(

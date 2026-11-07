@@ -338,6 +338,14 @@ export function createAutomationPluginSettings(
     el('option', { value: 'unlimited' }, 'Unlimited'),
   )
   const permissionsFieldset = el('fieldset', { class: 'automation-permissions' })
+  const modelAllowanceInput = el('input', {
+    type: 'number',
+    class: 'automation-input automation-model-allowance-input',
+    min: '0.01',
+    max: '10000',
+    step: '0.01',
+    placeholder: 'No limit',
+  })
   const permissionFilterInput = el('input', {
     type: 'search',
     class: 'automation-input automation-permission-filter',
@@ -387,6 +395,17 @@ export function createAutomationPluginSettings(
         'span',
         { class: 'automation-hint' },
         'Higher limits let fresh runs start while older changes wait for review.',
+      ),
+    ),
+    el(
+      'label',
+      { class: 'automation-label automation-model-allowance-label' },
+      'Model allowance per run (USD estimate)',
+      modelAllowanceInput,
+      el(
+        'span',
+        { class: 'automation-hint' },
+        'Optional. Native Anthropic API models only. Each request reserves its full-context maximum cost, including retries and helpers. Reservations are not refunded; actual charges are usually lower. Tool spending is excluded.',
       ),
     ),
     permissionsFieldset,
@@ -684,6 +703,8 @@ export function createAutomationPluginSettings(
     setScheduleControls(schedule?.cron ?? '0 9 * * 1-5')
     promptInput.value = schedule?.prompt ?? draft?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true
+    modelAllowanceInput.value =
+      schedule?.maxRunCostUsd === undefined ? '' : String(schedule.maxRunCostUsd)
     const savedLimit = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
     if (!Array.from(worktreeLimitSelect.options).some((option) => option.value === savedLimit)) {
       worktreeLimitSelect.append(
@@ -1061,6 +1082,7 @@ export function createAutomationPluginSettings(
       enabled: enabledInput.checked,
       maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
       permissions: selectedPermissions(),
+      maxRunCostUsd: modelAllowanceInput.value.trim() ? Number(modelAllowanceInput.value) : null,
     }
     void api.automations
       .upsert(projectId, input)
