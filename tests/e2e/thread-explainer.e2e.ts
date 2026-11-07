@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import assert from 'node:assert/strict'
-import { browser, $ } from '@wdio/globals'
+import { browser } from '@wdio/globals'
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
@@ -11,6 +11,7 @@ import { frameInTranscript, stickyPromptCollisions } from './helpers/sticky-prom
 import {
   prepareE2eScreenshot,
   E2E_SCREENSHOT_DIR,
+  savePreparedAppScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 
@@ -203,7 +204,7 @@ describe('thread explainer', () => {
       nth: 1,
     })
     assert.deepEqual(pinned.collisions, [], JSON.stringify(pinned.geometry))
-    await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'thread-explainer-inline.png'))
+    await savePreparedAppScreenshot('thread-explainer-inline.png')
 
     await assertNoErrorToasts('captured preview')
     await browser.reloadSession()

@@ -279,6 +279,25 @@ export function proposingThreadId(store: AppStore, threadId: string): string | n
     : null
 }
 
+/**
+ * Everything {@link attentionThreadId} and {@link proposingThreadId} read from
+ * the active project's threads, as one comparable key: each thread's side-chat
+ * parent and proposer. A prompt's showability changes only when this, or the
+ * active thread, does; renames and turns leave it alone.
+ */
+export const threadRelationsKey = (() => {
+  let lastThreads: readonly Thread[] | null = null
+  let lastKey = ''
+  return (threads: readonly Thread[]): string => {
+    if (threads === lastThreads) return lastKey
+    lastThreads = threads
+    lastKey = threads
+      .map((t) => `${t.id}<${t.sideChat?.parentThreadId ?? ''}<${t.proposedBy?.threadId ?? ''}`)
+      .join('\n')
+    return lastKey
+  }
+})()
+
 /** An archive completed after the user switched to another project. */
 export function archiveCachedSidebarThread(
   projectId: string,
