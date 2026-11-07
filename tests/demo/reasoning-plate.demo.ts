@@ -1,6 +1,6 @@
 import { $, browser } from '@wdio/globals'
 import assert from 'node:assert/strict'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { parkPointer, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 // Expanded reasoning sits on one plain raised plate (docs/ui-taste.md,
 // "Containment is a plate"): a fill, with no sheen, glow, hatch, outline or
@@ -31,6 +31,21 @@ describe('an open thinking block', () => {
     assert.notEqual(plate.color, 'rgba(0, 0, 0, 0)', 'the plate has a fill')
     assert.equal(plate.border, '0px', 'no outline')
     assert.equal(plate.shadow, 'none', 'no inset highlight')
+
+    // The latest prompt sticks to the top of the transcript, so a plate left
+    // near the top edge is partly under it. Centre the plate, then check that
+    // the plate itself is what shows at its top edge before taking the shot.
+    // The pointer leaves too, so the summary is captured at rest, not hovered.
+    await $('.message-reasoning[open]').scrollIntoView({ block: 'center' })
+    await parkPointer()
+    const covered = await browser.execute(() => {
+      const reasoning = document.querySelector('.message-reasoning[open]')
+      if (!reasoning) return 'missing'
+      const box = reasoning.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 2)
+      return hit && reasoning.contains(hit) ? null : (hit?.className ?? 'nothing')
+    })
+    assert.equal(covered, null, 'nothing sits over the top of the plate')
 
     await saveElementScreenshot('.message-reasoning[open]', 'reasoning-raised-plate.png')
   })
