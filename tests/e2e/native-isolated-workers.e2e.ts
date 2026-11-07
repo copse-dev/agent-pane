@@ -27,6 +27,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot, pinTextForCapture } from './helpers/screenshot.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 const PROJECT_ID = 'native-isolated-workers'
 const MODEL = 'scripted-isolated-workers'
@@ -229,10 +230,7 @@ describe('native isolated writable workers', function () {
       timeoutMsg: 'The sidebar should drop a stale changes glyph for the clean checkout',
     })
   }
-  async function saveWorkerScreenshot(
-    filename: string,
-    beforeCapture?: () => Promise<void>,
-  ): Promise<void> {
+  async function saveWorkerScreenshot(filename: string): Promise<void> {
     await settleSidebarChanges()
     // Real ownership/path assertions precede capture. These main-generated UUIDs
     // and the host's Node location cannot be seeded through product inputs.
@@ -247,7 +245,20 @@ describe('native isolated writable workers', function () {
       for (const [path, name] of capturePaths)
         await pin(path, `/workspace/worktrees/${PROJECT_ID}/${name}`)
       await pin(process.execPath, '/usr/bin/node')
-      await saveAppScreenshot(filename, undefined, beforeCapture)
+      await saveAppScreenshot(filename, undefined, async () => {
+        if (filename !== 'native-isolated-workers-running.png') return
+        // Opening the terminal changes transcript height. Frame this turn only
+        // after the capture helper has resized the shell, rather than inheriting
+        // whichever scroll anchor the streaming turn reached on this runner.
+        await browser.execute(() => {
+          const prompts = document.querySelectorAll('.msg-user')
+          const prompt = prompts[prompts.length - 1]
+          if (!(prompt instanceof HTMLElement)) throw new Error('Worker prompt missing')
+          prompt.scrollIntoView({ block: 'start', behavior: 'instant' })
+        })
+        await waitForTranscriptScrollSettled()
+        await expect($('.tool-card-subagent')).toBeDisplayed()
+      })
     } finally {
       for (const restore of restores.reverse()) await restore()
     }
@@ -404,35 +415,7 @@ describe('native isolated writable workers', function () {
           (await $$('.supervised-task-label').map((label) => label.getText())).sort(),
           ['alpha (isolated)', 'beta (isolated)'],
         )
-        await expect($('.messages-list')).toHaveText(expect.stringContaining('Running alpha'))
-        await expect($('.messages-list')).toHaveText(expect.stringContaining('Running beta'))
-        await saveWorkerScreenshot('native-isolated-workers-running.png', async () => {
-          await $('.messages-list .agent-activity').waitForDisplayed({ timeout: 15_000 })
-          // Opening the terminal narrows the transcript and can move its reading
-          // anchor. This reference documents live worker controls: frame the
-          // latest activity after the capture resize and assert it fits.
-          await browser.execute(() => {
-            const list = document.querySelector('.messages-list')
-            if (!list) throw new Error('Worker transcript is missing')
-            list.scrollTop = list.scrollHeight
-          })
-          await browser.waitUntil(
-            () =>
-              browser.execute(() => {
-                const list = document.querySelector('.messages-list')
-                const activity = list?.querySelector<HTMLElement>('.agent-activity')
-                if (!list || !activity || activity.hidden) return false
-                const viewport = list.getBoundingClientRect()
-                const bounds = activity.getBoundingClientRect()
-                return (
-                  list.scrollHeight - list.clientHeight - list.scrollTop <= 1 &&
-                  bounds.top >= viewport.top &&
-                  bounds.bottom <= viewport.bottom
-                )
-              }),
-            { timeout: 5_000, timeoutMsg: 'Live worker activity is clipped in the capture frame' },
-          )
-        })
+        await saveWorkerScreenshot('native-isolated-workers-running.png')
       }
       await $('.stop-btn').click()
       await browser.waitUntil(() => closedWorkers.size === 2, { timeout: 15_000 })

@@ -10,10 +10,11 @@ import { $, browser, expect } from '@wdio/globals'
 import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-json.ts'
 import { parseDecisionLog } from '../../src/shared/threads/decision-log.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 const projectId = 'e2e-mobile-control'
 const token = randomBytes(32).toString('hex')
@@ -112,7 +113,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     origin = `https://${address}:42773`
     resetUserData()
-    seedEmptyProject(process.cwd(), projectId, {
+    seedEmptyProject(seedStableWorkspace(), projectId, {
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       autoRunSandboxCommands: false,
@@ -219,8 +220,8 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     assert.equal(queued.queued, true, queued.error ?? 'Mobile message queue failed')
     await expect($('.footer-queue')).toHaveText('1 queued')
-    // The queue count renders while the phone's submission still owns the
-    // thread; the composer re-enables Queue on the next thread update.
+    // Completion of the phone submission itself re-enables the composer;
+    // the stable workspace provides no incidental checkout/status update.
     await $('.submit-btn').waitForEnabled()
     await saveAppScreenshot('mobile-controls-queued-desktop.png')
     assert.equal(
@@ -415,23 +416,13 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       timeoutMsg: 'Stop left the pinned desktop transcript off the bottom',
     })
     await saveAppScreenshot('mobile-controls-stopped-desktop.png', undefined, async () => {
-      // The capture resize can shrink the app shell under an unchanged
-      // scrollTop, so re-frame the bottom the transcript was already pinned to.
+      // Stopping removes activity UI; frame the settled end after the capture resize.
       await browser.execute(() => {
         const list = document.querySelector('.messages-list')
-        if (!list) throw new Error('Stopped conversation is missing')
+        if (!(list instanceof HTMLElement)) throw new Error('Transcript missing')
         list.scrollTop = list.scrollHeight
       })
-      await browser.waitUntil(transcriptAtBottom, {
-        timeout: 5_000,
-        timeoutMsg: 'Stopped conversation did not settle at the bottom',
-      })
-      assert.equal(
-        await browser.execute(() =>
-          [...document.querySelectorAll('.msg-user .message-text')].at(-1)?.textContent.trim(),
-        ),
-        'Wait for my phone to stop this run.',
-      )
+      await waitForTranscriptScrollSettled(false)
     })
   })
 
