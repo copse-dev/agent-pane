@@ -26947,6 +26947,9 @@ function getToolCallLabel(tc) {
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
   const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : void 0;
+  if (name === "run_background" && tc.commandPhase?.state === "not_started") {
+    return "Did not start background task";
+  }
   if (name === "read_skill") {
     const skillName = stringArg2(tc.args, "name");
     if (skillName) {
