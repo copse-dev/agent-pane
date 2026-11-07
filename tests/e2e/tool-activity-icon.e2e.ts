@@ -9,7 +9,7 @@ import {
   seedStableWorkspace,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
@@ -310,6 +310,20 @@ describe('tool activity icon — nested rollup row', function () {
     await expect(nestedCard).toHaveAttribute('data-status', 'running')
     await approveShellCommandIfPrompted()
 
+    // The row exists inside a closed rollup. Open only that actual ancestor;
+    // expanding the nested tool itself would expose the fixture's arguments.
+    const rollup = nestedCard.parentElement().parentElement()
+    await expect(rollup).toHaveElementClass('tool-card-rollup')
+    if ((await rollup.getAttribute('open')) === null) {
+      await rollup.$(':scope > summary').click()
+    }
+    await expect(rollup).toHaveAttribute('open')
+    await nestedCard.$(':scope > .tool-card-header').scrollIntoView({
+      block: 'center',
+      inline: 'nearest',
+    })
+    await parkPointer()
+
     function measureNestedRow(): {
       status: string | null
       text: string | null
@@ -338,6 +352,14 @@ describe('tool activity icon — nested rollup row', function () {
     }
 
     async function assertRunningRow(): Promise<{ text: string | null; nameWidth: number }> {
+      await expect(rollup).toHaveAttribute('open')
+      await expect(nestedCard).not.toHaveAttribute('open')
+      const header = nestedCard.$(':scope > .tool-card-header')
+      await expect(header).toBeDisplayed()
+      await expect(header).toBeDisplayedInViewport()
+      const size = await header.getSize()
+      expect(size.width).toBeGreaterThan(0)
+      expect(size.height).toBeGreaterThan(0)
       const row = await browser.execute(measureNestedRow)
       if (
         row.nameRight === null ||
@@ -346,6 +368,7 @@ describe('tool activity icon — nested rollup row', function () {
         row.nameWidth === null
       )
         throw new Error('Missing running tool row geometry')
+      expect(row.nameWidth).toBeGreaterThan(0)
       expect(row.status).toBe('running')
       // Keep the live spiral visible while its redundant static glyph is hidden.
       const activity = nestedCard.$('.tool-activity-icon-slot > .reasoning-activity-icon')
