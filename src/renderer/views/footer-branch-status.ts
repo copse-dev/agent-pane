@@ -16,7 +16,12 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
-import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeThreadOf,
+  getActiveThreadOwner,
+  sameThreadBesidesDraft,
+  type ActiveThreadOwner,
+} from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
@@ -756,8 +761,8 @@ export function mountFooterBranchStatus(
     scheduleRefresh()
   }
 
-  // Set while the task that switched threads runs: the writer's own
-  // `threads_changed` follows it, and the refresh the switch started covers it.
+  // Set while the task that switched threads runs: the active-thread selection
+  // fires for the same write, and the refresh the switch started covers it.
   let switchedThisTask = false
 
   function copyBranchName(): void {
@@ -867,12 +872,18 @@ export function mountFooterBranchStatus(
         })
       },
     ),
-    store.on('threads_changed', () => {
-      // Same-thread metadata updates are the noisy path during first-message
-      // checkout and can share the existing working-tree debounce.
-      if (switchedThisTask) renderStoreState()
-      else scheduleStoreRefresh()
-    }),
+    // The active thread's own updates (branch, worktree, PR links, blank or
+    // not). Other threads' renames and turns no longer repaint the footer.
+    store.select(
+      activeThreadOf,
+      () => {
+        // Same-thread metadata updates are the noisy path during first-message
+        // checkout and can share the existing working-tree debounce.
+        if (switchedThisTask) renderStoreState()
+        else scheduleStoreRefresh()
+      },
+      sameThreadBesidesDraft,
+    ),
     store.on('thread_status_changed', scheduleStoreRefresh),
     store.on('message_added', () => {
       scheduleStoreRefresh()
