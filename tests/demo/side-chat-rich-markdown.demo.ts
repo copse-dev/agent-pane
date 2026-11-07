@@ -25,6 +25,17 @@ describe('Side chat replies render like the main conversation', () => {
     await expect(reply.$('.code-block-run')).not.toExist()
     await expect(body.$('.side-chat-msg.is-user br')).toExist()
 
+    // Frame both scrollers at their top. `scrollIntoView` above runs while the
+    // isolated frame is still growing, so where the side chat and the folded
+    // diagram came to rest depended on which landed first (body 7px and diagram
+    // 28px, its maximum, on an idle host; 5px and 0px on a loaded one).
+    await browser.execute(() => {
+      for (const selector of ['.side-chat-body-host', '.side-chat-body-host .mermaid-diagram']) {
+        const scroller = document.querySelector(selector)
+        if (scroller) scroller.scrollTop = 0
+      }
+    })
+
     // The chip click leaves the pointer on the main reply, whose hover actions
     // (Side chat, Copy) would otherwise sit over its text in the capture.
     await parkPointer()
