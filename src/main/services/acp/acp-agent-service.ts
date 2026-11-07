@@ -1,3 +1,4 @@
+import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
@@ -353,14 +354,23 @@ export class AcpTurnFailure extends Error {
     assistantText: string
     usage: { inputTokens: number; outputTokens: number }
   }
+  /**
+   * The turn spawned the agent under Copse's own OS sandbox on this machine
+   * (not remote, not unsandboxed), as decided when the turn started. The error
+   * copy reads it to name a cause only that sandbox creates, such as the
+   * read-only macOS Keychain (#4147).
+   */
+  readonly sandboxed: boolean
 
   constructor(
     cause: unknown,
     partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+    options: { readonly sandboxed?: boolean } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
+    this.sandboxed = options.sandboxed === true
   }
 }
 
@@ -606,13 +616,17 @@ export async function runAcpTurnWithContinuation(
           : [],
       )
       .join('')
-    throw new AcpTurnFailure(err.cause, {
-      assistantText: `${earlier}${err.partial.assistantText}`,
-      usage: {
-        inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
-        outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+    throw new AcpTurnFailure(
+      err.cause,
+      {
+        assistantText: `${earlier}${err.partial.assistantText}`,
+        usage: {
+          inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
+          outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
+        },
       },
-    })
+      { sandboxed: err.sandboxed },
+    )
   }
   return {
     stopReason: second.stopReason,
@@ -679,10 +693,11 @@ async function runAcpAgentTurn(
   // One containment answer for the whole turn: the session mode preset, the
   // read/search and Codex code-mode auto-approvals, and execute gating all read
   // it, so a remote (ACP-over-SSH) agent can never be treated as seatbelted.
+  const localSandbox = willSandboxAcpAgent(sandbox)
   const { sandboxed, contained, remote } = resolveAcpRunContainment({
     cwd,
     sshTarget,
-    localSandbox: willSandboxAcpAgent(sandbox),
+    localSandbox,
     unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
   })
   // Remembered grants are per SSH host: each is its own trust boundary.
@@ -981,7 +996,9 @@ async function runAcpAgentTurn(
     }
     const promptBlocks = buildAcpPromptContent(
       options.userPrompt,
-      fresh ? options.priorMessages : [],
+      fresh
+        ? options.priorMessages
+        : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
         // The tools the agent actually listed (#4144), not the ones offered:
@@ -1002,7 +1019,7 @@ async function runAcpAgentTurn(
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(
+      const outcome = await runAcpSessionPrompt(
         entry.open,
         promptBlocks,
         model,
@@ -1010,6 +1027,16 @@ async function runAcpAgentTurn(
         ACP_CANCEL_GRACE_MS,
         { onStaleModel },
       )
+      // Stop may cancel a model/config switch before any prompt is sent. Keep
+      // the last confirmed prefix on cancellation or a transport failure so a
+      // retry conservatively includes context the agent may never have seen.
+      if (outcome.stopReason !== 'cancelled') {
+        entry.transcriptCheckpoint = checkpointAcpTranscript(
+          options.priorMessages,
+          options.userPrompt,
+        )
+      }
+      return outcome
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
@@ -1058,12 +1085,18 @@ async function runAcpAgentTurn(
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     // An agent on a remote host answering "Authentication required" needs
     // remote-side remedies; replace the dead-end message with ones that work.
-    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err, {
-      assistantText,
-      usage: turn
-        ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
-        : { inputTokens: 0, outputTokens: 0 },
-    })
+    throw new AcpTurnFailure(
+      remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err,
+      {
+        assistantText,
+        usage: turn
+          ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
+          : { inputTokens: 0, outputTokens: 0 },
+      },
+      // The seatbelt the spawn actually applied: `sandboxed` also counts an
+      // unattended container, which has no macOS Keychain to keep read-only.
+      { sandboxed: localSandbox && !remote },
+    )
   } finally {
     releaseAgentWriter()
   }
@@ -1849,8 +1882,8 @@ function acpCopseToolsSteering(sandboxed: boolean, bridgeToolNames: readonly str
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
  * transcript replay and the session notes are only needed when the session is
- * FRESH — a reused session already carries both in its own context, and
- * re-sending them every turn would waste the agent's tokens (`includeNotes:
+ * FRESH — a reused session carries its own turns, while turns from another
+ * provider are caught up from the transcript checkpoint. Re-sending everything every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
  * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines, followed by a
  * GitHub steer naming the bridged tools in `bridgeToolNames`. Without any, the

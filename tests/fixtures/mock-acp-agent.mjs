@@ -24,6 +24,7 @@
  * | prompt contains  | behaviour                                                      |
  * | ---------------- | -------------------------------------------------------------- |
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
+ * | `stop-mid-command` | start an `execute` call, reply while it runs, end on cancel |
  * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
  * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
  * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
@@ -114,6 +115,8 @@ async function listTools(servers) {
 }
 
 let nextSessionId = 0
+/** Turns parked until the client cancels them (`stop-mid-command`). */
+const awaitingCancel = new Set()
 /** The http MCP servers each session was offered, by session id. */
 const offeredServers = new Map()
 const reportedFailures = new Set()
@@ -172,6 +175,29 @@ agent({ name: 'mock-acp-agent' })
       const received = Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))
       await say(`env:${JSON.stringify(received)}`)
       return { stopReason: 'end_turn' }
+    }
+
+    // Checked before the substring branches for the same reason as
+    // `report-env:`. The command never runs: the call stays in progress until
+    // the client's Stop cancels the turn, so the reply below lands in a later
+    // bubble than the call it interrupts.
+    if (text.includes('stop-mid-command')) {
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'mock-tool-long-check',
+          title: 'Run the long check',
+          kind: 'execute',
+          status: 'in_progress',
+          rawInput: { command: 'pnpm run check' },
+        },
+      })
+      await say('The long check is running; it takes a few minutes.')
+      await new Promise((resolve) => {
+        awaitingCancel.add(resolve)
+      })
+      return { stopReason: 'cancelled' }
     }
 
     const sayLine = /say:([^\n]*)/.exec(text)
@@ -257,5 +283,8 @@ agent({ name: 'mock-acp-agent' })
     await say(`echo:${text}`)
     return { stopReason: 'end_turn' }
   })
-  .onNotification('session/cancel', () => {})
+  .onNotification('session/cancel', () => {
+    for (const resolve of awaitingCancel) resolve()
+    awaitingCancel.clear()
+  })
   .connect(ndJsonStream(Writable.toWeb(process.stdout), readableFrom(process.stdin)))

@@ -255,6 +255,14 @@ export interface ToolCardRefresher {
   syncRunStepTrail: (thread: Thread | undefined, run: ToolRun) => void
   /** Drop element registrations; the model's state and user choices are kept. */
   forgetDisclosureElements: () => void
+  /** Drop only the registrations of elements no longer in the document (rows a reconcile removed). */
+  forgetDetachedDisclosureElements: () => void
+  /**
+   * Register again every disclosure under `root` that was bound before and
+   * then forgotten (rows of a thread the view switched away from and back to).
+   * Their toggles are still wired.
+   */
+  adoptDisclosureElements: (root: ParentNode) => void
 }
 
 export interface ToolCardRenderOptions {
@@ -725,6 +733,9 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
     syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store))
+    // A fresh build registers the trail with the disclosure model, which keeps
+    // the reader's choice for it from when it was the run's step.
+    registerReasoningDisclosures(msgEl)
   }
 
   /**
@@ -777,6 +788,19 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     syncRunStepTrail,
     forgetDisclosureElements(): void {
       disclosureElements.clear()
+    },
+    forgetDetachedDisclosureElements(): void {
+      for (const [key, details] of disclosureElements) {
+        if (!details.isConnected) disclosureElements.delete(key)
+      }
+    },
+    adoptDisclosureElements(root: ParentNode): void {
+      root
+        .querySelectorAll<HTMLDetailsElement>('details[data-disclosure-key]')
+        .forEach((details) => {
+          const key = details.dataset['disclosureKey']
+          if (key) disclosureElements.set(key, details)
+        })
     },
   }
 }
