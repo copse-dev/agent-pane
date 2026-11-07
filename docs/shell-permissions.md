@@ -1224,8 +1224,10 @@ Copse GitHub grants cover the current project repository only. Passing an explic
 `repo` keeps the normal per-call prompt. Shell commands, file changes, web/browser origins,
 sensitive-data reveals, ACP agent permission kinds, and model-spend approvals are deliberately not
 eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
-tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
-behavior.
+tool to the owning schedule. That “Remember for this automation” box starts unchecked, so approving
+alone grants nothing beyond the current call; only an exact preparation plan's offer starts checked
+(see [Worktree preparation capability](#worktree-preparation-capability)). Ordinary threads retain
+their existing global MCP “always allow” behavior.
 
 The first turn of a verified schedule-created thread runs in deferral mode. A
 prompt without a schedule grant records a pending request and returns a

@@ -798,13 +798,19 @@ function automationPermissionTarget(
   }
 }
 
+/**
+ * Only a preparation grant starts ticked: it is pinned to one plan fingerprint,
+ * folder and network scope that the automation editor previews. MCP tools and
+ * GitHub writes (approve, enable auto-merge, open a PR) stay opt-in, so one
+ * Approve click cannot silently authorize every future unattended run.
+ */
 function automationRememberOptions(
   automation: AutomationPermissionTarget,
   permission: AutomationPermission,
 ): Pick<ApprovalRequest, 'rememberLabel' | 'rememberDefault' | 'rememberSubject'> {
   return {
     rememberLabel: `Remember for this automation (“${automation.scheduleName}”)`,
-    rememberDefault: true,
+    rememberDefault: permission.kind === 'worktree-preparation',
     rememberSubject: JSON.stringify([
       automation.projectId,
       automation.scheduleId,

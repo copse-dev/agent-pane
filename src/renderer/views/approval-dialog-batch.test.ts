@@ -683,6 +683,77 @@ describe('approval dialog coalescing', () => {
     assert.ok(responses.every((response) => !response.remember))
   })
 
+  it('leaves an opt-in automation grant unticked', () => {
+    emit({
+      id: 'a',
+      type: 'mcp',
+      allowRemember: true,
+      rememberLabel: 'Remember for this automation',
+      rememberDefault: false,
+      rememberSubject: 'schedule/gh_pr_approve',
+    })
+    fireWindow()
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, false)
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '.approval-remember-input').checked, false)
+    approve().click()
+    assert.deepEqual(
+      responses.map((response) => response.remember),
+      [false],
+    )
+  })
+
+  it('does not tick remembering when a preparation plan batches with an opt-in grant', () => {
+    // Both automation offers share one label; only preparation starts ticked.
+    const label = 'Remember for this automation'
+    emit({
+      id: 'prep',
+      allowRemember: true,
+      rememberLabel: label,
+      rememberDefault: true,
+      rememberSubject: 'schedule/plan',
+    })
+    emit({
+      id: 'mcp',
+      type: 'mcp',
+      allowRemember: true,
+      rememberLabel: label,
+      rememberDefault: false,
+      rememberSubject: 'schedule/mcp-tool',
+    })
+    fireWindow()
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '.approval-remember-input').checked, false)
+    approve().click()
+    assert.ok(responses.every((response) => !response.remember))
+  })
+
+  it('unticks a preparation offer when an opt-in grant joins the open prompt', () => {
+    const label = 'Remember for this automation'
+    emit({
+      id: 'prep',
+      allowRemember: true,
+      rememberLabel: label,
+      rememberDefault: true,
+      rememberSubject: 'schedule/plan',
+    })
+    fireWindow()
+    const input = qsRequired<HTMLInputElement>(dialog, '.approval-remember-input')
+    assert.equal(input.checked, true)
+    emit({
+      id: 'mcp',
+      type: 'mcp',
+      allowRemember: true,
+      rememberLabel: label,
+      rememberDefault: false,
+      rememberSubject: 'schedule/mcp-tool',
+    })
+    fireSettle()
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    assert.equal(input.checked, false)
+    approve().click()
+    assert.ok(responses.every((response) => !response.remember))
+  })
+
   it('does not batch remembering for different automation plans with the same label', () => {
     const request = {
       allowRemember: true,

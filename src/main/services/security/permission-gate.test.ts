@@ -35,7 +35,11 @@ import {
   promptExpectedSandboxBlock,
   promptUnsandboxedShell,
 } from './permission-gate.ts'
-import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
+import {
+  decideMcpPermission,
+  describeMcpAnnotations,
+  GITHUB_WRITE_TOOLS,
+} from './permission-policy.ts'
 import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
@@ -953,7 +957,7 @@ describe('ensureToolPermitted', () => {
     let rememberLabel = ''
     setApprovalHandler(async (request) => {
       rememberLabel = request.rememberLabel ?? ''
-      assert.equal(request.rememberDefault, true)
+      assert.equal(request.rememberDefault, false, 'a GitHub action grant stays opt-in')
       assert.ok(request.rememberSubject)
       return { approved: true, remember: true }
     })
@@ -999,6 +1003,35 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('offers every automation GitHub action grant unticked', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule()
+    const offers: [string, boolean | undefined][] = []
+    setApprovalHandler(async (request) => {
+      assert.equal(request.allowRemember, true)
+      offers.push([request.subject ?? '', request.rememberDefault])
+      return { approved: false, remember: false }
+    })
+    try {
+      for (const toolName of GITHUB_WRITE_TOOLS) {
+        assert.equal(
+          await underAutomation(() => ensureToolPermitted({ toolName, args: { number: 1 } })),
+          false,
+        )
+      }
+      // Approve, auto-merge and PR creation included: one click must not save a
+      // grant that lets future unattended runs act without asking.
+      assert.deepEqual(
+        offers,
+        [...GITHUB_WRITE_TOOLS].map((toolName) => [toolName, false]),
+      )
+      assert.deepEqual(getAutomationService().list('project-1')[0]?.permissions, [])
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
   it('adds an exact MCP tool approval to the automation instead of the global grants', async () => {
     setPermissionGateForTests(null)
     const toolName = 'mcp__automation_fixture__publish_report'
@@ -1007,7 +1040,7 @@ describe('ensureToolPermitted', () => {
     let rememberLabel = ''
     setApprovalHandler(async (request) => {
       rememberLabel = request.rememberLabel ?? ''
-      assert.equal(request.rememberDefault, true)
+      assert.equal(request.rememberDefault, false, 'an MCP tool grant stays opt-in')
       assert.ok(request.rememberSubject)
       return { approved: true, remember: true }
     })
