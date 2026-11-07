@@ -494,6 +494,25 @@ Rules for anything that lands in a captured frame:
   a demo trace holds the trace at a checkpoint instead of racing its pacing:
   bundle an entry that injects the trace player's `sleep` with
   `buildDemoFixturePage` (`tests/demo/helpers/demo-fixture-page.ts`).
+  The helpers also re-measure the subject straight after the capture and
+  retake it if it moved while ChromeDriver grabbed the frame: a late scroll on
+  a loaded runner once cropped `guarded-yolo-hard-deny.png` 4px off its card.
+  Copy the app recomputes after the DOM first matches (the composer's
+  "about N tokens" estimate) needs `waitForStableText` before the capture, and
+  a "while running" frame holds the mock run at a `waitFor` checkpoint
+  (`context-wheel-live-running.png`) rather than racing its usage updates.
+  Never stand in a fixed `browser.pause` for any of these.
+- **Direct captures.** Don't call WebDriver's `saveScreenshot` from a spec: it
+  skips the layout, motion and index waits. When the shell resize in
+  `saveAppScreenshot` / `saveElementScreenshot` would undo the state under
+  test (it returns focus to the composer and closes hover popovers), use
+  `saveFramedElementScreenshot` inside `withCaptureFrame`, or
+  `savePreparedAppScreenshot` for a shell the spec already framed.
+- **Agent runs on the checkout.** A spec that sends a message in a project
+  seeded on `process.cwd()` runs the real thread-checkout transaction against
+  the runner's own repository: `context-wheel.e2e.ts` used to switch the
+  checkout to `main` for every later spec on that runner. Seed
+  `seedStableWorkspace()` for any spec that starts a run.
 - **Index builds.** The workspace watcher rebuilds the file index after every
   write, including the PNGs e2e saves into the checkout, and the footer shows
   `Indexing… <elapsed>` for a build that outlives its show delay. The capture
