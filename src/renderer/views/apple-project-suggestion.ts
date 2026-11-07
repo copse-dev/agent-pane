@@ -7,6 +7,7 @@ import { el } from '../dom/helpers.ts'
 import { sparkleIcon } from '../dom/icons.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /**
  * Offer Apple development when an Apple project becomes active.
@@ -284,7 +285,7 @@ export function mountAppleProjectSuggestions(
     renderReminder()
   })
 
-  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     const activeProjectId = store.getState().activeProjectId
     if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
       pendingDialog.controller.abort()

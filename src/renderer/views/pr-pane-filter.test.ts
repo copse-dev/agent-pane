@@ -546,8 +546,7 @@ describe('pr pane filter (issue #2482)', () => {
           row.click()
         } else if (change === 'project') {
           projectChanged = true
-          store.getState().activeProjectId = 'project-2'
-          store.emit('workspace_changed')
+          store.setState({ activeProjectId: 'project-2' })
         } else dispose()
         await settle()
         const before = viewerRoot.textContent

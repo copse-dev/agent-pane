@@ -1,3 +1,4 @@
+import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
@@ -88,6 +89,7 @@ import {
   addTrustedShellCommand,
   offerableTrustedCommand,
   routeShellCommand,
+  type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
@@ -160,6 +162,7 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
 import { scriptReplayScope } from './script-replay-scope.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
@@ -233,6 +236,12 @@ export interface ShellCommandPermissionOptions {
   outwardEffects?: 'defer' | 'deny'
   /** Explicit per-tool policy for an agent-originated run_shell/run_background call. */
   toolPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>
+  /**
+   * The native shell tool that will run the command (default `run_shell`).
+   * Trusted-command routing honours that tool's own per-tool setting, and the
+   * runner routes on the same tool, so the gate must judge the same boundary.
+   */
+  toolName?: ShellRoutingTool
 }
 
 export interface TerminalPermissionOptions {
@@ -337,12 +346,16 @@ async function requestEscalationApproval(
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
+  opts: { offerTrustedCommand?: boolean } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
   const scriptScope = leaseIdentity
     ? await scriptReplayScope(parts.command, leaseIdentity.executionRoot)
     : null
-  const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
+  const trustable =
+    opts.offerTrustedCommand === false
+      ? null
+      : offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
@@ -603,26 +616,36 @@ export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { readGrantApplied?: boolean; requireInteractiveApproval?: boolean } = {},
+  opts: {
+    readGrantApplied?: boolean
+    requireInteractiveApproval?: boolean
+    /**
+     * Authorize exactly this one outside execution: offer no trusted-command
+     * grant, replay lease or standing read grant. For an escape requested on
+     * evidence the command itself can forge, such as a background `retry_of`,
+     * whose "always allow" would otherwise outlive the failure it answered.
+     */
+    oneShot?: boolean
+  } = {},
 ): Promise<boolean> {
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
+  const oneShot = opts.oneShot === true
   if (!forceAsk && autoApproveShell(command, 'external')) return true
   // An agent rerunning the same demo or harness after each fix is blocked the
   // same way every time. A runner-verified block of bounded opaque local
   // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`
   // offers. A forced ask, which includes a block matched only from forgeable
   // command output, always reaches the user and never offers one.
-  const leaseIdentity = forceAsk
-    ? null
-    : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
+  const leaseIdentity =
+    forceAsk || oneShot ? null : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
   if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
     return !signal?.aborted
   }
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
-  if (!forceAsk && opts.readGrantApplied !== true) {
+  if (!forceAsk && !oneShot && opts.readGrantApplied !== true) {
     const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
     if (readOutside !== null) return readOutside
   }
@@ -633,6 +656,7 @@ export async function promptUnsandboxedShell(
     'shell-sandbox-retry',
     signal,
     leaseIdentity ?? undefined,
+    { offerTrustedCommand: !oneShot },
   )
 }
 
@@ -645,13 +669,21 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { source?: 'agent' | 'prior-denial'; executionRoot?: string | null } = {},
+  opts: {
+    source?: 'agent' | 'prior-denial'
+    executionRoot?: string | null
+    requireInteractiveApproval?: boolean
+  } = {},
 ): Promise<boolean> {
   // An agent rerunning the same browser demo or test harness after each fix asks
   // to leave the sandbox with the same command every time. Bounded opaque local
   // execution may carry the same exact-command replay lease a verified-block
   // escalation offers; nothing else is eligible.
-  const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
+  const forceAsk =
+    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
+  const leaseIdentity = forceAsk
+    ? null
+    : expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
   if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
     return !signal?.aborted
   }
@@ -1100,7 +1132,17 @@ async function checkGithubWriteToolPermission(
       ? automationPermissionTarget(permission)
       : null
   if (automation?.allowed) return true
-  const prompt = formatGithubWritePrompt(toolName, args)
+  const needsWorkspaceRepository =
+    toolName === 'gh_pr_create' &&
+    isRecord(args) &&
+    (typeof args['owner'] !== 'string' ||
+      args['owner'].length === 0 ||
+      typeof args['repo'] !== 'string' ||
+      args['repo'].length === 0)
+  const workspaceRepositorySlug = needsWorkspaceRepository
+    ? await getGithubRepoSlug(getAgentExecutionRoot())
+    : null
+  const prompt = formatGithubWritePrompt(toolName, args, workspaceRepositorySlug)
   const { approved, remember } = await requestApproval(
     {
       ...prompt,
@@ -1179,6 +1221,7 @@ async function checkShellPermission(
   originalCommand?: string,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+  toolName: ShellRoutingTool = 'run_shell',
 ): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) {
@@ -1196,6 +1239,7 @@ async function checkShellPermission(
     ...(originalCommand !== undefined ? { originalCommand } : {}),
     ...(signal !== undefined ? { signal } : {}),
     ...(explicitPolicy !== undefined ? { toolPolicy: explicitPolicy } : {}),
+    toolName,
   })
 }
 
@@ -1424,6 +1468,8 @@ export async function ensureShellCommandPermitted(
   if (opts.signal?.aborted) return false
   refuseCheckoutDetachingCommand(command, opts)
   const forceAsk = opts.toolPolicy === 'ask'
+  // Route on the tool that will run the command, exactly as its runner does.
+  const routingTool = opts.toolName ?? 'run_shell'
   const runThread = getActiveRunThread()
   // Plain reads of the chat store ask for the narrow conversation permission
   // before any outside-project grant or auto-run route can cover them.
@@ -1514,7 +1560,7 @@ export async function ensureShellCommandPermitted(
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
   if (!guardedYolo && !forceAsk) {
-    const routing = routeShellCommand(command, currentAgentRoots())
+    const routing = routeShellCommand(command, currentAgentRoots(), routingTool)
     if (routing.outcome === 'allow') {
       recordDecision({
         kind: 'shell',
@@ -1590,7 +1636,7 @@ export async function ensureShellCommandPermitted(
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
     (guardedYolo &&
       sandboxEnabled &&
-      routeShellCommand(command, currentAgentRoots()).outcome === 'allow')
+      routeShellCommand(command, currentAgentRoots(), routingTool).outcome === 'allow')
   const auditGuardedYolo = (
     userResponse: 'approved' | 'declined' | 'not-required',
     promptedBy?: string[],
@@ -1894,8 +1940,6 @@ async function checkBrowserNavigatePermission(
   return approved
 }
 
-const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
-
 /**
  * Gate the `run_background` tool. A start action's command is first put through
  * the *same* decision as run_shell: on macOS the seatbelt contains it (contained
@@ -1918,7 +1962,10 @@ async function checkBackgroundProcessPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const command = backgroundCommandFromArgs(args)
-  if (command && !(await checkShellPermission(args, originalCommand, signal, explicitPolicy))) {
+  if (
+    command &&
+    !(await checkShellPermission(args, originalCommand, signal, explicitPolicy, 'run_background'))
+  ) {
     return false
   }
   if (!command && explicitPolicy === 'ask') {
@@ -1939,8 +1986,7 @@ async function checkBackgroundProcessPermission(
   const root = getAgentProjectRoot()
   if (!root) throw new Error('No workspace open.')
 
-  const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
-  if (allowed.includes(root)) return true
+  if (projectAllowsPortBinding(root)) return true
 
   const { approved, remember } = await requestApproval(
     {
@@ -1956,9 +2002,7 @@ async function checkBackgroundProcessPermission(
     signal,
   )
   if (approved && remember) {
-    await updateSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [], (current) =>
-      current.includes(root) ? current : [...current, root],
-    )
+    await rememberProjectPortBinding(root)
   }
   return approved
 }

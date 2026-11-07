@@ -1,3 +1,4 @@
+import type { AcpTranscriptCheckpoint } from './acp-transcript-checkpoint.ts'
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
   agentManagedSessionOptions,
@@ -65,6 +66,7 @@ export interface PooledAcpSession {
   /** When this agent process was spawned — how a fault gets read (see below). */
   openedAt: number
   lastUsedAt: number
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   dispose: () => Promise<void>
 }
 
@@ -135,6 +137,7 @@ function runThreadOperation<T>(threadId: string, operation: () => Promise<T>): P
  * or replaced), kept so the next acquire can reattach to it.
  */
 interface CarryOverCandidate extends AcpSessionCarryOver {
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   lineage: string
 }
 const carryOverCandidates = new Map<string, CarryOverCandidate>()
@@ -205,6 +208,7 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
     sessionId: entry.open.session.sessionId,
     cwd: entry.cwd,
     hasHistory: entry.open.hasHistory,
+    ...(entry.transcriptCheckpoint ? { transcriptCheckpoint: entry.transcriptCheckpoint } : {}),
   })
 }
 
@@ -424,6 +428,7 @@ async function acquireAcpSessionUnlocked(
   // in wire order. `null` — always, when the flag is off — leaves the transport
   // untouched.
   const trace = await createAcpWireTrace({
+    ...(opts.projectId ? { projectId: opts.projectId } : {}),
     threadId: opts.threadId,
     agent: { command: opts.config.command, args: opts.config.args },
     ...(bridge ? { bridgeToolNames: bridge.toolNames } : {}),
@@ -471,6 +476,9 @@ async function acquireAcpSessionUnlocked(
     lineage,
     openedAt: Date.now(),
     lastUsedAt: Date.now(),
+    ...(open.resumed && carryOver?.transcriptCheckpoint
+      ? { transcriptCheckpoint: carryOver.transcriptCheckpoint }
+      : {}),
     dispose: () => {
       if (disposal) return disposal
       open.agentInitiated?.end()

@@ -505,6 +505,7 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     ['webAllowedOrigins', ['https://saved.example:443']],
   ])
   const revoked: string[] = []
+  let portBindingAllowed = true
   let guardedYoloPhase: GuardedYoloState['phase'] = 'active'
   const base = createFakeApi()
   const api = {
@@ -531,10 +532,15 @@ test('Context shows this thread’s saved read and send grants and revokes each 
           expiresAt: null,
         }
       },
+      revokeProjectPortBinding: async (pid: string, tid: string): Promise<void> => {
+        assert.equal(pid, 'p')
+        assert.equal(tid, threadId)
+        portBindingAllowed = false
+      },
       getContextPermissions: async (): Promise<ContextPermissionSnapshot> => ({
         outsideReadPaths: ['/outside/notes'],
         browserOrigins: ['https://session.example:443'],
-        portBindingAllowed: true,
+        portBindingAllowed,
       }),
     },
     decisions: {
@@ -585,6 +591,12 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? '',
     /https:\/\/denied.example:443webdenied/,
   )
+  const revokePort = viewer.querySelector<HTMLButtonElement>('[data-action="revoke-port-binding"]')
+  assert.ok(revokePort)
+  assert.match(revokePort.title, /Stop running tasks separately/)
+  revokePort.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-action="revoke-port-binding"]'), null)
   viewer.querySelector<HTMLButtonElement>('[data-action="disable-guarded-yolo"]')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-action="disable-guarded-yolo"]'), null)
@@ -831,5 +843,51 @@ test('Context paints when the panel opens on it from the store alone, with no ev
 
   store.setState({ filesPaneOpen: true, rightPanelMode: 'context' })
   assert.ok(viewer.querySelector(link))
+  dispose()
+})
+
+test('a project switch through setState alone refetches Context for the new project', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    workspaceRoot: '/work/widgets',
+    projects: [
+      { id: 'p', path: '/work/widgets', name: 'Widgets' },
+      { id: 'q', path: '/work/gadgets', name: 'Gadgets' },
+    ],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const backlinkProjects: string[] = []
+  const approvalProjects: string[] = []
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      backlinks: (projectId: string): Promise<ThreadBacklink[]> => {
+        backlinkProjects.push(projectId)
+        return Promise.resolve([
+          { threadId: `from-${projectId}`, title: `Mentioned in ${projectId}` },
+        ])
+      },
+      pendingApprovals: (projectId: string): Promise<DeferredApproval[]> => {
+        approvalProjects.push(projectId)
+        return Promise.resolve([])
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(viewer.querySelector('[data-thread-id="from-p"]'))
+
+  store.setState({ activeProjectId: 'q', workspaceRoot: '/work/gadgets' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(backlinkProjects, ['p', 'q'])
+  assert.deepEqual(approvalProjects, ['p', 'q'])
+  assert.ok(viewer.querySelector('[data-thread-id="from-q"]'), 'the new project’s backlinks render')
+  assert.equal(viewer.querySelector('[data-thread-id="from-p"]'), null)
   dispose()
 })

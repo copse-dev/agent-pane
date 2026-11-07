@@ -273,11 +273,12 @@ dialog.process-manager-overlay {
   font-size: var(--font-size-sm);
   white-space: nowrap;
 }
+/* Weight stays put on select — see the matching comment on
+   .pr-detail-section[aria-pressed='true'] in layout.css. */
 .process-manager-tab[aria-pressed='true'] {
   color: var(--text-primary);
   border-bottom-color: var(--accent);
   background: var(--bg-selected);
-  font-weight: 600;
 }
 .process-manager-tab:focus-visible {
   outline: 2px solid var(--border-focus);

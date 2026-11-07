@@ -272,7 +272,15 @@ describe('ci.yml workflow invariants', () => {
 
   it('keeps queue candidate jobs read-only and excludes privileged model and write jobs', () => {
     assert.match(workflow, /^permissions:\n {2}contents: read$/m)
-    for (const name of ['precheck', 'check', 'bench', 'build', 'e2e', 'review-cell']) {
+    for (const name of [
+      'precheck',
+      'check',
+      'bench',
+      'build',
+      'e2e',
+      'review-cell',
+      'macos-sandbox',
+    ]) {
       const job = jobBlock(name)
       assert.doesNotMatch(job, /secrets\.|contents: write|statuses: write|pull-requests: write/)
       const credentials = job.match(/persist-credentials: ([^\n]+)/)?.[1]
@@ -305,6 +313,119 @@ describe('ci.yml workflow invariants', () => {
     }
     assert.match(jobBlock('autoformat'), /if: (?:>-\n {6})?github\.event_name == 'pull_request' &&/)
     assert.match(jobBlock('screenshot-artifacts'), /github\.event_name == 'pull_request'/)
+  })
+
+  it('keeps opt-in macOS kernel probes on a standard hosted runner with exact-head, read-only execution', () => {
+    const native = jobBlock('macos-sandbox')
+    assert.match(native, /^ {4}needs: precheck$/m)
+    assert.match(native, /^ {4}runs-on: macos-26$/m)
+    assert.match(native, /^ {4}timeout-minutes: 20$/m)
+    assert.match(native, /^ {4}permissions:\n {6}contents: read$/m)
+    assert.match(native, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
+    assert.match(native, /persist-credentials: false/)
+    assert.match(native, /test "\$\(git rev-parse HEAD\)" = "\$EXPECTED_HEAD"/)
+    assert.match(
+      native,
+      /pnpm test -- src\/main\/project-sandbox\/node-toolchain-sandbox\.test\.ts toolchain-read-guard script-replay-native script-replay-scope capability-lease permission-gate/,
+    )
+    assert.match(native, /unit-tests\.tap/)
+    assert.match(native, /if-no-files-found: error/)
+    assert.doesNotMatch(
+      native,
+      /secrets\.|self-hosted|continue-on-error|contents: write|pull_request_target/,
+    )
+  })
+
+  it('requests and requires the macOS contract on the same explicit PR events only', () => {
+    const native = jobBlock('macos-sandbox')
+    const expression = native.match(/^ {4}if: >-\n((?: {6}.+\n)+)/m)?.[1]?.trim()
+    const required = jobBlock('ci-passed').match(/MACOS_SANDBOX_REQUIRED: \$\{\{ (.+) \}\}/)?.[1]
+    assert.ok(expression && required)
+    assert.equal(expression.replace(/\s+/g, ' '), required)
+    const cases = [
+      {
+        event: 'pull_request',
+        action: 'labeled',
+        sameRepo: true,
+        optedIn: true,
+        label: 'ci-macos-sandbox',
+        expected: true,
+      },
+      {
+        event: 'pull_request',
+        action: 'synchronize',
+        sameRepo: true,
+        optedIn: true,
+        label: '',
+        expected: true,
+      },
+      {
+        event: 'pull_request',
+        action: 'opened',
+        sameRepo: true,
+        optedIn: false,
+        label: '',
+        expected: false,
+      },
+      {
+        event: 'pull_request',
+        action: 'labeled',
+        sameRepo: true,
+        optedIn: true,
+        label: 'review-has-feedback',
+        expected: false,
+      },
+      {
+        event: 'pull_request',
+        action: 'synchronize',
+        sameRepo: false,
+        optedIn: true,
+        label: '',
+        expected: false,
+      },
+      {
+        event: 'merge_group',
+        action: 'checks_requested',
+        sameRepo: true,
+        optedIn: true,
+        label: '',
+        expected: false,
+      },
+      { event: 'push', action: '', sameRepo: true, optedIn: true, label: '', expected: false },
+      {
+        event: 'workflow_dispatch',
+        action: '',
+        sameRepo: true,
+        optedIn: true,
+        label: '',
+        expected: false,
+      },
+    ]
+    const source = expression.replaceAll('github.event.pull_request.labels.*.name', 'labels')
+    for (const item of cases) {
+      const result: unknown = runInNewContext(
+        source,
+        {
+          github: {
+            event_name: item.event,
+            repository: 'copse-dev/agent-pane',
+            event: {
+              action: item.action,
+              label: { name: item.label },
+              pull_request: {
+                head: {
+                  repo: { full_name: item.sameRepo ? 'copse-dev/agent-pane' : 'fork/agent-pane' },
+                },
+              },
+            },
+          },
+          labels: item.optedIn ? ['ci-macos-sandbox'] : [],
+          contains: (values: string[], value: string) => values.includes(value),
+        },
+        { timeout: 100 },
+      )
+      assert.equal(result, item.expected, JSON.stringify(item))
+    }
   })
 
   it('retains runner diagnostics when an e2e attempt loses its browser session', () => {
@@ -646,7 +767,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[\s*precheck,\s*screenshot-baselines,\s*check,\s*macos-sandbox,\s*review-cell,\s*bench,\s*build,\s*e2e,\s*screenshot-artifacts,?\s*\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
@@ -1134,7 +1255,7 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /89504e470d0a1a0a/)
     assert.match(workflow, /"\$size" -gt 16777216/)
     assert.match(workflow, /"\$count" -gt 4096/)
-    assert.match(workflow, /"\$total" -gt 536870912/)
+    assert.match(workflow, /"\$total" -gt 1073741824/)
     assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
   })
 

@@ -18,7 +18,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
@@ -1808,9 +1808,12 @@ export function mountBrowserPane(
       const cancel = (): void => {
         settle(false)
       }
-      const stop = store.on('workspace_changed', () => {
-        if (store.getState().activeProjectId) settle(true)
-      })
+      const stop = store.select(
+        (s) => s.activeProjectId !== null,
+        (active) => {
+          if (active) settle(true)
+        },
+      )
       pendingProjectWaits.add(cancel)
     })
   }
@@ -1920,8 +1923,11 @@ export function mountBrowserPane(
   })
 
   const unsubs = [
-    store.on('threads_changed', onThreadMaybeChanged),
-    store.on('workspace_changed', onThreadMaybeChanged),
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      onThreadMaybeChanged,
+      sameItems,
+    ),
     selectRightPanelMode(store, 'browser', onBrowserModeChange),
     store.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store.on('browser_url_requested', openRequestedBrowserUrl),

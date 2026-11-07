@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { StagedDiffEntry } from '@shared/types/state.ts'
 import { syncFilesPaneDom } from './panels.ts'
@@ -123,15 +123,17 @@ export function attachDiffState(
     // not seen staged before — re-read the authoritative one.
     hydrate()
   }
-  const unsubWorkspace = store.on('workspace_changed', syncDiffOwner)
-  const unsubThreads = store.on('threads_changed', syncDiffOwner)
+  const unsubOwner = store.select(
+    (s) => [s.activeProjectId, s.activeThreadId] as const,
+    syncDiffOwner,
+    sameItems,
+  )
 
   hydrate()
 
   return () => {
     unsubShowDiff()
     unsubQueued()
-    unsubWorkspace()
-    unsubThreads()
+    unsubOwner()
   }
 }

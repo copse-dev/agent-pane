@@ -672,6 +672,37 @@ in forgeable command output, Guarded YOLO and deterministic shell auto-approval 
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
 
+### Background tasks
+
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. Trusted-command routing follows `run_background`'s own per-tool setting in the
+permission gate and the runner alike: Always ask on `run_shell` alone changes neither where a
+background task runs nor how the gate records and, under Guarded YOLO, screens it. An eligible
+outside-read command instead receives the same per-spawn read overlay as `run_shell`; its named
+paths become readable without granting writes or network. Separately approved loopback binding
+composes with that read overlay. Foreground and background installs share package-firewall
+preparation and JavaScript lifecycle-script suppression under the existing safe-install setting; a
+missing proxy launcher refuses the install before spawning.
+
+Background starts accept `expects_sandbox_block` for ambiguous commands. The escape always asks
+afresh and authorizes that one attempt; declining runs contained and suppresses a second retry
+request for that attempt. Fully local commands ignore the hint, while hard-external commands
+retain their ordinary gate.
+
+A failed contained background task with per-attempt runner violations or a bounded denial
+signature can be retried explicitly: `action: start`, the exact same command and `retry_of` set
+to the failed task id. The agent must inspect partial effects first. This always requires fresh
+one-shot outside consent, including in Guarded YOLO; forgeable output cannot approve an escape.
+Neither prompt offers an “Always allow” trusted-command grant, a replay lease or a standing read
+grant, so a command that prints a denial signature cannot turn one approval into later unprompted
+escapes.
+The owner, command, execution root and failed status are rechecked after approval. Only one
+retry may claim an original attempt, and the retry gets a new task id and its own completion
+lifecycle. Running, successful, cancelled, timed-out, already outside, remote and adopted tasks
+are ineligible. Background failures never restart automatically and add no continuation wake.
+The foreground denial cache and replay leases do not apply to background retries.
+
 ## Host-side read tools
 
 `gh` through `run_shell` is an ambiguous “may reach” command: it starts in the network-less project
@@ -793,29 +824,41 @@ On macOS, Settings → Permissions → Commit signing has an **Allow signed comm
 toggle, on by default. After a trusted sandboxed socket probe receives an OS
 permission denial, Copse uses the system SSH signer, one configured public key and
 the exact agent socket, without asking. The grant for that project and identity is
-cached until app restart; a changed config, key, signer binary or socket re-runs the
+cached until app restart; a changed config, key, helper binary or socket re-runs the
 probe and re-grants, still without asking. Setting the git_commit tool to Always ask
 in Tool Permissions forces a fresh approval for every signing helper use instead, and
 never remembers it. Turning the setting off blocks further brokered ssh-agent
 signing. Config supplied by the repository never grants authority on its own.
 
-The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
-fixed arguments selecting that public key and the `git` signing namespace. Git and
-its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
-directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
+The socket is available only to separately sandboxed system helpers: `/usr/bin/ssh-add -L`
+checks for the configured public identity before staging, and `/usr/bin/ssh-keygen`
+signs with fixed arguments selecting that key and the `git` namespace. Both executables
+are pinned by their contents. The identity list is bounded and never sent to the agent.
+Git and its hooks receive a single-use commit-signing endpoint; they cannot talk to
+ssh-agent directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
 pinned through command-line config, so changing Git config during approval cannot
 replace the approved executable. The broker accepts bounded commit objects, not
 commands or arbitrary SSH authentication requests.
 
-With the ssh-agent setting off, a configured SSH key file has a separate one-commit
-consent path on macOS. Before staging or running hooks, the approval names the commit,
+With the ssh-agent setting off, or when the configured identity is unavailable from
+ssh-agent, a configured SSH key file has a separate one-commit consent path on macOS.
+This also covers a missing agent socket or public-key file. Agent communication errors
+and malformed or truncated identity lists fail closed without requesting private-key
+access. If the identity list lacks an inline public key, Copse instead reports how to
+load the key; there is no configured file for private-key consent.
+Before staging or running hooks, the approval names the commit,
 resolved private-key path, system signer and project. Copse reads no private-key
 contents until approval. This approval is never remembered: only the isolated system
 signer gains read access to the exact file. Git, hooks and the agent receive no key
 access. File identity is checked across approval and before and after each signer
 invocation. No private-key copy is written. A missing `.pub` file does not prevent signing. Passphrase-protected
 keys require the existing ssh-agent path; Copse does not collect their passphrases.
+When a configured public identity is available, the approved private key must match it.
 Rejecting or failing never triggers an unsigned or unsandboxed retry.
+
+Signer failures retain bounded diagnostics, including a missing key or unavailable
+agent socket, instead of hiding the cause behind a generic commit error. Signature
+output is never included in failure messages.
 
 This is the commit step of a PR workflow. The Create PR dialog pushes already committed
 changes; it does not commit, read signing keys or grant future signing access. PR
@@ -1225,13 +1268,24 @@ main process ([design and validation record](plans/sandboxed-artifact-image-down
 
 ## Implementation map
 
-Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
-`TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
-heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
-when every destination file is inside the workspace. This redirect does not widen the sandbox's
-writable roots or change the approval policy. When `COPSE_DIR` is reached through a symlink,
-Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS seatbelt otherwise
-rejects traversal through the home-directory link before its target allow can apply.
+Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
+patch commands even when every destination file is inside the workspace. This redirect does not
+widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
+through a symlink, Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS
+seatbelt otherwise rejects traversal through the home-directory link before its target allow can
+apply.
+
+ASRT bakes its own `TMPDIR` into every wrapped command, after the spawn env, from the wrapping
+process's `CLAUDE_CODE_TMPDIR` (else `/tmp/claude`). `withSandboxWrapTmpDir` (`tmp-env.ts`) sets
+that variable in Copse's `process.env` only while a wrap is in flight and restores the user's own
+value when it settles; concurrent wraps for one directory share it, and a wrap for another waits.
+It is never left set: an unsandboxed Claude Code that inherited it would keep its `claude-<uid>`
+files in the scratch directory every contained command can write. `envForRendererChildProcess`
+and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
+it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
+ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
@@ -1272,6 +1326,39 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+Shim roots and install subtrees are checked through their canonical destinations. An install
+subtree must stay strictly inside the canonical manager root; redirecting it to home, a parent,
+the manager root itself or a credential store grants nothing through that alias. A `node` file or
+npm implementation-directory alias into a sensitive path is omitted too: leaving only its lexical
+name in the read list would still let ASRT grant the canonical target. The shell looks `node` up
+through the `PATH` entry's own spelling, so a grant reached through a symlink in home (fnm's
+per-shell `~/.local/state/fnm_multishells/<id>` link to its install, a relocated `~/.asdf`, a
+dotfile-managed `~/.tool-versions`) also lists that spelling, once the canonical target and every
+directory link crossed on the way pass these checks. On macOS each crossed link is listed as
+well, because Seatbelt checks the link itself during lookup; on Linux bubblewrap creates the
+intermediate directories, and listing the link would mount its whole target. A spelling is dropped
+when a link it crosses lives where the sandbox can read or write (a checkout, scratch, an ACP
+agent's home directories), since a contained command could retarget it before ASRT mounts it. The
+`node` file's own alias is never listed. So fnm, nvm and a safely relocated version manager keep
+their bounded read grants and run contained.
+A Node target must be a regular executable file. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores and their canonical aliases are excluded too. Grants use the
+checked canonical destinations (plus those spellings) and omit toolchain exceptions already
+covered by the workspace.
+Known-store targets, Node install placement and crossed-link holders are resolved afresh for each
+policy construction. A resolution may be reused within that construction, but is never carried
+from an earlier command: a newly created/relinked store or a newly writable link must be recognised
+by the next policy build without a cache-expiry window.
+Replacing a canonical path or its ancestors before ASRT constructs the profile still races; these
+checks do not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
@@ -1356,3 +1443,5 @@ needed, deletes it, and reports absence only after a successful host inventory.
 Deletion asks on every invocation, including with a stored Device Hub allow,
 and cannot be remembered through the approval dialog. Stored blocks, read-only
 runs and toolGate hooks still win. Other Device Hub actions retain their policy.
+
+Saved local port-binding consent can be revoked under Context → Permissions → Project → Local port binding. Revocation applies to future task starts for that project; stop any already-running background task separately in Process manager. Other projects keep their own consent.
