@@ -394,6 +394,36 @@ function automationMenuEntries(
 const GROUP_MENU_ORDER: readonly ThreadGroupMode[] = ['status', 'project', 'none']
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+  // A sidebar repaint replaces its buttons; the user's pending menu request
+  // survives until another interaction cancels it or its project disappears.
+  let pendingProjectMenu: { projectId: string } | null = null
+
+  function currentProjectMenuButton(projectId: string): HTMLButtonElement | null {
+    for (const entry of root.querySelectorAll<HTMLElement>('.project-entry')) {
+      if (entry.dataset['projectId'] === projectId) {
+        return entry.querySelector<HTMLButtonElement>('.project-menu-btn')
+      }
+    }
+    return null
+  }
+
+  function cancelPendingProjectMenu(): void {
+    const pending = pendingProjectMenu
+    if (!pending) return
+    pendingProjectMenu = null
+    const button = currentProjectMenuButton(pending.projectId)
+    if (button) button.disabled = false
+  }
+
+  const cancelProjectMenuOnEscape = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') cancelPendingProjectMenu()
+  }
+  document.addEventListener('pointerdown', cancelPendingProjectMenu, true)
+  document.addEventListener('click', cancelPendingProjectMenu, true)
+  document.addEventListener('contextmenu', cancelPendingProjectMenu, true)
+  document.addEventListener('keydown', cancelProjectMenuOnEscape, true)
+  window.addEventListener('blur', cancelPendingProjectMenu)
+
   // The sidebar's thread list is narrowed from two rows at its top, as in the prototype:
   // the search field with the Activity bell and "+" beside it, then the project
   // filter and the sort and grouping choice.
@@ -2411,6 +2441,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         moreHorizontalIcon('ui-icon ui-icon-sm'),
       )
       menuButton.addEventListener('click', () => {
+        cancelPendingProjectMenu()
+        const request = { projectId: project.id }
+        pendingProjectMenu = request
         menuButton.disabled = true
         const state = store.getState()
         void Promise.all([
@@ -2425,8 +2458,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             .catch(() => false),
         ])
           .then(([result, appDetected]) => {
-            if (!menuButton.isConnected) return
-            const rect = menuButton.getBoundingClientRect()
+            if (pendingProjectMenu !== request || !root.isConnected) return
+            const currentProject = store.getState().projects.find((item) => item.id === project.id)
+            const anchor = currentProjectMenuButton(project.id)
+            if (!currentProject || !anchor) return
+            const rect = anchor.getBoundingClientRect()
             const entries: ContextMenuEntry[] = []
             if (appDetected) {
               entries.push({
@@ -2459,7 +2495,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
                 {
                   label: 'New automation…',
-                  disabled: project.missing === true,
+                  disabled: currentProject.missing === true,
                   onSelect: (): void => {
                     openAutomationDialog(store, api, { projectId: project.id, createNew: true })
                   },
@@ -2469,10 +2505,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             showContextMenu(rect.left, rect.bottom, [...entries, ...projectMenuEntries])
           })
           .catch((error: unknown) => {
-            showErrorToast('Could not load project menu', error)
+            if (pendingProjectMenu === request) showErrorToast('Could not load project menu', error)
           })
           .finally(() => {
-            menuButton.disabled = false
+            if (pendingProjectMenu === request) cancelPendingProjectMenu()
           })
       })
       const projectLine = el('div', { class: 'project-line' }, projectRow, menuButton)
@@ -2912,6 +2948,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   render()
   refreshOrphans()
   return () => {
+    cancelPendingProjectMenu()
+    document.removeEventListener('pointerdown', cancelPendingProjectMenu, true)
+    document.removeEventListener('click', cancelPendingProjectMenu, true)
+    document.removeEventListener('contextmenu', cancelPendingProjectMenu, true)
+    document.removeEventListener('keydown', cancelProjectMenuOnEscape, true)
+    window.removeEventListener('blur', cancelPendingProjectMenu)
     archivedThreads.hide()
     contentFilter.cancel()
     for (const timer of prBackfillRetryTimers) clearTimeout(timer)

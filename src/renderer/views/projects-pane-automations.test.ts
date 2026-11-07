@@ -1016,6 +1016,229 @@ describe('a scheduled run main starts in a background project', () => {
 })
 
 describe('project row automation menu', () => {
+  function pendingPlugins(): {
+    promise: Promise<{ plugins: PluginSummary[] }>
+    resolve: (value: { plugins: PluginSummary[] }) => void
+    reject: (reason: Error) => void
+  } {
+    let resolve: (value: { plugins: PluginSummary[] }) => void = () => {
+      throw new Error('Missing plugin response resolver')
+    }
+    let reject: (reason: Error) => void = () => {
+      throw new Error('Missing plugin response rejection')
+    }
+    const promise = new Promise<{ plugins: PluginSummary[] }>((onResolve, onReject) => {
+      resolve = onResolve
+      reject = onReject
+    })
+    return { promise, resolve, reject }
+  }
+
+  function pendingMenuFixture(): {
+    store: ReturnType<typeof createStore>
+    host: HTMLDivElement
+    dispose: () => void
+    first: ReturnType<typeof pendingPlugins>
+    second: ReturnType<typeof pendingPlugins>
+    requestedProjects: string[]
+  } {
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+    })
+    const first = pendingPlugins()
+    const second = pendingPlugins()
+    const lookups = [first, second]
+    const api = createFakeApi()
+    api.plugins.list = (): Promise<{ plugins: PluginSummary[] }> =>
+      lookups.shift()?.promise ?? Promise.resolve({ plugins: [automationsPlugin] })
+    const requestedProjects: string[] = []
+    api.automations.list = (projectId): Promise<AutomationSchedule[]> => {
+      requestedProjects.push(projectId)
+      return Promise.resolve([])
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dispose = mountProjectsPane(host, store, api)
+    return { store, host, dispose, first, second, requestedProjects }
+  }
+
+  it('keeps a requested project menu through a sidebar update before its lookup finishes', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('run', 'Docs freshness', 'schedule-docs')],
+      activeThreadId: 'run',
+    })
+    const api = createFakeApi()
+    const plugins = pendingPlugins()
+    api.plugins.list = (): Promise<{ plugins: PluginSummary[] }> => plugins.promise
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dispose = mountProjectsPane(host, store, api)
+    try {
+      const button = host.querySelector<HTMLButtonElement>('.project-menu-btn')
+      assert.ok(button)
+      button.click()
+      store.emit('threads_changed')
+      assert.equal(button.isConnected, false, 'the real sidebar render replaced the anchor')
+      plugins.resolve({ plugins: [automationsPlugin] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const action = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((item) => item.textContent === 'Automations')
+      assert.ok(action, 'the requested menu must survive an unrelated sidebar update')
+      action.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const dialog = document.querySelector<HTMLDialogElement>('#automation-dialog')
+      assert.ok(dialog?.open)
+      assert.match(dialog.querySelector('.automation-scope')?.textContent ?? '', /Project: Alpha/)
+    } finally {
+      dispose()
+    }
+  })
+
+  it('keeps the newer project menu when older lookups finish later', async () => {
+    const fixture = pendingMenuFixture()
+    try {
+      fixture.host
+        .querySelector<HTMLButtonElement>('.project-entry[data-project-id="a"] .project-menu-btn')
+        ?.click()
+      fixture.host
+        .querySelector<HTMLButtonElement>('.project-entry[data-project-id="b"] .project-menu-btn')
+        ?.click()
+      fixture.second.resolve({ plugins: [automationsPlugin] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const currentMenu = document.querySelector('.context-menu')
+      assert.ok(currentMenu)
+      fixture.first.resolve({ plugins: [automationsPlugin] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(document.querySelector('.context-menu'), currentMenu)
+      const action = Array.from(currentMenu.querySelectorAll<HTMLButtonElement>('button')).find(
+        (item) => item.textContent === 'Automations',
+      )
+      assert.ok(action)
+      action.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual(fixture.requestedProjects, ['b'])
+      assert.match(document.querySelector('.automation-scope')?.textContent ?? '', /Project: Beta/)
+      assert.equal(fixture.store.getState().activeProjectId, 'a')
+    } finally {
+      fixture.dispose()
+    }
+  })
+
+  it('preserves a newer keyboard-activated sort menu over an older project lookup', async () => {
+    const fixture = pendingMenuFixture()
+    try {
+      fixture.host.querySelector<HTMLButtonElement>('.project-menu-btn')?.click()
+      const sort = fixture.host.querySelector<HTMLButtonElement>('.projects-sort-btn')
+      assert.ok(sort)
+      sort.focus()
+      // Keyboard activation emits click without an earlier pointerdown.
+      sort.click()
+      const newerMenu = document.querySelector('.context-menu')
+      assert.ok(newerMenu)
+      fixture.first.resolve({ plugins: [automationsPlugin] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(document.querySelector('.context-menu'), newerMenu)
+    } finally {
+      fixture.dispose()
+    }
+  })
+
+  for (const cancellation of ['escape', 'pointer', 'contextmenu', 'blur', 'remove', 'dispose']) {
+    it(`does not reopen a pending project menu after ${cancellation}`, async () => {
+      const fixture = pendingMenuFixture()
+      let disposed = false
+      try {
+        fixture.host.querySelector<HTMLButtonElement>('.project-menu-btn')?.click()
+        switch (cancellation) {
+          case 'escape':
+            document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+            break
+          case 'pointer':
+            document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+            break
+          case 'contextmenu':
+            document.body.dispatchEvent(new Event('contextmenu', { bubbles: true }))
+            break
+          case 'blur':
+            window.dispatchEvent(new Event('blur'))
+            break
+          case 'remove':
+            fixture.store.setState({ projects: [] })
+            fixture.store.emit('projects_changed')
+            break
+          case 'dispose':
+            fixture.dispose()
+            disposed = true
+            break
+        }
+        fixture.first.resolve({ plugins: [automationsPlugin] })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        assert.equal(document.querySelector('.context-menu'), null)
+        if (cancellation !== 'remove' && cancellation !== 'dispose') {
+          assert.equal(
+            fixture.host.querySelector<HTMLButtonElement>('.project-menu-btn')?.disabled,
+            false,
+          )
+        }
+      } finally {
+        if (!disposed) fixture.dispose()
+      }
+    })
+  }
+
+  it('allows a retry after Escape without waiting for the cancelled lookup', async () => {
+    const fixture = pendingMenuFixture()
+    try {
+      const button = fixture.host.querySelector<HTMLButtonElement>('.project-menu-btn')
+      assert.ok(button)
+      button.click()
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+      assert.equal(button.disabled, false)
+      button.click()
+      fixture.second.resolve({ plugins: [automationsPlugin] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const menu = document.querySelector('.context-menu')
+      assert.ok(menu)
+      fixture.first.reject(new Error('The obsolete project-menu lookup failed.'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(document.querySelector('.context-menu'), menu)
+      assert.match(menu.textContent, /Automations/)
+      assert.equal(document.querySelector('.toast-error'), null)
+    } finally {
+      fixture.dispose()
+    }
+  })
+
+  it('reports a current lookup failure and lets the user try again', async () => {
+    const fixture = pendingMenuFixture()
+    try {
+      const button = fixture.host.querySelector<HTMLButtonElement>('.project-menu-btn')
+      assert.ok(button)
+      button.click()
+      fixture.first.reject(new Error('The current project-menu lookup failed.'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const toast = document.querySelector<HTMLElement>('.toast-error')
+      assert.ok(toast)
+      assert.match(toast.textContent, /current project-menu lookup failed/)
+      assert.equal(button.disabled, false)
+      assert.equal(document.querySelector('.context-menu'), null)
+      toast.click()
+    } finally {
+      fixture.dispose()
+    }
+  })
+
   for (const label of ['Automations', 'New automation…']) {
     it(`opens ${label} for the selected row without changing the active project`, async () => {
       const store = createStore({
