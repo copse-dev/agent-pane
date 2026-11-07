@@ -36,10 +36,11 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
-import type {
-  DialectAdapter,
-  DialectDiscoverOpts,
-  DialectInterpretation,
+import {
+  resolveCommandHookCwd,
+  type DialectAdapter,
+  type DialectDiscoverOpts,
+  type DialectInterpretation,
 } from './dialect-adapter.ts'
 import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
 import { testHookMatcher } from './matcher-regex.ts'
@@ -613,7 +614,7 @@ export async function cursorToolGateHooks(
         wireEvent: h.event,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -643,7 +644,7 @@ export async function cursorBeforeSubmitPromptHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -710,7 +711,7 @@ export async function cursorAfterFileEditHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -744,7 +745,7 @@ export async function cursorStopHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -786,7 +787,7 @@ export async function cursorSubagentStartHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -816,7 +817,7 @@ export async function cursorSubagentStopHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -873,7 +874,7 @@ export async function cursorAfterToolUseHooks(
         wireEvent: h.event,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
@@ -907,7 +908,7 @@ export async function cursorSessionStartHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        cwd: resolveCommandHookCwd(h.scope, h.cwd, opts.executionRoot),
         ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }

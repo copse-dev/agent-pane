@@ -4493,6 +4493,10 @@
       "sha256": "17a741d0c90fb1d73ad5519fea168ab0a0857efbbddd6acc907b8778b28b3af2",
       "bytes": 108943
     },
+    "settings-sources-hook-cwd.png": {
+      "sha256": "3ad5adb529911e0b891119a346142930edd93c011e7345ff058c7c89ed0dcb5b",
+      "bytes": 81758
+    },
     "settings-sources-hook-test-page-2.png": {
       "sha256": "c522825b737e875d264082fe9da88c0893e0244e1a2ee065c5e1de5ac0bf8a81",
       "bytes": 295556

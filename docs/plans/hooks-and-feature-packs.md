@@ -1011,6 +1011,13 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   are supported, but `isProjectSandboxEnabled()` can still be false (including on
   Windows or after initialization failure). Shell commands then prompt; command
   hooks follow their trusted-code fallback. A default is not a containment guarantee.
+- **Hook process cwd is separate from config discovery.** Project hooks run from
+  the pinned thread execution root; user hooks retain their declaring directory.
+  Sources Test has no agent turn and uses the asking window's project root for
+  discovery, synthetic payload and project process cwd. Without that project it
+  refuses a project-hook test instead of using an ambient root. Testing a user
+  hook without a project remains supported. These paths share the runtime mapping
+  and never weaken workspace trust or per-turn sandbox ownership.
 - **Hook stdout is the response channel.** Debug text can corrupt the wire response;
   stderr is captured separately in hook-run blobs. Parse failures follow the dialect's
   configured failure policy (blocking hooks default closed), and the spine records
