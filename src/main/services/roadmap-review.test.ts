@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
@@ -29,6 +31,7 @@ import {
 import { getRoadmapLastReviewAt, setRoadmapReviewRootForTest } from './roadmap-review-state.ts'
 import type { GhIssueSummary } from '../../shared/types/git.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
 import { deleteSetting, setSetting } from './storage/settings.ts'
 import { saveClassifierProfile, setBackgroundClassifier } from './classifiers/classifier-service.ts'
 
@@ -84,7 +87,7 @@ describe('roadmap review service', () => {
       status: 'archived',
     })
     assert.equal(getRoadmapLastReviewAt(), null)
-    const prepared = await prepareRoadmapReview()
+    const prepared = await prepareRoadmapReview(null)
     assert.equal(prepared.items.length, 1)
     assert.equal(prepared.items[0]?.title, 'Active item')
     assert.ok(prepared.runId)
@@ -118,7 +121,7 @@ describe('roadmap review service', () => {
       body: 'Still open',
       status: 'ready',
     })
-    const prepared = await prepareRoadmapReview()
+    const prepared = await prepareRoadmapReview(null)
     assert.deepEqual(
       prepared.items.map((i) => i.title),
       ['Active item', 'Done item'],
@@ -126,11 +129,45 @@ describe('roadmap review service', () => {
   })
 
   it('does not advance the checkpoint for a stale or fabricated run id', async () => {
-    const prepared = await prepareRoadmapReview()
+    const prepared = await prepareRoadmapReview(null)
     assert.equal(completeRoadmapReview('00000000-0000-4000-8000-000000000000'), false)
     assert.equal(getRoadmapLastReviewAt(), null)
     assert.equal(completeRoadmapReview(prepared.runId), true)
     assert.ok(getRoadmapLastReviewAt())
+  })
+
+  it("reads each window's commits from its own project, never the window global", async () => {
+    // #3958: the review IPC names the asking window's project. Two windows
+    // prepare at once while the window-global workspace points elsewhere.
+    const makeRepo = (name: string): string => {
+      const root = mkdtempSync(join(tmpdir(), `roadmap-review-${name}-`))
+      const git = (...args: string[]): void => {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+        assert.equal(result.status, 0, result.stderr)
+      }
+      git('init', '-q')
+      git('config', 'user.name', 'Test')
+      git('config', 'user.email', 'test@example.com')
+      git('config', 'commit.gpgsign', 'false')
+      git('commit', '-q', '--allow-empty', '-m', `${name} shipped`)
+      return root
+    }
+    const alpha = makeRepo('alpha')
+    const beta = makeRepo('beta')
+    setGitAvailableForTest(true)
+    try {
+      const [a, b] = await Promise.all([prepareRoadmapReview(alpha), prepareRoadmapReview(beta)])
+      assert.match(a.commits, /alpha shipped/)
+      assert.doesNotMatch(a.commits, /beta/)
+      assert.match(b.commits, /beta shipped/)
+      assert.doesNotMatch(b.commits, /alpha/)
+      // No window project: nothing is read from the window-global workspace.
+      assert.equal((await prepareRoadmapReview(null)).commits, 'No workspace open.')
+    } finally {
+      setGitAvailableForTest(null)
+      rmSync(alpha, { recursive: true, force: true })
+      rmSync(beta, { recursive: true, force: true })
+    }
   })
 
   it('marks done items resolved without calling a model', async () => {
@@ -141,6 +178,7 @@ describe('roadmap review service', () => {
       status: 'done',
     })
     const result = await reviewRoadmapItem(
+      null,
       note.id,
       '(no commits in this window)',
       'bulk',
@@ -187,7 +225,13 @@ describe('roadmap review service', () => {
       body: 'Add a shortcut to toggle the terminal',
       status: 'ready',
     })
-    const result = await reviewRoadmapItem(note.id, 'abc123 Add terminal shortcut', 'bulk', 'run-c')
+    const result = await reviewRoadmapItem(
+      null,
+      note.id,
+      'abc123 Add terminal shortcut',
+      'bulk',
+      'run-c',
+    )
     assert.equal(result.verdict, 'likely')
     assert.equal(result.detail, '')
     assert.match(sent[0] ?? '', /Add a shortcut to toggle the terminal/)
@@ -204,30 +248,34 @@ describe('roadmap review service', () => {
     let searchCalls = 0
     const origGetIssue = mockGitHubBackend.getIssue.bind(mockGitHubBackend)
     const origSearch = mockGitHubBackend.searchWorkspaceIssues.bind(mockGitHubBackend)
-    mockGitHubBackend.getIssue = async (ref: PrRef): Promise<GhIssueSummary | null> => {
+    mockGitHubBackend.getIssue = async (
+      root: string | null,
+      ref: PrRef,
+    ): Promise<GhIssueSummary | null> => {
       getIssueCalls++
-      return origGetIssue(ref)
+      return origGetIssue(root, ref)
     }
     mockGitHubBackend.searchWorkspaceIssues = async (
+      root: string | null,
       query: string,
       limit: number,
     ): Promise<GhIssueSummary[]> => {
       searchCalls++
-      return origSearch(query, limit)
+      return origSearch(root, query, limit)
     }
     try {
       clearBulkRunIssueCacheForTest()
-      const prepared = await prepareRoadmapReview()
+      const prepared = await prepareRoadmapReview(null)
       const slug = 'copse-mock/demo'
-      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
-      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      await gatherIssueEvidenceWithBulkCache(null, '#41', slug, prepared.runId)
+      await gatherIssueEvidenceWithBulkCache(null, '#41', slug, prepared.runId)
       assert.equal(getIssueCalls, 1)
       assert.equal(searchCalls, 1)
 
       getIssueCalls = 0
       searchCalls = 0
-      const otherRun = await prepareRoadmapReview()
-      await gatherIssueEvidenceWithBulkCache('#41', slug, otherRun.runId)
+      const otherRun = await prepareRoadmapReview(null)
+      await gatherIssueEvidenceWithBulkCache(null, '#41', slug, otherRun.runId)
       assert.equal(getIssueCalls, 1)
       assert.equal(searchCalls, 1)
 
@@ -235,7 +283,7 @@ describe('roadmap review service', () => {
       // so a later gather under that id cannot reuse stranded evidence.
       getIssueCalls = 0
       searchCalls = 0
-      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      await gatherIssueEvidenceWithBulkCache(null, '#41', slug, prepared.runId)
       assert.equal(getIssueCalls, 1)
       assert.equal(searchCalls, 1)
       assert.equal(completeRoadmapReview(prepared.runId), false)
@@ -485,5 +533,34 @@ describe('classifyRoadmapReview', () => {
       ]),
       'likely',
     )
+  })
+})
+
+describe('roadmap IPC handlers', () => {
+  // The roadmap's notes come from the knowledge store, whose project outside a
+  // turn is the active one. A handler that read git or GitHub from the asking
+  // window instead would, in a second window on another project, import that
+  // project's issues into this roadmap and review these notes against its log.
+  it('read git and GitHub from the knowledge store project, not the asking window', async () => {
+    const source = await readFile(new URL('../ipc/roadmap-handlers.ts', import.meta.url), 'utf8')
+    const start = source.indexOf('const roadmapProjectRoot = ')
+    const end = source.indexOf("ipcMain.handle('roadmap:complete-review'")
+    assert.ok(start !== -1 && end > start, 'roadmap handler block not found')
+    const block = source.slice(start, end)
+    assert.match(
+      block,
+      /roadmapProjectRoot = \(\): string \| null => currentProjectStoreScope\(\)\.root/,
+    )
+    for (const channel of [
+      'roadmap:issue-url',
+      'roadmap:open-issues',
+      'roadmap:check-fit',
+      'roadmap:prepare-review',
+      'roadmap:review-item',
+      'roadmap:review-item-deep',
+    ]) {
+      assert.ok(block.includes(`'${channel}'`), `${channel} is in the roadmap block`)
+    }
+    assert.doesNotMatch(block, /senderProjectRoot/)
   })
 })

@@ -129,7 +129,9 @@ What landed:
   `~/.copse/workspace/<projectId>/deferred-approvals.jsonl`. Append-only because the queue
   is evidence as much as state: "asked at 03:00, approved at 09:00" is what a reviewer
   wants, and rewriting the pending line in place would erase it. Resolving twice returns
-  null rather than minting a second verdict.
+  null rather than minting a second verdict. `<projectId>` is the deferring turn's own
+  project, never the window's active project; a run thread with no turn (no production path
+  has one) defers into the explicit no-project bucket.
 - **One interception point.** `requestApproval` is the single seam every gate already
   funnels through, so the mode is applied there — shell, MCP, web, browser, PII, ACP and
   the rest are covered without any of them growing a second code path, and without a gate

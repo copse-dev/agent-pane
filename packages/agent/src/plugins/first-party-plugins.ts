@@ -39,9 +39,9 @@
 //    appending the prompt block (`agent-system-prompt.ts`), and hides the
 //    renderer Memories pane (which reads the plugin's enablement via `plugins:list`).
 //  - `ciInvestigatorPlugin` — the first-party plugin for the experimental CI
-//    investigator subagent. Declares the `investigate_ci` tool plus its
-//    deep-log `gh_run_list` / `gh_run_view` helpers; the plugin toggle atomically
-//    drops all three from the model tool list (`registry-bootstrap.ts` reads the
+//    investigator subagent. Declares only `investigate_ci`; basic workflow reads
+//    remain core tools. The plugin toggle removes the investigator from the
+//    model tool list (`registry-bootstrap.ts` reads the
 //    plugin registry, ANDing `gh` availability into the register direction) and
 //    re-points the "Investigate CI failure" follow-up.
 //  - `forcedPlanningPlugin` — the first-party plugin for the experimental
@@ -82,6 +82,9 @@
 //  - `artifactCheckpointPlugin` — experimental delayed artifact-preservation
 //    steering. Contributes one `stepBoundary` hook and a scoped delay setting;
 //    default DISABLED.
+//  - `computerUsePlugin` — experimental macOS computer use: the `desktop_*`
+//    tools drive approved apps through the native desktop-control helper.
+//    Default DISABLED.
 //  - `siteBuildingPlugin` — stable, default-on website creative-engineering
 //    steering. Contributes one conditional turn-start hook shared by the local
 //    loop and ACP; no customer- or demo-specific art direction is embedded.
@@ -106,6 +109,7 @@ import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 import { reviewerInputPlugin } from './reviewer-input-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
+import { computerUsePlugin } from './computer-use-plugin.ts'
 import { claudeMdPlugin } from './claude-md-plugin.ts'
 import { agentsMdPlugin } from './agents-md-plugin.ts'
 import { cursorRulesPlugin } from './cursor-rules-plugin.ts'
@@ -129,6 +133,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   cursorRulesPlugin,
   todosPlugin,
   appleDevelopmentPlugin,
+  computerUsePlugin,
   postTurnReviewPlugin,
   reviewPlugin,
   longHorizonTasksPlugin,

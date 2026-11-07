@@ -1,7 +1,14 @@
 import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
+import {
+  isProjectSandboxEnabled,
+  sandboxViolationCountForCommand,
+  spawnBackgroundProcess,
+} from '../../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
+import { detectSandboxFailure } from '../security/sandbox-failure.ts'
+import { sandboxDenialRetryClassification } from '../security/sandbox-denial-signatures.ts'
 import { currentAgentRoots, getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -15,12 +22,16 @@ import {
   requireThreadExecutionOwner,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
-import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
-import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
+import {
+  shellReadGrantTargets,
+  shellRunsOutsideSandbox,
+} from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { captureBackgroundEditAdoption } from '../diff-queue.ts'
+import { packageFirewallLauncher } from '../security/package-firewall-launcher.ts'
+import { prepareShellCommand } from './prepare-shell-command.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -58,8 +69,13 @@ interface BackgroundProcess {
   exitObserved: boolean
   completionTimer: ReturnType<typeof setTimeout> | null
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  onCancelled?: (info: BackgroundProcessInfo) => void
   /** True when the process runs without the local project sandbox. */
   unsandboxed: boolean
+  violationId: string | null
+  violationCount: number
+  retryAllowed: boolean
+  retryUsed: boolean
   owner: ThreadExecutionOwner
 }
 
@@ -185,6 +201,10 @@ function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
 
 export interface StartBackgroundProcessOptions {
   command: string
+  /** Host-owned, set only after an explicit escape approval. */
+  unsandboxed?: boolean
+  /** A declined up-front escape must not immediately ask again on failure. */
+  suppressSandboxRetry?: boolean
   cwd?: string
   /** Escalate the sandbox to allow binding a loopback port, and detect the URL. */
   allowPortBinding?: boolean
@@ -196,6 +216,8 @@ export interface StartBackgroundProcessOptions {
   timeoutMs?: number
   /** Called once after a natural exit or deadline, never after explicit cancellation. */
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  /** Called once when a still-running task is stopped (by the agent, the user or thread cleanup). */
+  onCancelled?: (info: BackgroundProcessInfo) => void
 }
 
 export interface BackgroundProcessCompletion {
@@ -213,6 +235,7 @@ export interface AdoptBackgroundProcessOptions {
   output: string
   timeoutMs: number
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  onCancelled?: (info: BackgroundProcessInfo) => void
 }
 
 /** Transfer an already authorized child without respawning it or widening its sandbox. */
@@ -227,6 +250,10 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
     portBinding: false,
     unsandboxed: opts.unsandboxed,
+    violationId: null,
+    violationCount: 0,
+    retryAllowed: false,
+    retryUsed: false,
     url: null,
     urlRemote: false,
     exited: false,
@@ -237,6 +264,7 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     exitObserved: false,
     completionTimer: null,
     ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+    ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
   }
   entry.output.append(opts.output)
   processes.set(entry.id, entry)
@@ -267,6 +295,19 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
   })
   if (opts.proc.exitCode !== null || opts.proc.signalCode !== null) finish(opts.proc.exitCode)
   return toInfo(entry)
+}
+
+/** Mark a task stopped on purpose; tells its starter once, unless it had already exited. */
+function cancel(entry: BackgroundProcess): void {
+  const wasRunning = !entry.exited && !entry.cancelled
+  entry.cancelled = true
+  if (entry.completionTimer) clearTimeout(entry.completionTimer)
+  if (!wasRunning || !entry.onCancelled) return
+  try {
+    entry.onCancelled(toInfo(entry))
+  } catch (error) {
+    console.warn('[background-process] cancellation callback failed:', error)
+  }
 }
 
 function notifyCompletion(entry: BackgroundProcess): void {
@@ -302,10 +343,21 @@ export async function startBackgroundProcess(
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
   const owner = opts.owner ?? requireThreadExecutionOwner()
-  const unsandboxed =
+  // The tool gate already obtained shell consent for this raw command. Use the
+  // same routing as run_shell: an approved outside command does not require
+  // Guarded YOLO as well. A read-access answer remains narrower than an escape.
+  const roots = currentAgentRoots()
+  let unsandboxed =
+    opts.unsandboxed === true ||
     !isProjectSandboxEnabled() ||
-    (currentRunUsesGuardedYolo(owner.threadId) &&
-      shellRunsOutsideSandbox(command, currentAgentRoots()))
+    shellRunsOutsideSandbox(command, roots, 'run_background')
+  const readGrantTargets =
+    unsandboxed && opts.unsandboxed !== true
+      ? shellReadGrantTargets(command, roots, cwd, 'run_background')
+      : null
+  if (readGrantTargets) unsandboxed = false
+  const prepared = prepareShellCommand(command, cwd, packageFirewallLauncher)
+  if ('refused' in prepared) throw new Error(prepared.refused)
 
   const adoptEdits = await captureBackgroundEditAdoption(cwd, owner).catch((error: unknown) => {
     console.warn('[background-process] edit ownership snapshot failed:', error)
@@ -322,15 +374,19 @@ export async function startBackgroundProcess(
     return settleEdits
   }
   const entry = await createThreadResource(owner, async () => {
-    const proc = await spawnBackgroundProcess(command, {
+    const id = nextBackgroundOperationId()
+    const violationId = !unsandboxed && !spawnRunsOnSshTarget(cwd) ? id : null
+    const proc = await spawnBackgroundProcess(prepared.command, {
       cwd,
-      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
+      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess(prepared.env)),
       allowPortBinding: portBinding,
       unsandboxed,
+      ...(violationId ? { violationId } : {}),
+      ...(readGrantTargets ? { readGrantTargets } : {}),
     })
 
     const entry: BackgroundProcess = {
-      id: nextBackgroundOperationId(),
+      id,
       command,
       cwd,
       proc,
@@ -338,6 +394,10 @@ export async function startBackgroundProcess(
       output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES, { evidence: true }),
       portBinding,
       unsandboxed,
+      violationId,
+      violationCount: 0,
+      retryAllowed: opts.suppressSandboxRetry !== true,
+      retryUsed: false,
       url: null,
       urlRemote: false,
       exited: false,
@@ -348,8 +408,10 @@ export async function startBackgroundProcess(
       exitObserved: false,
       completionTimer: null,
       ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+      ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
       owner,
     }
+    if (prepared.banner) entry.output.append(prepared.banner)
     processes.set(entry.id, entry)
 
     if (opts.timeoutMs !== undefined) {
@@ -386,6 +448,12 @@ export async function startBackgroundProcess(
       if (entry.url !== null) done()
     })
     const finish = (code: number | null): void => {
+      if (entry.violationId) {
+        entry.violationCount = Math.max(
+          entry.violationCount,
+          sandboxViolationCountForCommand(entry.violationId),
+        )
+      }
       // Cancelled/timed-out work has no complete result to attribute. Release
       // first so even an ownership audit already in flight fails its epoch guard.
       if (entry.cancelled || entry.timedOut || code === null) releaseWriter()
@@ -411,6 +479,59 @@ export async function startBackgroundProcess(
 function observe(entry: BackgroundProcess): BackgroundProcess {
   if (entry.exited) entry.exitObserved = true
   return entry
+}
+
+/** Evidence only: a failed task never restarts itself or authorizes an escape. */
+export function backgroundSandboxRetryReasons(
+  id: string,
+  command: string,
+  cwd: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): string[] | null {
+  const entry = ownedProcess(id, owner)
+  if (
+    !entry ||
+    entry.command !== command.trim() ||
+    entry.cwd !== cwd ||
+    !entry.exited ||
+    entry.exitCode === null ||
+    entry.exitCode === 0 ||
+    entry.cancelled ||
+    entry.timedOut ||
+    entry.unsandboxed ||
+    !entry.violationId ||
+    !entry.retryAllowed ||
+    entry.retryUsed ||
+    !isProjectSandboxEnabled() ||
+    spawnRunsOnSshTarget(cwd)
+  )
+    return null
+  entry.violationCount = Math.max(
+    entry.violationCount,
+    sandboxViolationCountForCommand(entry.violationId),
+  )
+  const detection = detectSandboxFailure({
+    exitCode: entry.exitCode,
+    violationCount: entry.violationCount,
+    spawnFailed: false,
+  })
+  if (detection.likely) return detection.reasons
+  const signature = sandboxDenialRetryClassification(entry.output.toString(), entry.command)
+  return signature ? [signature.advice] : null
+}
+
+/** Claim after consent, synchronously: concurrent approvals cannot replay one failed task twice. */
+export function claimBackgroundSandboxRetry(
+  id: string,
+  command: string,
+  cwd: string,
+  owner: ThreadExecutionOwner,
+): boolean {
+  if (!backgroundSandboxRetryReasons(id, command, cwd, owner)) return false
+  const entry = ownedProcess(id, owner)
+  if (!entry) return false
+  entry.retryUsed = true
+  return true
 }
 
 /** The owner's tasks. Reading an exited task here counts as observing its exit. */
@@ -476,6 +597,19 @@ export function getBackgroundProcessLogs(
   return entry ? observe(entry).output.toString() : null
 }
 
+/**
+ * Recent output for the user to read, or null when unknown. Unlike
+ * {@link getBackgroundProcessLogs} this does not count as the agent observing
+ * the exit, so opening a card's logs never cancels the completion wake.
+ */
+export function peekBackgroundProcessLogs(
+  id: string,
+  owner: ThreadExecutionOwner,
+): { logs: string; running: boolean } | null {
+  const entry = ownedProcess(id, owner)
+  return entry ? { logs: entry.output.toString(), running: !entry.exited } : null
+}
+
 /** Kill a process and forget it. Returns false when the id is unknown. */
 export function stopBackgroundProcess(
   id: string,
@@ -483,8 +617,7 @@ export function stopBackgroundProcess(
 ): boolean {
   const entry = ownedProcess(id, owner)
   if (!entry) return false
-  entry.cancelled = true
-  if (entry.completionTimer) clearTimeout(entry.completionTimer)
+  cancel(entry)
   terminateProcessTree(entry.proc)
   processes.delete(id)
   notifyThreadResourceFinished(entry.owner.threadId)
@@ -516,8 +649,7 @@ export async function stopBackgroundProcessesForThread(
           }
           entry.proc.once('exit', finish)
           entry.proc.once('close', finish)
-          entry.cancelled = true
-          if (entry.completionTimer) clearTimeout(entry.completionTimer)
+          cancel(entry)
           cancelEscalation = terminateProcessTree(entry.proc)
           const timeout = setTimeout(finish, SUBPROCESS_KILL_GRACE_MS + 250)
           processes.delete(entry.id)

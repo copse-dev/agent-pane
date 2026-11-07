@@ -132,6 +132,7 @@ import {
   openCanvasArtefact,
   showCanvasArtefact,
 } from './controller/panels.ts'
+import { selectActiveWorkspace } from './controller/active-workspace.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import {
   getArtefactContent,
@@ -333,7 +334,6 @@ async function boot(): Promise<void> {
     (nextTheme) => {
       applyThemeToDocument(nextTheme)
       store.setState({ theme: nextTheme })
-      store.emit('theme_changed', nextTheme)
     },
   )
   // Restore the interaction accent and whole-app tint before the layout paints
@@ -558,7 +558,7 @@ async function boot(): Promise<void> {
     // Mount the panel immediately rather than waiting for restoreProject() to
     // finish — a large project's thread load (or a slow SSH connect) can take a
     // while, and every mounted pane already renders its own empty/loading state
-    // and updates reactively once workspace_changed/threads_changed fire below.
+    // and updates reactively once the restore below selects the workspace.
     ensureLayout()
     perfMark('renderer:layout-mounted')
     const endRestore = perfBegin('renderer:restore-project')
@@ -576,7 +576,7 @@ async function boot(): Promise<void> {
   } else {
     endBoot({ projects: 0 })
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
-    const unsubWelcome = store.on('workspace_changed', () => {
+    const unsubWelcome = selectActiveWorkspace(store, () => {
       unsubWelcome()
       unmountWelcome()
       ensureLayout()
