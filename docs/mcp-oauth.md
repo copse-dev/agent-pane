@@ -71,6 +71,33 @@ that port is taken it uses a free port and registers again.
   configured `Authorization` header always wins, and OAuth stays out of it.
 - **Sign out** deletes the record and reconnects.
 
+## Connections while changing projects
+
+An admitted agent turn keeps its originating MCP connection, tool definitions,
+read-only hints and exact permission identities until its work ends. Changing
+the project shown in the window connects that project's servers for new turns;
+it does not interrupt another project's pending call or route that turn's next
+call through the newly selected project. A background turn starting offscreen
+loads its own project's trusted configuration and default server directory.
+Ordinary Copse tools and saved allow/ask/block policy remain live.
+
+Native-tool bridge requests explicitly bind the same connection scope, including
+approved agent-initiated turns. An outstanding request retains its connection
+until it settles, even if the prompt binding ends first. Retired connections
+close after their last owning turn or request releases them. No calls are
+replayed when a project changes.
+
+This retention applies only to project navigation. Explicit reconnect, server
+disable/removal, configuration or trust changes, sign-out and application quit
+still invalidate retained connections. Stop and request cancellation keep their
+existing signals and permission checks. Turning off a bundled-server plugin
+revokes that server without closing unrelated configured servers.
+Queued turn admissions are tracked before connection work begins, so explicit
+revocation also cancels them before they can reuse or start a server.
+Admission cancellation covers initialization and tool discovery for configured
+and bundled servers; Stop does not leave tool listing holding the lifecycle
+queue for the next turn.
+
 ## Limits
 
 - Servers that only admit approved clients refuse registration. Figma's remote
