@@ -132,6 +132,13 @@ function rowTitles(listRoot: HTMLElement): string[] {
   return [...listRoot.querySelectorAll('.pr-list-title')].map((el) => el.textContent)
 }
 
+/** PR numbers in the active thread's "Related PRs" section. */
+function relatedNumbers(listRoot: HTMLElement): string[] {
+  return [
+    ...listRoot.querySelectorAll('.pr-list-row[data-pr-section="linked"] .pr-list-number'),
+  ].map((number) => number.textContent)
+}
+
 function sectionTitles(listRoot: HTMLElement): string[] {
   return [...listRoot.querySelectorAll('.git-changes-section-title')].map((el) => el.textContent)
 }
@@ -270,6 +277,72 @@ describe('pr pane thread key cost', () => {
       await settle()
       assert.equal(transcript.reads(), reads, 'draft writes do not rescan the transcript')
       assert.equal(agentLinkReads, links, 'draft writes do not refetch agent links')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('shows a link added by a new message or an edit while the pane is open', async () => {
+    const { listRoot, store, dispose } = mount([OTHER_PR], { linkedUrls: 'nothing linked yet' })
+    const setMessages = (update: (messages: Thread['messages']) => Thread['messages']): void => {
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: update(t.messages) } : t)),
+      })
+    }
+    try {
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), [])
+
+      // A new message: a new messages array with a PR link.
+      setMessages((messages) => [
+        ...messages,
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Opened https://github.com/acme/widgets/pull/42',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ])
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#42'])
+
+      // An edit that changes the link to another PR.
+      setMessages((messages) =>
+        messages.map((m) =>
+          m.id === 'm2'
+            ? { ...m, content: 'Opened https://github.com/acme/other-repo/pull/99' }
+            : m,
+        ),
+      )
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#99'])
+    } finally {
+      dispose()
+    }
+  })
+
+  it('shows a link added while the pane was closed once it reopens', async () => {
+    const { listRoot, store, dispose } = mount([OTHER_PR], { linkedUrls: 'nothing linked yet' })
+    try {
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), [])
+      store.setState({ filesPaneOpen: false })
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) =>
+            t.id === 'thread-1'
+              ? makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')
+              : t,
+          ),
+      })
+      await settle()
+      store.setState({ filesPaneOpen: true })
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#42'])
     } finally {
       dispose()
     }
