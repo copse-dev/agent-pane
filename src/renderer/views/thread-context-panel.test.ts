@@ -848,6 +848,45 @@ test('Context paints when the panel opens on it from the store alone, with no ev
   dispose()
 })
 
+test('a hidden Context panel ignores thread writes and shows them once it opens', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work/widgets', name: 'Widgets' }],
+    filesPaneOpen: false,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  let backlinkReads = 0
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      backlinks: (): Promise<ThreadBacklink[]> => {
+        backlinkReads += 1
+        return Promise.resolve([])
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const reads = backlinkReads
+
+  addMessage(store, threadId, 'user', 'Read https://docs.example.com/a')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const link = '[data-link-key="url:https://docs.example.com/a"]'
+  assert.equal(viewer.querySelector(link), null, 'nothing renders while hidden')
+  assert.equal(backlinkReads, reads, 'no reads while hidden')
+
+  store.setState({ filesPaneOpen: true })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(viewer.querySelector(link))
+  assert.equal(backlinkReads - reads, 1, 'opening refreshes once')
+  dispose()
+})
+
 test('the mounted pane follows the active thread from setState alone, not other threads', async () => {
   const store = createStore()
   store.setState({

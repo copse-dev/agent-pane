@@ -392,6 +392,11 @@ export function mountGitChangesPane(
   // has a queue to judge against, whether or not the path survived in it.
   let seededProposedPath: string | null = null
   const snapshotsByOwner = new Map<string, GitChangesSnapshot>()
+  // The last key built, with what it was built from: most updates leave the
+  // checkout unchanged and reuse it instead of serialising again.
+  let lastOwnerParts: readonly unknown[] = []
+  let lastOwnerKey = ''
+
   let displayedOwnerKey = activeOwnerKey()
   let ownerNeedsRefresh = false
 
@@ -416,7 +421,7 @@ export function mountGitChangesPane(
       ? threads.find((candidate) => candidate.id === threadId)
       : undefined
     const worktree = thread?.worktree
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -426,7 +431,11 @@ export function mountGitChangesPane(
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt,
-    ])
+    ]
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey
+    lastOwnerParts = parts
+    lastOwnerKey = JSON.stringify(parts)
+    return lastOwnerKey
   }
 
   /** Keep known rows per checkout, never carry another thread's rows or viewer. */
@@ -1188,7 +1197,7 @@ export function mountGitChangesPane(
     if (!owner) {
       // No thread yet — the usual cause is the launch window before threads
       // hydrate, so this is "not known yet", not "no repo". Stay in the loading
-      // state; the `threads_changed` that selects a thread refreshes again.
+      // state; the owner selection that picks up a thread refreshes again.
       gitAvailable = false
       loaded = false
       hasSettledGitRead = false

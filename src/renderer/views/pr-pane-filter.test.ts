@@ -193,6 +193,111 @@ describe('pr pane thread scope', () => {
   })
 })
 
+/** A long transcript whose message bodies count how often they are read. */
+function countedTranscript(count: number): { messages: Thread['messages']; reads: () => number } {
+  let reads = 0
+  const messages = Array.from({ length: count }, (_, index) => {
+    const text =
+      index === 0 ? 'See https://github.com/acme/widgets/pull/42' : `message ${String(index)}`
+    return {
+      id: `m${String(index)}`,
+      role: 'user' as const,
+      get content(): string {
+        reads += 1
+        return text
+      },
+      toolCalls: [],
+      createdAt: 0,
+    }
+  })
+  return { messages, reads: () => reads }
+}
+
+function writeDraft(store: AppStore, draft: string): void {
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((t) => (t.id === 'thread-1' ? { ...t, draftPrompt: draft } : t)),
+  })
+}
+
+describe('pr pane thread key cost', () => {
+  it('does not scan transcripts for thread writes while the pane is closed', async () => {
+    const transcript = countedTranscript(2_000)
+    const { store, dispose } = mount()
+    try {
+      store.setState({
+        filesPaneOpen: false,
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: transcript.messages } : t)),
+      })
+      await settle()
+      const before = transcript.reads()
+      for (let i = 0; i < 20; i++) writeDraft(store, `draft ${String(i)}`)
+      for (let i = 0; i < 20; i++) store.setState({ pendingSubmissionThreadIds: [] })
+      await settle()
+      assert.equal(transcript.reads() - before, 0)
+    } finally {
+      dispose()
+    }
+  })
+
+  it('scans a transcript once per messages array while the pane is open', async () => {
+    const transcript = countedTranscript(2_000)
+    let agentLinkReads = 0
+    const { listRoot, store, dispose } = mount([OTHER_PR], {
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      await settle()
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: transcript.messages } : t)),
+      })
+      await settle()
+      assert.ok(rowTitles(listRoot).includes('Fix login flow'))
+      const reads = transcript.reads()
+      const links = agentLinkReads
+      // Draft autosaves replace the thread object but keep its messages.
+      for (let i = 0; i < 20; i++) writeDraft(store, `draft ${String(i)}`)
+      await settle()
+      assert.equal(transcript.reads(), reads, 'draft writes do not rescan the transcript')
+      assert.equal(agentLinkReads, links, 'draft writes do not refetch agent links')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('refreshes once when the pane opens', async () => {
+    let agentLinkReads = 0
+    const { store, dispose } = mount([OTHER_PR], {
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      store.setState({ filesPaneOpen: false })
+      await settle()
+      const reads = agentLinkReads
+      store.setState({ filesPaneOpen: true })
+      await settle()
+      assert.equal(agentLinkReads - reads, 1)
+    } finally {
+      dispose()
+    }
+  })
+})
+
 describe('pr pane filter (issue #2482)', () => {
   it('keeps a directly opened PR visible and selected across list refreshes', async () => {
     const { listRoot, viewerRoot, store, dispose } = mount([OTHER_PR], {

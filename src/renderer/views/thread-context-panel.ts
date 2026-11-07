@@ -402,8 +402,12 @@ interface ContextPanelInputs {
   related: readonly unknown[]
 }
 
-/** The Context panel's thread inputs. */
+/** The panel's inputs while it is hidden: showing it renders from scratch. */
+const CONTEXT_PANEL_HIDDEN: ContextPanelInputs = { thread: undefined, related: [] }
+
+/** The Context panel's thread inputs; constant while the panel is hidden. */
 function contextPanelInputs(state: AppState): ContextPanelInputs {
+  if (!state.filesPaneOpen || state.rightPanelMode !== 'context') return CONTEXT_PANEL_HIDDEN
   const thread = activeThreadOf(state)
   if (!thread) return { thread, related: [state.activeProjectId] }
   const parentId = thread.sideChat?.parentThreadId
@@ -419,6 +423,8 @@ function contextPanelInputs(state: AppState): ContextPanelInputs {
 }
 
 function sameContextPanelInputs(a: ContextPanelInputs, b: ContextPanelInputs): boolean {
+  if (a === b) return true
+  if (a === CONTEXT_PANEL_HIDDEN || b === CONTEXT_PANEL_HIDDEN) return false
   return sameThreadBesidesDraft(a.thread, b.thread) && sameItems(a.related, b.related)
 }
 
@@ -1119,8 +1125,9 @@ export function mountThreadContextPane(
     // thread's turn or metadata does not re-render the panel.
     store.select(
       contextPanelInputs,
-      () => {
-        if (!contextModeActive(store)) return
+      (_next, prev) => {
+        // Showing the panel renders and refreshes from selectRightPanelMode above.
+        if (prev === CONTEXT_PANEL_HIDDEN || !contextModeActive(store)) return
         render()
         // Change stats read the thread's checkout from main, which rejects a
         // new thread until autosave has created it.

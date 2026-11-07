@@ -28,7 +28,7 @@ import type {
 import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { githubPrKey } from '@shared/git/github-pr-url.ts'
+import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import {
   isPlaceholderPr,
@@ -114,39 +114,62 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
 }
 
 const threadPrKeys = new WeakMap<Thread, string>()
+const transcriptPrKeys = new WeakMap<readonly { content: string }[], string>()
 
 /**
- * What this pane reads from one thread: its PR links (scraped from the
- * transcript), title, archive state, productions, and when its last turn
- * settled (a finished run may have recorded an agent↔PR link in main).
- * Memoised per thread object; thread writes replace only the thread they patch.
+ * The PR URLs a transcript mentions, scanned once per messages array. Draft,
+ * status and title writes replace the thread object but keep its messages, so
+ * they do not rescan the transcript.
+ */
+function transcriptPrKey(messages: readonly { content: string }[]): string {
+  const cached = transcriptPrKeys.get(messages)
+  if (cached !== undefined) return cached
+  const key = messages
+    .flatMap((message) => extractGithubPrUrls(message.content).map((pr) => pr.url))
+    .join(' ')
+  transcriptPrKeys.set(messages, key)
+  return key
+}
+
+/**
+ * What this pane reads from one thread: everything `threadPrRelationships`
+ * reads (transcript PR links, PR refs, agent link, productions), its title,
+ * archive state, and when its last turn settled (a finished run may have
+ * recorded an agent↔PR link in main). Memoised per thread object.
  */
 function threadPrKey(thread: Thread): string {
   const cached = threadPrKeys.get(thread)
   if (cached !== undefined) return cached
-  const links = threadPrRelationships(thread, thread.messages)
-    .map(({ pr, kinds }) => `${prRelationKey(pr)}:${kinds.join(',')}`)
-    .join(' ')
-  const productions = (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(' ')
+  const links = [
+    transcriptPrKey(thread.messages),
+    (thread.prRefs ?? []).map((pr) => pr.url).join(' '),
+    thread.remoteAgentLink?.prUrl ?? '',
+    (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(' '),
+  ]
   // A thread with no PR link shows nowhere in the pane: only its settling counts.
-  const key =
-    links === '' && productions === ''
-      ? `${thread.id}\u0000${String(thread.lastSettledAt ?? '')}`
-      : [
-          thread.id,
-          thread.title,
-          String(thread.archivedAt ?? ''),
-          String(thread.lastSettledAt ?? ''),
-          links,
-          productions,
-        ].join('\u0000')
+  const key = links.every((part) => part === '')
+    ? `${thread.id}\u0000${String(thread.lastSettledAt ?? '')}`
+    : [
+        thread.id,
+        thread.title,
+        String(thread.archivedAt ?? ''),
+        String(thread.lastSettledAt ?? ''),
+        ...links,
+      ].join('\u0000')
   threadPrKeys.set(thread, key)
   return key
 }
 
-/** Every input of the pane's thread-derived state, as one comparable key. */
-function prPaneThreadsKey(state: AppState): string {
-  return `${state.activeThreadId ?? ''}\n${state.threads.map(threadPrKey).join('\n')}`
+/** The pane's thread key while it is closed: opening it refreshes everything. */
+const PR_PANE_INACTIVE = ''
+
+/**
+ * Every input of the pane's thread-derived state, as one comparable key.
+ * Constant while the pane is closed, so thread writes then cost nothing.
+ */
+export function prPaneThreadsKey(state: AppState): string {
+  if (!state.filesPaneOpen || state.rightPanelMode !== 'prs') return PR_PANE_INACTIVE
+  return `prs\n${state.activeThreadId ?? ''}\n${state.threads.map(threadPrKey).join('\n')}`
 }
 
 export function indexThreadLinks(store: AppStore): Map<string, PrThreadRelationship[]> {
@@ -1641,8 +1664,9 @@ export function mountPrPane(
     }),
     // The threads' PR links, titles and finished turns; not streaming,
     // hydration or other metadata that leaves every key unchanged.
-    store.select(prPaneThreadsKey, () => {
-      if (!prsModeActive(store)) return
+    store.select(prPaneThreadsKey, (_next, prev) => {
+      // Opening the pane runs its own full refresh (selectRightPanelMode above).
+      if (prev === PR_PANE_INACTIVE || !prsModeActive(store)) return
       threadLinks = indexThreadLinks(store)
       linkedRefs = collectLinkedPrs(store)
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
