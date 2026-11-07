@@ -25,22 +25,37 @@ function listenerSnapshot(ports: number[] = []): string {
   ].join('\0')
 }
 
+interface HostOptions {
+  /** Whether the PID still exists when asked with signal 0. */
+  targetRunning?: boolean
+  /** Whether a closing inspector ends its own sessions, as Node's does. */
+  endsSessionOnClose?: boolean
+}
+
 /** Fake only OS/CDP boundaries; run the real activation and cleanup control flow. */
 function mockProfilerHost(
   context: TestContext,
   snapshots: (string | Error)[],
   inspectors = new Map([[OPENED_PORT, HOST_PID]]),
+  { targetRunning = true, endsSessionOnClose = true }: HostOptions = {},
 ): {
   closedInspectors: number[]
+  disconnects: { port: number; by: 'target' | 'client' }[]
   methods: string[]
   signals: { pid: number; signal: NodeJS.Signals | number | undefined }[]
 } {
   const closedInspectors: number[] = []
+  const disconnects: { port: number; by: 'target' | 'client' }[] = []
   const methods: string[] = []
   const signals: { pid: number; signal: NodeJS.Signals | number | undefined }[] = []
   let clock = 0
   context.mock.method(Date, 'now', () => (clock += 1000))
   context.mock.method(process, 'kill', (pid: number, signal?: NodeJS.Signals | number) => {
+    // Signal 0 only asks whether the PID exists; nothing reaches the target.
+    if (signal === 0) {
+      if (targetRunning) return true
+      throw Object.assign(new Error(`kill ESRCH`), { code: 'ESRCH' })
+    }
     signals.push({ pid, signal })
     return true
   })
@@ -74,6 +89,7 @@ function mockProfilerHost(
     'WebSocket',
     class extends EventTarget {
       readonly port: number
+      #closed = false
 
       constructor(url: string) {
         super()
@@ -86,25 +102,41 @@ function mockProfilerHost(
         assert.ok(request)
         methods.push(request.method)
         let result: unknown = {}
+        let closing = false
         if (request.params?.expression === 'process.pid') {
           result = { result: { type: 'number', value: inspectors.get(this.port) } }
         } else if (request.params?.expression?.includes('inspector')) {
           closedInspectors.push(this.port)
           inspectors.delete(this.port)
+          closing = endsSessionOnClose
         } else if (request.method === 'Profiler.stop') {
           result = { profile: { nodes: [], samples: [], timeDeltas: [] } }
         }
         this.dispatchEvent(
           new MessageEvent('message', { data: JSON.stringify({ id: request.id, result }) }),
         )
+        // The target's close frame arrives on a later I/O turn than its answer,
+        // after the client has already reacted to that answer.
+        if (closing) {
+          setImmediate(() => {
+            this.#end('target')
+          })
+        }
       }
 
       close = (): void => {
+        this.#end('client')
+      }
+
+      #end(by: 'target' | 'client'): void {
+        if (this.#closed) return
+        this.#closed = true
+        disconnects.push({ port: this.port, by })
         this.dispatchEvent(new Event('close'))
       }
     },
   )
-  return { closedInspectors, methods, signals }
+  return { closedInspectors, disconnects, methods, signals }
 }
 
 describe('profileProcess activation cleanup', { skip: process.platform === 'win32' }, () => {
@@ -169,6 +201,39 @@ describe('profileProcess activation cleanup', { skip: process.platform === 'win3
     assert.deepEqual(host.signals, [{ pid: HOST_PID, signal: 'SIGUSR1' }])
     assert.deepEqual(host.closedInspectors, [OPENED_PORT])
     assert.deepEqual(host.methods, ['Runtime.evaluate', 'Runtime.evaluate'])
+    assert.deepEqual(host.disconnects, [{ port: OPENED_PORT, by: 'target' }])
+  })
+
+  it('lets a closing target end the session instead of racing its close frame', async (context) => {
+    // A client close frame landing while Node's inspector closes makes it send
+    // two close frames; the second write callback segfaulted Node 24.22.1.
+    const host = mockProfilerHost(context, [], new Map([[REQUESTED_PORT, HOST_PID]]))
+    await profileProcess(HOST_PID, REQUESTED_PORT, 1)
+    assert.deepEqual(host.closedInspectors, [REQUESTED_PORT])
+    assert.deepEqual(host.disconnects, [{ port: REQUESTED_PORT, by: 'target' }])
+  })
+
+  it('disconnects after a bounded wait when the target keeps the session open', async (context) => {
+    const host = mockProfilerHost(context, [], new Map([[REQUESTED_PORT, HOST_PID]]), {
+      endsSessionOnClose: false,
+    })
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const profiling = profileProcess(HOST_PID, REQUESTED_PORT, 1)
+    const stillRunning = Symbol('still running')
+    let waitedMs = 0
+    // Let pending I/O settle, then advance the mocked clock until profiling ends.
+    while (
+      (await Promise.race([
+        profiling,
+        new Promise((resolve) => setImmediate(resolve, stillRunning)),
+      ])) === stillRunning
+    ) {
+      context.mock.timers.tick(500)
+      waitedMs += 500
+    }
+    assert.deepEqual(host.closedInspectors, [REQUESTED_PORT])
+    assert.deepEqual(host.disconnects, [{ port: REQUESTED_PORT, by: 'client' }])
+    assert.ok(waitedMs >= 5000, `disconnected after ${String(waitedMs)}ms, before the target could`)
   })
 
   it('refuses to signal when listener discovery is missing or denied', async (context) => {
@@ -176,6 +241,17 @@ describe('profileProcess activation cleanup', { skip: process.platform === 'win3
     await assert.rejects(profileProcess(HOST_PID, REQUESTED_PORT, 1), /requires readable Unix lsof/)
     assert.deepEqual(host.signals, [])
     assert.deepEqual(host.closedInspectors, [])
+  })
+
+  it('names a target that is no longer running instead of blaming lsof', async (context) => {
+    // lsof exits 1 with no output for a PID that has gone.
+    const host = mockProfilerHost(context, [new Error('Command failed: lsof')], undefined, {
+      targetRunning: false,
+    })
+    await assert.rejects(profileProcess(HOST_PID, REQUESTED_PORT, 1), {
+      message: `Process ${String(HOST_PID)} is not running`,
+    })
+    assert.deepEqual(host.signals, [])
   })
 
   it('refuses to signal when the process is absent from the discovery result', async (context) => {
