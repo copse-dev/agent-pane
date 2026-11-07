@@ -25139,7 +25139,11 @@ function setArtefactPreview(threadId, title, preview) {
   const key = previewKey(threadId, title);
   if (!preview || previews.get(key) === preview) return;
   previews.set(key, preview);
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1);
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
+}
+function artefactPreviewVersion(threadId, title) {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0;
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
@@ -25193,11 +25197,12 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, previewVersions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
     previewRevisions = /* @__PURE__ */ new Map();
+    previewVersions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -74249,6 +74254,7 @@ export {
   begin,
   init_perf,
   setArtefactPreview,
+  artefactPreviewVersion,
   getArtefactPreview,
   artefactPreviewRevision,
   setArtefactContent,
