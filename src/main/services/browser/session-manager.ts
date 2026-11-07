@@ -261,6 +261,10 @@ export class BrowserSessionManager {
         contextIsolation: true,
         nodeIntegration: false,
         backgroundThrottling: false,
+        // Hidden native windows do not present fresh compositor frames on Linux.
+        // Offscreen rendering keeps the agent tab paintable without showing a
+        // window, so Page.captureScreenshot can finish after zoom is applied.
+        offscreen: true,
       },
     })
     // Chromium headless can ignore the constructor bounds and leave a hidden
