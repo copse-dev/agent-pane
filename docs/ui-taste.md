@@ -271,8 +271,8 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
   the `--badge-*` tokens in `tokens.css`: `--font-size-xs`, weight 500, normal tracking,
   `--radius` corners, a 1px `--border` outline, muted text. A chip class
   (`.sources-badge`, `.provider-form-tag`, `.provider-privacy-badge`, `.mcp-origin-chip`,
-  `.plugin-badge-stable` / `-experimental`) adds a colour or a width bound, never its own
-  size, case, or corner.
+  `.plugin-badge-experimental`) adds a colour or a width bound, never its own size, case, or
+  corner.
 - **Sentence case.** Author labels in sentence case. Most badge text is a data value that
   arrives lowercase (`project`, `stable`, `in use`), so the recipe supplies the capital with
   `::first-letter` — `capitalize` would title-case `In Use`. A literal (a directory name
@@ -283,11 +283,12 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
 - **Neutral unless it reports a status.** `--warning` / `--error` / `--success` /
   `--danger` mean how the thing is doing (warning, not loaded, orphaned, outside sandbox,
   data policy); the accent means interaction emphasis (a nested instruction file active
-  this turn) plus the "experimental" exception above. A scope, kind, category, owner, or
-  the default state (`Stable`) stays neutral, even when it would be convenient to tell
-  categories apart by hue.
-- **Eyebrows are not badges.** The plugin publisher line over a name is a wide-tracked caps
-  caption without a frame, in text colours.
+  this turn) plus the "experimental" exception above. A scope, kind, category or owner
+  stays neutral, even when it would be convenient to tell categories apart by hue, and the
+  default state (`Stable`) gets no badge at all: label the exception, not the norm.
+- **A publisher is not a badge.** A plugin's publisher follows its version in the name line
+  (`1.2.3 · Copse`), in muted sentence-case text without a frame — not a caps caption over
+  the name, and not a chip beside it.
 
 Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
 see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
@@ -744,8 +745,10 @@ It fills the window and its sections run several screens, so it is typed and spa
   group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
   Search clears the list — its results are lifted out of their sections, so the contents no longer
   describe what is on screen.
-- **A plugin row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
-  the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
+- **A plugin row sits on the page**, not in a card of its own: the gap between rows separates
+  plugins, so a list of them is not a stack of bordered boxes. It holds its mark, the name line
+  (name, version, then the publisher: `1.2.3 · Copse`, plus an `Experimental` badge where one
+  applies), the capability counts as muted text, and the switch flanked by Off / On whose
   live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
   Everything configurable folds into one closed `Plugin settings` disclosure, so a list of plugins stays
   a list of plugins; the credential gate stays outside it, because it explains a switch you can see is
