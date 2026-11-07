@@ -1,14 +1,15 @@
 name: Halt release
 
 # Withdraw a bad release from both update channels, or restore one halted in
-# error. Halting turns the GitHub Release back into a draft: drafts are absent
-# from `releases.atom` (the beta check) and `releases/latest` (the stable
-# check), and their assets stop downloading, so no client is offered it and no
+# error. Halting drafts the release and archives its binary-repository tag:
+# a bare version tag still appears in `releases.atom` after drafting. Removing
+# that alias after preserving its exact Git object under halted/ withdraws it
+# from beta checks too. Draft assets stop downloading, so no client is offered it and no
 # new user downloads it. If it was the latest stable release, the newest
 # remaining stable release becomes latest again, so the stable download link
 # and feed fall back to it. Installed copies stay where they are: Copse never
 # downgrades, so a halted version is replaced by a corrective newer release.
-# The bytes are kept in the draft for investigation, never deleted.
+# The bytes stay in the draft; the source tag and archived Git object stay intact.
 #
 # `resume` republishes a halted release unchanged, for a halt raised in error.
 on:
@@ -75,8 +76,14 @@ jobs:
             "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/release.json"
           prerelease="$(jq -r .prerelease "$RUNNER_TEMP/release.json")"
           if [ "$ACTION" = halt ]; then
-            node scripts/release-promotion.mts check-halt "$RUNNER_TEMP/release.json"
-            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=true
+            bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" archive
+            # A retry may find the release already drafted but its tag still
+            # visible after a failed withdrawal. Finish that halt safely.
+            if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" != true ]; then
+              node scripts/release-promotion.mts check-halt "$RUNNER_TEMP/release.json"
+              gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=true
+            fi
+            bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" withdraw
             list_releases
             fallback="$(node scripts/release-promotion.mts fallback-latest "$RUNNER_TEMP/releases.json" "$TAG")"
             if [ "$prerelease" = false ] && [ -n "$fallback" ]; then
@@ -89,7 +96,10 @@ jobs:
               echo "$TAG is not halted"
               exit 1
             fi
-            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=false
+            bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" restore
+            # GitHub otherwise makes a republished stable latest immediately,
+            # even when a newer stable exists. Decide latest explicitly below.
+            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=false --latest=false
             list_releases
             # Only the newest stable release may be latest again.
             state=listed
