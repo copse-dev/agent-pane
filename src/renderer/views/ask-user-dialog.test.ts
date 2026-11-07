@@ -667,7 +667,6 @@ describe('ask_user dialog thread scoping', () => {
 
   function focusThread(threadId: string): void {
     store.setState({ activeThreadId: threadId })
-    store.emit('threads_changed')
   }
 
   beforeEach(() => {
@@ -809,7 +808,6 @@ describe('ask_user from a side chat', () => {
     assert.equal(isThreadAwaitingAttention('parent'), true)
     assert.equal(isThreadAwaitingAttention('side'), false)
     store.setState({ activeThreadId: 'parent' })
-    store.emit('threads_changed')
     assert.equal(dialog().open, true)
     assert.equal(isThreadAwaitingAttention('parent'), false)
   })
