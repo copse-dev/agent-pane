@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { formatArgvForShell, setProjectSandboxEnabled, spawnBackgroundProcess } from './spawn.ts'
+import { setProjectSandboxEnabled, spawnBackgroundProcess } from './spawn.ts'
 
 const heldScript =
   "process.stdin.once('data', () => process.exit(0)); process.stdout.write('ready')"
@@ -123,10 +123,7 @@ describe('background process sandbox lease', () => {
   })
 
   it('does not consume a lease for explicitly unsandboxed commands', async () => {
-    const watched = await start(
-      formatArgvForShell(process.execPath, ['-e', 'process.exit(0)']),
-      true,
-    )
+    const watched = await start('exit 0', true)
     assert.equal(await watched.closed, 0)
     assert.equal(wrapped, 0)
     assert.equal(released, 0)
@@ -134,7 +131,7 @@ describe('background process sandbox lease', () => {
 
   it('does not consume a lease when the sandbox is inactive', async () => {
     setProjectSandboxEnabled(false)
-    const watched = await start(formatArgvForShell(process.execPath, ['-e', 'process.exit(0)']))
+    const watched = await start('exit 0')
     assert.equal(await watched.closed, 0)
     assert.equal(wrapped, 0)
     assert.equal(released, 0)
