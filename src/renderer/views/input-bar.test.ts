@@ -6,11 +6,13 @@ import {
   addMessage,
   getThreadById,
   setThreadDraftPrompt,
+  setThreadTitle,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
 import type { ContextBreakdown, Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
+import type { ClientActionCommand, ClientActionOffer } from '@shared/client-actions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from '../controller/agent.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -26,6 +28,8 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { installTooltips } from '../dom/tooltip.ts'
+import { acceptMobileChat } from '../controller/mobile-chat.ts'
+import { acceptThreadPrompt } from '../controller/thread-prompts.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -289,16 +293,67 @@ async function flush(): Promise<void> {
   await settle()
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+} {
   let resolve: (value: T) => void = () => {}
-  const promise = new Promise<T>((innerResolve) => {
+  let reject: (error: Error) => void = () => {}
+  const promise = new Promise<T>((innerResolve, innerReject) => {
     resolve = innerResolve
+    reject = innerReject
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('composer observes external submission completion', () => {
+  for (const source of ['phone', 'thread prompt'] as const) {
+    it(`re-enables after a ${source} queues without a later store update`, async () => {
+      const active: Thread = { ...thread(), status: 'running', worktreeChoice: 'automatic' }
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: active.id,
+        threads: [active],
+      })
+      const api = createApi({ currentBranch: 'main' })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const bar = mountInputBar(host, store, api)
+      try {
+        await flush()
+        const button = host.querySelector<HTMLButtonElement>('.submit-btn')
+        assert.ok(button)
+        assert.equal(button.disabled, false)
+        const command = {
+          id: 'external-submit',
+          projectId: 'project-1',
+          text: 'Check the build',
+          expiresAt: Date.now() + 60_000,
+        }
+        const result =
+          source === 'phone'
+            ? await acceptMobileChat(store, api, { ...command, threadId: active.id })
+            : await acceptThreadPrompt(store, api, {
+                ...command,
+                sourceThreadId: 'another-thread',
+                thread: active,
+              })
+        assert.equal(result.ok, true)
+        assert.equal(getThreadById(store, active.id)?.pendingMessages?.length, 1)
+        // No flush, token, git-status event or unrelated state write repairs this.
+        assert.equal(button.disabled, false)
+      } finally {
+        bar.unmount()
+      }
+    })
+  }
 })
 
 describe('input bar resolved model label', () => {
@@ -838,7 +893,6 @@ describe('input bar first-message checkout', () => {
       threads: [{ ...thread(), id: 'thread-2', draftPrompt: 'Other project draft' }],
     })
     store.emit('threads_changed')
-    store.emit('workspace_changed')
     checkout.resolve({
       checkoutMode: 'worktree',
       choice: 'worktree',
@@ -870,7 +924,6 @@ describe('input bar first-message checkout', () => {
     assert.equal(composer.textContent, 'Other project draft')
     const restored = adoptBackgroundThreads(store, 'project-1', [])
     store.setState({ activeProjectId: 'project-1', threads: restored, activeThreadId: 'thread-1' })
-    store.emit('threads_changed')
     assert.equal(composer.textContent, '')
   })
 
@@ -1152,7 +1205,6 @@ describe('input bar first-message checkout', () => {
         worktreeChoice: 'worktree',
       })),
     })
-    store.emit('threads_changed')
     store.emit('git_branch_changed')
     await settle()
 
@@ -1757,7 +1809,6 @@ describe('externally cleared draft', () => {
     // Selecting the automation's thread loads its draft into the composer, the
     // same way clicking the sidebar row does.
     store.setState({ threads: [scheduled, existing], activeThreadId: scheduled.id })
-    store.emit('threads_changed')
     await settle()
 
     const composer = host.querySelector<HTMLElement>('.prompt-input')
@@ -2639,7 +2690,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(
@@ -2675,13 +2725,11 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(host.querySelectorAll('.attachment-chips .image-chip').length, 0)
     assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 0)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(
@@ -2742,7 +2790,6 @@ describe('input bar attachments across a thread switch', () => {
     })
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.ok(resolveArchive)
     assert.ok(resolveVideo)
@@ -2768,7 +2815,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 1)
@@ -2812,7 +2858,6 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     store.emit('code_block_run_finished', {
       id: 'run-1',
@@ -2847,7 +2892,6 @@ describe('input bar attachments across a thread switch', () => {
     assert.equal(getThreadById(store, second.id)?.messages.length, 0)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(
       host.querySelectorAll('.attachment-chips .shell-chip').length,
@@ -2884,7 +2928,6 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     store.emit('code_block_run_finished', {
       id: 'run-1',
@@ -2908,7 +2951,6 @@ describe('input bar attachments across a thread switch', () => {
     )
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
 
     const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
@@ -3072,12 +3114,10 @@ describe('input bar thread mentions', () => {
     assert.doesNotMatch(composer.textContent, /@auth/)
 
     store.setState({ activeThreadId: second.id })
-    store.emit('threads_changed')
     await settle()
     assert.equal(composer.querySelector('.inline-thread-chip'), null)
 
     store.setState({ activeThreadId: first.id })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(
       Array.from(composer.childNodes).map((node) =>
@@ -3701,11 +3741,9 @@ describe('input bar image compatibility', () => {
     const controls = host.querySelector<HTMLFieldSetElement>('.composer-image-description-actions')
     assert.equal(controls?.disabled, true)
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await flush()
     assert.equal(composer.getAttribute('contenteditable'), 'plaintext-only')
     store.setState({ activeThreadId: 'thread-1' })
-    store.emit('threads_changed')
     await flush()
     assert.ok(resolveDescription)
     resolveDescription({ text: 'Late description from a previous view.' })
@@ -4314,7 +4352,6 @@ describe('input bar footer classifier use', () => {
       ],
       activeThreadId: 'thread-2',
     })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(asked, ['thread-1', 'thread-2'])
 
@@ -4402,7 +4439,6 @@ describe('input bar footer classifier use', () => {
       ],
       activeProjectId: 'project-2',
     })
-    store.emit('threads_changed')
     await settle()
     wheel.dispatchEvent(new Event('mouseenter'))
     assert.doesNotMatch(
@@ -4597,12 +4633,82 @@ describe('input bar context wheel across a model change', () => {
 
     assert.equal(wheel(host).hidden, true)
   })
+
+  it('is busy only while an estimate is due, including after a failed reply', async () => {
+    const replies = [deferred<ContextBreakdown>(), deferred<ContextBreakdown>()]
+    let call = 0
+    const { host } = mount('gpt-4o-mini', () => {
+      const reply = replies[call]
+      call += 1
+      assert.ok(reply)
+      return reply.promise
+    })
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'busy while scheduled')
+    await flush()
+    assert.equal(call, 1)
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'busy while in flight')
+
+    replies[0]?.resolve(breakdown(30_000))
+    await flush()
+    await flush()
+    assert.ok(wheel(host).classList.contains('has-breakdown'))
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'settled once the reply lands')
+  })
+
+  it('stays busy for a newer estimate when a superseded reply lands', async () => {
+    const replies = [deferred<ContextBreakdown>(), deferred<ContextBreakdown>()]
+    let call = 0
+    const { host, store } = mount('gpt-4o-mini', () => {
+      const reply = replies[call]
+      call += 1
+      assert.ok(reply)
+      return reply.promise
+    })
+    await flush()
+    assert.equal(call, 1)
+
+    // A finished run re-estimates while the first reply is still due.
+    store.emit('thread_status_changed', 'thread-1', 'idle')
+    await flush()
+    assert.equal(call, 2)
+
+    replies[0]?.resolve(breakdown(10_000))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true', 'the newer request is still due')
+
+    replies[1]?.reject(new Error('main is gone'))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'a failed reply settles too')
+  })
+
+  it('settles when the native reply lands after a move to an ACP model', async () => {
+    const pending = deferred<ContextBreakdown>()
+    const { host, store, api } = mount('gpt-4o-mini', () => pending.promise)
+    await flush()
+    assert.equal(wheel(host).getAttribute('aria-busy'), 'true')
+
+    commitThreadModelSelection(store, api, 'thread-1', 'user', 'gpt-4o-mini', ACP_MODEL)
+    await flush()
+    await flush()
+    // The native reply is still due until main answers; then it settles unused.
+    pending.resolve(breakdown(30_000))
+    await flush()
+    await flush()
+    assert.equal(wheel(host).hasAttribute('aria-busy'), false, 'ACP owns the figures')
+    assert.equal(wheel(host).hidden, true)
+  })
 })
 
 describe('next-step tab complete in the composer', () => {
-  function mountWithHint(hint: string | null): {
+  function mountWithHint(
+    hint: string | null,
+    clientActions?: ApiClient['clientActions'],
+  ): {
     host: HTMLElement
     store: ReturnType<typeof createStore>
+    runs: Array<Parameters<ApiClient['agent']['run']>>
   } {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -4611,9 +4717,16 @@ describe('next-step tab complete in the composer', () => {
       activeThreadId: 'thread-1',
       threads: [thread()],
     })
-    const base = createApi({ currentBranch: 'main' })
+    const runs: Array<Parameters<ApiClient['agent']['run']>> = []
+    const base = createApi({
+      currentBranch: 'main',
+      onRun: async (...args) => {
+        runs.push(args)
+      },
+    })
     const api: ApiClient = {
       ...base,
+      clientActions: clientActions ?? base.clientActions,
       settings: {
         ...base['settings'],
         get: (key: string) =>
@@ -4627,7 +4740,7 @@ describe('next-step tab complete in the composer', () => {
     const host = document.createElement('div')
     document.body.append(host)
     mountInputBar(host, store, api)
-    return { host, store }
+    return { host, store, runs }
   }
 
   function finishTurn(store: ReturnType<typeof createStore>): void {
@@ -4652,8 +4765,8 @@ describe('next-step tab complete in the composer', () => {
     )
   })
 
-  it('Tab inserts the hint into the empty composer and spends the offer', async () => {
-    const { host, store } = mountWithHint('Run the tests to verify the fix')
+  it('keyboard Tab inserts the hint without sending and spends the offer', async () => {
+    const { host, store, runs } = mountWithHint('Run the tests to verify the fix')
     await settle()
     finishTurn(store)
     await flush()
@@ -4666,8 +4779,60 @@ describe('next-step tab complete in the composer', () => {
     await flush()
 
     assert.equal(composer.textContent, 'Run the tests to verify the fix')
+    assert.equal(runs.length, 0)
     assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
     assert.equal(composer.hasAttribute('data-next-step'), false)
+  })
+
+  it('a paired Tab action submits its exact suggestion once through the normal composer path', async () => {
+    const hint = 'Run the tests to verify the fix'
+    let offered: ClientActionOffer | null = null
+    let invoke: (command: ClientActionCommand) => void = () => {}
+    const replies: boolean[] = []
+    const { host, store, runs } = mountWithHint(hint, {
+      publish: async (value) => {
+        offered = value
+      },
+      claim: async () => true,
+      reply: async (_id, accepted) => {
+        replies.push(accepted)
+      },
+      onInvoke: (handler) => {
+        invoke = handler
+        return (): void => {}
+      },
+    })
+    await settle()
+    finishTurn(store)
+    await flush()
+    const reference = (): ClientActionCommand => {
+      assert.ok(offered)
+      return {
+        id: crypto.randomUUID(),
+        expiresAt: Date.now() + 3000,
+        projectId: offered.projectId,
+        threadId: offered.threadId,
+        revision: offered.revision,
+        actionId: 'next-step',
+      }
+    }
+    const command = reference()
+    invoke(command)
+    await flush()
+    await flush()
+    assert.equal(runs.length, 1)
+    assert.deepEqual(runs[0]?.slice(0, 2), ['project-1', 'thread-1'])
+    assert.deepEqual(
+      getThreadById(store, 'thread-1')
+        ?.messages.filter((m) => m.role === 'user')
+        .map((m) => m.content),
+      ['fix the parser bug', hint],
+    )
+    assert.equal(host.querySelector('.prompt-input')?.textContent, '')
+    invoke(command)
+    await flush()
+    assert.equal(runs.length, 1)
+    assert.deepEqual(replies, [true, false])
   })
 
   it('Tab in a composer with typed text keeps its default behavior', async () => {
@@ -4948,5 +5113,109 @@ describe('composer Send now shortcuts', () => {
       store.getState().threads[0]?.pendingMessages?.[0]?.payload.content,
       'send this now',
     )
+  })
+})
+
+describe('composer thread scope', () => {
+  it('follows the active thread from setState alone, but not drafts or other threads', async () => {
+    const active = thread()
+    const other: Thread = { ...thread(), id: 'thread-2', title: 'Other thread' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, other],
+    })
+    const runReads: string[] = []
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      container: {
+        ...base.container,
+        getRun: async (threadId) => {
+          runReads.push(threadId)
+          return null
+        },
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, api)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const settled = runReads.length
+
+    // Another thread's rename (which still emits threads_changed), this
+    // thread's draft autosave and its own update re-read no container run:
+    // that is per thread, so only a switch reads it again.
+    setThreadTitle(store, other.id, 'Renamed elsewhere')
+    setThreadDraftPrompt(store, active.id, 'half a thought')
+    setThreadTitle(store, active.id, 'Renamed here')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(runReads.length, settled, 'no container run re-read')
+
+    // The active thread's queue grows: the indicator follows, with no event.
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id === active.id
+          ? {
+              ...t,
+              pendingMessages: [{ messageId: 'q1', payload: { content: 'next' }, createdAt: 2 }],
+            }
+          : t,
+      ),
+    })
+    const indicator = host.querySelector<HTMLElement>('.footer-queue')
+    assert.ok(indicator)
+    assert.equal(indicator.hidden, false)
+    assert.equal(indicator.textContent, '1 queued')
+
+    // A bare selection change re-reads the new thread's run.
+    store.setState({ activeThreadId: other.id })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(runReads.at(-1), other.id)
+  })
+})
+
+describe('input bar skills across a workspace switch', () => {
+  it('lists skills again when setState alone selects another project', async () => {
+    let listCalls = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [
+        { id: 'project-1', name: 'Project', path: '/repo' },
+        { id: 'project-2', name: 'Other', path: '/other' },
+      ],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const inputBar = mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        listSkills: async () => {
+          listCalls += 1
+          return []
+        },
+      }),
+    )
+    try {
+      await flush()
+      const mountCalls = listCalls
+      assert.ok(mountCalls >= 1, 'mount primes the skills cache')
+
+      // No store event: the selection alone must reach the composer.
+      store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other' })
+      assert.equal(listCalls, mountCalls + 1, 'the workspace switch lists skills again')
+
+      store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other' })
+      assert.equal(listCalls, mountCalls + 1, 'an unchanged workspace does not refetch')
+    } finally {
+      inputBar.unmount()
+    }
   })
 })

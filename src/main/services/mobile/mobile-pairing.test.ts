@@ -16,11 +16,33 @@ it('rejects delayed decisions when a replacement reuses the display code and lab
     assert.equal(requests.respond(decision, old.code, old.id), false)
     assert.deepEqual(requests.current(), current)
   }
-  assert.equal(requests.respond('control', '654321', current.id), false)
-  assert.equal(requests.respond('control', current.code, current.id), true)
+  assert.equal(requests.respond('control', '654321', current.id, true), false)
+  assert.equal(requests.respond('control', current.code, current.id, true), true)
   assert.equal(await second, 'control')
   assert.equal(requests.current(), null)
+  assert.equal(requests.respond('control', current.code, current.id, true), false)
+})
+
+it('grants control over the LAN IP only with the local-root acknowledgement', async () => {
+  const requests = new MobilePairing()
+  const result = requests.request('Phone', '123456', new AbortController().signal)
+  const current = requests.current()
+  assert.ok(current)
+  assert.equal(current.trustedName, false)
   assert.equal(requests.respond('control', current.code, current.id), false)
+  assert.deepEqual(requests.current(), current)
+  assert.equal(requests.respond('control', current.code, current.id, true), true)
+  assert.equal(await result, 'control')
+})
+
+it('grants control on desktop approval alone over the trusted name', async () => {
+  const requests = new MobilePairing()
+  const result = requests.request('Phone', '123456', new AbortController().signal, true)
+  const current = requests.current()
+  assert.ok(current)
+  assert.equal(current.trustedName, true)
+  assert.equal(requests.respond('control', current.code, current.id), true)
+  assert.equal(await result, 'control')
 })
 
 it('allows read-only and denial for the matching request', async () => {

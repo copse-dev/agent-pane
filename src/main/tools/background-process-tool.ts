@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
   getBackgroundProcessLogs,
+  backgroundSandboxRetryReasons,
+  claimBackgroundSandboxRetry,
   isBackgroundExitObserved,
   listBackgroundProcesses,
   type BackgroundProcessInfo,
@@ -14,8 +16,26 @@ import {
   requestBackgroundCompletionWake,
   resolveBackgroundCompletionWakeHandler,
 } from '../services/exec/background-completion-wake.ts'
-import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
+import {
+  isThreadCheckoutDeferred,
+  requireThreadExecutionOwner,
+} from '../services/thread-execution-context.ts'
+import { currentAgentRoots, getAgentExecutionRoot } from '../services/execution-root.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
+import { spawnRunsOnSshTarget } from '../project-sandbox/spawn.ts'
+import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
+import { shellExpectedBlockEscalation } from '../services/security/permission-policy.ts'
+import {
+  promptExpectedSandboxBlock,
+  promptUnsandboxedShell,
+} from '../services/security/permission-gate.ts'
+import { resolveToolPermission } from '../services/security/tool-permissions.ts'
+import { currentRunIsUnattendedContainer } from '../services/security/unattended-run.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
+import {
+  captureLateCommandPhaseReport,
+  reportCommandPhase,
+} from '../services/exec/command-phase.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {
   const containment = info.unsandboxed ? ' · unsandboxed' : ''
@@ -38,16 +58,37 @@ function tailLogs(logs: string, maxLines = 40): string {
   return ['[…]', ...lines.slice(lines.length - maxLines)].join('\n')
 }
 
+function retryAdvice(info: BackgroundProcessInfo): string {
+  if (!backgroundSandboxRetryReasons(info.id, info.command, info.cwd)) return ''
+  return (
+    '\nA sandbox denial may have caused this failure. Inspect partial effects before replaying. ' +
+    'To request a new outside attempt, call run_background with action=start, the exact same command, ' +
+    `and retry_of="${info.id}". Fresh consent is required; the failed task is not restarted automatically.`
+  )
+}
+
 export const runBackgroundTool = defineTool({
   name: 'run_background',
   description:
-    'Run a command asynchronously with a durable task handle. Use this for long-lived commands (dev servers and watchers) and bounded work expected to outlive a foreground call or leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs). Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. For bounded work, set `wake_on_completion: true` and `timeout_ms`; after it starts, end the turn instead of polling because completion will resume the task exactly once. Without port binding it runs fully sandboxed (workspace-only, no network/binding).',
+    'Run a command asynchronously with a durable task handle. Use this for long-lived commands (dev servers and watchers) and bounded work expected to outlive a foreground call or leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs). Actions: `start` a command; `list` running tasks; `logs` for a task by id; `stop` a task by id. Set `allow_port_binding: true` for a task that must bind a local port (e.g. a dev server) — it returns the detected http://localhost:<port> URL to open with browser_navigate, and prompts for permission the first time per project. For bounded work, set `wake_on_completion: true` and `timeout_ms`; after it starts, end the turn instead of polling because completion will resume the task exactly once. Local commands use the project sandbox; commands approved for outside access use the same routing as run_shell. A read-access approval widens only the named paths. Use expects_sandbox_block to request an escape before an ambiguous command, or retry_of with the exact command of a failed contained task to request a new outside attempt. Inspect partial effects before retrying. Neither option authorizes access without consent.',
   parameters: z.object({
     action: z.enum(['start', 'list', 'logs', 'stop']),
     command: z
       .string()
       .optional()
       .describe('For action=start: the command, e.g. "npm run dev" or "npm run build -- --watch".'),
+    expects_sandbox_block: z
+      .boolean()
+      .optional()
+      .describe(
+        'For action=start: ask before an ambiguous command expected to need outside access. Declining keeps it contained.',
+      ),
+    retry_of: z
+      .string()
+      .optional()
+      .describe(
+        'For action=start: failed contained task id to retry once with fresh outside consent and the exact same command. Inspect partial effects first.',
+      ),
     allow_port_binding: z
       .boolean()
       .optional()
@@ -65,7 +106,19 @@ export const runBackgroundTool = defineTool({
       .describe('Required with wake_on_completion: hard deadline in milliseconds.'),
     id: z.string().optional().describe('For action=logs/stop: the task handle from start/list.'),
   }),
-  async execute({ action, command, allow_port_binding, wake_on_completion, timeout_ms, id }) {
+  async execute(
+    {
+      action,
+      command,
+      allow_port_binding,
+      wake_on_completion,
+      timeout_ms,
+      id,
+      expects_sandbox_block,
+      retry_of,
+    },
+    signal,
+  ) {
     if (action === 'list') {
       const tasks = listBackgroundProcesses()
       if (tasks.length === 0) return 'No background tasks running.'
@@ -78,7 +131,7 @@ export const runBackgroundTool = defineTool({
       if (logs === null) return `No background task with id "${id}".`
       const output = logs.trim() || '(no output yet)'
       const info = listBackgroundProcesses().find((task) => task.id === id)
-      return info && !info.running ? `${formatInfo(info)}\n\n${output}` : output
+      return info && !info.running ? `${formatInfo(info)}\n\n${output}${retryAdvice(info)}` : output
     }
 
     if (action === 'stop') {
@@ -99,35 +152,99 @@ export const runBackgroundTool = defineTool({
     if (wake_on_completion === true && !turnTreeId) {
       return 'run_background cannot wake without an active human turn-tree.'
     }
+    signal.throwIfAborted()
+    const cwd = getAgentExecutionRoot()
+    if (!cwd) return 'No workspace open.'
+    let unsandboxed = false
+    let suppressSandboxRetry = false
+    if (retry_of !== undefined) {
+      if (isThreadCheckoutDeferred() || currentRunIsUnattendedContainer(owner.threadId)) {
+        return 'An outside background retry is unavailable in this execution mode.'
+      }
+      const reasons = backgroundSandboxRetryReasons(retry_of, command, cwd, owner)
+      if (!reasons)
+        return 'No eligible failed contained task matches retry_of, command, owner and working directory.'
+      const approved = await promptUnsandboxedShell(
+        command,
+        ['This starts a new attempt; the failed task may have made partial changes.', ...reasons],
+        signal,
+        // One outside attempt only: a forged denial must not earn a standing grant.
+        { requireInteractiveApproval: true, oneShot: true },
+      )
+      signal.throwIfAborted()
+      if (!approved) return 'Outside background retry declined; no new attempt was started.'
+      if (resolveToolPermission('run_background')?.policy === 'block')
+        throw new Error('This tool is blocked.')
+      if (!claimBackgroundSandboxRetry(retry_of, command, cwd, owner))
+        return 'The failed task is no longer eligible for retry.'
+      unsandboxed = true
+    } else if (
+      expects_sandbox_block === true &&
+      !isThreadCheckoutDeferred() &&
+      !currentRunIsUnattendedContainer(owner.threadId) &&
+      !spawnRunsOnSshTarget(cwd) &&
+      !shellRunsOutsideSandbox(command, currentAgentRoots(), 'run_background')
+    ) {
+      const escalation = shellExpectedBlockEscalation(command, cwd, isProjectSandboxEnabled())
+      if (escalation.eligible) {
+        unsandboxed = await promptExpectedSandboxBlock(command, escalation.reasons, signal, {
+          executionRoot: cwd,
+          requireInteractiveApproval: true,
+        })
+        suppressSandboxRetry = !unsandboxed
+      }
+    }
+    signal.throwIfAborted()
+    if (resolveToolPermission('run_background')?.policy === 'block')
+      throw new Error('This tool is blocked.')
     // Capture before spawn: process `exit` is delivered outside this ALS scope.
     const armedWakeHandler = turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
+    // The task ends after this call returns, often in a later turn: record its
+    // end on the card that started it before any wake reads that card (#3956).
+    const reportEnd = captureLateCommandPhaseReport(owner)
+    reportCommandPhase('starting')
     const info = await startSupervisedBackgroundProcess({
       command,
+      cwd,
+      unsandboxed,
+      suppressSandboxRetry,
       allowPortBinding: allow_port_binding === true,
       owner,
       ...(timeout_ms !== undefined ? { timeoutMs: timeout_ms } : {}),
-      ...(turnTreeId
-        ? {
-            onCompletion: async ({ info: completed }): Promise<void> => {
-              await requestBackgroundCompletionWake(
-                {
-                  operationId: completed.id,
-                  owner,
-                  turnTreeId,
-                  exitCode: completed.exitCode,
-                  timedOut: completed.timedOut,
-                  alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
-                },
-                armedWakeHandler,
-              )
-            },
-          }
-        : {}),
+      onCancelled: ({ id: taskId }) => {
+        void reportEnd('cancelled', { backgroundTaskId: taskId })
+      },
+      onCompletion: async ({ info: completed }): Promise<void> => {
+        await reportEnd(completed.timedOut ? 'timed_out' : 'exited', {
+          backgroundTaskId: completed.id,
+          ...(completed.exitCode !== null ? { exitCode: completed.exitCode } : {}),
+        })
+        if (!turnTreeId) return
+        await requestBackgroundCompletionWake(
+          {
+            operationId: completed.id,
+            owner,
+            turnTreeId,
+            exitCode: completed.exitCode,
+            timedOut: completed.timedOut,
+            alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
+          },
+          armedWakeHandler,
+        )
+      },
     })
+    reportCommandPhase('running', { backgroundTaskId: info.id })
+    if (!info.running) {
+      reportCommandPhase(info.timedOut ? 'timed_out' : 'exited', {
+        backgroundTaskId: info.id,
+        ...(info.exitCode !== null ? { exitCode: info.exitCode } : {}),
+      })
+    }
     const lines = [formatInfo(info)]
     if (!info.running) {
       const logs = getBackgroundProcessLogs(info.id)
       lines.push('', 'The task exited immediately. Recent output:', tailLogs(logs ?? ''))
+      lines.push(retryAdvice(info))
     } else if (wake_on_completion === true) {
       lines.push('', 'Completion wake is armed. End this turn now; do not poll for completion.')
     } else if (info.url) {

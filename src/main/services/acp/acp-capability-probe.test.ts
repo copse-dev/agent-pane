@@ -10,7 +10,7 @@ import {
   type AuthMethod,
   type SessionModeState,
   type SessionConfigOption,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import {
   extractCapabilitySnapshot,
   probeAgentCapabilities,

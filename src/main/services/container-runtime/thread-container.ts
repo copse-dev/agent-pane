@@ -1,3 +1,4 @@
+import { appleContainerActivity, markAppleImageUsed } from './apple-container-activity.ts'
 import { storageCleanup } from '../storage-cleanup.ts'
 import type { ThreadContainerRunSpec } from './run-spec.ts'
 import {
@@ -1081,6 +1082,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
         WORKER_UID: String(WORKER_UID),
       },
     })
+    if (engine === 'apple') await markAppleImageUsed(image)
     await runContainerImageBuild(engine, () =>
       runEngine(engine, build.args, { timeoutMs: 15 * 60_000 }),
     )
@@ -1892,7 +1894,11 @@ export async function runThreadInContainer(
   dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },
 ): Promise<ThreadContainerRecord> {
   return storageCleanup().use('runs', () =>
-    runThreadInContainerLeased(request, options, dependencies),
+    process.platform === 'darwin'
+      ? appleContainerActivity().use('runs', () =>
+          runThreadInContainerLeased(request, options, dependencies),
+        )
+      : runThreadInContainerLeased(request, options, dependencies),
   )
 }
 
@@ -2048,6 +2054,7 @@ async function runThreadInContainerLeased(
     pidsLimit: 512,
     cpus: 2,
   }
+  if (engine === 'apple') await duringPreparation(() => markAppleImageUsed(image))
   const digest = await duringPreparation(() => imageDigest(image, engine))
   const attestation = buildAttestation(runInput, digest)
   await duringPreparation(() => {

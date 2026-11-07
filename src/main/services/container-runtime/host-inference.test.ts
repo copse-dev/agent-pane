@@ -499,6 +499,7 @@ describe('OAuth stays on the host', () => {
       },
       {
         openBrowser: async (): Promise<void> => {},
+        focusApp: (): void => {},
         fetch: async (_url, init): Promise<Response> => {
           refreshes++
           assert.match(
@@ -580,6 +581,7 @@ describe('OAuth stays on the host', () => {
       },
       {
         openBrowser: async (): Promise<void> => {},
+        focusApp: (): void => {},
         fetch: async (): Promise<Response> => new Response(null, { status: 200 }),
       },
     )

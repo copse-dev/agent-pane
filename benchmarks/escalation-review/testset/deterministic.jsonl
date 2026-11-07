@@ -433,7 +433,7 @@
 {"id":"au-rustup-toolchain","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-docker-pull","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-pnpm-store-prune","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"au-xcrun-simctl-boot","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"au-xcrun-simctl-boot","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-defaults-read-app","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-open-url","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-git-reset-hard","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}

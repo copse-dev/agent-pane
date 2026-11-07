@@ -5,15 +5,13 @@ import type {
   SupervisedTaskAuditEvent,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
+import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import {
-  storageDelete,
-  storageGet,
   storageListFiles,
   storageReadFile,
   storageRemoveFile,
-  storageSet,
   storageWriteFile,
-} from '../storage/storage.ts'
+} from '../storage/user-data-files.ts'
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from '../supervisor/task-store.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
@@ -489,6 +487,65 @@ describe('AppleDevelopmentService enrollment', () => {
       ).operation.outcome?.reason,
       'Apple operation requires approval again after Copse restarted.',
     )
+  })
+
+  it('cancels one project, or every project when the plugin is turned off', async () => {
+    const waitingTask = (projectId: string): SupervisedTaskMeta => ({
+      taskId: `operation-${projectId}`,
+      projectId,
+      threadId: 'thread-1',
+      handler: 'apple_operation',
+      handlerInput: {},
+      provenance: 'agent',
+      state: 'waiting',
+      createdAt: 1,
+      updatedAt: 1,
+      trigger: { kind: 'wake_at', wakeAt: Date.now() + 60 * 60 * 1_000 },
+      permissionSnapshot: {
+        capturedAt: 1,
+        autoRunSandboxCommands: false,
+        projectSandboxEnabled: false,
+        executionRoot: `/${projectId}`,
+        workspaceTargetKind: 'local',
+      },
+      reapproveOnWake: false,
+      concurrencyClass: `apple:/${projectId}`,
+      resourceBudget: { maxDurationMs: 30 * 60 * 1_000, maxAttempts: 1 },
+      attempt: 0,
+      maxAttempts: 1,
+    })
+    // A clock that never fires: the far-future wakes must stay waiting.
+    const supervisor = new TaskSupervisor({
+      store: new EmptyTaskStore(['project-a', 'project-b', 'project-c'].map(waitingTask)),
+      clock: {
+        now: (): number => Date.now(),
+        setTimeout: (): number => 0,
+        clearTimeout: (): void => {},
+      },
+    })
+    const service = new AppleDevelopmentService({
+      driver: new InstalledXcodeDriver(),
+      supervisor,
+      pluginEnabled: (): boolean => true,
+      platform: 'darwin',
+    })
+    await supervisor.start()
+    const state = (projectId: string): string | undefined =>
+      supervisor.get(projectId, `operation-${projectId}`)?.state
+
+    await service.cancelProject('project-c')
+    assert.deepEqual(['project-a', 'project-b', 'project-c'].map(state), [
+      'waiting',
+      'waiting',
+      'cancelled',
+    ])
+
+    await service.cancelAllProjects()
+    assert.deepEqual(['project-a', 'project-b', 'project-c'].map(state), [
+      'cancelled',
+      'cancelled',
+      'cancelled',
+    ])
   })
 
   it('refreshes candidates from the enrolled thread checkout without metadata execution', async () => {

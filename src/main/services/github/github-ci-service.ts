@@ -126,8 +126,11 @@ export function deriveOverallState(
     // genuinely has no CI" when checks are merely pending. (#521)
     return opts.checksPending ? 'pending' : 'no_checks'
   }
-  if (checks.some((check) => check.bucket === 'pending')) return 'pending'
-  if (checks.some((check) => check.bucket === 'fail')) return 'failure'
+  if (opts.checksPending || checks.some((check) => check.bucket === 'pending')) return 'pending'
+  if (checks.some((check) => check.bucket === 'fail' || check.bucket === 'cancel')) return 'failure'
+  // An unfamiliar GitHub state is not evidence that CI passed. Keep watching
+  // until it resolves or the existing durable-watch deadline expires.
+  if (checks.some((check) => check.bucket === 'unknown')) return 'pending'
   return 'success'
 }
 
@@ -165,8 +168,7 @@ export function pickLatestRunForHead(
 ): GhWorkflowRun | null {
   if (runs.length === 0) return null
   if (headSha) {
-    const match = runs.find((run) => run.headSha === headSha)
-    if (match) return match
+    return runs.find((run) => run.headSha === headSha) ?? null
   }
   return runs[0] ?? null
 }
@@ -175,7 +177,10 @@ function prSelector(prNumber: number | undefined): string[] {
   return prNumber === undefined ? [] : [String(prNumber)]
 }
 
-async function loadOpenPr(prNumber?: number, cwd?: string): Promise<GhPrView | null> {
+async function loadOpenPr(
+  prNumber: number | undefined,
+  cwd: string | null,
+): Promise<GhPrView | null> {
   const args = [
     'pr',
     'view',
@@ -183,9 +188,15 @@ async function loadOpenPr(prNumber?: number, cwd?: string): Promise<GhPrView | n
     '--json',
     'state,number,title,url,headRefName,headRefOid,statusCheckRollup',
   ]
-  const result = await runGh(args, cwd ? { cwd } : {})
+  const result = await runGh(args, { cwd })
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
+    const message = result.stderr.trim() || result.stdout.trim() || 'gh pr view failed'
+    if (prNumber === undefined && /no pull requests found for branch/i.test(message)) {
+      throw new Error(
+        `${message}\nThis tool reads open-PR checks. Use gh_run_list for branch/main workflow runs, pin commit to the tip SHA, and use gh_run_view for failure logs. CI status remains unknown until workflow evidence is read.`,
+      )
+    }
+    throw new Error(message)
   }
   const pr = parseGhJson(result.stdout, decodeWithSchema(ghPrViewSchema))
   if (!pr || pr.state !== 'OPEN') return null
@@ -202,7 +213,10 @@ interface PrChecksResult {
   pending: boolean
 }
 
-async function loadPrChecks(prNumber?: number, cwd?: string): Promise<PrChecksResult> {
+async function loadPrChecks(
+  prNumber: number | undefined,
+  cwd: string | null,
+): Promise<PrChecksResult> {
   const args = [
     'pr',
     'checks',
@@ -210,7 +224,7 @@ async function loadPrChecks(prNumber?: number, cwd?: string): Promise<PrChecksRe
     '--json',
     'name,state,bucket,link,workflow',
   ]
-  const result = await runGh(args, cwd ? { cwd } : {})
+  const result = await runGh(args, { cwd })
   if (result.code !== 0 && result.code !== 8) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr checks failed')
   }
@@ -220,7 +234,7 @@ async function loadPrChecks(prNumber?: number, cwd?: string): Promise<PrChecksRe
 async function loadLatestRun(
   branch: string | null,
   headSha: string | null,
-  cwd?: string,
+  cwd: string | null,
 ): Promise<GhWorkflowRun | null> {
   if (!branch) return null
   const result = await runGh(
@@ -234,7 +248,7 @@ async function loadLatestRun(
       '--json',
       'databaseId,headSha,conclusion,status,url,name,displayTitle',
     ],
-    cwd ? { cwd } : {},
+    { cwd },
   )
   if (result.code !== 0) return null
   const runs = parseGhJson(result.stdout, decodeWithSchema(ghWorkflowRunsSchema))
@@ -262,7 +276,11 @@ function buildCiStatus(
   }
 }
 
-export async function getCiStatus(prNumber?: number, cwd?: string): Promise<CiStatus> {
+/** CI status for the PR in `cwd`, the checkout the caller acts on (null when none resolves). */
+export async function getCiStatus(
+  prNumber: number | undefined,
+  cwd: string | null,
+): Promise<CiStatus> {
   const pr = await loadOpenPr(prNumber, cwd)
   if (!pr) {
     return {
@@ -309,7 +327,7 @@ export async function getCiFailureLogs(opts: {
   prNumber?: number | undefined
   runId?: number | undefined
   maxBytes?: number | undefined
-  cwd?: string | undefined
+  cwd: string | null
 }): Promise<string> {
   const maxBytes = opts.maxBytes ?? COMMAND_OUTPUT_MAX_BYTES
   const pr = await loadOpenPr(opts.prNumber, opts.cwd)
@@ -328,7 +346,7 @@ export async function getCiFailureLogs(opts: {
 
   const result = await runGh(['run', 'view', String(runId), '--log-failed'], {
     timeout_ms: COMMAND_RUNNER_LONG_TIMEOUT_MS,
-    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    cwd: opts.cwd,
   })
   if (result.code !== 0) {
     throw new Error(

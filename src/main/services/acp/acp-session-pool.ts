@@ -1,3 +1,4 @@
+import type { AcpTranscriptCheckpoint } from './acp-transcript-checkpoint.ts'
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
   agentManagedSessionOptions,
@@ -8,6 +9,7 @@ import {
 } from './acp-client.ts'
 import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reattach.ts'
 import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
+import { AcpTerminalHost } from './acp-terminals.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
 import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
@@ -64,6 +66,7 @@ export interface PooledAcpSession {
   /** When this agent process was spawned — how a fault gets read (see below). */
   openedAt: number
   lastUsedAt: number
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   dispose: () => Promise<void>
 }
 
@@ -134,6 +137,7 @@ function runThreadOperation<T>(threadId: string, operation: () => Promise<T>): P
  * or replaced), kept so the next acquire can reattach to it.
  */
 interface CarryOverCandidate extends AcpSessionCarryOver {
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   lineage: string
 }
 const carryOverCandidates = new Map<string, CarryOverCandidate>()
@@ -155,6 +159,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     cwd: config.cwd,
     host: spawnConfigSshTarget(config)?.hostId ?? null,
     sandbox: config.sandbox ?? null,
+    stateDir: config.stateDir ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
     readonlyCheckout: config.readonlyCheckout === true,
@@ -203,6 +208,7 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
     sessionId: entry.open.session.sessionId,
     cwd: entry.cwd,
     hasHistory: entry.open.hasHistory,
+    ...(entry.transcriptCheckpoint ? { transcriptCheckpoint: entry.transcriptCheckpoint } : {}),
   })
 }
 
@@ -422,6 +428,7 @@ async function acquireAcpSessionUnlocked(
   // in wire order. `null` — always, when the flag is off — leaves the transport
   // untouched.
   const trace = await createAcpWireTrace({
+    ...(opts.projectId ? { projectId: opts.projectId } : {}),
     threadId: opts.threadId,
     agent: { command: opts.config.command, args: opts.config.args },
     ...(bridge ? { bridgeToolNames: bridge.toolNames } : {}),
@@ -434,7 +441,11 @@ async function acquireAcpSessionUnlocked(
       () =>
         openAcpSession(
           config,
-          { current: null },
+          // Client terminals (#623) run through the bridge's run_shell binding,
+          // so they exist exactly when the bridge does: local agents only.
+          bridge
+            ? { current: null, terminals: new AcpTerminalHost(bridge.runShellCommand) }
+            : { current: null },
           opts.createTransport,
           carryOver,
           trace,
@@ -465,6 +476,9 @@ async function acquireAcpSessionUnlocked(
     lineage,
     openedAt: Date.now(),
     lastUsedAt: Date.now(),
+    ...(open.resumed && carryOver?.transcriptCheckpoint
+      ? { transcriptCheckpoint: carryOver.transcriptCheckpoint }
+      : {}),
     dispose: () => {
       if (disposal) return disposal
       open.agentInitiated?.end()

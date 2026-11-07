@@ -49,11 +49,31 @@ describe('right panel expand-over-chat', () => {
     assert.equal(resizer.hidden, true)
     assert.equal(qsRequired(document, '#context-host').hidden, false)
     store.setState({ rightPanelMode: 'explorer' })
-    store.emit('right_panel_mode_changed')
     assert.equal(sidebar.hidden, false)
     assert.equal(resizer.hidden, false)
     assert.equal(qsRequired(document, '#context-host').hidden, true)
     unmount()
+  })
+
+  it('repaints from panel state alone, with no event emitted', () => {
+    const { body } = mountShell()
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'explorer' })
+    const unmount = mountRightPanelLayout(store)
+    const resizer = qsRequired(document, '#resizer-tree')
+    assert.equal(resizer.hidden, false)
+
+    store.setState({ filesPaneOpen: false })
+    assert.equal(resizer.hidden, true)
+    store.setState({ filesPaneOpen: true, rightPanelMaximized: true })
+    assert.equal(resizer.hidden, false)
+    assert.equal(body.classList.contains(RIGHT_PANEL_MAXIMIZED_CLASS), true)
+    // Closing the panel is enough to uncover chat, whatever the flag still says.
+    store.setState({ filesPaneOpen: false })
+    assert.equal(body.classList.contains(RIGHT_PANEL_MAXIMIZED_CLASS), false)
+
+    unmount()
+    store.setState({ filesPaneOpen: true })
+    assert.equal(resizer.hidden, true, 'unmount stops repainting')
   })
 
   it('marks #body only while an open panel is expanded', () => {

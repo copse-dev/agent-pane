@@ -7,6 +7,9 @@ import {
 } from './env-key-import.ts'
 import type { DetectedKey } from './env-key-detection.ts'
 import { hasApiKey, deleteApiKey, setSetting } from '../storage/settings.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 function key(provider: string, value = `${provider}-secret`, source = '~/.zshrc'): DetectedKey {
   return { provider, envVar: `${provider.toUpperCase()}_API_KEY`, value, source }
@@ -95,10 +98,10 @@ describe('importDetectedEnvKeys', () => {
   })
 
   describe('against the real settings store', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       deleteApiKey('anthropic')
       deleteApiKey('openai')
-      setSetting('envKeyAutoDetectEnabled', true)
+      await setSetting('envKeyAutoDetectEnabled', true)
     })
 
     it('round-trips: imported keys become visible to hasApiKey', () => {
@@ -120,8 +123,8 @@ describe('importDetectedEnvKeys', () => {
       assert.equal(hasApiKey('openai'), true)
     })
 
-    it('honours the stored consent flag through the default deps', () => {
-      setSetting('envKeyAutoDetectEnabled', false)
+    it('honours the stored consent flag through the default deps', async () => {
+      await setSetting('envKeyAutoDetectEnabled', false)
       assert.throws(
         () => importDetectedEnvKeys({}, { scan: () => [key('anthropic')] }),
         EnvKeyImportConsentError,

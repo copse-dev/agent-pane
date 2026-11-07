@@ -1,4 +1,9 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import {
+  isIsolatedDesktopGuest,
+  desktopGuestProvider,
+  DESKTOP_PARENT_MODEL,
+} from '../isolated-desktop/guest-provider.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { createChatGptPlanProvider } from './chatgpt-plan-provider.ts'
 import { getChatGptPlanService, type ChatGptPlanService } from './chatgpt-plan-service.ts'
@@ -309,6 +314,11 @@ export async function buildProvider(
   promptCacheKey?: string,
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
+  if (isIsolatedDesktopGuest()) {
+    if (model !== DESKTOP_PARENT_MODEL)
+      throw new Error('This isolated desktop can use only the approved parent model')
+    return desktopGuestProvider()
+  }
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {

@@ -8,6 +8,8 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Screen readers now announce the Settings dialog by name when it opens.
+
 ## 0.1.0-beta.16
 
 - Copse no longer decodes Brotli-compressed HTTP responses itself, closing

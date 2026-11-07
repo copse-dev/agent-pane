@@ -8,11 +8,13 @@ import { resolveUserDataDir } from './services/storage/user-data-migration.ts'
 
 augmentPathForGuiLaunch()
 
-// MUST be imported before any module that constructs electron-store (storage.ts,
-// settings.ts), because electron-store resolves its file path from
-// app.getPath('userData') at construction time. ESM evaluates imports in source
-// order, so keeping this as the first import in main/index.ts guarantees the
-// name/path are set before those stores are built.
+// MUST be imported first in main/index.ts. electron-store resolves its file path
+// from app.getPath('userData') when a store is built. The stores (storage.ts,
+// settings.ts) open on first read or write rather than at import, and no module
+// reads them while it loads (#3959). Keeping this first still guarantees the
+// name/path and the backend installed below are in place before any other
+// module is evaluated, so a future import-time read cannot bind the in-memory
+// fallback. ESM evaluates imports in source order.
 //
 // Without this, an unpackaged `electron .` run stores data under an "Electron"
 // directory and presents itself as "Electron" in the menu/About panel.

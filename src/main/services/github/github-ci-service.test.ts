@@ -74,6 +74,36 @@ describe('deriveOverallState', () => {
     assert.equal(deriveOverallState([]), 'no_checks')
   })
 
+  it('does not report cancelled or unrecognized checks as passing', () => {
+    assert.equal(
+      deriveOverallState([{ name: 'CI', state: 'CANCELLED', bucket: 'cancel' }]),
+      'failure',
+    )
+    assert.equal(
+      deriveOverallState([{ name: 'review', state: 'NEW_STATE', bucket: 'unknown' }]),
+      'pending',
+    )
+  })
+
+  it('keeps a partial passing list pending when gh reports queued checks', () => {
+    assert.equal(
+      deriveOverallState([{ name: 'lint', state: 'SUCCESS', bucket: 'pass' }], {
+        checksPending: true,
+      }),
+      'pending',
+    )
+  })
+
+  it('allows skipped checks alongside passing checks', () => {
+    assert.equal(
+      deriveOverallState([
+        { name: 'lint', state: 'SUCCESS', bucket: 'pass' },
+        { name: 'optional', state: 'SKIPPED', bucket: 'skipping' },
+      ]),
+      'success',
+    )
+  })
+
   it('returns pending for an empty list when checks are queued but not yet reported (#521)', () => {
     assert.equal(deriveOverallState([], { checksPending: true }), 'pending')
   })
@@ -124,8 +154,13 @@ describe('pickLatestRunForHead', () => {
     assert.deepEqual(pickLatestRunForHead(runs, 'head'), { databaseId: 2, headSha: 'head' })
   })
 
-  it('falls back to the newest listed run', () => {
+  it('never substitutes an older commit when the current head has no listed run', () => {
     const runs = [{ databaseId: 9, headSha: 'old' }]
-    assert.deepEqual(pickLatestRunForHead(runs, 'missing'), { databaseId: 9, headSha: 'old' })
+    assert.equal(pickLatestRunForHead(runs, 'missing'), null)
+  })
+
+  it('uses the newest listed run only when no head was supplied', () => {
+    const runs = [{ databaseId: 9, headSha: 'old' }]
+    assert.deepEqual(pickLatestRunForHead(runs, null), { databaseId: 9, headSha: 'old' })
   })
 })

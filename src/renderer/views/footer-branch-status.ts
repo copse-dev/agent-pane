@@ -16,7 +16,13 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
-import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeThreadOf,
+  getActiveThreadOwner,
+  sameThreadBesidesDraft,
+  type ActiveThreadOwner,
+} from '../controller/active-thread-owner.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
@@ -670,7 +676,6 @@ export function mountFooterBranchStatus(
   }
 
   async function refresh(): Promise<void> {
-    refreshedThreadId = store.getState().activeThreadId
     const token = ++refreshToken
     pruneBaseBranches()
     if (!store.getState().workspaceRoot) {
@@ -728,8 +733,6 @@ export function mountFooterBranchStatus(
     if (open) renderMenu()
   }
 
-  let refreshedThreadId = store.getState().activeThreadId
-
   function refreshNow(): void {
     if (refreshTimer) {
       clearTimeout(refreshTimer)
@@ -746,13 +749,21 @@ export function mountFooterBranchStatus(
     }, 500)
   }
 
-  /** Render store-owned state now; defer only the supplementary Git reads. */
-  function scheduleStoreRefresh(): void {
+  function renderStoreState(): void {
     pruneBaseBranches()
     renderTrigger()
     if (open) renderMenu()
+  }
+
+  /** Render store-owned state now; defer only the supplementary Git reads. */
+  function scheduleStoreRefresh(): void {
+    renderStoreState()
     scheduleRefresh()
   }
+
+  // Set while the task that switched threads runs: the active-thread selection
+  // fires for the same write, and the refresh the switch started covers it.
+  let switchedThisTask = false
 
   function copyBranchName(): void {
     const branch = branchToCopy
@@ -837,12 +848,12 @@ export function mountFooterBranchStatus(
       }
       refreshNow()
     }),
-    store.on('workspace_changed', refreshNow),
-    store.on('threads_changed', () => {
-      // A real thread switch should repaint immediately. Same-thread metadata
-      // updates are the noisy path during first-message checkout and can share
-      // the existing working-tree debounce.
-      if (store.getState().activeThreadId !== refreshedThreadId) {
+    selectActiveWorkspace(store, refreshNow),
+    // A real thread switch repaints immediately, whichever writer made it and
+    // whether or not it emitted anything (#3928).
+    store.select(
+      (s) => s.activeThreadId,
+      () => {
         // `status` describes the thread we just left, not the one we are
         // switching to. Clear it (and the picker's branch list) before
         // repainting so the label falls through to the new thread's own
@@ -855,10 +866,24 @@ export function mountFooterBranchStatus(
         renderTrigger()
         if (open) renderMenu()
         refreshNow()
-        return
-      }
-      scheduleStoreRefresh()
-    }),
+        switchedThisTask = true
+        queueMicrotask(() => {
+          switchedThisTask = false
+        })
+      },
+    ),
+    // The active thread's own updates (branch, worktree, PR links, blank or
+    // not). Other threads' renames and turns no longer repaint the footer.
+    store.select(
+      activeThreadOf,
+      () => {
+        // Same-thread metadata updates are the noisy path during first-message
+        // checkout and can share the existing working-tree debounce.
+        if (switchedThisTask) renderStoreState()
+        else scheduleStoreRefresh()
+      },
+      sameThreadBesidesDraft,
+    ),
     store.on('thread_status_changed', scheduleStoreRefresh),
     store.on('message_added', () => {
       scheduleStoreRefresh()

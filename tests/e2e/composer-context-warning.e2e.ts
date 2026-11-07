@@ -1,10 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
   saveElementScreenshot,
+  waitForStableText,
 } from './helpers/screenshot.ts'
 import { composerBannerMetrics } from './helpers/composer-banner.ts'
 
@@ -19,7 +20,9 @@ describe('composer context-window warning', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-context-fit-project', {
+    // Not this checkout: its AGENTS.md, skills and branch reach the estimate
+    // and the follow-up row, so a docs edit on main would move the app frame.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-context-fit-project', {
       subagentsEnabled: false,
       model: 'gpt-4o-mini',
     })
@@ -67,6 +70,10 @@ describe('composer context-window warning', () => {
       },
     ])
 
+    // The banner quotes the live pre-send estimate ("about N tokens"), which
+    // reruns on later store changes; the assertions above skip the number, so
+    // hold the capture until the figure stops moving.
+    await waitForStableText('.composer-context-warning-text')
     await saveElementScreenshot('.composer-context-warning', 'composer-context-warning-over.png')
     // Placement is the point of the change: the advice sits with the composer and
     // its model picker, not in app-level chrome.

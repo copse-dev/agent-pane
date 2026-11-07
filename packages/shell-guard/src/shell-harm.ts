@@ -1,4 +1,13 @@
-import { dirname, isAbsolute, parse as parsePath, resolve, sep, win32 } from 'node:path'
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  parse as parsePath,
+  resolve,
+  sep,
+  win32,
+} from 'node:path'
 import {
   CODE_INTERPRETERS,
   SCRIPT_EXTENSIONS,
@@ -12,6 +21,7 @@ import {
   unwrapWrappers,
 } from './shell-argv.ts'
 import { classifyGhSegment } from './gh-argv.ts'
+import { isPlainPackageName, packageRunnerCall } from './package-runners.ts'
 import { scanShellComposition, splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
 import { hostReachReasons } from './host-reach.ts'
@@ -132,17 +142,20 @@ function expandTilde(token: string, homeDir: string, cwd: string): string {
   return resolve(dirname(homeDir), name) + rest
 }
 
-function expandPathToken(token: string, context: ShellHarmContext): string {
+/** The absolute path a token names, with home and cwd variables expanded but links not followed. */
+function lexicalPathToken(token: string, context: ShellHarmContext): string {
   let expanded = expandTilde(token, context.homeDir, context.workspaceRoot ?? process.cwd())
   for (const { re, value } of pathVariables(context)) {
     expanded = expanded.replace(re, () => value)
   }
-  if (isAbsolute(expanded) || isWindowsPath(expanded)) return canonicalPath(expanded, context)
+  if (isWindowsPath(expanded)) return win32.normalize(expanded)
+  if (isAbsolute(expanded)) return resolve(expanded)
   const base = context.workspaceRoot ?? process.cwd()
-  return canonicalPath(
-    isWindowsPath(base) ? win32.resolve(base, expanded) : resolve(base, expanded),
-    context,
-  )
+  return isWindowsPath(base) ? win32.resolve(base, expanded) : resolve(base, expanded)
+}
+
+function expandPathToken(token: string, context: ShellHarmContext): string {
+  return canonicalPath(lexicalPathToken(token, context), context)
 }
 
 function isAtOrAbove(path: string, boundary: string): boolean {
@@ -843,8 +856,13 @@ function inspectPermissionBypass(command: string, normalized: string, out: Mutab
  * signal at all, so `fs.rmSync(process.env.HOME, {recursive: true})` was silently
  * allowed. An argument we cannot resolve is now a prompt.
  */
+/**
+ * `rm(` is Node's `fs/promises` and `fs` callback delete, usually imported by name
+ * (`import { rm } from 'node:fs/promises'`). It only counts as a call, so the
+ * bare word in an import list or a string does not.
+ */
 const LANGUAGE_DELETION_VERBS =
-  'rmSync|rmdirSync|removeSync|rmtree|rm_rf|remove_entry|removedirs|unlinkSync|unlink|promises\\s*\\.\\s*rm|rimraf\\s*\\.\\s*sync|rimraf'
+  'rmSync|rmdirSync|removeSync|rmtree|rm_rf|remove_entry|removedirs|unlinkSync|unlink|promises\\s*\\.\\s*rm|rm(?=\\s*\\()|rimraf\\s*\\.\\s*sync|rimraf'
 
 /**
  * `require('fs').promises.rm(…)` and `require('rimraf').sync(…)` put a quoted
@@ -1161,6 +1179,223 @@ function scriptContentsLookBinary(contents: string): boolean {
   return controls / sampleLen > 0.1
 }
 
+/**
+ * pnpm's `node_modules/.bin` shim (`@zkochan/cmd-shim`), line by line with
+ * indentation and blank lines dropped. The gate cannot follow the shim's
+ * `$(echo "$0" | sed …)` and `$basedir` itself, so a file that is exactly this
+ * template is read as the program it runs instead. The lines must come in this
+ * order: out of place, `basedir=\`cygpath …\`` empties `$basedir` on a host
+ * without cygpath and the shim runs a different file than it names.
+ */
+const PNPM_SHIM_PROLOGUE = [
+  /^#!\/bin\/sh$/,
+  /^basedir=\$\(dirname "\$\(echo "\$0" \| sed -e 's,\\\\,\/,g'\)"\)$/,
+  /^case `uname` in$/,
+  /^\*CYGWIN\*\|\*MINGW\*\|\*MSYS\*\)$/,
+  /^if command -v cygpath > \/dev\/null 2>&1; then$/,
+  /^basedir=`cygpath -w "\$basedir"`$/,
+  /^fi$/,
+  /^;;$/,
+  /^esac$/,
+]
+const PNPM_SHIM_NODE_PATH = [
+  /^if \[ -z "\$NODE_PATH" \]; then$/,
+  /^export NODE_PATH="[^"$`]*"$/,
+  /^else$/,
+  /^export NODE_PATH="[^"$`]*:\$NODE_PATH"$/,
+  /^fi$/,
+]
+const SHIM_TARGET = String.raw`"\$basedir\/([^"$\x60]+)"`
+/** A target run with node: `$basedir/node` when the shim's directory has one, else PATH's. */
+const PNPM_SHIM_NODE_EXEC = [
+  /^if \[ -x "\$basedir\/node" \]; then$/,
+  new RegExp(String.raw`^exec "\$basedir\/node" +${SHIM_TARGET} "\$@"$`),
+  /^else$/,
+  new RegExp(String.raw`^exec node +${SHIM_TARGET} "\$@"$`),
+  /^fi$/,
+]
+/** A target executed as it is, for a bin that is not JavaScript (esbuild's native binary). */
+const PNPM_SHIM_DIRECT_EXEC = [new RegExp(String.raw`^${SHIM_TARGET} +"\$@"$`), /^exit \$\?$/]
+
+/** How a pnpm shim runs its target, relative to `$basedir`. */
+interface PnpmShimTarget {
+  target: string
+  withNode: boolean
+}
+
+/** Match `patterns` against `lines` from `start`; the captured targets, or null on a mismatch. */
+function matchShimLines(
+  lines: readonly string[],
+  start: number,
+  patterns: readonly RegExp[],
+): string[] | null {
+  const targets: string[] = []
+  for (const [offset, pattern] of patterns.entries()) {
+    const match = pattern.exec(lines[start + offset] ?? '')
+    if (match === null) return null
+    if (match[1] !== undefined) targets.push(match[1])
+  }
+  return targets
+}
+
+/** What a pnpm shim runs, relative to its directory, or null when the file is not exactly one. */
+function pnpmShimTarget(contents: string): PnpmShimTarget | null {
+  const lines = contents
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (matchShimLines(lines, 0, PNPM_SHIM_PROLOGUE) === null) return null
+  let at = PNPM_SHIM_PROLOGUE.length
+  if (matchShimLines(lines, at, PNPM_SHIM_NODE_PATH) !== null) at += PNPM_SHIM_NODE_PATH.length
+  for (const [patterns, withNode] of [
+    [PNPM_SHIM_NODE_EXEC, true],
+    [PNPM_SHIM_DIRECT_EXEC, false],
+  ] as const) {
+    const targets = matchShimLines(lines, at, patterns)
+    if (targets === null || at + patterns.length !== lines.length) continue
+    const [target, ...rest] = targets
+    if (target === undefined || rest.some((other) => other !== target)) return null
+    return { target, withNode }
+  }
+  return null
+}
+
+/**
+ * `../eslint/bin/eslint.js`: climbs only at the start. A `..` after a named
+ * directory is resolved by the kernel from wherever that directory links to,
+ * which joining the path as text would get wrong.
+ */
+function isPlainShimTarget(target: string): boolean {
+  const segments = target.split('/')
+  const firstName = segments.findIndex((segment) => segment !== '..')
+  return (
+    firstName >= 0 &&
+    segments
+      .slice(firstName)
+      .every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+  )
+}
+
+/** A file a command runs, and the language it is run as (null: the kernel executes it). */
+interface ProgramFile {
+  path: string
+  interpreter: SourceLanguage | null
+  /** A shim's `$basedir/node`: it runs the target in node's place, as whatever it is. */
+  standsInForNode?: boolean
+}
+
+/**
+ * The files a pnpm shim runs, resolved as the shell will, or null when
+ * `contents` is not exactly a shim. Nothing is trusted for being under
+ * `node_modules`: an agent can write a shim and its payload there, so each file
+ * is read like any other program.
+ *
+ * `$basedir` is the directory of the path the shell was handed (`$0`), not of
+ * the file a link points to: a link elsewhere to a real shim makes it run a file
+ * beside the link. The shim also rewrites every `\` in `$0` to `/`, so a path
+ * that holds one names a different directory to the shell than to the gate; such
+ * a shim is read as the script it is, which prompts.
+ *
+ * The node form prefers `$basedir/node` to the node on PATH. When the shim's
+ * directory holds one (or might: no `pathExists`), that program runs the target
+ * as whatever it is: a copied `/bin/sh` runs it as shell, which reading it as
+ * JavaScript would miss. So it is never allowed: it asks, and is read too.
+ */
+function pnpmShimPrograms(
+  invoked: string,
+  contents: string,
+  context: ShellHarmContext,
+): ProgramFile[] | null {
+  const shim = pnpmShimTarget(contents)
+  if (shim === null || !isPlainShimTarget(shim.target) || invoked.includes('\\')) return null
+  const basedir = canonicalPath(dirname(invoked), context)
+  // Spelled as the shell will hand it on: a native target's own `$0`.
+  const target = resolve(basedir, shim.target)
+  if (!shim.withNode) return [{ path: target, interpreter: null }]
+  const node = join(basedir, 'node')
+  const programs: ProgramFile[] = [{ path: target, interpreter: 'code' }]
+  if (context.pathExists?.(node) !== false) {
+    programs.unshift({ path: node, interpreter: null, standsInForNode: true })
+  }
+  return programs
+}
+
+/** Whether `path` is an entry of a `node_modules/.bin` directory: a program, whatever its suffix. */
+function isPackageBinEntry(path: string): boolean {
+  const bin = dirname(path)
+  return basename(bin) === '.bin' && basename(dirname(bin)) === 'node_modules'
+}
+
+/**
+ * Read and assess a file a command runs. `program.interpreter` is the language
+ * the interpreter on the command line reads it as, or null when the kernel
+ * executes the file itself. `program.path` is the path as the command spells
+ * it, before links; `operand` is how a reason names it.
+ *
+ * A pnpm shim is followed one hop. pnpm never points a shim at another shim, so
+ * a second one is read as the script it is, which keeps a chain of shims from
+ * recursing past the depth limit the other inspectors share.
+ */
+function inspectProgramFile(
+  operand: string,
+  program: ProgramFile,
+  context: ShellHarmContext,
+  out: MutableDecision,
+  depth: number,
+  seenScripts: Set<string>,
+  followShim = true,
+): void {
+  const { path: invoked, interpreter } = program
+  const resolved = canonicalPath(invoked, context)
+  if (seenScripts.has(resolved)) return
+  seenScripts.add(resolved)
+  const contents = context.readScript?.(resolved) ?? null
+  // A program the project compiled (`./target/debug/app`) has no text to
+  // inspect, and running it is no riskier than the `cargo run` or `make` that
+  // built it, which the gate already lets through. Only for direct execution of
+  // a file inside the workspace: an interpreter never runs a compiled binary,
+  // and a binary elsewhere is not the project's.
+  if (
+    contents === null &&
+    interpreter === null &&
+    context.workspaceRoot !== null &&
+    isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
+    context.isCompiledProgram?.(resolved) === true
+  ) {
+    return
+  }
+  const shim =
+    contents !== null && interpreter === null && followShim
+      ? pnpmShimPrograms(invoked, contents, context)
+      : null
+  if (shim !== null) {
+    for (const run of shim) {
+      if (run.standsInForNode === true) {
+        addUnique(
+          out.prompt,
+          `a pnpm shim runs ${run.path} in place of node, as an unknown program`,
+        )
+      }
+      inspectProgramFile(run.path, run, context, out, depth, seenScripts, false)
+    }
+    return
+  }
+  if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
+    addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
+    return
+  }
+  mergeDecision(
+    out,
+    assess(
+      contents,
+      { ...context, workspaceRoot: dirname(resolved) },
+      depth + 1,
+      seenScripts,
+      interpreter ?? scriptLanguage(contents, operand),
+    ),
+  )
+}
+
 function inspectInterpreter(
   argv: string[],
   context: ShellHarmContext,
@@ -1198,41 +1433,84 @@ function inspectInterpreter(
     ? (interpreterScriptOperand(argv) ?? directExecution)
     : directExecution
   if (!operand) return
+  const invoked = lexicalPathToken(operand, context)
   // Screenshots and other assets are not scripts the shell authored for us to
   // re-lex. Skip before readScript so a 79 KiB PNG never becomes advice text.
-  if (!isInterpreter && isNonScriptFileOperand(operand)) return
-  const resolved = expandPathToken(operand, context)
-  if (seenScripts.has(resolved)) return
-  seenScripts.add(resolved)
-  const contents = context.readScript?.(resolved) ?? null
-  // A program the project compiled (`./target/debug/app`) has no text to
-  // inspect, and running it is no riskier than the `cargo run` or `make` that
-  // built it, which the gate already lets through. Only for direct execution of
-  // a file inside the workspace: an interpreter never runs a compiled binary,
-  // and a binary elsewhere is not the project's.
-  if (
-    contents === null &&
-    !isInterpreter &&
-    context.workspaceRoot !== null &&
-    isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
-    context.isCompiledProgram?.(resolved) === true
-  ) {
-    return
-  }
-  if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
-    addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
-    return
-  }
-  mergeDecision(
+  // A package binary is a program whatever its name: `.bin/evil.png` runs.
+  if (!isInterpreter && isNonScriptFileOperand(operand) && !isPackageBinEntry(invoked)) return
+  inspectProgramFile(
+    operand,
+    { path: invoked, interpreter: isInterpreter ? interpreterLanguage : null },
+    context,
     out,
-    assess(
-      contents,
-      { ...context, workspaceRoot: dirname(resolved) },
-      depth + 1,
-      seenScripts,
-      isInterpreter ? interpreterLanguage : scriptLanguage(contents, operand),
-    ),
+    depth,
+    seenScripts,
   )
+}
+
+/**
+ * `npx <name>`, `npm exec <name>` and `pnpm exec <name>` run the project's
+ * `node_modules/.bin/<name>` when it exists. That file is read exactly as
+ * `./node_modules/.bin/<name>` would be: it is in the workspace, and an agent can
+ * write it. `pnpm exec` runs any other command from PATH, so that command is
+ * assessed as if typed; npm fetches it, which `host-reach.ts` asks about.
+ */
+function inspectPackageRunner(
+  argv: string[],
+  context: ShellHarmContext,
+  out: MutableDecision,
+  depth: number,
+  seenScripts: Set<string>,
+  nestedCommands: string[][],
+): void {
+  const call = packageRunnerCall(argv)
+  if (call === null) return
+  if (call.unmodelledOption !== null) {
+    addUnique(
+      out.prompt,
+      `${call.runner} with ${call.unmodelledOption} may run a package binary the gate cannot read`,
+    )
+    return
+  }
+  if (call.shellMode) {
+    if (call.command.length > 0) nestedCommands.push([call.command.join(' ')])
+    return
+  }
+  if (call.packageOption !== null) return
+  const [name] = call.command
+  if (name === undefined) return
+  if (call.fetches && !/^[@\w]/.test(name)) {
+    // `npx ./tool` installs the package in that directory and runs its binary.
+    if (/^[./~]/.test(name)) {
+      addUnique(out.prompt, `${call.runner} runs the package in ${name}, which is not read`)
+    }
+    return
+  }
+  // A scoped name does not name a `.bin` entry. npm runs `.bin/@scope/pkg` when
+  // there is one, and otherwise the binary the installed package's manifest
+  // names, which need not match (`bin: { custom: … }` runs `.bin/custom`);
+  // `pnpm exec` runs it as the relative path `./@scope/pkg`. Guessing `.bin/pkg`
+  // read a file that need not be the one that runs, so a scoped name asks.
+  if (name.startsWith('@')) {
+    addUnique(out.prompt, `${call.runner} ${name}: a scoped name does not say which file runs`)
+    return
+  }
+  const bin =
+    context.workspaceRoot !== null && isPlainPackageName(name)
+      ? join(context.workspaceRoot, 'node_modules', '.bin', name)
+      : null
+  if (bin !== null && context.pathExists?.(bin) === true) {
+    inspectProgramFile(
+      `node_modules/.bin/${name}`,
+      { path: bin, interpreter: null },
+      context,
+      out,
+      depth,
+      seenScripts,
+    )
+    return
+  }
+  if (!call.fetches) nestedCommands.push([quoteWords(call.command)])
 }
 
 const HOST_POWER_WORD = /\b(?:shutdown|reboot|halt|poweroff|Stop-Computer|Restart-Computer)\b/i
@@ -1796,6 +2074,7 @@ function inspectCommandLine(
     inspectMirrorDeletion(argv, context, out)
     inspectProcessKill(argv, out)
     inspectInterpreter(argv, context, out, depth, seenScripts, parsedHeads)
+    inspectPackageRunner(argv, context, out, depth, seenScripts, nestedCommands)
     nestedCommands.push(...findExecPayloads(argv))
     // `eval "rm -rf /"` hands a string to the shell. Unlike the pass-through
     // wrappers, its argument is code, not argv, so it has to be re-assessed.
@@ -1876,7 +2155,10 @@ function assess(
   // here as well, which is why every piped command carried two near-identical
   // reasons; the shared pattern now covers pwsh/powershell too.
   for (const reason of dangerousInSandboxReasons(inspectableCommand)) addUnique(out.prompt, reason)
+  // Shell expansion only: in code, `${…}` is a template literal, and deletions
+  // are read by `inspectLanguageDeletion` instead.
   if (
+    language === 'shell' &&
     /\$(?:\{|[A-Za-z_])|%[A-Za-z_][A-Za-z0-9_]*%/.test(inspectableCommand) &&
     /\b(?:rm|del|rmdir|remove-item|dd|mkfs|shred)\b/i.test(inspectableCommand)
   ) {

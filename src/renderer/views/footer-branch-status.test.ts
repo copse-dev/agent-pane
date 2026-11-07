@@ -9,6 +9,7 @@ import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { setThreadDraftPrompt, setThreadTitle } from '@shared/store/thread-helpers.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -366,13 +367,11 @@ describe('footer branch status', () => {
         activeThreadId: otherThread.id,
         threads: [...store.getState().threads, otherThread],
       })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, false)
       assert.equal(reattach.textContent, 'Continue rebase')
 
       store.setState({ activeThreadId: 'thread-1' })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, true)
       assert.equal(reattach.textContent, 'Running…')
@@ -600,7 +599,6 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 1)
 
-    store.emit('threads_changed')
     store.emit('message_added', 'thread-1', 'message-1')
     store.emit('git_branch_changed')
     await settle()
@@ -611,10 +609,101 @@ describe('footer branch status', () => {
     assert.equal(branchReads, 2, 'the event burst resolves to one deferred refresh')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
     assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, 'the switch adds no deferred read')
+
+    // Another thread's rename (which still emits threads_changed) is not this
+    // footer's business: no repaint, no deferred Git read.
+    const label = host.querySelector('.footer-branch-label')
+    setThreadTitle(store, 'thread-1', 'Renamed elsewhere')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, "another thread's rename starts no Git read")
+    assert.equal(host.querySelector('.footer-branch-label'), label)
+
+    // Draft autosave replaces the active thread object; typing is not a branch change.
+    setThreadDraftPrompt(store, 'thread-2', 'still typing')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, 'a draft autosave starts no Git read')
+  })
+
+  it('repaints a thread switch from the store alone, with no event emitted (#3928)', async () => {
+    const second = { ...thread(undefined, true), id: 'thread-2' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true), second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    let resolveSecond: (status: GitBranchStatus) => void = () => {
+      throw new Error('expected the second thread read to still be pending')
+    }
+    const base = createApi({ currentBranch: 'main', pr: null })
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (_projectId, threadId) => {
+          if (threadId === 'thread-1') return { currentBranch: 'main', pr: null }
+          return new Promise<GitBranchStatus>((resolve) => {
+            resolveSecond = resolve
+          })
+        },
+      },
+    })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+
+    store.setState({ activeThreadId: 'thread-2' })
+    assert.equal(
+      qsRequired(host, '.branch-picker').hidden,
+      true,
+      'the previous thread branch is dropped synchronously on the switch',
+    )
+    resolveSecond({ currentBranch: 'feature/second', pr: null })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
+    control.destroy()
+  })
+
+  it('re-reads git status straight away when setState alone switches the workspace', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(undefined, true)],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const reads: string[] = []
+    const base = createApi({ currentBranch: 'main', pr: null })
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (projectId) => {
+          reads.push(projectId)
+          return { currentBranch: projectId === 'project-1' ? 'main' : 'feature/other', pr: null }
+        },
+      },
+    })
+    await settle()
+    assert.deepEqual(reads, ['project-1'])
+
+    // The thread id stays put so only the workspace selection can fire.
+    store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other-repo' })
+    await settle()
+    assert.deepEqual(reads, ['project-1', 'project-2'], 'no 500ms debounce before the read')
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/other')
+    control.destroy()
   })
 
   it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
@@ -650,7 +739,6 @@ describe('footer branch status', () => {
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
 
     // thread-2's own branch status is still in flight - the widget must hide
@@ -920,7 +1008,6 @@ describe('footer branch status', () => {
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
 
     store.setState({ threads: [thread(undefined, true)] })
-    store.emit('threads_changed')
     await settle()
 
     // The selection was consumed by the first send; the thread now speaks for a

@@ -6,7 +6,12 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import {
+  expectAssistantReply,
+  installMockScenario,
+  type ScenarioHandle,
+} from './helpers/mock-scenario.ts'
+import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-wake.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -16,13 +21,19 @@ const PROJECT_ID = 'e2e-staged-diff-project'
 // fixture outside the source checkout so accepted edits cannot pollute it.
 let workspaceRoot = ''
 
+/**
+ * Accepting a proposal wakes its turn with a hidden prompt, so a proposal the
+ * spec will accept passes `acceptedReply`: the scenario then scripts that wake,
+ * and the caller waits for it to finish.
+ */
 async function writeProposedFile(
   title: string,
   user: string,
   path: string,
   content: string,
   reply: string,
-): Promise<void> {
+  acceptedReply?: string,
+): Promise<ScenarioHandle> {
   const scenario = await installMockScenario({
     title,
     turns: [
@@ -33,13 +44,16 @@ async function writeProposedFile(
           { text: reply, expectToolResults: [{ name: 'write_file' }] },
         ],
       },
+      ...(acceptedReply === undefined ? [] : [acceptanceWakeTurn([path], acceptedReply)]),
     ],
   })
   await setComposerValue(user)
   await $('.submit-btn').click()
   await waitForAgentIdle(60_000)
   await expectAssistantReply(reply)
-  await scenario.assertComplete()
+  if (acceptedReply === undefined) await scenario.assertComplete()
+  else await scenario.waitForTurns(1)
+  return scenario
 }
 
 describe('staged diff approval UI', () => {
@@ -259,13 +273,16 @@ describe('staged diff approval UI', () => {
       )
     }
 
-    await writeProposedFile(
+    const acceptedReply = 'src/e2e-staged-layout.css is on disk with the muted colour.'
+    const proposal = await writeProposedFile(
       'Propose a staged CSS change',
       'Create src/e2e-staged-layout.css with a muted projects settings button colour.',
       'src/e2e-staged-layout.css',
       ['.projects-settings-btn {', '  color: var(--text-muted);', '}', ''].join('\n'),
       'I prepared the proposed CSS change for src/e2e-staged-layout.css.',
+      acceptedReply,
     )
+    const promptsBeforeAccept = (await readTranscriptNotices()).prompts
 
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 15_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
@@ -278,6 +295,14 @@ describe('staged diff approval UI', () => {
       timeout: 15_000,
       timeoutMsg: 'expected proposed section to close after accept',
     })
+
+    // The approval woke the proposing turn: its scripted reply lands with no new
+    // chat prompt, and no request went unscripted.
+    await proposal.waitForComplete()
+    await expectAssistantReply(acceptedReply)
+    await waitForAgentIdle()
+    await proposal.assertComplete()
+    expect(await readTranscriptNotices()).toEqual({ prompts: promptsBeforeAccept, cautions: [] })
 
     await browser.pause(3_000)
     await saveAppScreenshot('staged-diff-css-accept-no-error.png')

@@ -1,11 +1,12 @@
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('new index model intelligence', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'intellect-equating-project', {
+    seedEmptyProject(seedStableWorkspace(), 'intellect-equating-project', {
       model: 'acp:equating-agent#claude-fable-5-1',
       registeredAcpAgents: [
         {
@@ -38,6 +39,19 @@ describe('new index model intelligence', () => {
     const menu = $('.model-picker-menu')
     // Synced scores move; the tilde is the stable contract for an equated estimate.
     await expect(menu).toHaveText('Claude Fable 5.1: intellect ~', { containing: true })
-    await saveElementScreenshot('.model-picker-menu', 'model-intellect-equating.png')
+    assert.match(await menu.getText(), /Claude Fable 5\.1: intellect ~\d+(\.\d+)?/)
+    // The weekly Artificial Analysis sync (sync-intellect.yml) rewrites the
+    // number in packages/llm, and that PR owns no screenshot, so an unpinned
+    // capture drifts on every later PR that renders the picker.
+    const restoreScore = await pinTextForCapture(
+      '.model-picker-menu',
+      /(?<=intellect ~)\d+(\.\d+)?/g,
+      '60.0',
+    )
+    try {
+      await saveElementScreenshot('.model-picker-menu', 'model-intellect-equating.png')
+    } finally {
+      await restoreScore()
+    }
   })
 })

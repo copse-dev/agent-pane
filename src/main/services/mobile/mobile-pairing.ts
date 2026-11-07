@@ -15,7 +15,12 @@ export class MobilePairing {
     return this.pending ? { ...this.pending.pairing } : null
   }
 
-  request(label: string, code: string, signal: AbortSignal): Promise<MobileCompanionAccess | null> {
+  request(
+    label: string,
+    code: string,
+    signal: AbortSignal,
+    trustedName = false,
+  ): Promise<MobileCompanionAccess | null> {
     this.pending?.resolve(null)
     this.pending = null
     if (signal.aborted) return Promise.resolve(null)
@@ -28,15 +33,26 @@ export class MobilePairing {
     }
     signal.addEventListener('abort', cancel, { once: true })
     return new Promise<MobileCompanionAccess | null>((resolve) => {
-      this.pending = { pairing: { id, label, code }, resolve }
+      this.pending = { pairing: { id, label, code, trustedName }, resolve }
     }).finally(() => {
       signal.removeEventListener('abort', cancel)
     })
   }
 
-  respond(decision: MobileCompanionAccess | 'deny', code: string, id: string): boolean {
+  /**
+   * Control needs the desktop's local-root acknowledgement, unless the phone
+   * asked over the trusted name: its browser then verified a publicly trusted
+   * certificate itself, and the desktop approval alone grants control.
+   */
+  respond(
+    decision: MobileCompanionAccess | 'deny',
+    code: string,
+    id: string,
+    rootTrusted = false,
+  ): boolean {
     const pending = this.pending
     if (!pending || pending.pairing.id !== id || pending.pairing.code !== code) return false
+    if (decision === 'control' && !rootTrusted && !pending.pairing.trustedName) return false
     this.pending = null
     pending.resolve(decision === 'deny' ? null : decision)
     return true

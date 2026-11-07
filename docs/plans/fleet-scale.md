@@ -1,9 +1,12 @@
 # Working at fleet scale
 
-**Status: Proposed**, except C3 and C7, which are merged —
+**Status: Partially implemented.** C3 and C7 are merged —
 [#1663](https://github.com/copse-dev/agent-pane/pull/1663) capped every CI job and
 [#1667](https://github.com/copse-dev/agent-pane/pull/1667) enforced the five module
-boundaries. This is an audit of what
+boundaries. C2 is covered by dated, owned quarantine entries in `tests/e2e/exclusions.json`
+([#2720](https://github.com/copse-dev/agent-pane/pull/2720)); C1 per-spec outcome persistence started
+in [#3806](https://github.com/copse-dev/agent-pane/pull/3806); P1 shipped as the Activity view and P2's
+sensor exists in the dark-factory plugin. C4–C6, P3–P6 and Part 3 remain proposed. This is an audit of what
 breaks when one person supervises a fleet of agents rather than writing the code
 themselves: what the CI should do differently, what the product should do differently, and
 what neither currently lets you look at.

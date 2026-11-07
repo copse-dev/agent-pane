@@ -1,5 +1,9 @@
 # Bounded workflow skill dependencies
 
+Status: **Resolved** — shipped in [#3895](https://github.com/copse-dev/agent-pane/pull/3895), which
+also added the child/ACP access the brief below lists as separate work. The rest of this file is the
+original task brief.
+
 Initial task base: `2b25d75dae6e191934890666759fc7919584407c`.
 Rebased onto `41b7c785ff978c66a303874b4c3cfde00fe6e2a5` before handoff.
 

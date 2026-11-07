@@ -2,12 +2,11 @@ name: ACP v2 SDK watch
 
 # Nightly re-check of the question docs/acp-v2-readiness.md leaves open: how much
 # of ACP protocol v2 does the published SDK expose, and has that surface moved?
-# Copse's integration is v1 by design (the SDK's MAIN entry is
-# PROTOCOL_VERSION === 1), but since 1.3.0 the same package also publishes
-# ./experimental/v2 — which arrived in a MINOR release, with no major bump and no
-# new dist-tag. That is why the watch reads the package's export map rather than
-# just its version numbers, and why it exists at all: the last surface change
-# went unnoticed for weeks.
+# Copse's integration is v1 by design. SDK 2.x still exports stable v1 by
+# default; Copse uses /unstable for v1 extensions, while v2 stays under
+# ./experimental/v2. That is why the watch reads executable runtime exports and
+# reviewed major lines rather than treating every SDK patch or schema JSON path
+# as a protocol migration.
 #
 # Deliberately its OWN workflow rather than a nightly job in ci.yml: it is
 # advisory, not a merge gate (docs/testing-strategy.md), it needs no build, no

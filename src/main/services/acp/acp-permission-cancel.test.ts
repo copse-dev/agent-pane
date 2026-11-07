@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
-import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
+import type { RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable'
 import { setApprovalHandler } from '../approval.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import {

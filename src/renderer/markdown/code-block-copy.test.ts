@@ -78,6 +78,34 @@ describe('attachCodeBlockCopyButtons', () => {
     assert.equal(root.querySelectorAll('.code-block-run').length, 2)
   })
 
+  it('offers run for unlabelled fences starting with a common POSIX utility', () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      "<pre><code>find . -maxdepth 1 -name '.wdio-profile-*' -exec rm -rf {} +</code></pre>" +
+      '<pre><code>some-made-up-binary --flag</code></pre>'
+
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+
+    assert.equal(root.querySelectorAll('.code-block-copy').length, 2)
+    assert.equal(root.querySelectorAll('.code-block-run').length, 1)
+  })
+
+  it('still checks the unlabelled-command heuristic for the renderer\'s own "lang-text" class', () => {
+    // @copse/streaming-markdown classes every fence, tagged or not: an empty
+    // info string renders as `class="hljs lang-text"`, not a bare <code> with
+    // no class at all. That class must not be mistaken for an explicit,
+    // unsupported language.
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<pre><code class="hljs lang-text">find . -maxdepth 1 -name \'.wdio-profile-*\'</code></pre>' +
+      '<pre><code class="hljs lang-text">export const x = 1</code></pre>'
+
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+
+    assert.equal(root.querySelectorAll('.code-block-copy').length, 2)
+    assert.equal(root.querySelectorAll('.code-block-run').length, 1)
+  })
+
   it('emits the exact command and reflects its completion outcome', () => {
     const root = preWithCode('node scripts/check.mts --focused')
     const requests: Array<{ id: string; command: string }> = []

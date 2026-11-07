@@ -1,7 +1,8 @@
 # Relationship spike: additional validation
 
-> Draft spike: rework after sidebar/activity redesign #3386 lands. These checks
-> improve the evidence for the spike; they do not remove its merge prerequisites.
+> **Historical validation notes.** #3386 closed unmerged and the work landed in
+> [#3502](https://github.com/copse-dev/agent-pane/pull/3502). These checks were the evidence for the
+> spike.
 
 Validated on Debian 13 with Node 24.19.0 and Electron 44.4.2 (Node 24.21.0,
 Chromium 152). The complete gate and clean-main comparison used main

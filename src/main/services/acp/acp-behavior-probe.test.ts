@@ -8,7 +8,7 @@ import {
   RequestError,
   type PromptRequest,
   type SessionUpdate,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import {
   DEFAULT_BEHAVIOR_PROMPT,
   extractBehaviorSnapshot,

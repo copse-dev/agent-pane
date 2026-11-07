@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -14,6 +14,7 @@ import {
   setSemanticIndexReadyForTest,
   setSemanticSearchExecutorForTest,
 } from '../services/search/semantic-index.ts'
+import { ownedIt } from '../services/thread-execution-context.test-support.ts'
 
 describe('search_codebase tool', () => {
   let tempRoot = ''
@@ -45,7 +46,7 @@ describe('search_codebase tool', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('routes identifier queries through regex search', async () => {
+  ownedIt('routes identifier queries through regex search', async () => {
     const result = normalizeToolExecuteResult(
       await registry.execute(
         'search_codebase',
@@ -57,7 +58,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /auth\.ts/)
   })
 
-  it('accepts the `pattern` alias in place of `query`', async () => {
+  ownedIt('accepts the `pattern` alias in place of `query`', async () => {
     const result = normalizeToolExecuteResult(
       await registry.execute(
         'search_codebase',
@@ -69,7 +70,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /auth\.ts/)
   })
 
-  it('reports a helpful message when neither query nor pattern is given', async () => {
+  ownedIt('reports a helpful message when neither query nor pattern is given', async () => {
     const result = normalizeToolExecuteResult(
       await registry.execute('search_codebase', { mode: 'auto' }, new AbortController().signal),
     ).result
@@ -77,7 +78,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /pattern/)
   })
 
-  it('uses native semantic search when available', async () => {
+  ownedIt('uses native semantic search when available', async () => {
     setSemanticBackendForTest('gortex')
     setSemanticSearchExecutorForTest(async ({ query }) => ({
       hits: [
@@ -101,7 +102,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /semantic hit/)
   })
 
-  it('falls back to regex when native semantic search is unavailable', async () => {
+  ownedIt('falls back to regex when native semantic search is unavailable', async () => {
     const result = normalizeToolExecuteResult(
       await registry.execute(
         'search_codebase',
@@ -112,7 +113,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /\[semantic search unavailable — regex fallback\]/)
   })
 
-  it('reports when semantic mode is requested but unavailable', async () => {
+  ownedIt('reports when semantic mode is requested but unavailable', async () => {
     const result = normalizeToolExecuteResult(
       await registry.execute(
         'search_codebase',
@@ -124,7 +125,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /gortex/)
   })
 
-  it('falls back to regex without blocking while the semantic index is cold', async () => {
+  ownedIt('falls back to regex without blocking while the semantic index is cold', async () => {
     setSemanticBackendForTest('gortex')
     setSemanticIndexReadyForTest(null) // cold: no build pass has completed
     setSemanticSearchExecutorForTest(async () => {
@@ -141,7 +142,7 @@ describe('search_codebase tool', () => {
     assert.match(result, /\[semantic index still building — regex fallback\]/)
   })
 
-  it('returns the building note instead of blocking in explicit semantic mode', async () => {
+  ownedIt('returns the building note instead of blocking in explicit semantic mode', async () => {
     setSemanticBackendForTest('gortex')
     setSemanticIndexReadyForTest(null)
 

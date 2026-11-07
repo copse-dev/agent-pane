@@ -705,6 +705,88 @@ describe('worktree manager', () => {
     assert.equal(restored.retiredAt, undefined)
   })
 
+  for (const advanceBranch of [false, true]) {
+    it(`restores a handed-over run on its own branch (advanced=${String(advanceBranch)})`, async () => {
+      const { repo } = await setup()
+      const worktree = await allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'old-run',
+        projectRoot: repo,
+        prompt: 'Investigate CI',
+        baseBranch: 'main',
+      })
+      const retiredHead = git(worktree.path, ['rev-parse', 'HEAD']).trim()
+      const adopted = await adoptThreadWorktree({
+        projectId: 'project-1',
+        projectRoot: repo,
+        fromThreadId: 'old-run',
+        toThreadId: 'new-run',
+        from: worktree,
+        baseBranch: 'main',
+      })
+      assert.equal(adopted.status, 'adopted')
+      if (advanceBranch) {
+        await writeFile(join(adopted.worktree.path, 'new-run.txt'), 'new work\n')
+        git(adopted.worktree.path, ['add', '.'])
+        git(adopted.worktree.path, ['commit', '-q', '-m', 'new run'])
+      }
+      const newerHead = git(adopted.worktree.path, ['rev-parse', 'HEAD']).trim()
+      // Uncommitted work in the newer run must also survive opening the old one.
+      await writeFile(join(adopted.worktree.path, 'pending.txt'), 'keep me\n')
+      const restored = await restoreRetiredThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'old-run',
+        projectRoot: repo,
+        worktree: { ...worktree, retiredAt: Date.now(), retiredHead },
+      })
+      assert.notEqual(restored.branch, adopted.worktree.branch)
+      assert.equal(git(restored.path, ['rev-parse', 'HEAD']).trim(), retiredHead)
+      assert.equal(restored.retiredAt, undefined)
+      const retry = await restoreRetiredThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'old-run',
+        projectRoot: repo,
+        worktree: { ...worktree, retiredAt: Date.now(), retiredHead },
+      })
+      assert.equal(retry.branch, restored.branch)
+      await validateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'old-run',
+        projectRoot: repo,
+        worktree: restored,
+      })
+      assert.equal(git(adopted.worktree.path, ['rev-parse', 'HEAD']).trim(), newerHead)
+      assert.equal(git(adopted.worktree.path, ['branch', '--show-current']).trim(), worktree.branch)
+      assert.equal(await readFile(join(adopted.worktree.path, 'pending.txt'), 'utf-8'), 'keep me\n')
+    })
+  }
+
+  it('still refuses a retired branch held outside the managed project namespace', async () => {
+    const { temp, repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'retired-run',
+      projectRoot: repo,
+      prompt: 'Investigate CI',
+      baseBranch: 'main',
+    })
+    const retiredHead = git(worktree.path, ['rev-parse', 'HEAD']).trim()
+    git(repo, ['worktree', 'remove', worktree.path])
+    const foreign = join(temp, 'foreign-checkout')
+    git(repo, ['worktree', 'add', foreign, worktree.branch])
+    await assert.rejects(
+      restoreRetiredThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'retired-run',
+        projectRoot: repo,
+        worktree: { ...worktree, retiredAt: Date.now(), retiredHead },
+      }),
+      /checked out in another worktree/,
+    )
+    assert.equal(git(foreign, ['branch', '--show-current']).trim(), worktree.branch)
+    assert.equal(git(foreign, ['rev-parse', 'HEAD']).trim(), retiredHead)
+  })
+
   it('rejects symlinks that would redirect a managed checkout sandbox grant', async () => {
     const { temp, repo } = await setup()
     const managedRoot = join(temp, 'worktrees')
@@ -1197,6 +1279,30 @@ describe('worktree manager', () => {
       assert.ok(git(path, ['status']).includes('rebase in progress'))
     }
 
+    const rebaseState = (path: string, name: string): string =>
+      git(path, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-path',
+        `rebase-merge/${name}`,
+      ]).trim()
+
+    /** Up to Git 2.55 a pick whose commit failed is rescheduled as the next todo. */
+    async function pickRescheduled(path: string, picked: string): Promise<boolean> {
+      const todo = await readFile(rebaseState(path, 'git-rebase-todo'), 'utf8')
+      return todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))
+    }
+
+    /** Turn Git 2.56's stop on a failed pick into the rescheduled stop older Git leaves. */
+    async function rescheduleStoppedPick(path: string, picked: string): Promise<void> {
+      const todoPath = rebaseState(path, 'git-rebase-todo')
+      const subject = git(path, ['log', '-1', '--format=%s', picked]).trim()
+      await writeFile(todoPath, `pick ${picked} ${subject}\n${await readFile(todoPath, 'utf8')}`)
+      await rm(rebaseState(path, 'stopped-sha'), { force: true })
+      await rm(rebaseState(path, 'message'), { force: true })
+      git(path, ['update-ref', '--no-deref', 'CHERRY_PICK_HEAD', picked])
+    }
+
     it('recognises a rebase pick whose commit failed to sign', async () => {
       const { input, path } = await detachedWorktree()
       const repo = input.projectRoot
@@ -1213,6 +1319,18 @@ describe('worktree manager', () => {
         '-S',
         'main',
       ])
+      if (!(await pickRescheduled(path, picked))) {
+        // Git 2.56 stops on the pick as it does for a conflict, recording its
+        // message, so the plain `--continue` commits it and no recovery is
+        // offered. Recreate the rescheduled stop older Git leaves.
+        assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+          state: 'detached',
+          branch: input.worktree.branch,
+          recovery: 'rebase',
+          uncommittedPick: null,
+        })
+        await rescheduleStoppedPick(path, picked)
+      }
 
       assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
         state: 'detached',

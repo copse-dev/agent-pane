@@ -103,8 +103,9 @@ export function initTerminal(win: BrowserWindow): () => void {
     // a pop-out showed the approval and the main window silently held the
     // passphrase prompt until it timed out (#2507).
     return runWithRendererPromptTarget(event.sender, async () => {
+      const projectRoot = getProjectRoot(meta.projectId)
       const permitted = await ensureTerminalPermitted(
-        meta.executionTarget === 'local' ? { remoteTarget: false } : {},
+        meta.executionTarget === 'local' ? { projectRoot, remoteTarget: false } : { projectRoot },
       )
       if (!permitted) throw new Error('Terminal access was not approved')
       const create = async (): Promise<{

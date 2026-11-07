@@ -9,6 +9,7 @@ import { el } from '../dom/helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { mountAgentTasks } from './agent-tasks.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 
 type ChunkHandler = (threadId: string, chunk: StreamChunk) => void
 type OutputHandler = (data: string, toolCallId: string | null) => void
@@ -318,9 +319,14 @@ describe('agent-tasks', () => {
     startShell(h, 'a', 'thread-one cmd')
     assert.equal(tabs(h).filter((t) => !t.hidden).length, 1)
 
-    // Switch to another thread: the first thread's task is hidden.
+    // Another thread's update leaves the panel alone.
+    const before = tabs(h)
+    h.store.setState({ threads: [makeThread({ id: 't9', title: 'Elsewhere' })] })
+    assert.deepEqual(tabs(h), before)
+    assert.equal(tabs(h).filter((t) => !t.hidden).length, 1)
+
+    // Switch to another thread: the selection alone re-scopes, no event needed.
     h.store.setState({ activeThreadId: 't2' })
-    h.store.emit('threads_changed')
     assert.equal(tabs(h).filter((t) => !t.hidden).length, 0)
     assert.equal(section(h).hidden, true)
 
@@ -333,9 +339,21 @@ describe('agent-tasks', () => {
 
     // Switch back: the first thread's task returns, the second's hides.
     h.store.setState({ activeThreadId: 't1' })
-    h.store.emit('threads_changed')
     const visible = tabs(h).filter((t) => !t.hidden)
     assert.equal(visible.length, 1)
     assert.equal(visible[0]?.querySelector('.agent-task-label')?.textContent, 'thread-one cmd')
+  })
+
+  it('re-scopes on a project switch made through setState alone, with no event', () => {
+    startShell(h, 'a', 'thread-one cmd')
+    at(tabs(h), 0).click()
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), true)
+
+    h.store.setState({ activeProjectId: 'p2', workspaceRoot: '/work/p2', activeThreadId: 't2' })
+
+    assert.equal(at(tabs(h), 0).hidden, true, 'the old thread’s task is no longer shown')
+    assert.equal(at(panels(h), 0).hidden, true)
+    assert.equal(section(h).hidden, true)
+    assert.equal(h.viewerParent.classList.contains('showing-agent-task'), false, 'nor selected')
   })
 })
