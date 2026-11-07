@@ -651,11 +651,12 @@ describe('runAgent AgentHost decoupling', () => {
     ])
   })
 
-  it('activates nested instructions on first file access and defers the first edit', async () => {
+  it('defers every edit from one parent response until scoped instructions reach the next request', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
     await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
     const writes: string[] = []
+    const chunks: StreamChunk[] = []
     const registry = new ToolRegistry()
     registry.register(
       defineTool({
@@ -670,6 +671,7 @@ describe('runAgent AgentHost decoupling', () => {
     )
 
     let calls = 0
+    let writesBeforeDelivery: string[] = []
     const provider: LLMProvider = {
       stream: async function* (messages) {
         calls += 1
@@ -685,29 +687,56 @@ describe('runAgent AgentHost decoupling', () => {
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'second-edit-before-instructions',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
         assert.match(system.content, /Never edit before reading this/)
         if (calls === 2) {
+          writesBeforeDelivery = [...writes]
           const deferred = messages.find(
             (message) =>
               message.role === 'tool' &&
               message.toolResults.some((result) => result.toolCallId === 'first-edit'),
           )
           assert.ok(deferred?.role === 'tool')
-          assert.match(deferred.toolResults[0]?.result ?? '', /Edit deferred/)
+          // True for the activating path and for any other edit in the response.
+          assert.deepEqual(
+            deferred.toolResults.map((result) => result.result),
+            Array.from(
+              { length: 2 },
+              () =>
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+            ),
+          )
           assert.deepEqual(writes, [])
           yield {
             type: 'tool_call' as const,
             toolCall: {
-              id: 'retried-edit',
+              id: 'first-edit',
               name: 'write_file',
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'second-edit-before-instructions',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
-        assert.deepEqual(writes, ['packages/api/router.ts'])
+        assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
         yield { type: 'text' as const, text: 'Done.' }
       },
     }
@@ -734,7 +763,7 @@ describe('runAgent AgentHost decoupling', () => {
                 'thread-nested',
                 'Make the requested change.',
                 [],
-                { emit: () => undefined },
+                { emit: (_threadId, chunk) => chunks.push(chunk) },
                 registry,
                 {
                   provider,
@@ -747,8 +776,26 @@ describe('runAgent AgentHost decoupling', () => {
             ),
         ),
       )
+      assert.deepEqual(
+        writesBeforeDelivery,
+        [],
+        'no edit may run before its instructions are delivered',
+      )
       assert.equal(calls, 3)
-      assert.deepEqual(writes, ['packages/api/router.ts'])
+      assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
+      // The transcript learns which calls were held back from a structured
+      // marker, not from the reason text the model reads.
+      assert.deepEqual(
+        chunks.flatMap((chunk) =>
+          chunk.type === 'tool_result' ? [[chunk.toolCallId, chunk.deferred]] : [],
+        ),
+        [
+          ['first-edit', true],
+          ['second-edit-before-instructions', true],
+          ['first-edit', undefined],
+          ['second-edit-before-instructions', undefined],
+        ],
+      )
     } finally {
       setDefaultPluginRegistry(null)
       await rm(root, { recursive: true, force: true })

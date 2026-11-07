@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
@@ -17,7 +17,13 @@ import {
 } from '@shared/store/transcript-stream.test-support.ts'
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
-import { appendMessage, createThread, getProjectThread, updateMeta } from './thread-store.ts'
+import {
+  appendMessage,
+  createThread,
+  getProjectThread,
+  threadDirectoryPath,
+  updateMeta,
+} from './thread-store.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { TurnTranscriptWriter } from './turn-transcript-writer.ts'
 
@@ -181,6 +187,52 @@ describe('TurnTranscriptWriter', () => {
     )
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
   })
+
+  for (const retryId of ['call_0', 'retry_1']) {
+    it(`persists a performed retry ${retryId} without a stale deferred marker`, async () => {
+      const write = (id: string): StreamChunk => ({
+        type: 'tool_call',
+        toolCall: { id, name: 'write_file', args: { path: 'packages/api/first.ts' } },
+      })
+      let chunks: StreamChunk[] = [
+        write('call_0'),
+        {
+          type: 'tool_result',
+          toolCallId: 'call_0',
+          result: 'Edit deferred.',
+          isError: false,
+          deferred: true,
+        },
+        { type: 'done' },
+      ]
+      const turn = harness(() => chunks)
+      await dispatch(turn)
+      const spine = join(threadDirectoryPath(PROJECT, THREAD), 'events.jsonl')
+      assert.match(readFileSync(spine, 'utf8'), /"deferred"\s*:\s*true/)
+      assert.equal((await stored()).messages.at(-1)?.toolCalls[0]?.deferred, true)
+
+      // The first result is already durable. The next turn replaces that
+      // message's full spine line when a provider reuses the id.
+      chunks = [
+        write(retryId),
+        { type: 'tool_result', toolCallId: retryId, result: 'File written.', isError: false },
+        { type: 'done' },
+      ]
+      await dispatch(turn)
+      const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+      const applied = calls.find((call) => call.result === 'File written.')
+      assert.ok(applied)
+      assert.equal(applied.status, 'done')
+      assert.equal(Object.hasOwn(applied, 'deferred'), false)
+      const raw = readFileSync(spine, 'utf8')
+      assert.doesNotMatch(raw, /"deferred"\s*:\s*false/)
+      if (retryId === 'call_0') assert.doesNotMatch(raw, /"deferred"\s*:/)
+      else {
+        assert.equal(calls[0]?.deferred, true)
+        assert.match(raw, /"deferred"\s*:\s*true/)
+      }
+    })
+  }
 
   it('stamps every chunk so an open window draws the same messages it wrote', async () => {
     const window = createStore({
