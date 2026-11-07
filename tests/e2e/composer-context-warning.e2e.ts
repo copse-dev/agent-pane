@@ -5,6 +5,7 @@ import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
   saveElementScreenshot,
+  waitForStableText,
 } from './helpers/screenshot.ts'
 import { composerBannerMetrics } from './helpers/composer-banner.ts'
 
@@ -69,6 +70,10 @@ describe('composer context-window warning', () => {
       },
     ])
 
+    // The banner quotes the live pre-send estimate ("about N tokens"), which
+    // reruns on later store changes; the assertions above skip the number, so
+    // hold the capture until the figure stops moving.
+    await waitForStableText('.composer-context-warning-text')
     await saveElementScreenshot('.composer-context-warning', 'composer-context-warning-over.png')
     // Placement is the point of the change: the advice sits with the composer and
     // its model picker, not in app-level chrome.

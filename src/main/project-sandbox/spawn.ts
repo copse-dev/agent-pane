@@ -93,9 +93,11 @@ function wrapForSandbox(
   overlay: Partial<SandboxRuntimeConfig>,
   tmpDir: string,
   signal?: AbortSignal,
+  cwd?: string,
+  options?: Parameters<typeof SandboxManager.wrapWithSandboxArgv>[5],
 ): ReturnType<typeof SandboxManager.wrapWithSandboxArgv> {
   return withSandboxWrapTmpDir(tmpDir, () =>
-    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal),
+    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal, cwd, options),
   )
 }
 
@@ -346,6 +348,8 @@ export async function spawnBackgroundProcess(
     unsandboxed?: boolean
     /** Named read targets derived from the command approved by the tool gate. */
     readGrantTargets?: readonly string[]
+    /** Unique host-owned attempt id for runner-side violation attribution. */
+    violationId?: string
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -390,6 +394,12 @@ export async function spawnBackgroundProcess(
         label: `background task: ${shellCommandLine}`,
       })
     : (): void => {}
+  let hasSandboxLease = false
+  const releaseSandbox = (): void => {
+    if (!hasSandboxLease) return
+    hasSandboxLease = false
+    afterSandboxedCommand()
+  }
   try {
     const tmpDir = sandboxTmpDir(overlay)
     const { argv, env } = await wrapForSandbox(
@@ -397,7 +407,11 @@ export async function spawnBackgroundProcess(
       shellForSandboxWrap(),
       overlay,
       tmpDir,
+      undefined,
+      opts.cwd,
+      opts.violationId ? { commandId: opts.violationId } : undefined,
     )
+    hasSandboxLease = true
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')
     const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
@@ -408,10 +422,19 @@ export async function spawnBackgroundProcess(
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
-    child.once('close', release)
-    child.once('error', release)
+    child.once('close', () => {
+      releaseSandbox()
+      release()
+    })
+    child.once('error', () => {
+      // A failed kill can emit an error while the wrapped process is still
+      // alive. Keep its deny-path mounts until close; a failed spawn has no PID.
+      if (child.pid === undefined) releaseSandbox()
+      release()
+    })
     return child
   } catch (err) {
+    releaseSandbox()
     release()
     throw err
   }

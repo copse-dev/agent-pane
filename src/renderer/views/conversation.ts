@@ -5,6 +5,8 @@ import {
   planTranscriptRows,
   relinkReadingAnchor,
   sameExceptTurnOutcome,
+  ROW_CARD_ATTRIBUTES,
+  sameSignature,
   transcriptRowElement,
   transcriptRowSignature,
   type TranscriptRowSignature,
@@ -51,7 +53,7 @@ import {
   type HookRunSection,
 } from '@shared/hooks/hook-run-detail.ts'
 import type { HookRunDetail } from '@shared/types/hooks.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { type AppStore, sameItems as sameTuple } from '@shared/store/store.ts'
 import {
   artefactPreviewRevision,
   artefactUriFromToolResult,
@@ -821,23 +823,19 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
 }
 
 /**
- * Whether the thread-wide inputs that many rows read at build time are
- * unchanged, so a keyed row reconcile may stand in for a full rebuild. The
- * remaining inputs are either per-row (the messages, their queue, the status
- * the live tail reads; see transcript-rows.ts) or chrome synced on its own
- * (todos, the working brief).
+ * Whether a keyed row reconcile may stand in for a full rebuild: the same
+ * thread, and its transcript is loaded on both sides. Every other input is
+ * either signed per row (the messages, their queue, the status the live tail
+ * reads, and the thread-wide facts a card draws — proposal and reviewer
+ * answers, live proposal targets, canvas thumbnails, the interrupted-turn
+ * marker; see transcriptRowSignature) or chrome synced on its own (the model
+ * the queued panel shows, todos, the working brief).
  */
 function sameRowEnvironment(a: TranscriptInputs, b: TranscriptInputs): boolean {
   return (
     a.threadId === b.threadId &&
-    a.model === b.model &&
-    a.interruptedTurnAt === b.interruptedTurnAt &&
-    a.liveProposalTargets === b.liveProposalTargets &&
     a.needsHydration === b.needsHydration &&
-    a.hydrationFailed === b.hydrationFailed &&
-    a.artefactPreviewRevision === b.artefactPreviewRevision &&
-    sameItems(a.threadProposals, b.threadProposals) &&
-    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+    a.hydrationFailed === b.hydrationFailed
   )
 }
 
@@ -3177,6 +3175,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // True while older history is still being backfilled above the window, so
   // the list does not yet hold every row of the thread.
   let backfillPending = false
+  // The ids, in order, of the messages the backfill has yet to render at the
+  // top of the list. A reconcile leaves these to the backfill.
+  let backfillPrefix: readonly string[] = []
   // What each message row was built from (see transcript-rows.ts). A row whose
   // signature still matches its message is kept across a reconcile.
   const rowSignatures = new WeakMap<HTMLElement, TranscriptRowSignature>()
@@ -3472,7 +3473,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
-    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg))
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store, thread, msg))
     rowDrawnFrom.set(msgEl, msg)
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
@@ -3651,6 +3652,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * scrollToBottom here would fight the scroll-anchoring the caller performs.
    */
   function prependMessageEl(threadId: string, msgId: string, before: Node | null): void {
+    if (reattachReturningRow(threadId, msgId, before)) return
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
     list.insertBefore(msgEl, before)
@@ -4255,48 +4257,107 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
 
+  // The trailing cards as last drawn, with what they were drawn from. A sync
+  // that finds the same thread and the same report or comparison keeps the
+  // card (and the findings the reader opened in it) instead of recreating it.
+  let comparisonCard: { threadId: string; signature: string; element: HTMLElement } | null = null
+  let reviewReportCard: { threadId: string; signature: string; element: HTMLElement } | null = null
+
   function syncComparisonPanel(): void {
     // A retired two-model comparison from before Copse Reviewer: still
     // rendered from thread data so old threads keep their card (decision 17),
     // dismissible, no longer re-runnable. Sits after the review report.
-    list.querySelector('[data-comparison-card]')?.remove()
     const thread = getActiveThread(store)
-    if (thread?.comparison) {
+    const comparison = thread?.comparison
+    const signature = comparison ? renderSignature(comparison) : ''
+    if (
+      !thread ||
+      !comparison ||
+      comparisonCard?.threadId !== thread.id ||
+      comparisonCard.signature !== signature
+    ) {
+      list.querySelector('[data-comparison-card]')?.remove()
+      comparisonCard = null
+    }
+    if (!thread || !comparison) return
+    if (!comparisonCard) {
       const threadId = thread.id
-      const card = createComparisonCardEl(thread.comparison, api, undefined, () => {
+      const element = createComparisonCardEl(comparison, api, undefined, () => {
         dismissComparison(store, threadId)
       })
-      card.setAttribute('data-comparison-card', '')
-      list.append(card)
+      element.setAttribute('data-comparison-card', '')
+      comparisonCard = { threadId, signature, element }
     }
+    // Only move it when it is out of place: re-inserting a connected node
+    // detaches it first.
+    const { element } = comparisonCard
+    if (element.parentNode !== list || element !== list.lastElementChild) list.append(element)
   }
 
   function syncReviewReportCard(): void {
     // The Copse Reviewer findings card renders inline as a trailing child of
     // the message list, after the post-turn review cards, so it joins the
-    // transcript flow. Replaced on every sync (status transitions, dismissals).
-    list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
+    // transcript flow. Rebuilt when the report changes (status transitions,
+    // dismissals); kept, with the findings the reader opened, otherwise.
     const thread = getActiveThread(store)
-    if (!thread?.reviewReport) return
-    const threadId = thread.id
-    const card = createReviewFindingsCardEl(thread.reviewReport, {
-      onRetry: () => {
-        startReview(store, api, threadId)
-      },
-      onDismissCard: () => {
-        dismissReviewReport(store, threadId)
-      },
-      onDismissFinding: (finding) => {
-        dismissReviewFinding(store, api, threadId, finding)
-      },
-      onRestoreFinding: (finding) => {
-        restoreReviewFinding(store, api, threadId, finding.id)
-      },
-    })
-    card.setAttribute('data-review-report-card', '')
+    const report = thread?.reviewReport
+    const signature = report ? renderSignature(report) : ''
+    if (
+      !thread ||
+      !report ||
+      reviewReportCard?.threadId !== thread.id ||
+      reviewReportCard.signature !== signature
+    ) {
+      list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
+      reviewReportCard = null
+    }
+    if (!thread || !report) return
+    if (!reviewReportCard) {
+      const threadId = thread.id
+      // Each button disables itself on click and relied on the card being
+      // drawn again. A kept card is drawn again only when the report changes,
+      // so an action that left the report as it was (a Retry while a turn is
+      // running) draws the card afresh here, with its buttons enabled.
+      const act =
+        (action: () => void): (() => void) =>
+        () => {
+          const before = getThreadById(store, threadId)?.reviewReport
+          action()
+          if (getThreadById(store, threadId)?.reviewReport !== before) return
+          if (reviewReportCard?.threadId !== threadId) return
+          reviewReportCard.element.remove()
+          reviewReportCard = null
+          syncReviewReportCard()
+        }
+      const element = createReviewFindingsCardEl(report, {
+        onRetry: act(() => {
+          startReview(store, api, threadId)
+        }),
+        onDismissCard: act(() => {
+          dismissReviewReport(store, threadId)
+        }),
+        onDismissFinding: (finding) => {
+          act(() => {
+            dismissReviewFinding(store, api, threadId, finding)
+          })()
+        },
+        onRestoreFinding: (finding) => {
+          act(() => {
+            restoreReviewFinding(store, api, threadId, finding.id)
+          })()
+        },
+      })
+      element.setAttribute('data-review-report-card', '')
+      reviewReportCard = { threadId, signature, element }
+    }
+    const { element } = reviewReportCard
     const comparison = list.querySelector('[data-comparison-card]')
-    if (comparison) list.insertBefore(card, comparison)
-    else list.append(card)
+    const inPlace =
+      element.parentNode === list &&
+      (comparison ? element.nextElementSibling === comparison : element === list.lastElementChild)
+    if (inPlace) return
+    if (comparison) list.insertBefore(element, comparison)
+    else list.append(element)
   }
 
   /** The chrome around the message list — todos, comparison, queued panel, the
@@ -4372,29 +4433,42 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const delta = list.scrollHeight - heightBefore
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     updateScrollButton()
+    backfillPrefix = backfillPrefix.slice(0, chunkStart)
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
       })
-    } else backfillPending = false
+    } else {
+      backfillPending = false
+      returningRows = new Map()
+    }
   }
 
   /**
    * Patch the rendered rows to match `thread` instead of rebuilding the list
    * (see transcript-rows.ts). Returns false, having touched nothing, when the
-   * change is one a whole rebuild must handle: a thread-wide input that many
-   * rows read changed, the hydration notice is involved, older history is
-   * still backfilling, or the kept rows would have to move.
+   * change is one a whole rebuild must handle: another thread, the hydration
+   * notice is involved, a message the backfill has yet to render added or
+   * removed, or the kept rows would have to move or a key appears twice.
+   * Thread-wide facts a card draws are signed on its row.
+   *
+   * While older history is still backfilling, the plan covers the rows below
+   * the part the backfill has yet to render; the backfill goes on rendering
+   * that part above them.
    */
   function reconcileTranscriptRows(
     thread: Thread,
     inputs: TranscriptInputs,
     previous: TranscriptInputs,
   ): boolean {
-    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false
+    if (!sameRowEnvironment(inputs, previous)) return false
     if (inputs.needsHydration || inputs.hydrationFailed) return false
+    const pending = backfillPending ? backfillPrefix : []
+    if (pending.some((id, i) => thread.messages[i]?.id !== id)) return false
+    const hidden = queuedMessageIds(thread)
+    for (const id of pending) hidden.add(id)
     const elements = Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-message-id]'))
-    const wanted = wantedTranscriptRows(thread, queuedMessageIds(thread))
+    const wanted = wantedTranscriptRows(store, thread, hidden)
     const messages = new Map(thread.messages.map((message) => [message.id, message]))
     const signed = elements.map((element) => ({
       key: element.dataset['messageId'] ?? '',
@@ -4451,6 +4525,121 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return true
   }
 
+  // The rows of recently viewed threads, detached when the view switched away
+  // from them, so returning to one reconciles those rows (keeping their
+  // resolved links and open disclosures) instead of building every row again.
+  // A thread is stashed only while nothing can change its rows behind the
+  // view's back: idle, fully rendered, with no automatic disclosure pending.
+  // Each row is its message element followed by its anchored cards.
+  const RECENT_TRANSCRIPTS = 2
+  const recentTranscripts = new Map<
+    string,
+    { readonly inputs: TranscriptInputs; readonly rows: Map<string, Element[]> }
+  >()
+  // Stashed rows older than the window a return restores at once; the
+  // backfill reattaches each one that still draws its message.
+  let returningRows = new Map<string, Element[]>()
+
+  /** Detach thread `threadId`'s rows from the list and keep them for a return. */
+  function stashTranscript(threadId: string, inputs: TranscriptInputs): void {
+    recentTranscripts.delete(threadId)
+    const thread = getThreadById(store, threadId)
+    if (!thread || thread.status === 'running' || inputs.needsHydration || backfillPending) return
+    if (disclosures.hasAutoOpen(threadId)) return
+    // An inline canvas guest does not survive being detached; a row that
+    // hosts one is built again on the return.
+    const hostsGuest = new Set(
+      Array.from(list.querySelectorAll('.canvas-inline-artefact'), (guest) =>
+        guest.closest('.messages-list > [data-message-id]'),
+      ),
+    )
+    const rows = new Map<string, Element[]>()
+    let current: Element[] | null = null
+    for (const node of Array.from(list.children)) {
+      const key = node instanceof HTMLElement ? node.dataset['messageId'] : undefined
+      if (key !== undefined) {
+        current = hostsGuest.has(node) ? null : [node]
+        if (current) rows.set(key, current)
+      } else if (current && ROW_CARD_ATTRIBUTES.some((attribute) => node.hasAttribute(attribute))) {
+        current.push(node)
+      } else current = null
+    }
+    if (rows.size === 0) return
+    for (const parts of rows.values()) for (const part of parts) part.remove()
+    recentTranscripts.set(threadId, { inputs, rows })
+    while (recentTranscripts.size > RECENT_TRANSCRIPTS) {
+      const oldest = recentTranscripts.keys().next().value
+      if (oldest === undefined) break
+      recentTranscripts.delete(oldest)
+    }
+  }
+
+  /**
+   * Put the stashed rows of `thread`'s newest-first window back into the
+   * (cleared) list and reconcile them with the thread as it is now, then
+   * finish exactly as a fresh build does; older history backfills as it does
+   * after a fresh build, reattaching stashed rows that still draw their
+   * message. Returns the backfill's start, or null, leaving the list empty,
+   * when there is nothing to restore or the rows cannot be reconciled; the
+   * caller then builds the list fresh.
+   */
+  function restoreTranscript(thread: Thread, inputs: TranscriptInputs): number | null {
+    const stashed = recentTranscripts.get(thread.id)
+    recentTranscripts.delete(thread.id)
+    if (!stashed || needsHydration(thread)) return null
+    const start = Math.max(0, thread.messages.length - INITIAL_RENDER_WINDOW)
+    for (const message of thread.messages.slice(start)) {
+      for (const part of stashed.rows.get(message.id) ?? []) list.append(part)
+      stashed.rows.delete(message.id)
+    }
+    backfillPending = start > 0
+    backfillPrefix = thread.messages.slice(0, start).map((message) => message.id)
+    toolCards.adoptDisclosureElements(list)
+    if (!reconcileTranscriptRows(thread, inputs, stashed.inputs)) {
+      toolCards.forgetDisclosureElements()
+      disposeInlineArtefacts(list)
+      clear(list)
+      backfillPending = false
+      backfillPrefix = []
+      return null
+    }
+    returningRows = stashed.rows
+    // The same batched tail work a fresh build does, and the same landing at
+    // the live end.
+    syncModelLabels()
+    syncUserActions()
+    syncAcpResourceReferences(list, api, store)
+    syncHookCardVisibility()
+    finishThreadChrome(thread)
+    syncConciseTurnFooters()
+    refreshStickyImagePrompt()
+    syncAvatarMotion()
+    scrollToBottom(true)
+    return start
+  }
+
+  /**
+   * Reattach the stashed row of `msgId` before `before` when it still draws
+   * the message as the thread holds it now (see restoreTranscript). Returns
+   * whether it did; otherwise the caller builds the row.
+   */
+  function reattachReturningRow(threadId: string, msgId: string, before: Node | null): boolean {
+    const parts = returningRows.get(msgId)
+    returningRows.delete(msgId)
+    const [element] = parts ?? []
+    const thread = getThreadById(store, threadId)
+    const message = thread?.messages.find((candidate) => candidate.id === msgId)
+    const signed = element instanceof HTMLElement ? rowSignatures.get(element) : undefined
+    if (!parts || !thread || !message || !signed) return false
+    if (!sameSignature(signed, transcriptRowSignature(store, thread, message))) return false
+    if (element instanceof HTMLElement && rowDrawnFrom.get(element) !== message) return false
+    for (const part of parts) {
+      list.insertBefore(part, before)
+      toolCards.adoptDisclosureElements(part)
+    }
+    return true
+  }
+
   function rebuildForThread(): void {
     const thread = getActiveThread(store)
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
@@ -4479,6 +4668,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const preservedScrollTop =
       rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null
     if (!rebuildingSameThread) transcriptScroll.resetForThread()
+    if (!rebuildingSameThread && renderedThreadId !== null && renderedInputs) {
+      stashTranscript(renderedThreadId, renderedInputs)
+    }
     toolCards.forgetDisclosureElements()
     if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
@@ -4489,8 +4681,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
     renderedInputs = inputs
+    backfillPending = false
+    backfillPrefix = []
     if (!thread) {
       finishThreadChrome(null)
+      return
+    }
+    returningRows = new Map()
+    const restoredFrom = inputs && !rebuildingSameThread ? restoreTranscript(thread, inputs) : null
+    if (restoredFrom !== null) {
+      if (restoredFrom > 0) {
+        const generation = backfillGeneration
+        requestAnimationFrame(() => {
+          backfillOlderMessages(thread, restoredFrom, generation)
+        })
+      }
       return
     }
     // A freshly selected thread arrives as metadata only (`messages: []`,
@@ -4540,6 +4745,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     backfillPending = initialStart > 0
+    backfillPrefix = thread.messages.slice(0, initialStart).map((message) => message.id)
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -4586,6 +4792,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       })
     }),
     store.on('settings_changed', () => {
+      // A stashed row is synced with the settings only once it is back.
+      recentTranscripts.clear()
       agentNamesRequested = false
       agentNamesRevision++
       syncModelLabels()
@@ -4760,18 +4968,34 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (tid === store.getState().activeThreadId) markRowPatched(mid)
       scrollToBottom()
     }),
-    store.on('comparison_changed', () => {
-      syncComparisonPanel()
-      scrollToBottom()
-    }),
+    // The trailing cards draw the active thread's report and comparison, so
+    // follow those values rather than the events their writers emit. A switch
+    // to another thread is the rebuild's to draw.
+    store.select(
+      (state) => {
+        const thread =
+          state.threads.find((candidate) => candidate.id === state.activeThreadId) ??
+          state.backgroundThreads.find((carried) => carried.thread.id === state.activeThreadId)
+            ?.thread
+        return [state.activeThreadId, thread?.reviewReport, thread?.comparison] as const
+      },
+      ([threadId]) => {
+        if (threadId === null || threadId !== renderedThreadId) return
+        syncReviewReportCard()
+        syncComparisonPanel()
+        scrollToBottom()
+      },
+      sameTuple,
+    ),
     store.on('review_report_changed', (tid, mid) => {
       // A report replaces its message's object; noting the row it just drew
       // keeps that from blocking the rows the stream patched (see
       // adoptPatchedSignatures).
-      if (mid) {
-        renderMessageReviewReport(tid, mid)
-        if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
-      } else syncReviewReportCard()
+      // The thread's own report is a trailing card, which follows the state
+      // (see the store.select above).
+      if (!mid) return
+      renderMessageReviewReport(tid, mid)
+      if (tid === store.getState().activeThreadId) markRowPatched(mid, ['reviewReport'])
       scrollToBottom()
     }),
     store.on('settings_changed', () => {
@@ -4841,6 +5065,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   syncFromStore()
   return () => {
     disposed = true
+    recentTranscripts.clear()
     setBackgroundTaskLogLoader(null)
     archiveReview.dispose()
     selectionQuote.destroy()

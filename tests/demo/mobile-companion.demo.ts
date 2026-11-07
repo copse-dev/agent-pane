@@ -256,7 +256,7 @@ describe('Mobile Companion at phone width', () => {
       await browser.refresh()
       await expect($('.row-title=Polish the onboarding copy')).toBeDisplayed()
       const row = await $('.row-title=Polish the onboarding copy').parentElement()
-      await expect(row.parentElement().$('.group-heading span')).toHaveText('RECENT')
+      await expect(row.parentElement().$('.group-heading span')).toHaveText('Recent')
       await expect($('.state.needs-approval')).toBeDisplayed()
       await browser.execute(async () => {
         await document.fonts.ready
@@ -269,7 +269,7 @@ describe('Mobile Companion at phone width', () => {
         async () => {
           const updatedRow = await $('.row-title=Polish the onboarding copy').parentElement()
           return (
-            (await updatedRow.parentElement().$('.group-heading span').getText()) === 'HAS CHANGES'
+            (await updatedRow.parentElement().$('.group-heading span').getText()) === 'Has changes'
           )
         },
         { timeoutMsg: 'The next Activity poll should show completed dirty status' },
@@ -655,7 +655,9 @@ describe('Mobile Companion at phone width', () => {
       })
       await browser.refresh()
       await expect($('html')).toHaveAttribute('data-theme', theme)
-      await expect($('#pair h1')).toHaveText('See what needs you.')
+      // The heading names the task; no caps eyebrow over it.
+      await expect($('#pair h1')).toHaveText('Pair this phone')
+      await expect($('#pair .eyebrow')).not.toExist()
 
       const appearance = await browser.execute(async () => {
         await document.fonts.ready
@@ -723,10 +725,13 @@ describe('Mobile Companion at phone width', () => {
       await browser.execute(async () => {
         await document.fonts.ready
       })
-      await expect($('#groups')).toHaveText(expect.stringContaining('NEEDS YOU'))
-      await expect($('#groups')).toHaveText(expect.stringContaining('WORKING'))
-      await expect($('#groups')).toHaveText(expect.stringContaining('HAS CHANGES'))
-      await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
+      // Group labels are sentence case, like the desktop group headers, and the
+      // page heading stands without an eyebrow over it.
+      await expect($('#groups')).toHaveText(expect.stringContaining('Needs you'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('Working'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('Has changes'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('Recent'))
+      await expect($('#activity .eyebrow')).not.toExist()
       await expect($('.state.needs-approval')).toHaveText('needs approval')
       await expect($('.state.working')).toHaveText('working')
       await expect($('.state.finished')).toHaveText('finished')
@@ -747,6 +752,19 @@ describe('Mobile Companion at phone width', () => {
       // The full thread stays one tap away for anyone who wants more context.
       await $('#inline-decision .open-thread-link').click()
       await expect($('#thread-title')).toHaveText('Review the release')
+      // The project is a quiet line under the title; roles read as words.
+      await expect($('#thread-title + .thread-project-meta')).toBeDisplayed()
+      const roles = await browser.execute(() =>
+        [...document.querySelectorAll('#messages .message-role')].map((role) => [
+          role.textContent,
+          getComputedStyle(role).textTransform,
+        ]),
+      )
+      expect(roles.length).toBeGreaterThan(0)
+      for (const [label, transform] of roles) {
+        expect(['You', 'Agent']).toContain(label)
+        expect(transform).toBe('none')
+      }
       await expect($('#messages')).toHaveText(
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
       )

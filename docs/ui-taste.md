@@ -273,8 +273,8 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
   the `--badge-*` tokens in `tokens.css`: `--font-size-xs`, weight 500, normal tracking,
   `--radius` corners, a 1px `--border` outline, muted text. A chip class
   (`.sources-badge`, `.provider-form-tag`, `.provider-privacy-badge`, `.mcp-origin-chip`,
-  `.plugin-badge-stable` / `-experimental`) adds a colour or a width bound, never its own
-  size, case, or corner.
+  `.plugin-badge-experimental`) adds a colour or a width bound, never its own size, case, or
+  corner.
 - **Sentence case.** Author labels in sentence case. Most badge text is a data value that
   arrives lowercase (`project`, `stable`, `in use`), so the recipe supplies the capital with
   `::first-letter` — `capitalize` would title-case `In Use`. A literal (a directory name
@@ -285,11 +285,12 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
 - **Neutral unless it reports a status.** `--warning` / `--error` / `--success` /
   `--danger` mean how the thing is doing (warning, not loaded, orphaned, outside sandbox,
   data policy); the accent means interaction emphasis (a nested instruction file active
-  this turn) plus the "experimental" exception above. A scope, kind, category, owner, or
-  the default state (`Stable`) stays neutral, even when it would be convenient to tell
-  categories apart by hue.
-- **Eyebrows are not badges.** The plugin publisher line over a name is a wide-tracked caps
-  caption without a frame, in text colours.
+  this turn) plus the "experimental" exception above. A scope, kind, category or owner
+  stays neutral, even when it would be convenient to tell categories apart by hue, and the
+  default state (`Stable`) gets no badge at all: label the exception, not the norm.
+- **A publisher is not a badge.** A plugin's publisher follows its version in the name line
+  (`1.2.3 · Copse`), in muted sentence-case text without a frame — not a caps caption over
+  the name, and not a chip beside it.
 
 Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
 see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
@@ -756,8 +757,10 @@ It fills the window and its sections run several screens, so it is typed and spa
   group that is hidden (developer-only) or mounted by a panel needs no second place to be declared.
   Search clears the list — its results are lifted out of their sections, so the contents no longer
   describe what is on screen.
-- **A plugin row is a card** (elevated surface, `--radius-lg`, `--spacing-lg` padding): its mark, then
-  the publisher as a tracked-caps eyebrow over the name, and the switch flanked by Off / On whose
+- **A plugin row sits on the page**, not in a card of its own: the gap between rows separates
+  plugins, so a list of them is not a stack of bordered boxes. It holds its mark, the name line
+  (name, version, then the publisher: `1.2.3 · Copse`, plus an `Experimental` badge where one
+  applies), the capability counts as muted text, and the switch flanked by Off / On whose
   live side is picked out in CSS from `:checked` — no second copy of the state to keep in sync.
   Everything configurable folds into one closed `Plugin settings` disclosure, so a list of plugins stays
   a list of plugins; the credential gate stays outside it, because it explains a switch you can see is
@@ -1402,21 +1405,21 @@ rather than by what it looks like. Flat and hatched plates set `--sev` and mix t
 locally using the tuning tokens in `styles/global/base.css`: `--callout-plate-fill`,
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch`. There are no finished
 `--callout-plate` or `--callout-hatch` properties: a root-level mix would resolve the root's
-severity before inheritance. Expanded reasoning builds its etched surface from theme tokens and
-applies a fainter accent hatch.
+severity before inheritance. Expanded reasoning sits on a plain raised plate built from theme
+tokens alone.
 
 - **Flat plate** — prose the agent wrote. GitHub alerts and blockquotes. It is part of the answer,
   so it gets a plain surface, and the severity hue moves to the title and its glyph.
 - **Hatched plate** — Short status annotations such as review and comparison. The texture sets
   them apart from assistant prose without spending another hue or shape. Under
   `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate.
-- **Etched plate** — Expanded reasoning keeps a finer, lighter hatch over a softly tinted solid
-  surface. The hatch fades toward the center of the box so longer passages sit on calmer glass.
-  A faint edge and inset highlight preserve the etched feel, while `--text-secondary` keeps the
-  words legible. Under reduced transparency or increased contrast, use a plain elevated surface
-  and a stronger edge.
+- **Raised plate** — Expanded reasoning: `--bg-elevated`, no outline, texture, gradient or inset
+  highlight, with `--text-secondary` keeping the words legible. It used to be an "etched glass"
+  (a sheen, a radial glow, a fading hatch, an edge and a highlight stacked on one disclosure),
+  which was the busiest surface in the transcript for the least important text. Under increased
+  contrast it gains a `--border-strong` edge.
 
-Expanded reasoning uses the etched plate both while live and after completion, including inside a
+Expanded reasoning uses the raised plate both while live and after completion, including inside a
 tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.

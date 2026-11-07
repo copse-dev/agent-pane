@@ -5,7 +5,12 @@ import { once } from 'node:events'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { profileInspector, summarizeProfile, type CpuProfile } from './profile-main-process.mts'
+import {
+  describeError,
+  profileInspector,
+  summarizeProfile,
+  type CpuProfile,
+} from './profile-main-process.mts'
 
 // An ES module main process: there is no `require` in any scope, and the first
 // uncaught exception ends the process, as Copse's fault policy quits the app.
@@ -287,18 +292,35 @@ describe('profileInspector', { timeout: 30_000 }, () => {
           '--out',
           output,
         ])
-        assert.equal(result.code, 1, result.stderr)
-        assert.match(result.stderr, /did not become available/)
-        assert.doesNotMatch(result.stderr, /cleanup could not be confirmed|may still be open/)
+        const evidence = (): string =>
+          [
+            `Profiler exit code: ${String(result.code)}`,
+            `Profiler stderr:\n${result.stderr}`,
+            `Target PID: ${String(target.child.pid)}; exit code: ${String(target.child.exitCode)}; signal: ${String(target.child.signalCode)}`,
+            `Target stderr:\n${target.stderr()}`,
+          ].join('\n')
+        assert.equal(result.code, 1, evidence())
+        assert.match(result.stderr, /did not become available/, evidence())
+        assert.equal(target.child.exitCode, null, evidence())
+        assert.equal(target.child.signalCode, null, evidence())
+        assert.doesNotMatch(
+          result.stderr,
+          /cleanup could not be confirmed|may still be open/,
+          evidence(),
+        )
         assert.equal(
           target.stderr().match(/Debugger listening on /g)?.length,
           2,
-          'SIGUSR1 must actually reopen the inspector before cleanup is accepted',
+          `SIGUSR1 must actually reopen the inspector before cleanup is accepted\n${evidence()}`,
         )
-        assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
-        assert.equal(target.child.exitCode, null, target.stderr())
-        assert.doesNotMatch(target.stderr(), /uncaughtException/)
-        await assert.rejects(access(output), { code: 'ENOENT' })
+        assert.ok(
+          await waitFor(async () => !(await inspectorIsListening(target.url)), 5000),
+          evidence(),
+        )
+        assert.equal(target.child.exitCode, null, evidence())
+        assert.equal(target.child.signalCode, null, evidence())
+        assert.doesNotMatch(target.stderr(), /uncaughtException/, evidence())
+        await assert.rejects(access(output), { code: 'ENOENT' }, evidence())
       } finally {
         await Promise.all([target.dispose(), rm(dir, { recursive: true, force: true })])
       }
@@ -328,6 +350,43 @@ describe('profileInspector', { timeout: 30_000 }, () => {
     } finally {
       await target.dispose()
     }
+  })
+})
+
+describe('describeError', () => {
+  it('prints every nested cause and aggregated failure with process details', () => {
+    const lsof = Object.assign(new Error('Command failed: lsof -nP -p 7 -F0pfPnT\nlsof: denied'), {
+      status: 1,
+      signal: null,
+    })
+    const reset = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+    })
+    const cleanup = new AggregateError(
+      [new Error('Inspector did not close: http://127.0.0.1:9', { cause: reset })],
+      'Could not verify cleanup of every new target listener',
+    )
+    const discovery = new Error('Cannot discover listeners for process 7', { cause: lsof })
+    const error = new AggregateError(
+      [new Error('Inspector on port 9 did not become available'), cleanup, discovery],
+      'Inspector activation failed; its inspector may still be open',
+      { cause: discovery },
+    )
+    assert.equal(
+      describeError(error),
+      [
+        'AggregateError: Inspector activation failed; its inspector may still be open',
+        '  [1/3] Error: Inspector on port 9 did not become available',
+        '  [2/3] AggregateError: Could not verify cleanup of every new target listener',
+        '    [1/1] Error: Inspector did not close: http://127.0.0.1:9',
+        '      caused by: TypeError: fetch failed',
+        '        caused by: Error: socket hang up (code ECONNRESET)',
+        '  [3/3] Error: Cannot discover listeners for process 7',
+        '    caused by: Error: Command failed: lsof -nP -p 7 -F0pfPnT (exit status 1)',
+        '      lsof: denied',
+      ].join('\n'),
+    )
+    assert.equal(describeError('plain'), 'plain')
   })
 })
 
