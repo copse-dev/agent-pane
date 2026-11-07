@@ -288,7 +288,9 @@ export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): P
       // A retained uncertain close sorts first on later ticks. Keep reporting
       // it, while still releasing unrelated sessions that are safely idle.
       failure ??=
-        error instanceof Error ? error : new Error('ACP session cleanup failed', { cause: error })
+        error instanceof Error
+          ? error
+          : new Error('Coding agent session cleanup failed', { cause: error })
     }
   }
   if (failure) throw failure
