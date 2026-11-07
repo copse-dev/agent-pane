@@ -10,8 +10,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import os, { homedir, tmpdir } from 'node:os'
+import { syncBuiltinESMExports } from 'node:module'
+import { delimiter, dirname, join, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
@@ -813,17 +814,65 @@ describe('workspaceSandboxOverlay', () => {
     assert.equal(network.allowLocalBinding, false)
   })
 
-  it('re-allows node toolchain paths alongside the workspace', () => {
-    const overlay = workspaceSandboxOverlay('/tmp/project')
-    const allowRead = overlay.filesystem?.allowRead ?? []
-    assert.ok(allowRead.includes('/tmp/project'))
-    assert.ok(allowRead.some((p) => p.includes('/tmp/project/**')))
+  for (const location of ['denied home', 'outside home', 'workspace'] as const) {
+    it(`keeps a Node toolchain readable in ${location} without redundant exceptions`, (t) => {
+      const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-overlay-toolchain-')))
+      const home = join(fixture, 'home')
+      const workspace = join(home, 'project')
+      const nodeRoot =
+        location === 'denied home'
+          ? join(home, '.nvm', 'versions', 'node', 'v24')
+          : location === 'workspace'
+            ? join(workspace, 'node-install')
+            : join(fixture, 'outside-node')
+      const bin = join(nodeRoot, 'bin')
+      const node = join(bin, 'node')
+      const credential = join(home, '.ssh', 'id_ed25519')
+      mkdirSync(workspace, { recursive: true })
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(join(nodeRoot, 'lib', 'node_modules'), { recursive: true })
+      mkdirSync(dirname(credential), { recursive: true })
+      writeFileSync(node, '#!/bin/sh\n', { mode: 0o755 })
+      writeFileSync(credential, 'synthetic credential\n', { mode: 0o600 })
+      const previousPath = process.env['PATH']
+      const mockHome = t.mock.method(os, 'homedir', () => home)
+      syncBuiltinESMExports()
+      process.env['PATH'] = `${bin}${delimiter}${previousPath ?? ''}`
+      try {
+        const toolchain = resolveNodeToolchainAllowRead(process.env)
+        assert.ok(toolchain.includes(node), 'the synthetic Node install was discovered')
+        const filesystem = workspaceSandboxOverlay(workspace).filesystem
+        assert.ok(filesystem)
+        const allowRead = filesystem.allowRead ?? []
+        assert.ok(allowRead.includes(workspace))
+        assert.ok(allowRead.includes(`${workspace}/**`))
+        assert.ok(filesystem.denyRead.includes(home))
+        const hasNodeException = allowRead.some(
+          (path) => path === nodeRoot || path.startsWith(`${nodeRoot}${sep}`),
+        )
+        assert.equal(hasNodeException, location === 'denied home')
 
-    const toolchain = resolveNodeToolchainAllowRead(process.env)
-    if (toolchain.length > 0) {
-      assert.ok(toolchain.every((p) => allowRead.includes(p)))
-    }
-  })
+        const profile = wrapCommandWithSandboxMacOS({
+          command: 'true',
+          needsNetworkRestriction: false,
+          readConfig: {
+            denyOnly: filesystem.denyRead,
+            allowWithinDeny: allowRead.map(removeTrailingGlobSuffix),
+          },
+          writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+        })
+        assert.equal(lastReadRule(profile, node), 'allow')
+        assert.equal(lastReadRule(profile, join(home, 'unrelated.txt')), 'deny')
+        assert.equal(lastReadRule(profile, credential), 'deny')
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        mockHome.mock.restore()
+        syncBuiltinESMExports()
+        rmSync(fixture, { recursive: true, force: true })
+      }
+    })
+  }
 
   it('denies home reads but re-allows git config files', () => {
     const overlay = workspaceSandboxOverlay('/Users/me/project')
