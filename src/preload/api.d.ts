@@ -439,6 +439,8 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string

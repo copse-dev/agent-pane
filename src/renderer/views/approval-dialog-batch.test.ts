@@ -26,6 +26,8 @@ interface EmitReq {
   showWhileSettingsOpen?: boolean
   allowRemember?: boolean
   rememberLabel?: string
+  rememberDefault?: boolean
+  rememberSubject?: string
   collapseDetails?: boolean
   approveOnceLabel?: string
   approveLabel?: string
@@ -89,6 +91,8 @@ function makeApi(): {
         showWhileSettingsOpen: req.showWhileSettingsOpen,
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
+        rememberDefault: req.rememberDefault,
+        rememberSubject: req.rememberSubject,
         collapseDetails: req.collapseDetails,
         approveOnceLabel: req.approveOnceLabel,
         approveLabel: req.approveLabel,
@@ -658,6 +662,39 @@ describe('approval dialog coalescing', () => {
     input.checked = true
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
     assert.ok(responses.every((r) => r.remember))
+  })
+
+  it('defaults automation remembering on and preserves an explicit opt-out on append', () => {
+    const request = {
+      allowRemember: true,
+      rememberLabel: 'Remember for this automation',
+      rememberDefault: true,
+      rememberSubject: 'schedule/plan',
+    }
+    emit({ id: 'a', ...request })
+    fireWindow()
+    const input = qsRequired<HTMLInputElement>(dialog, '.approval-remember-input')
+    assert.equal(input.checked, true)
+    input.checked = false
+    emit({ id: 'b', ...request })
+    fireSettle()
+    assert.equal(input.checked, false)
+    approve().click()
+    assert.ok(responses.every((response) => !response.remember))
+  })
+
+  it('does not batch remembering for different automation plans with the same label', () => {
+    const request = {
+      allowRemember: true,
+      rememberLabel: 'Remember for this automation',
+      rememberDefault: true,
+    }
+    emit({ id: 'a', ...request, rememberSubject: 'schedule/plan-a' })
+    emit({ id: 'b', ...request, rememberSubject: 'schedule/plan-b' })
+    fireWindow()
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    approve().click()
+    assert.ok(responses.every((response) => !response.remember))
   })
 
   it('hides the remember checkbox for a mixed-grant batch', () => {

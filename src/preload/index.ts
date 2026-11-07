@@ -441,6 +441,8 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
@@ -465,6 +467,8 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          rememberDefault?: boolean
+          rememberSubject?: string
           approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
