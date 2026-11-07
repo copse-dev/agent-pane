@@ -21912,6 +21912,7 @@ function createStore(initial) {
     threads: [],
     backgroundThreads: [],
     activeThreadId: null,
+    pendingSubmissionThreadIds: [],
     panelTab: "file",
     openFile: null,
     activeDiff: null,
@@ -22235,25 +22236,21 @@ var init_model_usage = __esm({
 
 // src/shared/store/pending-submissions.ts
 function beginThreadSubmission(store, threadId) {
-  let pending = pendingByStore.get(store);
-  if (!pending) {
-    pending = /* @__PURE__ */ new Set();
-    pendingByStore.set(store, pending);
-  }
-  if (pending.has(threadId)) return false;
-  pending.add(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (pending.includes(threadId)) return false;
+  store.setState({ pendingSubmissionThreadIds: [...pending, threadId] });
   return true;
 }
 function endThreadSubmission(store, threadId) {
-  pendingByStore.get(store)?.delete(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (!pending.includes(threadId)) return;
+  store.setState({ pendingSubmissionThreadIds: pending.filter((id) => id !== threadId) });
 }
 function isThreadSubmitting(store, threadId) {
-  return pendingByStore.get(store)?.has(threadId) ?? false;
+  return store.getState().pendingSubmissionThreadIds.includes(threadId);
 }
-var pendingByStore;
 var init_pending_submissions = __esm({
   "src/shared/store/pending-submissions.ts"() {
-    pendingByStore = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -25142,7 +25139,11 @@ function setArtefactPreview(threadId, title, preview) {
   const key = previewKey(threadId, title);
   if (!preview || previews.get(key) === preview) return;
   previews.set(key, preview);
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1);
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
+}
+function artefactPreviewVersion(threadId, title) {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0;
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
@@ -25196,11 +25197,12 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, previewVersions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
     previewRevisions = /* @__PURE__ */ new Map();
+    previewVersions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -43888,10 +43890,10 @@ var init_acp_known_agents = __esm({
           //
           // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
           // (not Claude Code's), baked into the wrapped command from the wrapping
-          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
-          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
-          // normally never sees it. The entry stays as a safety net for a wrap that
-          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
           // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
@@ -43988,10 +43990,10 @@ var init_acp_known_agents = __esm({
           //
           // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
           // (not Claude Code's), baked into the wrapped command from the wrapping
-          // process's `CLAUDE_CODE_TMPDIR`. Copse now pins that to the workspace
-          // scratch dir (`pinSandboxWrapTmpDir`, #4149), so a sandboxed agent
-          // normally never sees it. The entry stays as a safety net for a wrap that
-          // predates the pin. The `-*` glob does not reach it: that hyphen is
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
           // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
@@ -47497,7 +47499,10 @@ async function fetchModelOptions(api, current, opts = {}) {
       {
         ...option,
         label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
-        disabled: true
+        disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...option.disabled === true ? {} : { superseded: true }
       }
     ];
   });
@@ -49698,6 +49703,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ] : []
       );
       if (selected) item.classList.add("is-selected");
+      if (opt.superseded) item.classList.add("is-superseded");
       if (opt.value === activeValue) item.classList.add("is-active");
       item.addEventListener("click", () => {
         selectOption(opt.value);
@@ -73814,7 +73820,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     };
     unsubs.push(
       store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
-      store.on("threads_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
         if (changedThreadId === threadId) preview.close();
       })
@@ -74248,6 +74253,7 @@ export {
   begin,
   init_perf,
   setArtefactPreview,
+  artefactPreviewVersion,
   getArtefactPreview,
   artefactPreviewRevision,
   setArtefactContent,
