@@ -259,6 +259,13 @@ Implementation and limits: [thread-in-container](plans/thread-in-container.md),
 
 ## Platform matrix
 
+Listing configured Git remotes (`git remote`, `git remote -v`, or `--verbose`) is a local read and
+starts inside an active project sandbox. Other remote operations retain their existing external
+classification. A recognized slash-delimited `sed` address/substitution filter treats its script
+as text, including words such as "signature". External read/write/execute commands and execution
+flags are never filter shapes; unknown grammar retains the conservative policy. These shapes
+still prompt when the OS sandbox is unavailable.
+
 This matrix describes standard shell policy. Explicit trusted-command grants, per-tool overrides,
 Guarded YOLO and attested unattended containers have the separate rules above.
 
