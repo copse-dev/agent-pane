@@ -1,6 +1,6 @@
 import type { Message, Thread } from '@shared/types'
 import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
-import { sameItems, type AppStore } from '@shared/store/store.ts'
+import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 function refreshKey(projectId: string, thread: Thread): string | null {
@@ -79,15 +79,16 @@ export function attachImportedCursorAgentRefresh(store: AppStore, api: ApiClient
       })
   }
 
-  const offThreads = store.on('threads_changed', refreshActive)
-  const offWorkspace = store.select(
-    (s) => [s.activeProjectId, s.activeThreadId] as const,
-    refreshActive,
-    sameItems,
-  )
+  // Only what `refreshActive` keys on: the active thread's link, turn and queue
+  // state, which also changes when the project or thread switches. Another
+  // thread's update, or this one's rename, does not re-check.
+  const offThreads = store.select((state) => {
+    const { activeProjectId, activeThreadId, threads } = state
+    const thread = activeThreadId ? threads.find((t) => t.id === activeThreadId) : undefined
+    return activeProjectId && thread ? refreshKey(activeProjectId, thread) : null
+  }, refreshActive)
   refreshActive()
   return (): void => {
     offThreads()
-    offWorkspace()
   }
 }

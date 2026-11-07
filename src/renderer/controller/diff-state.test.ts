@@ -7,6 +7,8 @@ import type { StagedDiffEntry } from '@shared/types/state.ts'
 import { attachDiffState } from './diff-state.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { selectRightPanel } from './panels.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 
 type QueuedHandler = (projectId: string, threadId: string, entries: StagedDiffEntry[]) => void
 type ShowDiffHandler = (
@@ -95,10 +97,29 @@ describe('diff state', () => {
     assert.deepEqual(store.getState().stagedDiffs, [{ path: 'a.ts', language: 'typescript' }])
 
     store.setState({ activeThreadId: 'thread-b' })
-    store.emit('threads_changed')
     await settle()
 
     assert.deepEqual(store.getState().stagedDiffs, [{ path: 'b.ts', language: 'typescript' }])
+  })
+
+  it('does not re-read the queue when only thread metadata changes', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-a',
+      threads: [makeThread({ id: 'thread-a' }), makeThread({ id: 'thread-b' })],
+    })
+    const h = harness({ 'project-1/thread-a': [{ path: 'a.ts', language: 'typescript' }] })
+    attachDiffState(store, h.api, { revealOnShowDiff: false })
+    await settle()
+    const published = store.getState().stagedDiffs
+    assert.deepEqual(h.queueCalls, [['project-1', 'thread-a']])
+
+    setThreadTitle(store, 'thread-a', 'Renamed')
+    setThreadTitle(store, 'thread-b', 'Another thread')
+    await settle()
+
+    assert.deepEqual(h.queueCalls, [['project-1', 'thread-a']])
+    assert.equal(store.getState().stagedDiffs, published)
   })
 
   it('republishes and re-reads the new owner queue on a project switch from setState alone', async () => {
@@ -141,7 +162,6 @@ describe('diff state', () => {
     // Switch away before the in-flight read for thread-a can resolve.
     attachDiffState(store, h.api, { revealOnShowDiff: false })
     store.setState({ activeThreadId: 'thread-b' })
-    store.emit('threads_changed')
     await settle()
 
     assert.deepEqual(store.getState().stagedDiffs, [], "thread-a's queue must not land on thread-b")

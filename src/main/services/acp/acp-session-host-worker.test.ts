@@ -66,14 +66,20 @@ export const SandboxManager = {
   getConfig() { return config },
   updateConfig(next) { config = next },
   isSandboxingEnabled() { return config !== null },
-  async wrapWithSandboxArgv(command, shell) { return { argv: [shell, '-c', command] } },
+  // Like ASRT 0.0.74: read the wrapping process's env after an await and bake
+  // TMPDIR into the command, where it beats the spawn env.
+  async wrapWithSandboxArgv(command, shell) {
+    await new Promise((resolve) => setImmediate(resolve))
+    const tmp = process.env.CLAUDE_CODE_TMPDIR || process.env.CLAUDE_TMPDIR || '/tmp/claude'
+    return { argv: [shell, '-c', 'export TMPDIR=' + JSON.stringify(tmp) + '\\n' + command] }
+  },
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
 `
 
 const RELAY_AGENT =
-  "process.stdout.write(`env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
+  "process.stdout.write(`tmp:${String(process.env.TMPDIR === process.env.TMP && process.env.TMP === process.env.CLAUDE_CODE_TMPDIR)} env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
 
 function spawnWorker(workerPath: string, cwd: string, agentScript = RELAY_AGENT): ChildProcess {
   return spawn(process.execPath, [workerPath], {
@@ -158,7 +164,8 @@ describe('ACP session host worker', () => {
           (message) => message.type === 'network-denial' && message.host === 'blocked.example',
         ),
       )
-      assert.match(await waitForStdout(child, 'env:true'), /env:true/)
+      // The agent's temp variables all agree, ASRT's baked TMPDIR included (#4149).
+      assert.match(await waitForStdout(child, 'env:true'), /tmp:true env:true/)
       const output = waitForStdout(child, 'agent:hello')
       child.stdin?.write('hello\n')
       assert.match(await output, /agent:hello/)
