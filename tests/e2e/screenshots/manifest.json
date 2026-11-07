@@ -1542,8 +1542,8 @@
       "bytes": 307331
     },
     "context-wheel-live-running.png": {
-      "sha256": "06a75af9086d814676eb474a81a23a6a354265940d269b85535d24d89864e86a",
-      "bytes": 12906
+      "sha256": "534ce17c3e47d4e6948041817167310e5e7e3becc2174f1ca083913059a5f3eb",
+      "bytes": 9347
     },
     "context-wheel-running-hover.png": {
       "sha256": "f4883453558e7ba41e93a94b168e6fed951552b8ed3fc0a330b7a3edc4dbaef1",
@@ -5692,6 +5692,10 @@
     "transcript-scroll-jump-button.png": {
       "sha256": "c2d2b339afbcef96c97b550a40cb2729b62dc8cb0d634d3d31cedd1d895d1af3",
       "bytes": 128662
+    },
+    "transcript-thread-return.png": {
+      "sha256": "9b4562b398b0d5dff66f7391883265762636c0db3fa9a40080ad69dcdee91f0c",
+      "bytes": 185481
     },
     "transcript-thread-wide-reconcile.png": {
       "sha256": "48d58f606513d442d0e5b849584020147dd63706723dbf274a62e8f6a51c09e4",
