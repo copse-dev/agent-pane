@@ -5189,6 +5189,14 @@
       "sha256": "fa2b4962b4fb56eeeeb9f06ec8b7dbf610677e74ae774bd8ad490b739defee57",
       "bytes": 109090
     },
+    "subagent-tool-sizing-narrow.png": {
+      "sha256": "64ca2eba72df541da1c17f94ce55d2e88d9ce84db4f69d44d69bc075143479d3",
+      "bytes": 27282
+    },
+    "subagent-tool-sizing-wide.png": {
+      "sha256": "a9364a561b3c4128db8f5123e8a4562eee3bcb51534fe2361377facb8e6253cd",
+      "bytes": 35388
+    },
     "subagent-ungrouped-beside-read.png": {
       "sha256": "4e41b7a7cc4dc70adec6a9e84001d95f3d8a39b89f068c650678e9cee71461f0",
       "bytes": 97802
@@ -5590,8 +5598,8 @@
       "bytes": 255344
     },
     "tool-activity-icon-nested-row-running.png": {
-      "sha256": "dd1382736229cdbcdd59bebf67c5264f4e13bdf5176875bf46c452280dd6ab29",
-      "bytes": 272433
+      "sha256": "cf2da59c0631708f98232a298519098896c7811bec254cafc3bfeef1fe94310d",
+      "bytes": 286926
     },
     "tool-argument-clamp-guidance.png": {
       "sha256": "bcaae741c497efba08cf40ccb2c9d2b8e8543f1f018c2380c20e820546349dae",
