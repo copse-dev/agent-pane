@@ -2964,7 +2964,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-permission-kind {
   flex: none;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 1px 5px;
   color: var(--text-secondary);
   font-size: var(--font-size-3xs);

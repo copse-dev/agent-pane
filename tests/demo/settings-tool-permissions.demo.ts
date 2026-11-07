@@ -28,6 +28,15 @@ describe('browser-hosted tool permission settings', () => {
     const proton = panel.$('[data-group-id="mcp:project:proton-mcp"]')
     await expect(proton.$('.tool-permission-group-origin')).toHaveText('project')
     await expect(proton.$('.tool-permission-group-status')).toHaveText('connected')
+    // Count, origin and status are labels beside the name, not actions: they take
+    // the kit corner, not pill rounding (docs/ui-taste.md, chips).
+    for (const tag of [
+      '.tool-permission-count',
+      '.tool-permission-group-origin',
+      '.tool-permission-group-status',
+    ]) {
+      await expect(proton.$(tag)).toHaveStyle({ 'border-top-left-radius': '6px' })
+    }
     assert.equal((await proton.$$('.tool-permission-row').getElements()).length, 4)
     await expect(proton.$('[data-tool-id="mcp:project:proton-mcp:send-mail"]')).toHaveText(
       expect.stringContaining('Send a new mail message.'),
