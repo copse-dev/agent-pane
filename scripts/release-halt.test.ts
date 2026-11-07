@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { load } from 'js-yaml'
 import { z } from 'zod'
-import { decodeWithSchema, safeJsonParse } from '../packages/std/src/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 const workflowSchema = z.object({
   jobs: z.object({
