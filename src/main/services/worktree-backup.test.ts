@@ -1,4 +1,15 @@
-import { describe, beforeEach, afterEach } from 'node:test'
+import { configureThreadStore } from '@copse/thread-store/environment.ts'
+let isolatedBackupStore = ''
+before(async () => {
+  isolatedBackupStore = await mkdtemp(join(tmpdir(), 'copse-backup-store-'))
+  configureThreadStore({ workspaceRoot: () => isolatedBackupStore })
+})
+after(async () => {
+  configureThreadStore()
+  if (isolatedBackupStore) await rm(isolatedBackupStore, { recursive: true, force: true })
+})
+
+import { before, after, describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, readFile, readdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -10,6 +21,7 @@ import {
   restoreWorktreeBackup,
 } from './github/git-service.ts'
 import {
+  clearSessionBackupsForTest,
   ensureSessionBackup,
   ensureWorktreeRecoverable,
   getSessionBackup,
@@ -318,7 +330,11 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
 
     // A new turn resets the restore point; the next ensure snapshots afresh.
     resetSessionBackup(TEST_THREAD_OWNER)
-    assert.equal(getSessionBackup(), null)
+    assert.equal(
+      getSessionBackup(),
+      first,
+      'a read-only follow-up must keep the previous restore point',
+    )
     const third = await ensureSessionBackup(root)
     assert.ok(third)
     assert.notEqual(third, first)
@@ -338,6 +354,29 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
       await writeFile(join(root, 'dirty.txt'), 'work\n', 'utf-8')
       assert.equal(await ensureWorktreeRecoverable(root), true)
       assert.ok(getSessionBackup(), 'a backup should have been taken')
+    },
+  )
+
+  ownedIt('rechecks new user work after an earlier clean approval in the same turn', async () => {
+    assert.equal(await ensureWorktreeRecoverable(root), true)
+    assert.equal(getSessionBackup(), null)
+    await writeFile(join(root, 'new-user-draft.txt'), 'manual work during the turn\n', 'utf8')
+    assert.equal(await ensureWorktreeRecoverable(root), true)
+    assert.ok(getSessionBackup()?.paths.includes('new-user-draft.txt'))
+    await writeFile(join(root, 'new-user-draft.txt'), 'later agent edit\n', 'utf8')
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(
+      await readFile(join(root, 'new-user-draft.txt'), 'utf8'),
+      'manual work during the turn\n',
+    )
+  })
+
+  ownedIt(
+    'does not reuse a clean approval when Git can no longer verify recoverability',
+    async () => {
+      assert.equal(await ensureWorktreeRecoverable(root), true)
+      setGitAvailableForTest(false)
+      assert.equal(await ensureWorktreeRecoverable(root), false)
     },
   )
 
@@ -364,6 +403,26 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
       assert.equal(await readFile(join(root, 'dirty.txt'), 'utf-8'), 'user work\n')
     },
   )
+
+  ownedIt('loads the same checkout restore point after process state is lost', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user checkpoint\n')
+    const backup = await ensureSessionBackup(root)
+    assert.ok(backup)
+    await writeFile(join(root, 'dirty.txt'), 'agent edit\n')
+    clearSessionBackupsForTest()
+    assert.deepEqual(getSessionBackup(), backup)
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'user checkpoint\n')
+  })
+
+  ownedIt('never restores a stored checkpoint into another checkout', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user checkpoint\n')
+    assert.ok(await ensureSessionBackup(root))
+    clearSessionBackupsForTest()
+    assert.equal(getSessionBackup(TEST_THREAD_OWNER, join(root, 'other')), null)
+    assert.equal(await restoreSessionBackup(TEST_THREAD_OWNER, join(root, 'other')), false)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'user checkpoint\n')
+  })
 
   ownedIt('restoreSessionBackup returns false when there is no backup', async () => {
     assert.equal(getSessionBackup(), null)

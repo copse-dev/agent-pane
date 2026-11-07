@@ -200,19 +200,28 @@ export function registerGitHandlers(
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:session-backup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-    return getSessionBackup({ projectId, threadId })
-  })
+  ipcMain.handle(
+    'git:session-backup',
+    async (event, projectIdArg: unknown, threadIdArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      return getSessionBackup(
+        { projectId, threadId },
+        await resolveWatchedGitRoot(projectId, threadId),
+      )
+    },
+  )
   ipcMain.handle(
     'git:restore-backup',
     async (event, projectIdArg: unknown, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [projectIdArg])
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      return restoreSessionBackup({ projectId, threadId })
+      return restoreSessionBackup(
+        { projectId, threadId },
+        await resolveWatchedGitRoot(projectId, threadId),
+      )
     },
   )
 }

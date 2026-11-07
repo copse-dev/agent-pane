@@ -3845,6 +3845,34 @@
       "sha256": "5333f3ec9e677e5b346bca90d4abaca88d478849d83a0185a3432f66a21b7513",
       "bytes": 302304
     },
+    "session-backup-after-followup.png": {
+      "sha256": "12c2d432f327fb91cb932d468183db9d9b8d5728e0b3c97bf998745dbf0bf1d0",
+      "bytes": 328260
+    },
+    "session-backup-after-restart.png": {
+      "sha256": "61425f823977d274b5b1ba6f8f51a761dec4dcbc5856205bfabdfbc859a97356",
+      "bytes": 328402
+    },
+    "session-backup-clean-baseline-after-restart.png": {
+      "sha256": "57ab2a3c4f278100c166f724e93aef6ef3a80f4ea720e7d9fb070a4f7bc13c65",
+      "bytes": 334305
+    },
+    "session-backup-latest-edit-restored.png": {
+      "sha256": "3e98807cdca88eafdac0894ba50e50111aa95874ed4ec47673f20275947225bf",
+      "bytes": 350699
+    },
+    "session-backup-proposal-restored-after-restart.png": {
+      "sha256": "f2ca3fe0f2f3fef65bafbeb190615b65e61d6377e540fb8f2ebf82483c9cf863",
+      "bytes": 373693
+    },
+    "session-backup-proposal-retains-point.png": {
+      "sha256": "343a15d155fe94eb5b6225d9964512937aa845111b0129de6e8e8d7cd4f0d0c6",
+      "bytes": 372197
+    },
+    "session-backup-restored.png": {
+      "sha256": "b1c64264f4ebb4ce528d7a4b3815c5baa80aaf3d626f0473a461cda4f0468bea",
+      "bytes": 340838
+    },
     "settings-about-update-channel.png": {
       "sha256": "a496ae588294386496cd3dfe5961b6854c68dc89628eb55ca22342a0dfee7fc4",
       "bytes": 39788
