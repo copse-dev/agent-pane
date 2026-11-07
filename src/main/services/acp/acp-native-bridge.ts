@@ -425,6 +425,22 @@ export interface AcpNativeBridge {
   close: () => Promise<void>
 }
 
+/**
+ * Whether an agent can list a tool with this input schema. The Anthropic API
+ * requires `type: "object"` at the top level, and Claude Code drops every tool
+ * of an MCP server that offers one without it: a single union-shaped schema
+ * hid all of Copse's tools from Claude (#4142). The bridge leaves such a tool
+ * out, with a warning, rather than lose the rest.
+ */
+export function isAgentInputSchema(schema: Record<string, unknown>): boolean {
+  return (
+    schema['type'] === 'object' &&
+    !Object.hasOwn(schema, 'anyOf') &&
+    !Object.hasOwn(schema, 'oneOf') &&
+    !Object.hasOwn(schema, 'allOf')
+  )
+}
+
 function bridgedTools(
   registry: ToolRegistry,
   projectId?: string,
@@ -436,7 +452,14 @@ function bridgedTools(
   // 400s the whole request on the openapi-3.0 flavor.
   return registry
     .toMcpTools()
-    .filter((tool) => offered.has(tool.name))
+    .filter((tool) => {
+      if (!offered.has(tool.name)) return false
+      if (isAgentInputSchema(tool.inputSchema)) return true
+      console.warn(
+        `[acp-bridge] not offering "${tool.name}": its input schema is not a top-level object`,
+      )
+      return false
+    })
     .map((tool) =>
       tool.name === ASK_CLASSIFIER_TOOL_NAME
         ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }

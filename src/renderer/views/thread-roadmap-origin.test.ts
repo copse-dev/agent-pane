@@ -2,6 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountThreadRoadmapOrigin } from './thread-roadmap-origin.ts'
@@ -100,9 +102,9 @@ describe('thread roadmap origin chip', () => {
   })
 
   it('picks up the stamp once it lands after the thread already exists', async () => {
-    // "Start thread" creates the thread (threads_changed fires here, before
-    // the item's `thread` field is stamped) and only later stamps the item —
-    // the exact race register-handlers.ts's roadmap:set-thread broadcasts
+    // "Start thread" creates and selects the thread (before the item's
+    // `thread` field is stamped) and only later stamps the item —
+    // the exact race roadmap-handlers.ts's roadmap:set-thread broadcasts
     // roadmap:changed for.
     const origin: Record<string, { id: string; title: string }> = {}
     const store = createStore({ activeThreadId: null })
@@ -110,7 +112,6 @@ describe('thread roadmap origin chip', () => {
     const { element, destroy } = mountThreadRoadmapOrigin(store, api)
     try {
       store.setState({ activeThreadId: 'thread-1' })
-      store.emit('threads_changed')
       await flush()
       assert.equal(element.hidden, true, 'not stamped yet')
 
@@ -135,8 +136,8 @@ describe('thread roadmap origin chip', () => {
       await flush()
       assert.equal(element.hidden, false)
 
+      // The selection alone re-syncs: no `threads_changed` is emitted.
       store.setState({ activeThreadId: 'thread-2' })
-      store.emit('threads_changed')
       assert.equal(element.hidden, true, 'the old thread chip hides before the lookup settles')
       await flush()
       assert.equal(element.hidden, true)
@@ -145,8 +146,11 @@ describe('thread roadmap origin chip', () => {
     }
   })
 
-  it('ignores threads_changed for the same active thread, but re-queries on roadmap:changed', async () => {
-    const store = createStore({ activeThreadId: 'thread-1' })
+  it('ignores updates to the same or other threads, but re-queries on roadmap:changed', async () => {
+    const store = createStore({
+      activeThreadId: 'thread-1',
+      threads: [makeThread({ id: 'thread-1' }), makeThread({ id: 'thread-2' })],
+    })
     const origin: Record<string, { id: string; title: string }> = {
       'thread-1': { id: 'item-a', title: 'Old title' },
     }
@@ -155,10 +159,11 @@ describe('thread roadmap origin chip', () => {
     try {
       await flush()
       assert.deepEqual(calls, ['thread-1'])
-      store.emit('threads_changed')
+      setThreadTitle(store, 'thread-1', 'Renamed')
+      setThreadTitle(store, 'thread-2', 'Another thread')
       store.emit('threads_changed')
       await flush()
-      assert.deepEqual(calls, ['thread-1'], 'streaming thread events do not re-query')
+      assert.deepEqual(calls, ['thread-1'], 'renames and other threads do not re-query')
 
       // A rename broadcasts roadmap:changed: the chip picks the new title up.
       origin['thread-1'] = { id: 'item-a', title: 'New title' }

@@ -73,7 +73,14 @@ export function createAcpTurnRunner(deps: AcpTurnRunnerDeps): AcpTurnRunner {
       return decision === 'allow'
     }
     setApprovalHandler(async (req: ApprovalRequest) => ({
-      approved: await askClient(req.title, { body: req.body, type: req.type }),
+      approved: await askClient(req.title, {
+        body: req.body,
+        type: req.type,
+        bodyMarkdown: req.bodyMarkdown,
+        bodyAdvice: req.bodyAdvice,
+        bodyFooter: req.bodyFooter,
+        approveLabel: req.approveLabel,
+      }),
       remember: false,
     }))
     setStagedDiffResolver((entry) =>

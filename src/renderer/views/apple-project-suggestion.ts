@@ -7,6 +7,7 @@ import { el } from '../dom/helpers.ts'
 import { sparkleIcon } from '../dom/icons.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /**
  * Offer Apple development when an Apple project becomes active.
@@ -28,19 +29,17 @@ const PLUGIN_DESCRIPTION =
 function pluginCard(): HTMLElement {
   const mark = el('img', { src: './brand-mark.svg', alt: '', width: '40', height: '40' })
   const icon = el('span', { class: 'plugin-icon plugin-icon-copse', 'aria-hidden': 'true' }, mark)
-  const stability = el('span', { class: 'plugin-badge plugin-badge-experimental' }, 'experimental')
+  // The same name line as the Settings row: name, then the publisher, then the
+  // Experimental badge (docs/ui-taste.md, "A plugin row sits on the page").
   const nameLine = el(
     'div',
     { class: 'plugin-row-name-line' },
     el('span', { class: 'plugin-name' }, PLUGIN_NAME),
-    stability,
-  )
-  const title = el(
-    'div',
-    { class: 'plugin-row-title' },
+    el('span', { class: 'plugin-name-separator', 'aria-hidden': 'true' }, '·'),
     el('span', { class: 'plugin-badge plugin-badge-first-party' }, 'Copse'),
-    nameLine,
+    el('span', { class: 'ui-badge plugin-badge-experimental' }, 'experimental'),
   )
+  const title = el('div', { class: 'plugin-row-title' }, nameLine)
   return el(
     'div',
     { class: 'plugin-row apple-suggestion-card' },
@@ -284,7 +283,7 @@ export function mountAppleProjectSuggestions(
     renderReminder()
   })
 
-  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     const activeProjectId = store.getState().activeProjectId
     if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
       pendingDialog.controller.abort()

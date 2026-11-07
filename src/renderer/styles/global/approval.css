@@ -127,6 +127,16 @@
 .approval-body-code {
   font-family: var(--font-mono);
 }
+/* A markdown section (e.g. a PR description) nested inside `.approval-body`:
+ * same box and scrollbar as the plain-text header lines above it, but reset
+ * off the header's `pre-wrap` so rendered block elements (lists, headings,
+ * code blocks) lay out normally instead of doubling their own whitespace. */
+.approval-body-markdown {
+  white-space: normal;
+}
+.approval-body > .approval-body-markdown {
+  margin-top: var(--spacing-sm);
+}
 /* A matching decision merges its distinct explanations and presents all
  * subjects as one compact list. The list owns the outer card and scrollbar so
  * parallel commands read as one approval decision, not repeated prompts. */
