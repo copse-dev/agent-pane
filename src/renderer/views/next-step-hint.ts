@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { getThreadById } from '@shared/store/thread-helpers.ts'
+import { getThreadById, getThreadProjectId } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
 
 /**
@@ -55,6 +55,8 @@ export function mountNextStepHint(
   }
 
   async function maybeFetchHint(threadId: string): Promise<void> {
+    const projectId = getThreadProjectId(store, threadId)
+    if (!projectId) return
     const exchange = lastExchange(store, threadId)
     if (!exchange) {
       hintsByThread.delete(threadId)
@@ -75,7 +77,11 @@ export function mountNextStepHint(
 
     const token = nextFetchToken(threadId)
     try {
-      const text = await api.agent.suggestNextStep(JSON.stringify(exchange.context))
+      const text = await api.agent.suggestNextStep(
+        JSON.stringify(exchange.context),
+        projectId,
+        threadId,
+      )
       if (token !== fetchTokens.get(threadId)) return
       hintsByThread.set(threadId, { turnKey: exchange.turnKey, text })
     } catch {

@@ -393,10 +393,22 @@ export interface ApiClient {
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
-    suggestTitle: (text: string) => Promise<string | null>
-    suggestTerminalTitle: (text: string) => Promise<string | null>
-    suggestCommandSummary: (commands: string[]) => Promise<string | null>
-    suggestToolTurnSummary: (actions: string[]) => Promise<string | null>
+    suggestTitle: (text: string, projectId: string, threadId: string) => Promise<string | null>
+    suggestTerminalTitle: (
+      text: string,
+      projectId: string | null,
+      threadId: string | null,
+    ) => Promise<string | null>
+    suggestCommandSummary: (
+      commands: string[],
+      projectId: string,
+      threadId: string,
+    ) => Promise<string | null>
+    suggestToolTurnSummary: (
+      actions: string[],
+      projectId: string,
+      threadId: string,
+    ) => Promise<string | null>
     suggestFollowUps: (
       projectId: string,
       threadId: string,
@@ -414,7 +426,11 @@ export interface ApiClient {
       contextJson: string,
     ) => Promise<string | null>
     /** Tab-completable next step for the composer placeholder; null = no obvious step. */
-    suggestNextStep: (contextJson: string) => Promise<string | null>
+    suggestNextStep: (
+      contextJson: string,
+      projectId: string,
+      threadId: string,
+    ) => Promise<string | null>
     /**
      * `stamp` is present when main has already persisted this chunk's turn; the
      * window then draws it with main's message ids and writes nothing itself.

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
+import { createStore as createAppStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
@@ -8,6 +8,10 @@ import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+
+function createStore(initial: Parameters<typeof createAppStore>[0] = {}): AppStore {
+  return createAppStore({ activeProjectId: 'project-1', ...initial })
+}
 
 function requireThread(store: AppStore, id: string): Thread {
   const found = getThreadById(store, id)
@@ -98,6 +102,24 @@ test('maybeNameThread suggests a title from the first user message', async () =>
 
   assert.deepEqual(titleCalls, ['Add a login button'])
   assert.equal(requireThread(store, 't-name').title, 'Generated Title')
+})
+
+test('title requests keep a background thread’s owner after a project switch', async () => {
+  const store = createStore({
+    activeProjectId: 'new-project',
+    backgroundThreads: [
+      { projectId: 'original-project', thread: newThread('t-background', [userMessage('Review')]) },
+    ],
+  })
+  const api = createFakeApi()
+  const owners: string[][] = []
+  api.agent.suggestTitle = async (_text, projectId, threadId) => {
+    owners.push([projectId, threadId])
+    return 'Review project'
+  }
+  maybeNameThread(store, api, 't-background')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(owners, [['original-project', 't-background']])
 })
 
 test('maybeRenameThreadBranch applies an idle settled title to its worktree branch', async () => {

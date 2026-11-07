@@ -276,7 +276,7 @@ export function mountTerminalsPane(
     // being suggested, but TypeScript keeps the narrowing from the guard above.
     const renamedByUser = (): boolean => tab.renamed
     try {
-      const title = await api.agent.suggestTerminalTitle(text)
+      const title = await api.agent.suggestTerminalTitle(text, tab.scopeProjectId, tab.scopeId)
       if (title && !renamedByUser()) {
         setTabLabel(tab, title)
         tab.autoNamed = true
