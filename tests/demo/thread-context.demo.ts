@@ -67,7 +67,8 @@ describe('The thread Context panel', () => {
     )
     await expect(
       $$('[data-context-section="permissions"] [data-action^="revoke-"]'),
-    ).toBeElementsArrayOfSize(3)
+    ).toBeElementsArrayOfSize(4)
+    await expect($('[data-action="revoke-port-binding"]')).toBeDisplayed()
     await expect($('[data-access="orchestrate"]')).toHaveText(
       expect.stringContaining('Orchestrate own subthreads'),
     )

@@ -2477,10 +2477,25 @@ describe('turn-tree shell replay leases', () => {
             }),
             true,
           )
+          assert.equal(
+            await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+              executionRoot: root,
+              requireInteractiveApproval: true,
+            }),
+            true,
+          )
         }
+        await setSetting('toolPermissionOverrides', { 'copse:run_shell': 'ask' })
+        assert.equal(
+          await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+            executionRoot: root,
+          }),
+          true,
+        )
       })
-      assert.deepEqual(offered, [true, false, false])
+      assert.deepEqual(offered, [true, false, false, false, false, false])
     } finally {
+      await setSetting('toolPermissionOverrides', {})
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
     }

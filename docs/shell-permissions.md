@@ -657,6 +657,37 @@ in forgeable command output, Guarded YOLO and deterministic shell auto-approval 
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
 
+### Background tasks
+
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. Trusted-command routing follows `run_background`'s own per-tool setting in the
+permission gate and the runner alike: Always ask on `run_shell` alone changes neither where a
+background task runs nor how the gate records and, under Guarded YOLO, screens it. An eligible
+outside-read command instead receives the same per-spawn read overlay as `run_shell`; its named
+paths become readable without granting writes or network. Separately approved loopback binding
+composes with that read overlay. Foreground and background installs share package-firewall
+preparation and JavaScript lifecycle-script suppression under the existing safe-install setting; a
+missing proxy launcher refuses the install before spawning.
+
+Background starts accept `expects_sandbox_block` for ambiguous commands. The escape always asks
+afresh and authorizes that one attempt; declining runs contained and suppresses a second retry
+request for that attempt. Fully local commands ignore the hint, while hard-external commands
+retain their ordinary gate.
+
+A failed contained background task with per-attempt runner violations or a bounded denial
+signature can be retried explicitly: `action: start`, the exact same command and `retry_of` set
+to the failed task id. The agent must inspect partial effects first. This always requires fresh
+one-shot outside consent, including in Guarded YOLO; forgeable output cannot approve an escape.
+Neither prompt offers an “Always allow” trusted-command grant, a replay lease or a standing read
+grant, so a command that prints a denial signature cannot turn one approval into later unprompted
+escapes.
+The owner, command, execution root and failed status are rechecked after approval. Only one
+retry may claim an original attempt, and the retry gets a new task id and its own completion
+lifecycle. Running, successful, cancelled, timed-out, already outside, remote and adopted tasks
+are ineligible. Background failures never restart automatically and add no continuation wake.
+The foreground denial cache and replay leases do not apply to background retries.
+
 ## Host-side read tools
 
 `gh` through `run_shell` is an ambiguous “may reach” command: it starts in the network-less project
@@ -1364,3 +1395,5 @@ needed, deletes it, and reports absence only after a successful host inventory.
 Deletion asks on every invocation, including with a stored Device Hub allow,
 and cannot be remembered through the approval dialog. Stored blocks, read-only
 runs and toolGate hooks still win. Other Device Hub actions retain their policy.
+
+Saved local port-binding consent can be revoked under Context → Permissions → Project → Local port binding. Revocation applies to future task starts for that project; stop any already-running background task separately in Process manager. Other projects keep their own consent.

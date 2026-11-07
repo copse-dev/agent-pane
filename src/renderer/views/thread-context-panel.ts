@@ -7,7 +7,8 @@ import {
   plusIcon,
   closeIcon,
 } from '../dom/icons.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
+import type { AppState, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DecisionEvent } from '@shared/threads/decision-log.ts'
 import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
@@ -37,7 +38,9 @@ import { deriveThreadContext, type ThreadContextModel } from './thread-context-m
 import { mountReviewerInput } from './reviewer-input.ts'
 import { showErrorToast } from './toast.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { activeThreadOf, sameThreadBesidesDraft } from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -383,6 +386,48 @@ export function renderThreadContext(
   return host
 }
 
+const titlesKeys = new WeakMap<readonly Thread[], string>()
+
+function threadTitlesKey(threads: readonly Thread[]): string {
+  const cached = titlesKeys.get(threads)
+  if (cached !== undefined) return cached
+  const key = threads.map((t) => `${t.id}\u0000${t.title}`).join('\n')
+  titlesKeys.set(threads, key)
+  return key
+}
+
+interface ContextPanelInputs {
+  thread: Thread | undefined
+  /** Compared item by item: project, titles, parent and side-chat threads. */
+  related: readonly unknown[]
+}
+
+/** The panel's inputs while it is hidden: showing it renders from scratch. */
+const CONTEXT_PANEL_HIDDEN: ContextPanelInputs = { thread: undefined, related: [] }
+
+/** The Context panel's thread inputs; constant while the panel is hidden. */
+function contextPanelInputs(state: AppState): ContextPanelInputs {
+  if (!state.filesPaneOpen || state.rightPanelMode !== 'context') return CONTEXT_PANEL_HIDDEN
+  const thread = activeThreadOf(state)
+  if (!thread) return { thread, related: [state.activeProjectId] }
+  const parentId = thread.sideChat?.parentThreadId
+  return {
+    thread,
+    related: [
+      state.activeProjectId,
+      threadTitlesKey(state.threads),
+      parentId === undefined ? undefined : state.threads.find((t) => t.id === parentId),
+      ...state.threads.filter((t) => t.sideChat?.parentThreadId === thread.id),
+    ],
+  }
+}
+
+function sameContextPanelInputs(a: ContextPanelInputs, b: ContextPanelInputs): boolean {
+  if (a === b) return true
+  if (a === CONTEXT_PANEL_HIDDEN || b === CONTEXT_PANEL_HIDDEN) return false
+  return sameThreadBesidesDraft(a.thread, b.thread) && sameItems(a.related, b.related)
+}
+
 function contextModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   return filesPaneOpen && rightPanelMode === 'context'
@@ -577,7 +622,42 @@ export function mountThreadContextPane(
       permissionRow('Workspace trust', currentGrants.workspaceTrusted ? 'Trusted' : 'Untrusted'),
     )
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow('Local port binding', 'Granted', 'Saved for this checkout'))
+      const revoke = el(
+        'button',
+        {
+          type: 'button',
+          class: 'thread-context-action thread-context-row-action',
+          'data-action': 'revoke-port-binding',
+          'aria-label': 'Revoke local port binding for this project',
+          title:
+            'Ask again before future tasks can bind a local port. Stop running tasks separately.',
+        },
+        'Revoke',
+      )
+      revoke.addEventListener('click', () => {
+        const state = store.getState()
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return
+        revoke.disabled = true
+        void api.security
+          .revokeProjectPortBinding(state.activeProjectId, threadId)
+          .then(() => refreshAccess())
+          .catch((error: unknown) => {
+            revoke.disabled = false
+            showErrorToast('Could not revoke local port permission', error)
+          })
+      })
+      result.append(
+        el(
+          'div',
+          { class: 'thread-context-row-wrap' },
+          permissionRow(
+            'Local port binding',
+            'Granted',
+            'Saved for this project. Revoke to ask for future tasks; stop running tasks separately.',
+          ),
+          revoke,
+        ),
+      )
     }
     result.append(el('p', { class: 'thread-context-permission-label' }, 'App-wide'))
     result.append(
@@ -1053,13 +1133,26 @@ export function mountThreadContextPane(
       render()
       void refreshMentions()
     }),
-    store.on('threads_changed', () => {
-      if (!contextModeActive(store)) return
-      const active = getActiveThread(store)?.id ?? null
-      render()
-      if (active !== mentionedFor) void refreshMentions()
-      else if (storageKey !== activeStorageKey()) void refreshStorage()
-    }),
+    // What `deriveThreadContext` reads: the active thread, every thread's title
+    // (link labels), its side chats and, for a side chat, its parent. Another
+    // thread's turn or metadata does not re-render the panel.
+    store.select(
+      contextPanelInputs,
+      (_next, prev) => {
+        // Showing the panel renders and refreshes from selectRightPanelMode above.
+        if (prev === CONTEXT_PANEL_HIDDEN || !contextModeActive(store)) return
+        render()
+        // Change stats read the thread's checkout from main, which rejects a
+        // new thread until autosave has created it.
+        afterPendingThreadPersistence(() => {
+          if (disposed || !contextModeActive(store)) return
+          const active = getActiveThread(store)?.id ?? null
+          if (active !== mentionedFor) void refreshMentions()
+          else if (storageKey !== activeStorageKey()) void refreshStorage()
+        })
+      },
+      sameContextPanelInputs,
+    ),
     store.on('message_done', () => {
       if (!contextModeActive(store)) return
       render()

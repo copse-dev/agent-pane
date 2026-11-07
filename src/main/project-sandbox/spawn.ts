@@ -93,9 +93,11 @@ function wrapForSandbox(
   overlay: Partial<SandboxRuntimeConfig>,
   tmpDir: string,
   signal?: AbortSignal,
+  cwd?: string,
+  options?: Parameters<typeof SandboxManager.wrapWithSandboxArgv>[5],
 ): ReturnType<typeof SandboxManager.wrapWithSandboxArgv> {
   return withSandboxWrapTmpDir(tmpDir, () =>
-    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal),
+    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal, cwd, options),
   )
 }
 
@@ -344,6 +346,10 @@ export async function spawnBackgroundProcess(
     allowPortBinding?: boolean
     /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
     unsandboxed?: boolean
+    /** Named read targets derived from the command approved by the tool gate. */
+    readGrantTargets?: readonly string[]
+    /** Unique host-owned attempt id for runner-side violation attribution. */
+    violationId?: string
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -370,9 +376,15 @@ export async function spawnBackgroundProcess(
     })
   }
 
-  const overlay = opts.allowPortBinding
-    ? portBindingSandboxOverlay(opts.cwd)
-    : workspaceSandboxOverlay(opts.cwd)
+  const readGrantTargets = opts.readGrantTargets ?? []
+  const base =
+    readGrantTargets.length > 0
+      ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
+      : workspaceSandboxOverlay(opts.cwd)
+  const bindingNetwork = opts.allowPortBinding
+    ? portBindingSandboxOverlay(opts.cwd).network
+    : undefined
+  const overlay = bindingNetwork ? { ...base, network: bindingNetwork } : base
   // Only a port-binding task needs the global network scope widened; a contained
   // task keeps the deny-all base, so acquiring a no-op scope would be misleading.
   const release = opts.allowPortBinding
@@ -389,6 +401,9 @@ export async function spawnBackgroundProcess(
       shellForSandboxWrap(),
       overlay,
       tmpDir,
+      undefined,
+      opts.cwd,
+      opts.violationId ? { commandId: opts.violationId } : undefined,
     )
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')

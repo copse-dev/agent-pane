@@ -17,6 +17,10 @@ import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/setting
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort } from './tests/e2e/helpers/debug-port.ts'
+import {
+  installCaptureSettle,
+  withoutCaptureSettle,
+} from './tests/e2e/helpers/context-estimate-settled.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
@@ -160,6 +164,9 @@ export const config: WebdriverIO.Config = {
     // not scroll to rescue it (it only scrolls what is out of view). Nudge such
     // a control clear at click time; see helpers/settings-action-bar-click.ts.
     installSettingsActionBarClickSafety(browser)
+    // Every capture waits for the composer's context estimate, so the footer's
+    // context wheel never races main's reply; see helpers/context-estimate-settled.ts.
+    installCaptureSettle(browser)
     await assertE2eDeviceScaleFactor()
     await parkSessionPointer()
   },
@@ -186,7 +193,8 @@ export const config: WebdriverIO.Config = {
         const base = `${test.title.replace(/[^a-z0-9]+/gi, '-').slice(0, 80)}-${String(Date.now())}`
         await withTimeout(
           (async (): Promise<void> => {
-            await browser.saveScreenshot(join(dir, `${base}.png`))
+            // A failure dump records the app as it is, pending estimate or not.
+            await withoutCaptureSettle(() => browser.saveScreenshot(join(dir, `${base}.png`)))
             writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
             // The page source shows *that* an element is missing or unpopulated;
             // the renderer console says why (e.g. the settings-dialog refresh
