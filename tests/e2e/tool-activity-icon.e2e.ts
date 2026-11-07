@@ -10,7 +10,12 @@ import {
   seedStableWorkspace,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  parkPointer,
+  saveAppScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
@@ -336,6 +341,10 @@ describe('tool activity icon — nested rollup row', function () {
       statusVisible: boolean | null
       statusWidth: number
       activityWidth: number
+      activityHeight: number
+      activitySvgWidth: number
+      activitySvgHeight: number
+      activitySize: number | null
       phaseCount: number
       phaseState: string | null
       phaseText: string | null
@@ -346,12 +355,23 @@ describe('tool activity icon — nested rollup row', function () {
       const name = header?.querySelector('.tool-name')
       const status = header?.querySelector('.tool-status-icon')
       const activity = header?.querySelector('.tool-activity-icon-slot')
+      const activityRect = activity?.getBoundingClientRect()
+      const activitySvgRect = activity
+        ?.querySelector('.reasoning-activity-icon')
+        ?.getBoundingClientRect()
       const phases = header?.querySelectorAll(':scope > .tool-command-phase')
       const phase = phases?.item(0)
       const message = header?.closest('.msg')
       const nameRect = name?.getBoundingClientRect()
       const headerRect = header?.getBoundingClientRect()
       const messageRect = message?.getBoundingClientRect()
+      const sizeProbe = document.createElement('span')
+      sizeProbe.style.position = 'absolute'
+      sizeProbe.style.visibility = 'hidden'
+      sizeProbe.style.width = 'var(--font-size-sm)'
+      header?.append(sizeProbe)
+      const activitySize = header ? sizeProbe.getBoundingClientRect().width : null
+      sizeProbe.remove()
       return {
         status: header?.closest('.tool-card')?.getAttribute('data-status') ?? null,
         text: name?.textContent ?? null,
@@ -362,7 +382,11 @@ describe('tool activity icon — nested rollup row', function () {
         messageRight: messageRect?.right ?? null,
         statusVisible: status ? getComputedStyle(status).display !== 'none' : null,
         statusWidth: status?.getBoundingClientRect().width ?? 0,
-        activityWidth: activity?.getBoundingClientRect().width ?? 0,
+        activityWidth: activityRect?.width ?? 0,
+        activityHeight: activityRect?.height ?? 0,
+        activitySvgWidth: activitySvgRect?.width ?? 0,
+        activitySvgHeight: activitySvgRect?.height ?? 0,
+        activitySize,
         phaseCount: phases?.length ?? 0,
         phaseState: phase?.getAttribute('data-phase') ?? null,
         phaseText: phase?.textContent ?? null,
@@ -405,6 +429,7 @@ describe('tool activity icon — nested rollup row', function () {
         row.headerWidth === null ||
         row.messageRight === null ||
         row.nameWidth === null ||
+        row.activitySize === null ||
         row.headerGap === null
       )
         throw new Error('Missing running tool row geometry')
@@ -412,6 +437,11 @@ describe('tool activity icon — nested rollup row', function () {
       expect(row.headerWidth).toBeGreaterThan(0)
       expect(row.headerRight).toBeGreaterThan(0)
       expect(row.messageRight).toBeGreaterThan(0)
+      expect(row.activitySize).toBeGreaterThan(0)
+      expect(row.activityWidth).toBeCloseTo(row.activitySize, 1)
+      expect(row.activityHeight).toBeCloseTo(row.activitySize, 1)
+      expect(row.activitySvgWidth).toBeCloseTo(row.activitySize, 1)
+      expect(row.activitySvgHeight).toBeCloseTo(row.activitySize, 1)
       expect(row.phaseCount).toBe(1)
       expect(row.phaseState).toBe('running')
       expect(row.phaseText).toBe('Running')
@@ -442,7 +472,27 @@ describe('tool activity icon — nested rollup row', function () {
       }
     }
 
-    await assertRunningRow('before-negative-control')
+    // Use the reader's panel control for a real wide/narrow layout round trip.
+    // Restore the narrow state before the capture and settled-width comparison.
+    await $('[aria-label="Toggle right panel"]').click()
+    await expect($('#pane-files')).not.toBeDisplayed()
+    await nestedCard.$(':scope > .tool-card-header').scrollIntoView({
+      block: 'center',
+      inline: 'nearest',
+    })
+    await waitForSettledLayout('.tool-rollup-body .tool-card-header')
+    await parkPointer()
+    const wide = await assertRunningRow('wide-panel-closed')
+    await $('[aria-label="Toggle right panel"]').click()
+    await expect($('#pane-files')).toBeDisplayed()
+    await nestedCard.$(':scope > .tool-card-header').scrollIntoView({
+      block: 'center',
+      inline: 'nearest',
+    })
+    await waitForSettledLayout('.tool-rollup-body .tool-card-header')
+    await parkPointer()
+    const narrow = await assertRunningRow('before-negative-control')
+    expect(wide.headerWidth).toBeGreaterThan(narrow.headerWidth)
     const staticGlyph = await nestedCard
       .$(':scope > .tool-card-header > .tool-status-icon')
       .getElement()
