@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -330,12 +331,23 @@ describe('tool activity icon — nested rollup row', function () {
       nameWidth: number | null
       nameRight: number | null
       headerRight: number | null
+      headerWidth: number | null
       messageRight: number | null
       statusVisible: boolean | null
+      statusWidth: number
+      activityWidth: number
+      phaseCount: number
+      phaseState: string | null
+      phaseText: string | null
+      phaseWidth: number
+      headerGap: number | null
     } {
       const header = document.querySelector('.tool-rollup-body .tool-card-header')
       const name = header?.querySelector('.tool-name')
       const status = header?.querySelector('.tool-status-icon')
+      const activity = header?.querySelector('.tool-activity-icon-slot')
+      const phases = header?.querySelectorAll(':scope > .tool-command-phase')
+      const phase = phases?.item(0)
       const message = header?.closest('.msg')
       const nameRect = name?.getBoundingClientRect()
       const headerRect = header?.getBoundingClientRect()
@@ -346,12 +358,32 @@ describe('tool activity icon — nested rollup row', function () {
         nameWidth: nameRect?.width ?? null,
         nameRight: nameRect?.right ?? null,
         headerRight: headerRect?.right ?? null,
+        headerWidth: headerRect?.width ?? null,
         messageRight: messageRect?.right ?? null,
         statusVisible: status ? getComputedStyle(status).display !== 'none' : null,
+        statusWidth: status?.getBoundingClientRect().width ?? 0,
+        activityWidth: activity?.getBoundingClientRect().width ?? 0,
+        phaseCount: phases?.length ?? 0,
+        phaseState: phase?.getAttribute('data-phase') ?? null,
+        phaseText: phase?.textContent ?? null,
+        phaseWidth: phase?.getBoundingClientRect().width ?? 0,
+        headerGap: header ? Number.parseFloat(getComputedStyle(header).columnGap) : null,
       }
     }
 
-    async function assertRunningRow(): Promise<{ text: string | null; nameWidth: number }> {
+    function assertStaticRunningGlyphHidden(visible: boolean | null): void {
+      assert.equal(visible, false, 'Running row shows a duplicate static status glyph')
+    }
+
+    async function assertRunningRow(stage: string): Promise<{
+      text: string | null
+      nameWidth: number
+      phaseWidth: number
+      headerGap: number
+      headerWidth: number
+      headerRight: number
+      messageRight: number
+    }> {
       await expect(rollup).toHaveAttribute('open')
       await expect(nestedCard).not.toHaveAttribute('open')
       const header = nestedCard.$(':scope > .tool-card-header')
@@ -360,21 +392,38 @@ describe('tool activity icon — nested rollup row', function () {
       const size = await header.getSize()
       expect(size.width).toBeGreaterThan(0)
       expect(size.height).toBeGreaterThan(0)
+      await expect(header.$$(':scope > .tool-command-phase')).toBeElementsArrayOfSize(1)
+      const phase = header.$(':scope > .tool-command-phase')
+      await expect(phase).toHaveAttribute('data-phase', 'running')
+      await expect(phase).toHaveText('Running')
+      await expect(phase).toBeDisplayed()
       const row = await browser.execute(measureNestedRow)
+      console.info('nested-tool-row-geometry', JSON.stringify({ stage, ...row }))
       if (
         row.nameRight === null ||
         row.headerRight === null ||
+        row.headerWidth === null ||
         row.messageRight === null ||
-        row.nameWidth === null
+        row.nameWidth === null ||
+        row.headerGap === null
       )
         throw new Error('Missing running tool row geometry')
       expect(row.nameWidth).toBeGreaterThan(0)
+      expect(row.headerWidth).toBeGreaterThan(0)
+      expect(row.headerRight).toBeGreaterThan(0)
+      expect(row.messageRight).toBeGreaterThan(0)
+      expect(row.phaseCount).toBe(1)
+      expect(row.phaseState).toBe('running')
+      expect(row.phaseText).toBe('Running')
+      expect(row.phaseWidth).toBeGreaterThan(0)
+      expect(Number.isFinite(row.headerGap)).toBe(true)
+      expect(row.headerGap).toBeGreaterThanOrEqual(0)
       expect(row.status).toBe('running')
       // Keep the live spiral visible while its redundant static glyph is hidden.
       const activity = nestedCard.$('.tool-activity-icon-slot > .reasoning-activity-icon')
       await expect(activity).toExist()
       await expect(activity).toBeDisplayed()
-      expect(row.statusVisible).toBe(false)
+      assertStaticRunningGlyphHidden(row.statusVisible)
       // The label stays inside the hover pill, which stays inside the message.
       expect(row.nameRight <= row.headerRight).toBe(true)
       expect(row.headerRight <= row.messageRight).toBe(true)
@@ -382,34 +431,111 @@ describe('tool activity icon — nested rollup row', function () {
         'sleep 40 # Allow the preview server time to load the workspace, restore cached dependencies, co…',
       )
       expect(await $('#app').getText()).not.toContain(releaseName)
-      return { text: row.text, nameWidth: row.nameWidth }
+      return {
+        text: row.text,
+        nameWidth: row.nameWidth,
+        phaseWidth: row.phaseWidth,
+        headerGap: row.headerGap,
+        headerWidth: row.headerWidth,
+        headerRight: row.headerRight,
+        messageRight: row.messageRight,
+      }
     }
 
-    const running = await assertRunningRow()
+    await assertRunningRow('before-negative-control')
+    const staticGlyph = await nestedCard
+      .$(':scope > .tool-card-header > .tool-status-icon')
+      .getElement()
+    const previousDisplay = await browser.execute((glyph: HTMLElement) => {
+      const saved = {
+        value: glyph.style.getPropertyValue('display'),
+        priority: glyph.style.getPropertyPriority('display'),
+      }
+      glyph.style.setProperty('display', 'inline-flex')
+      return saved
+    }, staticGlyph)
+    try {
+      // Reintroduce the original duplicate in the real DOM. The same invariant
+      // used above must reject it even after accounting for the supported phase.
+      const duplicate = await browser.execute(measureNestedRow)
+      console.info('nested-tool-row-geometry', JSON.stringify({ stage: 'duplicate', ...duplicate }))
+      expect(duplicate.statusVisible).toBe(true)
+      expect(duplicate.statusWidth).toBeGreaterThan(0)
+      expect(() => {
+        assertStaticRunningGlyphHidden(duplicate.statusVisible)
+      }).toThrow('Running row shows a duplicate static status glyph')
+    } finally {
+      await browser.execute(
+        (glyph: HTMLElement, saved: { value: string; priority: string }) => {
+          if (saved.value) glyph.style.setProperty('display', saved.value, saved.priority)
+          else glyph.style.removeProperty('display')
+        },
+        staticGlyph,
+        previousDisplay,
+      )
+    }
+    await assertRunningRow('before-capture')
+    let running: Awaited<ReturnType<typeof assertRunningRow>>
     try {
       await browser.pause(600)
       await saveAppScreenshot('tool-activity-icon-nested-row-running.png', undefined, async () => {
         // Check the pinned frame, then keep the barrier held across the helper's
         // later layout/index waits and actual screenshot exposure.
-        await assertRunningRow()
+        await assertRunningRow('pinned-capture')
       })
-      await assertRunningRow()
+      running = await assertRunningRow('after-capture')
     } finally {
       releaseCommand()
     }
 
     await expect(nestedCard).toHaveAttribute('data-status', 'done', { wait: 60_000 })
+    await expect(rollup).toHaveAttribute('open')
+    await expect(nestedCard).not.toHaveAttribute('open')
+    const settledHeader = nestedCard.$(':scope > .tool-card-header')
+    await expect(settledHeader).toBeDisplayed()
+    await expect(settledHeader).toBeDisplayedInViewport()
+    const settledSize = await settledHeader.getSize()
+    expect(settledSize.width).toBeGreaterThan(0)
+    expect(settledSize.height).toBeGreaterThan(0)
+    await expect(settledHeader.$(':scope > .tool-command-phase')).not.toExist()
     await browser.pause(300)
     const settled = await browser.execute(measureNestedRow)
-    if (settled.nameRight === null || settled.headerRight === null || settled.nameWidth === null)
+    console.info('nested-tool-row-geometry', JSON.stringify({ stage: 'settled', ...settled }))
+    if (
+      settled.nameRight === null ||
+      settled.headerRight === null ||
+      settled.headerWidth === null ||
+      settled.messageRight === null ||
+      settled.nameWidth === null
+    )
       throw new Error('Missing settled tool row geometry')
     expect(settled.statusVisible).toBe(true)
+    expect(settled.nameWidth).toBeGreaterThan(0)
+    expect(settled.headerWidth).toBeGreaterThan(0)
+    expect(settled.headerRight).toBeGreaterThan(0)
+    expect(settled.messageRight).toBeGreaterThan(0)
+    expect(settled.phaseCount).toBe(0)
+    expect(settled.phaseState).toBeNull()
+    expect(settled.phaseWidth).toBe(0)
     expect(settled.text).toBe(running.text)
     expect(settled.nameRight <= settled.headerRight).toBe(true)
+    const geometryChanges = {
+      headerWidth: Math.abs(settled.headerWidth - running.headerWidth),
+      headerRight: Math.abs(settled.headerRight - running.headerRight),
+      messageRight: Math.abs(settled.messageRight - running.messageRight),
+    }
+    const geometryComparison = { running, settled, geometryChanges, tolerance: 1 }
+    console.info('nested-tool-row-container-comparison', JSON.stringify(geometryComparison))
+    for (const [part, change] of Object.entries(geometryChanges)) {
+      assert.ok(
+        change <= 1,
+        `Nested ${part} changed by ${String(change)}px: ${JSON.stringify(geometryComparison)}`,
+      )
+    }
 
-    // Read the trailing slot's own tokens instead of a magic number: the most
-    // a running row should ever cost the label, versus its settled self, is
-    // one icon-slot plus one row gap (the live spiral it alone now reserves).
+    // A real running command also shows its supported phase label, which a
+    // clean exit removes. Account only for that measured text and its gap;
+    // the remaining icon budget keeps the same token-based bound.
     const tolerance = await browser.execute(() => {
       const probe = (value: string): number => {
         const el = document.createElement('span')
@@ -424,7 +550,13 @@ describe('tool activity icon — nested rollup row', function () {
       return probe('var(--font-size-sm)') + probe('var(--spacing-sm)') + 1
     })
     const lostToRunning = settled.nameWidth - running.nameWidth
-    expect(lostToRunning).toBeLessThanOrEqual(tolerance)
+    const phaseFootprint = running.phaseWidth + running.headerGap
+    const iconLoss = lostToRunning - phaseFootprint
+    console.info(
+      'nested-tool-row-width-comparison',
+      JSON.stringify({ running, settled, lostToRunning, phaseFootprint, iconLoss, tolerance }),
+    )
+    expect(iconLoss).toBeLessThanOrEqual(tolerance)
     await waitForAgentIdle(30_000)
     server.assertComplete()
   })
