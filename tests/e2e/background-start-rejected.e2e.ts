@@ -22,6 +22,26 @@ const THREAD = 'preview-permission-000001'
 const REPLY = 'The preview request is handled.'
 let root = ''
 
+type PreviewObservation = {
+  thread: Awaited<ReturnType<typeof loadProjectThreads>>[number] | null
+  gitStatus: string
+  promptState: { startingCommit: string | null; dirty: boolean }
+}
+
+async function observePreview(): Promise<PreviewObservation> {
+  return {
+    thread: (await loadProjectThreads(PROJECT)).find((thread) => thread.id === THREAD) ?? null,
+    gitStatus: execFileSync('git', ['status', '--porcelain=v1', '-uall'], {
+      cwd: root,
+      encoding: 'utf8',
+    }),
+    promptState: await browser.execute(
+      ({ project, thread }) => window.api.git.promptState(project, thread),
+      { project: PROJECT, thread: THREAD },
+    ),
+  }
+}
+
 async function requestPreview(prompt: string, approve: boolean): Promise<void> {
   const scenario = await installMockScenario({
     title: 'Preview permission check',
@@ -140,10 +160,46 @@ describe('truthful rejected background-start caption', function () {
   })
 
   it('keeps a real approved start, reports rejection without starting, and retains the caption after reload', async () => {
+    const artifactRoot = join(process.cwd(), 'tests/e2e/artifacts/background-start-rejected')
+    mkdirSync(artifactRoot, { recursive: true })
     await requestPreview('Start this preview once.', true)
     await browser.waitUntil(() => readFileSync(join(root, 'starts.txt'), 'utf8') === 'start', {
       timeout: 10_000,
     })
+    const beforeFirstExit = await observePreview()
+    writeFileSync(
+      join(artifactRoot, 'before-first-exit.json'),
+      JSON.stringify(beforeFirstExit, null, 2) + '\n',
+    )
+    let cleanBeforeSecond = beforeFirstExit
+    try {
+      await browser.waitUntil(
+        async () => {
+          cleanBeforeSecond = await observePreview()
+          const calls = cleanBeforeSecond.thread?.messages.flatMap((message) => message.toolCalls)
+          return (
+            calls?.length === 1 &&
+            calls[0]?.commandPhase?.state === 'exited' &&
+            calls[0].commandPhase.exitCode === 0 &&
+            cleanBeforeSecond.gitStatus === '' &&
+            !cleanBeforeSecond.promptState.dirty
+          )
+        },
+        { timeout: 10_000, timeoutMsg: 'the approved preview did not exit with clean Git state' },
+      )
+    } finally {
+      writeFileSync(
+        join(artifactRoot, 'clean-before-second.json'),
+        JSON.stringify(cleanBeforeSecond, null, 2) + '\n',
+      )
+    }
+    assert.equal(cleanBeforeSecond.gitStatus, '')
+    assert.equal(cleanBeforeSecond.promptState.dirty, false)
+    const firstCalls =
+      cleanBeforeSecond.thread?.messages.flatMap((message) => message.toolCalls) ?? []
+    assert.equal(firstCalls.length, 1)
+    assert.equal(firstCalls[0]?.commandPhase?.state, 'exited')
+    assert.equal(firstCalls[0].commandPhase.exitCode, 0)
     await requestPreview('Do not approve this second preview.', false)
     await browser.waitUntil(
       async () => {
@@ -158,6 +214,14 @@ describe('truthful rejected background-start caption', function () {
       { timeout: 10_000 },
     )
     const thread = (await loadProjectThreads(PROJECT)).find((thread) => thread.id === THREAD)
+    writeFileSync(
+      join(artifactRoot, 'history.json'),
+      JSON.stringify(thread ?? null, null, 2) + '\n',
+    )
+    writeFileSync(
+      join(artifactRoot, 'events.jsonl'),
+      readFileSync(join(e2eWorkspaceDir(), PROJECT, THREAD, 'events.jsonl')),
+    )
     assert.ok(thread)
     const calls = thread.messages.flatMap((message) => message.toolCalls)
     assert.equal(calls.length, 2)
@@ -167,8 +231,7 @@ describe('truthful rejected background-start caption', function () {
     assert.ok(rejected)
     assert.equal(approved.commandPhase?.state, 'exited')
     assert.equal(approved.commandPhase.launched, true)
-    if (approved.commandPhase.exitCode !== undefined)
-      assert.equal(approved.commandPhase.exitCode, 0)
+    assert.equal(approved.commandPhase.exitCode, 0)
     assert.equal(rejected.result, 'User rejected the run_background tool call.')
     assert.equal(rejected.commandPhase?.state, 'not_started')
     assert.equal(rejected.commandPhase.launched, false)
@@ -176,11 +239,15 @@ describe('truthful rejected background-start caption', function () {
     const humanDirty = thread.messages
       .filter((message) => message.role === 'user')
       .map((message) => message.dirty)
-    assert.deepEqual(humanDirty, [false, false])
     const gitStatus = execFileSync('git', ['status', '--porcelain'], {
       cwd: root,
       encoding: 'utf8',
     })
+    writeFileSync(
+      join(artifactRoot, 'before-dirty-assertions.json'),
+      JSON.stringify({ approved, rejected, humanDirty, gitStatus }, null, 2) + '\n',
+    )
+    assert.deepEqual(humanDirty, [false, false])
     assert.equal(gitStatus, '')
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -225,13 +292,6 @@ describe('truthful rejected background-start caption', function () {
     assert.equal(labels.rejected, 'Did not start background task')
     assert.ok(labels.width > 0 && labels.left >= 0 && labels.right <= labels.viewportWidth)
     assert.ok(labels.top >= 0 && labels.bottom <= labels.viewportHeight)
-    const artifactRoot = join(process.cwd(), 'tests/e2e/artifacts/background-start-rejected')
-    mkdirSync(artifactRoot, { recursive: true })
-    writeFileSync(join(artifactRoot, 'history.json'), JSON.stringify(thread, null, 2) + '\n')
-    writeFileSync(
-      join(artifactRoot, 'events.jsonl'),
-      readFileSync(join(e2eWorkspaceDir(), PROJECT, THREAD, 'events.jsonl')),
-    )
     writeFileSync(
       join(artifactRoot, 'receipt.json'),
       JSON.stringify(
