@@ -463,7 +463,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-KZGW74ZW.js";
+} from "./chunk-PHX6EEQG.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -3999,15 +3999,27 @@ function approvalCopyElement(className, text) {
   flushLines();
   return root;
 }
+function approvalMarkdownBody(markdown) {
+  const host = el("div", { class: "approval-body-markdown streaming-markdown" });
+  host.innerHTML = renderMarkdown(markdown);
+  return host;
+}
+function approvalBodyChildren(req) {
+  const children = [];
+  if (req.body.trim()) children.push(req.body);
+  if (req.bodyMarkdown?.trim()) children.push(approvalMarkdownBody(req.bodyMarkdown));
+  return children;
+}
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  if (req.body.trim())
+  const children = approvalBodyChildren(req);
+  if (children.length > 0)
     parts.push(
       el(
         "div",
         { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-        req.body
+        ...children
       )
     );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
@@ -4230,8 +4242,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     dialog.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
+      const children = approvalBodyChildren(req);
+      const body = el("div", { class: bodyClass }, ...children);
+      if (children.length === 0 || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -4419,6 +4432,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId,
       title,
       body,
+      bodyMarkdown,
       bodyAdvice,
       bodyFooter,
       type,
@@ -4441,6 +4455,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         threadId,
         title,
         body,
+        bodyMarkdown,
         bodyAdvice,
         bodyFooter,
         type,
@@ -4513,6 +4528,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId: req.threadId,
       title: req.title,
       body: req.body,
+      bodyMarkdown: req.bodyMarkdown,
       bodyAdvice: req.bodyAdvice,
       bodyFooter: req.bodyFooter,
       type: req.type,
@@ -4535,6 +4551,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
 var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_settings_dialog();
     init_attention();
@@ -69918,6 +69935,12 @@ ${reply}`);
     }
   });
   const unsubs = [
+    store2.select(
+      (state) => state.activeThreadId !== null && state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState();
+      }
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already
@@ -76566,7 +76589,38 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
     );
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "revoke-port-binding",
+          "aria-label": "Revoke local port binding for this project",
+          title: "Ask again before future tasks can bind a local port. Stop running tasks separately."
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        const state = store2.getState();
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return;
+        revoke.disabled = true;
+        void api2.security.revokeProjectPortBinding(state.activeProjectId, threadId).then(() => refreshAccess()).catch((error) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke local port permission", error);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Local port binding",
+            "Granted",
+            "Saved for this project. Revoke to ask for future tasks; stop running tasks separately."
+          ),
+          revoke
+        )
+      );
     }
     result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
     result.append(
