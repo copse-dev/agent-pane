@@ -287,18 +287,35 @@ describe('profileInspector', { timeout: 30_000 }, () => {
           '--out',
           output,
         ])
-        assert.equal(result.code, 1, result.stderr)
-        assert.match(result.stderr, /did not become available/)
-        assert.doesNotMatch(result.stderr, /cleanup could not be confirmed|may still be open/)
+        const evidence = (): string =>
+          [
+            `Profiler exit code: ${String(result.code)}`,
+            `Profiler stderr:\n${result.stderr}`,
+            `Target PID: ${String(target.child.pid)}; exit code: ${String(target.child.exitCode)}; signal: ${String(target.child.signalCode)}`,
+            `Target stderr:\n${target.stderr()}`,
+          ].join('\n')
+        assert.equal(result.code, 1, evidence())
+        assert.match(result.stderr, /did not become available/, evidence())
+        assert.equal(target.child.exitCode, null, evidence())
+        assert.equal(target.child.signalCode, null, evidence())
+        assert.doesNotMatch(
+          result.stderr,
+          /cleanup could not be confirmed|may still be open/,
+          evidence(),
+        )
         assert.equal(
           target.stderr().match(/Debugger listening on /g)?.length,
           2,
-          'SIGUSR1 must actually reopen the inspector before cleanup is accepted',
+          `SIGUSR1 must actually reopen the inspector before cleanup is accepted\n${evidence()}`,
         )
-        assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
-        assert.equal(target.child.exitCode, null, target.stderr())
-        assert.doesNotMatch(target.stderr(), /uncaughtException/)
-        await assert.rejects(access(output), { code: 'ENOENT' })
+        assert.ok(
+          await waitFor(async () => !(await inspectorIsListening(target.url)), 5000),
+          evidence(),
+        )
+        assert.equal(target.child.exitCode, null, evidence())
+        assert.equal(target.child.signalCode, null, evidence())
+        assert.doesNotMatch(target.stderr(), /uncaughtException/, evidence())
+        await assert.rejects(access(output), { code: 'ENOENT' }, evidence())
       } finally {
         await Promise.all([target.dispose(), rm(dir, { recursive: true, force: true })])
       }
