@@ -6,6 +6,10 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { profileInspector, summarizeProfile, type CpuProfile } from './profile-main-process.mts'
+import {
+  requestTargetProgress,
+  TARGET_PROGRESS_SOURCE,
+} from './test-support/profiler-target-progress.ts'
 
 // An ES module main process: there is no `require` in any scope, and the first
 // uncaught exception ends the process, as Copse's fault policy quits the app.
@@ -24,6 +28,9 @@ interface Target {
   child: ChildProcess
   url: string
   stderr: () => string
+  note: (stage: string, detail?: string) => void
+  progress: (stage: string) => Promise<void>
+  diagnostics: () => string
   dispose: () => Promise<void>
 }
 
@@ -34,20 +41,48 @@ async function startTarget(observeSignal = true): Promise<Target> {
     file,
     (observeSignal
       ? "if (process.platform !== 'win32') process.on('SIGUSR1', () => console.error('[signal] SIGUSR1'));\n"
-      : '') + TARGET,
+      : '') +
+      TARGET_PROGRESS_SOURCE +
+      TARGET,
   )
   const child = spawn(process.execPath, ['--inspect=127.0.0.1:0', file], {
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+  })
+  const started = performance.now()
+  const events: { at: string; elapsedMs: number; stage: string; detail: string }[] = []
+  const note = (stage: string, detail = ''): void => {
+    events.push({
+      at: new Date().toISOString(),
+      elapsedMs: performance.now() - started,
+      stage,
+      detail,
+    })
+  }
+  note(
+    'spawned',
+    JSON.stringify({
+      node: process.version,
+      v8: process.versions.v8,
+      arch: process.arch,
+      coverage: Boolean(process.env['NODE_V8_COVERAGE']),
+    }),
+  )
+  child.once('exit', (code, signal) => {
+    note('target-exit', JSON.stringify({ code, signal }))
   })
   let stderr = ''
-  child.stderr.setEncoding('utf8')
+  const diagnostics = (): string =>
+    `Target state: pid=${String(child.pid)} exit=${String(child.exitCode)} signal=${String(child.signalCode)}\nTarget events:\n${JSON.stringify(events, null, 2)}\nTarget stderr:\n${stderr}`
+  const stderrStream = child.stderr
+  assert.ok(stderrStream, 'The target must expose its diagnostic stderr')
+  stderrStream.setEncoding('utf8')
   let url: string
   try {
     url = await new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Target inspector did not open: ${stderr}`))
       }, 5000)
-      child.stderr.on('data', (chunk: string) => {
+      stderrStream.on('data', (chunk: string) => {
         stderr += chunk
         const match = /ws:\/\/127\.0\.0\.1:\d+\/[\w-]+/.exec(stderr)
         if (match && stderr.includes('[target] ready')) {
@@ -79,6 +114,18 @@ async function startTarget(observeSignal = true): Promise<Target> {
     child,
     url,
     stderr: () => stderr,
+    note,
+    diagnostics,
+    progress: async (stage): Promise<void> => {
+      note('progress-request', stage)
+      try {
+        const reply = await requestTargetProgress(child, stage)
+        note('progress-ack', JSON.stringify(reply))
+      } catch (cause) {
+        note('progress-failed', stage)
+        throw new Error(`Target main-loop checkpoint failed: ${stage}\n${diagnostics()}`, { cause })
+      }
+    },
     dispose: async (): Promise<void> => {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill()
@@ -267,6 +314,7 @@ describe('profileInspector', { timeout: 30_000 }, () => {
       const target = await startTarget(false)
       const dir = await mkdtemp(join(tmpdir(), 'profile-main-cli-mismatch-'))
       const output = join(dir, 'unexpected.cpuprofile')
+      let failed = false
       try {
         const reservation = await startTarget()
         const requestedPort = new URL(reservation.url).port
@@ -275,8 +323,13 @@ describe('profileInspector', { timeout: 30_000 }, () => {
         assert.notEqual(new URL(target.url).port, requestedPort)
         // --inspect=...:0 assigned a non-default debugPort. Closing it leaves
         // that configured port in place for the following SIGUSR1 to reopen.
+        target.note('before-initial-profile-close')
         await profileInspector(target.url, 10, target.child.pid)
+        target.note('initial-profile-returned')
         assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
+        target.note('initial-http-closed')
+        await target.progress('after-initial-close')
+        target.note('before-wrong-port-cli', requestedPort)
         const result = await runProfiler([
           '--pid',
           String(target.child.pid),
@@ -287,12 +340,14 @@ describe('profileInspector', { timeout: 30_000 }, () => {
           '--out',
           output,
         ])
+        target.note('wrong-port-cli-returned', JSON.stringify({ code: result.code }))
         const evidence = (): string =>
           [
             `Profiler exit code: ${String(result.code)}`,
             `Profiler stderr:\n${result.stderr}`,
             `Target PID: ${String(target.child.pid)}; exit code: ${String(target.child.exitCode)}; signal: ${String(target.child.signalCode)}`,
             `Target stderr:\n${target.stderr()}`,
+            target.diagnostics(),
           ].join('\n')
         assert.equal(result.code, 1, evidence())
         assert.match(result.stderr, /did not become available/, evidence())
@@ -312,12 +367,29 @@ describe('profileInspector', { timeout: 30_000 }, () => {
           await waitFor(async () => !(await inspectorIsListening(target.url)), 5000),
           evidence(),
         )
+        target.note('cleanup-http-closed')
+        await target.progress('after-cleanup')
         assert.equal(target.child.exitCode, null, evidence())
         assert.equal(target.child.signalCode, null, evidence())
         assert.doesNotMatch(target.stderr(), /uncaughtException/, evidence())
         await assert.rejects(access(output), { code: 'ENOENT' }, evidence())
+        assert.equal(target.child.exitCode, null, evidence())
+        assert.equal(target.child.signalCode, null, evidence())
+        console.info('Profiler wrong-port target progress:\n' + target.diagnostics())
+      } catch (error) {
+        failed = true
+        console.error('Profiler wrong-port target failure:\n' + target.diagnostics(), error)
+        throw error
       } finally {
-        await Promise.all([target.dispose(), rm(dir, { recursive: true, force: true })])
+        target.note('fixture-disposal-start')
+        try {
+          await Promise.all([target.dispose(), rm(dir, { recursive: true, force: true })])
+        } finally {
+          // IPC disconnect may precede the child exit event. Preserve that later
+          // event too, and distinguish fixture disposal from the tested phases.
+          if (failed)
+            console.error('Profiler target after fixture disposal:\n' + target.diagnostics())
+        }
       }
     },
   )
