@@ -178,7 +178,7 @@ describe('finished automation worktree retirement survives stale renderer metada
     if (projectRoot) removeE2eTree(projectRoot)
   })
 
-  it('refreshes the held count, rejects stale checkout snapshots and preserves the chat on reload', async () => {
+  it('keeps cleanup durable while its historical chat is selected, including passive Git reads and reload', async () => {
     await $('.automation-threads-toggle').click()
     await expect($(`${GROUP} .automation-schedule-held`)).toHaveText('2 held')
     await expect($('.prompt-input')).toHaveText(DRAFT)
@@ -193,6 +193,14 @@ describe('finished automation worktree retirement survives stale renderer metada
     await parkPointer()
     await saveAppScreenshot('automation-worktree-retirement-held.png')
 
+    const selectedRun = RUNS[0]
+    assert.ok(selectedRun)
+    await $(`${GROUP} .automation-schedule-toggle`).click()
+    await $(`.chat-row[data-thread-id="${selectedRun}"]`).click()
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('The release check finished. No changes were needed.'),
+    )
+
     await $(`${GROUP} .automation-schedule-toggle`).click({ button: 'right' })
     await $('.context-menu-item=Clean up finished runs…').click()
     await expect($('.toast')).toHaveText(expect.stringContaining('Freed 2 worktrees'))
@@ -203,9 +211,66 @@ describe('finished automation worktree retirement survives stale renderer metada
       assert.ok(path)
       assert.equal(existsSync(path), false)
     }
-    await expect($('.prompt-input')).toHaveText(DRAFT)
+    const passiveGit = await browser.execute(
+      async (input) => {
+        const [branch, status, branchStatus, available] = await Promise.all([
+          window.api.git.currentBranch(input.projectId, input.threadId),
+          window.api.git.status(input.projectId, input.threadId),
+          window.api.git.branchStatus(input.projectId, input.threadId),
+          window.api.git.isAvailable(input.projectId, input.threadId),
+        ])
+        return { branch, status, branchStatus, available }
+      },
+      { projectId: PROJECT, threadId: selectedRun },
+    )
+    assert.deepEqual(passiveGit, {
+      branch: null,
+      status: null,
+      branchStatus: { currentBranch: null, pr: null },
+      available: false,
+    })
+    const passiveReads = await browser.execute(
+      async (input) => {
+        const owner = { projectId: input.projectId, threadId: input.threadId }
+        const errors: string[] = []
+        for (const read of [
+          (): Promise<unknown> => window.api.fs.listDir(owner.projectId, owner.threadId, ''),
+          (): Promise<unknown> => window.api.fs.readdir(owner.projectId, owner.threadId, ''),
+          (): Promise<unknown> =>
+            window.api.fs.readFile(owner.projectId, owner.threadId, 'README.md'),
+          (): Promise<unknown> =>
+            window.api.fs.readImage(owner.projectId, owner.threadId, 'README.md'),
+        ]) {
+          try {
+            await read()
+            errors.push('unexpected success')
+          } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error))
+          }
+        }
+        await window.api.fs.watch(owner.projectId, owner.threadId, 'README.md')
+        await window.api.fs.unwatch(owner.projectId, owner.threadId, 'README.md')
+        return {
+          errors,
+          links: await window.api.index.resolveFileReferences(['README.md'], owner),
+        }
+      },
+      { projectId: PROJECT, threadId: selectedRun },
+    )
+    assert.equal(passiveReads.errors.length, 4)
+    for (const error of passiveReads.errors) assert.match(error, /Checkout unavailable/)
+    assert.deepEqual(passiveReads.links, [])
+    await expect($(`.chat-row[data-thread-id="${selectedRun}"]`)).toHaveElementClass('selected')
+    for (const id of RUNS) {
+      assert.ok(meta(id).worktree.retiredAt)
+      const path = checkouts.get(id)
+      assert.ok(path)
+      assert.equal(existsSync(path), false)
+    }
     await parkPointer()
     await saveAppScreenshot('automation-worktree-retirement-freed.png')
+    await $(`.chat-row[data-thread-id="${CHAT}"]`).click()
+    await expect($('.prompt-input')).toHaveText(DRAFT)
 
     // Real IPC, not an alternate test option: this is the stale checkout field
     // emitted by the delayed renderer producer covered by the controller test.
@@ -238,11 +303,26 @@ describe('finished automation worktree retirement survives stale renderer metada
     }))
     writeFileSync(
       join(artifacts, 'retirement.json'),
-      JSON.stringify({ stale, after, rawMetadata, spine }, null, 2),
+      JSON.stringify(
+        { selectedRun, passiveGit, passiveReads, stale, after, rawMetadata, spine },
+        null,
+        2,
+      ),
     )
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const reloaded = await browser.execute(
+      async (input) => ({
+        navigation: await window.api.windowState.getNavigation(),
+        planning: (await window.api.threads.loadProject(input.project)).find(
+          (thread) => thread.id === input.chat,
+        ),
+      }),
+      { project: PROJECT, chat: CHAT },
+    )
+    assert.equal(reloaded.planning?.draftPrompt, DRAFT)
+    await $(`.chat-row[data-thread-id="${CHAT}"]`).click()
     await expect($('.prompt-input')).toHaveText(DRAFT)
     const toggle = $('.automation-threads-toggle')
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
@@ -254,5 +334,50 @@ describe('finished automation worktree retirement survives stale renderer metada
       assert.ok(path)
       assert.equal(existsSync(path), false)
     }
+    const scheduleToggle = $(`${GROUP} .automation-schedule-toggle`)
+    if ((await scheduleToggle.getAttribute('aria-expanded')) === 'false')
+      await scheduleToggle.click()
+    await $(`.chat-row[data-thread-id="${selectedRun}"]`).click()
+    if (!(await $('#pane-files').isDisplayed())) {
+      await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    }
+    await expect($('#file-tree-host')).toBeDisplayed()
+    await expect($('.file-tree .sidebar-empty')).toHaveText(
+      'Checkout unavailable. Resume this chat to restore it.',
+    )
+    await expect($('.file-tree .tree-row')).not.toExist()
+    await parkPointer()
+    await saveAppScreenshot('automation-worktree-retirement-unavailable.png')
+    await $(`.chat-row[data-thread-id="${CHAT}"]`).click()
+    await expect($('.prompt-input')).toHaveText(DRAFT)
+    const final = RUNS.map((id, index) => {
+      assert.ok(meta(id).worktree.retiredAt)
+      const path = checkouts.get(id)
+      assert.ok(path)
+      assert.equal(existsSync(path), false)
+      assert.equal(
+        readFileSync(join(e2eWorkspaceDir(), PROJECT, id, 'events.jsonl'), 'utf8'),
+        spine[index],
+      )
+      return { id, text: readFileSync(join(e2eWorkspaceDir(), PROJECT, id, 'meta.json'), 'utf8') }
+    })
+    writeFileSync(
+      join(artifacts, 'retirement.json'),
+      JSON.stringify(
+        {
+          selectedRun,
+          passiveGit,
+          passiveReads,
+          stale,
+          after,
+          rawMetadata,
+          spine,
+          reloaded,
+          final,
+        },
+        null,
+        2,
+      ),
+    )
   })
 })
