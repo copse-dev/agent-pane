@@ -616,7 +616,7 @@ describe('ci.yml workflow invariants', () => {
 
   it('runs the strict streaming motion eval once after the parallel browser suite', () => {
     const build = jobBlock('build')
-    const commands = [...build.matchAll(/^ {6}- run: (npm run test:demo.*)$/gm)].map(
+    const commands = [...build.matchAll(/^ {6}(?:- | {2})run: (npm run test:demo.*)$/gm)].map(
       (match) => match[1],
     )
     assert.deepEqual(commands, [
@@ -1099,7 +1099,19 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
       /\(github\.event\.workflow_run\.conclusion == 'success' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'failure' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'timed_out'\) &&/,
     )
     assert.doesNotMatch(workflow, /conclusion (?:==|!=) 'cancelled'/)
-    assert.match(workflow, /job\.name === 'screenshot-artifacts' && job\.conclusion === 'success'/)
+    assert.match(
+      workflow,
+      /const collections = jobs\.filter\(\(job\) => job\.name === 'screenshot-artifacts'\)/,
+    )
+    assert.match(
+      workflow,
+      /collections\.length === 1 && collections\[0\]\.conclusion === 'success'/,
+    )
+    assert.match(workflow, /shards\.length === expectedShards/)
+    assert.match(
+      workflow,
+      /shard\.job\.conclusion === 'success' && shard\.step\.conclusion === 'success'/,
+    )
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,

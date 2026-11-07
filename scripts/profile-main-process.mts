@@ -17,6 +17,14 @@
 // Immediate.<anonymous> (<anonymous>:1:46)`). INSPECTOR_CLOSE_EXPRESSION loads
 // the module from global scope and contains its own failure.
 //
+// Disconnecting is risky too. `inspector.close()` sends each connected session
+// a WebSocket close frame; a client close frame arriving in the same inspector
+// I/O turn makes Node send a second one, and the first write's callback frees
+// the connection the second one still uses. The target then segfaults in
+// `WsHandler::OnCloseFrameWritten` (seen on Node 24.22.1, intermittently and
+// more often under CPU load). So once the close is scheduled, the target ends
+// the session and this script only answers its close frame.
+//
 // Run:  node scripts/profile-main-process.mts --pid <pid> [--seconds 5] [--out file]
 
 import childProcess from 'node:child_process'
@@ -30,8 +38,8 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { isDirectExecution } from './lib/direct-execution.mts'
 
 /**
- * Deferred so the target answers this evaluate before `close()` waits for the
- * session to disconnect; the caller disconnects as soon as the answer arrives.
+ * Deferred so the target answers this evaluate before `close()` ends the
+ * session; the caller then waits for that end instead of disconnecting first.
  */
 export const INSPECTOR_CLOSE_EXPRESSION =
   "setImmediate(() => { try { process.getBuiltinModule('node:inspector').close() } " +
@@ -117,7 +125,7 @@ export function targetListenerOrigins(output: string, pid: number): Set<string> 
     const address = endpoint?.[1]?.replace(/^\[/, '').replace(/\]$/, '')
     const port = Number(endpoint?.[2])
     if (!address || !Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error('Cannot parse a target TCP listener')
+      throw new Error(`Cannot parse a target TCP listener: ${JSON.stringify(file.address)}`)
     }
     const addresses =
       address === '*'
@@ -125,7 +133,11 @@ export function targetListenerOrigins(output: string, pid: number): Set<string> 
         : [address === '0.0.0.0' ? '127.0.0.1' : address === '::' ? '::1' : address]
     for (const address of addresses) {
       const family = isIP(address)
-      if (family === 0) throw new Error('Target listener address is not a numeric local address')
+      if (family === 0) {
+        throw new Error(
+          `Target listener address is not a numeric local address: ${JSON.stringify(address)}`,
+        )
+      }
       const host = family === 6 ? `[${address}]` : address
       origins.add(new URL(`http://${host}:${String(port)}`).origin)
     }
@@ -151,6 +163,16 @@ export function targetListenerOrigins(output: string, pid: number): Set<string> 
   return origins
 }
 
+/** Signal 0 delivers nothing; only ESRCH proves the PID is gone (EPERM means it exists). */
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return !(error instanceof Error && 'code' in error && error.code === 'ESRCH')
+  }
+}
+
 function readTargetListenerOrigins(pid: number): Set<string> {
   if (process.platform === 'win32') {
     throw new Error(
@@ -168,6 +190,9 @@ function readTargetListenerOrigins(pid: number): Set<string> {
     })
     return targetListenerOrigins(output, pid)
   } catch (cause) {
+    // lsof exits 1 without output for a PID that no longer exists; say so
+    // rather than blaming lsof for a target that crashed or quit.
+    if (!processExists(pid)) throw new Error(`Process ${String(pid)} is not running`, { cause })
     throw new Error(
       `Cannot discover listeners for process ${String(pid)}; automatic activation requires readable Unix lsof output. Open its inspector manually`,
       { cause },
@@ -177,21 +202,20 @@ function readTargetListenerOrigins(pid: number): Set<string> {
 
 interface InspectorSession {
   call(method: string, params?: Record<string, unknown>): Promise<unknown>
+  /** Whether the target ended the connection within `timeoutMs`; sends nothing itself. */
+  waitForDisconnect(timeoutMs: number): Promise<boolean>
   close(): void
-  waitForClose(): Promise<void>
 }
+
+/**
+ * How long a target may take to run the scheduled close and end our session.
+ * A busy main process delays the `setImmediate`; disconnecting first instead
+ * risks the close-frame race described at the top of this file.
+ */
+const INSPECTOR_SHUTDOWN_TIMEOUT_MS = 5000
 
 async function connectInspector(url: string): Promise<InspectorSession> {
   const socket = new WebSocket(url)
-  const closed = new Promise<void>((resolve) => {
-    socket.addEventListener(
-      'close',
-      () => {
-        resolve()
-      },
-      { once: true },
-    )
-  })
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       socket.close()
@@ -237,12 +261,15 @@ async function connectInspector(url: string): Promise<InspectorSession> {
     if (reply.error) waiter.reject(new Error(reply.error.message))
     else waiter.resolve(reply.result)
   })
-  socket.addEventListener('close', () => {
-    for (const waiter of pending.values()) {
-      clearTimeout(waiter.timeout)
-      waiter.reject(new Error('Inspector session closed'))
-    }
-    pending.clear()
+  const disconnected = new Promise<true>((resolve) => {
+    socket.addEventListener('close', () => {
+      for (const waiter of pending.values()) {
+        clearTimeout(waiter.timeout)
+        waiter.reject(new Error('Inspector session closed'))
+      }
+      pending.clear()
+      resolve(true)
+    })
   })
   return {
     call: (method, params = {}): Promise<unknown> =>
@@ -263,23 +290,23 @@ async function connectInspector(url: string): Promise<InspectorSession> {
           )
         }
       }),
-    close: (): void => {
-      socket.close()
-    },
-    waitForClose: async (): Promise<void> => {
-      let timer: ReturnType<typeof setTimeout> | undefined
+    waitForDisconnect: async (timeoutMs): Promise<boolean> => {
+      let timeout: ReturnType<typeof setTimeout> | undefined
       try {
-        await Promise.race([
-          closed,
-          new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(() => {
-              reject(new Error('Inspector session did not close'))
-            }, 1000)
+        return await Promise.race([
+          disconnected,
+          new Promise<false>((resolve) => {
+            timeout = setTimeout(() => {
+              resolve(false)
+            }, timeoutMs)
           }),
         ])
       } finally {
-        clearTimeout(timer)
+        clearTimeout(timeout)
       }
+    },
+    close: (): void => {
+      socket.close()
     },
   }
 }
@@ -398,7 +425,7 @@ export async function profileProcess(
   }
 }
 
-/** Ask the target to close its inspector, then disconnect. */
+/** Ask the target to close its inspector and let it end the session; disconnect on failure. */
 async function closeInspector(session: InspectorSession): Promise<void> {
   try {
     const evaluated = evaluateResultSchema.parse(
@@ -407,14 +434,62 @@ async function closeInspector(session: InspectorSession): Promise<void> {
     if (evaluated.exceptionDetails) {
       throw new Error(`Inspector close was not scheduled: ${evaluated.exceptionDetails.text}`)
     }
-    // The target forcibly closes its inspector connections. Sending our own
-    // WebSocket close frame at the same time races Node's server shutdown
-    // (WsHandler::OnCloseFrameWritten can fault the target). Let its close
-    // event arrive before disconnecting; failed shutdown remains bounded.
-    await session.waitForClose()
+    // Sending our own close frame now would race the target's (see the top of
+    // this file). Callers that must prove closure probe the endpoint afterwards.
+    await session.waitForDisconnect(INSPECTOR_SHUTDOWN_TIMEOUT_MS)
   } finally {
     session.close()
   }
+}
+
+const failureFactsSchema = z.object({
+  code: z.union([z.string(), z.number()]).optional(),
+  status: z.number().nullable().optional(),
+  signal: z.string().nullable().optional(),
+})
+
+/**
+ * Every message in an error tree, one indented line each: `cause` chains and
+ * AggregateError members included at any depth, with exit status, signal and
+ * code where a child process or socket error carries them. The outermost line
+ * stays the fail-safe summary; the deepest lines name what actually failed.
+ */
+export function describeError(error: unknown): string {
+  const lines: string[] = []
+  const seen = new Set<unknown>()
+  const visit = (value: unknown, depth: number, label: string): void => {
+    const indent = '  '.repeat(depth)
+    if (seen.has(value)) {
+      lines.push(`${indent}${label}(shown above)`)
+      return
+    }
+    seen.add(value)
+    if (!(value instanceof Error)) {
+      lines.push(`${indent}${label}${String(value)}`)
+      return
+    }
+    const facts = failureFactsSchema.safeParse(value).data
+    const annotations = [
+      facts?.status == null ? '' : `exit status ${String(facts.status)}`,
+      facts?.signal == null ? '' : `signal ${facts.signal}`,
+      facts?.code === undefined ? '' : `code ${String(facts.code)}`,
+    ].filter(Boolean)
+    const [first, ...rest] = `${value.name}: ${value.message}`.split('\n')
+    const suffix = annotations.length > 0 ? ` (${annotations.join(', ')})` : ''
+    lines.push(
+      `${indent}${label}${first ?? ''}${suffix}`,
+      ...rest.map((line) => `${indent}  ${line}`),
+    )
+    const members: unknown[] = value instanceof AggregateError ? value.errors : []
+    members.forEach((member, index) => {
+      visit(member, depth + 1, `[${String(index + 1)}/${String(members.length)}] `)
+    })
+    if (value.cause !== undefined && !members.includes(value.cause)) {
+      visit(value.cause, depth + 1, 'caused by: ')
+    }
+  }
+  visit(error, 0, '')
+  return lines.join('\n')
 }
 
 /** The `limit` frames with the most self time, heaviest first. */
@@ -468,9 +543,9 @@ async function main(): Promise<void> {
 
 if (isDirectExecution(import.meta.url, 'profile-main-process')) {
   main().catch((error: unknown) => {
-    // Preserve nested cleanup causes for diagnostics; the primary fail-safe
-    // warning remains visible when closure could not be confirmed.
-    console.error(error instanceof Error ? error : String(error))
+    // Print every nested cause: the primary fail-safe warning comes first, and
+    // the deepest line names the failure behind it.
+    console.error(describeError(error))
     process.exitCode = 1
   })
 }
