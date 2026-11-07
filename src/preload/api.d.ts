@@ -319,6 +319,8 @@ export interface ApiClient {
       threadId: string,
       projectRoot: string,
     ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
+    /** Revoke saved local-port consent for this thread's project. Running tasks must be stopped separately. */
+    revokeProjectPortBinding: (projectId: string, threadId: string) => Promise<void>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
@@ -440,6 +442,7 @@ export interface ApiClient {
         threadId?: string
         title: string
         body: string
+        bodyMarkdown?: string
         bodyAdvice?: string
         bodyFooter?: string
         type: string

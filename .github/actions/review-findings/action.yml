@@ -7,6 +7,9 @@ inputs:
   request:
     description: The same authorized JSON request used for grounding
     required: true
+  ground-artifact-id:
+    description: Immutable artifact ID returned by the grounding job, including on reruns
+    required: true
   model-api-key:
     description: Model provider API key
     required: false
@@ -73,10 +76,20 @@ runs:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
         COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
       run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
+    - name: Validate grounding artifact identity
+      if: ${{ steps.prepare.outputs.ready == 'true' }}
+      shell: bash
+      env:
+        GROUND_ARTIFACT_ID: ${{ inputs.ground-artifact-id }}
+      run: |
+        if [[ ! "$GROUND_ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
+          echo '::error::A single grounding artifact ID is required'
+          exit 1
+        fi
     - uses: actions/download-artifact@v8
       if: ${{ steps.prepare.outputs.ready == 'true' }}
       with:
-        name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}
+        artifact-ids: ${{ inputs.ground-artifact-id }}
         path: ${{ runner.temp }}/copse-review-ground
     - name: Mint repository-scoped App publishing token
       if: ${{ steps.prepare.outputs.ready == 'true' && inputs.app-id != '' && inputs.app-private-key != '' }}

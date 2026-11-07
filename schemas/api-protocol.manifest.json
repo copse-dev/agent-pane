@@ -2019,6 +2019,13 @@
           1
         ]
       },
+      "security:revoke-project-port-binding": {
+        "api": "security.revokeProjectPortBinding",
+        "args": [
+          2,
+          2
+        ]
+      },
       "settings:available-providers": {
         "api": "settings.availableProviders",
         "args": [

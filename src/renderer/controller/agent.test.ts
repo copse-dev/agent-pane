@@ -66,6 +66,7 @@ function setup(
   messages: (id?: string) => Message[]
   gitBranchChanged: number[]
   finishedAlerts: Array<{ threadId: string; title: string }>
+  attachCalls: Array<[projectId: string, threadIds: string[]]>
   showDiff: (
     projectId: string,
     threadId: string,
@@ -102,6 +103,7 @@ function setup(
   const messageDone: string[] = []
   const gitBranchChanged: number[] = []
   const finishedAlerts: Array<{ threadId: string; title: string }> = []
+  const attachCalls: Array<[projectId: string, threadIds: string[]]> = []
   store.on('message_done', (id) => messageDone.push(id))
   store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
@@ -116,6 +118,9 @@ function setup(
           return () => {}
         },
         run: async (): Promise<void> => {},
+        attachTranscripts: async (projectId: string, threadIds: string[]): Promise<void> => {
+          attachCalls.push([projectId, threadIds])
+        },
         onChunk: (h: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void) => {
           chunkHandler = h
           return (): void => {}
@@ -239,6 +244,7 @@ function setup(
     messages,
     gitBranchChanged,
     finishedAlerts,
+    attachCalls,
     showDiff,
     queueDiffs,
   }
@@ -319,6 +325,23 @@ test('a queue-only diff update does not open Changes or construct an editor surf
   assert.equal(store.getState().filesPaneOpen, false)
   assert.equal(store.getState().rightPanelMode, 'browser')
   assert.deepEqual(store.getState().stagedDiffs, [{ path: 'a.ts', language: 'typescript' }])
+})
+
+test('a workspace switch from setState alone attaches the new project transcripts', () => {
+  const { store, attachCalls } = setup()
+  assert.deepEqual(attachCalls, [['project-1', ['t1']]])
+
+  store.setState({
+    activeProjectId: 'project-2',
+    workspaceRoot: '/repo/two',
+    threads: [thread('p2-a'), thread('p2-b')],
+    activeThreadId: 'p2-a',
+  })
+
+  assert.deepEqual(attachCalls, [
+    ['project-1', ['t1']],
+    ['project-2', ['p2-a', 'p2-b']],
+  ])
 })
 
 test('text chunks create one assistant message and accumulate tokens', () => {

@@ -75,6 +75,8 @@ import type { AutomationPermission } from '@shared/types'
 import { getAutomationService } from '../automations/automation-service.ts'
 import { isMcpToolRemembered } from '../mcp/mcp-registry.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+import { execFileSync } from 'node:child_process'
+import { runWithToolAvailability } from '../tool-availability.ts'
 
 installInMemorySecretCipher()
 
@@ -594,6 +596,42 @@ describe('ensureToolPermitted', () => {
       } finally {
         setApprovalHandler(null)
       }
+    }
+  })
+
+  it('resolves an implicit publication target at the active turn boundary', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'copse-publication-target-'))
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], {
+      cwd: root,
+    })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.match(request.body, /Repository: acme\/widgets/)
+      assert.equal(request.bodyMarkdown, '## Complete description\n\nPublish exactly this.')
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await runWithToolAvailability({ git: true, gh: false, rg: false }, () =>
+          runWithWorkspaceRoot(root, () =>
+            ensureToolPermitted({
+              toolName: 'gh_pr_create',
+              args: {
+                title: 'Fix the parser',
+                body: '## Complete description\n\nPublish exactly this.',
+              },
+            }),
+          ),
+        ),
+        false,
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -2439,10 +2477,25 @@ describe('turn-tree shell replay leases', () => {
             }),
             true,
           )
+          assert.equal(
+            await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+              executionRoot: root,
+              requireInteractiveApproval: true,
+            }),
+            true,
+          )
         }
+        await setSetting('toolPermissionOverrides', { 'copse:run_shell': 'ask' })
+        assert.equal(
+          await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+            executionRoot: root,
+          }),
+          true,
+        )
       })
-      assert.deepEqual(offered, [true, false, false])
+      assert.deepEqual(offered, [true, false, false, false, false, false])
     } finally {
+      await setSetting('toolPermissionOverrides', {})
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
     }
@@ -2847,20 +2900,36 @@ describe('formatGithubWritePrompt', () => {
       owner: 'acme',
       repo: 'widgets',
     })
-    for (const value of [
-      'acme/widgets',
-      'Fix the parser',
-      'Review all changes',
-      'fix/parser',
-      'develop',
-      'Draft: yes',
-    ])
+    for (const value of ['acme/widgets', 'Fix the parser', 'fix/parser', 'develop', 'Draft: yes'])
       assert.ok(prompt.body.includes(value))
+    assert.equal(prompt.bodyMarkdown, 'Review all changes')
     assert.match(prompt.bodyAdvice, /people with access/)
     assert.match(prompt.bodyFooter, /once/)
     const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
     assert.match(implicit.body, /current branch \(will be pushed\)/)
     assert.match(implicit.body, /repository default branch/)
+  })
+  it('fills only omitted target halves using the repository resolved by main', () => {
+    const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' }, 'acme/widgets')
+    assert.match(implicit.body, /Repository: acme\/widgets/)
+    const otherOwner = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', owner: 'another-owner' },
+      'acme/widgets',
+    )
+    assert.match(otherOwner.body, /Repository: another-owner\/widgets/)
+    const otherRepo = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', repo: 'another-repo' },
+      'acme/widgets',
+    )
+    assert.match(otherRepo.body, /Repository: acme\/another-repo/)
+    const explicit = formatGithubWritePrompt(
+      'gh_pr_create',
+      { title: 'Fix', owner: 'other', repo: 'target' },
+      'acme/widgets',
+    )
+    assert.match(explicit.body, /Repository: other\/target/)
   })
 })
 

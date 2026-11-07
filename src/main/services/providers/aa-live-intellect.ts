@@ -400,7 +400,7 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
  * feature is simply off) or the fetch fails (the panel falls back to curated
  * data). Results are cached — a real cohort for hours, a failure only briefly
  * (see {@link liveCacheTtlMs}) — and the cache is dropped when the key changes
- * (register-handlers `settings:set-key`).
+ * (settings-handlers.ts `settings:set-key`).
  */
 export async function fetchLiveIntellectModels(options?: {
   fetchImpl?: typeof fetch
