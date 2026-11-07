@@ -178,10 +178,20 @@ function readTargetListenerOrigins(pid: number): Set<string> {
 interface InspectorSession {
   call(method: string, params?: Record<string, unknown>): Promise<unknown>
   close(): void
+  waitForClose(): Promise<void>
 }
 
 async function connectInspector(url: string): Promise<InspectorSession> {
   const socket = new WebSocket(url)
+  const closed = new Promise<void>((resolve) => {
+    socket.addEventListener(
+      'close',
+      () => {
+        resolve()
+      },
+      { once: true },
+    )
+  })
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       socket.close()
@@ -255,6 +265,21 @@ async function connectInspector(url: string): Promise<InspectorSession> {
       }),
     close: (): void => {
       socket.close()
+    },
+    waitForClose: async (): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          closed,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              reject(new Error('Inspector session did not close'))
+            }, 1000)
+          }),
+        ])
+      } finally {
+        clearTimeout(timer)
+      }
     },
   }
 }
@@ -382,6 +407,11 @@ async function closeInspector(session: InspectorSession): Promise<void> {
     if (evaluated.exceptionDetails) {
       throw new Error(`Inspector close was not scheduled: ${evaluated.exceptionDetails.text}`)
     }
+    // The target forcibly closes its inspector connections. Sending our own
+    // WebSocket close frame at the same time races Node's server shutdown
+    // (WsHandler::OnCloseFrameWritten can fault the target). Let its close
+    // event arrive before disconnecting; failed shutdown remains bounded.
+    await session.waitForClose()
   } finally {
     session.close()
   }
