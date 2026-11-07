@@ -74327,6 +74327,7 @@ export {
   parseGithubPrUrl,
   stripUrlTrailingPunctuation,
   githubPrKeyMatchesTerm,
+  extractGithubPrUrls,
   githubPrKey,
   init_github_pr_url,
   init_github_pr_url2,

@@ -126,6 +126,7 @@ import {
   errorMessage,
   excerptText,
   external_exports,
+  extractGithubPrUrls,
   fetchModelOptions,
   fileExtension,
   findAcpCatalogEntry,
@@ -469,7 +470,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CS2ER43T.js";
+} from "./chunk-DI23JHAN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -65423,7 +65424,11 @@ function createContextWheel() {
     root.classList.toggle("is-interactive", popoverActive && !root.hidden);
     restoreEngagedPopover();
   }
-  return { root, update };
+  function setEstimating(estimating) {
+    if (estimating) root.setAttribute("aria-busy", "true");
+    else root.removeAttribute("aria-busy");
+  }
+  return { root, update, setEstimating };
 }
 var RADIUS, CIRCUMFERENCE, SVG_NS3, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
@@ -69012,7 +69017,11 @@ ${description}
   }
   let estimateTimer = null;
   let estimateSeq = 0;
+  let estimateInFlight = null;
   let estimateEnabled = true;
+  function syncEstimateBusy() {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq);
+  }
   function stopContextEstimates() {
     estimateEnabled = false;
     estimateSeq++;
@@ -69020,6 +69029,7 @@ ${description}
       clearTimeout(estimateTimer);
       estimateTimer = null;
     }
+    syncEstimateBusy();
   }
   function currentInvocables() {
     return mergeInvocables(
@@ -69045,6 +69055,13 @@ ${description}
     });
   }
   async function runContextEstimate() {
+    try {
+      await requestContextEstimate();
+    } finally {
+      syncEstimateBusy();
+    }
+  }
+  async function requestContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
       estimateSeq++;
@@ -69071,10 +69088,13 @@ ${description}
     const estimatedModel = footerChatModel();
     const payload = composeEstimatePayload();
     let breakdown;
+    estimateInFlight = seq;
     try {
       breakdown = await api2.agent.estimateContext(projectId, id, payload);
     } catch {
       return;
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null;
     }
     if (seq !== estimateSeq || getActiveThreadId() !== id) return;
     lastBreakdown = breakdown;
@@ -69088,6 +69108,7 @@ ${description}
       estimateTimer = null;
       void runContextEstimate();
     }, delay);
+    syncEstimateBusy();
   }
   submitBtn.addEventListener("click", () => {
     void submit();
@@ -73049,6 +73070,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   let seededProposedPath = null;
   const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let lastOwnerParts = [];
+  let lastOwnerKey = "";
   let displayedOwnerKey = activeOwnerKey();
   let ownerNeedsRefresh = false;
   function activeOwner() {
@@ -73064,7 +73087,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const currentProject = projectId === activeProjectId;
     const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
     const worktree = thread?.worktree;
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -73074,7 +73097,11 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt
-    ]);
+    ];
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey;
+    lastOwnerParts = parts;
+    lastOwnerKey = JSON.stringify(parts);
+    return lastOwnerKey;
   }
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
@@ -74394,24 +74421,36 @@ function collectLinkedPrs(store2) {
     number: pr.number
   }));
 }
+function transcriptPrKey(messages) {
+  const cached = transcriptPrKeys.get(messages);
+  if (cached !== void 0) return cached;
+  const key = messages.flatMap((message2) => extractGithubPrUrls(message2.content).map((pr) => pr.url)).join(" ");
+  transcriptPrKeys.set(messages, key);
+  return key;
+}
 function threadPrKey(thread) {
   const cached = threadPrKeys.get(thread);
   if (cached !== void 0) return cached;
-  const links = threadPrRelationships(thread, thread.messages).map(({ pr, kinds }) => `${prRelationKey(pr)}:${kinds.join(",")}`).join(" ");
-  const productions = (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(" ");
-  const key = links === "" && productions === "" ? `${thread.id}\0${String(thread.lastSettledAt ?? "")}` : [
+  const links = [
+    transcriptPrKey(thread.messages),
+    (thread.prRefs ?? []).map((pr) => pr.url).join(" "),
+    thread.remoteAgentLink?.prUrl ?? "",
+    (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(" ")
+  ];
+  const key = links.every((part) => part === "") ? `${thread.id}\0${String(thread.lastSettledAt ?? "")}` : [
     thread.id,
     thread.title,
     String(thread.archivedAt ?? ""),
     String(thread.lastSettledAt ?? ""),
-    links,
-    productions
+    ...links
   ].join("\0");
   threadPrKeys.set(thread, key);
   return key;
 }
 function prPaneThreadsKey(state) {
-  return `${state.activeThreadId ?? ""}
+  if (!state.filesPaneOpen || state.rightPanelMode !== "prs") return PR_PANE_INACTIVE;
+  return `prs
+${state.activeThreadId ?? ""}
 ${state.threads.map(threadPrKey).join("\n")}`;
 }
 function indexThreadLinks(store2) {
@@ -75613,8 +75652,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }),
     // The threads' PR links, titles and finished turns; not streaming,
     // hydration or other metadata that leaves every key unchanged.
-    store2.select(prPaneThreadsKey, () => {
-      if (!prsModeActive(store2)) return;
+    store2.select(prPaneThreadsKey, (_next, prev) => {
+      if (prev === PR_PANE_INACTIVE || !prsModeActive(store2)) return;
       threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
@@ -75678,7 +75717,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffEditor = null;
   };
 }
-var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys;
+var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys, transcriptPrKeys, PR_PANE_INACTIVE;
 var init_pr_pane = __esm({
   "src/renderer/views/pr-pane.ts"() {
     init_helpers();
@@ -75724,6 +75763,8 @@ var init_pr_pane = __esm({
       anthropic: "Claude"
     };
     threadPrKeys = /* @__PURE__ */ new WeakMap();
+    transcriptPrKeys = /* @__PURE__ */ new WeakMap();
+    PR_PANE_INACTIVE = "";
   }
 });
 
@@ -76460,6 +76501,7 @@ function threadTitlesKey(threads) {
   return key;
 }
 function contextPanelInputs(state) {
+  if (!state.filesPaneOpen || state.rightPanelMode !== "context") return CONTEXT_PANEL_HIDDEN;
   const thread = activeThreadOf(state);
   if (!thread) return { thread, related: [state.activeProjectId] };
   const parentId = thread.sideChat?.parentThreadId;
@@ -76474,6 +76516,8 @@ function contextPanelInputs(state) {
   };
 }
 function sameContextPanelInputs(a, b2) {
+  if (a === b2) return true;
+  if (a === CONTEXT_PANEL_HIDDEN || b2 === CONTEXT_PANEL_HIDDEN) return false;
   return sameThreadBesidesDraft(a.thread, b2.thread) && sameItems(a.related, b2.related);
 }
 function contextModeActive(store2) {
@@ -77105,8 +77149,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     // thread's turn or metadata does not re-render the panel.
     store2.select(
       contextPanelInputs,
-      () => {
-        if (!contextModeActive(store2)) return;
+      (_next, prev) => {
+        if (prev === CONTEXT_PANEL_HIDDEN || !contextModeActive(store2)) return;
         render2();
         afterPendingThreadPersistence(() => {
           if (disposed || !contextModeActive(store2)) return;
@@ -77154,7 +77198,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     for (const off of offs) off();
   };
 }
-var SECTION_TITLES, titlesKeys;
+var SECTION_TITLES, titlesKeys, CONTEXT_PANEL_HIDDEN;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
     init_file_bytes();
@@ -77185,6 +77229,7 @@ var init_thread_context_panel = __esm({
       "resolved-questions": "Resolved questions"
     };
     titlesKeys = /* @__PURE__ */ new WeakMap();
+    CONTEXT_PANEL_HIDDEN = { thread: void 0, related: [] };
   }
 });
 
