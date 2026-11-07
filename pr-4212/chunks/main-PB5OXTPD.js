@@ -59,6 +59,7 @@ import {
   archiveCachedSidebarThread,
   archiveThread,
   artefactPreviewRevision,
+  artefactPreviewVersion,
   artefactUriFromToolResult,
   at,
   attachAnnotation,
@@ -462,7 +463,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-3JZCS2YT.js";
+} from "./chunk-VEAXY6CW.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1283,9 +1284,12 @@ function openAppRunDialog(store2, api2, projectId = store2.getState().activeProj
     panel.element
   );
   const unsubscribe = selectActiveWorkspace(store2, close2);
-  const unsubscribeThread = store2.on("threads_changed", () => {
-    if (store2.getState().activeThreadId !== (owner.threadId ?? null)) close2();
-  });
+  const unsubscribeThread = store2.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close2();
+    }
+  );
   dialog.addEventListener(
     "close",
     () => {
@@ -11983,6 +11987,274 @@ var init_render_signature = __esm({
   }
 });
 
+// src/renderer/controller/thread-proposals.ts
+async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) throw new Error("Open a project before starting a proposed thread");
+  store2.emit("composer_draft_flush");
+  const threadId = createThread(store2, void 0, { activate: false });
+  setThreadTitle(store2, threadId, proposal.title);
+  patchThreadAnywhere(store2, threadId, (t) => ({
+    ...t,
+    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
+  }));
+  await awaitPendingThreadPersistence();
+  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
+  const prepared = await api2.agent.prepareCheckout(
+    projectId,
+    threadId,
+    proposal.prompt,
+    "worktree",
+    model
+  );
+  applyPreparedThreadCheckout(store2, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store2, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
+  addMessage(store2, threadId, "user", proposal.prompt);
+  setThreadProposalDecision(store2, sourceThreadId, {
+    id: proposal.id,
+    status: "started",
+    decidedAt: Date.now(),
+    threadId,
+    checkoutMode: prepared.checkoutMode
+  });
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
+}
+var init_thread_proposals = __esm({
+  "src/renderer/controller/thread-proposals.ts"() {
+    init_thread_helpers();
+    init_message_queue();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/thread-proposal-card.ts
+function chip(kind, ...children) {
+  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
+}
+function statePill(state) {
+  const { status } = state;
+  if (status === "started") {
+    const shared = state.checkoutMode === "shared";
+    return el(
+      "span",
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
+      checkIcon("ui-icon ui-icon-sm"),
+      shared ? "Started in the shared checkout" : "Thread started"
+    );
+  }
+  if (status === "dismissed") {
+    return el(
+      "span",
+      { class: "thread-proposal-state", "data-state": "dismissed" },
+      closeIcon("ui-icon ui-icon-sm"),
+      "Dismissed"
+    );
+  }
+  return null;
+}
+function buildOpenThreadButton(threadId, handlers3) {
+  const open = el(
+    "button",
+    { type: "button", class: "thread-proposal-open" },
+    "Open thread",
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  open.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handlers3.onOpenThread(threadId);
+  });
+  return open;
+}
+function buildPendingActions(proposal, handlers3, rerender) {
+  const start = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
+    "Start this thread"
+  );
+  const dismiss = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
+    "Not now"
+  );
+  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  start.addEventListener("click", () => {
+    start.disabled = true;
+    dismiss.disabled = true;
+    start.textContent = "Starting\u2026";
+    error.hidden = true;
+    void handlers3.onStart(proposal).catch((cause) => {
+      start.disabled = false;
+      dismiss.disabled = false;
+      start.textContent = "Start this thread";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
+      error.hidden = false;
+    });
+  });
+  dismiss.addEventListener("click", () => {
+    handlers3.onDismiss(proposal);
+    rerender({ status: "dismissed" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
+}
+function buildDismissedActions(proposal, handlers3, rerender) {
+  const restore = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
+    "Bring it back"
+  );
+  restore.addEventListener("click", () => {
+    handlers3.onRestore(proposal);
+    rerender({ status: "pending" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, restore);
+}
+function buildBody(proposal, state, handlers3, rerender) {
+  const body = el("div", { class: "thread-proposal-body" });
+  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
+  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
+  if (proposal.rationale) {
+    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
+  }
+  const chips = el("div", { class: "thread-proposal-chips" });
+  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
+  const files = threadProposalFileSummary(proposal.files);
+  if (files) chips.append(chip("files", files));
+  body.append(chips);
+  const prompt = el("details", { class: "thread-proposal-prompt" });
+  prompt.append(
+    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
+    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
+  );
+  body.append(prompt);
+  if (state.status === "pending") {
+    body.append(buildPendingActions(proposal, handlers3, rerender));
+  } else if (state.status === "dismissed") {
+    body.append(buildDismissedActions(proposal, handlers3, rerender));
+  }
+  return body;
+}
+function createThreadProposalCard(proposal, state, handlers3) {
+  const card = el("details", {
+    class: "tool-card thread-proposal",
+    "data-tool-id": proposal.id,
+    "data-status": "done"
+  });
+  const render2 = (next) => {
+    while (card.firstChild) card.firstChild.remove();
+    card.dataset["proposalStatus"] = next.status;
+    card.open = next.status === "pending";
+    const header = el(
+      "summary",
+      { class: "tool-card-header thread-proposal-header" },
+      el(
+        "span",
+        { class: "thread-proposal-icon", "aria-hidden": "true" },
+        gitBranchIcon("ui-icon ui-icon-sm")
+      ),
+      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
+      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+    );
+    const pill = statePill(next);
+    if (pill) header.append(pill);
+    if (next.status === "started" && next.threadId) {
+      header.append(buildOpenThreadButton(next.threadId, handlers3));
+    }
+    card.append(header, buildBody(proposal, next, handlers3, render2));
+  };
+  render2(state);
+  return card;
+}
+var init_thread_proposal_card = __esm({
+  "src/renderer/views/thread-proposal-card.ts"() {
+    init_helpers();
+    init_ipc_error_message();
+    init_icons();
+    init_thread_proposal();
+  }
+});
+
+// src/renderer/views/thread-proposal-tool-card.ts
+function cardState(store2, sourceThreadId, proposalId) {
+  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
+  const status = threadProposalStatus(decisions, proposalId);
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
+  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
+}
+function threadProposalCardSignature(tc, store2, sourceThreadId) {
+  if (!isThreadProposalCall(tc)) return void 0;
+  const state = cardState(store2, sourceThreadId, tc.id);
+  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
+}
+function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
+  const args = tc.args;
+  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposal = parseThreadProposal(tc.id, proposalArgs);
+  if (!proposal) return null;
+  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
+    onStart: async (accepted) => {
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
+    },
+    onDismiss: (dismissed) => {
+      setThreadProposalDecision(store2, sourceThreadId, {
+        id: dismissed.id,
+        status: "dismissed",
+        decidedAt: Date.now()
+      });
+    },
+    onRestore: (restored) => {
+      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
+    },
+    onOpenThread: (threadId) => {
+      switchThread(store2, threadId);
+    }
+  });
+}
+var init_thread_proposal_tool_card = __esm({
+  "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_unknown_value2();
+    init_thread_proposal();
+    init_thread_helpers();
+    init_thread_proposals();
+    init_confirm_dialog();
+    init_toast();
+    init_thread_proposal_card();
+  }
+});
+
 // src/shared/tools/tool-runs.ts
 function regularToolCalls(msg) {
   return (msg.toolCalls ?? []).filter((tc) => !tc.subagent);
@@ -12720,274 +12992,6 @@ var init_disclosure_model = __esm({
   }
 });
 
-// src/renderer/controller/thread-proposals.ts
-async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Open a project before starting a proposed thread");
-  store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, void 0, { activate: false });
-  setThreadTitle(store2, threadId, proposal.title);
-  patchThreadAnywhere(store2, threadId, (t) => ({
-    ...t,
-    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
-  }));
-  await awaitPendingThreadPersistence();
-  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
-  const prepared = await api2.agent.prepareCheckout(
-    projectId,
-    threadId,
-    proposal.prompt,
-    "worktree",
-    model
-  );
-  applyPreparedThreadCheckout(store2, threadId, prepared);
-  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
-    setThreadDraftPrompt(store2, threadId, proposal.prompt);
-    return { started: false, threadId, reason: "shared-checkout-declined" };
-  }
-  addMessage(store2, threadId, "user", proposal.prompt);
-  setThreadProposalDecision(store2, sourceThreadId, {
-    id: proposal.id,
-    status: "started",
-    decidedAt: Date.now(),
-    threadId,
-    checkoutMode: prepared.checkoutMode
-  });
-  startHumanTurnTree(store2, threadId);
-  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
-  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
-}
-var init_thread_proposals = __esm({
-  "src/renderer/controller/thread-proposals.ts"() {
-    init_thread_helpers();
-    init_message_queue();
-    init_persistence();
-  }
-});
-
-// src/renderer/views/thread-proposal-card.ts
-function chip(kind, ...children) {
-  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
-}
-function statePill(state) {
-  const { status } = state;
-  if (status === "started") {
-    const shared = state.checkoutMode === "shared";
-    return el(
-      "span",
-      {
-        class: "thread-proposal-state",
-        "data-state": "started",
-        ...shared ? { "data-checkout": "shared" } : {}
-      },
-      checkIcon("ui-icon ui-icon-sm"),
-      shared ? "Started in the shared checkout" : "Thread started"
-    );
-  }
-  if (status === "dismissed") {
-    return el(
-      "span",
-      { class: "thread-proposal-state", "data-state": "dismissed" },
-      closeIcon("ui-icon ui-icon-sm"),
-      "Dismissed"
-    );
-  }
-  return null;
-}
-function buildOpenThreadButton(threadId, handlers3) {
-  const open = el(
-    "button",
-    { type: "button", class: "thread-proposal-open" },
-    "Open thread",
-    arrowRightIcon("ui-icon ui-icon-sm")
-  );
-  open.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    handlers3.onOpenThread(threadId);
-  });
-  return open;
-}
-function buildPendingActions(proposal, handlers3, rerender) {
-  const start = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
-    "Start this thread"
-  );
-  const dismiss = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
-    "Not now"
-  );
-  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
-  start.addEventListener("click", () => {
-    start.disabled = true;
-    dismiss.disabled = true;
-    start.textContent = "Starting\u2026";
-    error.hidden = true;
-    void handlers3.onStart(proposal).catch((cause) => {
-      start.disabled = false;
-      dismiss.disabled = false;
-      start.textContent = "Start this thread";
-      const message2 = ipcErrorMessage(cause, "");
-      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
-      error.hidden = false;
-    });
-  });
-  dismiss.addEventListener("click", () => {
-    handlers3.onDismiss(proposal);
-    rerender({ status: "dismissed" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
-}
-function buildDismissedActions(proposal, handlers3, rerender) {
-  const restore = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
-    "Bring it back"
-  );
-  restore.addEventListener("click", () => {
-    handlers3.onRestore(proposal);
-    rerender({ status: "pending" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, restore);
-}
-function buildBody(proposal, state, handlers3, rerender) {
-  const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
-  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
-  if (proposal.rationale) {
-    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
-  }
-  const chips = el("div", { class: "thread-proposal-chips" });
-  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
-  const files = threadProposalFileSummary(proposal.files);
-  if (files) chips.append(chip("files", files));
-  body.append(chips);
-  const prompt = el("details", { class: "thread-proposal-prompt" });
-  prompt.append(
-    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
-    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
-  );
-  body.append(prompt);
-  if (state.status === "pending") {
-    body.append(buildPendingActions(proposal, handlers3, rerender));
-  } else if (state.status === "dismissed") {
-    body.append(buildDismissedActions(proposal, handlers3, rerender));
-  }
-  return body;
-}
-function createThreadProposalCard(proposal, state, handlers3) {
-  const card = el("details", {
-    class: "tool-card thread-proposal",
-    "data-tool-id": proposal.id,
-    "data-status": "done"
-  });
-  const render2 = (next) => {
-    while (card.firstChild) card.firstChild.remove();
-    card.dataset["proposalStatus"] = next.status;
-    card.open = next.status === "pending";
-    const header = el(
-      "summary",
-      { class: "tool-card-header thread-proposal-header" },
-      el(
-        "span",
-        { class: "thread-proposal-icon", "aria-hidden": "true" },
-        gitBranchIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
-    );
-    const pill = statePill(next);
-    if (pill) header.append(pill);
-    if (next.status === "started" && next.threadId) {
-      header.append(buildOpenThreadButton(next.threadId, handlers3));
-    }
-    card.append(header, buildBody(proposal, next, handlers3, render2));
-  };
-  render2(state);
-  return card;
-}
-var init_thread_proposal_card = __esm({
-  "src/renderer/views/thread-proposal-card.ts"() {
-    init_helpers();
-    init_ipc_error_message();
-    init_icons();
-    init_thread_proposal();
-  }
-});
-
-// src/renderer/views/thread-proposal-tool-card.ts
-function cardState(store2, sourceThreadId, proposalId) {
-  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
-  const status = threadProposalStatus(decisions, proposalId);
-  const decision = findThreadProposalDecision(decisions, proposalId);
-  const startedId = decision?.threadId;
-  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
-  return {
-    status,
-    ...threadId ? { threadId } : {},
-    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
-  };
-}
-function confirmSharedCheckout(proposal) {
-  return showConfirmDialog({
-    message: "Run this in your current checkout?",
-    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
-    confirmLabel: "Run it here",
-    cancelLabel: "Leave it"
-  });
-}
-function noteDeclined() {
-  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
-    variant: "info",
-    durationMs: 8e3
-  });
-}
-function threadProposalCardSignature(tc, store2, sourceThreadId) {
-  if (!isThreadProposalCall(tc)) return void 0;
-  const state = cardState(store2, sourceThreadId, tc.id);
-  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
-}
-function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
-  const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
-  const proposal = parseThreadProposal(tc.id, proposalArgs);
-  if (!proposal) return null;
-  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
-    onStart: async (accepted) => {
-      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-        confirmSharedCheckout
-      });
-      if (!result.started) noteDeclined();
-    },
-    onDismiss: (dismissed) => {
-      setThreadProposalDecision(store2, sourceThreadId, {
-        id: dismissed.id,
-        status: "dismissed",
-        decidedAt: Date.now()
-      });
-    },
-    onRestore: (restored) => {
-      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
-    },
-    onOpenThread: (threadId) => {
-      switchThread(store2, threadId);
-    }
-  });
-}
-var init_thread_proposal_tool_card = __esm({
-  "src/renderer/views/thread-proposal-tool-card.ts"() {
-    init_unknown_value2();
-    init_thread_proposal();
-    init_thread_helpers();
-    init_thread_proposals();
-    init_confirm_dialog();
-    init_toast();
-    init_thread_proposal_card();
-  }
-});
-
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13512,13 +13516,30 @@ function applyTranscriptRowPlan(plan, host) {
     }
   }
 }
-function transcriptRowSignature(thread, message2) {
-  return signRow(thread, message2, multiStepRunFor(thread, message2.id));
+function callAnswer(store2, thread, call) {
+  if (isThreadProposalCall(call)) return threadProposalCardSignature(call, store2, thread.id) ?? null;
+  if (isReviewerInputCall(call)) {
+    return reviewerInputAnswer(thread.reviewerInputAnswers, call.id) ?? null;
+  }
+  return void 0;
 }
-function signRow(thread, message2, run4) {
+function previewTitles(message2, calls) {
+  const titles2 = (message2.canvasArtefacts ?? []).map((artefact) => artefact.title);
+  for (const call of calls) {
+    if (call.status !== "done") continue;
+    const uri = artefactUriFromToolResult(call.result);
+    if (uri) titles2.push(artefactTitleFromUri(uri));
+  }
+  return titles2;
+}
+function transcriptRowSignature(store2, thread, message2) {
+  return signRow(store2, thread, message2, multiStepRunFor(thread, message2.id));
+}
+function signRow(store2, thread, message2, run4) {
   const liveStep = liveStepMessageId(thread);
   const origin = message2.role === "user" ? message2.origin : void 0;
   markUserInterruptedCalls(thread);
+  const calls = [...message2.toolCalls, ...run4?.toolCalls ?? []];
   return {
     patched: renderSignature({
       message: { ...message2, turnOutcome: void 0 },
@@ -13528,8 +13549,7 @@ function signRow(thread, message2, run4) {
     }),
     settled: renderSignature({
       memberOf: run4 && run4.anchorId !== message2.id ? run4.anchorId : null,
-      // A run's anchor draws every member's calls.
-      interrupted: [...message2.toolCalls, ...run4?.toolCalls ?? []].flatMap((call) => {
+      interrupted: calls.flatMap((call) => {
         const cause = userInterruption(call);
         return cause === void 0 ? [] : [[call.id, cause]];
       }),
@@ -13537,18 +13557,25 @@ function signRow(thread, message2, run4) {
         (message2.canvasArtefacts ?? []).map((artefact) => artefact.title),
         (message2.visualEvidence ?? []).map((evidence) => evidence.id)
       ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store2, thread, call);
+        return answer === void 0 ? [] : [[call.id, answer]];
+      }),
+      previews: previewTitles(message2, calls).map(
+        (title) => artefactPreviewVersion(thread.id, title)
+      ),
       failed: message2.turnOutcome?.status === "failed",
       recovery: turnRecoveryForMessage(thread, message2.id),
       wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null
     })
   };
 }
-function wantedTranscriptRows(thread, hidden) {
+function wantedTranscriptRows(store2, thread, hidden) {
   return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => {
     const run4 = multiStepRunFor(thread, message2.id);
     return {
       key: message2.id,
-      signature: signRow(thread, message2, run4),
+      signature: signRow(store2, thread, message2, run4),
       patchedBy: run4 ? run4.memberIds : [message2.id]
     };
   });
@@ -13590,10 +13617,14 @@ function relinkReadingAnchor(list, anchor) {
 var ROW_CARD_ATTRIBUTES;
 var init_transcript_rows = __esm({
   "src/renderer/views/transcript-rows.ts"() {
+    init_artefact();
+    init_reviewer_input();
+    init_artefact_previews();
     init_inline_artefact();
     init_turn_recovery2();
     init_command_task_links();
     init_render_signature();
+    init_thread_proposal_tool_card();
     init_tool_card_refresh();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
@@ -16360,9 +16391,6 @@ function mountThreadRoadmapOrigin(store2, api2) {
   let itemId = null;
   let generation = 0;
   let syncedThreadId;
-  function syncIfThreadChanged() {
-    if (store2.getState().activeThreadId !== syncedThreadId) sync();
-  }
   function sync() {
     const gen = ++generation;
     const threadId = store2.getState().activeThreadId;
@@ -16400,7 +16428,7 @@ function mountThreadRoadmapOrigin(store2, api2) {
     if (itemId) navigateToRoadmapItem(store2, itemId);
   });
   sync();
-  const unsubscribeThreads = store2.on("threads_changed", syncIfThreadChanged);
+  const unsubscribeThreads = store2.select((s) => s.activeThreadId, sync);
   const unsubscribeRoadmap = api2.roadmap.onChanged(sync);
   return {
     element: link,
@@ -19475,7 +19503,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.model === b2.model && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -21343,7 +21371,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg));
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store2, thread, msg));
     rowDrawnFrom.set(msgEl, msg);
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
@@ -21888,41 +21916,75 @@ function mountConversation(root, store2, api2) {
       "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
     );
   }
+  let comparisonCard = null;
+  let reviewReportCard = null;
   function syncComparisonPanel() {
-    list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
-    if (thread?.comparison) {
+    const comparison = thread?.comparison;
+    const signature = comparison ? renderSignature(comparison) : "";
+    if (!thread || !comparison || comparisonCard?.threadId !== thread.id || comparisonCard.signature !== signature) {
+      list.querySelector("[data-comparison-card]")?.remove();
+      comparisonCard = null;
+    }
+    if (!thread || !comparison) return;
+    if (!comparisonCard) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+      const element2 = createComparisonCardEl(comparison, api2, void 0, () => {
         dismissComparison(store2, threadId);
       });
-      card.setAttribute("data-comparison-card", "");
-      list.append(card);
+      element2.setAttribute("data-comparison-card", "");
+      comparisonCard = { threadId, signature, element: element2 };
     }
+    const { element } = comparisonCard;
+    if (element.parentNode !== list || element !== list.lastElementChild) list.append(element);
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
-    if (!thread?.reviewReport) return;
-    const threadId = thread.id;
-    const card = createReviewFindingsCardEl(thread.reviewReport, {
-      onRetry: () => {
-        startReview(store2, api2, threadId);
-      },
-      onDismissCard: () => {
-        dismissReviewReport(store2, threadId);
-      },
-      onDismissFinding: (finding) => {
-        dismissReviewFinding(store2, api2, threadId, finding);
-      },
-      onRestoreFinding: (finding) => {
-        restoreReviewFinding(store2, api2, threadId, finding.id);
-      }
-    });
-    card.setAttribute("data-review-report-card", "");
+    const report = thread?.reviewReport;
+    const signature = report ? renderSignature(report) : "";
+    if (!thread || !report || reviewReportCard?.threadId !== thread.id || reviewReportCard.signature !== signature) {
+      list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
+      reviewReportCard = null;
+    }
+    if (!thread || !report) return;
+    if (!reviewReportCard) {
+      const threadId = thread.id;
+      const act = (action) => () => {
+        const before = getThreadById(store2, threadId)?.reviewReport;
+        action();
+        if (getThreadById(store2, threadId)?.reviewReport !== before) return;
+        if (reviewReportCard?.threadId !== threadId) return;
+        reviewReportCard.element.remove();
+        reviewReportCard = null;
+        syncReviewReportCard();
+      };
+      const element2 = createReviewFindingsCardEl(report, {
+        onRetry: act(() => {
+          startReview(store2, api2, threadId);
+        }),
+        onDismissCard: act(() => {
+          dismissReviewReport(store2, threadId);
+        }),
+        onDismissFinding: (finding) => {
+          act(() => {
+            dismissReviewFinding(store2, api2, threadId, finding);
+          })();
+        },
+        onRestoreFinding: (finding) => {
+          act(() => {
+            restoreReviewFinding(store2, api2, threadId, finding.id);
+          })();
+        }
+      });
+      element2.setAttribute("data-review-report-card", "");
+      reviewReportCard = { threadId, signature, element: element2 };
+    }
+    const { element } = reviewReportCard;
     const comparison = list.querySelector("[data-comparison-card]");
-    if (comparison) list.insertBefore(card, comparison);
-    else list.append(card);
+    const inPlace = element.parentNode === list && (comparison ? element.nextElementSibling === comparison : element === list.lastElementChild);
+    if (inPlace) return;
+    if (comparison) list.insertBefore(element, comparison);
+    else list.append(element);
   }
   function finishThreadChrome(thread) {
     syncTodoPanel();
@@ -21969,7 +22031,7 @@ function mountConversation(root, store2, api2) {
     if (backfillPending || !sameRowEnvironment(inputs, previous)) return false;
     if (inputs.needsHydration || inputs.hydrationFailed) return false;
     const elements = Array.from(list.querySelectorAll(":scope > [data-message-id]"));
-    const wanted = wantedTranscriptRows(thread, queuedMessageIds(thread));
+    const wanted = wantedTranscriptRows(store2, thread, queuedMessageIds(thread));
     const messages = new Map(thread.messages.map((message2) => [message2.id, message2]));
     const signed = elements.map((element) => ({
       key: element.dataset["messageId"] ?? "",
@@ -22279,15 +22341,26 @@ function mountConversation(root, store2, api2) {
       if (tid === store2.getState().activeThreadId) markRowPatched(mid);
       scrollToBottom();
     }),
-    store2.on("comparison_changed", () => {
-      syncComparisonPanel();
-      scrollToBottom();
-    }),
+    // The trailing cards draw the active thread's report and comparison, so
+    // follow those values rather than the events their writers emit. A switch
+    // to another thread is the rebuild's to draw.
+    store2.select(
+      (state) => {
+        const thread = state.threads.find((candidate) => candidate.id === state.activeThreadId) ?? state.backgroundThreads.find((carried) => carried.thread.id === state.activeThreadId)?.thread;
+        return [state.activeThreadId, thread?.reviewReport, thread?.comparison];
+      },
+      ([threadId]) => {
+        if (threadId === null || threadId !== renderedThreadId) return;
+        syncReviewReportCard();
+        syncComparisonPanel();
+        scrollToBottom();
+      },
+      sameItems
+    ),
     store2.on("review_report_changed", (tid, mid) => {
-      if (mid) {
-        renderMessageReviewReport(tid, mid);
-        if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
-      } else syncReviewReportCard();
+      if (!mid) return;
+      renderMessageReviewReport(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -22412,6 +22485,7 @@ var init_conversation = __esm({
     init_user_prompt_fold();
     init_hook_card2();
     init_hook_run_detail2();
+    init_store();
     init_artefact_previews();
     init_inline_artefact();
     init_artefact();
@@ -33356,6 +33430,8 @@ function mountFileTree(root, store2, api2) {
     try {
       const owner = getActiveThreadOwner(store2);
       if (!owner) throw new Error("No active task");
+      await awaitPendingThreadPersistence();
+      if (generation !== loadGeneration) return;
       const entries = await api2.fs.listDir(owner.projectId, owner.threadId, dirPath);
       if (generation !== loadGeneration) return;
       clear(target);
@@ -33390,17 +33466,19 @@ function mountFileTree(root, store2, api2) {
     });
   }
   refreshBtn.addEventListener("click", refresh);
-  let lastOwnerKey = "";
-  function refreshForActiveTask() {
-    const owner = getActiveThreadOwner(store2);
-    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : "";
-    if (nextKey === lastOwnerKey) return;
-    lastOwnerKey = nextKey;
-    refresh();
-  }
   const unsubs = [
-    selectActiveWorkspace(store2, refresh),
-    store2.on("threads_changed", refreshForActiveTask),
+    // The tree lists the active project's root, scoped to the active thread's
+    // checkout: reload only when one of those changes, not on renames,
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
+    store2.select(
+      (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId],
+      () => {
+        queueMicrotask(refresh);
+      },
+      sameItems
+    ),
     store2.select(
       (s) => s.openFile,
       (openFile2) => {
@@ -33411,7 +33489,7 @@ function mountFileTree(root, store2, api2) {
       void revealPath(path, true);
     })
   ];
-  refreshForActiveTask();
+  if (getActiveThreadOwner(store2)) refresh();
   const unregisterPopoutSeed = registerPopoutSeedHandlers("explorer", {
     capture: () => ({
       openFilePath: store2.getState().openFile?.path ?? null,
@@ -33438,13 +33516,14 @@ var init_file_tree = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_material_file_icons();
+    init_store();
     init_handle_file_drop();
     init_files();
     init_context_menu();
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
-    init_active_workspace();
+    init_persistence();
   }
 });
 
@@ -63186,14 +63265,18 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
       renderComments();
     });
   });
-  const unsub = store2.on("threads_changed", () => {
-    refreshIndicator();
-    if (owner && (owner.projectId !== store2.getState().activeProjectId || owner.threadId !== store2.getState().activeThreadId)) {
-      generation++;
-      owner = null;
-      dialog.close();
-    }
-  });
+  const unsub = store2.select(
+    (s) => [s.activeProjectId, s.activeThreadId],
+    ([projectId, threadId]) => {
+      refreshIndicator();
+      if (owner && (owner.projectId !== projectId || owner.threadId !== threadId)) {
+        generation++;
+        owner = null;
+        dialog.close();
+      }
+    },
+    sameItems
+  );
   const unsubStatus = store2.on("thread_status_changed", (threadId) => {
     if (store2.getState().activeThreadId === threadId && getThreadById(store2, threadId)?.status !== "running")
       refreshIndicator(true);
@@ -63228,6 +63311,7 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
 var TEMPLATE, DEFAULT_TITLE;
 var init_thread_plan_dialog = __esm({
   "src/renderer/views/thread-plan-dialog.ts"() {
+    init_store();
     init_thread_helpers();
     init_plan_schema();
     init_helpers();
@@ -71974,11 +72058,10 @@ ${output}` : "Terminal output: (none)"
     selectRightPanelMode(store2, "terminal", onTerminalModeChange),
     store2.on("agent_task_selected", onAgentTaskSelected),
     store2.on("settings_changed", onFontSizeChange),
-    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("thread_checkout_changed", (threadId) => {
       void onThreadCheckoutChanged(threadId);
     }),
-    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("request_terminal_command", (command2, options) => {
       void runCommandInNewShell(command2, options);
     }),
@@ -72290,14 +72373,12 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     appendOutput(toolCallId, data);
   });
   const unsubShell = store2.on("shell_tab_activated", clearSelection);
-  const unsubThreads = store2.on("threads_changed", onThreadMaybeChanged);
-  const unsubWorkspace = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
+  const unsubThread = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
   return () => {
     unsubChunk();
     unsubOutput();
     unsubShell();
-    unsubThreads();
-    unsubWorkspace();
+    unsubThread();
     showTaskView(false);
     section2.remove();
   };
@@ -76395,7 +76476,38 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
     );
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "revoke-port-binding",
+          "aria-label": "Revoke local port binding for this project",
+          title: "Ask again before future tasks can bind a local port. Stop running tasks separately."
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        const state = store2.getState();
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return;
+        revoke.disabled = true;
+        void api2.security.revokeProjectPortBinding(state.activeProjectId, threadId).then(() => refreshAccess()).catch((error) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke local port permission", error);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Local port binding",
+            "Granted",
+            "Saved for this project. Revoke to ask for future tasks; stop running tasks separately."
+          ),
+          revoke
+        )
+      );
     }
     result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
     result.append(
@@ -77961,6 +78073,9 @@ var init_review = __esm({
 });
 
 // src/renderer/views/roadmap-pane.ts
+function knownThreadsKey(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map((b2) => b2.thread)].map((t) => `${t.id}\0${t.title}`).join("\n");
+}
 function roadmapModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "roadmap";
@@ -79987,12 +80102,17 @@ Notes: ${notes}` : prompt;
       void refresh();
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
-    // re-render from the already-loaded items (no IPC round-trip needed).
-    store2.on("threads_changed", () => {
-      if (!roadmapModeActive(store2)) return;
-      renderList();
-      renderEditor({ preserveDirty: true });
-    }),
+    // re-render from the already-loaded items (no IPC round-trip needed). Only
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
+    store2.select(
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
+      () => {
+        if (!roadmapModeActive(store2)) return;
+        renderList();
+        renderEditor({ preserveDirty: true });
+      }
+    ),
     selectActiveWorkspace(store2, () => {
       loadToken++;
       loading = false;
@@ -81548,7 +81668,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
-    store2.on("threads_changed", onThreadMaybeChanged),
     store2.select(
       (s) => [s.activeProjectId, s.activeThreadId],
       onThreadMaybeChanged,
@@ -87640,18 +87759,16 @@ function attachDiffState(store2, api2, options) {
     publishActiveQueue(entries);
     hydrate();
   };
-  const unsubWorkspace = store2.select(
+  const unsubOwner = store2.select(
     (s) => [s.activeProjectId, s.activeThreadId],
     syncDiffOwner,
     sameItems
   );
-  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
   hydrate();
   return () => {
     unsubShowDiff();
     unsubQueued();
-    unsubWorkspace();
-    unsubThreads();
+    unsubOwner();
   };
 }
 var init_diff_state = __esm({
@@ -88177,8 +88294,24 @@ function attachProviderInvalidationWarning(store2, api2, ui) {
     });
   };
   const unsubscribe = [
-    selectActiveWorkspace(store2, check),
-    store2.on("threads_changed", check),
+    // The check reads the active workspace and the active thread's route:
+    // which thread, whether it is idle, and its model. One selection, so a
+    // project switch checks once. Other threads' updates, and this one's
+    // rename, do not re-check.
+    store2.select(
+      (state) => {
+        const thread = getActiveThread(store2);
+        return [
+          state.activeProjectId,
+          state.workspaceRoot,
+          thread?.id,
+          thread?.status,
+          thread?.model
+        ];
+      },
+      check,
+      sameItems
+    ),
     store2.on("settings_changed", check),
     store2.on("thread_status_changed", check)
   ];
@@ -88194,7 +88327,7 @@ var init_provider_invalidation = __esm({
   "src/renderer/controller/provider-invalidation.ts"() {
     init_zod();
     init_safe_json2();
-    init_active_workspace();
+    init_store();
     init_thread_helpers();
     init_model_selection();
   }
@@ -88684,22 +88817,19 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (lastAttemptKey === key) lastAttemptKey = null;
     });
   };
-  const offThreads = store2.on("threads_changed", refreshActive);
-  const offWorkspace = store2.select(
-    (s) => [s.activeProjectId, s.activeThreadId],
-    refreshActive,
-    sameItems
-  );
+  const offThreads = store2.select((state) => {
+    const { activeProjectId, activeThreadId, threads } = state;
+    const thread = activeThreadId ? threads.find((t) => t.id === activeThreadId) : void 0;
+    return activeProjectId && thread ? refreshKey(activeProjectId, thread) : null;
+  }, refreshActive);
   refreshActive();
   return () => {
     offThreads();
-    offWorkspace();
   };
 }
 var init_imported_cursor_agent_refresh = __esm({
   "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
     init_remote_agent_link2();
-    init_store();
   }
 });
 

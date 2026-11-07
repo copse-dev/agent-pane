@@ -25139,7 +25139,11 @@ function setArtefactPreview(threadId, title, preview) {
   const key = previewKey(threadId, title);
   if (!preview || previews.get(key) === preview) return;
   previews.set(key, preview);
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1);
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
+}
+function artefactPreviewVersion(threadId, title) {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0;
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
@@ -25193,11 +25197,12 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, previewVersions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
     previewRevisions = /* @__PURE__ */ new Map();
+    previewVersions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -28153,6 +28158,7 @@ function sidebarLastPromptAt(thread) {
   return void 0;
 }
 function isAutomationPendingStart(thread) {
+  if (thread.automation === void 0) return false;
   return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
 }
 function sidebarHasRun(thread) {
@@ -47494,7 +47500,10 @@ async function fetchModelOptions(api, current, opts = {}) {
       {
         ...option,
         label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
-        disabled: true
+        disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...option.disabled === true ? {} : { superseded: true }
       }
     ];
   });
@@ -49695,6 +49704,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ] : []
       );
       if (selected) item.classList.add("is-selected");
+      if (opt.superseded) item.classList.add("is-superseded");
       if (opt.value === activeValue) item.classList.add("is-active");
       item.addEventListener("click", () => {
         selectOption(opt.value);
@@ -73811,7 +73821,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     };
     unsubs.push(
       store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
-      store.on("threads_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
         if (changedThreadId === threadId) preview.close();
       })
@@ -74245,6 +74254,7 @@ export {
   begin,
   init_perf,
   setArtefactPreview,
+  artefactPreviewVersion,
   getArtefactPreview,
   artefactPreviewRevision,
   setArtefactContent,
