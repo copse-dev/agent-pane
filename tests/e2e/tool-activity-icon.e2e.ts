@@ -72,7 +72,7 @@ describe('tool activity icon', function () {
       },
       {
         user: 'Run a short shell command',
-        toolResults: [{ name: 'run_shell' }],
+        toolResults: [{ name: 'run_shell', includes: '(no output)' }],
         text: 'The short shell command completed successfully.',
       },
     )
@@ -155,6 +155,11 @@ describe('tool activity icon', function () {
 
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
+    // A late capture must fail rather than silently record a settled row as running.
+    await expect(card).toHaveAttribute('data-status', 'running')
+    const activity = card.$('.tool-activity-icon-slot > .reasoning-activity-icon')
+    await expect(activity).toExist()
+    await expect(activity).toBeDisplayed()
 
     // The screenshot lands ~18s into the 40s command at worst; allow the rest
     // of the sleep plus the follow-up turn with room to spare.
