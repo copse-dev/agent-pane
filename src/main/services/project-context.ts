@@ -185,8 +185,8 @@ export class ProjectContextReader {
           if (ref === null) continue
           const validRef =
             tool === null
-              ? /^messages\/[^/]+\.md$/.test(ref.ref) && !ref.ref.endsWith('.reasoning.md')
-              : /^blobs\/[^/]+\.tool-\d+\.result\.txt$/.test(ref.ref)
+              ? /^messages\/[^/\\]+\.md$/.test(ref.ref) && !ref.ref.endsWith('.reasoning.md')
+              : /^blobs\/[^/\\]+\.tool-\d+\.result\.txt$/.test(ref.ref)
           if (!validRef) {
             this.files.omissions.add('unsupported-source')
             continue
