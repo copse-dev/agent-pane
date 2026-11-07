@@ -21169,6 +21169,7 @@ function mountConversation(root, store2, api2) {
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   let backfillPending = false;
+  let backfillPrefix = [];
   const rowSignatures = /* @__PURE__ */ new WeakMap();
   const rowDrawnFrom = /* @__PURE__ */ new WeakMap();
   const patchedRows = /* @__PURE__ */ new Set();
@@ -22021,6 +22022,7 @@ function mountConversation(root, store2, api2) {
     const delta = list.scrollHeight - heightBefore;
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     updateScrollButton();
+    backfillPrefix = backfillPrefix.slice(0, chunkStart);
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation);
@@ -22028,10 +22030,14 @@ function mountConversation(root, store2, api2) {
     } else backfillPending = false;
   }
   function reconcileTranscriptRows(thread, inputs, previous) {
-    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false;
+    if (!sameRowEnvironment(inputs, previous)) return false;
     if (inputs.needsHydration || inputs.hydrationFailed) return false;
+    const pending = backfillPending ? backfillPrefix : [];
+    if (pending.some((id, i2) => thread.messages[i2]?.id !== id)) return false;
+    const hidden = queuedMessageIds(thread);
+    for (const id of pending) hidden.add(id);
     const elements = Array.from(list.querySelectorAll(":scope > [data-message-id]"));
-    const wanted = wantedTranscriptRows(store2, thread, queuedMessageIds(thread));
+    const wanted = wantedTranscriptRows(store2, thread, hidden);
     const messages = new Map(thread.messages.map((message2) => [message2.id, message2]));
     const signed = elements.map((element) => ({
       key: element.dataset["messageId"] ?? "",
@@ -22144,6 +22150,7 @@ function mountConversation(root, store2, api2) {
     if (thread.status === "running") disclosures.cancelCompaction(thread.id);
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     backfillPending = initialStart > 0;
+    backfillPrefix = thread.messages.slice(0, initialStart).map((message2) => message2.id);
     if (initialStart > 0) {
       const generation = backfillGeneration;
       requestAnimationFrame(() => {
