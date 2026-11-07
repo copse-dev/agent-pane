@@ -289,6 +289,16 @@ describe('bounded project context corpus', () => {
     )
   })
 
+  it('reads both known memory schemas without trusting agent-supplied source metadata', async () => {
+    memory('v1', 'needle older memory', 'memorySchema: 1\nsources: msg:unverified')
+    memory('v2', 'needle current memory', 'memorySchema: 2\nsources: ["msg:unverified"]')
+    const output = await reader().search({ query: 'needle' })
+    const found = results(output)
+    assert.equal(found.results.length, 2)
+    assert.ok(found.results.every((r) => r.author === 'unknown'))
+    assert.doesNotMatch(output, /msg:unverified/)
+  })
+
   it('honors deletion tombstones even when a leftover note is later healed into the index', async () => {
     memory('deleted', 'needle forgotten')
     memory('kept', 'needle retained')

@@ -286,7 +286,11 @@ export class ProjectContextReader {
       const note = parseKnowledgeNote(raw, path)
       if (note === null || note.type !== 'Memory' || !segment.safeParse(note.id).success) continue
       if (deleted.has(note.id)) continue
-      if (note.fields['memorySchema'] !== undefined && note.fields['memorySchema'] !== '2') {
+      if (
+        note.fields['memorySchema'] !== undefined &&
+        note.fields['memorySchema'] !== '1' &&
+        note.fields['memorySchema'] !== '2'
+      ) {
         this.files.omissions.add('unsupported-memory-schema')
         continue
       }
