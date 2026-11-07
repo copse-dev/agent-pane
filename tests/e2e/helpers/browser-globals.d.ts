@@ -7,6 +7,12 @@ declare global {
     /** The actual lazy Monaco bundle export, shared with monaco-global.ts. */
     __copseMonaco?: typeof monaco
     __copseE2e?: ScenarioBridge
+    /** Test-helper-only observation identity and exact acknowledged ledger prefix. */
+    __copseE2eErrorToastState?: {
+      owner: ScenarioBridge | undefined
+      generation: string
+      acknowledged: string[]
+    }
     __closeConfirmAnswers?: boolean[]
     __pageJumps?: number[]
     __multiWindowIpc?: { changes: string[]; statusPushes: number }
