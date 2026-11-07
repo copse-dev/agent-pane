@@ -9,6 +9,21 @@ import {
   readWorktreePreparationPlan,
 } from '../worktree-preparation-plan.ts'
 
+/** A moved or deleted project folder reads as unavailable, not as a raw ENOENT. */
+function canonicalProjectRoot(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+    )
+      throw new Error('This project’s folder is no longer available.', { cause: error })
+    throw error
+  }
+}
+
 /** Resolve from the requested project, never the window's current workspace. */
 export function reviewAutomationPreparation(
   projectId: string,
@@ -28,7 +43,7 @@ export function reviewAutomationPreparation(
     throw new Error('Worktree setup review is available for local projects only.')
   if (!isAbsolute(project.path))
     throw new Error('This project does not have an absolute local path.')
-  const projectRoot = realpathSync(project.path)
+  const projectRoot = canonicalProjectRoot(project.path)
   const plan = readWorktreePreparationPlan(
     containedPreparationPath(projectRoot, input.directory ?? '.'),
   )

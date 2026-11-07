@@ -102,6 +102,13 @@ describe('automation preparation review', () => {
     assert.throws(() => reviewAutomationPreparation('project-a', {}), /setup needs attention/)
   })
 
+  it('reports a moved project folder as unavailable instead of a raw ENOENT', () => {
+    storageSet('projects', [{ id: 'project-a', name: 'Project A', path: join(root, 'moved') }])
+    assert.throws(() => reviewAutomationPreparation('project-a', {}), {
+      message: 'This project’s folder is no longer available.',
+    })
+  })
+
   it('refuses traversal, absolute folders and a symlink escaping the requested project', () => {
     symlinkSync(tmpdir(), join(root, 'outside'))
     for (const directory of ['..', tmpdir(), 'outside']) {
