@@ -11,6 +11,7 @@ import {
   threadPlanInstructions,
 } from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
+import { withPromptCatalog } from '@copse/llm/prompt-cache-diagnostics.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
@@ -1966,6 +1967,7 @@ async function runAgentWithInlineCanvas(
       nestedInstructionTurn,
     })
     const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
+    const parentProvider = withPromptCatalog(provider, systemPromptBuild.promptCatalog)
     const skillActivationTurn = createSkillActivationTurn(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
@@ -2665,7 +2667,7 @@ async function runAgentWithInlineCanvas(
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
               await runWithAgentRunExploreMode(subagentsEnabled, async () => {
                 await runAgentLoop({
-                  provider,
+                  provider: parentProvider,
                   messages: trimmed,
                   tools: parentLoopTools,
                   usageModel: model,
@@ -2768,7 +2770,7 @@ async function runAgentWithInlineCanvas(
         )
 
         const parentContinuationBase: RunParentContinuationOptions = {
-          provider,
+          provider: parentProvider,
           messages: trimmed,
           tools: parentLoopTools,
           contextWindow,
