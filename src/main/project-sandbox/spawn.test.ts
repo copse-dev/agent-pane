@@ -10,7 +10,10 @@ import {
   shellForSandboxWrap,
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
+  withSandboxOnlyAccess,
+  withSandboxOnlyEnv,
   withSandboxShellPath,
+  type SandboxOnlySpawnAccess,
 } from './spawn.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
 
@@ -145,5 +148,68 @@ describe('spawning into a deleted working directory', () => {
       spawnShellInProjectSandbox('echo hi', { cwd: missing, stdio: 'pipe' }),
       /Working directory no longer exists/,
     )
+  })
+})
+
+describe('sandbox-only spawn access', () => {
+  const access: SandboxOnlySpawnAccess = {
+    env: (base) => ({
+      GIT_CONFIG_COUNT: String(Number(base['GIT_CONFIG_COUNT'] ?? '0') + 1),
+      GH_CONFIG_DIR: '/private/tmp/cghr/1/gh',
+      GH_TOKEN: undefined,
+    }),
+    allowUnixSockets: ['/private/tmp/cghr/1/gh.sock'],
+    allowRead: ['/private/tmp/cghr/1'],
+  }
+
+  it('adds exactly the socket and read paths to the overlay', () => {
+    const overlay = {
+      network: { allowedDomains: [], deniedDomains: [], allowLocalBinding: false },
+      filesystem: { denyRead: ['/home'], allowRead: ['/w'], allowWrite: ['/w'], denyWrite: [] },
+    }
+    const { network, filesystem } = withSandboxOnlyAccess(overlay, access)
+    assert.ok(network && filesystem)
+    assert.deepEqual(network.allowUnixSockets, ['/private/tmp/cghr/1/gh.sock'])
+    assert.deepEqual(network.allowedDomains, [])
+    assert.equal(network.allowLocalBinding, false)
+    assert.deepEqual(filesystem.allowRead, ['/w', '/private/tmp/cghr/1', '/private/tmp/cghr/1/**'])
+    assert.deepEqual(filesystem.allowWrite, ['/w'])
+    const none = withSandboxOnlyAccess(overlay, {
+      env: () => ({}),
+      allowUnixSockets: [],
+      allowRead: [],
+    })
+    assert.deepEqual(none, overlay)
+  })
+
+  it('applies variables over the final environment and unsets undefined ones', () => {
+    const env = withSandboxOnlyEnv(
+      { GIT_CONFIG_COUNT: '2', GH_TOKEN: 'ghp_real', KEEP: '1' },
+      access,
+    )
+    assert.equal(env['GIT_CONFIG_COUNT'], '3')
+    assert.equal(env['GH_CONFIG_DIR'], '/private/tmp/cghr/1/gh')
+    assert.ok(!Object.hasOwn(env, 'GH_TOKEN'))
+    assert.equal(env['KEEP'], '1')
+    const base = { A: '1' }
+    assert.equal(withSandboxOnlyEnv(base, undefined), base)
+  })
+
+  it('never reaches an unsandboxed spawn', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sandbox-only-'))
+    try {
+      const child = await spawnShellInProjectSandbox('printf "%s" "${GH_CONFIG_DIR-unset}"', {
+        cwd: dir,
+        stdio: 'pipe',
+        unsandboxed: true,
+        sandboxOnly: access,
+      })
+      let output = ''
+      child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()))
+      await new Promise((resolveClose) => child.on('close', resolveClose))
+      assert.equal(output, 'unset')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

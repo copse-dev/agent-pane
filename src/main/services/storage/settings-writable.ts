@@ -411,6 +411,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Experimental GitHub reads for project-sandboxed shell commands, served on
+  // the host with the desktop sign-in. Off by default.
+  // See src/main/services/github/sandbox-github-reads.ts.
+  sandboxGitHubReadsEnabled: z.boolean(),
   // Experimental living-plan workflow: the composer's "Start planning" button
   // and dialog. Off by default — container, ACP, remote, and plugin-hosted
   // executors still fail closed while a plan is active, and completion is

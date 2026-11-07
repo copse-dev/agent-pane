@@ -51,6 +51,25 @@ export type GitHubDecision =
       body: 'none' | 'stream' | 'graphql'
     }
 
+/**
+ * Which caller the request came through. It changes only the refusal wording:
+ * the policy is identical for a container run (A24) and for the desktop's
+ * project sandbox (`sandbox-github-reads.ts`), whose write refusals the shell
+ * tool recognises as a sandbox block and offers to rerun outside.
+ */
+export type GitHubRoute = 'container' | 'sandbox'
+
+const WRITE_REFUSAL: Record<GitHubRoute, { push: string; readsOnly: string }> = {
+  container: {
+    push: 'pushing is not allowed from a container run',
+    readsOnly: 'container runs can only read GitHub',
+  },
+  sandbox: {
+    push: 'pushing is not allowed from the project sandbox',
+    readsOnly: 'sandboxed commands can only read GitHub',
+  },
+}
+
 export interface GitHubRequestFacts {
   method: string
   /** The request-target as received. */
@@ -114,7 +133,11 @@ function gitFetchPath(method: string, path: string, query: string): GitPath {
 }
 
 /** Decide one request. */
-export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
+export function decideGitHubRequest(
+  facts: GitHubRequestFacts,
+  route: GitHubRoute = 'container',
+): GitHubDecision {
+  const wording = WRITE_REFUSAL[route]
   const method = facts.method.toUpperCase()
   if (!/^[A-Z]+$/.test(method)) return refuse('the request method is malformed', 400)
 
@@ -181,7 +204,7 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
     return refuse('dot segments are not allowed in the request path', 400)
   }
   if (/receive-pack/i.test(`${pathAndQuery} ${plainPath} ${plainQuery}`)) {
-    return refuse('pushing is not allowed from a container run')
+    return refuse(wording.push)
   }
 
   const isRead = method === 'GET' || method === 'HEAD'
@@ -209,7 +232,7 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
         body: 'none',
       }
     }
-    return refuse(`${method} to github.com is a write; container runs can only read GitHub`)
+    return refuse(`${method} to github.com is a write; ${wording.readsOnly}`)
   }
 
   if (parsed.host === GITHUB_API_HOST) {
@@ -236,9 +259,7 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
         body: 'graphql',
       }
     }
-    return refuse(
-      `${method} ${plainPath.slice(0, 120)} is a write; container runs can only read GitHub`,
-    )
+    return refuse(`${method} ${plainPath.slice(0, 120)} is a write; ${wording.readsOnly}`)
   }
 
   if (isPassThroughHost(parsed.host)) {
@@ -251,7 +272,7 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
         body: 'none',
       }
     }
-    return refuse(`${method} to ${parsed.host} is a write; container runs can only read GitHub`)
+    return refuse(`${method} to ${parsed.host} is a write; ${wording.readsOnly}`)
   }
 
   return refuse(`${parsed.host} is not a GitHub host`)

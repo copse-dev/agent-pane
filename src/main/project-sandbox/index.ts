@@ -15,6 +15,7 @@ export {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
 } from './spawn.ts'
+export type { SandboxOnlySpawnAccess } from './spawn.ts'
 export {
   gatewayReadFile,
   gatewayWriteFile,

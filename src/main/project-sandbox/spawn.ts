@@ -71,6 +71,67 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
 }
 
 /**
+ * Access a spawn gets only when it actually runs inside the project sandbox:
+ * the experimental GitHub read route (`services/github/sandbox-github-reads.ts`).
+ * Dropped on every unsandboxed path — an approved escape, a trusted-command
+ * route, a retry outside, or no sandbox at all — so those keep the user's own
+ * `gh` login and SSH exactly as before.
+ */
+export interface SandboxOnlySpawnAccess {
+  /** Variables added on top of the spawn's final environment; `undefined` unsets. */
+  env: (base: NodeJS.ProcessEnv) => Record<string, string | undefined>
+  /** Unix sockets the spawn may connect to (macOS Seatbelt). */
+  allowUnixSockets: readonly string[]
+  /** Paths the spawn may read. */
+  allowRead: readonly string[]
+}
+
+/** The overlay with the sandbox-only access added; nothing else changes. */
+export function withSandboxOnlyAccess(
+  overlay: Partial<SandboxRuntimeConfig>,
+  access: SandboxOnlySpawnAccess,
+): Partial<SandboxRuntimeConfig> {
+  const network = overlay.network
+  const filesystem = overlay.filesystem
+  if (!network || !filesystem)
+    throw new Error('the workspace overlay must define network and filesystem')
+  const reads = access.allowRead.flatMap((path) => [path, `${path}/**`])
+  return {
+    ...overlay,
+    network:
+      access.allowUnixSockets.length === 0
+        ? network
+        : {
+            ...network,
+            allowUnixSockets: [
+              ...new Set([...(network.allowUnixSockets ?? []), ...access.allowUnixSockets]),
+            ],
+          },
+    filesystem:
+      reads.length === 0
+        ? filesystem
+        : { ...filesystem, allowRead: [...new Set([...(filesystem.allowRead ?? []), ...reads])] },
+  }
+}
+
+/** The sandboxed spawn's environment with the sandbox-only variables applied. */
+export function withSandboxOnlyEnv(
+  env: NodeJS.ProcessEnv,
+  access: SandboxOnlySpawnAccess | undefined,
+): NodeJS.ProcessEnv {
+  if (!access) return env
+  const overrides = access.env(env)
+  const out: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!Object.hasOwn(overrides, key)) out[key] = value
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) out[key] = value
+  }
+  return out
+}
+
+/**
  * The temp directory a command wrapped with `overlay` can write: the
  * workspace-owned scratch dir when the overlay grants it, so commands using
  * $TMPDIR (mktemp, build tools, test runners) stay off the system /tmp the
@@ -260,6 +321,8 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /** Access applied only if this spawn runs inside the project sandbox. */
+    sandboxOnly?: SandboxOnlySpawnAccess
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -299,9 +362,10 @@ export async function spawnShellInProjectSandbox(
     readGrantTargets.length > 0
       ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
       : workspaceSandboxOverlay(opts.cwd)
-  const customConfig = opts.readonlyCheckout
-    ? withoutCheckoutWrites(baseConfig, opts.cwd)
-    : baseConfig
+  const contained = opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig
+  const customConfig = opts.sandboxOnly
+    ? withSandboxOnlyAccess(contained, opts.sandboxOnly)
+    : contained
   const tmpDir = sandboxTmpDir(customConfig)
   const { argv, env } = await wrapForSandbox(
     shellCommandLine,
@@ -316,7 +380,10 @@ export async function spawnShellInProjectSandbox(
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
     env: withSandboxShellPath(
-      withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
+      withSandboxOnlyEnv(
+        withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
+        opts.sandboxOnly,
+      ),
     ),
     stdio: opts.stdio,
     signal: opts.signal,

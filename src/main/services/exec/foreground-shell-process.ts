@@ -6,6 +6,7 @@ import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
+  type SandboxOnlySpawnAccess,
 } from '../../project-sandbox/index.ts'
 import {
   CappedOutputAccumulator,
@@ -78,6 +79,8 @@ export async function runShellOnce(
   readGrantTargets: readonly string[] = [],
   onDetach?: () => () => Promise<void>,
   readonlyCheckout = false,
+  /** Access for a contained run only; an unsandboxed run never receives it. */
+  sandboxOnly?: SandboxOnlySpawnAccess,
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   const owner = getThreadExecutionContext()
@@ -104,6 +107,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
+          ...(sandboxOnly && !unsandboxed ? { sandboxOnly } : {}),
           signal: spawnController.signal,
         })
       } catch (err) {

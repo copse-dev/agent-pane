@@ -161,6 +161,7 @@ export interface SettingsValues {
   conciseThreadsEnabled: boolean
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
+  sandboxGitHubReadsEnabled: boolean
   planModeEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean
