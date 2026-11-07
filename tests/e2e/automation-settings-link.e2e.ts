@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
+  parkPointer,
   prepareE2eScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -143,8 +144,58 @@ describe('automation setup links', function () {
     await expect(row.$('.automation-schedule-summary')).toHaveText(
       'Every weekday at 09:00 · local time',
     )
-    await form.scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('.automation-form', 'automation-setup-link-form.png')
+    await saveElementScreenshot('#automation-dialog', 'automation-setup-link-form.png', {
+      beforeCapture: async () => {
+        await dialog.$('.automation-form-title').scrollIntoView({ block: 'start' })
+        const name = row.$('.automation-name-input')
+        const model = row.$('.model-picker-trigger[aria-label="Automation model"]')
+        await expect(name).toHaveValue('Docs freshness')
+        assert.equal(await name.getComputedLabel(), 'Name')
+        assert.equal(await model.getComputedLabel(), 'Automation model')
+        const bounds = await browser.execute(() => {
+          const editor = document.querySelector('#automation-dialog')
+          const viewport = editor?.querySelector('.automation-dialog-body')?.getBoundingClientRect()
+          const app = document.getElementById('app')?.getBoundingClientRect()
+          const nameLabel = editor?.querySelector('.automation-name-input')?.closest('label')
+          const modelLabel = editor?.querySelector('.automation-model-select')?.closest('label')
+          if (!viewport || !app || !nameLabel || !modelLabel)
+            throw new Error('Missing automation editor identity frame')
+          const top = Math.max(0, viewport.top, app.top)
+          const bottom = Math.min(innerHeight, viewport.bottom, app.bottom)
+          const left = Math.max(0, viewport.left, app.left)
+          const right = Math.min(innerWidth, viewport.right, app.right)
+          const fields = [nameLabel, modelLabel].map((label) => {
+            const rect = label.getBoundingClientRect()
+            return {
+              top: rect.top,
+              bottom: rect.bottom,
+              left: rect.left,
+              right: rect.right,
+              width: rect.width,
+              height: rect.height,
+            }
+          })
+          return {
+            viewport: { top, bottom, left, right },
+            fields,
+            visible: fields.every(
+              (rect) =>
+                rect.width > 0 &&
+                rect.height > 0 &&
+                rect.top >= top &&
+                rect.bottom <= bottom &&
+                rect.left >= left &&
+                rect.right <= right,
+            ),
+          }
+        })
+        assert.ok(
+          bounds.visible,
+          `linked schedule name and model must remain visible: ${JSON.stringify(bounds)}`,
+        )
+        await parkPointer()
+      },
+    })
 
     // Linking out is not expanding: the run list stays as the user left it.
     await dialog.$('[aria-label="Close automations"]').click()
