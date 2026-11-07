@@ -725,6 +725,14 @@
       "sha256": "f6ddd727eda2d1dee426acd0bba462092d8826cf2e4965693910963e2631df88",
       "bytes": 334855
     },
+    "automation-headless-tool-completed.png": {
+      "sha256": "7f383bbed6044dd484dd6563885c98fd0d343c3237a57e2f003f2f2628d41ce9",
+      "bytes": 336170
+    },
+    "automation-headless-tool-pending.png": {
+      "sha256": "00f752473cc7b4b3d997bf0fb9bf3e1b7245255273d213e4cb8898f377205b11",
+      "bytes": 288602
+    },
     "automation-held-contrast-dark.png": {
       "sha256": "6dcee5402a2576eea1fb70adcaeac8375048d9c8d895eadb25d158808d6e83cb",
       "bytes": 675
@@ -2452,6 +2460,14 @@
     "mcp-native-simulator-creation-error.png": {
       "sha256": "4046d1744ddb2b546c0e39cbe49f614f62f2a34153b1d94d6219b699861d10e7",
       "bytes": 335881
+    },
+    "mcp-navigation-original-project.png": {
+      "sha256": "5898e9c24f05781bf33b37bc90b7bae08451672c4548c5a521f1e53be5da4437",
+      "bytes": 330321
+    },
+    "mcp-navigation-selected-project.png": {
+      "sha256": "5e942f2c19c6283810ff89adc30bc96cfb9d50936d948603a0161268e98ee81d",
+      "bytes": 316248
     },
     "mcp-settings-connected.png": {
       "sha256": "fe805fcfa69c04ada71e4ddebc727e2b9d7713235eec3fd7372e5686f56f39c5",
