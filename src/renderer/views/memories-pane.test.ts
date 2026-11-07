@@ -121,6 +121,23 @@ describe('memories pane', () => {
     }
   })
 
+  it('lists memories when the panel opens on them from the store alone, with no event emitted', async () => {
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const { api, calls } = makeApi([makeNote('a', 'Build command', 'Run npm build')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(calls.list, 0, 'no fetch while off screen')
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'memories' })
+      await flush()
+      assert.equal(calls.list, 1)
+      assert.equal(list.querySelector('.memories-row-title')?.textContent, 'Build command')
+    } finally {
+      unmount()
+    }
+  })
+
   // "No memories yet. The agent saves these with the remember tool…" is
   // onboarding copy for an empty store — shown before the store has been read,
   // it tells a user with a full knowledge base that they have none.
@@ -271,14 +288,56 @@ describe('memories pane', () => {
       assert.ok(body)
       // User is mid-edit...
       body.value = 'Half-typed new body'
-      // ...when a background store event fires (e.g. the staged-diff queue drains).
-      store.emit('files_pane_changed')
+      // ...when the panel is closed and reopened, which refreshes the list.
+      store.setState({ filesPaneOpen: false })
+      store.setState({ filesPaneOpen: true })
       await flush()
       // The draft must survive rather than being overwritten with the stored note.
       assert.equal(
         viewer.querySelector<HTMLTextAreaElement>('.memories-body-input')?.value,
         'Half-typed new body',
       )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('drops the selection and lists the new project’s memories when setState alone switches projects', async () => {
+    const store = createStore({
+      activeProjectId: 'p1',
+      workspaceRoot: '/work/one',
+      filesPaneOpen: true,
+      rightPanelMode: 'memories',
+    })
+    const byProject: Record<string, KnowledgeNote[]> = {
+      p1: [makeNote('a', 'Build command', 'Run npm build')],
+      // The same id in the next project: only the switch, not a missing note, clears it.
+      p2: [makeNote('a', 'Deploy steps', 'Run make deploy'), makeNote('b', 'Owner', 'Ops team')],
+    }
+    const base = makeApi([]).api
+    const api: ApiClient = {
+      ...base,
+      memories: {
+        ...base.memories,
+        list: async () => byProject[store.getState().activeProjectId ?? ''] ?? [],
+      },
+    }
+    const { list, viewer } = mountHosts()
+    const titles = (): (string | null)[] =>
+      Array.from(list.querySelectorAll('.memories-row-title'), (e) => e.textContent)
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.memories-row')?.click()
+      assert.equal(list.querySelectorAll('.memories-row.is-selected').length, 1)
+      assert.equal(viewer.querySelector<HTMLFormElement>('.memories-form')?.hidden, false)
+
+      store.setState({ activeProjectId: 'p2', workspaceRoot: '/work/two' })
+      await flush()
+
+      assert.deepEqual(titles(), ['Deploy steps', 'Owner'])
+      assert.equal(list.querySelectorAll('.memories-row.is-selected').length, 0)
+      assert.equal(viewer.querySelector<HTMLFormElement>('.memories-form')?.hidden, true)
     } finally {
       unmount()
     }

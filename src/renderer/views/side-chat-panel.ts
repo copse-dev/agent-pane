@@ -1,5 +1,5 @@
-import { renderMarkdown } from '@copse/streaming-markdown'
 import { el, clear } from '../dom/helpers.ts'
+import { patchChildren } from '../dom/patch-children.ts'
 import { plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -11,7 +11,7 @@ import {
   restoreThread,
 } from '@shared/store/thread-helpers.ts'
 import { excerptText, sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from '../controller/side-chat.ts'
 import {
   ensureThreadMessages,
@@ -19,6 +19,15 @@ import {
   showSideChatTranscript,
   needsHydration,
 } from '../controller/thread-hydration.ts'
+import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
+import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
+import { bindFileReferenceClicks } from '../markdown/file-links.ts'
+import {
+  paintAssistantMarkdown,
+  renderUserPromptMarkdown,
+  type MessageMarkdownHost,
+} from '../markdown/message-markdown.ts'
+import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { showToast } from './toast.ts'
@@ -71,22 +80,76 @@ export function resolveSideChatSelection(
   return { mainId, rows, selectedId: (own ?? selected ?? rows[0])?.id ?? null }
 }
 
-function messageEl(message: Thread['messages'][number]): HTMLElement {
+type ChatMessage = Thread['messages'][number]
+
+/** A message's rendered node and the inputs it was painted from. */
+interface RenderedMessage {
+  node: HTMLElement
+  role: ChatMessage['role']
+  content: string
+  streaming: boolean
+  tools: string
+}
+
+/**
+ * Rendered messages by id, kept by the pane across redraws. The pane redraws every
+ * frame while a reply streams; reusing a node whose inputs have not changed keeps a
+ * settled reply — its Mermaid frames, copy buttons and file links — painted once.
+ */
+export type SideChatMessageNodes = Map<string, RenderedMessage>
+
+/**
+ * One message, rendered exactly as the main conversation renders it: user prompts
+ * and replies go through the shared message markdown (`message-markdown.ts`).
+ */
+function messageEl(
+  message: ChatMessage,
+  streaming: boolean,
+  host: MessageMarkdownHost,
+  nodes: SideChatMessageNodes | undefined,
+): HTMLElement {
+  const tools = message.toolCalls.map((call) => call.name).join('\n')
+  const cached = nodes?.get(message.id)
+  if (
+    cached &&
+    cached.role === message.role &&
+    cached.content === message.content &&
+    cached.streaming === streaming &&
+    cached.tools === tools
+  )
+    return cached.node
+  let node: HTMLElement
   if (message.role === 'user') {
-    return el('div', { class: 'side-chat-msg is-user', 'data-role': 'user' }, message.content)
+    node = el('div', { class: 'side-chat-msg is-user message-text', 'data-role': 'user' })
+    renderUserPromptMarkdown(node, message.content)
+  } else if (message.role === 'error') {
+    node = el('div', { class: 'side-chat-msg is-error', 'data-role': 'error' }, message.content)
+  } else {
+    // Keep the bubble across a stream's frames: the incremental renderer and its
+    // pacing are keyed by this element, as in the main conversation.
+    const reused = cached?.role === message.role ? cached.node : undefined
+    node =
+      reused ??
+      el(
+        'div',
+        { class: 'side-chat-msg is-assistant', 'data-role': 'assistant' },
+        el('div', { class: 'side-chat-msg-text message-text streaming-markdown' }),
+        el('div', { class: 'side-chat-tools' }),
+      )
+    const text = node.querySelector<HTMLElement>('.side-chat-msg-text')
+    const changed = cached?.content !== message.content || cached.streaming !== streaming
+    if (text && (reused === undefined || changed))
+      paintAssistantMarkdown(text, message.content, streaming, host)
+    node
+      .querySelector('.side-chat-tools')
+      ?.replaceChildren(
+        ...message.toolCalls.map((call) =>
+          el('div', { class: 'side-chat-tool', 'data-tool': call.name }, call.name),
+        ),
+      )
   }
-  if (message.role === 'error') {
-    return el('div', { class: 'side-chat-msg is-error', 'data-role': 'error' }, message.content)
-  }
-  const bubble = el('div', {
-    class: 'side-chat-msg is-assistant message-text streaming-markdown',
-    'data-role': 'assistant',
-  })
-  if (message.content.trim() !== '') bubble.innerHTML = renderMarkdown(message.content)
-  for (const call of message.toolCalls) {
-    bubble.append(el('div', { class: 'side-chat-tool', 'data-tool': call.name }, call.name))
-  }
-  return bubble
+  nodes?.set(message.id, { node, role: message.role, content: message.content, streaming, tools })
+  return node
 }
 
 /** Pure render of one side chat's header, context line and transcript. */
@@ -97,6 +160,12 @@ export function renderSideChat(input: {
   onArchive: (archived: boolean) => void
   /** The transcript read failed; shown instead of a loading line that would never finish. */
   loadFailed?: boolean
+  /** What only this surface can add to a message (the pane passes the desktop host). */
+  host?: MessageMarkdownHost
+  /** The pane's mounted transcript, patched in place so unchanged messages stay mounted. */
+  body?: HTMLElement
+  /** The pane's rendered messages, reused across redraws (see {@link SideChatMessageNodes}). */
+  messageNodes?: SideChatMessageNodes
 }): { header: HTMLElement; body: HTMLElement } {
   const { side, parent } = input
   const archived = side.archivedAt != null
@@ -138,11 +207,12 @@ export function renderSideChat(input: {
     if (!archiveBlocked) input.onArchive(archived)
   })
 
-  const body = el('div', { class: 'side-chat-body' })
+  const body = input.body ?? el('div', { class: 'side-chat-body' })
+  const children: HTMLElement[] = []
   if (needsHydration(side)) {
     // After a restart the transcript is still on disk, so an empty `messages` here
     // means "not read yet", not "nothing was said"; suggestions would mislead.
-    body.append(
+    children.push(
       el(
         'div',
         { class: 'side-chat-empty', 'data-side-chat-loading': '' },
@@ -156,7 +226,7 @@ export function renderSideChat(input: {
   } else if (side.messages.length === 0) {
     // An archived side chat takes no new questions until it is restored, so it
     // offers no suggestions either (the composer is disabled for the same reason).
-    body.append(
+    children.push(
       el(
         'div',
         { class: 'side-chat-empty' },
@@ -181,11 +251,24 @@ export function renderSideChat(input: {
       ),
     )
   } else {
-    for (const message of side.messages) body.append(messageEl(message))
+    const host = input.host ?? {}
+    const last = side.messages.at(-1)
+    for (const message of side.messages) {
+      // Only the newest reply of a running chat is still arriving.
+      const streaming =
+        side.status === 'running' && message === last && message.role === 'assistant'
+      children.push(messageEl(message, streaming, host, input.messageNodes))
+    }
+    // Drop nodes for messages this chat no longer has (or another chat's).
+    const kept = new Set(side.messages.map((message) => message.id))
+    for (const id of input.messageNodes?.keys() ?? []) {
+      if (!kept.has(id)) input.messageNodes?.delete(id)
+    }
   }
   if (side.status === 'running') {
-    body.append(el('div', { class: 'side-chat-typing', role: 'status' }, 'Copse is thinking…'))
+    children.push(el('div', { class: 'side-chat-typing', role: 'status' }, 'Copse is thinking…'))
   }
+  patchChildren(body, children)
   return { header, body }
 }
 
@@ -249,6 +332,15 @@ export function mountSideChatPane(
     el('div', { class: 'side-chat-foot' }, promote),
   )
   viewerRoot.append(headerHost, bodyHost, emptyState, form)
+  const messageHost = desktopMessageHost(api)
+  const messageNodes: SideChatMessageNodes = new Map()
+  // Rendered replies carry the same workspace, file and browser links as the main
+  // conversation, so they open the same way.
+  const unbindLinks = [
+    bindFileReferenceClicks(bodyHost, store, api),
+    bindWorkspaceLinkClicks(bodyHost, store, api),
+    bindBrowserLinkClicks(bodyHost, store, api),
+  ]
 
   let selectedId: string | null = null
   let frame = 0
@@ -329,12 +421,13 @@ export function mountSideChatPane(
     const atBottom =
       bodyScroll.scrollHeight - bodyScroll.scrollTop - bodyScroll.clientHeight < 32 ||
       bodyScroll.childElementCount === 0
-    clear(bodyHost)
     emptyState.hidden = side !== undefined
     form.hidden = side === undefined
     headerHost.hidden = side === undefined
     bodyHost.hidden = side === undefined
     if (!side) {
+      bodyHost.replaceChildren()
+      messageNodes.clear()
       emptyState.textContent =
         selection.mainId === null
           ? 'Open a thread to start a side chat.'
@@ -348,6 +441,9 @@ export function mountSideChatPane(
       side,
       parent,
       loadFailed,
+      host: messageHost,
+      body: bodyHost,
+      messageNodes,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store, side.id)
@@ -355,7 +451,6 @@ export function mountSideChatPane(
       },
     })
     headerHost.append(view.header)
-    bodyHost.append(...Array.from(view.body.childNodes))
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight
     const unloaded = needsHydration(side)
     input.disabled = side.archivedAt != null || unloaded
@@ -404,8 +499,7 @@ export function mountSideChatPane(
       openRightPanel(store, 'side-chat')
       render()
     }),
-    store.on('right_panel_mode_changed', schedule),
-    store.on('files_pane_changed', schedule),
+    selectRightPanelMode(store, 'side-chat', schedule),
     store.on('threads_changed', schedule),
     store.on('message_added', schedule),
     store.on('message_token', schedule),
@@ -417,6 +511,7 @@ export function mountSideChatPane(
   return () => {
     showSideChatTranscript(null)
     for (const off of offs) off()
+    for (const unbind of unbindLinks) unbind()
     if (frame !== 0) cancelAnimationFrame(frame)
   }
 }

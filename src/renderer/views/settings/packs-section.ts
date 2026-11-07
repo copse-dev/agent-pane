@@ -5,6 +5,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
+import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { qsRequired } from '../../dom/helpers.ts'
@@ -16,10 +17,8 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/canvas-settings.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { createAutomationPluginSettings } from '../automation-plugin-settings.ts'
-import { createParallelSearchPluginSettings } from '../parallel-search-plugin-settings.ts'
 import { createAppleDevelopmentPanel } from '../apple-development-panel.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import { fetchDynamicModelOptions, modelDisplayLabel } from '../model-options.ts'
@@ -337,9 +336,6 @@ export function createPacksSection(
     const track = document.createElement('span')
     track.className = 'toggle-switch-track'
     track.setAttribute('aria-hidden', 'true')
-    // Set by a credential-gated plugin (below) once it knows no key is stored, so
-    // the change handler's `finally` re-arms the lock instead of clearing it.
-    let credentialLocked = false
     toggle.addEventListener('change', () => {
       const settingsOpen = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')?.open
       toggle.disabled = true
@@ -366,7 +362,7 @@ export function createPacksSection(
           toggle.checked = !toggle.checked
         })
         .finally(() => {
-          toggle.disabled = credentialLocked && !toggle.checked
+          toggle.disabled = false
         })
     })
     toggleLabel.append(toggle, track)
@@ -523,7 +519,7 @@ export function createPacksSection(
       chips.push({
         label: 'Tools',
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(', '),
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(', '),
       })
     }
     if (contributions.modelRoutes.length > 0) {
@@ -722,41 +718,6 @@ export function createPacksSection(
         }),
       )
     }
-    if (
-      plugin.id === PARALLEL_SEARCH_PLUGIN_ID &&
-      plugin.contributions.ui.some(
-        (contribution) =>
-          contribution.level === 3 && contribution.slot === 'settings-plugin-detail',
-      )
-    ) {
-      // Parallel Search is credential-gated end to end: `syncParallelSearchTools`
-      // registers `parallel_search` only when the plugin is on AND a key resolves.
-      // Without this the switch flips on with no key and nothing happens — an
-      // on-looking plugin contributing no tool. Block the on-direction until a key
-      // is stored (never the off-direction, or a user who clears their key would
-      // be stuck with the plugin showing enabled), and say why in a hint.
-      // The gate explains a switch you can see is locked, so it stays on the
-      // face of the card — folding the reason away under "Plugin settings" would
-      // leave a dead toggle with no explanation next to it.
-      const gate = document.createElement('p')
-      gate.className = 'field-hint plugin-credential-gate'
-      gate.hidden = true
-      row.append(gate)
-      settingsFold.append(
-        createParallelSearchPluginSettings(api, {
-          onKeyPresence: (hasKey) => {
-            credentialLocked = !hasKey
-            toggle.disabled = credentialLocked && !toggle.checked
-            gate.hidden = hasKey
-            gate.textContent = toggle.checked
-              ? 'Add a Parallel API key to let the agent use Parallel search.'
-              : 'Add a Parallel API key to turn this plugin on.'
-            if (toggle.disabled) toggleLabel.title = 'Add a Parallel API key to turn this plugin on'
-          },
-        }),
-      )
-    }
-
     // A plugin with nothing to configure shows no fold — an empty disclosure is
     // worse than none, because it invites a click that reveals nothing.
     if (settingsFold.childElementCount > 1) row.append(settingsFold)

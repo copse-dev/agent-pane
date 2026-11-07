@@ -28,6 +28,7 @@ import {
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
 import { buildMobileAssets } from './mobile-build.mts'
+import { buildProcessMemoryHelper } from './build-process-memory.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
 import { checkBundledExplainerSyntax } from './lib/explainer-syntax.mts'
@@ -395,6 +396,10 @@ cpSync('assets', 'dist/assets', { recursive: true })
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
+cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+  recursive: true,
+})
+buildProcessMemoryHelper()
 
 // The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
 // committed manifest carries only channels and arity; the typed schema a
@@ -420,6 +425,19 @@ try {
 cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
   recursive: true,
 })
+
+try {
+  accessSync(resolve('vendor/remote-watcher'))
+  // Static per-target binaries uploaded to SSH workspace hosts (see
+  // native/remote-watcher). Dereference for the same worktree-symlink reason
+  // as gortex above.
+  cpSync('vendor/remote-watcher', 'dist/resources/remote-watcher', {
+    recursive: true,
+    dereference: true,
+  })
+} catch {
+  // Optional — without it SSH workspaces fall back to remote file polling.
+}
 
 // Last of the shipped inputs: the licence report reads every bundle's metafile
 // and fails the build if any shipped component lacks its licence text.

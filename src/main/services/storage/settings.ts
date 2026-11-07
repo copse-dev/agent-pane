@@ -4,7 +4,7 @@ import { clearKeyReadability, resolveKeyReadability } from './api-key-readabilit
 import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
-import { openPersistentStore } from './persistent-store.ts'
+import { lazyPersistentStore } from './persistent-store.ts'
 import { SETTINGS_WRITE_QUEUE, runSerialized, runSerializedUpdate } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import {
@@ -25,7 +25,8 @@ import { ALLOW_PLAINTEXT_SECRETS_ENV, resolveSecretWritePolicy } from './secret-
 // settings.json has its own persistent-store instance; this cache will not
 // observe another process's write to a key it has already read. In-process
 // writers stay coherent via write-through + the shared settings write queue.
-const cached = openPersistentStore({ name: 'settings' })
+// Opened on first use, not at import (see storage.ts).
+const cached = lazyPersistentStore({ name: 'settings' })
 
 interface StoredKey {
   v: 1

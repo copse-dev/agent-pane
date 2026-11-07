@@ -2,7 +2,10 @@ import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { createAppRunPanel } from './app-run-dialog.ts'
+import { createAppRunPanel, openAppRunDialog } from './app-run-dialog.ts'
+import { createStore } from '@shared/store/store.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 import type { AppRunDiscovery, AppRunOperation, AppRunSelection } from '@shared/types/app-run.ts'
 const owner = { projectId: 'project', threadId: 'thread' }
 const data: AppRunDiscovery = {
@@ -102,5 +105,58 @@ describe('Run app picker', () => {
     assert.equal(panel.element.querySelector('.app-run-error')?.textContent, 'Device disconnected')
     assert.equal(launched, false)
     assert.equal(panel.element.querySelector<HTMLButtonElement>('.app-run-run')?.disabled, true)
+  })
+  it('closes an open dialog when setState alone switches the workspace', async () => {
+    const api = createFakeApi()
+    api.appRun.discover = async (): Promise<AppRunDiscovery> => data
+    api.appRun.devices = async (): Promise<AppRunDiscovery['devices']> => []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project',
+      projects: [
+        { id: 'project', name: 'Project', path: '/repo' },
+        { id: 'other', name: 'Other', path: '/other' },
+      ],
+    })
+    openAppRunDialog(store, api)
+    cleanup.push(() => {
+      document.querySelector<HTMLDialogElement>('#app-run-dialog')?.close()
+    })
+    await settle()
+    assert.ok(document.querySelector('#app-run-dialog[open]'), 'the dialog opens')
+
+    // No store event: the selection alone must close the dialog.
+    store.setState({ activeProjectId: 'other', workspaceRoot: '/other' })
+    await settle()
+    assert.equal(
+      document.querySelectorAll('#app-run-dialog').length,
+      0,
+      'the workspace switch closes the dialog',
+    )
+  })
+})
+
+describe('Run app dialog thread scope', () => {
+  it('stays open across thread metadata updates and closes on a bare selection change', () => {
+    const store = createStore({
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+      threads: [makeThread({ id: 'thread' }), makeThread({ id: 'other' })],
+    })
+    const api = createFakeApi()
+    api.appRun.discover = async (): Promise<AppRunDiscovery> => data
+    openAppRunDialog(store, api)
+    const dialog = (): HTMLDialogElement | null =>
+      document.querySelector<HTMLDialogElement>('#app-run-dialog')
+    assert.equal(dialog()?.open, true)
+
+    setThreadTitle(store, 'thread', 'Renamed')
+    setThreadTitle(store, 'other', 'Renamed too')
+    store.emit('threads_changed')
+    assert.equal(dialog()?.open, true, 'thread metadata does not close the dialog')
+
+    // No event: the selection alone closes a dialog scoped to the old thread.
+    store.setState({ activeThreadId: 'other' })
+    assert.notEqual(dialog()?.open, true)
   })
 })

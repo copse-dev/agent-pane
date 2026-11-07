@@ -110,6 +110,33 @@ describe('Monaco selection to chat attachment', () => {
 
     await $('#file-viewer .selected-text').waitForDisplayed({ timeout: 5_000 })
     await saveAppViewportScreenshot(SCREENSHOT, async () => {
+      // The real drag can auto-scroll by a slightly different amount. Normalize
+      // the viewport through a real wheel gesture after capture framing, without
+      // clicking away from the composer or changing Monaco's selection.
+      let settledAtStart = 0
+      await browser.waitUntil(
+        async () => {
+          const atStart = await browser.execute(() => {
+            const content = document.querySelector('#file-viewer .monaco-editor .lines-content')
+            return content !== null && getComputedStyle(content).left === '0px'
+          })
+          settledAtStart = atStart ? settledAtStart + 1 : 0
+          if (!atStart) {
+            // Monaco can cap each wheel event, so keep using the real input
+            // until the rendered content reaches the clamped endpoint.
+            await browser
+              .action('wheel')
+              .scroll({ origin: editor, deltaX: -10_000, deltaY: 0, duration: 100 })
+              .perform()
+          }
+          return settledAtStart >= 3
+        },
+        {
+          timeout: 5_000,
+          interval: 34,
+          timeoutMsg: 'Monaco horizontal content did not settle at its left endpoint',
+        },
+      )
       await parkPointer()
       await browser.waitUntil(
         () =>
@@ -120,6 +147,14 @@ describe('Monaco selection to chat attachment', () => {
           ),
         { timeout: 3_000, timeoutMsg: 'Monaco scrollbar did not fade before capture' },
       )
+      await expect(chip).toHaveText(expect.stringContaining(`${SAMPLE_FILE}:`))
+      await expect($('#file-viewer .selected-text')).toBeDisplayed()
+      expect(
+        await browser.execute(() => document.activeElement?.matches('.prompt-input') ?? false),
+      ).toBe(true)
+      expect(
+        (await $('#file-viewer .monaco-editor .lines-content').getCSSProperty('left')).value,
+      ).toBe('0px')
     })
   })
 })

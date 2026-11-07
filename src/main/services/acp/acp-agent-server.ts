@@ -8,7 +8,7 @@ import {
   type PromptRequest,
   type RequestPermissionOutcome,
   type StopReason,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import type { StreamChunk } from '@shared/types'
 import { createAgentUpdateTranslator } from './session-update-adapter.ts'

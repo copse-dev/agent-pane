@@ -1,4 +1,7 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { applyOrStageDiff, clearDiffQueueForTest } from '../diff-queue.ts'
+import { setGitAvailableForTest } from '../tool-availability.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { before, after } from 'node:test'
@@ -16,6 +19,7 @@ import {
   listBackgroundProcessPids,
   getBackgroundProcessLogs,
   isBackgroundExitObserved,
+  peekBackgroundProcessLogs,
   nextBackgroundOperationId,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
@@ -142,6 +146,81 @@ describe('background process manager', () => {
     assert.equal(stopBackgroundProcess(info.id, OWNER), false)
   })
 
+  it('adopts an early background formatter even when the command later fails', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-background-edits-'))
+    const restoreWorkspace = setWorkspaceRootForTest(cwd)
+    setGitAvailableForTest(true)
+    const context: ThreadExecutionContext = {
+      ...CONTEXT,
+      root: cwd,
+      projectRoot: cwd,
+      checkoutMode: 'worktree',
+    }
+    try {
+      execFileSync('git', ['init', cwd], { stdio: 'pipe' })
+      await runWithThreadExecutionContext(context, async () => {
+        clearDiffQueueForTest()
+        await applyOrStageDiff('formatted.txt', '', 'before\n', 'plaintext')
+        const info = await startBackgroundProcess({
+          command: "printf 'formatted\\n' > formatted.txt; exit 3",
+          waitMs: 4000,
+        })
+        assert.equal(info.running, false)
+        assert.equal(info.exitCode, 3)
+        const result = await applyOrStageDiff('formatted.txt', 'formatted\n', 'next\n', 'plaintext')
+        assert.match(result, /Applied edit directly/)
+        assert.equal(await readFile(join(cwd, 'formatted.txt'), 'utf-8'), 'next\n')
+      })
+    } finally {
+      runWithThreadExecutionContext(context, () => {
+        clearDiffQueueForTest()
+      })
+      setGitAvailableForTest(null)
+      restoreWorkspace()
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('refreshes ownership before waking the owner of a task that outlives start', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-background-late-edits-'))
+    const restoreWorkspace = setWorkspaceRootForTest(cwd)
+    setGitAvailableForTest(true)
+    const context: ThreadExecutionContext = {
+      ...CONTEXT,
+      root: cwd,
+      projectRoot: cwd,
+      checkoutMode: 'worktree',
+    }
+    try {
+      execFileSync('git', ['init', cwd], { stdio: 'pipe' })
+      await runWithThreadExecutionContext(context, async () => {
+        clearDiffQueueForTest()
+        await applyOrStageDiff('formatted.txt', '', 'before\n', 'plaintext')
+        const completion = Promise.withResolvers<string>()
+        const info = await startBackgroundProcess({
+          command: "sleep 0.2; printf 'formatted\\n' > formatted.txt",
+          waitMs: 10,
+          onCompletion: async () => {
+            completion.resolve(
+              await applyOrStageDiff('formatted.txt', 'formatted\n', 'next\n', 'plaintext'),
+            )
+          },
+        })
+        assert.equal(info.running, true)
+        assert.match(await completion.promise, /Applied edit directly/)
+        assert.equal(await readFile(join(cwd, 'formatted.txt'), 'utf-8'), 'next\n')
+      })
+    } finally {
+      await stopBackgroundProcessesForThread(OWNER)
+      runWithThreadExecutionContext(context, () => {
+        clearDiffQueueForTest()
+      })
+      setGitAvailableForTest(null)
+      restoreWorkspace()
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('reports a command that exits immediately as not running', async () => {
     const info = await startBackgroundProcess({
       command: 'echo boom; exit 3',
@@ -266,6 +345,53 @@ describe('background process manager', () => {
     assert.equal(exited, true, 'explicitly cancelled child must exit')
 
     assert.equal(notified, false)
+  })
+
+  it('tells the starter once when a running task is stopped, and never after it exited', async () => {
+    const cancelled: string[] = []
+    const running = await startBackgroundProcess({
+      command: 'sleep 30',
+      cwd: process.cwd(),
+      waitMs: 10,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    assert.equal(stopBackgroundProcess(running.id, OWNER), true)
+    assert.equal(stopBackgroundProcess(running.id, OWNER), false)
+    assert.deepEqual(cancelled, [running.id])
+
+    const finished = await startBackgroundProcess({
+      command: 'true',
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    await waitForBackgroundExit(finished.id)
+    stopBackgroundProcess(finished.id, OWNER)
+    assert.deepEqual(cancelled, [running.id], 'stopping an exited task is not a cancellation')
+  })
+
+  it('lets the user read logs without counting as the agent observing the exit', async () => {
+    const info = await startBackgroundProcess({
+      command: `node -e "console.log('peeked')"`,
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+    })
+    // Poll through the peek itself: the list helper would mark the exit observed.
+    const deadline = Date.now() + 10_000
+    let peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    while (peeked?.running === true && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    }
+    assert.deepEqual(peeked, { logs: 'peeked\n', running: false })
+    assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    assert.equal(
+      peekBackgroundProcessLogs(info.id, { projectId: 'other', threadId: 'other' }),
+      null,
+    )
   })
 
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {

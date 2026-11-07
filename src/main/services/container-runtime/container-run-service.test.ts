@@ -10,13 +10,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
-import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { ContainerRunService, judgeRun } from './container-run-service.ts'
 import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const PROJECT = 'container-run-project'
 const THREAD = 'container-run-thread'
@@ -108,6 +111,9 @@ beforeEach(async () => {
   storageSet('projects', [{ id: PROJECT, path: root }])
   storageSet('activeProjectId', PROJECT)
   setApiKey('anthropic', 'sk-ant-test')
+  // Saving a key also reflects it into this session's environment; a key saved
+  // in an earlier launch is only in settings, which is the case under test.
+  delete process.env['ANTHROPIC_API_KEY']
   await setSetting('localServerUrl', '')
   await setSetting('containerRunsEnabled', true)
 })

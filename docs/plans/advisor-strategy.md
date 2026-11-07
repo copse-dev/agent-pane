@@ -2,8 +2,10 @@
 
 Tracking: [#566](https://github.com/copse-dev/agent-pane/issues/566)
 
-Status: **experimental scaffold** — off by default behind the `copse.advisor-strategy`
-first-party pack (Settings → Packs). The orthogonal `advisorModel` setting stays top-level
+Status: **Partial / deferred — experimental scaffold.** #566 is closed and token billing merged in
+[#918](https://github.com/copse-dev/agent-pane/pull/918). Off by default behind the
+`copse.advisor-strategy` first-party plugin (Settings → Plugins). The follow-ups listed under
+"Deliberately out of scope" have no open issue. The orthogonal `advisorModel` setting stays top-level
 (Settings → Experimental).
 
 ## What this is

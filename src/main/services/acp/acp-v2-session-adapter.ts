@@ -2,9 +2,21 @@ import {
   ContentBlock as ContentBlockGuards,
   SessionUpdate as SessionUpdateGuards,
   StateUpdate as StateUpdateGuards,
+  ToolCallContent as ToolCallContentGuards,
 } from '@agentclientprotocol/sdk/experimental/v2'
-import type { ContentBlock, SessionUpdate } from '@agentclientprotocol/sdk/experimental/v2'
-import type { StreamChunk } from '@shared/types'
+import type {
+  ContentBlock,
+  SessionUpdate,
+  ToolCallContent,
+  ToolCallUpdate,
+} from '@agentclientprotocol/sdk/experimental/v2'
+import type {
+  AcpContentBlock,
+  AcpToolCallContent,
+  StreamChunk,
+  ToolResultImage,
+} from '@shared/types'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * PROTOTYPE — translating ACP **v2** session updates into Copse's `StreamChunk`
@@ -28,11 +40,10 @@ import type { StreamChunk } from '@shared/types'
  *     signal, not a chunk, so it leaves through {@link V2Applied.stopReason}
  *     rather than the chunk list.
  *
- * The happy discovery is that Copse's chunk vocabulary already has the primitive
- * the upsert model needs: `text_replace` ("replace accumulated assistant text"),
- * added for a different reason entirely. Whole-message updates map onto it
- * exactly, so v2's biggest shape change costs no new wire type — which the
- * readiness doc's table did not anticipate.
+ * Copse's stream therefore has an explicit message-id replacement primitive:
+ * `acp_content_replace`. Unlike the older turn-wide `text_replace`, it can
+ * revise one earlier message or thought without collapsing adjacent messages,
+ * and it retains non-text content blocks.
  *
  * One SDK constraint the v1 adapter's shape does not survive: **the v2 union
  * does not narrow on its discriminant**. `switch (update.sessionUpdate)` —
@@ -72,89 +83,91 @@ export interface V2SessionAdapter {
   apply(update: SessionUpdate): V2Applied
 }
 
-/** Text accumulated for one `messageId`, in arrival order. */
-interface MessageBuffer {
-  id: string
-  text: string
-}
-
 export function createV2SessionAdapter(): V2SessionAdapter {
-  // Agent messages only. `user_message` is our own prompt echoed back for
-  // replay; the thread already has it, so re-emitting would double it.
-  const agentMessages: MessageBuffer[] = []
   const seenToolCalls = new Set<string>()
-
-  const bufferFor = (id: string): MessageBuffer => {
-    const existing = agentMessages.find((message) => message.id === id)
-    if (existing) return existing
-    const created: MessageBuffer = { id, text: '' }
-    agentMessages.push(created)
-    return created
-  }
-
-  /** Every agent message so far, concatenated — what `text_replace` expects. */
-  const allAgentText = (): string => agentMessages.map((message) => message.text).join('')
 
   return {
     apply(update: SessionUpdate): V2Applied {
       if (SessionUpdateGuards.isAgentMessageChunk(update)) {
-        const text = textOf(update.content)
-        if (text === '') return NOTHING
-        bufferFor(update.messageId).text += text
-        // An append is a delta, so it stays a plain `text` chunk — the cheap
-        // path, and the one that keeps streaming feeling incremental.
-        return { chunks: [{ type: 'text', text }] }
+        const content = normalizeContentBlock(update.content)
+        return content === null
+          ? NOTHING
+          : {
+              chunks: [
+                { type: 'acp_content', channel: 'message', messageId: update.messageId, content },
+              ],
+            }
       }
 
       if (SessionUpdateGuards.isAgentMessage(update)) {
-        // A whole-message upsert. Rewriting one message rewrites the turn's
-        // accumulated text, so the replacement covers every message so far.
-        bufferFor(update.messageId).text = (update.content ?? []).map(textOf).join('')
-        return { chunks: [{ type: 'text_replace', text: allAgentText() }] }
+        if (update.content === undefined) return NOTHING
+        return {
+          chunks: [
+            {
+              type: 'acp_content_replace',
+              channel: 'message',
+              messageId: update.messageId,
+              content: normalizeContentBlocks(update.content ?? []),
+            },
+          ],
+        }
       }
 
       if (SessionUpdateGuards.isAgentThoughtChunk(update)) {
-        const text = textOf(update.content)
-        // Reasoning has no replace primitive, so a whole-thought upsert
-        // (`agent_thought`) cannot be expressed without one — it falls through
-        // to the drop at the end rather than being double-rendered.
-        return text === '' ? NOTHING : { chunks: [{ type: 'reasoning', text }] }
+        const content = normalizeContentBlock(update.content)
+        return content === null
+          ? NOTHING
+          : {
+              chunks: [
+                { type: 'acp_content', channel: 'thought', messageId: update.messageId, content },
+              ],
+            }
+      }
+
+      if (SessionUpdateGuards.isAgentThought(update)) {
+        if (update.content === undefined) return NOTHING
+        return {
+          chunks: [
+            {
+              type: 'acp_content_replace',
+              channel: 'thought',
+              messageId: update.messageId,
+              content: normalizeContentBlocks(update.content ?? []),
+            },
+          ],
+        }
       }
 
       if (SessionUpdateGuards.isToolCallUpdate(update)) {
         const first = !seenToolCalls.has(update.toolCallId)
         seenToolCalls.add(update.toolCallId)
-        const name = typeof update.name === 'string' ? update.name : undefined
-        const status = toolStatus(update.status)
+        const patch = toolCallPatch(update)
         // In v2 the first update for an id IS the announcement — there is no
         // separate `tool_call`, so the adapter has to remember which ids it has
         // already opened a card for.
         if (first) {
-          return {
-            chunks: [
-              {
-                type: 'tool_call',
-                toolCall: {
-                  id: update.toolCallId,
-                  name: name ?? update.toolCallId,
-                  args: update.rawInput ?? {},
-                },
+          const chunks: StreamChunk[] = [
+            {
+              type: 'tool_call',
+              toolCall: {
+                id: update.toolCallId,
+                name: patch.name ?? update.toolCallId,
+                ...(patch.title !== undefined ? { title: patch.title } : {}),
+                args: update.rawInput ?? {},
+                ...(typeof update.kind === 'string' ? { kind: update.kind } : {}),
               },
-            ],
+            },
+          ]
+          if (Object.keys(patch).length > 1 || patch.status !== undefined) {
+            chunks.push({ type: 'tool_call_update', toolCallId: update.toolCallId, ...patch })
           }
+          return { chunks }
         }
         return {
-          chunks: [
-            {
-              type: 'tool_call_update',
-              toolCallId: update.toolCallId,
-              ...(name !== undefined ? { name } : {}),
-              ...(update.rawInput !== undefined && update.rawInput !== null
-                ? { args: update.rawInput }
-                : {}),
-              ...(status !== undefined ? { status } : {}),
-            },
-          ],
+          chunks:
+            Object.keys(patch).length === 0
+              ? []
+              : [{ type: 'tool_call_update', toolCallId: update.toolCallId, ...patch }],
         }
       }
 
@@ -189,14 +202,155 @@ export function createV2SessionAdapter(): V2SessionAdapter {
   }
 }
 
-/** Text out of one v2 content block; '' for anything not textual. */
-function textOf(content: ContentBlock): string {
-  return ContentBlockGuards.isText(content) ? content.text : ''
+function safeMimeType(value: string | null | undefined): string {
+  return value && /^[\w.+-]+\/[\w.+-]+$/.test(value) ? value : 'application/octet-stream'
+}
+
+function dataUrl(mimeType: string | null | undefined, data: string): string {
+  return `data:${safeMimeType(mimeType)};base64,${data}`
+}
+
+function normalizeContentBlock(content: ContentBlock): AcpContentBlock | null {
+  if (ContentBlockGuards.isText(content)) return { type: 'text', text: content.text }
+  if (ContentBlockGuards.isImage(content)) {
+    const mimeType = safeMimeType(content.mimeType)
+    return {
+      type: 'image',
+      dataUrl: dataUrl(mimeType, content.data),
+      mimeType,
+      ...(content.uri ? { uri: content.uri } : {}),
+    }
+  }
+  if (ContentBlockGuards.isAudio(content)) {
+    const mimeType = safeMimeType(content.mimeType)
+    return { type: 'audio', dataUrl: dataUrl(mimeType, content.data), mimeType }
+  }
+  if (ContentBlockGuards.isResourceLink(content)) {
+    return {
+      type: 'resource_link',
+      uri: content.uri,
+      name: content.name,
+      ...(content.title ? { title: content.title } : {}),
+      ...(content.description ? { description: content.description } : {}),
+      ...(content.mimeType ? { mimeType: content.mimeType } : {}),
+      ...(content.size !== undefined && content.size !== null ? { size: content.size } : {}),
+    }
+  }
+  if (ContentBlockGuards.isResource(content)) {
+    const resource = content.resource
+    const unknownResource: unknown = resource
+    if (!isRecord(unknownResource)) return null
+    const text = unknownResource['text']
+    if (typeof text === 'string') {
+      return {
+        type: 'resource',
+        uri: resource.uri,
+        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+        text,
+      }
+    }
+    const blob = unknownResource['blob']
+    if (typeof blob !== 'string') return null
+    return {
+      type: 'resource',
+      uri: resource.uri,
+      ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+      dataUrl: dataUrl(resource.mimeType, blob),
+    }
+  }
+  return null
+}
+
+function normalizeContentBlocks(content: readonly ContentBlock[]): AcpContentBlock[] {
+  return content.flatMap((block) => {
+    const normalized = normalizeContentBlock(block)
+    return normalized === null ? [] : [normalized]
+  })
+}
+
+function normalizeToolCallContent(content: readonly ToolCallContent[]): AcpToolCallContent[] {
+  return content.flatMap((item): AcpToolCallContent[] => {
+    if (ToolCallContentGuards.isContent(item)) {
+      const normalized = normalizeContentBlock(item.content)
+      return normalized === null ? [] : [{ type: 'content', content: normalized }]
+    }
+    if (ToolCallContentGuards.isTerminal(item)) {
+      return [{ type: 'terminal', terminalId: item.terminalId }]
+    }
+    if (ToolCallContentGuards.isDiff(item)) {
+      const text = item.patch?.text ?? JSON.stringify(item.changes)
+      return [{ type: 'content', content: { type: 'text', text } }]
+    }
+    return []
+  })
+}
+
+function contentResult(content: readonly AcpToolCallContent[]): {
+  text: string | null
+  images: ToolResultImage[]
+} {
+  const text = content
+    .flatMap((item) =>
+      item.type === 'content' && item.content.type === 'text' ? [item.content.text] : [],
+    )
+    .join('\n')
+  const images = content.flatMap((item): ToolResultImage[] =>
+    item.type === 'content' && item.content.type === 'image'
+      ? [{ kind: 'screenshot', dataUrl: item.content.dataUrl }]
+      : [],
+  )
+  return { text: text === '' ? null : text, images }
+}
+
+function formatRawToolValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function toolCallPatch(
+  update: ToolCallUpdate,
+): Omit<Extract<StreamChunk, { type: 'tool_call_update' }>, 'type' | 'toolCallId'> {
+  const name = typeof update.name === 'string' ? update.name : undefined
+  const title = typeof update.title === 'string' ? update.title : undefined
+  const status = toolStatus(update.status)
+  const content =
+    update.content !== undefined ? normalizeToolCallContent(update.content ?? []) : undefined
+  const rendered = content === undefined ? undefined : contentResult(content)
+  const result =
+    update.rawOutput !== undefined && update.rawOutput !== null
+      ? formatRawToolValue(update.rawOutput)
+      : rendered?.text
+  return {
+    ...(name !== undefined ? { name, programmaticName: name } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(update.rawInput !== undefined && update.rawInput !== null ? { args: update.rawInput } : {}),
+    ...(typeof update.kind === 'string' ? { kind: update.kind } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(result !== undefined
+      ? { result, ...(result !== null ? { resultFormat: 'markdown' } : {}) }
+      : {}),
+    ...(rendered !== undefined ? { images: rendered.images } : {}),
+    ...(content !== undefined ? { content } : {}),
+    ...(update.locations !== undefined
+      ? {
+          locations: (update.locations ?? []).map((location) => ({
+            path: location.path,
+            ...(location.line !== undefined && location.line !== null
+              ? { line: location.line }
+              : {}),
+          })),
+        }
+      : {}),
+  }
 }
 
 function toolStatus(status: unknown): 'running' | 'done' | 'error' | undefined {
-  if (status === 'in_progress' || status === 'pending') return 'running'
+  if (status === 'in_progress' || status === 'pending' || status === null) return 'running'
   if (status === 'completed') return 'done'
-  if (status === 'failed') return 'error'
+  if (status === 'failed' || status === 'cancelled') return 'error'
   return undefined
 }

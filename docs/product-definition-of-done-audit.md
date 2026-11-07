@@ -1,5 +1,8 @@
 # Product definition-of-done audit
 
+> **Historical snapshot (2026-07-29).** Its live-state columns are out of date. The current release
+> evidence register is [`product-release-evidence.md`](product-release-evidence.md), owned by #1373.
+
 **Snapshot:** 2026-07-29
 
 **Repository baseline:** `main` at `7cb3f382` (the tree promoted from `develop` at `b130ce95`)

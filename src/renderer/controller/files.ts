@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-owner.ts'
 import { openBrowserUrl } from './panels.ts'
@@ -82,9 +82,7 @@ export async function openWorkspaceFile(
       if (!isOwner()) preview.close()
     }
     unsubs.push(
-      store.on('panel_changed', checkOwner),
-      store.on('threads_changed', checkOwner),
-      store.on('workspace_changed', checkOwner),
+      store.select((s) => [s.activeProjectId, s.activeThreadId] as const, checkOwner, sameItems),
       store.on('thread_checkout_changed', (changedThreadId) => {
         if (changedThreadId === threadId) preview.close()
       }),
@@ -116,9 +114,6 @@ export async function openWorkspaceFile(
     rightPanelMode: 'explorer',
     filesPaneOpen: true,
   })
-  store.emit('panel_changed')
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 /** Open a local workspace file using the user's global browser preference. */
@@ -152,9 +147,6 @@ export function revealWorkspaceDirectory(store: AppStore, path: string): void {
     filesPaneOpen: true,
   })
   store.emit('explorer_reveal', path)
-  store.emit('panel_changed')
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 export async function activateWorkspaceReference(

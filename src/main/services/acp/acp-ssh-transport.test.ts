@@ -33,10 +33,99 @@ import {
   remoteVersionManagerSearchScript,
   formatRemoteAcpInstallApproval,
   remoteAcpInstallSpec,
+  clearRemoteAgentPathCacheForTests,
+  resolveCachedRemoteAgentPath,
 } from './acp-ssh-transport.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 
 const REMOTE_ROOT = '/remote/project'
+
+describe('remote ACP PATH cache', () => {
+  afterEach(() => {
+    clearRemoteAgentPathCacheForTests()
+  })
+
+  it('reuses a successful probe across replacement ACP transports', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => {
+      probes += 1
+      return Promise.resolve('/remote/node/bin:/usr/bin')
+    }
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      '/remote/node/bin:/usr/bin',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/remote/node/bin:/usr/bin',
+    )
+    assert.equal(probes, 1)
+  })
+
+  it('does not cache failed probes', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => {
+      probes += 1
+      if (probes === 1) return Promise.reject(new Error('connection dropped'))
+      return Promise.resolve('/usr/bin')
+    }
+
+    await assert.rejects(
+      resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      /connection dropped/,
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/usr/bin',
+    )
+    assert.equal(probes, 2)
+  })
+
+  it('does not cache a missing agent result', async () => {
+    let probes = 0
+    const resolve = (): Promise<string | null> => {
+      probes += 1
+      return Promise.resolve(probes === 1 ? null : '/usr/bin')
+    }
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      null,
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/usr/bin',
+    )
+    assert.equal(probes, 2)
+  })
+
+  it('isolates host, shell, and command entries and expires old results', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => Promise.resolve(`/path/${String(++probes)}`)
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'agent', resolve, 0),
+      '/path/1',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('b', '/bin/zsh', 'agent', resolve, 1),
+      '/path/2',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/bash', 'agent', resolve, 1),
+      '/path/3',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'other', resolve, 1),
+      '/path/4',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'agent', resolve, 31 * 60_000),
+      '/path/5',
+    )
+  })
+})
 
 async function setUpSshWorkspace(): Promise<void> {
   await setSetting('sshWorkspaceEnabled', true)

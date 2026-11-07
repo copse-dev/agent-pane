@@ -9,6 +9,7 @@ function summary(task: SupervisedTaskMeta): SupervisedTaskSummary {
     projectId: task.projectId,
     threadId: task.threadId,
     handler: task.handler,
+    ...(task.agentId ? { agentId: task.agentId } : {}),
     state: task.state,
     updatedAt: task.updatedAt,
     attempt: task.attempt,

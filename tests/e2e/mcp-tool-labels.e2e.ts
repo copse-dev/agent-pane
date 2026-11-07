@@ -63,7 +63,7 @@ describe('MCP tool labels', () => {
       'msg-assistant-copse-group',
     )
     await expect(at([...steps], 0).$('.tool-card-header .tool-name')).toHaveText('Create issue')
-    await expect(at([...steps], 1).$('.tool-card-header .tool-name')).toHaveText('github')
+    await expect(at([...steps], 1).$('.tool-card-header .tool-name')).toHaveText('GitHub')
     await expect(at([...steps], 2).$('.tool-card-header .tool-name')).toHaveText(
       'Used 5 tools · 1 failed',
     )

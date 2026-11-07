@@ -19,26 +19,33 @@ import {
   type Packument,
 } from './acp-v2-watch.mts'
 
-/** Today's registry shape: one dist-tag, a 1.x line, no major >= 2. */
+/** Today's registry shape: SDK 2.2.0 is latest, while the default protocol remains v1. */
 const PACKUMENT: Packument = {
-  distTags: { latest: '1.3.0' },
-  versions: ['0.29.0', '1.0.0', '1.2.1', '1.3.0'],
-  modified: '2026-07-21T15:49:38.613Z',
+  distTags: { latest: '2.2.0' },
+  versions: ['1.3.0', '2.0.0', '2.0.1', '2.1.0', '2.2.0'],
+  modified: '2026-10-30T12:00:00.000Z',
 }
 
 /** Today's published export map: v2 exists, behind the experimental marker. */
 const MANIFEST: Manifest = {
-  version: '1.3.0',
+  version: '2.2.0',
   exportPaths: [
     '.',
     './experimental/v2',
+    './experimental/v2/unstable',
     './experimental/node',
     './schema/schema.json',
+    './schema/v2/schema.json',
     './schema/v2/schema.unstable.json',
   ],
 }
 
-const ACKNOWLEDGED_TODAY = ['export:./experimental/v2', 'export:./schema/v2/schema.unstable.json']
+const ACKNOWLEDGED_TODAY = [
+  'export:./experimental/v2',
+  'export:./experimental/v2/unstable',
+  'version:2.x',
+  'pin:2.x',
+]
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 })
@@ -51,9 +58,9 @@ function requestUrl(input: RequestInfo | URL): string {
 
 describe('evaluateWatch', () => {
   it('stays quiet on the v2 surface already triaged', () => {
-    const verdict = evaluateWatch(PACKUMENT, MANIFEST, '^1.3.0', ACKNOWLEDGED_TODAY)
+    const verdict = evaluateWatch(PACKUMENT, MANIFEST, '2.2.0', ACKNOWLEDGED_TODAY)
     assert.equal(verdict.status, 'as-expected')
-    assert.deepEqual(verdict.v2Exports, ['./experimental/v2', './schema/v2/schema.unstable.json'])
+    assert.deepEqual(verdict.v2Exports, ['./experimental/v2', './experimental/v2/unstable'])
     assert.ok(verdict.signals.every((signal) => signal.acknowledged))
   })
 
@@ -64,7 +71,7 @@ describe('evaluateWatch', () => {
     const verdict = evaluateWatch(
       PACKUMENT,
       { ...MANIFEST, exportPaths: [...MANIFEST.exportPaths, './v2'] },
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'changed')
@@ -80,7 +87,7 @@ describe('evaluateWatch', () => {
     const verdict = evaluateWatch(
       PACKUMENT,
       { ...MANIFEST, exportPaths: [...MANIFEST.exportPaths, './experimental/v2/client'] },
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'changed')
@@ -95,37 +102,24 @@ describe('evaluateWatch', () => {
     const verdict = evaluateWatch(
       PACKUMENT,
       { version: '1.2.1', exportPaths: ['.', './experimental/node'] },
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'as-expected')
     assert.deepEqual(verdict.v2Exports, [])
   })
 
-  it('flags a major >= 2 release, because the main entry of 1.x negotiates v1', () => {
+  it('flags a new SDK major line once, not every patch release', () => {
     const verdict = evaluateWatch(
-      { ...PACKUMENT, versions: [...PACKUMENT.versions, '2.0.0'] },
+      { ...PACKUMENT, versions: [...PACKUMENT.versions, '3.0.0-alpha.1', '3.0.0'] },
       MANIFEST,
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'changed')
     assert.deepEqual(
       verdict.signals.filter((signal) => !signal.acknowledged).map((signal) => signal.name),
-      ['2.0.0'],
-    )
-  })
-
-  it('flags a v2 prerelease and says so', () => {
-    const verdict = evaluateWatch(
-      { ...PACKUMENT, versions: [...PACKUMENT.versions, '2.0.0-alpha.1'] },
-      MANIFEST,
-      '^1.3.0',
-      ACKNOWLEDGED_TODAY,
-    )
-    assert.match(
-      verdict.signals.find((signal) => signal.kind === 'version')?.why ?? '',
-      /prerelease alpha\.1/,
+      ['3.x'],
     )
   })
 
@@ -133,7 +127,7 @@ describe('evaluateWatch', () => {
     const verdict = evaluateWatch(
       { ...PACKUMENT, distTags: { latest: '1.3.0', next: '1.4.0-next.0' } },
       MANIFEST,
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'changed')
@@ -143,22 +137,20 @@ describe('evaluateWatch', () => {
     )
   })
 
-  it('flags a package.json bumped past the v1 line', () => {
-    // The registry is unchanged here: the alarm is that *we* moved, which means
-    // the v1 adapters in src/main/services/acp are running against a v2 default.
-    const verdict = evaluateWatch(PACKUMENT, MANIFEST, '^2.0.0', ACKNOWLEDGED_TODAY)
+  it('flags a package.json bump to an untriaged SDK major', () => {
+    const verdict = evaluateWatch(PACKUMENT, MANIFEST, '^3.0.0', ACKNOWLEDGED_TODAY)
     assert.equal(verdict.status, 'changed')
     assert.deepEqual(
       verdict.signals.filter((signal) => signal.kind === 'pin').map((signal) => signal.name),
-      ['^2.0.0'],
+      ['3.x'],
     )
   })
 
   it('ignores unparseable versions rather than reading them as v2', () => {
     const verdict = evaluateWatch(
-      { ...PACKUMENT, versions: ['1.3.0', 'nightly'] },
+      { ...PACKUMENT, versions: ['1.3.0', '2.2.0', 'nightly'] },
       MANIFEST,
-      '^1.3.0',
+      '2.2.0',
       ACKNOWLEDGED_TODAY,
     )
     assert.equal(verdict.status, 'as-expected')
@@ -259,7 +251,7 @@ describe('registry requests', () => {
 
 describe('formatReport', () => {
   it('names the published v2 entry points even on a quiet run', () => {
-    const report = formatReport(evaluateWatch(PACKUMENT, MANIFEST, '^1.3.0', ACKNOWLEDGED_TODAY))
+    const report = formatReport(evaluateWatch(PACKUMENT, MANIFEST, '2.2.0', ACKNOWLEDGED_TODAY))
     assert.match(report, /v2 entry points published: `\.\/experimental\/v2`/)
     assert.match(report, /already triaged in `ACKNOWLEDGED`/)
     assert.doesNotMatch(report, /surface moved/)
@@ -270,7 +262,7 @@ describe('formatReport', () => {
       evaluateWatch(
         PACKUMENT,
         { ...MANIFEST, exportPaths: [...MANIFEST.exportPaths, './v2'] },
-        '^1.3.0',
+        '2.2.0',
         ACKNOWLEDGED_TODAY,
       ),
     )
@@ -287,7 +279,7 @@ describe('the pinned SDK', () => {
     // (docs/acp-v2-readiness.md). A main entry that starts negotiating v2 is a
     // migration, not a dependency bump — this is what makes that loud.
     assert.equal(PROTOCOL_VERSION, 1)
-    assert.equal(rangeMajor(readPinnedRange()), 1)
+    assert.equal(rangeMajor(readPinnedRange()), 2)
   })
 
   it('carries its v2 API on the experimental subpath, not the main entry', () => {

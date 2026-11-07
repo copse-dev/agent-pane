@@ -3,9 +3,12 @@
 Status: **Active (P1 + P2 landed)**. Discovery, Settings visibility, and explicit
 `/name` invocation are implemented. Automatic delegation (P4) and the remaining phases
 are still design only. A gap review against Claude Code (2026-09-25) is recorded in
-[Gaps against Claude Code](#gaps-against-claude-code-2026-09-25). Owns
+[Gaps against Claude Code](#gaps-against-claude-code-2026-09-25). Originally owned
 [#1819](https://github.com/copse-dev/agent-pane/issues/1819) ("I want to use agents that
-are in my `~/.claude/agents` when using copse").
+are in my `~/.claude/agents` when using copse"), now closed; P3–P8 need a new tracking issue.
+Native named workers shipped in [#3897](https://github.com/copse-dev/agent-pane/pull/3897)
+([`native-readonly-workers.md`](native-readonly-workers.md),
+[`native-writable-workers.md`](native-writable-workers.md)).
 
 Related: [orchestration-pattern.md](orchestration-pattern.md) (the `delegate_step` worker
 seam this reuses), [advisor-strategy.md](advisor-strategy.md),
@@ -82,7 +85,11 @@ Binding once this plan is accepted; divergence updates this file in the same PR.
 
 ### 1. Explicit invocation only in v1 — no automatic delegation
 
-The parent model is **not** told which agents exist. There is no `<available_agents>`
+The parent model is **not** told which agents exist. The native
+`run_readonly_workers` first slice permits one or two exact names already supplied
+by the user, under a two-worker allowance per turn and the existing supervisor.
+It adds no agent catalogue or description-driven selection; see
+[native-readonly-workers.md](native-readonly-workers.md). There is no `<available_agents>`
 catalog block in the system prompt, so the model cannot decide on its own to spend a turn
 inside someone's `code-reviewer`. Delegation happens because the user asked for it.
 
@@ -248,10 +255,10 @@ Mapped rather than honoured literally:
   **ignored, always**. A file on disk does not get to relax Copse's permission gate,
   staged-edit review, or the sandbox. This is the security stance for the whole feature: a
   definition's tool list can only ever _narrow_ what the parent turn could already do.
-- `isolation: worktree` → not supported yet (Copse's worktree work is
-  [thread-worktrees.md](thread-worktrees.md)). Register the agent, but stamp "runs without
-  worktree isolation" on the Settings row and the subagent card, because an agent written
-  to expect a throwaway checkout will edit the real tree.
+- `isolation: worktree` → supported through `run_isolated_workers`, which allocates
+  separate owned worker checkouts. Slash invocation and `run_readonly_workers`
+  reject the requirement before inference; they never fall back to the parent tree.
+  See [the writable worker contract](native-writable-workers.md).
 - `is_background` / `background` → ignored in v1; Copse's equivalent is the background
   task supervisor, not a subagent flag.
 
@@ -297,7 +304,9 @@ With `tools` omitted, the agent inherits the parent turn's tool set **minus**: t
 subagent entry points (`task`, `explore`, `investigate_ci`, `delegate_step`, `advisor`,
 `compare_models` — no nesting, depth stays 1), `ask_user` (a subagent reports back instead
 of interrogating the user, as the orchestration worker already does), and `git_commit`
-(integration stays with the parent, same rationale as `delegate_step`).
+(integration stays with the parent, same rationale as `delegate_step`). Custom agents
+also cannot call `update_thread_plan` or `report_plan_completion`: workers report
+findings, while the parent owns the shared thread plan.
 
 Whatever survives, every inner call still goes through `ToolRegistry.execute` — permission
 gate, read-only enforcement, staged-edit approval, sandbox — exactly as `explore` and
@@ -429,9 +438,7 @@ setting to turn it off. This is the part that gets an eval pass before it defaul
 [agent-plugins-migration.md](agent-plugins-migration.md).
 
 **P6 — Deferred fields.** `skills` preloading (Copse has `buildInvokedSkillsBlock`, so
-this is cheap), per-agent `mcpServers`, `memory`, `isolation: worktree` (per-thread worktrees
-now exist — [thread-worktrees.md](thread-worktrees.md) — so this is no longer blocked on
-them), and
+this is cheap), per-agent `mcpServers`, `memory`, broader isolated-agent entry points, and
 injecting definitions into non-Claude ACP agents the way invoked skills are injected today.
 
 **P7 — Background and follow-up runs (proposed, not yet a decision).** Let an agent run
@@ -469,7 +476,7 @@ Ranked by user impact:
 | G-01 | The model picks an agent from its `description` and can launch several at once.                                                 | Explicit `/name` only, one agent per message, run before the parent's first LLM call. The model has no `task` tool.                                                                                                                                                                | P4                                                   |
 | G-02 | Agents can run in the background. The parent keeps working and is notified when one completes.                                  | Always runs inline and blocks the turn. `background` / `is_background` are ignored with a note.                                                                                                                                                                                    | P7                                                   |
 | G-03 | A finished agent can be continued with its context intact (send it another message by id).                                      | Every run is one-shot and returns only a summary. Nothing addresses a finished run again.                                                                                                                                                                                          | P7                                                   |
-| G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Ignored with a note. The agent edits the thread's working tree, even though per-thread worktrees now exist.                                                                                                                                                                        | P6                                                   |
+| G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Supported through `run_isolated_workers` with owned checkouts; other entry points reject before inference. The parent checkout is never a fallback.                                                                                                                                | P6                                                   |
 | G-05 | No small step cap. Agents run until done, bounded by context and compaction.                                                    | `CUSTOM_AGENT_DEFAULT_MAX_STEPS = 12`, `CUSTOM_AGENT_MAX_STEPS_CEILING = 30`. Too few for review or refactor agents on a real diff. Raise the cap, or make the ceiling a setting instead of a constant, while keeping the rule that a definition file cannot raise its own budget. | New decision needed                                  |
 | G-06 | `skills`, `mcpServers`, `hooks` (agent-scoped), `memory`, `effort` are honoured.                                                | All parsed, then ignored with a Settings note. `skills` is the cheapest: reuse `buildInvokedSkillsBlock`.                                                                                                                                                                          | P6                                                   |
 | G-07 | Built-in general-purpose and Plan agents, plus a fork agent that inherits the conversation.                                     | Copse has fixed built-ins (`explore`, `investigate_ci`, `delegate_step`, advisor, review). A custom agent sees only `parentGoal`, never the conversation, and there is no fork mode.                                                                                               | Unowned                                              |
@@ -477,7 +484,7 @@ Ranked by user impact:
 | G-09 | `@agent-name` mention; `claude --agent <name>` runs a whole session as an agent; `--agents <json>` defines session-only agents. | `/name` only (a deliberate decision 2 choice). No way to run a whole thread as an agent, which is why `initialPrompt` is ignored.                                                                                                                                                  | #1573 (named agent profile)                          |
 | G-10 | Plugin-supplied `agents/`; Codex reads `.codex/agents/*.toml`.                                                                  | Neither.                                                                                                                                                                                                                                                                           | P5, P3                                               |
 | G-11 | `opus` / `sonnet` / `fable` resolve to the current model.                                                                       | Fixed: aliases resolve to the newest catalog model of their family (decision 7).                                                                                                                                                                                                   | Done (#3174)                                         |
-| G-12 | Agent teams with a shared task list, and scripted multi-agent workflows.                                                        | Only `delegate_step` orchestration. Fan-out/fan-in is planned as a campaign primitive, not built.                                                                                                                                                                                  | [background-supervisor.md](background-supervisor.md) |
+| G-12 | Agent teams with a shared task list, and scripted multi-agent workflows.                                                        | Bounded foreground fan-out/fan-in for two explicitly named read-only workers uses the supervisor. Writable isolated workers and detached campaigns remain follow-ups.                                                                                                              | [background-supervisor.md](background-supervisor.md) |
 
 Suggested order: G-01 (P4 is what makes definitions behave like
 they do in Claude Code; run the eval the plan already requires, because the P2 eval showed

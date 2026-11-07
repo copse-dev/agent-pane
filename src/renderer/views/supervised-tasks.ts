@@ -4,7 +4,12 @@ import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
 
-function taskLabel(handler: string): string {
+function taskLabel(task: SupervisedTaskSummary): string {
+  const { handler } = task
+  if (handler.startsWith('native_readonly_worker:'))
+    return task.agentId ? `${task.agentId} (read-only)` : 'Read-only worker'
+  if (handler.startsWith('native_isolated_worker:'))
+    return task.agentId ? `${task.agentId} (isolated)` : 'Isolated worker'
   if (handler === 'long_horizon_continue') return 'Long task continuation'
   return handler.replaceAll('_', ' ')
 }
@@ -53,7 +58,7 @@ export function mountSupervisedTasks(
       const label = el(
         'summary',
         { class: 'supervised-task-summary' },
-        el('span', { class: 'supervised-task-label' }, taskLabel(task.handler)),
+        el('span', { class: 'supervised-task-label' }, taskLabel(task)),
         el('span', { class: 'supervised-task-state' }, task.state),
       )
       const detail = el('div', { class: 'supervised-task-detail' })
@@ -69,7 +74,9 @@ export function mountSupervisedTasks(
         if (value.resultRef) detail.append(el('p', {}, value.resultRef.ref))
         if (
           (value.state === 'blocked' || value.state === 'failed') &&
-          value.handler !== 'shell_process'
+          value.handler !== 'shell_process' &&
+          !value.handler.startsWith('native_readonly_worker:') &&
+          !value.handler.startsWith('native_isolated_worker:')
         ) {
           const resume = el(
             'button',
@@ -114,7 +121,7 @@ export function mountSupervisedTasks(
           type: 'button',
           class: 'supervised-task-cancel',
           title: 'Cancel task',
-          'aria-label': `Cancel ${taskLabel(task.handler)}`,
+          'aria-label': `Cancel ${taskLabel(task)}`,
         },
         closeIcon('ui-icon ui-icon-sm'),
       )

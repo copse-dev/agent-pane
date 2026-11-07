@@ -29,6 +29,45 @@ function thread(id: string): Thread {
   }
 }
 
+test('footprint totals and footer survive tab switches and disclose unavailable samples', async () => {
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    processManager: {
+      ...base.processManager,
+      snapshot: async () => ({
+        sampledAt: 1000,
+        memoryMetric: 'footprint',
+        processes: [12288, 1024, null].map((memoryMiB, index) => ({
+          pid: index + 1,
+          startedAt: 1,
+          label: `Process ${String(index + 1)}`,
+          type: 'App',
+          threadId: null,
+          cpuPercent: 0,
+          memoryMiB,
+        })),
+      }),
+    },
+  }
+  mountProcessManagerDialog(api, createStore({}))()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const footer = (): string => document.querySelector('.process-manager-footer')?.textContent ?? ''
+  assert.match(footer(), /macOS footprint in MiB \(includes compressed\/swap\)/)
+  assert.match(footer(), /Totals exclude 1 unavailable process\./)
+  assert.match(
+    document.querySelector('.process-manager-summary')?.textContent ?? '',
+    /Memory 13312.0 MiB/,
+  )
+  assert.match(document.querySelector('.process-manager-rows')?.textContent ?? '', /13312.0 MiB/)
+  const tabs = document.querySelectorAll<HTMLButtonElement>('.process-manager-tab')
+  tabs[1]?.click()
+  assert.match(footer(), /Metadata only/)
+  tabs[0]?.click()
+  assert.match(footer(), /macOS footprint/)
+  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
+})
+
 function menuItem(label: string): HTMLButtonElement {
   const item = [...document.querySelectorAll<HTMLButtonElement>('.context-menu-item')].find(
     (button) => button.textContent === label,

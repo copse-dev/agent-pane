@@ -198,6 +198,24 @@ The instance stays open after the turn ends; quit it from the Dock or menu when 
 macOS-only and unavailable in SSH workspaces. It is a manual look, not visual evidence: user-visible
 changes still need a focused WebdriverIO spec (see [Visual validation](#visual-validation)).
 
+## Cloning another repo from an agent session
+
+An agent's own shell tool (not Copse's `run_shell`) is sandboxed separately: it is wrapped by its own
+egress proxy with no allowlist for arbitrary external hosts, and the command never runs through
+Copse's spawn path, so none of `run_shell`'s sandbox-denial-signature handling (which auto-retries a
+known denial with elevation) ever sees it. A `git clone`/`fetch` of another repo run directly in that
+shell fails with:
+
+```
+fatal: unable to access 'https://github.com/...': CONNECT tunnel failed, response 403
+```
+
+That is sandbox containment, not an app bug, and retrying the same command in the same shell fails the
+same way. For the current project's own origin, use the `copse` MCP server's `git_fetch` tool. To
+clone or fetch a different repo entirely, use its `run_shell` tool instead (set
+`expects_sandbox_block: true` to ask up front) — both run through Copse's host command path with real
+network access, subject to the usual approval.
+
 ## Per-model behaviour
 
 Do not branch on a model id string (`startsWith('gpt')`). Ask `modelCapabilities(selection)` from
@@ -229,7 +247,7 @@ the regex script bridge are retired; the fixture source guard rejects them in ex
 Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile).
 Keep `config.json` small: every `storage:set` makes the main process rewrite the whole file
 synchronously, so large or append-only data (logs, ledgers) belongs in its own file next to it —
-see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/storage.ts`.
+see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/user-data-files.ts`.
 
 | Path                                                                                 | Contents                                                              |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
@@ -454,7 +472,11 @@ of the shot, see `scripts/filter-screenshots.mts`); anything larger is either a 
 spec that is not deterministic, and re-baselining fixes neither.
 
 1. **Is it recurring?** The same shot appearing on PRs that do not touch its spec is unowned drift.
-   Compare the before/after images of two unrelated PRs' evidence comments.
+   Compare the before/after images of two unrelated PRs' evidence comments. Every full run renders
+   the same drift; the filter only shows it to PRs whose diff owns the shot, so a PR touching a
+   widely imported `src/` file shows all of it and a lockfile bump shows none. Find the merged
+   change that moved the pixels without owning them, such as a spec that seeds `process.cwd()` and
+   so renders this checkout's `AGENTS.md`, skills or branch.
 2. **Measure it.** Diff the pair with `pixelmatch` (threshold 0.1) for the differing-pixel count and
    percentage, and compare dimensions. A changed height or width is a state race, never noise.
 3. **Look at both images.** Name what differs before deciding:

@@ -56,7 +56,7 @@ export function withNoindexMeta(html: string): string {
   // At the end of the head, not the start, so the charset declaration keeps its
   // place as the first thing in the document — same spot (and same reason) as
   // the Monaco base injected by `pointHtmlAtMonacoBase`.
-  const close = html.search(/<\/head\s*>/i)
+  const close = headCloseIndex(html)
   if (close < 0) {
     throw new Error('no </head> to inject the robots meta into')
   }
@@ -68,6 +68,23 @@ export function withNoindexMeta(html: string): string {
   const before = html.slice(lineStart, close)
   const insert = /^[ \t]*$/.test(before) ? `  ${NOINDEX_META}\n${before}` : NOINDEX_META
   return `${html.slice(0, close)}${insert}${html.slice(close)}`
+}
+
+/**
+ * Where the document's own `</head>` starts, or -1. A `</head>` inside a
+ * `<script>` or `<style>` is text, not markup: the bundled Mermaid frame's
+ * inline script contains one, and injecting there changed the script so it no
+ * longer matched the frame's hash-pinned CSP and never ran.
+ */
+function headCloseIndex(html: string): number {
+  const rawText: [number, number][] = []
+  for (const match of html.matchAll(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi))
+    rawText.push([match.index, match.index + match[0].length])
+  for (const match of html.matchAll(/<\/head\s*>/gi)) {
+    if (!rawText.some(([start, end]) => match.index > start && match.index < end))
+      return match.index
+  }
+  return -1
 }
 
 /** Every `.html` file under `root`, depth-first, sorted for determinism. */

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { hostname, platform, release, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
 import {
   probeAgentCapabilities,

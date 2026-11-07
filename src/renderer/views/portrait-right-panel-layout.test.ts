@@ -130,7 +130,6 @@ describe('portrait right panel layout', () => {
     assert.equal(app.classList.contains(PORTRAIT_CHROME_CLASS), false)
 
     store.setState({ autoPortraitRightPanel: true, filesPaneOpen: false })
-    store.emit('files_pane_changed')
     // Stacked grid requires the pane open; chrome stays on for tall windows so
     // the bottom panel-controls row remains available.
     assert.equal(body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS), false)
@@ -138,7 +137,6 @@ describe('portrait right panel layout', () => {
     assert.equal(app.classList.contains(PORTRAIT_CHROME_CLASS), true)
 
     store.setState({ filesPaneOpen: true })
-    store.emit('files_pane_changed')
     assert.equal(body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS), true)
 
     setViewport(1200, 800)

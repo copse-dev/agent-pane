@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { SessionUpdate } from '@agentclientprotocol/sdk'
+import type { SessionUpdate } from '@agentclientprotocol/sdk/unstable'
 import type { StreamChunk } from '@shared/types'
 import {
   createAgentUpdateTranslator,
@@ -29,10 +29,12 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     assert.deepEqual(update, {
       sessionUpdate: 'tool_call',
       toolCallId: 't1',
+      name: 'read_file',
       title: 'read_file',
       kind: 'read',
       status: 'pending',
       rawInput: { path: 'a.ts' },
+      _meta: { 'copse.dev': { toolName: 'read_file' } },
     })
   })
 
@@ -44,10 +46,12 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     assert.deepEqual(update, {
       sessionUpdate: 'tool_call',
       toolCallId: 't2',
+      name: 'run_shell',
       title: 'git status',
       kind: 'execute',
       status: 'pending',
       rawInput: { command: 'git status' },
+      _meta: { 'copse.dev': { toolName: 'run_shell' } },
     })
   })
 
@@ -193,6 +197,25 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         severity: 'warning',
         title: 'Attention required',
         description: 'This client does not advertise notice support.',
+      }),
+      [],
+    )
+  })
+
+  it('drops compaction updates when compaction capability is not advertised', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'compaction_update',
+        compactionId: 'compact-1',
+        status: 'completed',
+      }),
+      [],
+    )
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'compaction_summary_chunk',
+        compactionId: 'compact-1',
+        content: { type: 'text', text: 'summary' },
       }),
       [],
     )
@@ -350,6 +373,28 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
         toolCall: { id: 't9', name: 'search', title: 'search', args: { q: 'x' } },
       },
     ])
+  })
+
+  it('prefers the Copse metadata tool name over a command-shaped title and ACP name', () => {
+    const [chunk] = sessionUpdateToStreamChunks({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'shell-1',
+      name: 'wrong_name',
+      title: 'git status --short',
+      kind: 'execute',
+      _meta: { 'copse.dev': { toolName: 'run_shell' } },
+    })
+    assert.deepEqual(chunk, {
+      type: 'tool_call',
+      toolCall: {
+        id: 'shell-1',
+        name: 'run_shell',
+        title: 'git status --short',
+        programmaticName: 'run_shell',
+        args: {},
+        kind: 'execute',
+      },
+    })
   })
 
   it('keeps a meaningful ACP title distinct from the programmatic tool name', () => {
@@ -993,7 +1038,6 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
       {
         sessionUpdate: 'session_message_chunk',
         messageId: 'child-message',
-        senderSessionId: 'child-session',
         content: { type: 'text', text: 'Child chunk' },
       },
     ]

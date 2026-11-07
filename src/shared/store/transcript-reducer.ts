@@ -10,6 +10,7 @@ import {
   appendToken,
   appendReasoning,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   addMessageCanvasArtefact,
   addMessageVisualEvidence,
   addToolCall,
@@ -69,6 +70,8 @@ export interface TranscriptReducerHooks {
   /** A labelled phase began; the renderer owns the wording. */
   activityLabel?: (threadId: string, phase: TranscriptActivityPhase) => void
   promptProgress?: (threadId: string, fraction: number) => void
+  /** A stage of reaching a remote agent began; `label` is the row's wording. */
+  setupProgress?: (threadId: string, label: string) => void
   /** Visible assistant output arrived: the renderer names the thread from it. */
   visibleOutput?: (threadId: string) => void
   toolResult?: (threadId: string, ownerId: string, chunk: ToolResultChunk) => void
@@ -125,6 +128,12 @@ interface StreamState {
   writing: boolean
   acpMessageId: string | null
   acpThoughtMessageId: string | null
+  /** External v2 message/thought id -> durable Copse bubble id. */
+  acpMessageOwners: Array<{
+    channel: 'message' | 'thought'
+    messageId: string
+    ownerId: string
+  }>
 }
 
 export function createTranscriptReducer(
@@ -143,6 +152,7 @@ export function createTranscriptReducer(
         writing: false,
         acpMessageId: null,
         acpThoughtMessageId: null,
+        acpMessageOwners: [],
       }
       state.set(threadId, st)
     }
@@ -202,12 +212,30 @@ export function createTranscriptReducer(
     return plan.text
   }
 
+  const acpOwner = (
+    st: StreamState,
+    channel: 'message' | 'thought',
+    messageId: string,
+  ): string | undefined =>
+    st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)
+      ?.ownerId
+
+  const rememberAcpOwner = (
+    st: StreamState,
+    channel: 'message' | 'thought',
+    messageId: string | undefined,
+  ): void => {
+    if (messageId === undefined || st.msgId === null || acpOwner(st, channel, messageId)) return
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId })
+  }
+
   const apply = (threadId: string, chunk: StreamChunk): void => {
     const st = get(threadId)
     switch (chunk.type) {
       case 'machine_turn_start': {
         hooks.turnStarted?.(threadId)
         setThreadStatus(store, threadId, 'running')
+        if (chunk.hidden) break
         const id = hooks.createMessageId?.(threadId)
         addMessage(
           store,
@@ -277,6 +305,34 @@ export function createTranscriptReducer(
           st.writing = false
           hooks.visibleOutput?.(threadId)
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId)
+        activity(threadId)
+        break
+      }
+      case 'acp_content_replace': {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId)
+        if (ownerId === undefined) {
+          const previousId = chunk.channel === 'message' ? st.acpMessageId : st.acpThoughtMessageId
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store.emit('message_done', st.msgId)
+            st.msgId = null
+            st.toolSinceText = false
+            st.currentText = ''
+          }
+          if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
+          else st.acpThoughtMessageId = chunk.messageId
+          ownerId = ensureFreshAfterTools(threadId, st)
+          rememberAcpOwner(st, chunk.channel, chunk.messageId)
+        }
+        replaceAcpContentBlocks(store, ownerId, chunk.channel, chunk.content)
+        if (ownerId === st.msgId && chunk.channel === 'message') {
+          st.currentText = chunk.content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('')
+        }
+        st.writing = false
+        hooks.visibleOutput?.(threadId)
         activity(threadId)
         break
       }
@@ -338,6 +394,7 @@ export function createTranscriptReducer(
             ...(chunk.images !== undefined ? { images: chunk.images } : {}),
             ...(chunk.content !== undefined ? { content: chunk.content } : {}),
             ...(chunk.locations !== undefined ? { locations: chunk.locations } : {}),
+            ...(chunk.commandPhase !== undefined ? { commandPhase: chunk.commandPhase } : {}),
           })
         }
         st.writing = false
@@ -442,6 +499,15 @@ export function createTranscriptReducer(
       }
       case 'prompt_progress': {
         hooks.promptProgress?.(threadId, chunk.fraction)
+        break
+      }
+      case 'agent_setup_progress': {
+        // Status only: nothing reaches the transcript. Until the agent's first
+        // token the row would otherwise say "Reasoning…" while Copse is still
+        // connecting to or installing on a remote host. Once the agent is
+        // reached, resync the row from thread state.
+        if (chunk.phase === 'ready') activity(threadId)
+        else hooks.setupProgress?.(threadId, chunk.label)
         break
       }
       case 'context_pressure': {
@@ -663,7 +729,9 @@ export function createTranscriptReducer(
     restore: (threadId, checkpoint): void => {
       state.delete(threadId)
       pendingTurn.delete(threadId)
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream))
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream))
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn))
     },
   }

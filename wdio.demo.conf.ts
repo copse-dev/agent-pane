@@ -10,6 +10,7 @@ import { installDeleteSessionSafety, withTimeout } from './tests/e2e/helpers/aft
 import { prepareBenchmarkExplorerFixture } from './tests/demo/helpers/benchmark-explorer-fixture.ts'
 import { buildMobileAssets } from './scripts/mobile-build.mts'
 import { MOBILE_CONTENT_SECURITY_POLICY } from './src/shared/mobile-content-security-policy.ts'
+import { mobileAssetRoutes } from './src/shared/mobile-asset-routes.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -278,10 +279,17 @@ async function startDemoServer(): Promise<void> {
       response.writeHead(404).end('Not found')
       return
     }
+    // Mobile routes carry the LAN server's own headers, so the page and its
+    // Mermaid frame document get the same policies as on a phone.
+    const mobileRoute =
+      mobilePath === null
+        ? undefined
+        : mobileAssetRoutes().get(mobilePath === '/index.html' ? '/' : mobilePath)
     response.writeHead(200, {
       'Content-Type': contentTypes[extname(path)] ?? 'application/octet-stream',
       'Cache-Control': 'no-store',
       ...(mobilePath ? { 'Content-Security-Policy': MOBILE_CONTENT_SECURITY_POLICY } : {}),
+      ...mobileRoute?.headers,
     })
     createReadStream(path).pipe(response)
   })

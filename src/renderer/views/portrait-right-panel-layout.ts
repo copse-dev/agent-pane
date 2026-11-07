@@ -76,7 +76,7 @@ export function mountPortraitRightPanelLayout(body: HTMLElement, store: AppStore
   }
 
   window.addEventListener('resize', sync, { passive: true })
-  const unsubs = [store.on('files_pane_changed', sync), store.on('settings_changed', sync)]
+  const unsubs = [store.select((s) => s.filesPaneOpen, sync), store.on('settings_changed', sync)]
   sync()
 
   return () => {

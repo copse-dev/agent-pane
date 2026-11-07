@@ -2,14 +2,15 @@ import { el, on } from '../dom/helpers.ts'
 import { moreHorizontalIcon } from '../dom/icons.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { setTooltip } from '../dom/tooltip.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { selectRightPanel, toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { sideChatsOf } from '@shared/threads/side-chat.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
 
 export type PanelControlId =
   | 'explorer'
@@ -588,12 +589,22 @@ export function mountPanelModeControls(
   syncExperimentalBtns()
 
   const unsubs = [
-    store.on('files_pane_changed', syncPanelBtns),
-    store.on('files_pane_changed', syncSideChatBadge),
-    store.on('right_panel_mode_changed', syncPanelBtns),
-    store.on('right_panel_mode_changed', syncSideChatBadge),
-    store.on('staged_diffs_changed', syncChangesBadge),
-    store.on('threads_changed', syncSideChatBadge),
+    selectRightPanel(store, () => {
+      syncPanelBtns()
+      syncSideChatBadge()
+    }),
+    store.select((s) => s.stagedDiffs.length, syncChangesBadge),
+    // The badge's count and unread state for the open thread's side chats.
+    store.select(
+      (s) => {
+        const active = activeThreadOf(s)
+        const mainId = active?.sideChat?.parentThreadId ?? active?.id
+        const rows = mainId === undefined ? [] : sideChatsOf(s.threads, mainId)
+        return [rows.length, rows.filter((row) => row.unread).length] as const
+      },
+      syncSideChatBadge,
+      sameItems,
+    ),
     store.on('settings_changed', syncExperimentalBtns),
   ]
 

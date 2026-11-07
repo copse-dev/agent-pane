@@ -67,14 +67,11 @@ the file, not counts of images with visible syntax.
 | staged-diff-ui.e2e.ts         | One write-file directive helper, called three times |                  5 | Natural file-edit requests and complete post-tool replies; retain Monaco and diff IPC coverage                         |
 | double-submit.e2e.ts          | Delay directive                                     |                  2 | Natural request and follow-up; hold/release the first response outside the prompt                                      |
 | queued-message-delete.e2e.ts  | Delay directive, also asserted verbatim             |                  2 | Hold a normal request while its queued follow-up is deleted                                                            |
-| queued-pinned.e2e.ts          | Delay directive                                     |     1, uncommitted | Hold a normal request while checking queue pinning; currently excluded from CI                                         |
+| queued-pinned.e2e.ts          | Delay directive                                     |     1, uncommitted | Hold a normal request while checking queue pinning                                                                     |
 | thread-running-status.e2e.ts  | Delay directive                                     |                  1 | Controlled in-progress turn; screenshot is cropped to the sidebar                                                      |
 | two-step-stop.e2e.ts          | Delay directive                                     |                  1 | Controlled in-progress turn; retain two-Escape cancellation                                                            |
 | ui-polish.e2e.ts              | Delay directive                                     |                  3 | Controlled activity state with natural chat text behind subsequent panels                                              |
 | mcp-validate.spec.ts          | Two external-tool directives                        |                  4 | Port the affected MCP flows to WDIO, or consolidate into verified equivalent coverage before retiring this legacy file |
-
-`staged-diff-ui.e2e.ts` is also excluded by `wdio.ci.conf.ts`. A green default
-CI selection therefore does not establish that all migrated cases work.
 
 **Why replacing the prompt strings is insufficient**
 

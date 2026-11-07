@@ -31,6 +31,7 @@ function tenseFromStatus(status: ToolCall['status']): ToolLabelTense {
 
 const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   explore: { running: 'Exploring files', done: 'Explored files' },
+  read_explored: { running: 'Quoting explored lines', done: 'Quoted explored lines' },
   read_file: { running: 'Reading file', done: 'Read file' },
   list_dir: { running: 'Listing directory', done: 'Listed directory' },
   search_code: { running: 'Searching code', done: 'Searched code' },
@@ -38,7 +39,6 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   semantic_search: { running: 'Searching codebase', done: 'Searched codebase' },
   find_files: { running: 'Finding files', done: 'Found files' },
   web_search: { running: 'Searching the web', done: 'Searched the web' },
-  parallel_search: { running: 'Searching with Parallel', done: 'Searched with Parallel' },
   fetch_url: { running: 'Fetching page', done: 'Fetched page' },
   browser_preview: { running: 'Opening preview', done: 'Opened preview' },
   browser_navigate: { running: 'Opening browser', done: 'Opened browser' },
@@ -106,7 +106,14 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir', 'video_frames', 'preflight_worktree'],
+    tools: [
+      'explore',
+      'read_explored',
+      'read_file',
+      'list_dir',
+      'video_frames',
+      'preflight_worktree',
+    ],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {
@@ -114,7 +121,7 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
     label: { running: 'Searching', done: 'Searched' },
   },
   web: {
-    tools: ['web_search', 'parallel_search', 'fetch_url'],
+    tools: ['web_search', 'fetch_url'],
     label: { running: 'Fetching from web', done: 'Fetched from web' },
   },
   browser: {
@@ -230,7 +237,7 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   const mcp = parseMcp(name)
   // Codex reports connection failures as synthetic MCP startup calls. Their
   // server is the useful identity; stripping it makes every failure "Startup".
-  if (mcp?.tool === 'startup') return `${mcp.server} startup`
+  if (mcp?.tool === 'startup') return `${humanizeIdentifier(mcp.server)} startup`
   if (mcp) return humanizeIdentifier(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.
@@ -416,7 +423,7 @@ export function getToolGroupKey(name: string, kind?: string): string | null {
 
 export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): string {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length)
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length))
   }
   const group = TOOL_GROUPS[key]
   if (!group) return key

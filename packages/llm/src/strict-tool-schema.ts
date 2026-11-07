@@ -416,7 +416,7 @@ export interface StrictToolSet {
 export function prepareStrictTools(tools: readonly LLMTool[], enabled: boolean): StrictToolSet {
   const originals = new Map<string, unknown>()
   const wire = tools.map((tool): StrictWireTool => {
-    const source = normalizeOpenAIToolSchema(tool.parameters)
+    const source = normalizeOpenAIToolSchema(tool.parameters, { objectUnionEnvelope: false })
     const conversion = enabled ? toStrictSchema(source) : null
     if (conversion?.ok) {
       originals.set(tool.name, source)

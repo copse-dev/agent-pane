@@ -20,34 +20,53 @@ import {
   type ScreenshotEntry,
 } from './screenshot-manifest.mts'
 
+const DOWNLOAD_ATTEMPTS = 4
+
+// A dropped connection (`fetch failed`, `terminated`) or the per-attempt
+// timeout, while requesting or while reading the body. A later attempt can
+// succeed; an HTTP error, size overrun or integrity mismatch cannot.
+function transientDownloadError(error: unknown): boolean {
+  return (
+    error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError')
+  )
+}
+
 export async function publicScreenshot(entry: ScreenshotEntry): Promise<Buffer> {
   const base = new URL(
     `${nonEmptyStringOr(process.env['SCREENSHOT_R2_PUBLIC_URL']?.trim(), SCREENSHOT_PUBLIC_URL).replace(/\/$/, '')}/`,
   )
   if (base.protocol !== 'https:') throw new Error('Screenshot storage must use HTTPS')
-  let response: Response | undefined
-  for (let attempt = 0; attempt < 4; attempt++) {
-    response = await fetch(new URL(screenshotObjectKey(entry), base), {
-      signal: AbortSignal.timeout(60_000),
-    })
-    if (response.ok || (response.status !== 429 && response.status < 500)) break
-    await response.body?.cancel()
-    if (attempt < 3) {
-      const retryAfter = Number(response.headers.get('retry-after'))
-      await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(
-            30_000,
-            Math.max(1000 * 2 ** attempt, Number.isFinite(retryAfter) ? retryAfter * 1000 : 0),
-          ),
-        ),
-      )
+  const url = new URL(screenshotObjectKey(entry), base)
+  for (let attempt = 0; ; attempt++) {
+    const last = attempt === DOWNLOAD_ATTEMPTS - 1
+    let retryAfter = Number.NaN
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(60_000) })
+      if (response.ok && response.body) return await readScreenshot(response.body, entry)
+      await response.body?.cancel()
+      if (last || (response.status !== 429 && response.status < 500))
+        throw new Error(`Screenshot download failed: HTTP ${String(response.status)}`)
+      retryAfter = Number(response.headers.get('retry-after'))
+    } catch (error) {
+      if (last || !transientDownloadError(error)) throw error
     }
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        Math.min(
+          30_000,
+          Math.max(1000 * 2 ** attempt, Number.isFinite(retryAfter) ? retryAfter * 1000 : 0),
+        ),
+      ),
+    )
   }
-  if (!response?.ok || !response.body)
-    throw new Error(`Screenshot download failed: HTTP ${String(response?.status)}`)
-  const reader = response.body.getReader()
+}
+
+async function readScreenshot(
+  body: NonNullable<Response['body']>,
+  entry: ScreenshotEntry,
+): Promise<Buffer> {
+  const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
   try {

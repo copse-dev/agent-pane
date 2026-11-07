@@ -1,14 +1,13 @@
 import { loadAllProjectThreadMetas } from '../thread-store.ts'
 import type { StreamChunk } from '@shared/types'
+import { storageDelete, storageGet } from './storage.ts'
 import {
   storageAppendFile,
-  storageDelete,
-  storageGet,
   storageListFiles,
   storageReadFile,
   storageRemoveFile,
   storageWriteFile,
-} from './storage.ts'
+} from './user-data-files.ts'
 import {
   buildUsageSummary,
   parseUsageEvents,

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
@@ -81,6 +81,7 @@ describe('ACP agent <-> client loopback', () => {
         id: 't1',
         name: 'read_file',
         title: 'read_file',
+        programmaticName: 'read_file',
         args: { path: 'a.ts' },
         kind: 'read',
       },

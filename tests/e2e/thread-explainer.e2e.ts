@@ -2,14 +2,16 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import assert from 'node:assert/strict'
-import { browser, $ } from '@wdio/globals'
+import { browser } from '@wdio/globals'
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { frameInTranscript, stickyPromptCollisions } from './helpers/sticky-prompt.ts'
 import {
   prepareE2eScreenshot,
   E2E_SCREENSHOT_DIR,
+  savePreparedAppScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 
@@ -194,7 +196,15 @@ describe('thread explainer', () => {
       join(E2E_SCREENSHOT_DIR, 'thread-explainer-player.png'),
       Buffer.from(frame.split(',')[1] ?? '', 'base64'),
     )
-    await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'thread-explainer-inline.png'))
+    // Frame the answer around the card below the pinned prompt (the test's own
+    // scrollIntoView above does not reserve its band), then prove it is clear.
+    await frameInTranscript(['.msg:has(.canvas-inline-artefact)'], 1)
+    const pinned = await stickyPromptCollisions({
+      selector: '.msg:has(.canvas-inline-artefact)',
+      nth: 1,
+    })
+    assert.deepEqual(pinned.collisions, [], JSON.stringify(pinned.geometry))
+    await savePreparedAppScreenshot('thread-explainer-inline.png')
 
     await assertNoErrorToasts('captured preview')
     await browser.reloadSession()

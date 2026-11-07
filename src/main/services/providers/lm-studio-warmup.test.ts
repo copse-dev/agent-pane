@@ -1,7 +1,10 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { createLmStudioWarmup } from './lm-studio-warmup.ts'
-import { setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { setApiKey, setSetting } from '../storage/settings.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const model = 'qwen/chat'
 const baseUrl = 'http://localhost:1234/proxy/v1/'
@@ -175,24 +178,24 @@ describe('LM Studio warm-up', () => {
 describe('warm-up uses the inference configuration', () => {
   const originalMockMode = process.env['COPSE_PANEL_MOCK_LLM']
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restoreAll()
     if (originalMockMode === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
     else process.env['COPSE_PANEL_MOCK_LLM'] = originalMockMode
-    setSetting('model', '')
-    setSetting('localDefaultModel', '')
-    setSetting('localServerUrl', '')
-    setSetting('roleModels', {})
-    setSetting('blockedModelMakers', [])
+    await setSetting('model', '')
+    await setSetting('localDefaultModel', '')
+    await setSetting('localServerUrl', '')
+    await setSetting('roleModels', {})
+    await setSetting('blockedModelMakers', [])
     setApiKey('lmstudio', '')
   })
 
   it('resolves the saved default, legacy alias, and dynamic role with the configured URL/key', async () => {
     delete process.env['COPSE_PANEL_MOCK_LLM']
-    setSetting('model', 'lm-studio')
-    setSetting('localDefaultModel', model)
-    setSetting('localServerUrl', baseUrl)
-    setSetting('roleModels', { coder: `lmstudio:${model}` })
+    await setSetting('model', 'lm-studio')
+    await setSetting('localDefaultModel', model)
+    await setSetting('localServerUrl', baseUrl)
+    await setSetting('roleModels', { coder: `lmstudio:${model}` })
     setApiKey('lmstudio', 'configured-key')
     const requests: Array<{ url: unknown; init: RequestInit | undefined }> = []
     mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
@@ -215,7 +218,7 @@ describe('warm-up uses the inference configuration', () => {
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     await createLmStudioWarmup()(`lmstudio:${model}`)
     delete process.env['COPSE_PANEL_MOCK_LLM']
-    setSetting('blockedModelMakers', ['xai'])
+    await setSetting('blockedModelMakers', ['xai'])
     await createLmStudioWarmup()('lmstudio:x-ai/grok-4.5')
     assert.equal(fetch.mock.callCount(), 0)
   })

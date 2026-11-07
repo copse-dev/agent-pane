@@ -9,6 +9,7 @@ import { parseSshPublicKey } from '../../project-sandbox/git-commit-signing.ts'
 import { requestApproval } from '../approval.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
+import { sshCommitSignature } from './git-signing-result.ts'
 
 const SIGNER = '/usr/bin/ssh-keygen'
 const MAX_PRIVATE_KEY_BYTES = 64 * 1024
@@ -139,13 +140,7 @@ export async function leaseGitPrivateSigningKey(
           stdoutMaxBytes: 16384,
         })
         await assertIdentity()
-        if (
-          result.code !== 0 ||
-          result.stdoutTruncated ||
-          !result.stdout.startsWith('-----BEGIN SSH SIGNATURE-----')
-        )
-          throw new Error('SSH commit signing failed. No unsigned retry was attempted.')
-        return result.stdout
+        return sshCommitSignature(result)
       },
     }
   } catch (error) {

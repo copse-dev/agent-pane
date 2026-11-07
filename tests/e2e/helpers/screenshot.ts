@@ -121,12 +121,18 @@ export async function saveThreePaneScreenshot(
           height: Math.round(rect.height * devicePixelRatio),
         }
       })
-      const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+      let shot = ''
+      await withSettledIndex(async () => {
+        shot = await browser.takeScreenshot()
+      })
+      const viewport = PNG.sync.read(Buffer.from(shot, 'base64'))
       const cropped = new PNG({ width: bounds.width, height: bounds.height })
       PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
       writeFileSync(path, PNG.sync.write(cropped))
     } else {
-      await body.saveScreenshot(path)
+      await withSettledIndex(async () => {
+        await body.saveScreenshot(path)
+      })
     }
   })
 }
@@ -225,10 +231,29 @@ export async function saveAppScreenshot(
 
 /** Capture an app shell that the spec has already sized and framed. */
 export async function savePreparedAppScreenshot(filename: string): Promise<void> {
-  const app = await browser.$('#app').getElement()
-  await app.waitForDisplayed({ timeout: 15_000 })
-  await waitForSettledLayout('#app')
-  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await saveFramedElementScreenshot('#app', filename)
+}
+
+/**
+ * Capture `selector` exactly as the spec framed it: no shell resize. Use it
+ * where that resize would undo the state under test — it hands focus back to
+ * the composer and can close a hover popover — instead of calling WebDriver's
+ * `saveScreenshot` directly, which skips the layout, index and motion waits.
+ * Wrap it in {@link withCaptureFrame} so fonts and animations are settled too.
+ */
+export async function saveFramedElementScreenshot(
+  selector: string,
+  filename: string,
+): Promise<void> {
+  const el = await browser.$(selector).getElement()
+  await el.waitForDisplayed({ timeout: 15_000 })
+  await waitForSettledLayout(selector)
+  await withSettledIndex(async () => {
+    await captureWhileStill(selector, async () => {
+      const subject = await browser.$(selector).getElement()
+      await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    })
+  })
 }
 
 /** Capture native webviews without ChromeDriver's element-capture rescaling. */
@@ -250,7 +275,11 @@ export async function saveAppViewportScreenshot(
         height: Math.round(rect.height * devicePixelRatio),
       }
     })
-    const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+    let shot = ''
+    await withSettledIndex(async () => {
+      shot = await browser.takeScreenshot()
+    })
+    const viewport = PNG.sync.read(Buffer.from(shot, 'base64'))
     if (
       bounds.x < 0 ||
       bounds.y < 0 ||
@@ -296,9 +325,7 @@ export async function saveChatPaneScreenshot(filename: string): Promise<void> {
     document.querySelector('.message-text table')?.scrollIntoView({ block: 'start' })
   })
   await browser.pause(100)
-  const app = await browser.$('#app').getElement()
-  await app.waitForDisplayed({ timeout: 15_000 })
-  await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await saveFramedElementScreenshot('#app', filename)
 }
 
 /** Capture a message sub-tree once {@link prepareChatMessageScreenshot} has run. */
@@ -310,10 +337,7 @@ export async function savePreparedElementScreenshot(
   await browser.execute((sel) => {
     document.querySelector<HTMLElement>(sel)?.scrollIntoView({ block: 'start', inline: 'nearest' })
   }, selector)
-  await browser.pause(100)
-  const el = await browser.$(selector).getElement()
-  await el.waitForDisplayed({ timeout: 15_000 })
-  await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  await saveFramedElementScreenshot(selector, filename)
 }
 
 /**
@@ -387,6 +411,127 @@ function isStaleElement(error: unknown): boolean {
 }
 
 /**
+ * The subject's viewport box plus every scroll offset inside it, as one
+ * comparable string, or `null` when it is missing or was just replaced.
+ * The box moves when any ancestor scrolls, so this sees a transcript that
+ * re-pins under the subject as well as scrolling inside it.
+ */
+async function layoutSnapshot(target: string | WebdriverIO.Element): Promise<string | null> {
+  try {
+    // A WDIO element crosses into the page as the DOM node itself; a selector
+    // is looked up there. Specs hand `saveElementScreenshot` either.
+    return await browser.execute((subject: string | Element) => {
+      const host = typeof subject === 'string' ? document.querySelector(subject) : subject
+      if (!host) return null
+      const rect = host.getBoundingClientRect()
+      const parts = [rect.top, rect.left, rect.width, rect.height]
+      const nodes = [host, ...host.querySelectorAll('*')]
+      for (const node of nodes) {
+        // Only scrollports carry a meaningful offset; skipping the rest keeps
+        // the walk cheap on a large settings form.
+        if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
+          parts.push(node.scrollTop, node.scrollLeft)
+        }
+      }
+      return parts.join(',')
+    }, target)
+  } catch (error) {
+    // The node was replaced between frames — a re-render is itself movement,
+    // so it is not settled; a selector re-resolves next time round, and an
+    // element handle that stays stale runs out the clock like a spinner.
+    if (!isStaleElement(error)) throw error
+    return null
+  }
+}
+
+/** How many times a capture is retaken when its subject moved while it was taken. */
+const STILL_CAPTURE_ATTEMPTS = 4
+
+/** Whether `target`'s box lies wholly inside the viewport, so capturing it scrolls nothing. */
+async function fullyInViewport(target: string | WebdriverIO.Element): Promise<boolean> {
+  try {
+    return await browser.execute((subject: string | Element) => {
+      const host = typeof subject === 'string' ? document.querySelector(subject) : subject
+      if (!host) return false
+      const rect = host.getBoundingClientRect()
+      return (
+        rect.top >= 0 &&
+        rect.left >= 0 &&
+        rect.bottom <= window.innerHeight &&
+        rect.right <= window.innerWidth
+      )
+    }, target)
+  } catch (error) {
+    if (!isStaleElement(error)) throw error
+    return false
+  }
+}
+
+/**
+ * Take `capture` and keep it only if `target` was in the same place before and
+ * after. ChromeDriver measures an element's box and then grabs a frame, so a
+ * scroll landing in between crops the right box out of a moved page.
+ * {@link waitForSettledLayout} cannot rule that out: a loaded runner can start
+ * a late scroll after the settle has already read three still frames, and
+ * `guarded-yolo-hard-deny.png` came back with the denied card 4px higher in an
+ * identical crop that way. A changed snapshot settles again and retakes; the
+ * last attempt is kept so a genuinely moving surface still gets a capture.
+ *
+ * Only a subject wholly inside the viewport is checked. For one that is not,
+ * ChromeDriver scrolls it into view as part of the capture, so the subject
+ * always "moves" (about 40px per capture on a settings page taller than the
+ * window) and retaking would only keep a later, different frame. That subject
+ * keeps the single capture it always had.
+ */
+async function captureWhileStill(
+  target: string | WebdriverIO.Element,
+  capture: () => Promise<void>,
+): Promise<void> {
+  if (!(await fullyInViewport(target))) {
+    await capture()
+    return
+  }
+  for (let attempt = 1; ; attempt += 1) {
+    const before = await layoutSnapshot(target)
+    await capture()
+    const after = await layoutSnapshot(target)
+    if ((before !== null && before === after) || attempt >= STILL_CAPTURE_ATTEMPTS) return
+    await waitForSettledLayout(target)
+  }
+}
+
+/**
+ * Wait until the text under `selector` reads the same on `polls` consecutive
+ * reads `interval` apart. For copy the app recomputes after the DOM first
+ * matches a spec's assertion, such as the composer's pre-send estimate, which
+ * reruns on every store change: a regex that skips the number passes on the
+ * first value, while the capture should hold the value the page settles on.
+ */
+export async function waitForStableText(
+  selector: string,
+  options: { polls?: number; interval?: number; timeout?: number } = {},
+): Promise<string> {
+  const { polls = 4, interval = 250, timeout = 15_000 } = options
+  let previous: string | null = null
+  let stable = 0
+  let settled = ''
+  await browser.waitUntil(
+    async () => {
+      const text = await browser.execute(
+        (sel: string) => document.querySelector(sel)?.textContent ?? null,
+        selector,
+      )
+      stable = text !== null && text === previous ? stable + 1 : 0
+      previous = text
+      if (text !== null) settled = text
+      return stable >= polls - 1
+    },
+    { timeout, interval, timeoutMsg: `text under ${selector} never held still` },
+  )
+  return settled
+}
+
+/**
  * Wait until nothing under `selector` is still moving: every scroll offset in
  * the subtree and the element's own box must read the same across consecutive
  * animation frames. Smooth scrolling is the usual offender — a spec that does
@@ -408,32 +553,7 @@ export async function waitForSettledLayout(
   let previous: string | null = null
   let stable = 0
   while (Date.now() < deadline) {
-    // A WDIO element crosses into the page as the DOM node itself; a selector
-    // is looked up there. Specs hand `saveElementScreenshot` either.
-    let snapshot: string | null
-    try {
-      snapshot = await browser.execute((subject: string | Element) => {
-        const host = typeof subject === 'string' ? document.querySelector(subject) : subject
-        if (!host) return null
-        const rect = host.getBoundingClientRect()
-        const parts = [rect.top, rect.left, rect.width, rect.height]
-        const nodes = [host, ...host.querySelectorAll('*')]
-        for (const node of nodes) {
-          // Only scrollports carry a meaningful offset; skipping the rest keeps
-          // the walk cheap on a large settings form.
-          if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
-            parts.push(node.scrollTop, node.scrollLeft)
-          }
-        }
-        return parts.join(',')
-      }, target)
-    } catch (error) {
-      // The node was replaced between frames — a re-render is itself movement,
-      // so it is not settled; a selector re-resolves next time round, and an
-      // element handle that stays stale runs out the clock like a spinner.
-      if (!isStaleElement(error)) throw error
-      snapshot = null
-    }
+    const snapshot = await layoutSnapshot(target)
     if (snapshot !== null && snapshot === previous) {
       stable += 1
       if (stable >= stableFrames) return
@@ -481,8 +601,12 @@ export async function saveElementScreenshot(
     // page settled (a tool card whose transcript updated once more) is a fresh
     // node by now, and the handle taken above would be stale.
     await waitForSettledLayout(selector)
-    const subject = await browser.$(selector).getElement()
-    await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    await withSettledIndex(async () => {
+      await captureWhileStill(selector, async () => {
+        const subject = await browser.$(selector).getElement()
+        await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+      })
+    })
     // Hand the page back exactly as the caller left it — the scroll was for the
     // capture, and specs keep interacting with the page afterwards.
     if (saved) await browser.execute(restoreScrollAfterCapture, selector, saved)
@@ -542,4 +666,73 @@ export async function pinTextForCapture(
  */
 export function pinProfilePathForCapture(selector: string): Promise<() => Promise<void>> {
   return pinTextForCapture(selector, /\.wdio-profile-[^/\s]+/g, '.wdio-profile-XXXXXX')
+}
+
+/**
+ * How long a capture waits for a workspace index build to finish. A file-index
+ * rebuild of an e2e workspace takes well under this even on CI's no-rg walk; a
+ * cold semantic build of a real checkout (a dev host with gortex installed)
+ * can take minutes, and that case falls back to pinning the elapsed label.
+ */
+const INDEX_SETTLE_TIMEOUT_MS = 15_000
+
+/** Builds that already outlasted the wait once, keyed by their `startedAt`. */
+const outlastedBuilds = new Set<number>()
+
+/** The footer chip's live elapsed label, e.g. "Indexing… 12s" or "Building file index… 1m 4s". */
+const ELAPSED_LABEL = /(Indexing…|Building file index…) \d+(m \d+)?s/
+
+async function readIndexState(): Promise<{ building: number[]; chipBuilding: boolean }> {
+  return browser.execute(async () => {
+    // Fixture documents and web pages a spec captures have no preload bridge.
+    if (!('api' in window)) return { building: [], chipBuilding: false }
+    const status = await window.api.index.status()
+    const building = [status.fileIndex, status.semantic]
+      .filter((component) => component.phase === 'building')
+      .map((component) => component.startedAt ?? 0)
+    const chip = document.querySelector<HTMLElement>('.footer-indexing')
+    return { building, chipBuilding: chip?.dataset['state'] === 'building' }
+  })
+}
+
+/**
+ * Hold a capture until no workspace index build is running, so the footer's
+ * "Indexing… <elapsed>" chip is either absent or the same on every run.
+ *
+ * The workspace watcher rebuilds the file index after every write, and e2e
+ * writes PNGs into the checkout it is indexing. On a loaded runner the rebuild
+ * outlives the chip's show delay, so without this wait the same frame came back
+ * with no chip, "Indexing… 2s" or "Indexing… 4s" depending on scheduling
+ * (`footer-branch-bisect-in-progress.png` rendered two hashes on one day).
+ *
+ * It reads the status through the same `index.status()` call the chip seeds
+ * from, so it also covers a build still inside the chip's show delay, which
+ * would otherwise appear mid-capture. When a build outlasts the wait, the chip
+ * is genuinely part of the frame: pin only its seconds and keep the real copy.
+ */
+async function withSettledIndex(capture: () => Promise<void>): Promise<void> {
+  let state = await readIndexState()
+  const deadline = Date.now() + INDEX_SETTLE_TIMEOUT_MS
+  while (
+    (state.building.length > 0 || state.chipBuilding) &&
+    !state.building.some((startedAt) => outlastedBuilds.has(startedAt)) &&
+    Date.now() < deadline
+  ) {
+    await browser.pause(100)
+    state = await readIndexState()
+  }
+  if (state.building.length === 0 && !state.chipBuilding) {
+    await capture()
+    return
+  }
+  for (const startedAt of state.building) outlastedBuilds.add(startedAt)
+  // A build that started inside the show delay has no chip text to pin yet.
+  const restore = state.chipBuilding
+    ? await pinTextForCapture('.footer-indexing', ELAPSED_LABEL, '$1 0s')
+    : null
+  try {
+    await capture()
+  } finally {
+    await restore?.()
+  }
 }
