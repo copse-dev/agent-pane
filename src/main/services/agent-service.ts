@@ -158,7 +158,7 @@ import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
 } from '@shared/tools/readonly-tools.ts'
-import { getMcpToolMeta } from './mcp/mcp-registry.ts'
+import { acquireMcpToolScope, getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { runCustomAgent } from './agents/custom-agent-runner.ts'
@@ -880,6 +880,19 @@ export async function runAgent(
   }
 }
 
+async function runWithMcpTools<T>(
+  registry: ToolRegistry,
+  signal: AbortSignal,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const scope = await acquireMcpToolScope(registry, undefined, signal)
+  try {
+    return await scope.run(operation)
+  } finally {
+    await scope.release()
+  }
+}
+
 async function runAgentWithInlineCanvas(
   threadId: string,
   userPrompt: UserContent,
@@ -905,6 +918,36 @@ async function runAgentWithInlineCanvas(
     resolveAgentChatModel(previousPromptModel ?? requestedModel),
   )
   admission.signal.throwIfAborted()
+  return runWithMcpTools(registry, admission.signal, () =>
+    runAgentWithResolvedModel(
+      threadId,
+      userPrompt,
+      priorMessages,
+      host,
+      registry,
+      admission,
+      onPreflightComplete,
+      requestedModel,
+      resolved,
+      options,
+    ),
+  )
+}
+
+async function runAgentWithResolvedModel(
+  threadId: string,
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  admission: AbortController,
+  onPreflightComplete: () => void,
+  requestedModel: string,
+  resolved: Awaited<ReturnType<typeof resolveAgentChatModel>>,
+  options?: RunAgentOptions,
+): Promise<RunAgentResult> {
+  admission.signal.throwIfAborted()
+  const runContext = getThreadExecutionContext()
   let model = resolved.model
   recordThreadModel(threadId, model)
   // Persist the resolved model so a turn that fails before any usage (e.g. a
