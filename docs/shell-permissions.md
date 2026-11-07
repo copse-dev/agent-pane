@@ -28,6 +28,9 @@ SDK retries are disabled for these requests. Parallel native helpers and in-loop
 share the serialized allowance. No reservation is refunded after failure, cancellation,
 missing usage or restart. A request that cannot fit, or whose allowance cannot be read or
 written, does not start. Usage accounting remains separate and reports observed usage.
+Thread-owned title and terminal labels, tool summaries, follow-up and next-step suggestions,
+PR descriptions, image handoffs and manually requested reviews re-enter the same persisted
+allowance outside the dispatcher. A project-only terminal has no automation run owner.
 
 This is a ceiling on **catalogue-priced reservations**, not a guarantee about a provider invoice:
 catalogue prices or context limits may be stale, and tool-initiated spending is outside its scope.

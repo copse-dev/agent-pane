@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type {} from './helpers/browser-globals.d.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 
 const PROJECT_ID = 'e2e-model-allowance'
 
@@ -136,5 +137,61 @@ describe('automation model allowance editor', function () {
     await browser.execute(async () => {
       await window.__copseE2e?.clearMockScenarios()
     })
+  })
+
+  it('every out-of-turn helper and review reads the durable allowance through real IPC', async () => {
+    const threadId = await browser.execute(async (projectId: string) => {
+      const threads = await window.api.threads.loadProject(projectId)
+      const thread = threads.find((candidate) => candidate.title === 'Limited project review')
+      if (!thread) throw new Error('The automation run is missing')
+      return thread.id
+    }, PROJECT_ID)
+    const path = join(copseUserDataDir(), 'automation-budgets', PROJECT_ID, `${threadId}.json`)
+    const original = readFileSync(path, 'utf8')
+    // Corrupt the isolated fixture on disk. Even mock-mode helpers that normally
+    // return a canned title or no suggestion must read and reject this record.
+    writeFileSync(path, '{broken')
+    try {
+      const results = await browser.execute(
+        async (projectId: string, id: string) => {
+          const context = JSON.stringify({
+            userMessage: 'Review',
+            assistantMessage: 'Done',
+            toolNames: [],
+          })
+          const agent = window.api.agent
+          const requests = [
+            agent.suggestTitle('Review the project', projectId, id),
+            agent.suggestTerminalTitle('Running tests', projectId, id),
+            agent.suggestCommandSummary(['pwd', 'git status'], projectId, id),
+            agent.suggestToolTurnSummary(['Read files', 'Run tests'], projectId, id),
+            agent.suggestNextStep(context, projectId, id),
+            agent.suggestFollowUps(projectId, id, context),
+            agent.suggestPrBody(projectId, id, context),
+            agent.describeImages(projectId, id, 'claude-haiku-4-5', '', [
+              'data:image/png;base64,AAAA',
+            ]),
+            agent.retryReview(projectId, id, '{}'),
+            window.api.review.run(projectId, id, '{}'),
+          ]
+          return Promise.all(
+            requests.map(async (request) => {
+              try {
+                await request
+                return 'unexpectedly admitted'
+              } catch (error) {
+                return error instanceof Error ? error.message : String(error)
+              }
+            }),
+          )
+        },
+        PROJECT_ID,
+        threadId,
+      )
+      assert.equal(results.length, 10)
+      for (const result of results) assert.match(result, /allowance is unreadable/)
+    } finally {
+      writeFileSync(path, original)
+    }
   })
 })

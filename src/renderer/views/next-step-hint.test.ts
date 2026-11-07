@@ -47,6 +47,28 @@ async function flush(): Promise<void> {
 }
 
 describe('next-step hint controller', () => {
+  it('captures the owning project before awaiting settings across a project switch', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const api = createFakeApi()
+    const owners: string[][] = []
+    let release: (value: unknown) => void = () => {}
+    api.settings.get = () =>
+      new Promise((resolve) => {
+        release = resolve
+      })
+    api.agent.suggestNextStep = async (_context, projectId, id) => {
+      owners.push([projectId, id])
+      return null
+    }
+    const mount = mountNextStepHint(store, api, () => {})
+    store.emit('thread_status_changed', threadId, 'idle')
+    store.setState({ activeProjectId: 'new-project', threads: [] })
+    release(true)
+    await flush()
+    assert.deepEqual(owners, [['project-1', threadId]])
+    mount.destroy()
+  })
+
   it('fetches once per finished turn and exposes the hint for the active thread', async () => {
     const { store, threadId } = storeWithFinishedTurn()
     const { api, fetches } = fakeApi({ enabled: true, hint: 'Run the tests' })
