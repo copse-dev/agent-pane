@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { browser, $ } from '@wdio/globals'
+import { browser } from '@wdio/globals'
 import { reviewSceneStory, worktreeSceneStory } from '../fixtures/explainer-scenes.ts'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
@@ -10,7 +10,11 @@ import { submitComposer } from './helpers/composer.ts'
 import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  savePreparedAppScreenshot,
+} from './helpers/screenshot.ts'
 
 async function turn(prompt: string, name: string, args: Record<string, unknown>): Promise<void> {
   const scenario = await prepareMockToolTurn(prompt, { name, args }, 'The explanation is ready.')
@@ -155,9 +159,7 @@ describe('composed explainer scenes', () => {
         join(E2E_SCREENSHOT_DIR, `explainer-scenes-${String(index + 1)}-player.png`),
         Buffer.from(frame.split(',')[1] ?? '', 'base64'),
       )
-      await $('#app').saveScreenshot(
-        join(E2E_SCREENSHOT_DIR, `explainer-scenes-${String(index + 1)}.png`),
-      )
+      await savePreparedAppScreenshot(`explainer-scenes-${String(index + 1)}.png`)
       await assertNoErrorToasts('composed explainer')
     }
     await browser.reloadSession()
