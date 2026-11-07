@@ -1,12 +1,18 @@
 import type { Thread } from '@shared/types'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
-import { disposeAcpSession } from './acp/acp-session-pool.ts'
+import {
+  hasActiveAcpTurn,
+  withIdleAcpSession,
+  type IdleAcpSessionResult,
+} from './acp/acp-session-pool.ts'
 import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
+import { withThreadResourceFence } from './thread-resource-fence.ts'
 import { getThreadMeta, loadProjectThreadMetas, updateMetaOrThrow } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { adoptThreadWorktree, canAdoptThreadWorktree } from './worktree-manager.ts'
+import { hasLiveWorktreeWriter } from './worktree-writers.ts'
 
 /**
  * Which finished run's checkout the next run of the same automation may take over.
@@ -27,9 +33,12 @@ export interface AutomationWorktreeReuseDependencies {
     patch: Partial<Omit<Thread, 'messages'>>,
   ): Promise<void>
   projectRoot(projectId: string): string | null
-  /** True while a terminal, background process or ACP turn could still use the checkout. */
-  isLive(projectId: string, threadId: string): boolean
-  disposeSession(threadId: string): Promise<void>
+  /** Non-ACP owners; the pool separately guards ACP ownership atomically. */
+  isLive(projectId: string, threadId: string, checkoutRoot: string): boolean
+  withIdleSession: <T>(
+    threadId: string,
+    operation: () => Promise<T>,
+  ) => Promise<IdleAcpSessionResult<T>>
   canAdopt: typeof canAdoptThreadWorktree
   adopt: typeof adoptThreadWorktree
   now(): number
@@ -97,7 +106,12 @@ export function createAutomationWorktreeReuse(
       if (!subject || scheduleId === undefined) return false
       const previous = previousRun(threads, scheduleId, '')
       if (previous?.thread.id !== threadId) return false
-      if (!settled(previous.thread) || deps.isLive(projectId, threadId)) return false
+      if (
+        !settled(previous.thread) ||
+        deps.isLive(projectId, threadId, previous.worktree.path) ||
+        hasActiveAcpTurn(threadId)
+      )
+        return false
       return deps.canAdopt({
         projectId,
         projectRoot: root,
@@ -112,35 +126,56 @@ export function createAutomationWorktreeReuse(
       if (!thread || scheduleId === undefined) return null
       const previous = previousRun(await loadMetas(input.projectId), scheduleId, input.threadId)
       if (!previous) return null
-      if (!settled(previous.thread) || deps.isLive(input.projectId, previous.thread.id)) return null
+      return withThreadResourceFence(
+        { projectId: input.projectId, threadId: previous.thread.id },
+        async () => {
+          // Resource creation or an earlier hand-over may have won the fence.
+          const current = previousRun(await loadMetas(input.projectId), scheduleId, input.threadId)
+          if (current?.thread.id !== previous.thread.id) return null
+          if (
+            !settled(current.thread) ||
+            deps.isLive(input.projectId, current.thread.id, current.worktree.path)
+          )
+            return null
+          const released = await deps.withIdleSession(current.thread.id, async () => {
+            const latest = await getMeta(input.projectId, current.thread.id)
+            if (
+              !latest ||
+              !settled(latest) ||
+              latest.worktree?.path !== current.worktree.path ||
+              latest.worktree.retiredAt !== undefined ||
+              deps.isLive(input.projectId, current.thread.id, current.worktree.path)
+            )
+              return null
+            const result = await deps.adopt({
+              projectId: input.projectId,
+              projectRoot: input.projectRoot,
+              fromThreadId: current.thread.id,
+              toThreadId: input.threadId,
+              from: latest.worktree,
+              baseBranch: input.baseBranch,
+            })
+            if (result.status !== 'adopted') return null
 
-      await deps.disposeSession(previous.thread.id)
-      const result = await deps.adopt({
-        projectId: input.projectId,
-        projectRoot: input.projectRoot,
-        fromThreadId: previous.thread.id,
-        toThreadId: input.threadId,
-        from: previous.worktree,
-        baseBranch: input.baseBranch,
-      })
-      if (result.status !== 'adopted') return null
-
-      // The checkout now lives at the new thread's path, so the old thread must stop claiming it.
-      // Its branch is the same one the new thread is on, so it is recorded as retired rather
-      // than dropped. Retried once: a stale claim would break the next worktree-budget check.
-      const retired = {
-        worktree: {
-          ...previous.worktree,
-          retiredAt: deps.now(),
-          retiredHead: result.previousHead,
+            // The old thread must stop claiming the checkout now owned by the
+            // new run. Retry once rather than leave a stale budget claim.
+            const retired = {
+              worktree: {
+                ...latest.worktree,
+                retiredAt: deps.now(),
+                retiredHead: result.previousHead,
+              },
+            }
+            try {
+              await deps.updateMeta(input.projectId, current.thread.id, retired)
+            } catch {
+              await deps.updateMeta(input.projectId, current.thread.id, retired)
+            }
+            return result.worktree
+          })
+          return released.status === 'busy' ? null : released.value
         },
-      }
-      try {
-        await deps.updateMeta(input.projectId, previous.thread.id, retired)
-      } catch {
-        await deps.updateMeta(input.projectId, previous.thread.id, retired)
-      }
-      return result.worktree
+      )
     },
   }
 }
@@ -150,11 +185,11 @@ export function getAutomationWorktreeReuse(): AutomationWorktreeReuse {
   singleton ??= createAutomationWorktreeReuse({
     updateMeta: updateMetaOrThrow,
     projectRoot: getProjectRoot,
-    isLive: (projectId, threadId) =>
-      hasTerminalSessions(threadId) || hasBackgroundProcessesForThread({ projectId, threadId }),
-    disposeSession: async (threadId) => {
-      await disposeAcpSession(threadId)
-    },
+    isLive: (projectId, threadId, root) =>
+      hasTerminalSessions(threadId) ||
+      hasBackgroundProcessesForThread({ projectId, threadId }) ||
+      hasLiveWorktreeWriter(root),
+    withIdleSession: withIdleAcpSession,
     canAdopt: canAdoptThreadWorktree,
     adopt: adoptThreadWorktree,
     now: Date.now,

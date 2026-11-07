@@ -5,11 +5,17 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type NewSessionRequest,
+  type SessionUpdate,
 } from '@agentclientprotocol/sdk/unstable'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
-import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from './acp-client.ts'
+import {
+  cancelAgentInitiatedTurn,
+  runAcpSessionPrompt,
+  type AcpClientHandlers,
+  type AcpTransport,
+} from './acp-client.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -29,6 +35,7 @@ import {
   disposeAllAcpSessions,
   hasActiveAcpTurn,
   reapIdleAcpSessions,
+  withIdleAcpSession,
 } from './acp-session-pool.ts'
 
 /**
@@ -44,15 +51,20 @@ interface AgentLog {
   promptSessions: string[]
 }
 
-function makeTransportFactory(log: AgentLog): () => Promise<{
+function makeTransportFactory(
+  log: AgentLog,
+  run?: AcpTurnRunner,
+): () => Promise<{
   stream: ReturnType<typeof ndJsonStream>
   dispose: () => void
 }> {
-  const runner: AcpTurnRunner = async (ctx) => {
-    log.promptSessions.push(ctx.sessionId)
-    await ctx.emit({ type: 'text', text: `echo:${ctx.prompt}` })
-    return { stopReason: 'end_turn' }
-  }
+  const runner: AcpTurnRunner =
+    run ??
+    (async (ctx): ReturnType<AcpTurnRunner> => {
+      log.promptSessions.push(ctx.sessionId)
+      await ctx.emit({ type: 'text', text: `echo:${ctx.prompt}` })
+      return { stopReason: 'end_turn' }
+    })
   return () => {
     log.spawns++
     const c2a = new TransformStream<Uint8Array, Uint8Array>()
@@ -113,6 +125,257 @@ const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/pool-test' }
 describe('acp-session-pool', () => {
   afterEach(async () => {
     await disposeAllAcpSessions()
+  })
+
+  for (const update of [
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'arriving-helper',
+      title: 'Background helper',
+      status: 'in_progress',
+    },
+    {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'Resuming after the prompt returned' },
+    },
+  ] satisfies SessionUpdate[]) {
+    it(`protects a received ${update.sessionUpdate} before the update pump consumes it`, async () => {
+      const { entry } = await acquireAcpSession({
+        threadId: 'received-update',
+        config: CONFIG,
+        createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+      })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      let mutations = 0
+      const cleanup = withIdleAcpSession('received-update', async () => {
+        mutations++
+      })
+      // Resolving the pump's waiter queues its continuation after the already
+      // requested close. The received update still owns this delivery gap.
+      entry.open.updates.enqueue(update)
+      assert.deepEqual(await cleanup, { status: 'busy' })
+      assert.equal(mutations, 0)
+      assert.equal(entry.open.isClosed(), false)
+    })
+  }
+
+  it('refuses automatic checkout changes while a prompt is outstanding', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    const { entry } = await acquireAcpSession({
+      threadId: 'prompt-owner',
+      config: CONFIG,
+      createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }, async () => {
+        entered.resolve(undefined)
+        await finish.promise
+        return { stopReason: 'end_turn' }
+      }),
+    })
+    entry.open.handlers.current = sink([])
+    const prompt = runAcpSessionPrompt(entry.open, 'work', undefined)
+    try {
+      await entered.promise
+      assert.deepEqual(await withIdleAcpSession('prompt-owner', async () => 'unsafe'), {
+        status: 'busy',
+      })
+      assert.equal(entry.open.isClosed(), false)
+    } finally {
+      finish.resolve(undefined)
+      await prompt
+    }
+  })
+
+  it('never mutates a checkout after an uncertain idle shutdown, including a second attempt', async () => {
+    const factory = makeTransportFactory({ spawns: 0, promptSessions: [] })
+    await acquireAcpSession({
+      threadId: 'uncertain-close',
+      config: CONFIG,
+      createTransport: async () => {
+        const transport = await factory()
+        return {
+          ...transport,
+          dispose: async (): Promise<void> => {
+            transport.dispose()
+            throw new Error('Shutdown could not be confirmed')
+          },
+        }
+      },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    let mutations = 0
+    const mutate = async (): Promise<void> => {
+      mutations++
+    }
+    await assert.rejects(
+      withIdleAcpSession('uncertain-close', mutate),
+      /Shutdown could not be confirmed/,
+    )
+    const healthy = await acquireAcpSession({
+      threadId: 'healthy-idle',
+      config: CONFIG,
+      createTransport: factory,
+    })
+    healthy.entry.lastUsedAt = 0
+    await assert.rejects(
+      reapIdleAcpSessions(Date.now() + 11 * 60_000),
+      /Shutdown could not be confirmed/,
+    )
+    assert.equal(
+      healthy.entry.open.isClosed(),
+      true,
+      'one uncertain writer cannot starve unrelated idle cleanup',
+    )
+    await assert.rejects(
+      acquireAcpSession({
+        threadId: 'uncertain-close',
+        config: CONFIG,
+        createTransport: async () => {
+          throw new Error('An uncertain old writer must not be replaced')
+        },
+      }),
+      /Shutdown could not be confirmed/,
+    )
+    const second = await withIdleAcpSession('uncertain-close', mutate).then(
+      () => 'released',
+      () => 'rejected',
+    )
+    assert.equal(second, 'rejected', 'reaping or replacement cannot forget the uncertain writer')
+    assert.equal(mutations, 0)
+    assert.equal(acpSessionPoolSize(), 1)
+    // Explicit shutdown still reports the same failure, while clearing the
+    // isolated pool so the next test cannot inherit this intentional fault.
+    await assert.rejects(disposeAllAcpSessions(), /Shutdown could not be confirmed/)
+  })
+
+  it('keeps a replacement acquire behind the entire idle checkout mutation', async () => {
+    const log = { spawns: 0, promptSessions: [] }
+    const createTransport = makeTransportFactory(log)
+    const { entry } = await acquireAcpSession({
+      threadId: 'handover',
+      config: CONFIG,
+      createTransport,
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    const mutation = withIdleAcpSession('handover', async () => {
+      assert.equal(entry.open.isClosed(), true)
+      entered.resolve(undefined)
+      await finish.promise
+      return 'checkout moved'
+    })
+    await entered.promise
+    const replacement = acquireAcpSession({ threadId: 'handover', config: CONFIG, createTransport })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(log.spawns, 1, 'the old root cannot be reopened while it is moving')
+    finish.resolve(undefined)
+    assert.deepEqual(await mutation, { status: 'released', value: 'checkout moved' })
+    assert.notEqual((await replacement).entry, entry)
+    assert.equal(log.spawns, 2)
+  })
+
+  it('does not wait for an opening session before refusing automatic cleanup', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    const factory = makeTransportFactory({ spawns: 0, promptSessions: [] })
+    const opening = acquireAcpSession({
+      threadId: 'opening',
+      config: CONFIG,
+      createTransport: async () => {
+        entered.resolve(undefined)
+        await finish.promise
+        return factory()
+      },
+    })
+    await entered.promise
+    let mutations = 0
+    assert.deepEqual(
+      await withIdleAcpSession('opening', async () => {
+        mutations++
+      }),
+      { status: 'busy' },
+    )
+    assert.equal(mutations, 0)
+    finish.resolve(undefined)
+    const { entry } = await opening
+    assert.equal(entry.open.isClosed(), false)
+  })
+
+  it('protects the cancellation acknowledgement after a self-started lease ends', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'cancelling',
+      config: CONFIG,
+      createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const lease = createAgentInitiatedTurnLease({
+      projectId: 'project',
+      threadId: 'cancelling',
+      bridge: {
+        setExecutionContext: () => {},
+        setTurnSignal: () => {},
+        setPendingExecutionContext: () => {},
+      },
+      resolveContext: async () => 'context',
+      confirmContinue: async () => false,
+      beginWriter: () => (): void => {},
+      getAuthority: () => null,
+    })
+    entry.open.agentInitiated = lease
+    lease.begin()
+    assert.equal(cancelAgentInitiatedTurn(entry.open, 2000), true)
+    assert.equal(lease.isActive(), false)
+    assert.deepEqual(await withIdleAcpSession('cancelling', async () => 'unsafe'), {
+      status: 'busy',
+    })
+    assert.equal(entry.open.isClosed(), false)
+    entry.open.updates.enqueue({
+      sessionUpdate: 'usage_update',
+      used: 1,
+      size: 2,
+      _meta: { '_claude/origin': { kind: 'task-notification' } },
+    })
+    await entry.open.agentInitiatedCancel?.settled
+    assert.deepEqual(await withIdleAcpSession('cancelling', async () => 'safe'), {
+      status: 'released',
+      value: 'safe',
+    })
+  })
+
+  it('rechecks a self-started lease that begins after automatic cleanup was requested', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'late-self-resume',
+      config: CONFIG,
+      createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const lease = createAgentInitiatedTurnLease({
+      projectId: 'project',
+      threadId: 'late-self-resume',
+      bridge: {
+        setExecutionContext: () => {},
+        setTurnSignal: () => {},
+        setPendingExecutionContext: () => {},
+      },
+      resolveContext: async () => 'context',
+      confirmContinue: async () => false,
+      beginWriter: () => (): void => {},
+      getAuthority: () => null,
+    })
+    entry.open.agentInitiated = lease
+    let mutations = 0
+    const cleanup = withIdleAcpSession('late-self-resume', async () => {
+      mutations++
+    })
+    // The update pump begins a lease synchronously, before its asynchronous
+    // context/budget claim finishes. It must beat a previously requested close.
+    lease.begin()
+    assert.deepEqual(await cleanup, { status: 'busy' })
+    assert.equal(mutations, 0)
+    assert.equal(entry.open.isClosed(), false)
+    assert.deepEqual(await reapIdleAcpSessions(Date.now() + 11 * 60_000), [])
+    lease.end()
+    assert.deepEqual(await reapIdleAcpSessions(Date.now() + 11 * 60_000), ['late-self-resume'])
   })
 
   it('reports a self-started lease and pending tools after the prompt has returned', async () => {
