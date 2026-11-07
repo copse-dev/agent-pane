@@ -1328,6 +1328,7 @@ const api: ApiClient = {
     openLicenseFile: (kind) => ipcRenderer.invoke('about:open-license-file', kind),
   },
   usage: {
+    signInToClaude: () => ipcRenderer.invoke('usage:sign-in-to-claude'),
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
     getThreadClassifierUse: (projectId, threadId) =>
       ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),

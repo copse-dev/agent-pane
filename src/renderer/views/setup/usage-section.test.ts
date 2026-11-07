@@ -1,6 +1,7 @@
 import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
@@ -84,7 +85,7 @@ describe('renderPlanProvider sign-in button', () => {
     assert.equal(hint.querySelector('code')?.textContent, 'claude auth login')
     assert.doesNotMatch(hint.textContent, /`/)
     assert.doesNotMatch(btn.title, /`/)
-    assert.equal(btn.title, 'Open a terminal and run claude auth login')
+    assert.equal(btn.title, 'Open Claude sign-in in your browser')
     btn.click()
     assert.equal(clicked, 1)
   })
@@ -251,27 +252,6 @@ describe('renderPlanProvider credit windows', () => {
 })
 
 describe('createPlanSignInHandler', () => {
-  it('closes settings and requests `claude auth login` in a terminal', () => {
-    const store = createStore({
-      filesPaneOpen: false,
-      rightPanelMode: 'explorer',
-      activeProjectId: 'ssh-project',
-      workspaceRoot: '/remote/project',
-    })
-    const commands: { command: string; executionTarget?: 'local' }[] = []
-    store.on('request_terminal_command', (cmd, options) => {
-      commands.push({ command: cmd, ...options })
-    })
-    let closed = 0
-    const handler = createPlanSignInHandler(store, 'claude', () => {
-      closed += 1
-    })
-    assert.ok(handler)
-    handler()
-    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
-    assert.equal(closed, 1)
-  })
-
   it('closes settings and requests `codex login` in a terminal', () => {
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     const commands: string[] = []
@@ -279,7 +259,7 @@ describe('createPlanSignInHandler', () => {
       commands.push(command)
     })
     let closed = 0
-    const handler = createPlanSignInHandler(store, 'codex', () => {
+    const handler = createPlanSignInHandler(store, () => {
       closed += 1
     })
     assert.ok(handler)
@@ -289,7 +269,7 @@ describe('createPlanSignInHandler', () => {
   })
 
   it('returns null without a store to route through', () => {
-    assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
+    assert.equal(createPlanSignInHandler(undefined), null)
   })
 })
 
@@ -341,6 +321,70 @@ describe('usage refresh after sign-in', () => {
     assert.equal(forced.includes(true), false, 'ordinary reads remain cached after recovery')
     section.detach()
   })
+})
+
+describe('guided Claude sign-in recovery', () => {
+  for (const error of [
+    'Claude Code is not installed or is not on Copse’s PATH.',
+    'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+    'Claude is using an API key or token, not a Claude subscription sign-in.',
+  ]) {
+    it(`shows ${error} and permits one successful retry`, async () => {
+      const base = createFakeApi()
+      let finishFirstAttempt: (result: { ok: boolean; error?: string }) => void = () => {
+        throw new Error('Sign-in attempt was not initialized')
+      }
+      const firstAttempt = new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        finishFirstAttempt = resolve
+      })
+      let attempts = 0
+      const api = {
+        ...base,
+        usage: {
+          ...base.usage,
+          getPlanUsage: async (): Promise<PlanUsageSnapshot> => ({
+            checkedAt: new Date().toISOString(),
+            providers: [claudeUnavailable('Claude credentials were rejected.')],
+          }),
+          signInToClaude: async (): Promise<{ ok: boolean; error?: string }> => {
+            attempts++
+            return attempts === 1 ? firstAttempt : { ok: true }
+          },
+        },
+      }
+      const section = createUsageSection(api, createStore())
+      document.body.append(section.root)
+      try {
+        await section.refresh()
+        const button = section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
+        const status = section.root.querySelector<HTMLElement>('.usage-plan-signin-status')
+        assert.ok(button && status)
+        button.click()
+        button.click()
+        assert.equal(attempts, 1)
+        assert.equal(button.disabled, true)
+        assert.equal(status.hidden, false)
+        assert.equal(status.getAttribute('role'), 'status')
+        assert.match(status.textContent, /Complete Claude sign-in in the browser/)
+
+        finishFirstAttempt({ ok: false, error })
+        await nextTurn()
+        assert.equal(status.textContent, error)
+        assert.equal(button.disabled, false)
+        button.click()
+        await nextTurn()
+        assert.equal(attempts, 2)
+        assert.equal(status.textContent, 'Claude sign-in complete.')
+        assert.equal(
+          section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')?.disabled,
+          false,
+        )
+      } finally {
+        section.detach()
+        section.root.remove()
+      }
+    })
+  }
 })
 
 describe('renderModelTable alignment', () => {

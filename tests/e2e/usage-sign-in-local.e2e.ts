@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-usage-local-sign-in'
 
-describe('usage sign-in local terminal routing', () => {
+describe('usage sign-in local CLI routing', () => {
   let bin = ''
   let originalPath: string | undefined
 
@@ -24,12 +23,12 @@ describe('usage sign-in local terminal routing', () => {
     // the installed provider CLI or touch its credentials.
     writeFileSync(
       join(bin, 'claude'),
-      '#!/bin/sh\nprintf "\\033[2J\\033[H"\nif [ "$PWD" = "$HOME" ]; then printf "COPSE_LOCAL_SIGN_IN:local-home:%s\\n" "$*"; else printf "WRONG_LOCAL_HOME:%s\\n" "$PWD"; fi\n',
+      '#!/bin/sh\nprintf "%s:%s\\n" "$PWD" "$*" >> "$(dirname "$0")/calls"\nif [ "$1" = auth ] && [ "$2" = status ]; then echo \'{"authMethod":"claude.ai"}\'; fi\n',
       { mode: 0o755 },
     )
     writeFileSync(
       join(bin, 'claude.cmd'),
-      '@echo off\r\ncls\r\nif /I "%CD%"=="%USERPROFILE%" (echo COPSE_LOCAL_SIGN_IN:local-home:%*) else (echo WRONG_LOCAL_HOME:%CD%)\r\n',
+      '@echo off\r\necho %CD%:%*>>"%~dp0calls"\r\nif "%1 %2"=="auth status" echo {"authMethod":"claude.ai"}\r\n',
     )
     originalPath = process.env['PATH']
     writeE2eEnv({
@@ -76,32 +75,19 @@ describe('usage sign-in local terminal routing', () => {
     const signIn = $('.usage-plan-provider[data-provider="claude"] .usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     await signIn.click()
-    await $('.terminal-container .xterm').waitForExist({ timeout: 15_000 })
-    await approveUnsandboxedTerminalIfPrompted()
-    await browser.waitUntil(
-      async () =>
-        (await $('.terminals-tab-panel.is-active .xterm-rows').getText()).includes(
-          'COPSE_LOCAL_SIGN_IN:',
-        ),
-      { timeout: 15_000, timeoutMsg: 'local sign-in CLI fixture did not execute' },
-    )
-    const output = await browser.execute(
-      () => document.querySelector('.terminals-tab-panel.is-active .xterm-rows')?.textContent ?? '',
-    )
-    assert.ok(output.includes('COPSE_LOCAL_SIGN_IN:local-home:auth login'), output)
-    assert.doesNotMatch(output, /COPSE_LOCAL_SIGN_IN:\/remote\/usage-project/)
-    // Match the other terminal evals: retain a visible steady outline instead
-    // of capturing an arbitrary phase of xterm's focused canvas cursor.
-    const terminalControl = $('.titlebar-btn[aria-label="Open terminal"]')
-    await terminalControl.execute((button) => {
-      button.focus()
+    const status = $('.usage-plan-signin-status')
+    await expect(status).toHaveText('Claude sign-in complete.')
+    await expect($('#settings-dialog')).toBeDisplayed()
+    await browser.waitUntil(() => existsSync(join(bin, 'calls')), {
+      timeout: 15_000,
+      timeoutMsg: 'local sign-in CLI fixture did not execute',
     })
-    await expect(terminalControl).toBeFocused()
-    // Keep evidence on the local terminal result. The unrelated project index
+    const calls = readFileSync(join(bin, 'calls'), 'utf8')
+    assert.ok(calls.includes(`${homedir()}:auth login`), calls)
+    assert.ok(calls.includes(`${homedir()}:auth status`), calls)
+    assert.doesNotMatch(calls, /\/remote\/usage-project/)
+    // Keep evidence on the guided result. The unrelated project index
     // can fail because this fixture deliberately points it at an invalid SSH host.
-    await saveElementScreenshot(
-      '.terminals-tab-panel.is-active',
-      'usage-sign-in-local-terminal.png',
-    )
+    await saveElementScreenshot('#settings-dialog', 'usage-sign-in-local-guided.png')
   })
 })
