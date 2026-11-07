@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import type { Thread } from '../../src/shared/types/index.ts'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import {
   readSeededSettings,
@@ -186,21 +187,47 @@ describe('unattended automation questions', function () {
     await scenario.waitForComplete()
     await scenario.assertComplete()
 
+    let run: Thread | undefined
+    await browser.waitUntil(
+      async () => {
+        run = (await loadProjectThreads(PROJECT)).find((thread) =>
+          thread.messages.some((message) => message.content === REPLY),
+        )
+        return run?.status === 'idle'
+      },
+      { timeout: 30_000, timeoutMsg: 'The unattended review has not finished saving' },
+    )
+    assert.ok(run)
+    const runId = run.id
+
     const automations = $('.automation-threads-toggle')
     await automations.waitForExist()
     if ((await automations.getAttribute('aria-expanded')) !== 'true') await automations.click()
     // One run is shown directly; schedule history folds appear only once there
     // is enough history to group. Select the actual fresh run in either layout.
-    await $('.automation-thread-rows .chat-row').click()
+    // Read the row at the click boundary: background metadata replaces sidebar
+    // nodes between separate WebDriver find/click requests.
+    await browser.waitUntil(
+      async () =>
+        await browser.execute((id) => {
+          const row = [
+            ...document.querySelectorAll<HTMLElement>('.automation-thread-rows .chat-row'),
+          ].find((candidate) => candidate.dataset['threadId'] === id)
+          if (!row) return false
+          row.click()
+          return true
+        }, runId),
+      { timeout: 10_000, timeoutMsg: 'The fresh automation run is missing from the sidebar' },
+    )
+    await expect($('.automation-thread-rows .chat-row.selected')).toHaveAttribute(
+      'data-thread-id',
+      runId,
+    )
     await expectAssistantReply(REPLY)
     // Settling the turn also renames its checkout and repaints the transcript.
     // Wait for that real final state before opening a question disclosure.
     await expect($('.stop-btn')).not.toBeDisplayed()
     await expect($('.footer-branch-label')).toHaveText(/^copse\/release-notes-review-[a-f0-9]+$/)
-    const run = (await loadProjectThreads(PROJECT)).find((thread) =>
-      thread.messages.some((message) => message.content === REPLY),
-    )
-    assert.ok(run)
     const savedAsk = run.messages
       .flatMap((message) => message.toolCalls)
       .find((call) => call.name === 'ask_user')
@@ -263,12 +290,12 @@ describe('unattended automation questions', function () {
         },
       ],
     })
-    const first = panel.$$('.reviewer-input-item')[0]
-    assert.ok(first)
-    await first.$('.reviewer-input-question').click()
-    await expect(first.$('.reviewer-input-option=Preview')).toExist()
-    await first.$('.reviewer-input-option=Preview').click()
-    await first.$('.ui-btn-primary').click()
+    await panel.$('.reviewer-input-item .reviewer-input-question').click()
+    // Opening the disclosure redraws its row. Find that new row for the
+    // remaining actions instead of retaining the detached collapsed row.
+    await expect(panel.$('.reviewer-input-item').$('.reviewer-input-option=Preview')).toExist()
+    await panel.$('.reviewer-input-item').$('.reviewer-input-option=Preview').click()
+    await panel.$('.reviewer-input-item').$('.ui-btn-primary').click()
     const question = $('#ask-user-dialog')
     await question.waitForDisplayed()
     await expect(question).toHaveText(expect.stringContaining('Which team owns the preview?'))
