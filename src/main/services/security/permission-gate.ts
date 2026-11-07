@@ -1,3 +1,4 @@
+import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
@@ -161,6 +162,7 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
@@ -1088,7 +1090,17 @@ async function checkGithubWriteToolPermission(
       ? automationPermissionTarget(permission)
       : null
   if (automation?.allowed) return true
-  const prompt = formatGithubWritePrompt(toolName, args)
+  const needsWorkspaceRepository =
+    toolName === 'gh_pr_create' &&
+    isRecord(args) &&
+    (typeof args['owner'] !== 'string' ||
+      args['owner'].length === 0 ||
+      typeof args['repo'] !== 'string' ||
+      args['repo'].length === 0)
+  const workspaceRepositorySlug = needsWorkspaceRepository
+    ? await getGithubRepoSlug(getAgentExecutionRoot())
+    : null
+  const prompt = formatGithubWritePrompt(toolName, args, workspaceRepositorySlug)
   const { approved, remember } = await requestApproval(
     {
       ...prompt,
@@ -1881,8 +1893,6 @@ async function checkBrowserNavigatePermission(
   return approved
 }
 
-const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
-
 /**
  * Gate the `run_background` tool. A start action's command is first put through
  * the *same* decision as run_shell: on macOS the seatbelt contains it (contained
@@ -1929,8 +1939,7 @@ async function checkBackgroundProcessPermission(
   const root = getAgentProjectRoot()
   if (!root) throw new Error('No workspace open.')
 
-  const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
-  if (allowed.includes(root)) return true
+  if (projectAllowsPortBinding(root)) return true
 
   const { approved, remember } = await requestApproval(
     {
@@ -1946,9 +1955,7 @@ async function checkBackgroundProcessPermission(
     signal,
   )
   if (approved && remember) {
-    await updateSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [], (current) =>
-      current.includes(root) ? current : [...current, root],
-    )
+    await rememberProjectPortBinding(root)
   }
   return approved
 }

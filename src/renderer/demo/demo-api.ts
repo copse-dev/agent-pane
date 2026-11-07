@@ -692,6 +692,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             portBindingAllowed: false,
           },
         ),
+      revokeProjectPortBinding: () => resolved(undefined),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
       onGuardedYoloChanged: (listener) => {

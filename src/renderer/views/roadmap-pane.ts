@@ -61,11 +61,14 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { BackgroundThread } from '@shared/types/state.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
 // the IPC surface so this view never imports main-process types directly.
@@ -89,6 +92,20 @@ const STATUS_OPTIONS: readonly RoadmapStatus[] = [
 const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'archived'])
 
 const isRoadmapStatus = memberOf(STATUS_OPTIONS)
+
+/**
+ * What the list reads from threads, as one comparable key: every thread id
+ * `getThreadById` can resolve (a row's Reopen chip shows only for those) and
+ * its title (the chip's tooltip and label).
+ */
+function knownThreadsKey(
+  threads: readonly Thread[],
+  backgroundThreads: readonly BackgroundThread[],
+): string {
+  return [...threads, ...backgroundThreads.map((b) => b.thread)]
+    .map((t) => `${t.id}\0${t.title}`)
+    .join('\n')
+}
 
 function roadmapModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -2588,13 +2605,18 @@ export function mountRoadmapPane(
       void refresh()
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
-    // re-render from the already-loaded items (no IPC round-trip needed).
-    store.on('threads_changed', () => {
-      if (!roadmapModeActive(store)) return
-      renderList()
-      renderEditor({ preserveDirty: true })
-    }),
-    store.on('workspace_changed', () => {
+    // re-render from the already-loaded items (no IPC round-trip needed). Only
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
+    store.select(
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
+      () => {
+        if (!roadmapModeActive(store)) return
+        renderList()
+        renderEditor({ preserveDirty: true })
+      },
+    ),
+    selectActiveWorkspace(store, () => {
       // The roadmap is per-project; drop the previous workspace's selection.
       // Invalidate in-flight reads even when the pane is hidden and no new
       // refresh will replace them. Paint the cleared editor before awaiting IPC.
