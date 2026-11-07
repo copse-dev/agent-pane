@@ -213,22 +213,33 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
 }
 
 /**
+ * Processes whose shutdown failed at least once. Such a process may have kept
+ * writing its agent session after Copse lost track of it, so even once a retry
+ * confirms it stopped, the next process starts a fresh session.
+ */
+const uncertainShutdowns = new WeakSet<PooledAcpSession>()
+
+/**
  * Remove a process from the live pool and wait until it is no longer able to
  * write its agent session. A failed shutdown must also discard the resumable
  * session ID: otherwise a later acquire could attach a second process to the
- * same session while the first one is still alive.
+ * same session while the first one is still alive. `retainOnFailure` keeps that
+ * process pooled instead, so every later reap, acquire or automatic checkout
+ * change retries its shutdown rather than assume the writer is gone.
  */
 async function evictAcpSession(
   threadId: string,
   entry: PooledAcpSession,
   options: { preserveForResume: boolean; retainOnFailure?: true },
 ): Promise<void> {
-  if (options.preserveForResume) rememberCarryOver(threadId, entry)
-  else carryOverCandidates.delete(threadId)
+  if (options.preserveForResume && !uncertainShutdowns.has(entry)) {
+    rememberCarryOver(threadId, entry)
+  } else carryOverCandidates.delete(threadId)
   if (!options.retainOnFailure) pool.delete(threadId)
   try {
     await entry.dispose()
   } catch (err) {
+    uncertainShutdowns.add(entry)
     carryOverCandidates.delete(threadId)
     throw err
   }
@@ -285,8 +296,9 @@ export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): P
       })
       if (didReap) reaped.push(threadId)
     } catch (error) {
-      // A retained uncertain close sorts first on later ticks. Keep reporting
-      // it, while still releasing unrelated sessions that are safely idle.
+      // A retained uncertain close sorts first and is retried on later ticks.
+      // Report its current failure, while still releasing unrelated sessions
+      // that are safely idle.
       failure ??=
         error instanceof Error
           ? error
@@ -495,12 +507,21 @@ async function acquireAcpSessionUnlocked(
       ? { transcriptCheckpoint: carryOver.transcriptCheckpoint }
       : {}),
     dispose: () => {
+      // Share a finished or in-flight shutdown, never a failed one: the next
+      // reap, acquire or checkout change asks again, and so either confirms
+      // the writer stopped or reports why it still cannot.
       if (disposal) return disposal
       open.agentInitiated?.end()
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
-        .then(() => {})
+        .then(
+          () => {},
+          (error: unknown) => {
+            disposal = null
+            throw error
+          },
+        )
         .finally(unregisterProcess)
       return disposal
     },
@@ -563,8 +584,8 @@ export function withIdleAcpSession<T>(
     // The guard and connection close run synchronously, before the first
     // disposal await. No update can start a turn between them.
     if (entry) {
-      // Keep an uncertain shutdown in the pool. Its cached failed disposal
-      // must keep later automatic mutations from assuming the writer is gone.
+      // Keep an uncertain shutdown in the pool: a later automatic mutation
+      // retries it, and runs only once the old writer is confirmed gone.
       await evictAcpSession(threadId, entry, { preserveForResume: false, retainOnFailure: true })
       notifyThreadResourceFinished(threadId)
     }

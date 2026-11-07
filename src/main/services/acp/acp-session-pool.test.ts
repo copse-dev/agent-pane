@@ -247,6 +247,106 @@ describe('acp-session-pool', () => {
     await assert.rejects(disposeAllAcpSessions(), /Shutdown could not be confirmed/)
   })
 
+  it('retries a failed idle shutdown on the next acquire instead of replaying it', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const factory = makeResumableTransportFactory(log)
+    let disposals = 0
+    const first = await acquireAcpSession({
+      threadId: 'temporary-wedge',
+      config: CONFIG,
+      createTransport: async () => {
+        const transport = await factory()
+        return {
+          ...transport,
+          // The SSH host is unreachable for the first attempt only.
+          dispose: async (): Promise<void> => {
+            disposals++
+            if (disposals === 1) {
+              throw new Error('Cannot clean up remote process group: SSH host dev is disconnected')
+            }
+            await transport.dispose()
+          },
+        }
+      },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    first.entry.lastUsedAt = 0
+    await assert.rejects(reapIdleAcpSessions(Date.now() + 11 * 60_000), /is disconnected/)
+    assert.equal(acpSessionPoolSize(), 1, 'the unconfirmed writer stays pooled')
+
+    const second = await acquireAcpSession({
+      threadId: 'temporary-wedge',
+      config: CONFIG,
+      createTransport: factory,
+    })
+    assert.equal(disposals, 2, 'the acquire asked the old transport to stop again')
+    assert.notEqual(second.entry, first.entry)
+    assert.equal(log.spawns, 2)
+    // The agent could resume, but the old process outlived a failed stop.
+    assert.equal(second.fresh, true)
+    assert.equal(second.handover, null)
+    assert.notEqual(second.entry.open.session.sessionId, first.entry.open.session.sessionId)
+  })
+
+  it('reports the current shutdown failure on every retry until one succeeds', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const factory = makeTransportFactory(log)
+    const failures = ['first failure', 'second failure', 'third failure']
+    let disposals = 0
+    const { entry } = await acquireAcpSession({
+      threadId: 'stuck-close',
+      config: CONFIG,
+      createTransport: async () => {
+        const transport = await factory()
+        return {
+          ...transport,
+          dispose: async (): Promise<void> => {
+            const failure = failures[disposals]
+            disposals++
+            if (failure !== undefined) throw new Error(`Shutdown not confirmed: ${failure}`)
+            transport.dispose()
+          },
+        }
+      },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    let mutations = 0
+    const mutate = async (): Promise<void> => {
+      mutations++
+    }
+    await assert.rejects(withIdleAcpSession('stuck-close', mutate), /first failure/)
+    await assert.rejects(
+      acquireAcpSession({
+        threadId: 'stuck-close',
+        config: CONFIG,
+        createTransport: async () => {
+          throw new Error('An unconfirmed old writer must not be replaced')
+        },
+      }),
+      /second failure/,
+    )
+    await assert.rejects(reapIdleAcpSessions(Date.now() + 11 * 60_000), /third failure/)
+    assert.equal(mutations, 0, 'no automatic checkout change while the writer may be alive')
+    assert.equal(log.spawns, 1)
+    assert.equal(acpSessionPoolSize(), 1)
+
+    const recovered = await acquireAcpSession({
+      threadId: 'stuck-close',
+      config: CONFIG,
+      createTransport: factory,
+    })
+    assert.equal(disposals, 4)
+    assert.notEqual(recovered.entry, entry)
+    assert.equal(recovered.fresh, true)
+    assert.equal(log.spawns, 2)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.deepEqual(await withIdleAcpSession('stuck-close', mutate), {
+      status: 'released',
+      value: undefined,
+    })
+    assert.equal(mutations, 1)
+  })
+
   it('keeps a replacement acquire behind the entire idle checkout mutation', async () => {
     const log = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)

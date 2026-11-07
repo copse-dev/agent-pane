@@ -952,6 +952,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
+  /** Close the connection and stop the agent. A failed stop can be retried. */
   dispose: () => Promise<void>
 }
 
@@ -1414,11 +1415,19 @@ export async function openAcpSession(
   let disposal: Promise<void> | null = null
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
-    disposed = true
-    pendingUpdates.clear()
-    terminals?.dispose()
-    connection.close()
-    disposal = Promise.resolve(transport.dispose())
+    if (!disposed) {
+      disposed = true
+      pendingUpdates.clear()
+      terminals?.dispose()
+      connection.close()
+    }
+    // Share a finished or in-flight transport shutdown, but not a failed one:
+    // the agent may still be alive, so the next dispose asks the transport
+    // again instead of replaying the first failure for the session's lifetime.
+    disposal = Promise.resolve(transport.dispose()).catch((error: unknown) => {
+      disposal = null
+      throw error
+    })
     return disposal
   }
 

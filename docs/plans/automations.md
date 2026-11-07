@@ -165,7 +165,11 @@ automatic hand-over, completed-run release and PR parking blocked. Idle session 
 the checkout mutation share the pool's existing per-thread operation: activity is rechecked
 immediately before closing the connection, and a new acquire waits until the checkout mutation
 finishes. An uncertain shutdown keeps the existing pool entry through idle reaping and failed
-replacement acquisition, and cannot authorize a later automatic mutation. A replacement can be
+replacement acquisition, and cannot authorize a later automatic mutation. It is not a cached
+verdict: each later reap, acquire or automatic mutation asks the transport to stop again (an SSH
+agent keeps its remote process group until a kill reaches it) and fails with that attempt's
+reason. Once one succeeds the entry leaves the pool and the next acquire starts a fresh agent
+session; a session whose process outlived a failed stop is never resumed. A replacement can be
 requested by a machine wake, so it is not an implicit human override. Explicit Stop and archive
 behavior is unchanged. Reaping still reports a failed shutdown after processing unrelated idle
 sessions, so retaining one uncertain writer cannot prevent safe resource cleanup elsewhere.
