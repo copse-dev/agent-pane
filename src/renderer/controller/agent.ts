@@ -1,5 +1,6 @@
 import { acceptThreadPrompt } from './thread-prompts.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   findToolCall,
@@ -274,7 +275,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         console.error('[threads] could not attach transcripts:', error)
       })
   }
-  const unsubWorkspace = store.on('workspace_changed', attach)
+  const unsubWorkspace = selectActiveWorkspace(store, attach)
   attach()
 
   const unsub = api.agent.onChunk((threadId, chunk, stamp) => {
@@ -285,6 +286,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
       chunk.type === 'acp_content' ||
+      chunk.type === 'acp_content_replace' ||
       (chunk.type === 'text' && chunk.text.trim() !== '') ||
       (chunk.type === 'reasoning' && chunk.text.trim() !== '')
     if (firstVisibleActivity && !st.firstActivityTraced) {

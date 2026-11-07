@@ -4,7 +4,7 @@ import type {
   SessionUpdate,
   ToolCallContent,
   ToolKind,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type {
   AcpContentBlock,
   AcpToolCallContent,
@@ -80,6 +80,16 @@ const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
   // Subagent-backed investigations.
   explore: 'think',
   investigate_ci: 'think',
+}
+
+const COPSE_ACP_META_KEY = 'copse.dev'
+
+function toolNameFromMeta(meta: { [key: string]: unknown } | null | undefined): string | undefined {
+  if (!meta) return undefined
+  const copseMeta = meta[COPSE_ACP_META_KEY]
+  if (!isRecord(copseMeta)) return undefined
+  const toolName = copseMeta['toolName']
+  return typeof toolName === 'string' && toolName.trim() ? unwrapInlineCode(toolName) : undefined
 }
 
 /** The command string of a shell tool call's args, if present. */
@@ -178,10 +188,12 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
       return {
         sessionUpdate: 'tool_call',
         toolCallId: chunk.toolCall.id,
+        name: chunk.toolCall.name,
         title: command ?? chunk.toolCall.name,
         kind,
         status: 'pending',
         rawInput: chunk.toolCall.args,
+        _meta: { [COPSE_ACP_META_KEY]: { toolName: chunk.toolCall.name } },
       }
     }
     case 'tool_result':
@@ -278,7 +290,8 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
     case 'tool_call': {
       const title = unwrapInlineCode(update.title)
       const programmaticName =
-        typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined
+        toolNameFromMeta(update._meta) ??
+        (typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined)
       return {
         type: 'tool_call',
         toolCall: {
@@ -320,7 +333,8 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
       const images = displayContent !== undefined ? (contentResult?.images ?? []) : undefined
       const title = typeof update.title === 'string' ? unwrapInlineCode(update.title) : undefined
       const programmaticName =
-        typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined
+        toolNameFromMeta(update._meta) ??
+        (typeof update.name === 'string' ? unwrapInlineCode(update.name) : undefined)
       const locations =
         update.locations !== undefined ? normalizeLocations(update.locations ?? []) : undefined
       if (
@@ -369,10 +383,10 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
     case 'config_option_update':
     case 'session_info_update':
       return null
-    // These v1 exports are explicitly unstable. Copse advertises neither plan
-    // entities, notices, compaction, child sessions, nor session-message capability,
-    // so receiving them is non-conforming;
-    // they remain deferred until their lifecycle has a host-owned model.
+    // Copse advertises neither plan entities, notices, compaction, child sessions,
+    // nor session-message capability, so receiving them is non-conforming. Notice
+    // and compaction are stable in SDK 2.2 but remain capability-gated; they stay
+    // deferred until their lifecycle has a host-owned persistence/presentation model.
     case 'plan_update':
     case 'plan_removed':
     case 'notice':

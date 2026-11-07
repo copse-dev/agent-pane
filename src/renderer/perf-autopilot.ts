@@ -415,8 +415,6 @@ async function runSurfaceSweep(store: AppStore): Promise<void> {
   mark('autopilot:sweep-start', { dwellMs: SWEEP_DWELL_MS, count: SWEEP_SURFACES.length })
   for (const surface of SWEEP_SURFACES) {
     store.setState({ rightPanelMode: surface, filesPaneOpen: true })
-    store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
     await afterNextFrame()
     mark('autopilot:surface', { surface })
     await sleep(SWEEP_DWELL_MS)

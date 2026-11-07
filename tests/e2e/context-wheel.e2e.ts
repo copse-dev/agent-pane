@@ -1,19 +1,53 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedContextWheelFixture, seedEmptyProject } from './helpers/seed-config.ts'
-import { describeSkipInCi } from './helpers/ci-gate.ts'
+import {
+  resetUserData,
+  seedContextWheelFixture,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveFramedElementScreenshot,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+/**
+ * Wait until the wheel's label stops changing. The pre-send estimate and the
+ * run's usage each land a round trip after the DOM first matches, and every
+ * landing re-renders the ring, so hovering or capturing on the first match
+ * catches whichever one had arrived.
+ */
+async function waitForSettledWheel(): Promise<void> {
+  let previous: string | null = null
+  let stable = 0
+  await browser.waitUntil(
+    async () => {
+      const label = await $('.context-wheel').getAttribute('aria-label')
+      stable = label === previous ? stable + 1 : 0
+      previous = label
+      return stable >= 3
+    },
+    { timeout: 15_000, interval: 200, timeoutMsg: 'the context wheel never settled' },
+  )
+}
 
-// Heaviest seeded spec (seedContextWheelFixture + reloadSession). The #345
-// trial confirmed it hard-OOM-crashes the runner on its first launch even in a
-// 4-spec shard at 8 shards, so it stays skipped in CI until its fixture is
-// lightened (it runs fine locally).
-describeSkipInCi('context wheel footer seeded', () => {
+/**
+ * Capture the footer as the hover left it. The shell-pinning helpers resize
+ * the app, which closes the popover, so the frame goes through the helper
+ * that keeps the spec's framing.
+ */
+async function saveFooterScreenshot(filename: string): Promise<void> {
+  await withCaptureFrame(async () => {
+    await saveFramedElementScreenshot('.input-footer', filename)
+  })
+}
+
+describe('context wheel footer seeded', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedContextWheelFixture(process.cwd())
     await browser.reloadSession()
@@ -41,7 +75,7 @@ describeSkipInCi('context wheel footer seeded', () => {
     expect(filled).toBeGreaterThan(0)
 
     await expect($('.footer-usage')).not.toExist()
-    await browser.pause(500)
+    await waitForSettledWheel()
     await wheel.moveTo()
     const popover = wheel.$('.context-wheel-popover')
     await expect(popover).toBeDisplayed()
@@ -49,16 +83,17 @@ describeSkipInCi('context wheel footer seeded', () => {
     await expect(popover.$('.context-wheel-popover-header')).toHaveText(/^Context · .+ \(\d+%\)$/)
     await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 2.0k tokens')
 
-    const footer = await $('.input-footer').getElement()
-    await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-seeded-30pct.png'))
+    await saveFooterScreenshot('context-wheel-seeded-30pct.png')
   })
 })
 
-describeSkipInCi('context wheel footer live mock', () => {
+describe('context wheel footer live mock', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-context-live-project', {
+    // A project on this checkout also starts its new chat from the picker's
+    // default branch, which switched the runner's own checkout to `main`.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-context-live-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -72,21 +107,36 @@ describeSkipInCi('context wheel footer live mock', () => {
   it('updates doughnut and tokens live during a mock agent run', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await setComposerValue('list files please')
+    // Hold the run mid-turn so "running" is one fixed state rather than
+    // whichever usage update the capture raced (three renders on one host).
+    const prompt = 'list files please'
+    const scenario = await installMockScenario({
+      title: 'Context wheel live run',
+      turns: [
+        {
+          user: prompt,
+          responses: [{ waitFor: 'wheel-capture', text: 'Here are the files.' }],
+        },
+      ],
+    })
+    await setComposerValue(prompt)
     await $('.submit-btn').click()
+    await scenario.waitForHold('wheel-capture')
 
     const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed({ wait: 30_000 })
     await expect(wheel).toHaveAttribute('aria-label', /context \d+%/i)
+    await expect($('.stop-btn')).toBeDisplayed()
 
-    await browser.pause(500)
+    await waitForSettledWheel()
     await wheel.moveTo()
     await expect(wheel.$('.context-wheel-popover .footer-usage-popover-header')).toHaveText(
       /Usage · ~?[\d.]+[kM]? tokens/,
       { wait: 30_000 },
     )
 
-    const footer = await $('.input-footer').getElement()
-    await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-live-running.png'))
+    await saveFooterScreenshot('context-wheel-live-running.png')
+    await scenario.release('wheel-capture')
+    await scenario.waitForComplete()
   })
 })

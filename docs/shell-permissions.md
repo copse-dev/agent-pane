@@ -36,8 +36,22 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
 | Sandboxed GitHub reads           | Experimental, off by default. Contained `git fetch`/`ls-remote` (macOS and Linux) and `gh` reads (macOS) reach a host handler that holds the user's GitHub token, admits reads only and needs a per-thread secret. Escalated and unsandboxed runs never receive the route.                                                                                                                               |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
-| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default.                                                                                                                                                                                                                           |
+| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; a request that runs a command is never remembered, so every command reaches the shell gate. See [ACP permission requests](#acp-permission-requests).                   |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
+
+The experimental `isolated_copse` tool asks for a fresh, non-rememberable grant before
+starting Linux Copse in an Apple container VM. The grant belongs to the invoking
+project/thread, expires after 15 minutes, and includes at most 100,000 input/output tokens
+on the parent model named in the approval. Only screenshots and bounded guest input are
+available; no host GUI control, folder mounts, credentials or general network access are
+granted. Stop/cancellation revokes input and inference before deleting the VM. Blocking the
+tool revokes all live isolated desktops. Failed deletion is surfaced and remains retryable.
+This grant does not change `launch_gui_app` or authorize a host-child fallback.
+ACP starts must name the host model explicitly. Their grant lasts only for the bound
+ACP turn/session; closing a completed MCP response does not revoke it, while abandoning
+startup, stopping the turn or closing the ACP session does. The created VM's image digest
+must match the owner-controlled local build receipt before startup. Host-only leases and
+VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
 
 ## Per-tool permission settings
 
@@ -82,7 +96,7 @@ switch the visible thread. An unavailable or archived destination is rejected.
 
 The experimental interactive-client API requires its default-off plugin and desktop pairing.
 Viewing and submitting decisions are separate session-only grants across all projects. A client
-may approve once or deny an exact pending standard shell-command or bounded worktree-preparation session/request/revision; it cannot create remembered
+may approve once or deny an exact pending standard shell-command, web-origin request or bounded worktree-preparation session/request/revision; it cannot create remembered
 grants or task leases. Pairing is desktop-only, and agent-invoked plugin runtimes have no decision
 write API. Disable or quit revokes every client. Audit events identify the paired client as the
 human-response source. Authentication trusts the paired software; it does not attest a physical
@@ -134,6 +148,12 @@ Guarded YOLO and active network scope. These are diagnostic
 facts, not a complete snapshot of all grants or an execution authorization.
 Coalesced prompts retain the opening request's context. Raw command text is still
 omitted: use the tool-call reference to find the existing tool arguments.
+
+An ACP permission request whose provenance claims conflict records a `classified` `acp` decision
+with the reason before it follows the ordinary path. A request delegated to the native bridge
+records an `allowed` `acp` decision with its ACP tool-call ID. The bridge's `bridge-request` record repeats that ID when it
+can name the call unambiguously, beside the `bridgeExecutionId` that the native gate's decisions
+carry.
 
 ## High-level tool restrictions
 
@@ -404,6 +424,66 @@ approval by default because they access host devices outside the project sandbox
 permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
 simulator does not enable renderer control; discrete agent input is a separate approved call.
 
+## ACP permission requests
+
+`respondToPermission` in `src/main/services/acp/acp-agent-service.ts` answers an external
+agent's `session/request_permission`. A request **runs a command** when either:
+
+- its kind is `execute`, with the command in `rawInput.command` or, failing that, in the title; or
+- it has no kind, or ACP's catch-all `other`, and carries a `rawInput.command` string or argv
+  (`acpShellCommandText`). ACP makes `kind` optional, so an agent can omit it. A structured
+  `command` object is a tool's argument, not a command line.
+
+A request that runs a command goes through the shell gate (`ensureShellCommandPermitted`), like
+native `run_shell`, after the bridged-tool check (Copse re-gates those calls when they run). Only
+an `execute` request runs in the agent's own shell, so only it carries the agent's sandbox claim
+into the gate. An unclassified request's `command` may be an MCP tool argument (a Redis or SQL
+command) that runs outside that sandbox, so it is judged as unsandboxed and never auto-runs on the
+sandbox. Its
+answer is never remembered, and no stored grant answers it. Remembered grants are keyed by agent
+and tool kind only. One remembered command approval would therefore approve every later command of
+that kind, such as `rm -rf`, before the gate classified, sandboxed or confirmed it. The grant store
+also ignores and prunes `execute` grants saved by earlier versions. An `execute` request with no
+command text at all gets the generic prompt without a remember option.
+
+A remembered `other` grant still covers `other` requests that carry no `rawInput.command`, such
+as an MCP tool call. A title alone does not make an `other` request a command. For such a call the
+title is a label, like an MCP tool name or "Delete everything", and treating it as a command line
+would send every unclassified tool call through the shell classifier. So an agent that puts a
+command only in the title of a kind-less request still gets the generic prompt, which an `other`
+grant can answer. Kinds the agent did classify (`read`, `edit`, `search`, `fetch`, and so on) keep
+their own handling even when their input has a `command` field.
+
+Copse answers with the agent's `allow_always` option only for a remembered grant or a ticked
+remember box. A one-shot approval, including every shell-gate approval, selects `allow_once`. An
+agent that offers no `allow_once` gets `cancelled`, not `allow_always`, because the agent would
+otherwise remember an answer the user gave once and stop asking Copse. Agent managed thread mode
+shows the agent's own request without Copse's shell classifier or remembered grants. Only its
+`allow_always` rule applies there: the dialog's box selects the agent's own option.
+
+### An agent's own sandbox escape
+
+Copse's sandbox wraps the whole agent process, so a per-command escape the agent
+offers itself cannot lift it. Claude Code's Bash `dangerouslyDisableSandbox: true`
+runs the command in the same sandbox, where it fails exactly as before. The
+agent cannot tell that from an ordinary sandboxed failure, so it retries (#4146).
+For a Claude agent that runs under Copse's sandbox on this machine,
+`acpSessionMeta` (`acp/acp-client.ts`) therefore sends Claude Code flag settings
+with every `session/new`, `session/resume` and `session/load`: one Bash
+`PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
+for the escape, the hook exits 2 and Claude Code returns its message to the model
+as the tool result. The message says the process runs inside Copse's sandbox and
+names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
+an outside run. When the session mounted no bridge, the message says so and tells
+the agent to ask the user instead.
+
+The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
+would not otherwise run, and leaves calls without the escape untouched. Claude
+Code's `sandbox.allowUnsandboxedCommands: false` is not used because it ignores
+the parameter silently. The sandbox prompt note says the same for every sandboxed
+agent. Agent managed thread mode, unsandboxed and SSH agents get no hook: there
+the agent's own escape is real or Copse has no sandbox to explain.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -426,6 +506,49 @@ An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bri
 configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
 point for a stdio or HTTP MCP server the external agent mounts itself.
 
+Because every bridged call is re-gated there, the agent's own ACP permission request for one only
+duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**
+on the request itself names a `copse` tool that this session's own bridge serves. Provenance comes
+from:
+
+- the adapter's structured tool name (`_meta.claudeCode.toolName`, or a qualified ACP `name`);
+- a title in one of the literal observed shapes: `copse-<tool>: <tool>`, `mcp__copse__<tool>` or
+  `mcp.copse.<tool>`. Separators are fixed, the tool name is ASCII and spelled exactly as offered,
+  and nothing is unwrapped or case-folded first. A looser grammar reads shell text as a tool:
+  `copse=;. ./run_shell` sources `./run_shell`.
+
+The agent's earlier reports of the same `toolCallId` can veto the request's claim but never stand
+in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`, or that carries a command line (`acpShellCommandText`, as for an unclassified request with `rawInput.command`),
+is never delegated on titles alone. Absent, unknown, conflicting or title-only provenance for those
+kinds, or a session without a mounted bridge, keeps the ordinary ACP path. Each delegation records
+an `acp` `allowed` decision under the turn's own project and thread.
+See [`plans/acp-tool-provenance.md`](plans/acp-tool-provenance.md).
+
+## ACP client terminals
+
+An ACP agent that delegates a command through `terminal/create` (issue #623; see
+[ACP agents](acp-agents.md#client-terminals)) gets no authority of its own: the
+request becomes exactly one `run_shell` call through `ToolRegistry`, under the
+owning turn's thread identity and execution context, as a bridged `run_shell`
+call would. The permission gate, per-tool overrides, hooks, read-only mode, the
+platform matrix above, Guarded YOLO, the expected-block and reactive
+unsandboxed-retry prompts and the denial cache therefore apply unchanged, and the
+command's text is what the gate judges and the prompt shows. `env` and `cwd` are
+rendered into that text (`export` lines and a `cd` into a workspace
+subdirectory); a `cwd` outside the execution root is refused, never run
+elsewhere. A request that arrives with no turn bound is refused, as a bridged call
+is. For a sandboxed agent the command shares the agent's network scope, as bridged
+shell calls do.
+
+Terminals are offered only alongside the native bridge for a local agent, never
+to an agent on an SSH host or on Windows. Copse does not auto-approve an agent's
+own `execute` permission request because terminals are advertised: the agent may
+still use its private shell, which only the spawn-time seatbelt contains.
+Implementation: `acp/acp-terminals.ts` (ACP side) and
+`AcpNativeBridge.runShellCommand` (turn binding); per-call output and exit
+reach the terminal through `runWithShellRunObserver` in
+`exec/shell-output-context.ts`.
+
 ## SSH workspaces
 
 On an SSH workspace (`docs/plans/ssh-remote-repo.md`) commands, git, search and files run on the
@@ -447,11 +570,12 @@ reads the original command.
   platform matrix applies to them: read/search requests, Codex code-mode cells, ambiguous commands
   and opaque interpreter scripts prompt, deterministic auto-approval does not fire, and Claude
   presets keep their own prompting mode rather than `acceptEdits`. Such an agent is not offered
-  Copse's loopback native-tool bridge or its token, so bridged-title auto-approval does not apply
-  either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
+  Copse's loopback native-tool bridge or its token, so bridged-provenance auto-approval does not
+  apply either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
   missing curated adapter is installed only after an approval that names the host and the pinned
   `package@version`. Remembered ACP tool-kind approvals are scoped to the configured SSH host;
-  an approval on one host never authorizes the same agent on another.
+  an approval on one host never authorizes the same agent on another. No host remembers an
+  approval for a request that runs a command.
 - **Native `run_shell`, `run_background` and todo-verification commands** use the actual
   execution target to determine containment. `commandRunsSandboxed` rejects a local sandbox
   claim when `spawnRunsOnSshTarget` resolves remote execution. The unsandboxed platform policy
@@ -542,6 +666,37 @@ the parsed command, after wrapper unwrapping, never from raw text: `grep -rn "gi
 in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
+
+### Background tasks
+
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. Trusted-command routing follows `run_background`'s own per-tool setting in the
+permission gate and the runner alike: Always ask on `run_shell` alone changes neither where a
+background task runs nor how the gate records and, under Guarded YOLO, screens it. An eligible
+outside-read command instead receives the same per-spawn read overlay as `run_shell`; its named
+paths become readable without granting writes or network. Separately approved loopback binding
+composes with that read overlay. Foreground and background installs share package-firewall
+preparation and JavaScript lifecycle-script suppression under the existing safe-install setting; a
+missing proxy launcher refuses the install before spawning.
+
+Background starts accept `expects_sandbox_block` for ambiguous commands. The escape always asks
+afresh and authorizes that one attempt; declining runs contained and suppresses a second retry
+request for that attempt. Fully local commands ignore the hint, while hard-external commands
+retain their ordinary gate.
+
+A failed contained background task with per-attempt runner violations or a bounded denial
+signature can be retried explicitly: `action: start`, the exact same command and `retry_of` set
+to the failed task id. The agent must inspect partial effects first. This always requires fresh
+one-shot outside consent, including in Guarded YOLO; forgeable output cannot approve an escape.
+Neither prompt offers an “Always allow” trusted-command grant, a replay lease or a standing read
+grant, so a command that prints a denial signature cannot turn one approval into later unprompted
+escapes.
+The owner, command, execution root and failed status are rechecked after approval. Only one
+retry may claim an original attempt, and the retry gets a new task id and its own completion
+lifecycle. Running, successful, cancelled, timed-out, already outside, remote and adopted tasks
+are ineligible. Background failures never restart automatically and add no continuation wake.
+The foreground denial cache and replay leases do not apply to background retries.
 
 ## GitHub reads in the sandbox (experimental)
 
@@ -738,29 +893,41 @@ On macOS, Settings → Permissions → Commit signing has an **Allow signed comm
 toggle, on by default. After a trusted sandboxed socket probe receives an OS
 permission denial, Copse uses the system SSH signer, one configured public key and
 the exact agent socket, without asking. The grant for that project and identity is
-cached until app restart; a changed config, key, signer binary or socket re-runs the
+cached until app restart; a changed config, key, helper binary or socket re-runs the
 probe and re-grants, still without asking. Setting the git_commit tool to Always ask
 in Tool Permissions forces a fresh approval for every signing helper use instead, and
 never remembers it. Turning the setting off blocks further brokered ssh-agent
 signing. Config supplied by the repository never grants authority on its own.
 
-The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
-fixed arguments selecting that public key and the `git` signing namespace. Git and
-its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
-directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
+The socket is available only to separately sandboxed system helpers: `/usr/bin/ssh-add -L`
+checks for the configured public identity before staging, and `/usr/bin/ssh-keygen`
+signs with fixed arguments selecting that key and the `git` namespace. Both executables
+are pinned by their contents. The identity list is bounded and never sent to the agent.
+Git and its hooks receive a single-use commit-signing endpoint; they cannot talk to
+ssh-agent directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
 pinned through command-line config, so changing Git config during approval cannot
 replace the approved executable. The broker accepts bounded commit objects, not
 commands or arbitrary SSH authentication requests.
 
-With the ssh-agent setting off, a configured SSH key file has a separate one-commit
-consent path on macOS. Before staging or running hooks, the approval names the commit,
+With the ssh-agent setting off, or when the configured identity is unavailable from
+ssh-agent, a configured SSH key file has a separate one-commit consent path on macOS.
+This also covers a missing agent socket or public-key file. Agent communication errors
+and malformed or truncated identity lists fail closed without requesting private-key
+access. If the identity list lacks an inline public key, Copse instead reports how to
+load the key; there is no configured file for private-key consent.
+Before staging or running hooks, the approval names the commit,
 resolved private-key path, system signer and project. Copse reads no private-key
 contents until approval. This approval is never remembered: only the isolated system
 signer gains read access to the exact file. Git, hooks and the agent receive no key
 access. File identity is checked across approval and before and after each signer
 invocation. No private-key copy is written. A missing `.pub` file does not prevent signing. Passphrase-protected
 keys require the existing ssh-agent path; Copse does not collect their passphrases.
+When a configured public identity is available, the approved private key must match it.
 Rejecting or failing never triggers an unsigned or unsandboxed retry.
+
+Signer failures retain bounded diagnostics, including a missing key or unavailable
+agent socket, instead of hiding the cause behind a generic commit error. Signature
+output is never included in failure messages.
 
 This is the commit step of a PR workflow. The Create PR dialog pushes already committed
 changes; it does not commit, read signing keys or grant future signing access. PR
@@ -904,6 +1071,41 @@ While active:
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
   it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
   command position is a comment, not a script to inspect.
+- Nothing under `node_modules` is trusted for being there. An agent can write a shim and a payload
+  (`node_modules/.bin/evil`, `node_modules/evil/index.js`) or rewrite a file in an installed
+  package, so a package binary is read as the program it runs and gets the answer that running
+  that file with `node` gets:
+  - A pnpm `.bin` shim that is exactly pnpm's template, line for line and in order, is read as the
+    file it runs, wherever the shim is: as JavaScript for the `exec node` form, and as a program for
+    the form pnpm writes for a native binary. `$basedir` is the directory of the path the shell
+    runs, so a link to a real shim resolves from the link's directory. The shim turns each `\` in
+    that path into `/`, so a shim run through a path holding one is read as the shell script it is,
+    which prompts. When `$basedir/node` exists (or the host cannot say), the shim runs that program
+    in node's place, as whatever it is (a copied `/bin/sh` would run the target as shell), so it
+    always asks, and that program is read too. A file with any other line, or the same lines out of
+    order, is read as the shell script it is, which prompts.
+  - `npx <name>`, `npm exec <name>` (and every spelling npm resolves to it: `x`, `exe`) and
+    `pnpm exec <name>`, directly or through `corepack` with or without a version pin
+    (`corepack pnpm@10.34.5 exec`), read the workspace's `node_modules/.bin/<name>` the same way.
+    `pnpm exec` runs any other command from PATH, so that command is assessed as if typed, and
+    `pnpm exec -c` assesses its shell string. An option the gate does not model, which can choose another directory or
+    workspace package (`--prefix`, `-C`, `--filter`, `-r`), prompts, and so does `npx ./dir`, which
+    runs the package in a local directory. A scoped name (`npx @scope/pkg`) asks too: npm runs the
+    binary the installed package's manifest names, which need not be `.bin/pkg`, and `pnpm exec`
+    runs it as the relative path `./@scope/pkg`.
+  - Registry packages are read the same way, with no exemption. Their bins are ordinarily small
+    launchers that read clean; one that recursively deletes a computed path (`c8` clears its
+    temporary directory) asks.
+  - A `.bin` entry is a program whatever its suffix: `./node_modules/.bin/tool.png` is read, not
+    skipped as an image.
+  - Only the file a binary names is read, not the modules it loads: a clean entry point that
+    `require`s a rewritten file is allowed, as `node entry.js` is. Package scripts
+    (`pnpm run <script>`, `npm test`), `pnpm <bin>` without `exec`, and `yarn` are not followed into
+    what they run.
+- Script and inline code is read as code, not shell: a `${…}` template literal is not an
+  expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
+  deny on a catastrophic literal target and otherwise prompt, so a script that recursively
+  deletes a computed path, such as `scripts/run-tests.mts` clearing its output directory, asks.
 - Commands that reach past this machine's project without deleting anything ask once
   (`host-reach.ts`):
   - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
@@ -926,10 +1128,16 @@ While active:
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
     every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
     `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
-  - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
+  - `npx`/`npm exec` (including `npm exe`, `npm -s exec` and `corepack npx`) of anything but a
+    binary installed in the workspace's `node_modules/.bin`, which is read as above instead,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
-    which download code before running it;
+    which download code before running it, also through `corepack` (`corepack pnpm@10 dlx`) or
+    under another name: `yarnpkg` is Yarn, and `pnpx` is `pnpm dlx`, which downloads even a name
+    the workspace's `.bin` has, so it is not read as `npx`. The subcommand is found past global
+    options (`pnpm --silent dlx`, `pnpm -C sub dlx`) and in npm's abbreviations (`npm cr vite` is
+    `npm create vite`). Any word after an initializer subcommand names an initializer, even after
+    an option (`npm init -y vite`), so `npm init -w packages/a` asks too;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
@@ -1039,7 +1247,7 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 ## Environment setup
 
 Environment setup ([plan](plans/environment-setup.md)) reviews the prompts a person answered in the
-active project and suggests values for settings this contract already defines: the shell
+project open in the asking window and suggests values for settings this contract already defines: the shell
 auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package
 registries. It changes no rule. An applied suggestion has exactly the effect of the same value
 typed into Settings → Permissions.
@@ -1100,15 +1308,53 @@ Review-thread resolution checks the thread's repository and PR before mutation. 
 PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
 scripts, general network access, or tool calls from unrelated threads.
 
+## Remote artifact image downloads
+
+Automatic hydration of remote-agent artifact images never fetches image bytes in the Electron
+main process ([design and validation record](plans/sandboxed-artifact-image-downloads.md)).
+
+- **Authorization first.** The renderer names the project and thread it shows. Main requires the
+  thread's durable `remoteAgentLink`; an agent ID from the transcript only selects that link and
+  never creates one. Path, provenance and sandbox-platform checks run before any network request.
+- **One credentialed request.** Main asks the configured Cursor API for a signed URL with a 10 s
+  timeout and a 64 KiB bound, and does not follow redirects. The URL must be HTTPS on port 443,
+  without userinfo, a fragment or an IP literal, on an exact approved download origin. A returned
+  URL never approves its own host.
+- **Per-job host and confinement.** Each download gets a short-lived host
+  (`dist/main/artifact-image-host.js`) with its own ASRT manager and egress proxy, so the
+  allowlist never touches main's process-global scope or another job. The downloader runs inside
+  ASRT with no writes, home and temp reads denied, no Unix sockets or local binding, and an
+  environment built from scratch. Its only route is the job proxy: authenticated `CONNECT` to an
+  approved host on 443, resolved once, refused if any answer is non-public, and dialled by vetted
+  address.
+- **Bounded, verified output.** At most three redirects, each rechecked. Identity encoding only.
+  PNG, JPEG, GIF or WebP with a matching signature, at most 16,384 px per side and 40 Mpx. 15 MiB
+  enforced while streaming, a 30 s deadline and a 10 s idle stall. Main and the host each verify
+  the frames, digest and type on their own; partial output is never shown or cached.
+- **Fail closed.** Windows, a failed ASRT start or a policy denial leaves the image unavailable
+  with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
+  retry re-authorizes and fetches a fresh signed URL.
+
 ## Implementation map
 
-Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
-`TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
-heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
-when every destination file is inside the workspace. This redirect does not widen the sandbox's
-writable roots or change the approval policy. When `COPSE_DIR` is reached through a symlink,
-Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS seatbelt otherwise
-rejects traversal through the home-directory link before its target allow can apply.
+Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
+patch commands even when every destination file is inside the workspace. This redirect does not
+widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
+through a symlink, Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS
+seatbelt otherwise rejects traversal through the home-directory link before its target allow can
+apply.
+
+ASRT bakes its own `TMPDIR` into every wrapped command, after the spawn env, from the wrapping
+process's `CLAUDE_CODE_TMPDIR` (else `/tmp/claude`). `withSandboxWrapTmpDir` (`tmp-env.ts`) sets
+that variable in Copse's `process.env` only while a wrap is in flight and restores the user's own
+value when it settles; concurrent wraps for one directory share it, and a wrap for another waits.
+It is never left set: an unsandboxed Claude Code that inherited it would keep its `claude-<uid>`
+files in the scratch directory every contained command can write. `envForRendererChildProcess`
+and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
+it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
+ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
@@ -1117,12 +1363,38 @@ SVG→PNG (and similar) contained without making nested workspaces, all of `/var
 writable. Linux and Windows are unchanged.
 
 The project sandbox denies reads of the home directory and re-allows only what contained commands
-need to run: the workspace, the user's git config, the chat store, Copse's own caches, the Node
-toolchain found on `PATH`, and the rustup toolchain (`$CARGO_HOME/bin`, `$RUSTUP_HOME/toolchains`,
-and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `credentials.toml` and
+need to run: the workspace, the user's git config and the files it includes, the chat store, Copse's
+own caches, the Node toolchain found on `PATH` (never home or above it, and from `~/Library`,
+`~/.local` or `~/.config` only `lib/node_modules`), and the rustup toolchain (`$CARGO_HOME/bin`,
+`$RUSTUP_HOME/toolchains`, and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `credentials.toml` and
 `config.toml` can hold registry tokens, and the registry and git caches are downloaded sources, not
 a toolchain. So `cargo --version`, `rustc`, and `rustfmt` run contained, while a build that needs
 the registry still fails contained and offers to run outside.
+
+The git config grant is `~/.gitconfig`, the global ignore files, and the whole `~/.config/git`
+directory, because an `include.path` or `core.hooksPath` often points into it and git treats EPERM
+on an included file as fatal. Git's XDG credential store, `~/.config/git/credentials`, holds
+plaintext tokens, so it is denied again inside that grant: on macOS ASRT emits the nested deny after
+the allows, and on Linux it masks the file with `/dev/null` (a missing file cannot be created
+contained, because the directory is bound read-only).
+
+For each `node` on `PATH` the sandbox re-allows the binary and the directory holding it. It
+re-allows the directory above `bin` only when that looks like a version install (nvm's
+`versions/node/vX.Y.Z`, a Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or
+one of its ancestors, and must sit at least two levels below home, judged on both the spelled and
+the canonical path (a `PATH` entry can reach home through an alias). A shallow home root that passes
+the rest (`~/.local` as an npm prefix, `~/.n`, an unpacked tarball) gets only its
+`lib/node_modules`. So `~/bin/node` or `~/.local/bin/node` never turns `~` or `~/.local` (and
+`.ssh`, `.aws`, `.npmrc` with it) into a read grant. A symlinked `node` also grants its target's
+install, but only when the target is a `node` in such a version install: a `PATH` directory a
+contained command can write, such as a checkout's `node_modules/.bin`, could otherwise hold
+`node -> ~/.ssh/id_ed25519`. A version manager that keeps its shims in a top-level home directory
+gets the shim directory plus the trees the shim runs from, read-only, not the whole manager
+directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/tools`, and asdf
+(`$ASDF_DATA_DIR/shims`, default `~/.asdf/shims`) adds `installs`, `plugins`, `bin` and `lib` under
+`$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
+of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
+shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
@@ -1169,6 +1441,9 @@ the registry still fails contained and offers to run outside.
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
+- `remote/artifact-image/`: automatic artifact-image hydration. `service.ts` (authorization,
+  queue, cache), `host.ts` / `host-entry.ts` (per-job ASRT and proxy), `egress-proxy.ts`,
+  `downloader.ts` / `downloader-entry.ts` (the confined client) and `policy.ts`.
 - `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
   permission catalogue, and corroboration of renderer-visible provenance against the schedule's
   main-owned latest-run record.
@@ -1187,3 +1462,26 @@ the registry still fails contained and offers to run outside.
 `shell-gate-replay.test.ts` replays the public command test set through the real gate under each
 platform situation and pins every outcome (`benchmarks/escalation-review/testset/gate-replay.jsonl`).
 Update this document and those tests with any intentional contract change.
+
+### Approved host artifact reads
+
+Approved outside-project read targets are added as exact files or recursive directory
+subtrees, without ancestor `allowRead` entries. ASRT already allows directory metadata
+traversal. A bare ancestor is a recursive subpath allow, and with the current runtime
+it can also cause a late whole-home deny to hide the explicitly approved target.
+Native regression coverage reads nested test artifacts while rejecting sibling reads
+and writes; read consent never grants host writes or network access.
+
+### CoreSimulator host commands and deletion
+
+`xcrun simctl` device operations and direct `simctl` invocations use host
+CoreSimulator services and follow the host-approval path, even when a pipeline
+or `|| echo` masks a command failure. Help and `xcrun --find` stay contained.
+
+Device Hub simulator deletion accepts one UUID, shuts down that device if
+needed, deletes it, and reports absence only after a successful host inventory.
+Deletion asks on every invocation, including with a stored Device Hub allow,
+and cannot be remembered through the approval dialog. Stored blocks, read-only
+runs and toolGate hooks still win. Other Device Hub actions retain their policy.
+
+Saved local port-binding consent can be revoked under Context → Permissions → Project → Local port binding. Revocation applies to future task starts for that project; stop any already-running background task separately in Process manager. Other projects keep their own consent.

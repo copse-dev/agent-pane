@@ -2,12 +2,10 @@
 // Nightly watch: how much of ACP protocol v2 does the published TypeScript SDK
 // expose, and has that surface changed since we last looked?
 //
-// Copse's ACP integration is protocol v1: the SDK's MAIN entry point ships
-// `PROTOCOL_VERSION === 1`, the session-update adapter parses a v1-only union,
-// and the capability probe requests v1 (docs/acp-v2-readiness.md). What that
-// doc used to say — that the published SDK carries no v2 types at all — stopped
-// being true at 1.3.0, the version this repo pins: `@agentclientprotocol/sdk`
-// now also publishes `./experimental/v2`, whose `PROTOCOL_VERSION` is 2.
+// Copse's shipping ACP integration remains protocol v1: the SDK's MAIN entry
+// point ships `PROTOCOL_VERSION === 1`, while Copse imports `/unstable` for the
+// v1 extensions it already supports. SDK 2.x also publishes experimental v2
+// runtime entry points, but the package major does not select the wire protocol.
 //
 // That is exactly the shape a watch is easy to get wrong on. v2 did NOT arrive
 // as a major bump or a `next` dist-tag; it arrived as a new subpath export in a
@@ -60,9 +58,9 @@ const ABBREVIATED_PACKUMENT = 'application/vnd.npm.install-v1+json'
 const V1_DIST_TAGS: readonly string[] = ['latest']
 
 /**
- * The SDK's 0.29 -> 1.0 jump was v1 going *stable*, not v2 arriving, so the whole
- * 1.x line negotiates v1 from its main entry. A major bump is still worth waking
- * someone for — it is just no longer the only way v2 can reach us.
+ * Major lines are watched once, rather than treating every patch release as a
+ * new migration signal. SDK 2.x still negotiates v1 from the main entry; 3.x is
+ * intentionally unacknowledged until it has been triaged.
  */
 const FIRST_CANDIDATE_MAJOR = 2
 
@@ -79,14 +77,20 @@ const FIRST_CANDIDATE_MAJOR = 2
  * docs/acp-v2-readiness.md.
  */
 const ACKNOWLEDGED: readonly string[] = [
-  'export:./experimental/v2', // v2 API, experimental subpath, since 1.3.0 (2026-07)
-  'export:./schema/v2/schema.unstable.json', // the unstable v2 schema it is generated from
+  'export:./experimental/v2', // v2 stable-feature API, still experimental in SDK 2.2.0
+  'export:./experimental/v2/unstable', // v2 unstable extensions, SDK 2.2.0
+  'version:2.x', // SDK major 2 retains protocol v1 on the default entry point
+  'pin:2.x', // Copse pins SDK 2.2.0 but explicitly imports the v1 unstable surface
 ]
 
 const READINESS_DOC = 'docs/acp-v2-readiness.md'
 
-/** Matches an export subpath that carries v2, e.g. `./experimental/v2`, `./v2/foo`. */
+/** Matches a runtime export subpath that carries v2, e.g. `./experimental/v2`, `./v2/foo`. */
 const V2_SUBPATH = /(?:^|\/)v2(?:$|\/|\.)/
+
+function isV2RuntimeExport(path: string): boolean {
+  return !path.startsWith('./schema/') && V2_SUBPATH.test(path)
+}
 
 export interface Packument {
   distTags: Record<string, string>
@@ -245,7 +249,7 @@ export function evaluateWatch(
     signals.push({ kind, name, why, acknowledged: acknowledged.includes(`${kind}:${name}`) })
   }
 
-  const v2Exports = manifest.exportPaths.filter((path) => V2_SUBPATH.test(path))
+  const v2Exports = manifest.exportPaths.filter(isV2RuntimeExport)
   for (const path of v2Exports) {
     // `./experimental/...` is upstream's own "not stable yet" marker. A v2 entry
     // point outside it means v2 has graduated, which is the migration trigger.
@@ -259,15 +263,17 @@ export function evaluateWatch(
     )
   }
 
+  const candidateMajors = new Set<number>()
   for (const version of packument.versions) {
     const parts = parseSemver(version)
     if (parts === null || parts.major < FIRST_CANDIDATE_MAJOR) continue
+    candidateMajors.add(parts.major)
+  }
+  for (const major of [...candidateMajors].sort((a, b) => a - b)) {
     add(
       'version',
-      version,
-      `major ${String(parts.major)} release` +
-        (parts.prerelease === '' ? '' : ` (prerelease ${parts.prerelease})`) +
-        " — the main entry's v1 line is 1.x, so this can negotiate v2 by default",
+      `${String(major)}.x`,
+      `SDK major ${String(major)} exists — confirm the default entry point and protocol selection before acknowledging this line`,
     )
   }
 
@@ -284,8 +290,8 @@ export function evaluateWatch(
   if (pinned !== null && pinned >= FIRST_CANDIDATE_MAJOR) {
     add(
       'pin',
-      pinnedRange,
-      `package.json depends on a major >= ${String(FIRST_CANDIDATE_MAJOR)} range — the v1 adapters in src/main/services/acp must have moved with it`,
+      `${String(pinned)}.x`,
+      `package.json depends on SDK major ${String(pinned)} — verify Copse's explicit v1/v2 import boundary`,
     )
   }
 
@@ -318,8 +324,8 @@ export function formatReport(verdict: WatchVerdict): string {
 
   if (verdict.status === 'as-expected') {
     lines.push(
-      "The published v2 surface is the one already triaged in `ACKNOWLEDGED`: Copse's",
-      `integration stays on the v1 main entry. See \`${READINESS_DOC}\`.`,
+      "The published v2 surface and SDK major are already triaged in `ACKNOWLEDGED`: Copse's",
+      `shipping integration stays on explicit v1 imports. See \`${READINESS_DOC}\`.`,
     )
     return lines.join('\n')
   }

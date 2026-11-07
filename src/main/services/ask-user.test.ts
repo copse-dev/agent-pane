@@ -16,6 +16,7 @@ import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { humanDecisions } from './human-decisions.ts'
 import { mobileDecisions } from './mobile/mobile-decisions.ts'
+import { storageGet, storageSet } from './storage/storage.ts'
 
 const req: AskUserRequest = {
   questions: [{ question: 'Which DB?', options: ['Postgres'] }, { question: 'Async?' }],
@@ -231,6 +232,74 @@ describe('window ask_user handler', () => {
       ),
       false,
     )
+  })
+
+  it("files each question under its asker's project, never the window's", async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const previous = storageGet('activeProjectId')
+    storageSet('activeProjectId', 'window-project')
+    try {
+      const turn = (projectId: string, threadId: string): Promise<AskUserResult> =>
+        runWithThreadExecutionContext(
+          {
+            projectId,
+            threadId,
+            projectRoot: process.cwd(),
+            root: process.cwd(),
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () => runWithActiveRunIdentity(threadId, () => requestUserAnswers(req)),
+        )
+      // Two turns in different projects, and an ACP agent's own continuation
+      // asking outside any turn with its thread's project named on the request.
+      const pending = Promise.all([
+        turn('project-a', 'thread-a'),
+        turn('project-b', 'thread-b'),
+        runWithActiveRunIdentity('thread-c', () =>
+          requestUserAnswers({ ...req, projectId: 'project-c' }),
+        ),
+      ])
+      const registered = new Map(
+        humanDecisions
+          .snapshot()
+          .requests.filter((request) => request.threadId.startsWith('thread-'))
+          .map((request) => [request.threadId, request.projectId]),
+      )
+      assert.deepEqual(
+        registered,
+        new Map([
+          ['thread-a', 'project-a'],
+          ['thread-b', 'project-b'],
+          ['thread-c', 'project-c'],
+        ]),
+      )
+      window.answer(['Postgres', 'Yes'])
+      await pending
+    } finally {
+      storageSet('activeProjectId', previous)
+    }
+  })
+
+  it('keeps a question with no turn and no named project off interactive clients', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const previous = storageGet('activeProjectId')
+    storageSet('activeProjectId', 'window-project')
+    try {
+      const pending = runWithActiveRunIdentity('thread-unowned', () => requestUserAnswers(req))
+      assert.equal(
+        humanDecisions.snapshot().requests.some((request) => request.threadId === 'thread-unowned'),
+        false,
+      )
+      // The desktop window still asks.
+      assert.deepEqual(window.sent, ['agent:ask-user-request'])
+      window.answer(['Postgres', 'Yes'])
+      assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+    } finally {
+      storageSet('activeProjectId', previous)
+    }
   })
 
   it('alerts for the asking thread and releases the alert once answered', async () => {

@@ -41,6 +41,7 @@ import { applyPatchTool } from '../tools/apply-patch-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
+import { readExploredTool } from '../tools/read-explored-tool.ts'
 import { isolatedWorkersTool } from '../tools/isolated-workers-tool.ts'
 import { readonlyWorkersTool } from '../tools/readonly-workers-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
@@ -99,7 +100,13 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { isolatedDesktopTool } from '../tools/isolated-desktop-tool.ts'
 import { deviceHubTool } from '../tools/device-hub-tool.ts'
+import {
+  registerDesktopControlTools,
+  unregisterDesktopControlTools,
+} from '../tools/desktop-control-tools.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 import { resolveWebSearchProvider } from '@shared/web-search.ts'
 
@@ -130,18 +137,19 @@ export function createRegistry(): ToolRegistry {
   // Host GUI launch (macOS Launch Services). Always approval-gated; not a
   // substitute for run_shell — see gui-app-launch-tool.ts.
   registry.register(launchGuiAppTool)
+  registry.register(isolatedDesktopTool)
   registry.register(preflightWorktreeTool)
   registry.register(prepareWorktreeTool)
   // Offered only while a deferred-worktree thread is still read-only (parentTools).
   registry.register(requestWriteAccessTool)
   registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
+  registry.register(readExploredTool)
   registry.register(readonlyWorkersTool)
   registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
-  // Plugins is the atomic master switch. Registration also requires `gh` (the
-  // entry tool and its deep-log gh_run_* helpers shell out to it), so the sync
+  // Plugins is the atomic master switch. Registration also requires `gh`, so the sync
   // ANDs plugin enablement with `gh` availability. Live toggles route through
   // {@link syncCiInvestigatorTools} on `plugins:set-enabled`.
   syncCiInvestigatorTools(registry)
@@ -211,6 +219,9 @@ export function createRegistry(): ToolRegistry {
   // tool brings the resulting booted Simulator into Copse's visible Desktop
   // panel, keeping display integration out of the third-party MCP server.
   syncAppleDevelopmentTools(registry)
+  // Experimental computer use: the desktop_* tools drive approved Mac apps
+  // through the native helper. Off unless `copse.computer-use` is enabled.
+  syncComputerUseTools(registry)
   // Reading a video as stills. Registered unconditionally because a video can
   // be attached to any thread at any time, but withheld per turn from threads
   // that have never had one (see `parentTools`) — most threads never will, and
@@ -279,10 +290,25 @@ export function syncAppleDevelopmentTools(
 }
 
 /**
+ * Keep the computer-use tools aligned with the experimental `copse.computer-use`
+ * plugin. macOS only: the helper is Accessibility + ScreenCaptureKit.
+ */
+export function syncComputerUseTools(
+  registry: ToolRegistry,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === 'darwin' && getDefaultPluginRegistry().isEnabled(COMPUTER_USE_PLUGIN_ID)) {
+    registerDesktopControlTools(registry)
+  } else {
+    unregisterDesktopControlTools(registry)
+  }
+}
+
+/**
  * Register or unregister the experimental OKF memory tools to match the current
  * enablement of the `copse.okf-memories` first-party plugin. Called at startup
  * (via createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tools appear
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tools appear
  * or disappear live without an app restart. This keeps the registry in sync with
  * the memory system-prompt block, which is rebuilt every turn from the same plugin
  * enablement (`agent-system-prompt.ts`) — otherwise enabling the feature
@@ -303,7 +329,7 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `roadmap_plan` tool to match the
  * current enablement of the `copse.roadmap-plans` first-party plugin (issue #556).
  * Called at startup (via createRegistry) and again whenever the plugin is toggled
- * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so
+ * from Settings > Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so
  * enabling the feature (e.g. to use the Roadmap pane) also gives the agent its
  * tool without an app restart — the atomic plugin disable drops the tool from the
  * model tool list in the same flag flip that drops the plugin's
@@ -330,7 +356,7 @@ export function syncReviewerInputTools(registry: ToolRegistry): void {
  * Register or unregister the `review_changes` tool to match the current
  * enablement of the `copse.review` first-party plugin. Called at startup (via
  * createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tool
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tool
  * appears or disappears live — the atomic plugin disable drops the tool from
  * the model tool list in the same flag flip that drops the plugin's bubble,
  * its `activeToolNames()` entry, and the Changes view's "Review" button.
@@ -347,7 +373,7 @@ export function syncReviewTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `track_long_task` tool to match the
  * current enablement of the `copse.long-horizon-tasks` first-party plugin (issue
  * #558). Called at startup (via createRegistry) and again whenever the plugin is
- * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
  * `plugins:set-enabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
  * drops the plugin's `activeToolNames()` entry from the Settings plugin list.
@@ -364,7 +390,7 @@ export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `advisor` tool to match the current
  * enablement of the `copse.advisor-strategy` first-party plugin (issue #566).
  * Called at startup (via createRegistry) and again whenever the plugin is toggled
- * from Settings > Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so
+ * from Settings > Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so
  * the tool appears or disappears live — the atomic plugin disable drops the tool
  * from the model tool list in the same flag flip that drops the plugin's
  * `activeToolNames()` entry from the Settings plugin list. The orthogonal
@@ -402,6 +428,8 @@ export function syncGhTools(registry: ToolRegistry): void {
     if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
     if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
     if (!registry.has('gh_api_read')) registry.register(ghApiReadTool)
+    if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
+    if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
     if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
     if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
     if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
@@ -410,6 +438,8 @@ export function syncGhTools(registry: ToolRegistry): void {
     registry.unregister('gh_pr_view')
     registry.unregister('gh_pr_files')
     registry.unregister('gh_api_read')
+    registry.unregister('gh_run_list')
+    registry.unregister('gh_run_view')
     registry.unregister('get_ci_status')
     registry.unregister('wait_for_ci_checks')
     registry.unregister('get_ci_failure_logs')
@@ -430,34 +460,16 @@ export function syncGhTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental CI investigator tools — the
- * `investigate_ci` entry tool and its deep-log `gh_run_list` / `gh_run_view`
- * helpers — to match the current enablement of the `copse.ci-investigator`
- * first-party plugin. Called at startup (via createRegistry) and again whenever
- * the plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
- * `plugins:set-enabled`), so the tools appear or disappear live — the atomic plugin
- * disable drops them from the model tool list in the same flag flip that drops
- * the plugin's `activeToolNames()` entries from the Settings plugin list.
- *
- * The register direction additionally requires `gh`: the entry tool and the
- * gh_run_* helpers shell out to it, so advertising them without a usable `gh`
- * would just surface "gh is not available" on every call. `gh` availability is
- * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
- * a live plugin enable respects the probed environment.
- *
- * `parentTools` additionally withholds `investigate_ci` while subagents are off
- * or read-only mode is on;
- * `isInvestigateCiOffered` is the combined predicate the prompt and the
- * CI follow-up read.
+ * The experimental investigator's entry point follows plugin enablement and gh
+ * availability. Workflow listing and log reads are core tools in syncGhTools;
+ * plugin changes must not remove them. Existing subagent and read-only gates
+ * further restrict the investigator when parentTools offers a turn's tool list.
+ * Live toggles route through ipc/plugin-handlers.ts (plugins:set-enabled).
  */
 export function syncCiInvestigatorTools(registry: ToolRegistry): void {
   if (ciInvestigatorToolsRegistrable()) {
-    if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
-    if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
     if (!registry.has(INVESTIGATE_CI_TOOL_NAME)) registry.register(investigateCiTool)
   } else {
-    registry.unregister('gh_run_list')
-    registry.unregister('gh_run_view')
     registry.unregister(INVESTIGATE_CI_TOOL_NAME)
   }
 }
@@ -466,7 +478,7 @@ export function syncCiInvestigatorTools(registry: ToolRegistry): void {
  * Register or unregister the experimental `reveal_pii` tool to match the current
  * enablement of the `copse.pii-redaction` first-party plugin. Called at startup
  * (via createRegistry) and again whenever the plugin is toggled from Settings >
- * Plugins (see `ipc/register-handlers.ts` `plugins:set-enabled`), so the tool appears
+ * Plugins (see `ipc/plugin-handlers.ts` `plugins:set-enabled`), so the tool appears
  * or disappears live — and stays in sync with the redaction system-prompt block
  * (`agent-system-prompt.ts`) and the input rewrite (`pii-redactor.ts`), which
  * are gated on the same plugin enablement. The atomic plugin disable drops the tool
@@ -485,7 +497,7 @@ export function syncPiiTools(registry: ToolRegistry): void {
  * Register or unregister the stable `run_background` tool to match the
  * current enablement of the `copse.background-tasks` first-party plugin (issue
  * #691). Called at startup (via createRegistry) and again whenever the plugin is
- * toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
  * `plugins:set-enabled`), so the tool appears or disappears live — the atomic plugin
  * disable drops the tool from the model tool list in the same flag flip that
  * drops the plugin's `activeToolNames()` entry from the Settings plugin list AND

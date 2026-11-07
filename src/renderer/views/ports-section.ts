@@ -1,6 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { openBrowserUrl } from '../controller/panels.ts'
+import { openBrowserUrl, selectRightPanelMode } from '../controller/panels.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -272,14 +272,11 @@ export function mountPortsSection(
     void pollOnce()
   }
 
-  const unsubs = [
-    store.on('right_panel_mode_changed', syncPolling),
-    store.on('files_pane_changed', syncPolling),
-  ]
+  const unsubs = [selectRightPanelMode(store, 'terminal', syncPolling)]
 
   render()
-  // Mounting into an already-active pane (pop-out window, restored layout) misses
-  // the *_changed events that normally start the first scan.
+  // Mounting into an already-active pane (pop-out window, restored layout) sees
+  // no change to select, so start the first scan here.
   syncPolling()
 
   return () => {

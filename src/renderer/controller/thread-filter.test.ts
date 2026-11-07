@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import type { Message, Thread } from '@shared/types'
+import type { PromptSearchResult } from '@copse/thread-store/prompt-search.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { createThreadFilter, filterText, residentRequestMatches } from './thread-filter.ts'
 
-function thread(id: string, date: number, extra: Partial<Thread> = {}): Thread {
+function thread(id: string, extra: Partial<Thread> = {}): Thread {
   return {
     id,
     title: id,
@@ -14,267 +15,174 @@ function thread(id: string, date: number, extra: Partial<Thread> = {}): Thread {
     messages: [],
     messagesLoaded: false,
     usage: { inputTokens: 0, outputTokens: 0 },
-    createdAt: date,
-    updatedAt: date,
+    createdAt: 1,
+    updatedAt: 1,
     ...extra,
   }
 }
-
 function request(content: string, extra: Partial<Message> = {}): Message {
   return { id: content, role: 'user', content, toolCalls: [], createdAt: 1, ...extra }
 }
 
-function deferredMessages(): { promise: Promise<Message[]>; resolve(messages: Message[]): void } {
-  let resolve = (_messages: Message[]): void => {
-    throw new Error('Promise not initialized')
-  }
-  const promise = new Promise<Message[]>((done) => {
-    resolve = done
-  })
-  return { promise, resolve }
-}
-
 describe('thread content filter', () => {
-  it('scans only the current project, newest human request first, without hydrating threads', async () => {
-    const threads = [
-      thread('old', 1),
-      thread('new', 3),
-      thread('recent-request', 2, { lastPromptAt: 4 }),
-      thread('needle title', 5),
-      thread('archived', 6, { archivedAt: 7 }),
-    ]
+  it('uses one ID-only search without loading transcripts and filters stale/foreign IDs', async () => {
+    const threads = [thread('saved'), thread('archived', { archivedAt: 1 }), thread('needle title')]
     const store = createStore({ activeProjectId: 'open', threads })
     const api = createFakeApi()
-    const reads: string[] = []
-    api.threads.loadMessages = async (projectId, id): Promise<Message[]> => {
-      reads.push(`${projectId}/${id}`)
-      return [request('a Needle in this request')]
+    const calls: string[] = []
+    api.threads.loadMessages = async (): Promise<Message[]> => {
+      assert.fail('search must not hydrate transcripts')
+    }
+    api.threads.searchRequests = async (project, query): Promise<PromptSearchResult> => {
+      calls.push(project + '/' + query)
+      return { matches: ['saved', 'archived', 'foreign'], incomplete: false }
     }
     const filter = createThreadFilter(store, api, () => {})
     filter.search('needle')
-    assert.deepEqual(reads, [])
-    // Debouncing is not searching: no status until a read can actually start.
     assert.equal(filter.waiting, true)
     assert.equal(filter.pending, false)
+    assert.deepEqual(calls, [])
     await delay(250)
-    assert.equal(filter.waiting, false)
-    assert.deepEqual(reads, ['open/recent-request', 'open/new', 'open/old'])
-    assert.deepEqual([...filter.matches], ['recent-request', 'new', 'old'])
+    assert.deepEqual(calls, ['open/needle'])
+    assert.deepEqual([...filter.matches], ['saved'])
     assert.equal(filter.pending, false)
     assert.equal(store.getState().threads, threads)
-    assert.ok(threads.every((t) => t.messages.length === 0 && t.messagesLoaded === false))
     filter.cancel()
   })
 
-  it('matches human text, excluding assistant, tools, and automatic continuations', async () => {
+  it('keeps unsaved human text authoritative over the saved index', async () => {
     const store = createStore({
       activeProjectId: 'open',
       threads: [
-        thread('assistant', 1, {
+        thread('assistant', {
           messagesLoaded: true,
           messages: [request('needle', { role: 'assistant' })],
         }),
-        thread('machine', 2, {
+        thread('machine', {
           messagesLoaded: true,
           messages: [request('needle', { origin: { kind: 'machine', operationId: 'job' } })],
         }),
-        thread('human', 3, { messagesLoaded: true, messages: [request('needle')] }),
-        thread('live-tail', 4, { messages: [request('needle')] }),
+        thread('human', { messagesLoaded: true, messages: [request('needle')] }),
+        thread('edited-hook', {
+          messagesLoaded: true,
+          messages: [
+            request('needle', {
+              origin: { kind: 'machine', operationId: 'job' },
+              editedByUser: true,
+            }),
+          ],
+        }),
+        thread('live-tail', { messages: [request('needle')] }),
+        thread('edited-away', { messagesLoaded: true, messages: [request('other words')] }),
       ],
     })
     const api = createFakeApi()
-    api.threads.loadMessages = async (): Promise<Message[]> => {
-      assert.fail('already resident requests need no disk read')
-    }
+    api.threads.searchRequests = async (): Promise<PromptSearchResult> => ({
+      matches: ['edited-away'],
+      incomplete: false,
+    })
     const filter = createThreadFilter(store, api, () => {})
     filter.search('needle')
     await delay(250)
-    assert.deepEqual([...filter.matches], ['live-tail', 'human'])
+    assert.deepEqual([...filter.matches], ['human', 'edited-hook', 'live-tail'])
     filter.cancel()
   })
 
-  it('cancels stale queries and serializes reads while a transcript is in flight', async () => {
+  it('debounces typing and discards superseded results without queueing new searches behind them', async () => {
     const store = createStore({
       activeProjectId: 'open',
-      threads: [thread('older', 1), thread('newer', 2)],
+      threads: [thread('old', { title: 'First work' }), thread('new', { title: 'Second work' })],
     })
     const api = createFakeApi()
-    const firstRead = deferredMessages()
-    const reads: string[] = []
-    api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-      reads.push(id)
-      return reads.length === 1 ? firstRead.promise : [request('new query')]
+    let finish: (result: PromptSearchResult) => void = () => assert.fail('not started')
+    const first = new Promise<PromptSearchResult>((resolve) => {
+      finish = resolve
+    })
+    const calls: string[] = []
+    let cancels = 0
+    api.threads.cancelRequestSearch = async (): Promise<void> => {
+      cancels++
+    }
+    api.threads.searchRequests = async (_project, query): Promise<PromptSearchResult> => {
+      calls.push(query)
+      return query === 'old' ? first : { matches: ['new'], incomplete: false }
     }
     const filter = createThreadFilter(store, api, () => {})
-    filter.search('old query')
+    filter.search('ol')
+    filter.search('old')
     await delay(250)
-    assert.deepEqual(reads, ['newer'])
-    filter.search('new query')
+    filter.search('new')
     await delay(250)
-    assert.deepEqual(reads, ['newer'])
-    firstRead.resolve([request('old query')])
+    assert.deepEqual(calls, ['old', 'new'])
+    assert.deepEqual([...filter.matches], ['new'])
+    finish({ matches: ['old'], incomplete: true })
     await delay(0)
-    // The superseded read is still indexed, so the new query reuses it.
-    assert.deepEqual(reads, ['newer', 'older'])
-    assert.deepEqual([...filter.matches], ['older'])
+    assert.deepEqual([...filter.matches], ['new'])
+    assert.equal(filter.failed, false)
+    assert.ok(cancels >= 3)
     filter.cancel()
   })
 
-  it('stops after a workspace switch, clear, or disposal', async () => {
+  it('ignores results after switching, clearing, or disposal', async () => {
     for (const action of ['workspace', 'clear', 'dispose']) {
-      const store = createStore({
-        activeProjectId: 'open',
-        threads: [thread('older', 1), thread('newer', 2)],
-      })
+      const store = createStore({ activeProjectId: 'open', threads: [thread('saved')] })
       const api = createFakeApi()
-      const response = deferredMessages()
-      const reads: string[] = []
-      api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-        reads.push(id)
-        return response.promise
-      }
+      let finish: (result: PromptSearchResult) => void = () => assert.fail('not started')
+      api.threads.searchRequests = (): Promise<PromptSearchResult> =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
       const filter = createThreadFilter(store, api, () => {})
       filter.search('needle')
       await delay(250)
-      if (action === 'workspace') store.setState({ activeProjectId: 'elsewhere' })
+      if (action === 'workspace') store.setState({ activeProjectId: 'other' })
       else if (action === 'clear') filter.search('')
       else filter.cancel()
-      response.resolve([request('needle')])
+      finish({ matches: ['saved'], incomplete: false })
       await delay(0)
-      assert.deepEqual(reads, ['newer'])
       assert.deepEqual([...filter.matches], [])
       filter.cancel()
     }
   })
 
-  it('reports incomplete searches and continues past an unreadable thread', async () => {
-    const store = createStore({
-      activeProjectId: 'open',
-      threads: [thread('older', 1), thread('newer', 2)],
-    })
+  it('reports incomplete/failed queries and recovers on the next search', async () => {
+    const store = createStore({ activeProjectId: 'open', threads: [thread('saved')] })
     const api = createFakeApi()
-    api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-      if (id === 'newer') throw new Error('unreadable')
-      return [request('needle')]
+    let fail = true
+    api.threads.searchRequests = async (): Promise<PromptSearchResult> => {
+      if (fail) throw new Error('worker exited')
+      return { matches: ['saved'], incomplete: true }
     }
     const filter = createThreadFilter(store, api, () => {})
     filter.search('needle')
     await delay(250)
     assert.equal(filter.failed, true)
     assert.equal(filter.pending, false)
-    assert.deepEqual([...filter.matches], ['older'])
+    fail = false
+    filter.search('needle')
+    await delay(250)
+    assert.equal(filter.failed, true)
+    assert.deepEqual([...filter.matches], ['saved'])
     filter.cancel()
   })
 
-  it('indexes each transcript once and reuses it across queries', async () => {
+  it('does no saved search for one character or fully resident histories', async () => {
     const store = createStore({
       activeProjectId: 'open',
-      threads: [thread('older', 1), thread('newer', 2)],
+      threads: [thread('human', { messagesLoaded: true, messages: [request('needle')] })],
     })
     const api = createFakeApi()
-    const reads: string[] = []
-    api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-      reads.push(id)
-      return [request(id === 'newer' ? 'I need a Needle' : 'nothing here')]
-    }
-    const filter = createThreadFilter(store, api, () => {})
-    filter.search('nee')
-    await delay(250)
-    filter.search('needle')
-    await delay(250)
-    assert.deepEqual(reads, ['newer', 'older'])
-    assert.deepEqual([...filter.matches], ['newer'])
-    filter.cancel()
-  })
-
-  it('re-reads a transcript once the thread gains a request', async () => {
-    const store = createStore({ activeProjectId: 'open', threads: [thread('t', 1)] })
-    const api = createFakeApi()
-    let content = 'old words'
-    const reads: string[] = []
-    api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-      reads.push(id)
-      return [request(content)]
-    }
-    const filter = createThreadFilter(store, api, () => {})
-    filter.search('needle')
-    await delay(250)
-    assert.deepEqual([...filter.matches], [])
-    content = 'now a needle'
-    store.setState({ threads: [thread('t', 1, { lastPromptAt: 5 })] })
-    filter.search('needle')
-    await delay(250)
-    assert.deepEqual(reads, ['t', 't'])
-    assert.deepEqual([...filter.matches], ['t'])
-    filter.cancel()
-  })
-
-  it('re-reads a transcript saved without a new request', async () => {
-    const store = createStore({ activeProjectId: 'open', threads: [thread('t', 1)] })
-    const api = createFakeApi()
-    let content = 'a needle'
-    const reads: string[] = []
-    api.threads.loadMessages = async (_projectId, id): Promise<Message[]> => {
-      reads.push(id)
-      return [request(content)]
-    }
-    const filter = createThreadFilter(store, api, () => {})
-    filter.search('needle')
-    await delay(250)
-    assert.deepEqual([...filter.matches], ['t'])
-    // An edit or truncation saves the thread without moving `lastPromptAt`.
-    content = 'rewritten'
-    store.setState({ threads: [thread('t', 1, { updatedAt: 99 })] })
-    filter.search('needle')
-    await delay(250)
-    assert.deepEqual(reads, ['t', 't'])
-    assert.deepEqual([...filter.matches], [])
-    filter.cancel()
-  })
-
-  it('filters titles only for one-character queries', async () => {
-    const store = createStore({ activeProjectId: 'open', threads: [thread('t', 1)] })
-    const api = createFakeApi()
-    api.threads.loadMessages = async (): Promise<Message[]> => {
-      assert.fail('a one-character query must not read transcripts')
+    api.threads.searchRequests = async (): Promise<PromptSearchResult> => {
+      assert.fail('no disk search needed')
     }
     const filter = createThreadFilter(store, api, () => {})
     filter.search('n')
     assert.equal(filter.waiting, false)
-    await delay(250)
-    assert.equal(filter.pending, false)
     assert.equal(residentRequestMatches([request('needle')], 'n'), false)
-    filter.cancel()
-  })
-
-  it('matches composed and decomposed accents alike', async () => {
-    const store = createStore({ activeProjectId: 'open', threads: [thread('t', 1)] })
-    const api = createFakeApi()
-    api.threads.loadMessages = async (): Promise<Message[]> => [request('Fix the Cafe\u0301 menu')]
-    const filter = createThreadFilter(store, api, () => {})
-    filter.search('caf\u00e9')
-    await delay(250)
-    assert.deepEqual([...filter.matches], ['t'])
-    assert.equal(filterText('CAF\u00c9'), filterText('Cafe\u0301'))
-    filter.cancel()
-  })
-
-  it('keeps searching after a sidebar update throws', async () => {
-    const store = createStore({ activeProjectId: 'open', threads: [thread('t', 1)] })
-    const api = createFakeApi()
-    api.threads.loadMessages = async (): Promise<Message[]> => [request('needle')]
-    let throws = true
-    const filter = createThreadFilter(store, api, () => {
-      if (throws) throw new Error('render failed')
-    })
     filter.search('needle')
     await delay(250)
-    assert.equal(filter.pending, false)
-    throws = false
-    filter.search('needl')
-    await delay(250)
-    assert.equal(filter.pending, false)
-    assert.deepEqual([...filter.matches], ['t'])
+    assert.deepEqual([...filter.matches], ['human'])
     filter.cancel()
+    assert.equal(filterText('CAFÉ'), filterText('Cafe\u0301'))
   })
 })

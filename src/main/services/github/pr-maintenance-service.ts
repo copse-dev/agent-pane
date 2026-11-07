@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { runGh } from './gh-service.ts'
+import type { runGh } from './gh-service.ts'
 import type { PrRef } from './backend/backend.ts'
 import { chooseAutoMergeStrategy } from './backend/merge-strategy.ts'
 
@@ -71,6 +71,9 @@ const resolutionSchema = z.object({
 
 type GhReply = Awaited<ReturnType<typeof runGh>>
 
+/** `gh` bound to the caller's checkout; every call here names `-R owner/repo`. */
+export type PrMaintenanceGh = (args: string[]) => Promise<GhReply>
+
 export interface PrMaintenanceService {
   merge(ref: PrRef, expectedHeadSha: string): Promise<string>
   comment(ref: PrRef, body: string): Promise<string>
@@ -78,7 +81,7 @@ export interface PrMaintenanceService {
 }
 
 /** Narrow CLI operations; injected command boundary keeps tests off the network. */
-export function createPrMaintenanceService(run: typeof runGh = runGh): PrMaintenanceService {
+export function createPrMaintenanceService(run: PrMaintenanceGh): PrMaintenanceService {
   const target = (ref: PrRef): string[] => ['-R', `${ref.owner}/${ref.repo}`, String(ref.number)]
   const result = (reply: GhReply, success: string): string =>
     reply.code === 0 ? success : `Failed: ${reply.stderr.trim() || 'GitHub CLI operation failed.'}`

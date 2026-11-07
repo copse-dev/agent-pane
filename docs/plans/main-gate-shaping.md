@@ -1,10 +1,14 @@
 # Main gate shaping: small main gate, complete release gate
 
-Status: **Proposed**. Audit and design only; **no policy change**. Nothing here alters a
+Status: **Active — shadow measurement running since 2026-10-17; no policy change.** The shadow
+report is described in [`main-gate-shadow-first-slice.md`](main-gate-shadow-first-slice.md),
+[`main-gate-replay-report.md`](main-gate-replay-report.md) and
+[`main-gate-report-automation.md`](main-gate-report-automation.md). A gate-policy change still needs
+the four-week shadow and its replay count first, and lands as its own PR. Nothing here alters a
 workflow, ruleset, required check, oracle selection rule or merge gate. Compiled 15 October 2026
 against main `5cfc66e77`; the measurement window is CI runs created 24 September to 15 October 2026. This is item 2 of the
-[recovery lessons and development throughput plan](https://github.com/copse-dev/agent-pane/pull/3770)
-(`docs/plans/recovery-throughput.md` once that PR lands). Follow [AGENTS.md](../../AGENTS.md) and
+[recovery lessons and development throughput plan](recovery-throughput.md)
+(landed in [#3770](https://github.com/copse-dev/agent-pane/pull/3770)). Follow [AGENTS.md](../../AGENTS.md) and
 the live repository rules until an explicit gate change lands as its own PR.
 
 The question the recovery plan asks is whether entry to `main` can run the affected visual specs

@@ -10,7 +10,7 @@ import {
   type SessionConfigSelectOption,
   type SessionUpdate,
   type Stream,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { randomInt } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { acpProbeErrorMessage, spawnProbeTransport } from './acp-behavior-probe.ts'

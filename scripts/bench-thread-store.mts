@@ -15,7 +15,6 @@ import { join, resolve } from 'node:path'
  * Authoritative numbers come from a real machine.
  */
 
-const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 const outfile = join(mkdtempSync(join(tmpdir(), 'copse-bench-build-')), 'bench.cjs')
 
@@ -33,9 +32,6 @@ await esbuild.build({
     {
       name: 'main-services-test-shims',
       setup(build): void {
-        build.onResolve({ filter: /\/settings\.ts$/ }, (args) =>
-          args.path.includes('settings.test-shim') ? undefined : { path: settingsShim },
-        )
         build.onResolve({ filter: /\/user-data-files\.ts$/ }, (args) =>
           args.path.includes('user-data-files.test-shim') ? undefined : { path: userDataFilesShim },
         )

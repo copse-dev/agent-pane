@@ -159,8 +159,15 @@ jobs:
         run: pnpm install --frozen-lockfile --config.ignore-scripts=true && pnpm run build:release
         env:
           CI: true
+
+  remote-watcher-binaries:
+    needs: preflight
+    uses: ./.github/workflows/remote-watcher-build.yml
+    with:
+      ref: ${{ needs.preflight.outputs.release_sha }}
+
   build-test:
-    needs: [preflight, verify-clean-release-build]
+    needs: [preflight, verify-clean-release-build, remote-watcher-binaries]
     timeout-minutes: 60
     # The runtime smoke test below is the only gate that actually launches the
     # packaged app, so it has to run on an OS the app supports. Keep this label
@@ -177,6 +184,25 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: ./.github/actions/setup
+      - name: Stage remote watcher binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: remote-watcher-all
+          path: vendor/remote-watcher
+      - name: Verify the remote watcher artifact
+        run: |
+          set -euo pipefail
+          (
+            cd vendor/remote-watcher
+            shasum -a 256 --check SHA256SUMS
+          )
+          for target in \
+            aarch64-apple-darwin \
+            x86_64-apple-darwin \
+            aarch64-unknown-linux-musl \
+            x86_64-unknown-linux-musl; do
+            test -s "vendor/remote-watcher/$target/copse-remote-watcher"
+          done
       # GitHub retired its Intel macOS images, so this runner is Apple Silicon
       # and the x64 bundle's smoke test — plus its `gortex version` call — runs
       # translated. Rosetta is not guaranteed on the arm64 images, and finding
@@ -286,6 +312,14 @@ jobs:
             spctl -a -vvv -t install "$app"
             xcrun stapler validate "$app"
             test -x "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex"
+            watcher_root="$app/Contents/Resources/app.asar.unpacked/dist/resources/remote-watcher"
+            for target in \
+              aarch64-apple-darwin \
+              x86_64-apple-darwin \
+              aarch64-unknown-linux-musl \
+              x86_64-unknown-linux-musl; do
+              test -s "$watcher_root/$target/copse-remote-watcher"
+            done
             app_arch="$(lipo "$app/Contents/MacOS/Copse" -archs)"
             gortex_arch="$(lipo "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" -archs)"
             expected_arch="$TARGET_ARCH"

@@ -1,6 +1,6 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream, type SessionUpdate } from '@agentclientprotocol/sdk'
+import { ndJsonStream, type SessionUpdate } from '@agentclientprotocol/sdk/unstable'
 import { buildAcpAgentApp, type AcpTurnContext, type AcpTurnRunner } from './acp-agent-server.ts'
 import {
   cancelAgentInitiatedTurn,

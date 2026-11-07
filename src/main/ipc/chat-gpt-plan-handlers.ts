@@ -1,37 +1,42 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 import { z } from 'zod'
-import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
-import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
+import { defineHandler } from './define-handler.ts'
+import {
+  getChatGptPlanService,
+  setChatGptPlanWindowFocus,
+} from '../services/providers/chatgpt-plan-service.ts'
+import { getMainWindow } from '../windows/create-main-window.ts'
+
+const zAccountId = z.string().min(1).max(256)
+
+/** Bring Copse forward over the browser that just finished the sign-in. */
+function focusMainWindow(): void {
+  // An HTTP callback is not an OS-sanctioned focus change, so steal it.
+  app.focus({ steal: true })
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
 
 export function registerChatGptPlanHandlers(win: BrowserWindow): void {
-  ipcMain.handle('chat-gpt-plan:status', (event) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().status()
-  })
-  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().signIn(
-      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
-    )
-  })
-  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
-    assertMainFrameSender(event, win)
+  setChatGptPlanWindowFocus(focusMainWindow)
+  defineHandler(win, 'chat-gpt-plan:status', z.tuple([]), () => getChatGptPlanService().status())
+  defineHandler(win, 'chat-gpt-plan:sign-in', z.tuple([zAccountId.optional()]), (accountId) =>
+    getChatGptPlanService().signIn(accountId),
+  )
+  defineHandler(win, 'chat-gpt-plan:refresh-account', z.tuple([zAccountId]), (accountId) =>
+    getChatGptPlanService().refreshAccount(accountId),
+  )
+  defineHandler(win, 'chat-gpt-plan:cancel-sign-in', z.tuple([]), () => {
     getChatGptPlanService().cancelSignIn()
   })
-  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:models', (event) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().models()
-  })
+  defineHandler(win, 'chat-gpt-plan:select-account', z.tuple([zAccountId]), (accountId) =>
+    getChatGptPlanService().selectAccount(accountId),
+  )
+  defineHandler(win, 'chat-gpt-plan:sign-out', z.tuple([zAccountId]), (accountId) =>
+    getChatGptPlanService().signOut(accountId),
+  )
+  defineHandler(win, 'chat-gpt-plan:models', z.tuple([]), () => getChatGptPlanService().models())
 }

@@ -4,6 +4,7 @@ import { afterEach, describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import { bindChatComposerLayout } from './chat-layout.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -121,16 +122,48 @@ describe('bindChatComposerLayout', () => {
 
     const unbind = bindChatComposerLayout(store)
     assert.equal(focusCount, 1)
-    store.emit('threads_changed')
-    store.emit('threads_changed')
+    setThreadTitle(store, 'thread-1', 'Renamed')
     assert.equal(focusCount, 1, 'a re-focus would pull the caret out of the Activity list')
 
     store.setState({
       activeThreadId: 'thread-2',
       threads: [emptyThread(), { ...emptyThread(), id: 'thread-2' }],
     })
-    store.emit('threads_changed')
     assert.equal(focusCount, 2, 'a different empty thread gets the composer')
+    unbind()
+  })
+
+  it('re-syncs on the active thread only: not on renames or other threads', () => {
+    mountLayout()
+    const store = createStore({
+      activeThreadId: 'thread-1',
+      threads: [emptyThread(), { ...emptyThread(), id: 'thread-2' }],
+    })
+    let syncs = 0
+    const unbind = bindChatComposerLayout(store, () => {
+      syncs += 1
+    })
+    const mounted = syncs
+
+    setThreadTitle(store, 'thread-1', 'Renamed')
+    setThreadTitle(store, 'thread-2', 'Renamed too')
+    assert.equal(syncs, mounted, 'renames do not re-sync the layout')
+
+    // The active thread gaining a message leaves the Activity home, with no event.
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id === 'thread-1'
+          ? {
+              ...t,
+              messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }],
+            }
+          : t,
+      ),
+    })
+    assert.equal(
+      document.getElementById('pane-chat')?.classList.contains('is-activity-home'),
+      false,
+    )
     unbind()
   })
 })

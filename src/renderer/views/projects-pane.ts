@@ -65,6 +65,7 @@ import {
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
+  switchProjectAndWait,
   openNewProjectThread,
   setSidebarProjectFilter,
   switchProjectThread,
@@ -88,6 +89,7 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { formatAge, formatAgeLong } from '../controller/activity-model.ts'
 import {
   groupRowsByStatus,
   orderSidebarRows,
@@ -137,6 +139,7 @@ import {
   type DropIntent,
   type SidebarDragPayload,
 } from './projects-drag.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /** Re-fetch PR lifecycle when a cache entry is older than this. */
 const PR_STATUS_CACHE_TTL_MS = 60_000
@@ -569,7 +572,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } =
       store.getState()
     const chosen = projects.find((project) => project.id === sidebarProjectFilterId)
-    if (!chosen) store.setState({ sidebarProjectFilterId: null })
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
     const suffix = archivedOnly ? ' · Archived' : needsCleanupOnly ? ' · Needs cleanup' : ''
     filterLabel.textContent = `${projectName}${suffix}`
@@ -1586,6 +1588,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A filter naming a removed project lists everything. Clear it before any
+    // DOM work: the write re-renders through the filter selection.
+    const { projects: known, sidebarProjectFilterId } = store.getState()
+    if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
+      store.setState({ sidebarProjectFilterId: null })
+    }
     // A redraw removes the source row, so Chromium may have nowhere to send
     // its eventual dragend. Clear the gesture before replacing its DOM.
     endDrag()
@@ -1649,7 +1657,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     function renderThreadRow(
       project: Project,
       thread: SidebarThread,
-      options: { displayTitle?: string; allowRename?: boolean } = {},
+      options: { displayTitle?: string; allowRename?: boolean; statusDetails?: boolean } = {},
     ): HTMLElement {
       const activeId = project.id === activeProjectId ? activeThreadId : null
       const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
@@ -1698,13 +1706,37 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           })
         }
       }
+      let content = title
+      if (options.statusDetails) {
+        const details = el('span', { class: 'chat-thread-details' })
+        if (thread.createdAt !== undefined && Number.isFinite(thread.createdAt)) {
+          const elapsed = Math.max(0, Date.now() - thread.createdAt)
+          const age = formatAgeLong(elapsed)
+          details.append(
+            el(
+              'time',
+              {
+                class: 'chat-thread-age',
+                datetime: new Date(thread.createdAt).toISOString(),
+                title: `Started ${new Date(thread.createdAt).toLocaleString()}`,
+                'aria-label': age === 'just now' ? 'Started just now' : `Started ${age} ago`,
+              },
+              formatAge(elapsed),
+            ),
+          )
+        }
+        details.append(
+          el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+        )
+        content = el('span', { class: 'chat-thread-content' }, title, details)
+      }
       const chatRow = el(
         'div',
         {
           class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
           'data-thread-id': thread.id,
         },
-        title,
+        content,
       )
       chatRow.addEventListener('click', () => {
         if (renaming?.threadId === thread.id) return
@@ -1831,10 +1863,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Agent is working'), title)
+        chatRow.insertBefore(runningStatus('Agent is working'), content)
       } else if (isAutomationPendingStart(thread)) {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Starting…'), title)
+        chatRow.insertBefore(runningStatus('Starting…'), content)
       } else if (
         (thread.unreadAt !== undefined ||
           getSideChatUnreadParents(store, project.id).has(thread.id)) &&
@@ -1850,7 +1882,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 ? 'Unread agent completion'
                 : 'Unread reply in a side chat',
           }),
-          title,
+          content,
         )
       }
 
@@ -2404,15 +2436,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     openAppRunDialog(store, api, project.id)
                     return
                   }
-                  const unsubscribe = store.on('workspace_changed', () => {
-                    if (store.getState().activeProjectId === project.id) {
-                      unsubscribe()
-                      openAppRunDialog(store, api, project.id)
-                    } else if (!isProjectSwitchInFlight(store, project.id)) {
-                      unsubscribe()
-                    }
-                  })
-                  switchProject(store, api, project.id)
+                  // Open once this switch is over, if it landed here. A
+                  // cancelled or superseded switch settles elsewhere, and a
+                  // failed one rejects; neither opens the dialog.
+                  void switchProjectAndWait(store, api, project.id)
+                    .then(() => {
+                      if (store.getState().activeProjectId === project.id) {
+                        openAppRunDialog(store, api, project.id)
+                      }
+                    })
+                    .catch(() => undefined)
                 },
               })
             }
@@ -2675,12 +2708,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           for (const thread of paged.visibleThreads) {
             const project = owners.get(byThread.get(thread)?.projectId ?? '')
             if (!project) continue
-            const row = renderThreadRow(project, thread)
-            row
-              .querySelector('.chat-title')
-              ?.after(
-                el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
-              )
+            const row = renderThreadRow(project, thread, { statusDetails: mode === 'status' })
+            if (mode !== 'status') {
+              row
+                .querySelector('.chat-title')
+                ?.after(
+                  el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+                )
+            }
             chats.append(row)
           }
           if (paged.hasMore) {
@@ -2825,12 +2860,23 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       showThreadArchiveToast(store, api, event.projectId, event.threadId, event.title)
     }),
+    // A trigger means main wrote this project's threads: it created a run and,
+    // when the project is not focused, drives that turn itself. A resident
+    // snapshot read before then lacks the run, so the next switch must reload.
+    api.automations.onTriggered((event) => {
+      invalidateProjectThreadLoads(api, event.projectId)
+    }),
     store.on('thread_archive_requested', (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId)
     }),
     unsubWorkingTree,
     store.on('projects_changed', render),
-    store.on('sidebar_project_filter_changed', render),
+    store.select(
+      (s) => s.sidebarProjectFilterId,
+      () => {
+        render()
+      },
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', () => {
@@ -2844,7 +2890,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', () => {
       render()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
       if (store.getState().activeProjectId !== filteredProjectId) closeThreadFilter()

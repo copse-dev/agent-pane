@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from './store.ts'
+import { createStore, sameItems } from './store.ts'
 import {
   archiveThread,
   restoreThread,
@@ -35,6 +35,36 @@ import { buildSideChatThread } from '@copse/thread-store/side-chat.ts'
 import type { Thread } from '@shared/types'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
+
+describe('createThread activation', () => {
+  it('switches to the new thread by default', () => {
+    const store = createStore({ activeThreadId: 'source', threads: [] })
+
+    const threadId = createThread(store)
+
+    assert.equal(store.getState().activeThreadId, threadId)
+  })
+
+  it('leaves the active thread and view state alone when activate is false', () => {
+    const store = createStore({ activeThreadId: 'source', threads: [] })
+    store.setState({
+      openFile: { path: 'a.ts', content: 'x', language: 'typescript' },
+    })
+    let newThreadOpened = 0
+    store.on('new_thread_opened', () => newThreadOpened++)
+
+    const threadId = createThread(store, undefined, { activate: false })
+
+    assert.equal(store.getState().activeThreadId, 'source')
+    assert.deepEqual(store.getState().openFile, {
+      path: 'a.ts',
+      content: 'x',
+      language: 'typescript',
+    })
+    assert.ok(getThreadById(store, threadId))
+    assert.equal(newThreadOpened, 0)
+  })
+})
 
 describe('addMessage prompt provenance', () => {
   it('stamps startingCommit and dirty onto the message when captured', () => {
@@ -366,7 +396,11 @@ describe('blank thread reuse', () => {
       stagedDiffs: [{ path: 'same.txt', language: 'plaintext' }],
     })
     let panelChanges = 0
-    store.on('panel_changed', () => panelChanges++)
+    store.select(
+      (s) => [s.openFile, s.activeDiff, s.stagedDiffs.length] as const,
+      () => panelChanges++,
+      sameItems,
+    )
 
     switchThread(store, first)
 
@@ -385,16 +419,20 @@ describe('blank thread reuse', () => {
     addMessage(store, second, 'user', 'second')
     let panelChanges = 0
     let threadChanges = 0
-    store.on('panel_changed', () => panelChanges++)
+    store.select(
+      (s) => [s.openFile, s.activeDiff, s.stagedDiffs.length] as const,
+      () => panelChanges++,
+      sameItems,
+    )
     store.on('threads_changed', () => threadChanges++)
 
     switchThread(store, first)
 
     assert.equal(store.getState().activeThreadId, first)
-    // No file, diff or staged queue was open, so the reset announces nothing —
-    // and its subscribers (the Changes pane, the context panel) answer that
-    // announcement with real git work on top of what `threads_changed` already
-    // triggers.
+    // No file, diff or staged queue was open, so the reset changes nothing a
+    // panel selection reads — and those selectors (the Changes pane, the
+    // context panel) would answer a change with real git work on top of what
+    // `threads_changed` already triggers.
     assert.equal(panelChanges, 0)
     assert.equal(threadChanges, 1)
   })

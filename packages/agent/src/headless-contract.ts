@@ -445,27 +445,52 @@ export function serializeHeadlessEvent(event: HeadlessEvent): string {
  * this module needs no id generator of its own (and stays deterministic in
  * tests).
  */
+export interface HeadlessProjectionContext {
+  turnId: TurnId
+  mintItemId: () => ItemId
+  /** The assistant message that a subsequent `text_replace` must upsert. */
+  currentTextItemId?: ItemId
+}
+
 export function projectStreamChunk(
   chunk: AgentStreamChunk,
-  ctx: { turnId: TurnId; mintItemId: () => ItemId },
+  ctx: HeadlessProjectionContext,
 ): HeadlessEvent[] {
   switch (chunk.type) {
-    case 'text':
+    case 'text': {
+      const itemId = ctx.mintItemId()
+      ctx.currentTextItemId = itemId
       return [
         {
           v: 1,
           type: 'message',
           turnId: ctx.turnId,
-          itemId: ctx.mintItemId(),
+          itemId,
           role: 'assistant',
           text: chunk.text,
         },
       ]
+    }
+    case 'text_replace': {
+      const itemId = ctx.currentTextItemId ?? ctx.mintItemId()
+      ctx.currentTextItemId = itemId
+      return [
+        {
+          v: 1,
+          type: 'message',
+          turnId: ctx.turnId,
+          itemId,
+          role: 'assistant',
+          text: chunk.text,
+        },
+      ]
+    }
     case 'reasoning':
       return [
         { v: 1, type: 'reasoning', turnId: ctx.turnId, itemId: ctx.mintItemId(), text: chunk.text },
       ]
     case 'tool_call':
+      delete ctx.currentTextItemId
       return [
         {
           v: 1,
@@ -479,6 +504,7 @@ export function projectStreamChunk(
         },
       ]
     case 'tool_result':
+      delete ctx.currentTextItemId
       return [
         {
           v: 1,
@@ -491,7 +517,7 @@ export function projectStreamChunk(
         },
       ]
     default:
-      // usage / done / text_replace / context_pressure / subagent_* / panel_update
+      // usage / done / context_pressure / subagent_* / panel_update
       // carry no contract event; `turn_end` is emitted by the driver, not derived
       // from a chunk, so the terminal `stopReason` is authoritative.
       return []
