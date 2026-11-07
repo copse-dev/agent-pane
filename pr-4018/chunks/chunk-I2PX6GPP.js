@@ -24847,6 +24847,11 @@ async function loadPersistedThread(api, projectId, threadId) {
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
 }
+function afterPendingThreadPersistence(task) {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task);
+  });
+}
 function attachAutosave(store, api) {
   let timer = null;
   let projectsDirty = false;
@@ -25139,7 +25144,11 @@ function setArtefactPreview(threadId, title, preview) {
   const key = previewKey(threadId, title);
   if (!preview || previews.get(key) === preview) return;
   previews.set(key, preview);
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1);
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
+}
+function artefactPreviewVersion(threadId, title) {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0;
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
@@ -25193,11 +25202,12 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, previewVersions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
     previewRevisions = /* @__PURE__ */ new Map();
+    previewVersions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -28153,7 +28163,7 @@ function sidebarLastPromptAt(thread) {
   return void 0;
 }
 function isAutomationPendingStart(thread) {
-  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+  return thread.automationPendingStart === true || thread.automation !== void 0 && automationRunBlock(thread) === "pending-start";
 }
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
@@ -29053,7 +29063,7 @@ async function recoverOrphanProject(store, api, storeId, confirm) {
   await activateAndWait(store, api, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, threadRelationsKey, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_side_chat2();
@@ -29079,6 +29089,16 @@ var init_projects = __esm({
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
     sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
+    threadRelationsKey = /* @__PURE__ */ (() => {
+      let lastThreads = null;
+      let lastKey = "";
+      return (threads) => {
+        if (threads === lastThreads) return lastKey;
+        lastThreads = threads;
+        lastKey = threads.map((t2) => `${t2.id}<${t2.sideChat?.parentThreadId ?? ""}<${t2.proposedBy?.threadId ?? ""}`).join("\n");
+        return lastKey;
+      };
+    })();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
     dismissedOrphanStoresChain = Promise.resolve();
@@ -71833,6 +71853,21 @@ function requireActiveThreadOwner(store) {
   if (!owner) throw new Error("No active task");
   return owner;
 }
+function activeThreadOf(state) {
+  const { activeThreadId, threads, backgroundThreads } = state;
+  if (!activeThreadId) return void 0;
+  return threads.find((t2) => t2.id === activeThreadId) ?? backgroundThreads.find((b2) => b2.thread.id === activeThreadId)?.thread;
+}
+function besidesDraft(thread) {
+  return Object.entries(thread).filter(([key]) => key !== "draftPrompt" && key !== "updatedAt");
+}
+function sameThreadBesidesDraft(a4, b2) {
+  if (a4 === b2) return true;
+  if (!a4 || !b2 || a4.id !== b2.id) return false;
+  const left = besidesDraft(a4);
+  const right = new Map(besidesDraft(b2));
+  return left.length === right.size && left.every(([key, value]) => right.has(key) && Object.is(value, right.get(key)));
+}
 var init_active_thread_owner = __esm({
   "src/renderer/controller/active-thread-owner.ts"() {
   }
@@ -73815,7 +73850,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     };
     unsubs.push(
       store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
-      store.on("threads_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
         if (changedThreadId === threadId) preview.close();
       })
@@ -74220,6 +74254,7 @@ export {
   loadThreads,
   loadPersistedThread,
   awaitPendingThreadPersistence,
+  afterPendingThreadPersistence,
   attachAutosave,
   init_persistence,
   RUN_ROLLUP_KEY,
@@ -74249,6 +74284,7 @@ export {
   begin,
   init_perf,
   setArtefactPreview,
+  artefactPreviewVersion,
   getArtefactPreview,
   artefactPreviewRevision,
   setArtefactContent,
@@ -74308,6 +74344,7 @@ export {
   getSideChatUnreadParents,
   attentionThreadId,
   proposingThreadId,
+  threadRelationsKey,
   archiveCachedSidebarThread,
   isProjectSwitchInFlight,
   preloadSidebarThreads,
@@ -74383,6 +74420,8 @@ export {
   init_working_brief,
   getActiveThreadOwner,
   requireActiveThreadOwner,
+  activeThreadOf,
+  sameThreadBesidesDraft,
   init_active_thread_owner,
   syncFilesPaneDom,
   selectRightPanelMode,
