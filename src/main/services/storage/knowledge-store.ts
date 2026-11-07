@@ -211,7 +211,8 @@ function parseExtraFields(yaml: string): Record<string, string> {
   return fields
 }
 
-function parseNoteFile(raw: string, file: string): KnowledgeNote | null {
+/** Decode already bounded OKF bytes; callers own filesystem access and size limits. */
+export function parseKnowledgeNote(raw: string, file: string): KnowledgeNote | null {
   const split = splitSkillMarkdown(raw)
   if (!split) return null
   const { frontmatter, body } = split
@@ -329,7 +330,7 @@ function nextOrder(records: Map<string, IndexRecord>): number {
 /** Read a single note file by absolute path, returning null on failure. */
 function readSingleNote(abs: string): KnowledgeNote | null {
   try {
-    return parseNoteFile(readFileSync(abs, 'utf8'), abs)
+    return parseKnowledgeNote(readFileSync(abs, 'utf8'), abs)
   } catch {
     return null
   }
@@ -484,7 +485,7 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
   for (const absPath of absPaths) {
     try {
       const raw = readFileSync(absPath, 'utf8')
-      const note = parseNoteFile(raw, absPath)
+      const note = parseKnowledgeNote(raw, absPath)
       if (note !== null) {
         notes.push(note)
       }
@@ -533,7 +534,7 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
     if (!id || !noteType) continue
     if (seen.has(id)) continue
 
-    const note = parseNoteFile(raw, abs)
+    const note = parseKnowledgeNote(raw, abs)
     if (!note) continue
 
     seen.add(note.id) // guard against duplicate ids across orphan files

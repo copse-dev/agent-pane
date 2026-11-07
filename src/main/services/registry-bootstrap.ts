@@ -52,6 +52,7 @@ import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-pl
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
 import { listThreadsTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
 import { subthreadsTool } from '../tools/subthreads-tool.ts'
+import { searchProjectContextTool, readProjectContextTool } from '../tools/project-context-tools.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { askClassifierTool } from '../tools/classifier-tool.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -247,6 +248,8 @@ export function createRegistry(): ToolRegistry {
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
   registry.register(proposeThreadTool)
   registry.register(listThreadsTool)
+  registry.register(searchProjectContextTool)
+  registry.register(readProjectContextTool)
   registry.register(sendThreadPromptTool)
   registry.register(subthreadsTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
