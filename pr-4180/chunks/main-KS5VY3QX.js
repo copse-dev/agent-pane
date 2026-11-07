@@ -61,6 +61,7 @@ import {
   archiveCachedSidebarThread,
   archiveThread,
   artefactPreviewRevision,
+  artefactPreviewVersion,
   artefactUriFromToolResult,
   at,
   attachAnnotation,
@@ -466,7 +467,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-TLFJ6OO2.js";
+} from "./chunk-CHT54NWT.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4038,15 +4039,27 @@ function approvalCopyElement(className, text) {
   flushLines();
   return root;
 }
+function approvalMarkdownBody(markdown) {
+  const host = el("div", { class: "approval-body-markdown streaming-markdown" });
+  host.innerHTML = renderMarkdown(markdown);
+  return host;
+}
+function approvalBodyChildren(req) {
+  const children = [];
+  if (req.body.trim()) children.push(req.body);
+  if (req.bodyMarkdown?.trim()) children.push(approvalMarkdownBody(req.bodyMarkdown));
+  return children;
+}
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  if (req.body.trim())
+  const children = approvalBodyChildren(req);
+  if (children.length > 0)
     parts.push(
       el(
         "div",
         { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-        req.body
+        ...children
       )
     );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
@@ -4269,8 +4282,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     dialog.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
+      const children = approvalBodyChildren(req);
+      const body = el("div", { class: bodyClass }, ...children);
+      if (children.length === 0 || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -4458,6 +4472,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId,
       title,
       body,
+      bodyMarkdown,
       bodyAdvice,
       bodyFooter,
       type,
@@ -4480,6 +4495,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         threadId,
         title,
         body,
+        bodyMarkdown,
         bodyAdvice,
         bodyFooter,
         type,
@@ -4556,6 +4572,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId: req.threadId,
       title: req.title,
       body: req.body,
+      bodyMarkdown: req.bodyMarkdown,
       bodyAdvice: req.bodyAdvice,
       bodyFooter: req.bodyFooter,
       type: req.type,
@@ -4578,6 +4595,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
 var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_store();
     init_settings_dialog();
@@ -12011,6 +12029,274 @@ var init_render_signature = __esm({
   }
 });
 
+// src/renderer/controller/thread-proposals.ts
+async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) throw new Error("Open a project before starting a proposed thread");
+  store2.emit("composer_draft_flush");
+  const threadId = createThread(store2, void 0, { activate: false });
+  setThreadTitle(store2, threadId, proposal.title);
+  patchThreadAnywhere(store2, threadId, (t) => ({
+    ...t,
+    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
+  }));
+  await awaitPendingThreadPersistence();
+  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
+  const prepared = await api2.agent.prepareCheckout(
+    projectId,
+    threadId,
+    proposal.prompt,
+    "worktree",
+    model
+  );
+  applyPreparedThreadCheckout(store2, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store2, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
+  addMessage(store2, threadId, "user", proposal.prompt);
+  setThreadProposalDecision(store2, sourceThreadId, {
+    id: proposal.id,
+    status: "started",
+    decidedAt: Date.now(),
+    threadId,
+    checkoutMode: prepared.checkoutMode
+  });
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
+}
+var init_thread_proposals = __esm({
+  "src/renderer/controller/thread-proposals.ts"() {
+    init_thread_helpers();
+    init_message_queue();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/thread-proposal-card.ts
+function chip(kind, ...children) {
+  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
+}
+function statePill(state) {
+  const { status } = state;
+  if (status === "started") {
+    const shared = state.checkoutMode === "shared";
+    return el(
+      "span",
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
+      checkIcon("ui-icon ui-icon-sm"),
+      shared ? "Started in the shared checkout" : "Thread started"
+    );
+  }
+  if (status === "dismissed") {
+    return el(
+      "span",
+      { class: "thread-proposal-state", "data-state": "dismissed" },
+      closeIcon("ui-icon ui-icon-sm"),
+      "Dismissed"
+    );
+  }
+  return null;
+}
+function buildOpenThreadButton(threadId, handlers3) {
+  const open = el(
+    "button",
+    { type: "button", class: "thread-proposal-open" },
+    "Open thread",
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  open.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handlers3.onOpenThread(threadId);
+  });
+  return open;
+}
+function buildPendingActions(proposal, handlers3, rerender) {
+  const start = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
+    "Start this thread"
+  );
+  const dismiss = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
+    "Not now"
+  );
+  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  start.addEventListener("click", () => {
+    start.disabled = true;
+    dismiss.disabled = true;
+    start.textContent = "Starting\u2026";
+    error.hidden = true;
+    void handlers3.onStart(proposal).catch((cause) => {
+      start.disabled = false;
+      dismiss.disabled = false;
+      start.textContent = "Start this thread";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
+      error.hidden = false;
+    });
+  });
+  dismiss.addEventListener("click", () => {
+    handlers3.onDismiss(proposal);
+    rerender({ status: "dismissed" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
+}
+function buildDismissedActions(proposal, handlers3, rerender) {
+  const restore = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
+    "Bring it back"
+  );
+  restore.addEventListener("click", () => {
+    handlers3.onRestore(proposal);
+    rerender({ status: "pending" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, restore);
+}
+function buildBody(proposal, state, handlers3, rerender) {
+  const body = el("div", { class: "thread-proposal-body" });
+  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
+  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
+  if (proposal.rationale) {
+    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
+  }
+  const chips = el("div", { class: "thread-proposal-chips" });
+  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
+  const files = threadProposalFileSummary(proposal.files);
+  if (files) chips.append(chip("files", files));
+  body.append(chips);
+  const prompt = el("details", { class: "thread-proposal-prompt" });
+  prompt.append(
+    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
+    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
+  );
+  body.append(prompt);
+  if (state.status === "pending") {
+    body.append(buildPendingActions(proposal, handlers3, rerender));
+  } else if (state.status === "dismissed") {
+    body.append(buildDismissedActions(proposal, handlers3, rerender));
+  }
+  return body;
+}
+function createThreadProposalCard(proposal, state, handlers3) {
+  const card = el("details", {
+    class: "tool-card thread-proposal",
+    "data-tool-id": proposal.id,
+    "data-status": "done"
+  });
+  const render2 = (next) => {
+    while (card.firstChild) card.firstChild.remove();
+    card.dataset["proposalStatus"] = next.status;
+    card.open = next.status === "pending";
+    const header = el(
+      "summary",
+      { class: "tool-card-header thread-proposal-header" },
+      el(
+        "span",
+        { class: "thread-proposal-icon", "aria-hidden": "true" },
+        gitBranchIcon("ui-icon ui-icon-sm")
+      ),
+      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
+      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+    );
+    const pill = statePill(next);
+    if (pill) header.append(pill);
+    if (next.status === "started" && next.threadId) {
+      header.append(buildOpenThreadButton(next.threadId, handlers3));
+    }
+    card.append(header, buildBody(proposal, next, handlers3, render2));
+  };
+  render2(state);
+  return card;
+}
+var init_thread_proposal_card = __esm({
+  "src/renderer/views/thread-proposal-card.ts"() {
+    init_helpers();
+    init_ipc_error_message();
+    init_icons();
+    init_thread_proposal();
+  }
+});
+
+// src/renderer/views/thread-proposal-tool-card.ts
+function cardState(store2, sourceThreadId, proposalId) {
+  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
+  const status = threadProposalStatus(decisions, proposalId);
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
+  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
+}
+function threadProposalCardSignature(tc, store2, sourceThreadId) {
+  if (!isThreadProposalCall(tc)) return void 0;
+  const state = cardState(store2, sourceThreadId, tc.id);
+  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
+}
+function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
+  const args = tc.args;
+  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposal = parseThreadProposal(tc.id, proposalArgs);
+  if (!proposal) return null;
+  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
+    onStart: async (accepted) => {
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
+    },
+    onDismiss: (dismissed) => {
+      setThreadProposalDecision(store2, sourceThreadId, {
+        id: dismissed.id,
+        status: "dismissed",
+        decidedAt: Date.now()
+      });
+    },
+    onRestore: (restored) => {
+      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
+    },
+    onOpenThread: (threadId) => {
+      switchThread(store2, threadId);
+    }
+  });
+}
+var init_thread_proposal_tool_card = __esm({
+  "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_unknown_value2();
+    init_thread_proposal();
+    init_thread_helpers();
+    init_thread_proposals();
+    init_confirm_dialog();
+    init_toast();
+    init_thread_proposal_card();
+  }
+});
+
 // src/shared/tools/tool-runs.ts
 function regularToolCalls(msg) {
   return (msg.toolCalls ?? []).filter((tc) => !tc.subagent);
@@ -12748,274 +13034,6 @@ var init_disclosure_model = __esm({
   }
 });
 
-// src/renderer/controller/thread-proposals.ts
-async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Open a project before starting a proposed thread");
-  store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, void 0, { activate: false });
-  setThreadTitle(store2, threadId, proposal.title);
-  patchThreadAnywhere(store2, threadId, (t) => ({
-    ...t,
-    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
-  }));
-  await awaitPendingThreadPersistence();
-  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
-  const prepared = await api2.agent.prepareCheckout(
-    projectId,
-    threadId,
-    proposal.prompt,
-    "worktree",
-    model
-  );
-  applyPreparedThreadCheckout(store2, threadId, prepared);
-  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
-    setThreadDraftPrompt(store2, threadId, proposal.prompt);
-    return { started: false, threadId, reason: "shared-checkout-declined" };
-  }
-  addMessage(store2, threadId, "user", proposal.prompt);
-  setThreadProposalDecision(store2, sourceThreadId, {
-    id: proposal.id,
-    status: "started",
-    decidedAt: Date.now(),
-    threadId,
-    checkoutMode: prepared.checkoutMode
-  });
-  startHumanTurnTree(store2, threadId);
-  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
-  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
-}
-var init_thread_proposals = __esm({
-  "src/renderer/controller/thread-proposals.ts"() {
-    init_thread_helpers();
-    init_message_queue();
-    init_persistence();
-  }
-});
-
-// src/renderer/views/thread-proposal-card.ts
-function chip(kind, ...children) {
-  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
-}
-function statePill(state) {
-  const { status } = state;
-  if (status === "started") {
-    const shared = state.checkoutMode === "shared";
-    return el(
-      "span",
-      {
-        class: "thread-proposal-state",
-        "data-state": "started",
-        ...shared ? { "data-checkout": "shared" } : {}
-      },
-      checkIcon("ui-icon ui-icon-sm"),
-      shared ? "Started in the shared checkout" : "Thread started"
-    );
-  }
-  if (status === "dismissed") {
-    return el(
-      "span",
-      { class: "thread-proposal-state", "data-state": "dismissed" },
-      closeIcon("ui-icon ui-icon-sm"),
-      "Dismissed"
-    );
-  }
-  return null;
-}
-function buildOpenThreadButton(threadId, handlers3) {
-  const open = el(
-    "button",
-    { type: "button", class: "thread-proposal-open" },
-    "Open thread",
-    arrowRightIcon("ui-icon ui-icon-sm")
-  );
-  open.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    handlers3.onOpenThread(threadId);
-  });
-  return open;
-}
-function buildPendingActions(proposal, handlers3, rerender) {
-  const start = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
-    "Start this thread"
-  );
-  const dismiss = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
-    "Not now"
-  );
-  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
-  start.addEventListener("click", () => {
-    start.disabled = true;
-    dismiss.disabled = true;
-    start.textContent = "Starting\u2026";
-    error.hidden = true;
-    void handlers3.onStart(proposal).catch((cause) => {
-      start.disabled = false;
-      dismiss.disabled = false;
-      start.textContent = "Start this thread";
-      const message2 = ipcErrorMessage(cause, "");
-      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
-      error.hidden = false;
-    });
-  });
-  dismiss.addEventListener("click", () => {
-    handlers3.onDismiss(proposal);
-    rerender({ status: "dismissed" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
-}
-function buildDismissedActions(proposal, handlers3, rerender) {
-  const restore = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
-    "Bring it back"
-  );
-  restore.addEventListener("click", () => {
-    handlers3.onRestore(proposal);
-    rerender({ status: "pending" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, restore);
-}
-function buildBody(proposal, state, handlers3, rerender) {
-  const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
-  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
-  if (proposal.rationale) {
-    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
-  }
-  const chips = el("div", { class: "thread-proposal-chips" });
-  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
-  const files = threadProposalFileSummary(proposal.files);
-  if (files) chips.append(chip("files", files));
-  body.append(chips);
-  const prompt = el("details", { class: "thread-proposal-prompt" });
-  prompt.append(
-    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
-    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
-  );
-  body.append(prompt);
-  if (state.status === "pending") {
-    body.append(buildPendingActions(proposal, handlers3, rerender));
-  } else if (state.status === "dismissed") {
-    body.append(buildDismissedActions(proposal, handlers3, rerender));
-  }
-  return body;
-}
-function createThreadProposalCard(proposal, state, handlers3) {
-  const card = el("details", {
-    class: "tool-card thread-proposal",
-    "data-tool-id": proposal.id,
-    "data-status": "done"
-  });
-  const render2 = (next) => {
-    while (card.firstChild) card.firstChild.remove();
-    card.dataset["proposalStatus"] = next.status;
-    card.open = next.status === "pending";
-    const header = el(
-      "summary",
-      { class: "tool-card-header thread-proposal-header" },
-      el(
-        "span",
-        { class: "thread-proposal-icon", "aria-hidden": "true" },
-        gitBranchIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
-    );
-    const pill = statePill(next);
-    if (pill) header.append(pill);
-    if (next.status === "started" && next.threadId) {
-      header.append(buildOpenThreadButton(next.threadId, handlers3));
-    }
-    card.append(header, buildBody(proposal, next, handlers3, render2));
-  };
-  render2(state);
-  return card;
-}
-var init_thread_proposal_card = __esm({
-  "src/renderer/views/thread-proposal-card.ts"() {
-    init_helpers();
-    init_ipc_error_message();
-    init_icons();
-    init_thread_proposal();
-  }
-});
-
-// src/renderer/views/thread-proposal-tool-card.ts
-function cardState(store2, sourceThreadId, proposalId) {
-  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
-  const status = threadProposalStatus(decisions, proposalId);
-  const decision = findThreadProposalDecision(decisions, proposalId);
-  const startedId = decision?.threadId;
-  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
-  return {
-    status,
-    ...threadId ? { threadId } : {},
-    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
-  };
-}
-function confirmSharedCheckout(proposal) {
-  return showConfirmDialog({
-    message: "Run this in your current checkout?",
-    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
-    confirmLabel: "Run it here",
-    cancelLabel: "Leave it"
-  });
-}
-function noteDeclined() {
-  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
-    variant: "info",
-    durationMs: 8e3
-  });
-}
-function threadProposalCardSignature(tc, store2, sourceThreadId) {
-  if (!isThreadProposalCall(tc)) return void 0;
-  const state = cardState(store2, sourceThreadId, tc.id);
-  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
-}
-function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
-  const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
-  const proposal = parseThreadProposal(tc.id, proposalArgs);
-  if (!proposal) return null;
-  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
-    onStart: async (accepted) => {
-      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-        confirmSharedCheckout
-      });
-      if (!result.started) noteDeclined();
-    },
-    onDismiss: (dismissed) => {
-      setThreadProposalDecision(store2, sourceThreadId, {
-        id: dismissed.id,
-        status: "dismissed",
-        decidedAt: Date.now()
-      });
-    },
-    onRestore: (restored) => {
-      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
-    },
-    onOpenThread: (threadId) => {
-      switchThread(store2, threadId);
-    }
-  });
-}
-var init_thread_proposal_tool_card = __esm({
-  "src/renderer/views/thread-proposal-tool-card.ts"() {
-    init_unknown_value2();
-    init_thread_proposal();
-    init_thread_helpers();
-    init_thread_proposals();
-    init_confirm_dialog();
-    init_toast();
-    init_thread_proposal_card();
-  }
-});
-
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13389,6 +13407,7 @@ function createToolCardRefresher(host) {
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
     syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
+    registerReasoningDisclosures(msgEl);
   }
   function syncRunStepTrail(thread, run4) {
     const runCard = list.querySelector(
@@ -13463,6 +13482,9 @@ var init_tool_card_refresh = __esm({
 });
 
 // src/renderer/views/transcript-rows.ts
+function sameSignature(a, b2) {
+  return a.patched === b2.patched && a.settled === b2.settled;
+}
 function planTranscriptRows(rendered, wanted) {
   const renderedByKey = /* @__PURE__ */ new Map();
   for (const row2 of rendered) {
@@ -13496,7 +13518,7 @@ function planTranscriptRows(rendered, wanted) {
     const previous = renderedByKey.get(row2.key);
     if (!previous) {
       ops.push({ kind: "insert", key: row2.key, before: insertBefore.get(row2.key) ?? null });
-    } else if (previous.signature !== row2.signature) {
+    } else if (!sameSignature(previous.signature, row2.signature)) {
       ops.push({ kind: "replace", key: row2.key });
     } else kept++;
   }
@@ -13536,27 +13558,97 @@ function applyTranscriptRowPlan(plan, host) {
     }
   }
 }
-function transcriptRowSignature(thread, message2) {
-  const run4 = multiStepRunFor(thread, message2.id);
+function callAnswer(store2, thread, call) {
+  if (isThreadProposalCall(call)) return threadProposalCardSignature(call, store2, thread.id) ?? null;
+  if (isReviewerInputCall(call)) {
+    return reviewerInputAnswer(thread.reviewerInputAnswers, call.id) ?? null;
+  }
+  return void 0;
+}
+function previewTitles(message2, calls) {
+  const titles2 = (message2.canvasArtefacts ?? []).map((artefact) => artefact.title);
+  for (const call of calls) {
+    if (call.status !== "done") continue;
+    const uri = artefactUriFromToolResult(call.result);
+    if (uri) titles2.push(artefactTitleFromUri(uri));
+  }
+  return titles2;
+}
+function transcriptRowSignature(store2, thread, message2) {
+  return signRow(store2, thread, message2, multiStepRunFor(thread, message2.id));
+}
+function signRow(store2, thread, message2, run4) {
   const liveStep = liveStepMessageId(thread);
   const origin = message2.role === "user" ? message2.origin : void 0;
-  return renderSignature({
-    message: message2,
-    run: run4 ?? null,
-    wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null,
-    // What the thread status and the message's place at the end mean for this
-    // row, rather than the raw facts: a finished reply that stops being the
-    // last message draws exactly what it drew before, and keeps its row.
-    live: isReasoningDisclosureLive(thread, message2),
-    liveStep: liveStep !== null && run4?.memberIds.includes(liveStep) === true ? liveStep : null,
-    recovery: turnRecoveryForMessage(thread, message2.id)
+  markUserInterruptedCalls(thread);
+  const calls = [...message2.toolCalls, ...run4?.toolCalls ?? []];
+  return {
+    patched: renderSignature({
+      message: { ...message2, turnOutcome: void 0 },
+      run: run4 ?? null,
+      live: isReasoningDisclosureLive(thread, message2),
+      liveStep: liveStep !== null && run4?.memberIds.includes(liveStep) === true ? liveStep : null
+    }),
+    settled: renderSignature({
+      memberOf: run4 && run4.anchorId !== message2.id ? run4.anchorId : null,
+      interrupted: calls.flatMap((call) => {
+        const cause = userInterruption(call);
+        return cause === void 0 ? [] : [[call.id, cause]];
+      }),
+      sections: [
+        (message2.canvasArtefacts ?? []).map((artefact) => artefact.title),
+        (message2.visualEvidence ?? []).map((evidence) => evidence.id)
+      ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store2, thread, call);
+        return answer === void 0 ? [] : [[call.id, answer]];
+      }),
+      previews: previewTitles(message2, calls).map(
+        (title) => artefactPreviewVersion(thread.id, title)
+      ),
+      failed: message2.turnOutcome?.status === "failed",
+      recovery: turnRecoveryForMessage(thread, message2.id),
+      wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null
+    })
+  };
+}
+function wantedTranscriptRows(store2, thread, hidden) {
+  return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => {
+    const run4 = multiStepRunFor(thread, message2.id);
+    return {
+      key: message2.id,
+      signature: signRow(store2, thread, message2, run4),
+      patchedBy: run4 ? run4.memberIds : [message2.id]
+    };
   });
 }
-function wantedTranscriptRows(thread, hidden) {
-  return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => ({
-    key: message2.id,
-    signature: transcriptRowSignature(thread, message2)
-  }));
+function adoptPatchedSignatures(rendered, wanted, patched, drawsCurrent) {
+  if (patched.size === 0) return rendered;
+  const renderedKeys = new Set(rendered.map((row2) => row2.key));
+  const wantedByKey = new Map(wanted.map((row2) => [row2.key, row2]));
+  if (rendered.some((row2, index) => !wantedByKey.has(row2.key) || !drawsCurrent(index))) {
+    return rendered;
+  }
+  let tail = false;
+  for (const row2 of wanted) {
+    if (!renderedKeys.has(row2.key)) tail = true;
+    else if (tail) return rendered;
+  }
+  return rendered.map((row2) => {
+    const current = wantedByKey.get(row2.key);
+    if (!current?.patchedBy.some((id) => patched.has(id))) return row2;
+    return {
+      key: row2.key,
+      signature: { patched: current.signature.patched, settled: row2.signature.settled }
+    };
+  });
+}
+function sameExceptTurnOutcome(drawn, next, redrawn = []) {
+  if (drawn === next) return true;
+  const skipped = /* @__PURE__ */ new Set(["turnOutcome", ...redrawn]);
+  const nextEntries = new Map(Object.entries(next).filter(([key]) => !skipped.has(key)));
+  const drawnEntries = Object.entries(drawn).filter(([key]) => !skipped.has(key));
+  return drawnEntries.length === nextEntries.size && drawnEntries.every(([key, value]) => nextEntries.has(key) && nextEntries.get(key) === value);
 }
 function relinkReadingAnchor(list, anchor) {
   if (!anchor || anchor.element.isConnected) return anchor;
@@ -13567,10 +13659,14 @@ function relinkReadingAnchor(list, anchor) {
 var ROW_CARD_ATTRIBUTES;
 var init_transcript_rows = __esm({
   "src/renderer/views/transcript-rows.ts"() {
+    init_artefact();
+    init_reviewer_input();
+    init_artefact_previews();
     init_inline_artefact();
     init_turn_recovery2();
     init_command_task_links();
     init_render_signature();
+    init_thread_proposal_tool_card();
     init_tool_card_refresh();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
@@ -19452,7 +19548,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.model === b2.model && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -21119,6 +21215,8 @@ function mountConversation(root, store2, api2) {
   let backfillGeneration = 0;
   let backfillPending = false;
   const rowSignatures = /* @__PURE__ */ new WeakMap();
+  const rowDrawnFrom = /* @__PURE__ */ new WeakMap();
+  const patchedRows = /* @__PURE__ */ new Set();
   const transcriptScroll = createTranscriptScroll({
     list,
     scrollToBottomBtn,
@@ -21318,7 +21416,8 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg));
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store2, thread, msg));
+    rowDrawnFrom.set(msgEl, msg);
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
@@ -21396,6 +21495,15 @@ function mountConversation(root, store2, api2) {
     const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
     list.insertBefore(msgEl, before ?? tail);
     finalizeMessageEl(threadId, msgId);
+  }
+  function markRowPatched(msgId, redraws = []) {
+    const message2 = locateMessage(store2, msgId)?.message;
+    const element = message2 ? transcriptRowElement(list, msgId) : null;
+    if (!message2 || !element) return;
+    const drawn = rowDrawnFrom.get(element);
+    if (drawn && !sameExceptTurnOutcome(drawn, message2, redraws)) return;
+    patchedRows.add(msgId);
+    rowDrawnFrom.set(element, message2);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -21853,41 +21961,75 @@ function mountConversation(root, store2, api2) {
       "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
     );
   }
+  let comparisonCard = null;
+  let reviewReportCard = null;
   function syncComparisonPanel() {
-    list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
-    if (thread?.comparison) {
+    const comparison = thread?.comparison;
+    const signature = comparison ? renderSignature(comparison) : "";
+    if (!thread || !comparison || comparisonCard?.threadId !== thread.id || comparisonCard.signature !== signature) {
+      list.querySelector("[data-comparison-card]")?.remove();
+      comparisonCard = null;
+    }
+    if (!thread || !comparison) return;
+    if (!comparisonCard) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+      const element2 = createComparisonCardEl(comparison, api2, void 0, () => {
         dismissComparison(store2, threadId);
       });
-      card.setAttribute("data-comparison-card", "");
-      list.append(card);
+      element2.setAttribute("data-comparison-card", "");
+      comparisonCard = { threadId, signature, element: element2 };
     }
+    const { element } = comparisonCard;
+    if (element.parentNode !== list || element !== list.lastElementChild) list.append(element);
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
-    if (!thread?.reviewReport) return;
-    const threadId = thread.id;
-    const card = createReviewFindingsCardEl(thread.reviewReport, {
-      onRetry: () => {
-        startReview(store2, api2, threadId);
-      },
-      onDismissCard: () => {
-        dismissReviewReport(store2, threadId);
-      },
-      onDismissFinding: (finding) => {
-        dismissReviewFinding(store2, api2, threadId, finding);
-      },
-      onRestoreFinding: (finding) => {
-        restoreReviewFinding(store2, api2, threadId, finding.id);
-      }
-    });
-    card.setAttribute("data-review-report-card", "");
+    const report = thread?.reviewReport;
+    const signature = report ? renderSignature(report) : "";
+    if (!thread || !report || reviewReportCard?.threadId !== thread.id || reviewReportCard.signature !== signature) {
+      list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
+      reviewReportCard = null;
+    }
+    if (!thread || !report) return;
+    if (!reviewReportCard) {
+      const threadId = thread.id;
+      const act = (action) => () => {
+        const before = getThreadById(store2, threadId)?.reviewReport;
+        action();
+        if (getThreadById(store2, threadId)?.reviewReport !== before) return;
+        if (reviewReportCard?.threadId !== threadId) return;
+        reviewReportCard.element.remove();
+        reviewReportCard = null;
+        syncReviewReportCard();
+      };
+      const element2 = createReviewFindingsCardEl(report, {
+        onRetry: act(() => {
+          startReview(store2, api2, threadId);
+        }),
+        onDismissCard: act(() => {
+          dismissReviewReport(store2, threadId);
+        }),
+        onDismissFinding: (finding) => {
+          act(() => {
+            dismissReviewFinding(store2, api2, threadId, finding);
+          })();
+        },
+        onRestoreFinding: (finding) => {
+          act(() => {
+            restoreReviewFinding(store2, api2, threadId, finding.id);
+          })();
+        }
+      });
+      element2.setAttribute("data-review-report-card", "");
+      reviewReportCard = { threadId, signature, element: element2 };
+    }
+    const { element } = reviewReportCard;
     const comparison = list.querySelector("[data-comparison-card]");
-    if (comparison) list.insertBefore(card, comparison);
-    else list.append(card);
+    const inPlace = element.parentNode === list && (comparison ? element.nextElementSibling === comparison : element === list.lastElementChild);
+    if (inPlace) return;
+    if (comparison) list.insertBefore(element, comparison);
+    else list.append(element);
   }
   function finishThreadChrome(thread) {
     syncTodoPanel();
@@ -21933,18 +22075,22 @@ function mountConversation(root, store2, api2) {
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (backfillPending || !sameRowEnvironment(inputs, previous)) return false;
     if (inputs.needsHydration || inputs.hydrationFailed) return false;
-    const rendered = Array.from(
-      list.querySelectorAll(":scope > [data-message-id]"),
-      (element) => ({
-        key: element.dataset["messageId"] ?? "",
-        signature: rowSignatures.get(element) ?? ""
-      })
-    );
-    const plan = planTranscriptRows(
-      rendered,
-      wantedTranscriptRows(thread, queuedMessageIds(thread))
-    );
+    const elements = Array.from(list.querySelectorAll(":scope > [data-message-id]"));
+    const wanted = wantedTranscriptRows(store2, thread, queuedMessageIds(thread));
+    const messages = new Map(thread.messages.map((message2) => [message2.id, message2]));
+    const signed = elements.map((element) => ({
+      key: element.dataset["messageId"] ?? "",
+      signature: rowSignatures.get(element) ?? UNSIGNED_ROW
+    }));
+    const rendered = adoptPatchedSignatures(signed, wanted, patchedRows, (index) => {
+      const element = elements[index];
+      const drawn = element ? rowDrawnFrom.get(element) : void 0;
+      const current = messages.get(signed[index]?.key ?? "");
+      return drawn !== void 0 && current !== void 0 && sameExceptTurnOutcome(drawn, current);
+    });
+    const plan = planTranscriptRows(rendered, wanted);
     if (plan.kind === "rebuild") return false;
+    patchedRows.clear();
     if (plan.ops.length > 0) {
       const wasPinned = transcriptScroll.isPinnedToBottom();
       const prevScrollTop = list.scrollTop;
@@ -21970,6 +22116,15 @@ function mountConversation(root, store2, api2) {
       syncModelLabels();
       syncUserActions();
     }
+    const wantedByKey = new Map(wanted.map((row2) => [row2.key, row2]));
+    elements.forEach((element, index) => {
+      if (element.parentElement !== list) return;
+      const key = signed[index]?.key ?? "";
+      const row2 = wantedByKey.get(key);
+      const message2 = messages.get(key);
+      if (row2) rowSignatures.set(element, row2.signature);
+      if (message2) rowDrawnFrom.set(element, message2);
+    });
     if (thread.status === "running") disclosures.cancelCompaction(thread.id);
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     return true;
@@ -21997,6 +22152,7 @@ function mountConversation(root, store2, api2) {
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    patchedRows.clear();
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -22104,6 +22260,7 @@ function mountConversation(root, store2, api2) {
             scrollToBottom();
           }
         }
+        markRowPatched(mid);
       }
     }),
     store2.on("message_canvas_artefacts_changed", (mid) => {
@@ -22112,6 +22269,7 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (thread && msg?.role === "assistant" && msgEl) {
         syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, thread.id, api2);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22121,6 +22279,7 @@ function mountConversation(root, store2, api2) {
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
         syncMessageVisualEvidence(msgEl, msg);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22142,6 +22301,7 @@ function mountConversation(root, store2, api2) {
         registerReasoningDisclosures(msgEl);
         syncAcpResourceReferences(list, api2, store2);
         syncToolRunMemberVisibility(msgEl);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22163,6 +22323,7 @@ function mountConversation(root, store2, api2) {
         hydrateAcpResourceImages(msgEl, api2, store2);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
+        markRowPatched(mid);
         scrollToBottom();
       }
     }),
@@ -22194,12 +22355,15 @@ function mountConversation(root, store2, api2) {
         const reasoning = body?.querySelector(":scope > .message-reasoning");
         if (reasoning && !reasoning.dataset["userToggled"]) reasoning.open = false;
       }
+      if (msg?.role === "assistant" && msgEl) markRowPatched(mid);
     }),
     store2.on("tool_call_started", (mid) => {
       refreshToolCards(mid);
+      markRowPatched(mid);
     }),
     store2.on("tool_call_updated", (mid) => {
       refreshToolCards(mid);
+      markRowPatched(mid);
     }),
     store2.on("threads_changed", () => {
       rebuildForThread();
@@ -22214,19 +22378,34 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("review_changed", (tid, mid) => {
       renderMessageReview(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["review"]);
       scrollToBottom();
     }),
     store2.on("hook_card_added", (tid, mid) => {
       renderMessageHookCards(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid);
       scrollToBottom();
     }),
-    store2.on("comparison_changed", () => {
-      syncComparisonPanel();
-      scrollToBottom();
-    }),
+    // The trailing cards draw the active thread's report and comparison, so
+    // follow those values rather than the events their writers emit. A switch
+    // to another thread is the rebuild's to draw.
+    store2.select(
+      (state) => {
+        const thread = state.threads.find((candidate) => candidate.id === state.activeThreadId) ?? state.backgroundThreads.find((carried) => carried.thread.id === state.activeThreadId)?.thread;
+        return [state.activeThreadId, thread?.reviewReport, thread?.comparison];
+      },
+      ([threadId]) => {
+        if (threadId === null || threadId !== renderedThreadId) return;
+        syncReviewReportCard();
+        syncComparisonPanel();
+        scrollToBottom();
+      },
+      sameItems
+    ),
     store2.on("review_report_changed", (tid, mid) => {
-      if (mid) renderMessageReviewReport(tid, mid);
-      else syncReviewReportCard();
+      if (!mid) return;
+      renderMessageReviewReport(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -22258,7 +22437,10 @@ function mountConversation(root, store2, api2) {
           setReasoningDisclosureTitle(details, false);
         });
         const last = getThreadById(store2, tid)?.messages.at(-1);
-        if (last) renderMessageTurnRecovery(tid, last.id);
+        if (last) {
+          renderMessageTurnRecovery(tid, last.id);
+          markRowPatched(last.id);
+        }
       }
       syncAvatarMotion();
     }),
@@ -22335,7 +22517,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -22348,6 +22530,7 @@ var init_conversation = __esm({
     init_user_prompt_fold();
     init_hook_card2();
     init_hook_run_detail2();
+    init_store();
     init_artefact_previews();
     init_inline_artefact();
     init_artefact();
@@ -22440,6 +22623,7 @@ var init_conversation = __esm({
     INITIAL_RENDER_WINDOW = 40;
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
+    UNSIGNED_ROW = { patched: "", settled: "" };
   }
 });
 
@@ -69710,6 +69894,12 @@ ${reply}`);
     }
   });
   const unsubs = [
+    store2.select(
+      (state) => state.activeThreadId !== null && state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState();
+      }
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already
@@ -76355,7 +76545,38 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
     );
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "revoke-port-binding",
+          "aria-label": "Revoke local port binding for this project",
+          title: "Ask again before future tasks can bind a local port. Stop running tasks separately."
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        const state = store2.getState();
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return;
+        revoke.disabled = true;
+        void api2.security.revokeProjectPortBinding(state.activeProjectId, threadId).then(() => refreshAccess()).catch((error) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke local port permission", error);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Local port binding",
+            "Granted",
+            "Saved for this project. Revoke to ask for future tasks; stop running tasks separately."
+          ),
+          revoke
+        )
+      );
     }
     result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
     result.append(
