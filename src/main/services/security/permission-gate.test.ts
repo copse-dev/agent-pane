@@ -3458,7 +3458,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         const temp = (darwinUserTempDir() ?? '').replace(/^\/private(?=\/)/, '')
         const log = `${temp}/rbe.log`
         const slice = String.raw`tr -d '\000' < "$L" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '1770,1850p' | cut -c1-300`
-        const { permitted, prompt } = await runWithActiveRunIdentity('thread-temp-read', () =>
+        const { permitted, prompt } = await inLoggedTurn('thread-temp-read', root, () =>
           runGate(`L=${log}; ${slice}`, { approved: false, remember: false }, root),
         )
         assert.equal(permitted, true)
