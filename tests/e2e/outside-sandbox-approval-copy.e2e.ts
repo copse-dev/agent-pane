@@ -130,4 +130,27 @@ describe('outside-sandbox approval copy', () => {
       rmSync(fixture, { recursive: true, force: true })
     }
   })
+
+  it('shows a fresh background escape request and keeps a declined attempt contained', async () => {
+    const command = 'node scripts/run-demo.mts --spec tests/demo/remote-acp-first-run.demo.ts'
+    const scenario = await prepareMockToolTurn(
+      'Start the background demo with the access I approve.',
+      { name: 'run_background', args: { action: 'start', command, expects_sandbox_block: true } },
+      'I kept the background attempt inside the sandbox.',
+    )
+    await submitComposer()
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
+    await expect(dialog.$('.approval-body')).toHaveText(command)
+    await expect(dialog.$('.approval-footer')).toHaveText(
+      expect.stringContaining("agent's expectation, not a confirmed sandbox block"),
+    )
+    await expect(dialog.$('.approval-turn-tree')).not.toBeDisplayed()
+    await saveElementScreenshot('#approval-dialog', 'background-expected-block-approval.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('I kept the background attempt inside the sandbox.')
+    await scenario.assertComplete()
+  })
 })
