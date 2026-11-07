@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
 import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
-import { getActiveProjectId } from '../services/workspace.ts'
 import { assertMainFrameSender, parseIpcArgs, zNonEmptyString } from './ipc-guards.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { initSkillsRegistry } from '../services/skills/skills-registry.ts'
@@ -46,9 +45,24 @@ import { getAutomationService } from '../services/automations/automation-service
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
-import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
+import {
+  getAppleDevelopmentService,
+  type AppleDevelopmentService,
+} from '../services/apple-development/apple-development-service.ts'
 import { reloadMcpServers, reloadMcpServersForPluginToggle } from '../services/mcp/mcp-registry.ts'
 import { syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+
+/**
+ * Stop Apple work once the Apple Development plugin is turned off. The plugin
+ * is app-wide, so that is every project's work, not only the one the primary
+ * window shows (#3958).
+ */
+export async function stopAppleWorkWhenTurnedOff(
+  enabled: boolean,
+  service: Pick<AppleDevelopmentService, 'cancelAllProjects'>,
+): Promise<void> {
+  if (!enabled) await service.cancelAllProjects()
+}
 
 export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   // Plugin registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
@@ -229,10 +243,7 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
       broadcastToAppWindows('mcp:status-changed', statuses)
-      if (!enabled) {
-        const activeProjectId = getActiveProjectId()
-        if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
-      }
+      await stopAppleWorkWhenTurnedOff(enabled, getAppleDevelopmentService())
     }
     return { plugins: getPluginService().list() }
   })
