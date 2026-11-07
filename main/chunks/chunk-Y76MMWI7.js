@@ -73820,7 +73820,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     };
     unsubs.push(
       store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
-      store.on("threads_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
         if (changedThreadId === threadId) preview.close();
       })

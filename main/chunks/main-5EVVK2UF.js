@@ -463,7 +463,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-PHX6EEQG.js";
+} from "./chunk-Y76MMWI7.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1284,9 +1284,12 @@ function openAppRunDialog(store2, api2, projectId = store2.getState().activeProj
     panel.element
   );
   const unsubscribe = selectActiveWorkspace(store2, close2);
-  const unsubscribeThread = store2.on("threads_changed", () => {
-    if (store2.getState().activeThreadId !== (owner.threadId ?? null)) close2();
-  });
+  const unsubscribeThread = store2.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close2();
+    }
+  );
   dialog.addEventListener(
     "close",
     () => {
@@ -16388,9 +16391,6 @@ function mountThreadRoadmapOrigin(store2, api2) {
   let itemId = null;
   let generation = 0;
   let syncedThreadId;
-  function syncIfThreadChanged() {
-    if (store2.getState().activeThreadId !== syncedThreadId) sync();
-  }
   function sync() {
     const gen = ++generation;
     const threadId = store2.getState().activeThreadId;
@@ -16428,7 +16428,7 @@ function mountThreadRoadmapOrigin(store2, api2) {
     if (itemId) navigateToRoadmapItem(store2, itemId);
   });
   sync();
-  const unsubscribeThreads = store2.on("threads_changed", syncIfThreadChanged);
+  const unsubscribeThreads = store2.select((s) => s.activeThreadId, sync);
   const unsubscribeRoadmap = api2.roadmap.onChanged(sync);
   return {
     element: link,
@@ -33430,6 +33430,8 @@ function mountFileTree(root, store2, api2) {
     try {
       const owner = getActiveThreadOwner(store2);
       if (!owner) throw new Error("No active task");
+      await awaitPendingThreadPersistence();
+      if (generation !== loadGeneration) return;
       const entries = await api2.fs.listDir(owner.projectId, owner.threadId, dirPath);
       if (generation !== loadGeneration) return;
       clear(target);
@@ -33464,17 +33466,19 @@ function mountFileTree(root, store2, api2) {
     });
   }
   refreshBtn.addEventListener("click", refresh);
-  let lastOwnerKey = "";
-  function refreshForActiveTask() {
-    const owner = getActiveThreadOwner(store2);
-    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : "";
-    if (nextKey === lastOwnerKey) return;
-    lastOwnerKey = nextKey;
-    refresh();
-  }
   const unsubs = [
-    selectActiveWorkspace(store2, refresh),
-    store2.on("threads_changed", refreshForActiveTask),
+    // The tree lists the active project's root, scoped to the active thread's
+    // checkout: reload only when one of those changes, not on renames,
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
+    store2.select(
+      (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId],
+      () => {
+        queueMicrotask(refresh);
+      },
+      sameItems
+    ),
     store2.select(
       (s) => s.openFile,
       (openFile2) => {
@@ -33485,7 +33489,7 @@ function mountFileTree(root, store2, api2) {
       void revealPath(path, true);
     })
   ];
-  refreshForActiveTask();
+  if (getActiveThreadOwner(store2)) refresh();
   const unregisterPopoutSeed = registerPopoutSeedHandlers("explorer", {
     capture: () => ({
       openFilePath: store2.getState().openFile?.path ?? null,
@@ -33512,13 +33516,14 @@ var init_file_tree = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_material_file_icons();
+    init_store();
     init_handle_file_drop();
     init_files();
     init_context_menu();
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
-    init_active_workspace();
+    init_persistence();
   }
 });
 
@@ -63260,14 +63265,18 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
       renderComments();
     });
   });
-  const unsub = store2.on("threads_changed", () => {
-    refreshIndicator();
-    if (owner && (owner.projectId !== store2.getState().activeProjectId || owner.threadId !== store2.getState().activeThreadId)) {
-      generation++;
-      owner = null;
-      dialog.close();
-    }
-  });
+  const unsub = store2.select(
+    (s) => [s.activeProjectId, s.activeThreadId],
+    ([projectId, threadId]) => {
+      refreshIndicator();
+      if (owner && (owner.projectId !== projectId || owner.threadId !== threadId)) {
+        generation++;
+        owner = null;
+        dialog.close();
+      }
+    },
+    sameItems
+  );
   const unsubStatus = store2.on("thread_status_changed", (threadId) => {
     if (store2.getState().activeThreadId === threadId && getThreadById(store2, threadId)?.status !== "running")
       refreshIndicator(true);
@@ -63302,6 +63311,7 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
 var TEMPLATE, DEFAULT_TITLE;
 var init_thread_plan_dialog = __esm({
   "src/renderer/views/thread-plan-dialog.ts"() {
+    init_store();
     init_thread_helpers();
     init_plan_schema();
     init_helpers();
@@ -72048,11 +72058,10 @@ ${output}` : "Terminal output: (none)"
     selectRightPanelMode(store2, "terminal", onTerminalModeChange),
     store2.on("agent_task_selected", onAgentTaskSelected),
     store2.on("settings_changed", onFontSizeChange),
-    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("thread_checkout_changed", (threadId) => {
       void onThreadCheckoutChanged(threadId);
     }),
-    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("request_terminal_command", (command2, options) => {
       void runCommandInNewShell(command2, options);
     }),
@@ -72364,14 +72373,12 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     appendOutput(toolCallId, data);
   });
   const unsubShell = store2.on("shell_tab_activated", clearSelection);
-  const unsubThreads = store2.on("threads_changed", onThreadMaybeChanged);
-  const unsubWorkspace = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
+  const unsubThread = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
   return () => {
     unsubChunk();
     unsubOutput();
     unsubShell();
-    unsubThreads();
-    unsubWorkspace();
+    unsubThread();
     showTaskView(false);
     section2.remove();
   };
@@ -78066,6 +78073,9 @@ var init_review = __esm({
 });
 
 // src/renderer/views/roadmap-pane.ts
+function knownThreadsKey(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map((b2) => b2.thread)].map((t) => `${t.id}\0${t.title}`).join("\n");
+}
 function roadmapModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "roadmap";
@@ -80092,12 +80102,17 @@ Notes: ${notes}` : prompt;
       void refresh();
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
-    // re-render from the already-loaded items (no IPC round-trip needed).
-    store2.on("threads_changed", () => {
-      if (!roadmapModeActive(store2)) return;
-      renderList();
-      renderEditor({ preserveDirty: true });
-    }),
+    // re-render from the already-loaded items (no IPC round-trip needed). Only
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
+    store2.select(
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
+      () => {
+        if (!roadmapModeActive(store2)) return;
+        renderList();
+        renderEditor({ preserveDirty: true });
+      }
+    ),
     selectActiveWorkspace(store2, () => {
       loadToken++;
       loading = false;
@@ -81653,7 +81668,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
-    store2.on("threads_changed", onThreadMaybeChanged),
     store2.select(
       (s) => [s.activeProjectId, s.activeThreadId],
       onThreadMaybeChanged,
@@ -87745,18 +87759,16 @@ function attachDiffState(store2, api2, options) {
     publishActiveQueue(entries);
     hydrate();
   };
-  const unsubWorkspace = store2.select(
+  const unsubOwner = store2.select(
     (s) => [s.activeProjectId, s.activeThreadId],
     syncDiffOwner,
     sameItems
   );
-  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
   hydrate();
   return () => {
     unsubShowDiff();
     unsubQueued();
-    unsubWorkspace();
-    unsubThreads();
+    unsubOwner();
   };
 }
 var init_diff_state = __esm({
@@ -88282,8 +88294,24 @@ function attachProviderInvalidationWarning(store2, api2, ui) {
     });
   };
   const unsubscribe = [
-    selectActiveWorkspace(store2, check),
-    store2.on("threads_changed", check),
+    // The check reads the active workspace and the active thread's route:
+    // which thread, whether it is idle, and its model. One selection, so a
+    // project switch checks once. Other threads' updates, and this one's
+    // rename, do not re-check.
+    store2.select(
+      (state) => {
+        const thread = getActiveThread(store2);
+        return [
+          state.activeProjectId,
+          state.workspaceRoot,
+          thread?.id,
+          thread?.status,
+          thread?.model
+        ];
+      },
+      check,
+      sameItems
+    ),
     store2.on("settings_changed", check),
     store2.on("thread_status_changed", check)
   ];
@@ -88299,7 +88327,7 @@ var init_provider_invalidation = __esm({
   "src/renderer/controller/provider-invalidation.ts"() {
     init_zod();
     init_safe_json2();
-    init_active_workspace();
+    init_store();
     init_thread_helpers();
     init_model_selection();
   }
@@ -88789,22 +88817,19 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (lastAttemptKey === key) lastAttemptKey = null;
     });
   };
-  const offThreads = store2.on("threads_changed", refreshActive);
-  const offWorkspace = store2.select(
-    (s) => [s.activeProjectId, s.activeThreadId],
-    refreshActive,
-    sameItems
-  );
+  const offThreads = store2.select((state) => {
+    const { activeProjectId, activeThreadId, threads } = state;
+    const thread = activeThreadId ? threads.find((t) => t.id === activeThreadId) : void 0;
+    return activeProjectId && thread ? refreshKey(activeProjectId, thread) : null;
+  }, refreshActive);
   refreshActive();
   return () => {
     offThreads();
-    offWorkspace();
   };
 }
 var init_imported_cursor_agent_refresh = __esm({
   "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
     init_remote_agent_link2();
-    init_store();
   }
 });
 
