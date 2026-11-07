@@ -157,6 +157,10 @@ Source files remain authoritative; deleting this cache is safe.
   [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`, and the
   legacy thread-level `reviewReport` used by reports written before per-turn
   anchoring. New Copse Reviewer reports live on their owning message spine line.
+  Project navigation flushes the outgoing composer's text into its owning thread
+  before taking the metadata/cache snapshot, and again at the live handoff if the
+  destination took time to load. This preserves edits made inside the normal
+  draft debounce window without submitting the draft or rewriting its transcript.
   When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
   Archiving also removes the thread's dedicated worktree after checking for
