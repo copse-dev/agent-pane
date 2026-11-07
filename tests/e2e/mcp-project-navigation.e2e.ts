@@ -73,8 +73,8 @@ async function runNow(projectId: string, name: string): Promise<void> {
   await $('#automation-dialog [aria-label="Close automations"]').click()
 }
 async function openRun(projectId: string, id: string): Promise<void> {
-  const project = `.project-entry[data-project-id="${projectId}"]`
-  await $(`${project} .project-row`).click()
+  // A run's workspace-level Automation row selects its owning project/thread.
+  // A separate project activation here needlessly races the final sidebar update.
   // Automations are a workspace-level section; one run is a flat row rather
   // than a schedule group. Open only the real folds that this layout has.
   const automations = $('.automation-threads-toggle')
@@ -86,8 +86,12 @@ async function openRun(projectId: string, id: string): Promise<void> {
   )
   if ((await schedule.isExisting()) && (await schedule.getAttribute('aria-expanded')) === 'false')
     await schedule.click()
-  await $(`.chat-row[data-thread-id="${id}"]`).waitForExist({ timeout: 10_000 })
-  await $(`.chat-row[data-thread-id="${id}"]`).click()
+  const row = $(`.chat-row[data-thread-id="${id}"]`)
+  await row.waitForExist({ timeout: 10_000 })
+  await expect(row.$('.chat-title')).toHaveText(
+    projectId === A ? 'Check project A' : 'Check project B',
+  )
+  await row.click()
 }
 
 describe('MCP project navigation during automation', function () {
@@ -372,7 +376,24 @@ describe('MCP project navigation during automation', function () {
       [A, idA, FINAL_A, 2, 'mcp-navigation-original-project.png'],
       [B, idB, FINAL_B, 1, 'mcp-navigation-selected-project.png'],
     ] as const) {
+      const branchPrefix = project === A ? 'copse/check-project-a-' : 'copse/check-project-b-'
+      await browser.waitUntil(
+        () => metadata(project, id).worktree?.branch.startsWith(branchPrefix) === true,
+        { timeout: 15_000 },
+      )
       await openRun(project, id)
+      await browser.waitUntil(
+        async () => {
+          const navigation = await browser.execute(() => window.api.windowState.getNavigation())
+          return navigation.activeProjectId === project && navigation.activeThreadId === id
+        },
+        { timeout: 10_000, timeoutMsg: 'The run did not select its owning project and thread' },
+      )
+      assert.equal(
+        await browser.execute(() => window.api.workspace.get()),
+        project === A ? rootA : rootB,
+      )
+      await expect($(`.chat-row[data-thread-id="${id}"]`)).toHaveElementClass('selected')
       await expect($('.messages-list')).toHaveText(expect.stringContaining(expectedText))
       await $('.stop-btn').waitForDisplayed({ reverse: true, timeout: 10_000 })
       assert.equal((await $$('.messages-list [data-tool-id][data-status="done"]')).length, count)
@@ -386,11 +407,6 @@ describe('MCP project navigation during automation', function () {
           if ((await details.getAttribute('open')) === null) await details.$('summary').click()
         }
       }
-      const branchPrefix = project === A ? 'copse/check-project-a-' : 'copse/check-project-b-'
-      await browser.waitUntil(
-        () => metadata(project, id).worktree?.branch.startsWith(branchPrefix) === true,
-        { timeout: 15_000 },
-      )
       const branch = metadata(project, id).worktree?.branch
       assert.ok(branch)
       await expect($(`.chat-row[data-thread-id="${id}"] .chat-title`)).toHaveText(
