@@ -1,5 +1,13 @@
 import { isIgnorableAfterTestError, withTimeout } from './after-test-safety.ts'
-import { UnexpectedErrorToastsError } from './error-toast-state.ts'
+
+/** A real product error cannot become an ignorable transport error because of its text. */
+export class UnexpectedErrorToastsError extends Error {
+  constructor(toasts: readonly string[], context?: string) {
+    const prefix = context ? `${context}: ` : ''
+    super(`${prefix}Unexpected error toast(s): ${toasts.join(' | ')}`)
+    this.name = 'UnexpectedErrorToastsError'
+  }
+}
 
 interface ErrorToastHookContext {
   currentTest?: { title: string; state?: string; err?: unknown }

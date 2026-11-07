@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
-import { acknowledgeExpectedErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 const PROJECT_ID = 'e2e-paste-unsupported-image'
 const TOAST_SHOT = 'paste-unsupported-image-toast.png'
@@ -58,13 +58,15 @@ describe('Pasting an unsupported image format', () => {
 
     const toast = $('.toast-error')
     await toast.waitForDisplayed({ timeout: 5_000 })
-    const expectedError = await toast.getText()
-    assert.match(expectedError, /format isn't supported/)
+    assert.equal(
+      await toast.getText(),
+      "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again.",
+    )
     await saveAppScreenshot(TOAST_SHOT)
 
     assert.equal((await $$('.attachment-chips .image-chip')).length, 0)
-    await acknowledgeExpectedErrorToasts([expectedError])
     await toast.waitForExist({ reverse: true, timeout: 10_000 })
+    await assertNoErrorToasts('after the unsupported-format toast naturally dismissed')
   })
 
   it('still accepts a supported format on the same composer', async () => {
