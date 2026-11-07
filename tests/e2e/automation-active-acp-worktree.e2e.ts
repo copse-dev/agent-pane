@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '../../src/shared/safe-json.ts'
+import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   e2eWorkspaceDir,
@@ -91,6 +92,40 @@ async function expandRuns(): Promise<void> {
   if ((await schedule.isExisting()) && (await schedule.getAttribute('aria-expanded')) === 'false')
     await schedule.click()
 }
+async function selectRun(id: string, title: string | RegExp): Promise<void> {
+  await expandRuns()
+  const selector = `.automation-thread-rows .chat-row[data-thread-id="${id}"]`
+  await $(selector).waitForDisplayed({ timeout: 10_000 })
+  const alreadySelected = await browser.execute(
+    (threadId: string) =>
+      document
+        .querySelector(
+          `.automation-thread-rows .chat-row[data-thread-id="${CSS.escape(threadId)}"]`,
+        )
+        ?.classList.contains('selected') ?? false,
+    id,
+  )
+  if (!alreadySelected) await $(selector).click()
+  await expect($(selector)).toHaveAttribute('class', expect.stringContaining('selected'))
+  await expect($(selector).$('.chat-title')).toHaveText(title)
+}
+
+async function waitForFirstPrompt(id: string): Promise<void> {
+  await waitForAgentIdle()
+  await expect($('.messages-list')).toHaveText(
+    expect.stringContaining(
+      'The first check is complete. Background verification will report back shortly.',
+    ),
+  )
+  await browser.waitUntil(
+    () => /^copse\/background-verification-[a-f0-9]+$/.test(meta(id).worktree?.branch ?? ''),
+    { timeout: 15_000, timeoutMsg: 'the completed run never received its friendly branch' },
+  )
+  const branch = meta(id).worktree?.branch
+  assert.ok(branch)
+  await expect($('.footer-branch-label')).toHaveText(branch)
+}
+
 async function runNowFromProject(): Promise<void> {
   await $(`.project-entry[data-project-id="${PROJECT}"] .project-menu-btn`).click()
   await $('.context-menu-item=Automations').click()
@@ -243,11 +278,8 @@ describe('automation checkout while an ACP background tool owns it', function ()
     assert.ok(oldCheckout)
     const pid = Number(readFileSync(join(oldCheckout, '.copse-fixture/pid'), 'utf8'))
     assert.ok(Number.isInteger(pid) && pid > 0 && live(pid))
-    await expandRuns()
-    await $(`.chat-row[data-thread-id="${oldId}"]`).click()
-    await expect($('.messages-list')).toHaveText(
-      expect.stringContaining('The first check is complete.'),
-    )
+    await selectRun(oldId, 'Background verification')
+    await waitForFirstPrompt(oldId)
     writeFileSync(join(oldCheckout, '.copse-fixture/begin-background'), 'report background work\n')
     await browser.waitUntil(
       () =>
@@ -369,11 +401,8 @@ describe('automation checkout while an ACP background tool owns it', function ()
     const newCheckout = fresh.worktree?.path
     assert.ok(newCheckout)
     assert.notEqual(newCheckout, oldCheckout)
-    await expandRuns()
-    await $(`.chat-row[data-thread-id="${newId}"]`).click()
-    await expect($('.messages-list')).toHaveText(
-      expect.stringContaining('The first check is complete.'),
-    )
+    await selectRun(newId, /^Latest · .+$/)
+    await waitForFirstPrompt(newId)
     writeFileSync(join(newCheckout, '.copse-fixture/begin-background'), 'report background work\n')
     await browser.waitUntil(
       () =>
@@ -424,8 +453,14 @@ describe('automation checkout while an ACP background tool owns it', function ()
         2,
       ) + '\n',
     )
-    await expandRuns()
-    await $(`.chat-row[data-thread-id="${newId}"]`).click()
+    // Exercise real navigation back to the requested run as well as the
+    // already-selected path used immediately after Run now.
+    await $('.project-row*=notes').click()
+    await expect(
+      $(`.automation-thread-rows .chat-row.selected[data-thread-id="${newId}"]`),
+    ).not.toBeExisting()
+    await selectRun(newId, /^Latest · .+$/)
+    await waitForFirstPrompt(newId)
     await expect($('.messages-list')).toHaveText(expect.stringContaining('Background verification'))
     await expect($('.messages-list [data-tool-id="background-verification"]')).toHaveAttribute(
       'data-status',
