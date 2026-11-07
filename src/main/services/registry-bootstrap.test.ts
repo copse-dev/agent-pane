@@ -619,6 +619,10 @@ describe('ACP bridge exposure decisions', () => {
       // Quotes what this native run's explore subagents read; it has nothing
       // to serve over the bridge.
       'read_explored',
+      // Project retrieval needs explicit adapter scope/consent parity before
+      // exposure beyond a captured native turn (project-context prototype).
+      'search_project_context',
+      'read_project_context',
       'investigate_ci',
       'delegate_step',
       'update_todos',
