@@ -1207,7 +1207,11 @@ describe('held automation worktrees in the sidebar', () => {
   function mountHeld(
     threads: Thread[],
     cleanupRuns?: ReturnType<typeof createFakeApi>['automations']['cleanupRuns'],
-  ): { host: HTMLElement; store: ReturnType<typeof createStore> } {
+  ): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+    api: ReturnType<typeof createFakeApi>
+  } {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -1223,7 +1227,7 @@ describe('held automation worktrees in the sidebar', () => {
     mountConfirmDialog()
     mountProjectsPane(host, store, api)
     host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
-    return { host, store }
+    return { host, store, api }
   }
 
   function openHeadingMenu(host: HTMLElement): string[] {
@@ -1286,6 +1290,90 @@ describe('held automation worktrees in the sidebar', () => {
 
     assert.deepEqual(calls, [['a', 'schedule-main']])
     assert.match(document.querySelector('.toast')?.textContent ?? '', /Freed 2 worktrees/)
+  })
+
+  it('refreshes the released checkout metadata while preserving local drafts and transcript', async () => {
+    const finished = held('finished', 30)
+    assert.ok(finished.worktree)
+    finished.lastPromptAt = 30
+    finished.messages = [
+      {
+        id: 'request',
+        role: 'user',
+        content: 'Original request',
+        createdAt: 30,
+        toolCalls: [],
+      },
+      {
+        id: 'answer',
+        role: 'assistant',
+        content: 'Existing answer',
+        createdAt: 30,
+        toolCalls: [],
+      },
+    ]
+    const retired = {
+      ...finished,
+      draftPrompt: '',
+      messages: [],
+      messagesLoaded: false,
+      worktree: { ...finished.worktree, retiredAt: 40 },
+    }
+    const chat = thread('chat', 'Regular conversation')
+    chat.draftPrompt = 'Keep this unsent follow-up'
+    const previouslyRetired = held('previous', 20)
+    assert.ok(previouslyRetired.worktree)
+    previouslyRetired.worktree = { ...previouslyRetired.worktree, retiredAt: 25 }
+    const { host, store, api } = mountHeld([chat, finished, previouslyRetired], async () => ({
+      released: [finished.id],
+      retained: [],
+    }))
+    const reads: string[] = []
+    api.threads.loadProject = async (projectId): Promise<Thread[]> => {
+      reads.push(projectId)
+      return [{ ...chat, draftPrompt: '' }, retired, previouslyRetired]
+    }
+    assert.equal(host.querySelector('.automation-schedule-held')?.textContent, '1 held')
+    openHeadingMenu(host)
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(host.querySelector('.automation-schedule-held')?.textContent ?? '', '')
+    assert.deepEqual(reads, ['a'])
+    const current = store.getState().threads.find((item) => item.id === finished.id)
+    assert.equal(current?.worktree?.retiredAt, 40)
+    assert.deepEqual(current.messages, finished.messages)
+    assert.equal(
+      store.getState().threads.find((item) => item.id === chat.id),
+      chat,
+    )
+    assert.equal(
+      store.getState().threads.find((item) => item.id === chat.id)?.draftPrompt,
+      chat.draftPrompt,
+    )
+    assert.equal(store.getState().activeThreadId, chat.id)
+    assert.match(document.querySelector('.toast')?.textContent ?? '', /Freed 1 worktree/)
+  })
+
+  it('reports a refresh failure without replaying or undoing the completed cleanup', async () => {
+    let cleanups = 0
+    const { host, api } = mountHeld(
+      [thread('chat', 'Regular conversation'), held('a', 30), held('b', 20)],
+      async () => {
+        cleanups += 1
+        return { released: ['a', 'b'], retained: [] }
+      },
+    )
+    api.threads.loadProject = async (): Promise<Thread[]> => {
+      throw new Error('Run list unavailable')
+    }
+    openHeadingMenu(host)
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const text = document.querySelector('.toast')?.textContent ?? ''
+    assert.match(text, /Cleanup finished, but the run list could not refresh/)
+    assert.match(text, /2 worktrees freed/)
+    assert.match(text, /Reopen the project/)
+    assert.equal(cleanups, 1)
   })
 
   it('names each run it had to leave, tells identical titles apart, and opens the first', async () => {
