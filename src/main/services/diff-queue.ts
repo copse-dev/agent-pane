@@ -2,12 +2,8 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, isAbsolute, relative, sep } from 'node:path'
-import type { BrowserWindow, IpcMain } from 'electron'
-import {
-  assertWriteTargetWithinRoot,
-  getActiveProjectId,
-  resolvePathWithinRoot,
-} from './workspace.ts'
+import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
+import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
@@ -36,6 +32,33 @@ import {
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { hasLiveWorktreeWriter, worktreeWriteEpoch } from './worktree-writers.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
+import { getActiveRunTurnTreeId } from './thread-models.ts'
+import { notifyDiffAcceptance } from './diff-acceptance-wake.ts'
+
+// Entry identity keeps replacement proposals and overlapping approvals independent.
+const stagedTurnTrees = new WeakMap<QueueEntry, string>()
+
+function captureStagedTurnTree(entry: QueueEntry): void {
+  const turnTreeId = getActiveRunTurnTreeId()
+  if (turnTreeId) stagedTurnTrees.set(entry, turnTreeId)
+}
+
+function acceptanceEpoch(state: DiffQueueState, entry: QueueEntry): string | undefined {
+  // ACP writes already resume through their blocked tool response.
+  return state.decisionWaiters.has(entry.path) ? undefined : stagedTurnTrees.get(entry)
+}
+
+function collectAcceptance(
+  accepted: Map<string, string[]>,
+  entry: QueueEntry,
+  turnTreeId: string | undefined,
+): void {
+  if (!turnTreeId || stagedTurnTrees.get(entry) !== turnTreeId) return
+  stagedTurnTrees.delete(entry)
+  const paths = accepted.get(turnTreeId) ?? []
+  paths.push(entry.path)
+  accepted.set(turnTreeId, paths)
+}
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -349,10 +372,7 @@ export function getPendingAfterContent(path: string): string | null {
   return state.queue.find((e) => e.path === key)?.after ?? null
 }
 
-async function readCurrentContent(
-  path: string,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string> {
+async function readCurrentContent(path: string, root: string | null): Promise<string> {
   if (!root) return ''
   try {
     const fs = getActiveWorkspaceFs()
@@ -655,6 +675,55 @@ export async function adoptWorktreeChangesSince(baseline: WorktreeBaseline): Pro
   return changes.map((c) => c.path)
 }
 
+/**
+ * Prepare conservative ownership refresh for one isolated background writer.
+ * Only files already owned and unchanged when it starts qualify. The caller
+ * acquires exactly one writer lease next and holds it through settlement.
+ * Any intervening writer/user-turn epoch invalidates the entire refresh.
+ */
+export async function captureBackgroundEditAdoption(
+  root: string,
+  owner: ThreadExecutionOwner,
+): Promise<() => Promise<void>> {
+  const context = getThreadExecutionContext()
+  if (
+    context?.projectId !== owner.projectId ||
+    context.threadId !== owner.threadId ||
+    context.checkoutMode !== 'worktree' ||
+    context.root !== root ||
+    hasLiveWorktreeWriter(root)
+  ) {
+    return async () => {}
+  }
+  const state = stateFor(owner)
+  const epoch = worktreeWriteEpoch()
+  const owned = new Map(state.directAppliedSnapshots)
+  const baseline = await snapshotWorktreePaths([...owned.keys()], root)
+  const eligible = [...baseline].filter(
+    ([path, snapshot]) => snapshot.content !== undefined && snapshot.content === owned.get(path),
+  )
+  return async () => {
+    // The writer's own lease contributes one epoch change. Keep it held while
+    // reading so a concurrent writer cannot slip between the audit and adoption.
+    const valid = (): boolean =>
+      worktreeWriteEpoch() === epoch + 1 && state.root === root && state.queue.length === 0
+    if (!valid()) return
+    const after = await snapshotWorktreePaths(
+      eligible.map(([path]) => path),
+      root,
+    )
+    if (!valid()) return
+    for (const [path, snapshot] of after) {
+      if (
+        snapshot.content !== undefined &&
+        state.directAppliedSnapshots.get(path) === owned.get(path)
+      ) {
+        recordDirectAppliedSnapshot(state, path, snapshot.content)
+      }
+    }
+  }
+}
+
 /** Paths in `git status` whose content now differs from the baseline snapshot. */
 async function worktreeChangesSince(
   baseline: WorktreeBaseline,
@@ -789,8 +858,8 @@ export function clearStagedDiffsForTest(): void {
  */
 export async function applyDiffEntry(
   entry: QueueEntry,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
 ): Promise<ApplyResult> {
   if (!root) return { status: 'error', error: 'No workspace open.' }
   const op = entry.op ?? 'write'
@@ -1005,21 +1074,48 @@ async function applyMkdir(entry: QueueEntry, root: string): Promise<ApplyResult>
   return { status: 'written' }
 }
 
-export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
-  function parseOwner(projectIdArg: unknown, threadIdArg: unknown): ThreadExecutionOwner {
-    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-    if (getActiveProjectId() !== projectId) {
-      throw new Error(`Cannot manage diffs for inactive project "${projectId}"`)
-    }
-    return { projectId, threadId }
+/**
+ * The owner a renderer names for a diff IPC call, accepted only when it is the
+ * project the asking window shows (`shownProjectId`). Judged against that
+ * window, never the process-global active project, so a second window can
+ * review its own project's diffs and not another's (#3958).
+ */
+export function parseDiffQueueOwner(
+  shownProjectId: string | null,
+  projectIdArg: unknown,
+  threadIdArg: unknown,
+): ThreadExecutionOwner {
+  const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+  const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+  if (shownProjectId !== projectId) {
+    throw new Error(`Cannot manage diffs for inactive project "${projectId}"`)
+  }
+  return { projectId, threadId }
+}
+
+/**
+ * `senderProjectId` names the project the asking window shows. It is injected
+ * by the Electron entry point (`senderProjectId` in `ipc/sender-project-root`)
+ * so the headless agent construction reaching this module stays Electron-free.
+ */
+export function initDiffQueue(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  senderProjectId: (sender: WebContents) => string | null,
+): void {
+  function parseOwner(
+    event: IpcMainInvokeEvent,
+    projectIdArg: unknown,
+    threadIdArg: unknown,
+  ): ThreadExecutionOwner {
+    return parseDiffQueueOwner(senderProjectId(event.sender), projectIdArg, threadIdArg)
   }
 
   ipcMain.handle(
     'diff:approve',
     async (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
       assertMainFrameSender(event, win)
-      await approveStagedDiff(path, parseOwner(projectIdArg, threadIdArg))
+      await approveStagedDiff(path, parseOwner(event, projectIdArg, threadIdArg))
     },
   )
 
@@ -1027,7 +1123,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     'diff:reject',
     (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
       assertMainFrameSender(event, win)
-      const owner = parseOwner(projectIdArg, threadIdArg)
+      const owner = parseOwner(event, projectIdArg, threadIdArg)
       const state = stateFor(owner)
       if (state.queue.some((e) => e.path === path)) {
         recordDecision(state, owner, { path, status: 'rejected' })
@@ -1046,7 +1142,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     'diff:content',
     (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
       assertMainFrameSender(event, win)
-      const owner = parseOwner(projectIdArg, threadIdArg)
+      const owner = parseOwner(event, projectIdArg, threadIdArg)
       const entry = typeof path === 'string' ? getStagedDiffEntry(path, owner) : null
       if (!entry) return null
       return {
@@ -1065,18 +1161,18 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
   // hydrate from this on mount instead of depending on catching the push.
   ipcMain.handle('diff:queue', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    const owner = parseOwner(projectIdArg, threadIdArg)
+    const owner = parseOwner(event, projectIdArg, threadIdArg)
     return stateFor(owner).queue.map((e) => ({ path: e.path, language: e.language }))
   })
 
   ipcMain.handle('diff:approve-all', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    return approveAllStagedDiffs(parseOwner(projectIdArg, threadIdArg))
+    return approveAllStagedDiffs(parseOwner(event, projectIdArg, threadIdArg))
   })
 
   ipcMain.handle('diff:reject-all', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    const owner = parseOwner(projectIdArg, threadIdArg)
+    const owner = parseOwner(event, projectIdArg, threadIdArg)
     const state = stateFor(owner)
     for (const entry of state.queue) {
       recordDecision(state, owner, { path: entry.path, status: 'rejected' })
@@ -1096,6 +1192,7 @@ export async function approveStagedDiff(path: string, owner: ThreadExecutionOwne
   const state = stateFor(owner)
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) return
+  const turnTreeId = acceptanceEpoch(state, entry)
   const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
   if (result.status === 'conflict') {
     restage(owner, entry, result.current)
@@ -1114,6 +1211,9 @@ export async function approveStagedDiff(path: string, owner: ThreadExecutionOwne
   const index = state.queue.indexOf(entry)
   if (index !== -1) state.queue.splice(index, 1)
   broadcastQueue(state, owner)
+  const accepted = new Map<string, string[]>()
+  collectAcceptance(accepted, entry, turnTreeId)
+  notifyDiffAcceptance(owner, accepted)
 }
 
 /**
@@ -1132,7 +1232,9 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
   const failures: { path: string; error: string }[] = []
   const toApply = [...state.queue]
   const appliedEntries = new Set<QueueEntry>()
+  const accepted = new Map<string, string[]>()
   for (const entry of toApply) {
+    const turnTreeId = acceptanceEpoch(state, entry)
     const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
     if (result.status === 'conflict') {
       restage(resolvedOwner, entry, result.current)
@@ -1149,6 +1251,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
       recordOwnershipAfterApply(state, entry)
       recordDecision(state, resolvedOwner, { path: entry.path, status: 'approved' })
       appliedEntries.add(entry)
+      collectAcceptance(accepted, entry, turnTreeId)
     }
   }
   if (appliedEntries.size > 0) {
@@ -1167,6 +1270,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
     )
   }
   broadcastQueue(state, resolvedOwner)
+  notifyDiffAcceptance(resolvedOwner, accepted)
   if (failures.length > 0) {
     throw new Error(
       `Failed to write ${String(failures.length)} file(s):\n${failures
@@ -1220,6 +1324,7 @@ export function stageDiff(
   upsertStagedDiffEntry(state.queue, { path, before, after, language, op: 'write' })
   const entry = state.queue.find((e) => e.path === path)
   if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
+  captureStagedTurnTree(entry)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
   broadcastToAppWindows(
     'agent:show-diff',
@@ -1403,6 +1508,7 @@ function stageFileOp(request: FileOpRequest): Promise<string> {
   } else {
     state.queue.push(queued)
   }
+  captureStagedTurnTree(queued)
   broadcastToAppWindows(
     'agent:show-diff',
     owner.projectId,

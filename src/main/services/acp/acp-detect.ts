@@ -39,11 +39,18 @@ export async function detectAcpAgents(
   return results
 }
 
-/** Resolve a command to its absolute path via `which`/`where`, or null if absent. */
-export async function resolveOnPath(command: string): Promise<string | null> {
+/**
+ * Resolve a command to its absolute path via `which`/`where`, or null if absent.
+ * `env` is the environment the command will be spawned with, whose `PATH` is
+ * the one a bare command resolves through (Copse's own by default).
+ */
+export async function resolveOnPath(
+  command: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<string | null> {
   const finder = process.platform === 'win32' ? 'where' : 'which'
   try {
-    const { stdout } = await run(finder, [command], { timeout: 4000 })
+    const { stdout } = await run(finder, [command], { timeout: 4000, ...(env ? { env } : {}) })
     const first = stdout.split(/\r?\n/).find((line) => line.trim().length > 0)
     return first ? first.trim() : null
   } catch {

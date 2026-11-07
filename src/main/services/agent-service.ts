@@ -45,6 +45,7 @@ import {
   type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
@@ -152,6 +153,7 @@ import {
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
+import { SUBAGENT_ONLY_TOOLS } from './subagent-only-tools.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -160,9 +162,28 @@ import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { runCustomAgent } from './agents/custom-agent-runner.ts'
-import { getAgent } from './agents/agents-registry.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
+import {
+  runInIsolatedWorkerCheckout,
+  type WorkerCheckout,
+} from './agents/isolated-worker-checkout.ts'
+import { threadProjectExecutionTarget } from './ssh-workspace/execution-target.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
+import { createReadonlyWorkerTurn } from './agents/readonly-worker-batch.ts'
+import { getTaskSupervisor } from './supervisor/task-supervisor.ts'
+import { runWithReadonlyWorkerRunner } from '../tools/readonly-workers-tool.ts'
+import {
+  getAgent,
+  collectDiscoveryRoots,
+  discoverAgentsFromRoots,
+} from './agents/agents-registry.ts'
 import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import {
+  isPhasedCommandCall,
+  queuedCommandPhase,
+  runWithCommandPhaseReporter,
+} from './exec/command-phase.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
 import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
@@ -324,14 +345,14 @@ function toolSchemaReserveForModel(model: string): number {
  * `min` changed lines. Drives the review "nothing to review" gate (#584): with the
  * default threshold of 1 this skips only an empty diff (e.g. right after a commit),
  * and a larger threshold additionally skips trivial edits. Measures the exact diff
- * the review sees — `getGitDiffText()` (unstaged tracked changes + untracked new
+ * the review sees — `getGitDiffText` (unstaged tracked changes + untracked new
  * files) — so a turn that only adds a large new file is NOT wrongly skipped (its
  * additions live in that diff even though `git diff --numstat` omits them). An
  * unmeasurable diff (git unavailable) falls through to running the review.
  */
 async function changedLinesBelow(min: number): Promise<boolean> {
   if (!isGitAvailable()) return false
-  const diff = await getGitDiffText()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   return countDiffChangedLines(diff) < min
 }
 
@@ -382,9 +403,6 @@ export const PARENT_DELEGATED_TOOLS = [
   'find_files',
 ] as const
 
-/** Tools that only function as subagent entry points; hidden when subagents are off. */
-const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
-
 /**
  * Only a thread still reading the user's checkout has write access to ask for,
  * so `request_write_access` is offered to deferred threads alone. Shared with
@@ -426,7 +444,7 @@ function parentTools(
   }
   if (!subagentsEnabled) {
     tools = tools
-      .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
+      .filter((t) => !SUBAGENT_ONLY_TOOLS.has(t.name))
       .map((t) =>
         t.name === 'read_file'
           ? {
@@ -798,6 +816,11 @@ export interface RunAgentOptions {
    * kept in the thread's history with the prompt it arrived on.
    */
   reviewContext?: string
+  /**
+   * A long-horizon task wake (decision 5). Its plan is open by design and the
+   * next wake resumes it, so the pre-review todo gate is skipped.
+   */
+  longTaskWake?: true
 }
 
 export interface RunAgentResult {
@@ -1372,7 +1395,7 @@ async function runAgentWithInlineCanvas(
                 model: executorModel,
                 registry,
                 signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
                 resolvePluginSetting,
                 recordHookRun: recordFunctionHookRun,
               }),
@@ -1528,7 +1551,12 @@ async function runAgentWithInlineCanvas(
         authFailure,
         acpAgentId: acpRunAgentId,
       })
-      const msg = agentErrorNotice(classifyAgentError(err, { acpAgentId: acpRunAgentId }))
+      const msg = agentErrorNotice(
+        classifyAgentError(err, {
+          acpAgentId: acpRunAgentId,
+          acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
+        }),
+      )
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
@@ -1942,6 +1970,7 @@ async function runAgentWithInlineCanvas(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
       systemPromptBuild.invokedSkillContextBytes,
+      'native',
     )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,
@@ -2001,7 +2030,7 @@ async function runAgentWithInlineCanvas(
       },
       {
         signal: controller.signal,
-        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
         resolvePluginSetting,
         recordHookRun: recordFunctionHookRun,
       },
@@ -2262,6 +2291,20 @@ async function runAgentWithInlineCanvas(
         // The parent tool executor, shared by the main loop and any post-turn parent
         // continuation turns (pre-review todo gate, review remediation) so both route
         // subagents, advisor, review, and shell tagging identically.
+        const readonlyWorkerTurn = createReadonlyWorkerTurn(getTaskSupervisor())
+        // Each command call's last reported stage (#3956), so execution picks up
+        // from the `queued` stage the card already shows.
+        const commandPhases = new Map<string, CommandPhase>()
+        const sendCommandPhase = (toolCallId: string, phase: CommandPhase): void => {
+          commandPhases.set(toolCallId, phase)
+          sendChunk({ type: 'tool_call_update', toolCallId, commandPhase: phase })
+        }
+        const sendLoopChunk = (chunk: StreamChunk): void => {
+          sendChunk(chunk)
+          if (chunk.type !== 'tool_call') return
+          const queued = queuedCommandPhase(chunk.toolCall)
+          if (queued) sendCommandPhase(chunk.toolCall.id, queued)
+        }
         const runParentTool = async (
           name: string,
           args: unknown,
@@ -2349,6 +2392,137 @@ async function runAgentWithInlineCanvas(
               () => registry.execute(name, args, signal),
             )
           }
+          if (name === 'run_readonly_workers' || name === 'run_isolated_workers') {
+            const isolated = name === 'run_isolated_workers'
+            return runWithReadonlyWorkerRunner(
+              async (requests, workerSignal) => {
+                const owner = getThreadExecutionContext()
+                if (!owner) throw new Error('Workers require an owning thread checkout.')
+                if (isolated && isAgentRunReadonly())
+                  throw new Error('Isolated writable workers are unavailable in read-only mode.')
+                if (isolated && threadProjectExecutionTarget()?.kind === 'ssh') {
+                  throw new Error(
+                    'Isolated workers require a local Git checkout; no workers were started.',
+                  )
+                }
+                // The Settings cache follows the active project; concurrent turns
+                // resolve their own trusted project definitions without changing it.
+                const definitions = await discoverAgentsFromRoots(
+                  await collectDiscoveryRoots(owner.projectRoot),
+                )
+                const agents = new Map(
+                  requests.map((request) => {
+                    const agent = definitions.agents.find(
+                      (candidate) => candidate.name === request.agent,
+                    )
+                    if (!agent) throw new Error(`Unknown custom agent: ${request.agent}`)
+                    if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                      throw new Error(`Workspace trust is required for agent "${request.agent}".`)
+                    }
+                    if (
+                      agent.unsupportedFields.some((field) => field.field === 'isolation') ||
+                      (!isolated && agent.isolation === 'worktree')
+                    ) {
+                      throw new Error(
+                        `Agent "${request.agent}" requires run_isolated_workers or has unsupported isolation; no workers were started.`,
+                      )
+                    }
+                    return [request.agent, agent] as const
+                  }),
+                )
+                const started = new Set<string>()
+                const checkouts = new Map<string, WorkerCheckout>()
+                const results = await readonlyWorkerTurn.run({
+                  mode: isolated ? 'isolated' : 'readonly',
+                  owner,
+                  permissionSnapshot: {
+                    capturedAt: Date.now(),
+                    executionRoot: owner.root,
+                    autoRunSandboxCommands: false,
+                    projectSandboxEnabled: isProjectSandboxEnabled(),
+                  },
+                  requests,
+                  signal: workerSignal,
+                  execute: async (request, workerId, ownedSignal) => {
+                    const agent = agents.get(request.agent)
+                    if (!agent) throw new Error(`Unknown custom agent: ${request.agent}`)
+                    if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                      throw new Error(`Workspace trust was revoked for agent "${request.agent}".`)
+                    }
+                    started.add(workerId)
+                    sendChunk({
+                      type: 'tool_call',
+                      toolCall: {
+                        id: workerId,
+                        name: 'task',
+                        args: { subagent_type: request.agent, prompt: request.prompt },
+                      },
+                    })
+                    const execute = (): Promise<string> => {
+                      ownedSignal.throwIfAborted()
+                      if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                        throw new Error(`Workspace trust was revoked for agent "${request.agent}".`)
+                      }
+                      return runCustomAgent(
+                        {
+                          parentToolCallId: workerId,
+                          parentGoal,
+                          provider,
+                          parentModel: model,
+                          registry,
+                          contextWindow,
+                          toolSchemaReserve,
+                          onChunk: (chunk) => {
+                            if (!ownedSignal.aborted) {
+                              sendChunk(chunk)
+                            }
+                          },
+                        },
+                        agent,
+                        request.prompt,
+                        ownedSignal,
+                      )
+                    }
+                    return isolated
+                      ? runInIsolatedWorkerCheckout({
+                          parent: owner,
+                          workerId,
+                          request,
+                          signal: ownedSignal,
+                          onCheckout: (checkout) => {
+                            checkouts.set(workerId, checkout)
+                          },
+                          execute,
+                        })
+                      : runWithAgentRunReadonly(true, execute)
+                  },
+                })
+                for (const result of results) {
+                  if (started.has(result.workerId)) {
+                    if (result.state !== 'completed') {
+                      const reason = result.error ?? result.state
+                      sendChunk({
+                        type: 'subagent_error',
+                        parentToolCallId: result.workerId,
+                        error: reason,
+                      })
+                    }
+                    sendChunk({
+                      type: 'tool_result',
+                      toolCallId: result.workerId,
+                      result: result.report ?? result.error ?? result.state,
+                      isError: result.state !== 'completed',
+                    })
+                  }
+                }
+                return results.map((result) => {
+                  const checkout = checkouts.get(result.workerId)
+                  return { ...result, ...(checkout ? { checkout } : {}) }
+                })
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
           if (name === 'advisor') {
             // Client-side advisor: hand the tool the live transcript so it can
             // forward it to a larger advisor model (issue #566). Mirrors the
@@ -2396,15 +2570,33 @@ async function runAgentWithInlineCanvas(
               () => registry.executeNormalized(name, args, signal),
             )
           }
-          if (name === 'run_shell') {
-            // Tag the command's streamed output with this tool-call id so the
-            // terminal pane can route it into the matching "Agent tasks" card.
-            setCurrentShellTaskId(toolCallId)
-            try {
-              return await registry.executeNormalized(name, args, signal)
-            } finally {
-              setCurrentShellTaskId(null)
-            }
+          if (isPhasedCommandCall(name, args)) {
+            return runWithCommandPhaseReporter(
+              (phase) => {
+                sendCommandPhase(toolCallId, phase)
+              },
+              commandPhases.get(toolCallId) ?? {
+                state: 'queued',
+                since: Date.now(),
+                launched: false,
+              },
+              async () => {
+                if (name !== 'run_shell') return registry.executeNormalized(name, args, signal)
+                // Tag the command's streamed output with this tool-call id so the
+                // terminal pane can route it into the matching "Agent tasks" card.
+                setCurrentShellTaskId(toolCallId)
+                try {
+                  return await registry.executeNormalized(name, args, signal)
+                } finally {
+                  setCurrentShellTaskId(null)
+                }
+              },
+              (outcome) =>
+                'value' in outcome
+                  ? normalizeToolExecuteResult(outcome.value).result
+                  : errorMessage(outcome.error),
+              toolCallId,
+            )
           }
           return registry.executeNormalized(name, args, signal)
         }
@@ -2526,7 +2718,7 @@ async function runAgentWithInlineCanvas(
                       loopStopReason = chunk.stopReason
                       return
                     }
-                    sendChunk(chunk)
+                    sendLoopChunk(chunk)
                     if (chunk.type === 'context_compacted' && runContext) {
                       // The boundary is canonical; the opaque item stays in the
                       // provider-history projection. Best effort like the other
@@ -2586,7 +2778,7 @@ async function runAgentWithInlineCanvas(
           executeTool: executeParentTool,
           onChunk: (chunk: StreamChunk): void => {
             if (chunk.type === 'done') return
-            sendChunk(chunk)
+            sendLoopChunk(chunk)
             if (chunk.type === 'usage') {
               inputTokens += chunk.inputTokens
               outputTokens += chunk.outputTokens
@@ -2626,7 +2818,14 @@ async function runAgentWithInlineCanvas(
 
         // Pre-review gate: if the plan still has open todos, give the parent a couple
         // of deterministic continuation turns to reconcile them before review runs.
-        if (!isPlanningRun() && getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
+        // A long-task wake skips it: those turns would spend the wake chain's shared
+        // budget and nudge the agent to cancel items the next wake will resume.
+        if (
+          !isPlanningRun() &&
+          !options?.longTaskWake &&
+          getAgentRunTodos().length > 0 &&
+          hasOpenTodos(getAgentRunTodos())
+        ) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
             await runWithAgentRunExploreMode(subagentsEnabled, async () => {
               await runPreReviewTodoGate(parentContinuationBase)

@@ -14,7 +14,15 @@ name: Publish screenshot candidates
 # are none. The `accept-screenshots` and
 # `decline-screenshots` labels record the decision
 # (screenshot-review-labels.yml); a push starts a new review, because statuses
-# belong to one SHA.
+# belong to one SHA. screenshot-review-push.yml retires the previous head's
+# evidence comment as soon as the push lands, so it never stands in for the new
+# head while this head renders.
+#
+# A red run still publishes what it rendered: `screenshot-artifacts` needs only
+# precheck, build and e2e, so a failure elsewhere (lint, a unit test) must not leave the
+# PR without evidence for its head. A red run that rendered nothing says so in
+# the comment and writes no status. Stacked PRs keep publishing only from green
+# runs, because stack coverage is attested from one.
 #
 # `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code. Nothing from the
@@ -43,10 +51,13 @@ jobs:
   publish:
     # A workflow_run receives secrets even when its source run came from a fork.
     # Reject forks before pushing any branch or writing to a PR.
-    # Failed/cancelled runs have no accepted evidence to publish.
+    # A cancelled run was superseded or stopped; its replacement publishes.
+    # A failed run publishes only if it rendered (see discovery below).
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.conclusion == 'success' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -75,11 +86,13 @@ jobs:
         env:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const runId = Number(process.env.RUN_ID);
             const runHeadSha = process.env.RUN_HEAD_SHA;
+            const green = process.env.RUN_CONCLUSION === 'success';
             const candidates = context.payload.workflow_run.pull_requests || [];
 
             core.setOutput('eligible', 'false');
@@ -101,8 +114,9 @@ jobs:
             const integrationHead = ['main', 'promote/main', 'release'].includes(parent.head.ref);
             // Promotion (`promote/main`, promote-develop.yml) and merge-back PRs
             // carry commits whose screenshots were reviewed on their source PRs;
-            // their review gate passes unasked.
+            // their review gate passes unasked, once their CI is green.
             if (
+              green &&
               parent.state === 'open' &&
               sameRepository &&
               integrationHead &&
@@ -124,6 +138,83 @@ jobs:
               return;
             }
 
+            // A red run can still have rendered this head: `screenshot-artifacts`
+            // needs only precheck, build and e2e. Publish that rather than leave the PR on
+            // a notice; when nothing rendered, the report step says so instead.
+            // Stacked PRs publish only from a green run, which attests coverage.
+            if (!green) {
+              const body = parent.body || '';
+              if (body.includes('<!-- copse-screenshot-stack:')) {
+                if (body.includes(`tip=#${number} -->`)) {
+                  core.setOutput('not-rendered', 'stack');
+                  core.setOutput('parent-number', String(number));
+                  core.setOutput('head-sha', runHeadSha);
+                }
+                core.notice(`Run ${runId} did not pass; stacked PRs publish screenshots only from a green run.`);
+                return;
+              }
+            }
+
+            // A green draft run can have skipped every renderer. Verify the
+            // actual plan and all its shard steps, even when no PNG differs.
+            // These are job records for this exact run, not PR-controlled metrics.
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: runId, filter: 'latest', per_page: 100,
+            });
+            const successfulStep = (job, name) => {
+              const matches = (job.steps || []).filter((step) => step.name === name);
+              return matches.length === 1 && matches[0].conclusion === 'success';
+            };
+            const prechecks = jobs.filter((job) => job.name === 'precheck');
+            const plans = prechecks.flatMap((job) => (job.steps || [])
+              .filter((step) => step.name.startsWith('Screenshot evidence plan:')));
+            const plan = prechecks.length === 1 && prechecks[0].conclusion === 'success' &&
+              plans.length === 1 && plans[0].conclusion === 'success'
+                ? /^Screenshot evidence plan: (render|no-eligible|reference-followup) \/ (full|subset|skip) \/ ([0-9]+) shards$/.exec(plans[0].name)
+                : undefined;
+            const expectedShards = Number(plan?.[3]);
+            let evidence = '';
+            let candidateUpload = '';
+            if (plan?.[1] === 'render' &&
+              ((plan[2] === 'full' && expectedShards === 9) ||
+               (plan[2] === 'subset' && expectedShards >= 1 && expectedShards <= 9))) {
+              const shards = jobs.flatMap((job) => (job.steps || []).flatMap((step) => {
+                const match = /^e2e shard ([1-9])\/([1-9]) \(oracle-gated, retry on flaky session startup\)$/.exec(step.name);
+                return match ? [{ job, step, index: Number(match[1]), total: Number(match[2]) }] : [];
+              }));
+              const collections = jobs.filter((job) => job.name === 'screenshot-artifacts');
+              const builds = jobs.filter((job) => job.name === 'build');
+              const uploads = collections.length === 1 ? (collections[0].steps || [])
+                .filter((step) => step.name === 'Upload immutable screenshot candidates') : [];
+              if (shards.length === expectedShards &&
+                new Set(shards.map((shard) => shard.index)).size === expectedShards &&
+                shards.every((shard) => shard.total === expectedShards && shard.index <= expectedShards &&
+                  shard.job.conclusion === 'success' && shard.step.conclusion === 'success' &&
+                  successfulStep(shard.job, 'Collect changed reference screenshots') &&
+                  successfulStep(shard.job, 'Upload rendered screenshot shard')) &&
+                builds.length === 1 && builds[0].conclusion === 'success' &&
+                ['Build browser reference app', 'Render browser reference screenshots',
+                  'Render isolated browser motion screenshots', 'Collect changed browser reference screenshots',
+                  'Upload rendered browser screenshots'].every((name) => successfulStep(builds[0], name)) &&
+                collections.length === 1 && collections[0].conclusion === 'success' &&
+                ['Download rendered screenshot candidates', 'Verify complete screenshot producer inputs',
+                  'Drop render noise from the candidate set',
+                  'Summarize candidate screenshots'].every((name) => successfulStep(collections[0], name)) &&
+                uploads.length === 1 && ['success', 'skipped'].includes(uploads[0].conclusion)) {
+                evidence = 'render';
+                candidateUpload = uploads[0].conclusion;
+              }
+            } else if (green && plan?.[2] === 'skip' && expectedShards === 0 &&
+              ['no-eligible', 'reference-followup'].includes(plan[1])) evidence = plan[1];
+            if (!evidence) {
+              core.setOutput('not-rendered', 'e2e');
+              core.setOutput('parent-number', String(number));
+              core.setOutput('head-sha', runHeadSha);
+              core.notice(`Run ${runId} has no complete eligible screenshot evidence for ${runHeadSha}.`);
+              return;
+            }
+            core.setOutput('screenshot-evidence', evidence);
+
             const artifactName = `reference-screenshot-candidates-${runId}`;
             const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
               owner,
@@ -138,8 +229,18 @@ jobs:
             const matches = artifacts.filter(
               (artifact) => artifact.name === artifactName && !artifact.expired,
             );
+            if (artifacts.some((artifact) => artifact.name === artifactName && artifact.expired)) {
+              core.notice(`Run ${runId} has expired candidate evidence; absence is not zero differences.`);
+              return;
+            }
             if (matches.length > 1) {
               core.setFailed(`Run ${runId} has ${matches.length} artifacts named ${artifactName}.`);
+              return;
+            }
+            if (evidence === 'render'
+              ? (candidateUpload === 'success' ? matches.length !== 1 : matches.length !== 0)
+              : matches.length !== 0) {
+              core.notice(`Run ${runId} candidate artifacts do not match its actual upload outcome; publishing no zero-result claim.`);
               return;
             }
 
@@ -336,10 +437,10 @@ jobs:
                 count=$((count + 1))
                 total=$((total + size))
                 # A labelled refresh renders every committed reference, so the
-                # budget must exceed the whole reference set with headroom
-                # (ci-workflow-invariants.test.ts pins it at twice the count
-                # and size of tests/e2e/screenshots).
-                if [ "$count" -gt 4096 ] || [ "$total" -gt 536870912 ]; then
+                # budget must exceed the whole reference set with headroom.
+                # 1 GiB allows twice the manifest's supported 512 MiB ceiling;
+                # ci-workflow-invariants.test.ts also checks current references.
+                if [ "$count" -gt 4096 ] || [ "$total" -gt 1073741824 ]; then
                   echo '::error::Screenshot candidate artifact exceeds its count or size budget.'
                   exit 1
                 fi
@@ -469,6 +570,8 @@ jobs:
           GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
           INTEGRATION: ${{ steps.discover.outputs.integration }}
           CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+          SCREENSHOT_EVIDENCE: ${{ steps.discover.outputs.screenshot-evidence }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -476,7 +579,7 @@ jobs:
             const sha = process.env.GATE_SHA;
             const count = Number(process.env.CANDIDATE_COUNT) || 0;
             const number = Number(process.env.PARENT_NUMBER);
-            const setStatus = (state, description) =>
+            const setStatus = (state, description, evidence = false) =>
               github.rest.repos.createCommitStatus({
                 owner,
                 repo,
@@ -484,7 +587,9 @@ jobs:
                 state,
                 context: statusContext,
                 description,
-                ...(number > 0 ? { target_url: `https://github.com/${owner}/${repo}/pull/${number}` } : {}),
+                ...(evidence
+                  ? { target_url: `https://github.com/${owner}/${repo}/actions/runs/${process.env.RUN_ID}` }
+                  : number > 0 ? { target_url: `https://github.com/${owner}/${repo}/pull/${number}` } : {}),
               });
             // Labels belong to the PR, unlike statuses. Re-read the head before
             // changing one so an older render cannot clear a newer review.
@@ -538,8 +643,21 @@ jobs:
               await syncReviewLabel(false);
               return;
             }
+            if (process.env.SCREENSHOT_EVIDENCE === 'reference-followup') {
+              await setStatus('pending', 'Screenshot-only follow-up needs its recorded review decision');
+              core.setOutput('pending', 'true');
+              await syncReviewLabel(true);
+              return;
+            }
+            if (!['render', 'no-eligible'].includes(process.env.SCREENSHOT_EVIDENCE)) {
+              await setStatus('pending', 'Waiting for complete eligible screenshot evidence');
+              core.setOutput('pending', 'true');
+              return;
+            }
             if (count === 0) {
-              await setStatus('success', 'No changed reference screenshots');
+              await setStatus('success', process.env.SCREENSHOT_EVIDENCE === 'no-eligible'
+                ? 'No eligible reference screenshot specs (oracle plan)'
+                : 'No changed reference screenshots', true);
               await syncReviewLabel(false);
               return;
             }
@@ -547,6 +665,7 @@ jobs:
             await setStatus(
               'pending',
               `${count} changed ${noun} review: label accept-screenshots or decline-screenshots`,
+              true,
             );
             core.setOutput('pending', 'true');
             await syncReviewLabel(true);
@@ -957,6 +1076,88 @@ jobs:
               });
             }
 
+      # A run without complete eligible screenshot evidence for this head. Say so in place of the
+      # push notice (or older evidence), so the PR never reads as rendering or
+      # reviewable when it is neither. No status: a head without one reads as
+      # waiting, and the decision workflows refuse it.
+      - name: Report a run that rendered no screenshots
+        if: steps.discover.outputs.not-rendered != ''
+        uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          EXPECTED_HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          REASON: ${{ steps.discover.outputs.not-rendered }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PARENT_NUMBER);
+            const sha = process.env.EXPECTED_HEAD_SHA;
+            const marker = '<!-- copse-e2e-screenshot-review -->';
+
+            // Evidence or a decision an earlier run published for this head
+            // still stands; a later red re-run (a label re-runs CI) renders
+            // nothing new and must not replace it. A failed publication's
+            // `error` status (newest first) is neither, so report over it.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner,
+              repo,
+              ref: sha,
+              per_page: 100,
+            });
+            const latest = statuses.find((status) => status.context === 'Screenshot review');
+            if (latest && latest.state !== 'error') {
+              core.info('This head already has a screenshot review; keeping it.');
+              return;
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: number,
+              per_page: 100,
+            });
+            // Like a run with no candidates, a red run never opens a comment.
+            const previous = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (!previous) return;
+            const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (parent.state !== 'open' || parent.head.sha !== sha) {
+              core.notice(`PR #${number} moved past ${sha}; a later run reports on its head.`);
+              return;
+            }
+
+            const why =
+              process.env.REASON === 'stack'
+                ? 'a declared stack tip publishes its combined screenshots only from a green run'
+                : 'the run did not establish complete eligible screenshot coverage';
+            const body = [
+              marker,
+              '### Screenshot evidence',
+              '',
+              '<!-- copse-screenshot-review-state -->',
+              `**No screenshots for \`${sha.slice(0, 12)}\`.** [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}) ` +
+                `has no complete screenshot evidence: ${why}. Finish an eligible CI run; this head's evidence and ` +
+                '`Screenshot review` check appear after a run that renders it.',
+              '<!-- /copse-screenshot-review-state -->',
+            ].join('\n');
+            if (previous.body !== body) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            }
+            if (parent.labels.some((label) => label.name === 'screenshots-need-review')) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: number,
+                  name: 'screenshots-need-review',
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+
       - name: Load trusted screenshot stack policy
         if: steps.stack-request.outputs.current != 'false' && success() && steps.discover.outputs.stack-artifact-id != ''
         uses: actions/checkout@v7.0.1
@@ -977,6 +1178,7 @@ jobs:
           HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
           MANIFEST_PATH: ${{ runner.temp }}/screenshot-stack-coverage/screenshot-stack-coverage.json
           COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
+          SOURCE_CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         with:
           script: |
             const { readFile, lstat } = await import('node:fs/promises');
@@ -987,7 +1189,7 @@ jobs:
               throw new Error('Invalid screenshot stack coverage manifest file');
             const coverage = await attestScreenshotStack(github, {
               ...context.repo, number: Number(process.env.PR_NUMBER),
-            }, process.env.HEAD_SHA, await readFile(process.env.MANIFEST_PATH, 'utf8'));
+            }, process.env.HEAD_SHA, await readFile(process.env.MANIFEST_PATH, 'utf8'), process.env.SOURCE_CI_RUN_URL);
             // Include PNGs already committed in lower layers, which may not
             // appear among newly rendered candidates. Both endpoints are pinned.
             const after = /^[0-9a-f]{40}$/.test(process.env.COMPARE_COMMIT || '')

@@ -18,6 +18,7 @@ import { basename, join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import { readCheckoutFile } from './checkout-fs.ts'
+import { inconclusiveCheckReason } from './check-failure.ts'
 import {
   findingId,
   type CheckoutTarget,
@@ -109,6 +110,8 @@ export interface CheckRun {
   readonly argv: readonly string[]
   readonly status: CheckStatus
   readonly exitCode: number | null
+  /** Older imported reports may not carry the process termination signal. */
+  readonly signal?: string | null
   readonly durationMs: number
   /** Capped, secret-scrubbed tail of the output. */
   readonly output: string
@@ -348,6 +351,7 @@ async function runTarget(
       argv: result.argv,
       status: statusOf(result),
       exitCode: result.exitCode,
+      signal: result.signal,
       durationMs: result.durationMs,
       output: scrub(result.output),
       outputTruncated: result.outputTruncated,
@@ -599,7 +603,7 @@ export async function runStage0Checks(
   // Use the configured command in the same cell, without repeating preparation.
   const firstTest = headRuns.runs.get('test')
   const confirmationRuns =
-    firstTest?.status === 'failed'
+    firstTest?.status === 'failed' && inconclusiveCheckReason(firstTest) === null
       ? await runTarget(
           cell,
           'head',
@@ -612,7 +616,10 @@ export async function runStage0Checks(
   const headConfirmation = confirmationRuns?.runs.get('test')
   let unstableTestReason: string | null = null
   if (headConfirmation && firstTest) {
-    if (headConfirmation.status !== 'failed') {
+    const incomplete = inconclusiveCheckReason(headConfirmation)
+    if (incomplete !== null) {
+      unstableTestReason = `Test confirmation was inconclusive: ${incomplete}`
+    } else if (headConfirmation.status !== 'failed') {
       unstableTestReason = `Tests failed once, but ${headConfirmation.status === 'passed' ? 'passed' : 'timed out'} on confirmation; a regression was not established.`
     } else if (firstTest.testFailures || headConfirmation.testFailures) {
       const first = firstTest.testFailures
@@ -630,7 +637,12 @@ export async function runStage0Checks(
     }
   }
   for (const [kind, run] of headRuns.runs) {
-    if (kind !== 'prepare' && run.status === 'failed' && !(kind === 'test' && unstableTestReason))
+    if (
+      kind !== 'prepare' &&
+      run.status === 'failed' &&
+      inconclusiveCheckReason(run) === null &&
+      !(kind === 'test' && unstableTestReason)
+    )
       failedOnHead.add(kind)
   }
   const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
@@ -659,8 +671,9 @@ export async function runStage0Checks(
       notChecked.push({ kind, reason })
       continue
     }
-    if (head.status === 'timed-out') {
-      const reason = `timed out on head after ${String(head.durationMs)} ms; nothing is claimed`
+    const incompleteHead = inconclusiveCheckReason(head)
+    if (incompleteHead !== null) {
+      const reason = incompleteHead
       checks.push({ kind, verdict: 'undetermined', head, base, reason })
       notChecked.push({ kind, reason })
       continue
@@ -683,6 +696,12 @@ export async function runStage0Checks(
           : `no ${kind} command on base`)
       checks.push({ kind, verdict: 'undetermined', head, base, reason })
       notChecked.push({ kind, reason: `failed on head, but ${reason}` })
+      continue
+    }
+    const incompleteBase = inconclusiveCheckReason(base)
+    if (incompleteBase !== null) {
+      checks.push({ kind, verdict: 'undetermined', head, base, reason: incompleteBase })
+      notChecked.push({ kind, reason: incompleteBase })
       continue
     }
     if (base.status === 'passed') {

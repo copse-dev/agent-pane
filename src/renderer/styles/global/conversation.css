@@ -271,33 +271,36 @@
     transparent 100%
   );
 }
-.scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+.conversation-navigation {
+  /* Reserve the same space with or without a return action: no transcript
+     overlays and no viewport jump when navigation becomes available. */
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: 0 var(--spacing-xl);
+}
+.scroll-to-bottom {
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  gap: var(--spacing-sm);
+  border-radius: var(--radius);
   border: none;
-  /* A filled control carrying --text-on-accent, so it takes the fill tier
-     (docs/ui-taste.md -> "--accent tints, --accent-fill fills"). Solid and
-     fully opaque: white on an 80% --accent measured 2.91:1 in dark, and even
-     the right pair loses AA once the page shows through a translucent fill. */
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  line-height: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  box-shadow: var(--shadow-md);
-  z-index: 4;
-  transition: background 0.15s;
 }
 .scroll-to-bottom:hover {
   opacity: 1;
-  background: var(--accent-fill-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .scroll-to-bottom:focus-visible {
   outline: 2px solid var(--accent);
@@ -939,6 +942,20 @@
   z-index: 3;
   box-shadow: var(--shadow-sm);
 }
+/* While the latest prompt is stuck, conversation.ts publishes the band it
+   covers as --sticky-prompt-band. For the length of one scroll call,
+   scrollIntoTranscriptView applies it as scroll padding and as
+   --sticky-prompt-scroll-band, so a scrolled-to reply row lands below the
+   prompt. The prompt itself and every row before it cancel that band:
+   scrolling to one of them leaves the prompt at or below it, so nothing covers
+   the top and the target lands flush, as without the band. */
+.messages-list
+  > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(
+    :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))
+  ),
+.messages-list > :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)) {
+  scroll-margin-top: calc(-1 * var(--sticky-prompt-scroll-band, 0px));
+}
 /* A narrow split pane cannot afford to pin a tall request over the response it
    owns. Let the prompt rejoin the transcript once the chat column reaches the
    compact width used beside a full-size Browser or editor. */
@@ -1046,41 +1063,6 @@
   font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -0.02em;
-}
-/* Markdown content styling lives in @copse/streaming-markdown's default.css,
-   scoped under `.streaming-markdown` (added to every render sink). Map the
-   package's `--sm-*` knobs onto agent-pane's theme tokens so rendered markdown
-   tracks the active theme. Host-only chrome the package never emits — code/table
-   copy buttons, mermaid expand/zoom, artifact images — stays below. */
-.streaming-markdown {
-  --sm-space-xs: var(--spacing-xs);
-  --sm-space-sm: var(--spacing-sm);
-  --sm-space-md: var(--spacing-md);
-  --sm-radius: var(--radius);
-  --sm-font-mono: var(--font-mono);
-  --sm-font-size-sm: var(--font-size-sm);
-  --sm-fg-muted: var(--text-secondary);
-  --sm-border: var(--border);
-  --sm-accent: var(--accent);
-  --sm-link: var(--link);
-  --sm-code-bg: var(--bg-elevated);
-  --sm-error: var(--error);
-  /* The package defaults to GitHub's alert palette; Copse has its own semantic
-     tokens for four of the five, and invents --info and --important for the
-     other two (tokens.css). markdown.css restyles the blocks themselves. */
-  --sm-alert-note: var(--info);
-  --sm-alert-tip: var(--success);
-  --sm-alert-important: var(--important);
-  --sm-alert-warning: var(--warning);
-  --sm-alert-caution: var(--danger);
-}
-/* Links inside rendered markdown follow the app's link tier (the package's
-   default keys them off its accent, which is too dim on the dark surfaces). */
-.streaming-markdown a {
-  color: var(--link);
-}
-.streaming-markdown a:hover {
-  color: var(--link-hover);
 }
 .message-text:empty {
   display: none;
@@ -1506,142 +1488,6 @@ span.acp-resource-title {
   color: var(--text-muted);
   font-style: italic;
 }
-.message-text .remote-artifact-image {
-  display: block;
-  max-width: 100%;
-  max-height: min(520px, 60vh);
-  margin: var(--spacing-sm) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  object-fit: contain;
-}
-.message-text .code-block-shell {
-  position: relative;
-}
-.code-block-actions {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xs);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  z-index: 1;
-}
-.code-block-copy,
-.code-block-run {
-  opacity: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-  transition: opacity 0.1s;
-}
-.code-block-run {
-  display: inline-grid;
-  min-width: 24px;
-  min-height: 22px;
-  place-items: center;
-  padding: 2px 5px;
-}
-.code-block-run.is-running .ui-icon {
-  animation: ui-inline-status-spin 0.9s linear infinite;
-}
-.message-text .code-block-shell:hover .code-block-actions > button,
-.message-text .code-block-shell:focus-within .code-block-actions > button {
-  opacity: 1;
-}
-.message-text:has(.code-block-shell:hover)
-  .code-block-shell:not(:hover):not(:focus-within)
-  .code-block-actions
-  > button,
-.message-text:has(.code-block-shell:focus-within)
-  .code-block-shell:not(:focus-within):not(:hover)
-  .code-block-actions
-  > button {
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .code-block-run.is-running .ui-icon {
-    animation: none;
-  }
-}
-/* A Play run's terminal output, directly under the command that produced it.
-   Terminal text keeps its columns, so long lines and logs scroll in place. */
-.code-block-output {
-  margin-top: var(--spacing-xs);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  font-size: var(--font-size-sm);
-}
-.code-block-output-summary {
-  padding: 4px var(--spacing-sm);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  cursor: pointer;
-}
-.code-block-output[data-run-state='failed'] > .code-block-output-summary {
-  color: var(--error);
-}
-.code-block-output-text,
-.code-block-output-empty {
-  max-height: 240px;
-  overflow: auto;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  white-space: pre;
-}
-.code-block-output-empty {
-  color: var(--text-muted);
-  font-style: italic;
-}
-/* GFM table copy control (#615): mirror the code-block hover affordance. The
-   shell carries the table's block margin so wrapping causes no layout shift, and
-   the button floats in the top-right corner (revealed on hover/focus). */
-.message-text .table-copy-shell {
-  position: relative;
-  margin: var(--spacing-sm) 0;
-}
-/* A table streams bare and is wrapped in .table-copy-shell by the final render.
-   Give it the shell's margin meanwhile, so completion doesn't shift the answer. */
-.message-text table:not(.table-copy-scroll > table) {
-  margin-block: var(--spacing-sm);
-}
-/* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
-   rather than adding a horizontal scrollbar to the whole conversation. */
-.message-text .table-copy-scroll {
-  overflow-x: auto;
-  max-width: 100%;
-}
-.message-text .table-copy-scroll > table {
-  margin: 0;
-  /* The wrapper owns horizontal scrolling. Keep the table itself as a pure
-     clip so Chromium paints its rounded top corners without overflow horns. */
-  overflow: hidden;
-}
-.table-copy {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xs);
-  opacity: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-  transition: opacity 0.1s;
-  z-index: 1;
-}
-.message-text .table-copy-shell:hover .table-copy,
-.message-text .table-copy-shell:focus-within .table-copy {
-  opacity: 1;
-}
 
 /* Transcript attachment chips (conversation.ts renderUserTranscript): a paste
    sits inline at its placeholder; files/threads follow in .transcript-attachment-row.
@@ -1832,4 +1678,53 @@ span.acp-resource-title {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* Docked in the reserved navigation row, never over the transcript, so it
+   cannot cover a prompt line or the TODO counter at any width. It sits before
+   Back to latest in a right-aligned row: revealing its label grows leftwards
+   and leaves the other control and the transcript where they are. */
+.conversation-first-prompt {
+  flex: 0 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.conversation-first-prompt-label {
+  display: none;
+}
+.conversation-first-prompt:hover,
+.conversation-first-prompt:focus-visible {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.conversation-first-prompt:hover .conversation-first-prompt-label,
+.conversation-first-prompt:focus-visible .conversation-first-prompt-label {
+  display: inline;
+}
+.conversation-first-prompt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  /* A wider touch target that still fills, not overflows, the 40px row. */
+  .conversation-first-prompt {
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .conversation-first-prompt-label {
+    display: inline;
+  }
 }

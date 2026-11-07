@@ -25,6 +25,7 @@ describe('readonly-tools', () => {
       'read_skill',
       'preflight_worktree',
       'explore',
+      'run_readonly_workers',
       'ask_user',
       'read_terminal',
     ]) {
@@ -42,6 +43,7 @@ describe('readonly-tools', () => {
       'make_directory',
       'run_shell',
       'prepare_worktree',
+      'run_isolated_workers',
       'update_todos',
       'fetch_url',
       'web_search',

@@ -70,9 +70,11 @@ formatting); the loop itself is main-process-only.
   `agent-loop-guards.ts`. M0.3's `todo-finalize-closeout` hook owns nudge
   selection; the closeout loop in `run-agent-loop.ts` still consumes
   `hasOpenTodos` / the still-open note.
-- **Two `EXPLORE_TOOL_NAMES` exist** (run-subagent's tool allowlist and
-  agent-loop-guards' duplicate-detection set). The barrel explicitly re-exports
-  the subagent allowlist — the one app code imports; deep imports see both.
+- **Two tool-name sets, deliberately named apart** (#1433):
+  `SUBAGENT_ALLOWED_TOOL_NAMES` (run-subagent) is the explore subagent's hard
+  allow-list; `DUPLICATE_GUARDED_TOOL_NAMES` (agent-loop-guards) is the set the
+  duplicate-call guard fingerprints. Adding `explore` to the first would let the
+  subagent spawn subagents; it belongs only in the second.
 
 ## Standalone path
 

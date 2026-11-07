@@ -6,6 +6,8 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { openWorkspaceFile } from './files.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 
 const IMAGE = 'data:image/png;base64,iVBORw0KGgo='
 
@@ -84,10 +86,9 @@ describe('workspace image links', () => {
     })
     const api = { ...base, fs: { ...base.fs, readImage: (): Promise<string> => image } }
     const pending = openWorkspaceFile(store, api, 'chart.png')
+    // A plain state write, no event: the preview selects its owner.
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('panel_changed')
     store.setState({ activeThreadId: 'thread-1' })
-    store.emit('panel_changed')
     resolve(IMAGE)
     await pending
     assert.equal(document.querySelector('dialog[open]'), null)
@@ -133,6 +134,25 @@ describe('workspace image links', () => {
       /file is too large/,
     )
     store.emit('thread_checkout_changed', 'thread-1')
+    assert.equal(document.querySelector('dialog[open]'), null)
+  })
+
+  it('keeps the preview open across thread metadata updates and closes on a thread switch', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [makeThread({ id: 'thread-1' }), makeThread({ id: 'thread-2' })],
+    })
+    const base = createFakeApi()
+    const api = { ...base, fs: { ...base.fs, readImage: async (): Promise<string> => IMAGE } }
+    await openWorkspaceFile(store, api, 'chart.png')
+    assert.ok(document.querySelector('dialog[open]'))
+
+    setThreadTitle(store, 'thread-1', 'Renamed')
+    setThreadTitle(store, 'thread-2', 'Renamed too')
+    assert.ok(document.querySelector('dialog[open]'), 'thread metadata leaves the preview open')
+
+    store.setState({ activeThreadId: 'thread-2' })
     assert.equal(document.querySelector('dialog[open]'), null)
   })
 

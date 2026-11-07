@@ -29,6 +29,10 @@ const PARENT = tools(
   'ask_user',
   'explore',
   'task',
+  'run_readonly_workers',
+  'run_isolated_workers',
+  'update_thread_plan',
+  'report_plan_completion',
   'mcp__github__create_issue',
   'mcp__github__list_issues',
   'mcp__linear__search',
@@ -37,7 +41,7 @@ const PARENT = tools(
 const names = (list: LLMTool[]): string[] => list.map((t) => t.name)
 
 describe('resolveCustomAgentTools', () => {
-  it('withholds parent-scoped skill activation even when a profile explicitly allows it', () => {
+  it('allows independently budgeted skill activation when the profile allows it', () => {
     for (const allowed of [null, ['read_file', 'read_skill']]) {
       assert.deepEqual(
         names(
@@ -46,15 +50,38 @@ describe('resolveCustomAgentTools', () => {
             disallowedTools: [],
           }),
         ),
+        ['read_file', 'read_skill'],
+      )
+    }
+  })
+  it('cannot overwrite the parent plan, even through an explicit allow-list', () => {
+    for (const parentTool of ['update_thread_plan', 'report_plan_completion']) {
+      assert.deepEqual(
+        names(
+          resolveCustomAgentTools(tools('read_file', parentTool), {
+            tools: ['read_file', parentTool],
+            disallowedTools: [],
+          }),
+        ),
         ['read_file'],
       )
     }
   })
+
   it('inherits the parent set minus what no subagent may hold', () => {
     const resolved = names(resolveCustomAgentTools(PARENT, { tools: null, disallowedTools: [] }))
     assert.ok(resolved.includes('read_file'))
     assert.ok(resolved.includes('write_file'))
-    for (const forbidden of ['task', 'explore', 'ask_user', 'git_commit']) {
+    for (const forbidden of [
+      'task',
+      'explore',
+      'run_readonly_workers',
+      'run_isolated_workers',
+      'ask_user',
+      'git_commit',
+      'update_thread_plan',
+      'report_plan_completion',
+    ]) {
       assert.ok(!resolved.includes(forbidden), `${forbidden} must never be inherited`)
     }
   })

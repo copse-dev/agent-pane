@@ -1,3 +1,8 @@
+import { buildSkillsCatalogBlock } from '../skills/skill-prompt.ts'
+import {
+  createSkillActivationTurn,
+  runWithSkillActivationTurn,
+} from '../skills/skill-activation.ts'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
@@ -20,7 +25,8 @@ import {
 import { addSubagentUsage } from '../subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { isolatedWorkerScope } from './isolated-worker-scope.ts'
+import { agentWorkspaceLabel } from '../execution-root.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
@@ -29,6 +35,29 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { buildProvider, isLocalChatModel } from '../providers/provider-selection.ts'
 import { resolveContextWindow } from '../providers/resolve-context-window.ts'
+
+// Only reviewed, root-confined native tools. External execution cannot inherit this authority.
+const ISOLATED_WORKER_TOOLS = new Set([
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'semantic_search',
+  'find_files',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_show',
+  'staged_diffs',
+  'read_staged_diff',
+  'write_file',
+  'str_replace',
+  'delete_file',
+  'rename_file',
+  'make_directory',
+  'preflight_worktree',
+  'prepare_worktree',
+])
 
 /**
  * Runs a user-authored subagent (docs/plans/custom-subagents.md, P2).
@@ -72,7 +101,18 @@ export async function runCustomAgent(
   prompt: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const workspace = getWorkspaceRoot() ?? '(none)'
+  signal.throwIfAborted()
+  if (agent.unsupportedFields.some((field) => field.field === 'isolation')) {
+    throw new Error(
+      `Agent "${agent.name}" requests isolation, but custom-agent worktree isolation is unavailable. The agent was not started.`,
+    )
+  }
+  if (agent.isolation === 'worktree' && !isolatedWorkerScope.getStore()) {
+    throw new Error(
+      `Agent "${agent.name}" requires run_isolated_workers; no isolated worker was started.`,
+    )
+  }
+  const workspace = agentWorkspaceLabel()
   const model = resolveCustomAgentModel(agent.model, ctx.parentModel)
   const usesParentModel = model === ctx.parentModel
   const provider = usesParentModel ? ctx.provider : await buildProvider(model)
@@ -99,6 +139,7 @@ export async function runCustomAgent(
   const projectId = getThreadExecutionContext()?.projectId
   const available = ctx.registry.toLLMTools().filter(
     (tool) =>
+      (!isolatedWorkerScope.getStore() || ISOLATED_WORKER_TOOLS.has(tool.name)) &&
       isAppleDevelopmentToolOffered(tool.name, projectId) &&
       (!readonly ||
         isToolAllowedInReadonlyMode(tool.name, {
@@ -108,7 +149,11 @@ export async function runCustomAgent(
         })),
   )
   const tools = resolveCustomAgentTools(available, agent)
-  const systemPrompt = buildCustomAgentSystemPrompt(agent)
+  const toolNames = tools.map((tool) => tool.name)
+  // A child owns its allowance, even when launched inside a parent activation scope.
+  const skillTurn = createSkillActivationTurn([], toolNames, 0, 'subagent')
+  const systemPrompt =
+    buildCustomAgentSystemPrompt(agent) + buildSkillsCatalogBlock(toolNames, 'subagent')
   const userTask = buildCustomAgentTask({ prompt, parentGoal: ctx.parentGoal, workspace })
 
   const subagentMessages: LLMMessage[] = [
@@ -146,13 +191,17 @@ export async function runCustomAgent(
     })
 
     addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })
+    signal.throwIfAborted()
+    if (session.status === 'error') throw new Error(summary)
     return summary
   }
 
-  return runWithAgentRunReadFileLimits(readLimits, () =>
-    // `readonly: true` (Cursor) / `permissionMode: plan` (Claude Code) map onto
-    // Copse's existing no-mutations scope. This only ever narrows: a parent turn
-    // already in read-only mode stays read-only for the agent too.
-    agent.readonly ? runWithAgentRunReadonly(true, run) : run(),
+  return runWithSkillActivationTurn(skillTurn, () =>
+    runWithAgentRunReadFileLimits(readLimits, () =>
+      // `readonly: true` (Cursor) / `permissionMode: plan` (Claude Code) map onto
+      // Copse's existing no-mutations scope. This only ever narrows: a parent turn
+      // already in read-only mode stays read-only for the agent too.
+      agent.readonly ? runWithAgentRunReadonly(true, run) : run(),
+    ),
   )
 }

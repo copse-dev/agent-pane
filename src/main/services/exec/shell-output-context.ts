@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 // The shell tool streams its child-process output to the renderer over the
 // global `agent:shell-output` channel, which historically carried no indication
 // of *which* run_shell call produced it. The terminal pane's "Agent tasks" view
@@ -29,7 +31,43 @@ export function setShellOutputSink(sink: ShellOutputSink | null): void {
   shellOutputSink = sink
 }
 
-/** Mirror a chunk of shell output to the UI, if anything is listening. */
-export function emitShellOutput(chunk: string): void {
+/** A command's process exit, as Node reports it. */
+export interface ShellRunExit {
+  exitCode: number | null
+  signal: NodeJS.Signals | null
+}
+
+/**
+ * Per-call observer for a run_shell execution. The UI sink above is global and
+ * sees a capped view; an ACP client terminal (`terminal/*`, issue #623) needs
+ * every byte of ONE command's output plus its real exit status, while that
+ * command still goes through run_shell's gate, sandbox and unsandboxed retry.
+ * Each spawned attempt reports its own exit, so after a retry the last report
+ * describes the run that produced the result.
+ */
+export interface ShellRunObserver {
+  output: (chunk: string) => void
+  exit: (status: ShellRunExit) => void
+}
+
+const shellRunObserverStorage = new AsyncLocalStorage<ShellRunObserver>()
+
+export function runWithShellRunObserver<T>(observer: ShellRunObserver, fn: () => T): T {
+  return shellRunObserverStorage.run(observer, fn)
+}
+
+/** The observer bound to the current run_shell call, if any. */
+export function currentShellRunObserver(): ShellRunObserver | undefined {
+  return shellRunObserverStorage.getStore()
+}
+
+/** Mirror a chunk to the UI only. The process runner feeds its observer raw bytes itself. */
+export function mirrorShellOutput(chunk: string): void {
   shellOutputSink?.(chunk, currentShellTaskId)
+}
+
+/** Mirror a chunk of shell output to the UI and the current call's observer. */
+export function emitShellOutput(chunk: string): void {
+  mirrorShellOutput(chunk)
+  shellRunObserverStorage.getStore()?.output(chunk)
 }

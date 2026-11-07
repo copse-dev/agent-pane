@@ -4,6 +4,7 @@ import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import {
   loopNudgeHook,
   malformedToolCallHook,
+  planVerifiedFinalizeHook,
   LOOP_NUDGE_HOOK_ID,
   reasoningRunawayHook,
   REASONING_RUNAWAY_HOOK_ID,
@@ -17,9 +18,11 @@ import { createHookRegistry, FIRST_PARTY_HOOKS, type HookEmitResult } from './ho
 import type { StepBoundaryEscalation, StepBoundaryPayload } from './canonical-events.ts'
 import { measureConversationPressure, type EscalationInput } from '../agent-loop-escalation.ts'
 import {
+  EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
   LOOP_NUDGE_USER_MESSAGE,
+  PLAN_VERIFIED_FINALIZE_NUDGE,
   STUCK_FINALIZE_NUDGE,
 } from '../agent-loop-guards.ts'
 import {
@@ -112,11 +115,30 @@ describe('STEP_BOUNDARY_HOOKS registration', () => {
         'truncation-continue',
         'reasoning-runaway',
         'malformed-tool-call',
+        'plan-verified-finalize',
       ],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
       STEP_BOUNDARY_HOOKS.map((h) => h.id),
+    )
+  })
+})
+
+describe('plan-verified-finalize (#1433 Fix 4)', () => {
+  it('selects the finalize text only at preStream after the plan closed on checks', async () => {
+    assert.deepEqual(
+      await planVerifiedFinalizeHook.run(preStream({ planClosedByVerifiedChecks: true }), {}),
+      { injectContext: PLAN_VERIFIED_FINALIZE_NUDGE },
+    )
+    assert.equal(await planVerifiedFinalizeHook.run(preStream(), {}), undefined)
+    assert.equal(
+      await planVerifiedFinalizeHook.run(preStream({ planClosedByVerifiedChecks: false }), {}),
+      undefined,
+    )
+    assert.equal(
+      await planVerifiedFinalizeHook.run(postStream({ planClosedByVerifiedChecks: true }), {}),
+      undefined,
     )
   })
 })
@@ -213,6 +235,29 @@ describe('loop-nudge', () => {
         preStream({
           escalation: calm,
           consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+        }),
+        {},
+      ),
+      { injectContext: EXPLORE_WITHOUT_READ_NUDGE },
+    )
+  })
+
+  it('points explore mode at the verbatim excerpts instead of the withheld read_file (#1433 Fix 0)', async () => {
+    const outcome = await loopNudgeHook.run(
+      preStream({
+        consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+        readFileOffered: false,
+      }),
+      {},
+    )
+    assert.deepEqual(outcome, { injectContext: EXPLORE_REPEAT_USE_EXCERPTS_NUDGE })
+    assert.doesNotMatch(EXPLORE_REPEAT_USE_EXCERPTS_NUDGE, /read_file/)
+    // An explicit true keeps the read_file wording.
+    assert.deepEqual(
+      await loopNudgeHook.run(
+        preStream({
+          consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+          readFileOffered: true,
         }),
         {},
       ),

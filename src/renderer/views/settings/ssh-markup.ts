@@ -2,11 +2,11 @@ import type { SettingField } from './fields.ts'
 
 export const sshMarkup = `
           <section class="settings-section" data-section="ssh">
-            <h3>SSH</h3>
+            <h3>Machines</h3>
             <p class="settings-section-desc">
-              Work on a remote Linux machine over SSH. Commands, git, search, and files all run
-              on the host; Copse stays on your computer.
+              Connect other computers to use their models, or manage SSH hosts for remote projects and agents.
             </p>
+            <div id="settings-machines-host" class="settings-mount"></div>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
 
             <fieldset>

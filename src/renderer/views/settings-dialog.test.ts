@@ -83,6 +83,12 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(dialog.querySelector('#settings-close')?.textContent, '')
   })
 
+  it('takes its accessible name from the Settings heading', () => {
+    const labelId = dialog.getAttribute('aria-labelledby')
+    assert.ok(labelId)
+    assert.equal(document.getElementById(labelId)?.textContent, 'Settings')
+  })
+
   it('opens via showModal() and closes via close()', () => {
     openSettingsDialog()
     assert.equal(spy.showModalCalls, 1)
@@ -183,6 +189,56 @@ describe('settings dialog (native <dialog>)', () => {
     assert.match(text, /Without a sandbox/i)
     assert.doesNotMatch(text, /write shapes still ask/)
   })
+})
+
+it('refreshes machines only while their settings section remains open and mounted', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  document.body.innerHTML = ''
+  let calls = 0
+  const base = createFakeApi()
+  mountSettingsDialog(createStore(), {
+    ...base,
+    machines: {
+      ...base.machines,
+      state: async () => {
+        calls += 1
+        return base.machines.state()
+      },
+    },
+  })
+  const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+  shimModal(dialog)
+  const settle = async (): Promise<void> => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  openSettingsDialog()
+  await settle()
+  t.mock.timers.tick(9000)
+  assert.equal(calls, 0)
+  qsRequired<HTMLButtonElement>(dialog, 'button[data-section="ssh"]').click()
+  await settle()
+  assert.equal(calls, 1)
+  t.mock.timers.tick(3000)
+  await settle()
+  assert.equal(calls, 2)
+  qsRequired<HTMLButtonElement>(dialog, 'button[data-section="general"]').click()
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 2)
+  closeSettingsDialog()
+  dialog.dispatchEvent(new Event('close'))
+  openSettingsDialog('ssh')
+  await settle()
+  assert.equal(calls, 3)
+  closeSettingsDialog()
+  dialog.dispatchEvent(new Event('close'))
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 3)
+  openSettingsDialog('ssh')
+  await settle()
+  assert.equal(calls, 4)
+  dialog.remove()
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 4)
 })
 
 describe('accent colour', () => {

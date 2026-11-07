@@ -276,6 +276,52 @@ async function collect(provider: LMStudioProvider): Promise<ProviderStreamChunk[
 }
 
 describe('LMStudioProvider', () => {
+  it('retains union actions, shared required fields and branch constraints in SDK tools', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+    const branches = [
+      {
+        type: 'object',
+        properties: { action: { type: 'string', enum: ['list'] } },
+        required: ['action'],
+        additionalProperties: false,
+      },
+      {
+        type: 'object',
+        properties: { action: { type: 'string', enum: ['launch'] }, device_id: { type: 'string' } },
+        required: ['action', 'device_id'],
+        additionalProperties: false,
+      },
+    ]
+    for await (const _ of provider.stream(
+      [{ role: 'user', content: 'List devices' }],
+      [{ name: 'device_hub', description: 'Device Hub', parameters: { oneOf: branches } }],
+    )) {
+      // Drain the stream so the provider sends and captures the tool definitions.
+    }
+    assert.deepEqual(Reflect.get(client.modelHandle.opts ?? {}, 'rawTools'), {
+      type: 'toolArray',
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'device_hub',
+            description: 'Device Hub',
+            parameters: {
+              type: 'object',
+              oneOf: branches,
+              properties: {
+                action: { anyOf: branches.map((branch) => branch.properties.action) },
+                device_id: { type: 'string' },
+              },
+              required: ['action'],
+            },
+          },
+        },
+      ],
+    })
+  })
+
   it('maps native progress, reasoning, text, tool calls, usage, and completion', async () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('local-model', { client })

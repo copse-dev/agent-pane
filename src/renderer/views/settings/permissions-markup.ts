@@ -24,6 +24,15 @@ export const permissionsMarkup = `
 
             <fieldset>
               <legend>Shell commands</legend>
+              <div class="environment-setup-settings-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="environment-setup-review">
+                  Review suggestions
+                </button>
+                <span class="field-hint">
+                  Suggests changes to these settings from prompts you keep approving in this
+                  project. Nothing changes until you choose.
+                </span>
+              </div>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Run commands without asking when they stay inside the project folder
@@ -101,6 +110,39 @@ export const permissionsMarkup = `
                   <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
                   without asking; any other host asks first. A destructive remote command still
                   asks.
+                </span>
+              </label>
+              <label>
+                Trusted package registries
+                <textarea
+                  class="settings-code-input"
+                  name="trustedPackageRegistries"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="https://npm.example.com"
+                ></textarea>
+                <span class="field-hint">
+                  One registry URL per line. In Guarded YOLO, an install pointed at one of these
+                  with <code>--registry</code>, <code>--index-url</code> or a variable such as
+                  <code>GOPROXY</code> runs without asking; any other registry asks first.
+                  Turning off checksum or TLS checks (<code>--trusted-host</code>,
+                  <code>GOSUMDB=off</code>) still asks.
+                </span>
+              </label>
+              <label>
+                Production targets
+                <textarea
+                  class="settings-code-input"
+                  name="productionTargets"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="prod-eu-cluster"
+                ></textarea>
+                <span class="field-hint">
+                  Cluster contexts or namespaces, cloud projects or profiles, and database or SSH
+                  hosts that count as production, one per line. In Guarded YOLO, any
+                  <code>kubectl</code>, cloud, <code>ssh</code> or database command that names one
+                  asks first, reads included. Matches whole names only.
                 </span>
               </label>
             </fieldset>

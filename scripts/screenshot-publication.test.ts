@@ -67,6 +67,7 @@ function candidateNames(entries: { name: string; new: boolean; focus?: boolean }
 
 interface Parent {
   state: string
+  body: string | null
   labels: { name: string }[]
   head: { ref: string; sha: string; repo: { full_name: string } }
   base: { ref: string }
@@ -79,11 +80,13 @@ function parent(
     state?: string
     repo?: string
     ref?: string
+    body?: string
     base?: string
   } = {},
 ): Parent {
   return {
     state: overrides.state ?? 'open',
+    body: overrides.body ?? null,
     labels: (overrides.labels ?? []).map((name) => ({ name })),
     head: {
       ref: overrides.ref ?? 'codex/feature',
@@ -112,6 +115,71 @@ interface WorkflowArtifact {
   expires_at?: string
 }
 
+interface WorkflowJob {
+  name: string
+  conclusion: string | null
+  steps?: { name: string; conclusion: string | null }[]
+}
+
+function evidenceJobs(
+  scope = 'render',
+  mode = 'subset',
+  total = 1,
+  candidates = false,
+): WorkflowJob[] {
+  return [
+    {
+      name: 'precheck',
+      conclusion: 'success',
+      steps: [
+        {
+          name: `Screenshot evidence plan: ${scope} / ${mode} / ${String(total)} shards`,
+          conclusion: 'success',
+        },
+      ],
+    },
+    {
+      name: 'build',
+      conclusion: total > 0 ? 'success' : 'skipped',
+      steps: [
+        'Build browser reference app',
+        'Render browser reference screenshots',
+        'Render isolated browser motion screenshots',
+        'Collect changed browser reference screenshots',
+        'Upload rendered browser screenshots',
+      ].map((name) => ({ name, conclusion: 'success' })),
+    },
+    ...Array.from({ length: total }, (_, i) => ({
+      name: `e2e (${String(i + 1)})`,
+      conclusion: 'success',
+      steps: [
+        {
+          name: `e2e shard ${String(i + 1)}/${String(total)} (oracle-gated, retry on flaky session startup)`,
+          conclusion: 'success',
+        },
+        { name: 'Collect changed reference screenshots', conclusion: 'success' },
+        { name: 'Upload rendered screenshot shard', conclusion: 'success' },
+      ],
+    })),
+    {
+      name: 'screenshot-artifacts',
+      conclusion: total > 0 ? 'success' : 'skipped',
+      steps: [
+        ...[
+          'Download rendered screenshot candidates',
+          'Verify complete screenshot producer inputs',
+          'Drop render noise from the candidate set',
+          'Summarize candidate screenshots',
+        ].map((name) => ({ name, conclusion: 'success' })),
+        {
+          name: 'Upload immutable screenshot candidates',
+          conclusion: candidates ? 'success' : 'skipped',
+        },
+      ],
+    },
+  ]
+}
+
 async function discover(
   liveParent = parent(),
   artifacts: WorkflowArtifact[] = [
@@ -125,13 +193,17 @@ async function discover(
   runHeadSha = SHA,
   setFailed: (message: string) => void = assert.fail,
   files: PrFile[] | Error = [],
+  run: { conclusion?: string; jobs?: WorkflowJob[] } = {},
 ): Promise<Map<string, string>> {
   const outputs = new Map<string, string>()
   const listWorkflowRunArtifacts = (): void => {}
   const listFiles = (): void => {}
+  const listJobsForWorkflowRun = (): void => {}
   await execute('Resolve the live parent PR and exact artifact', {
     context,
-    process: { env: { RUN_ID: '99', RUN_HEAD_SHA: runHeadSha } },
+    process: {
+      env: { RUN_ID: '99', RUN_HEAD_SHA: runHeadSha, RUN_CONCLUSION: run.conclusion ?? 'success' },
+    },
     core: {
       ...core,
       setFailed,
@@ -140,9 +212,21 @@ async function discover(
     github: {
       rest: {
         pulls: { get: async () => ({ data: liveParent }), listFiles },
-        actions: { listWorkflowRunArtifacts },
+        actions: { listWorkflowRunArtifacts, listJobsForWorkflowRun },
       },
-      paginate: async (method: unknown) => {
+      paginate: async (method: unknown, params: { run_id?: number; filter?: string }) => {
+        if (method === listJobsForWorkflowRun) {
+          assert.deepEqual([params.run_id, params.filter], [99, 'latest'])
+          return (
+            run.jobs ??
+            evidenceJobs(
+              'render',
+              'subset',
+              1,
+              artifacts.some((artifact) => artifact.name === 'reference-screenshot-candidates-99'),
+            )
+          )
+        }
         if (method === listWorkflowRunArtifacts) return artifacts
         assert.equal(method, listFiles)
         if (files instanceof Error) throw files
@@ -154,6 +238,52 @@ async function discover(
 }
 
 describe('screenshot publication', () => {
+  it('binds zero and nonzero evidence to the actual conditional immutable-upload outcome', async () => {
+    for (const state of ['success', 'failure', 'missing', 'duplicate']) {
+      const jobs = evidenceJobs().map((job) =>
+        job.name === 'screenshot-artifacts'
+          ? {
+              ...job,
+              steps: [
+                ...(job.steps ?? []).filter(
+                  (step) => step.name !== 'Upload immutable screenshot candidates',
+                ),
+                ...(state === 'missing'
+                  ? []
+                  : [
+                      {
+                        name: 'Upload immutable screenshot candidates',
+                        conclusion: state === 'duplicate' ? 'skipped' : state,
+                      },
+                    ]),
+                ...(state === 'duplicate'
+                  ? [{ name: 'Upload immutable screenshot candidates', conclusion: 'skipped' }]
+                  : []),
+              ],
+            }
+          : job,
+      )
+      assert.equal(
+        (await discover(parent(), [], SHA, assert.fail, [], { jobs })).get('eligible'),
+        'false',
+        state,
+      )
+    }
+    const artifact = [{ id: 42, name: 'reference-screenshot-candidates-99', expired: false }]
+    assert.equal(
+      (await discover(parent(), artifact, SHA, assert.fail, [], { jobs: evidenceJobs() })).get(
+        'eligible',
+      ),
+      'false',
+    )
+    assert.equal(
+      (await discover(parent(), [], SHA, assert.fail, [], { jobs: evidenceJobs() })).get(
+        'eligible',
+      ),
+      'true',
+    )
+  })
+
   it('publishes evidence for an ordinary run without any review-PR outputs', async () => {
     const outputs = await discover()
     assert.equal(outputs.get('eligible'), 'true')
@@ -165,6 +295,23 @@ describe('screenshot publication', () => {
       [...outputs.keys()].filter((key) => /review/.test(key)),
       [],
     )
+  })
+
+  it('keeps a complete collection eligible after short-lived raw producer artifacts expire', async () => {
+    for (const candidates of [false, true]) {
+      const artifacts = [
+        { id: 40, name: 'screenshots-shard-1', expired: true },
+        { id: 41, name: 'screenshots-demo', expired: false },
+        ...(candidates
+          ? [{ id: 42, name: 'reference-screenshot-candidates-99', expired: false }]
+          : []),
+      ]
+      const outputs = await discover(parent(), artifacts, SHA, assert.fail, [], {
+        jobs: evidenceJobs('render', 'subset', 1, candidates),
+      })
+      assert.equal(outputs.get('eligible'), 'true')
+      assert.equal(outputs.get('has-artifact'), String(candidates))
+    }
   })
 
   it('names the reference PNGs and e2e specs the PR changes for the preview order', async () => {
@@ -215,15 +362,229 @@ describe('screenshot publication', () => {
     }
   })
 
-  it('publishes nothing without an unexpired artifact', async () => {
+  it('allows no artifact only after complete coverage, never when candidate evidence expired', async () => {
     for (const artifacts of [
       [],
       [{ id: 42, name: 'reference-screenshot-candidates-99', expired: true }],
     ]) {
       const outputs = await discover(parent({ labels: ['update-screenshots'] }), artifacts)
-      assert.equal(outputs.get('eligible'), 'true')
+      assert.equal(outputs.get('eligible'), artifacts.length === 0 ? 'true' : 'false')
       assert.equal(outputs.get('has-artifact'), 'false')
     }
+  })
+
+  it('does not equate a green draft run that skipped rendering with complete screenshot evidence', async () => {
+    const outputs = await discover(parent(), [], SHA, assert.fail, [], {
+      jobs: [
+        { name: 'precheck', conclusion: 'success' },
+        { name: 'build', conclusion: 'skipped' },
+        { name: 'e2e', conclusion: 'skipped' },
+        { name: 'screenshot-artifacts', conclusion: 'skipped' },
+      ],
+    })
+    assert.equal(outputs.get('eligible'), 'false')
+    assert.equal(outputs.has('gate-sha'), false)
+  })
+
+  it('requires every successful eligible shard and the collection job for full or subset coverage', async () => {
+    for (const [mode, total] of [
+      ['full', 9],
+      ['subset', 3],
+    ] satisfies [string, number][]) {
+      const complete = evidenceJobs('render', mode, total)
+      const outputs = await discover(parent(), [], SHA, assert.fail, [], { jobs: complete })
+      assert.equal(outputs.get('screenshot-evidence'), 'render')
+      assert.equal(outputs.get('gate-sha'), SHA)
+      for (const jobs of [
+        complete.filter((job) => job.name !== 'e2e (1)'),
+        complete.filter((job) => job.name !== 'screenshot-artifacts'),
+        complete.map((job) => (job.name === 'precheck' ? { ...job, steps: [] } : job)),
+        complete.map((job) => (job.name === 'e2e (1)' ? { ...job, conclusion: 'skipped' } : job)),
+        complete.map((job) =>
+          job.name === 'e2e (1)'
+            ? {
+                ...job,
+                steps: (job.steps ?? []).map((step) => ({ ...step, conclusion: 'failure' })),
+              }
+            : job,
+        ),
+        complete.map((job) =>
+          job.name === 'screenshot-artifacts' ? { ...job, conclusion: 'failure' } : job,
+        ),
+        [...complete, complete[2] ?? assert.fail('missing shard')],
+      ]) {
+        const missing = await discover(parent(), [], SHA, assert.fail, [], { jobs })
+        assert.equal(missing.get('eligible'), 'false')
+        assert.equal(missing.has('gate-sha'), false)
+      }
+    }
+  })
+
+  it('does not conflate an unproven or suppressed skip with an oracle no-eligible plan', async () => {
+    for (const jobs of [
+      evidenceJobs('render', 'skip', 0),
+      evidenceJobs('draft', 'skip', 0),
+      evidenceJobs('cosmetic', 'skip', 0),
+      evidenceJobs('no-eligible', 'full', 0),
+      evidenceJobs('render', 'full', 0),
+      evidenceJobs('render', 'full', 1),
+      [{ name: 'precheck', conclusion: 'success' }],
+    ]) {
+      const outputs = await discover(parent(), [], SHA, assert.fail, [], { jobs })
+      assert.equal(outputs.get('eligible'), 'false')
+    }
+    const proven = await discover(parent(), [], SHA, assert.fail, [], {
+      jobs: evidenceJobs('no-eligible', 'skip', 0),
+    })
+    assert.equal(proven.get('screenshot-evidence'), 'no-eligible')
+    assert.equal(proven.get('gate-sha'), SHA)
+  })
+
+  it('rejects nominal collector success with missing, skipped, failed or duplicated required collection steps', async () => {
+    const required = [
+      'Download rendered screenshot candidates',
+      'Verify complete screenshot producer inputs',
+      'Drop render noise from the candidate set',
+      'Summarize candidate screenshots',
+    ]
+    for (const name of required) {
+      for (const state of ['missing', 'skipped', 'failure', 'duplicate']) {
+        const jobs = evidenceJobs().map((job) => {
+          if (job.name !== 'screenshot-artifacts') return job
+          const steps = (job.steps ?? []).filter((step) => step.name !== name)
+          if (state !== 'missing')
+            steps.push({ name, conclusion: state === 'duplicate' ? 'success' : state })
+          if (state === 'duplicate') steps.push({ name, conclusion: 'skipped' })
+          return { ...job, steps }
+        })
+        const artifacts = [
+          { id: 40, name: 'screenshots-shard-1', expired: true },
+          { id: 41, name: 'screenshots-demo', expired: false },
+        ]
+        const outputs = await discover(parent(), artifacts, SHA, assert.fail, [], { jobs })
+        assert.equal(outputs.get('eligible'), 'false', `${name}/${state}`)
+        assert.equal(outputs.has('gate-sha'), false)
+        // The real workflow skips its gate without gate-sha. Even if invoked,
+        // its missing evidence must not convert a skipped upload into zero.
+        const result = await gate({
+          CANDIDATE_COUNT: '0',
+          SCREENSHOT_EVIDENCE: outputs.get('screenshot-evidence') ?? '',
+        })
+        assert.equal(result.writes[0]?.state, 'pending', `${name}/${state}`)
+      }
+    }
+  })
+
+  it('rejects missing shard collection and ambiguous precheck or plan metadata before granting coverage', async () => {
+    const complete = evidenceJobs()
+    for (const jobs of [
+      complete.map((job) =>
+        job.name === 'e2e (1)'
+          ? {
+              ...job,
+              steps: (job.steps ?? []).map((step) =>
+                step.name === 'Collect changed reference screenshots'
+                  ? { ...step, conclusion: 'skipped' }
+                  : step,
+              ),
+            }
+          : job,
+      ),
+      [...complete, { name: 'precheck', conclusion: 'failure' }],
+      complete.map((job) =>
+        job.name === 'precheck'
+          ? {
+              ...job,
+              steps: [
+                ...(job.steps ?? []),
+                {
+                  name: 'Screenshot evidence plan: render / subset / 1 shards',
+                  conclusion: 'failure',
+                },
+              ],
+            }
+          : job,
+      ),
+    ]) {
+      const outputs = await discover(parent(), [], SHA, assert.fail, [], { jobs })
+      assert.equal(outputs.get('eligible'), 'false')
+      assert.equal(outputs.has('gate-sha'), false)
+    }
+  })
+
+  it('requires actual shard transport and every browser screenshot producer step before interpreting zero candidates', async () => {
+    for (const [jobName, name] of [
+      ['e2e (1)', 'Upload rendered screenshot shard'],
+      ...[
+        'Build browser reference app',
+        'Render browser reference screenshots',
+        'Render isolated browser motion screenshots',
+        'Collect changed browser reference screenshots',
+        'Upload rendered browser screenshots',
+      ].map((name) => ['build', name]),
+    ]) {
+      for (const state of ['missing', 'skipped', 'duplicate']) {
+        const jobs = evidenceJobs().map((job) => {
+          if (job.name !== jobName) return job
+          const steps = (job.steps ?? []).filter((step) => step.name !== name)
+          if (state !== 'missing')
+            steps.push({ name: name ?? '', conclusion: state === 'duplicate' ? 'success' : state })
+          if (state === 'duplicate') steps.push({ name: name ?? '', conclusion: 'success' })
+          return { ...job, steps }
+        })
+        const outputs = await discover(parent(), [], SHA, assert.fail, [], { jobs })
+        assert.equal(outputs.get('eligible'), 'false', `${jobName ?? ''}/${name ?? ''}/${state}`)
+      }
+    }
+  })
+
+  it('keeps the ready reset pending when an older same-head skipped completion arrives afterward', async () => {
+    const statuses: StatusWrite[] = []
+    const pushWorkflow = z
+      .object({ jobs: z.object({ retire: z.object({ steps: stepsSchema }) }) })
+      .parse(load(readFileSync('.github/workflows/screenshot-review-push.yml', 'utf8')))
+    const readyScript = pushWorkflow.jobs.retire.steps.find(
+      (candidate) => candidate.name === "Retire the previous head's screenshot evidence",
+    )?.with?.['script']
+    const listComments = (): void => {}
+    await runScript(readyScript, {
+      context,
+      core: { ...core, info: () => {} },
+      process: { env: { PR_NUMBER: '123', HEAD_SHA: SHA, EVENT_ACTION: 'ready_for_review' } },
+      github: {
+        rest: {
+          pulls: { get: async () => ({ data: parent() }) },
+          repos: {
+            listCommitStatusesForRef: async () => ({
+              data: [
+                {
+                  context: 'Screenshot review',
+                  state: 'success',
+                  description: 'No changed reference screenshots',
+                  creator: { login: 'github-actions[bot]', id: 41898282 },
+                  target_url: 'https://github.com/copse-dev/agent-pane/pull/123',
+                },
+              ],
+            }),
+            createCommitStatus: async (status: StatusWrite) => {
+              statuses.push(status)
+            },
+          },
+          issues: { listComments },
+        },
+        paginate: async () => [],
+      },
+    })
+    assert.equal(statuses[0]?.state, 'pending')
+    const outputs = await discover(parent(), [], SHA, assert.fail, [], {
+      jobs: evidenceJobs('render', 'full', 9).map((job) =>
+        job.name === 'precheck' ? job : { ...job, conclusion: 'skipped', steps: [] },
+      ),
+    })
+    const gateStep = steps.find((candidate) => candidate.id === 'gate')
+    assert.match(gateStep?.if ?? '', /discover.outputs.gate-sha != ''/)
+    assert.equal(outputs.has('gate-sha'), false, 'the old completion cannot reach a success writer')
+    assert.equal(statuses.at(-1)?.state, 'pending')
   })
 
   it('leaves expiry unset when the artifact metadata does not provide it', async () => {
@@ -268,6 +629,87 @@ describe('screenshot publication', () => {
         false,
         JSON.stringify(overrides),
       )
+    }
+  })
+
+  it('publishes a red run that rendered its screenshots like a green one', async () => {
+    // `screenshot-artifacts` needs only precheck, build and e2e; a lint or unit failure
+    // must not leave the head without evidence.
+    for (const conclusion of ['failure', 'timed_out']) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+        conclusion,
+        jobs: [
+          { name: 'check', conclusion: 'failure' },
+          ...evidenceJobs('render', 'subset', 1, true),
+        ],
+      })
+      assert.deepEqual(outputs, await discover())
+    }
+  })
+
+  it('reports a red run that rendered nothing without publishing evidence or a gate', async () => {
+    for (const jobs of [
+      [],
+      [{ name: 'screenshot-artifacts', conclusion: 'skipped' }],
+      [{ name: 'screenshot-artifacts', conclusion: 'failure' }],
+      [{ name: 'screenshot-artifacts', conclusion: null }],
+      [{ name: 'e2e (1)', conclusion: 'success' }],
+    ]) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+        conclusion: 'failure',
+        jobs,
+      })
+      assert.equal(outputs.get('not-rendered'), 'e2e', JSON.stringify(jobs))
+      assert.equal(outputs.get('parent-number'), '123')
+      assert.equal(outputs.get('head-sha'), SHA)
+      assert.equal(outputs.get('eligible'), 'false')
+      assert.equal(outputs.get('has-artifact'), 'false')
+      assert.equal(outputs.has('gate-sha'), false)
+    }
+  })
+
+  it('publishes stacked PRs only from a green run, reporting the tip', async () => {
+    const run = {
+      conclusion: 'failure',
+      jobs: [{ name: 'screenshot-artifacts', conclusion: 'success' }],
+    }
+    const lower = await discover(
+      parent({ body: `<!-- copse-screenshot-stack: #123@${SHA} tip=#124 -->` }),
+      undefined,
+      SHA,
+      assert.fail,
+      [],
+      run,
+    )
+    assert.equal(lower.has('not-rendered'), false)
+    assert.equal(lower.get('eligible'), 'false')
+    assert.equal(lower.has('gate-sha'), false)
+    const tip = await discover(
+      parent({ body: `<!-- copse-screenshot-stack: #122@${SHA} tip=#123 -->` }),
+      undefined,
+      SHA,
+      assert.fail,
+      [],
+      run,
+    )
+    assert.equal(tip.get('not-rendered'), 'stack')
+    assert.equal(tip.get('eligible'), 'false')
+    assert.equal(tip.has('stack-artifact-id'), false)
+    assert.equal(tip.has('gate-sha'), false)
+  })
+
+  it('passes integration heads, and reports anything, only for a live parent', async () => {
+    const red = { conclusion: 'failure', jobs: [] }
+    for (const overrides of [
+      { ref: 'main' },
+      { ref: 'release' },
+      { sha: 'new-tip' },
+      { state: 'closed' },
+      { repo: 'fork/agent-pane' },
+    ]) {
+      const outputs = await discover(parent(overrides), undefined, SHA, assert.fail, [], red)
+      assert.equal(outputs.has('gate-sha'), false, JSON.stringify(overrides))
+      assert.equal(outputs.has('not-rendered'), false, JSON.stringify(overrides))
     }
   })
 
@@ -334,6 +776,7 @@ interface StatusWrite {
   state: string
   context: string
   description: string
+  target_url?: string
 }
 
 async function gate(
@@ -364,7 +807,16 @@ async function gate(
       info: () => {},
       setOutput: (key: string, value: string) => outputs.set(key, value),
     },
-    process: { env: { PARENT_NUMBER: '123', GATE_SHA: SHA, CANDIDATE_COUNT: '2', ...env } },
+    process: {
+      env: {
+        PARENT_NUMBER: '123',
+        GATE_SHA: SHA,
+        CANDIDATE_COUNT: '2',
+        SCREENSHOT_EVIDENCE: 'render',
+        RUN_ID: '99',
+        ...env,
+      },
+    },
     github: {
       rest: {
         repos: {
@@ -527,6 +979,40 @@ describe('blocking screenshot review gate', () => {
       'success',
       'Integration branch: screenshots were reviewed on the source PRs',
     ])
+  })
+
+  it('passes a proven no-eligible plan without E2E and pins automatic zero results to the source run', async () => {
+    const result = await gate({ CANDIDATE_COUNT: '0', SCREENSHOT_EVIDENCE: 'no-eligible' })
+    assert.deepEqual(statusOf(result.writes[0]), [
+      'success',
+      'No eligible reference screenshot specs (oracle plan)',
+    ])
+    for (const evidence of ['render', 'no-eligible']) {
+      const current = await gate({ CANDIDATE_COUNT: '0', SCREENSHOT_EVIDENCE: evidence })
+      assert.equal(
+        current.writes[0]?.target_url,
+        'https://github.com/copse-dev/agent-pane/actions/runs/99',
+      )
+    }
+  })
+
+  it('never treats missing evidence or an unreviewed reference-only follow-up as zero-candidate approval', async () => {
+    for (const evidence of ['', 'reference-followup']) {
+      const result = await gate({ CANDIDATE_COUNT: '0', SCREENSHOT_EVIDENCE: evidence })
+      assert.equal(result.writes[0]?.state, 'pending')
+    }
+    const reviewed = await gate(
+      { CANDIDATE_COUNT: '0', SCREENSHOT_EVIDENCE: 'reference-followup' },
+      [
+        {
+          context: 'Screenshot review',
+          state: 'success',
+          description: 'Accepted by @reviewer; screenshot-only follow-up of abc123abc123',
+        },
+      ],
+    )
+    assert.deepEqual(reviewed.writes, [])
+    assert.match(reviewed.outputs.get('decision') ?? '', /^Accepted by @reviewer/)
   })
 
   it('keeps a decision already recorded for this head when CI re-runs on it', async () => {
@@ -1285,6 +1771,176 @@ describe('parent screenshot evidence comment', () => {
     assert.deepEqual((await publish({ ARTIFACT_ID: '' })).bodies, [])
     const { bodies } = await publish({ ARTIFACT_ID: '' }, parent(), true)
     assert.match(bodies[0] ?? '', /no filtered screenshot candidates/)
+  })
+})
+
+async function report(
+  scenario: {
+    reason?: string
+    statuses?: { context: string; state: string }[]
+    comments?: { id: number; user: { type: string }; body: string }[]
+    parent?: Parent
+    removeLabel?: Error
+  } = {},
+): Promise<{ bodies: string[]; removed: string[] }> {
+  const bodies: string[] = []
+  const removed: string[] = []
+  const listComments = (): void => {}
+  await execute('Report a run that rendered no screenshots', {
+    context,
+    core: { ...core, info: () => {} },
+    process: {
+      env: {
+        PARENT_NUMBER: '123',
+        EXPECTED_HEAD_SHA: SHA,
+        REASON: scenario.reason ?? 'e2e',
+        RUN_ID: '99',
+        RUN_URL: 'https://github.com/copse-dev/agent-pane/actions/runs/99',
+      },
+    },
+    github: {
+      rest: {
+        repos: {
+          listCommitStatusesForRef: async ({ ref }: { ref: string }) => {
+            assert.equal(ref, SHA)
+            return { data: scenario.statuses ?? [] }
+          },
+          // Reporting never writes a status: the head must keep reading as waiting.
+          createCommitStatus: assert.fail,
+        },
+        pulls: {
+          get: async () => ({
+            data: scenario.parent ?? parent({ labels: ['screenshots-need-review'] }),
+          }),
+        },
+        issues: {
+          listComments,
+          createComment: assert.fail,
+          updateComment: async ({ comment_id, body }: { comment_id: number; body: string }) => {
+            assert.equal(comment_id, 7)
+            bodies.push(body)
+          },
+          removeLabel: async ({ name }: { name: string }) => {
+            if (scenario.removeLabel) throw scenario.removeLabel
+            removed.push(name)
+          },
+        },
+      },
+      paginate: async (method: unknown) => {
+        assert.equal(method, listComments)
+        return (
+          scenario.comments ?? [
+            {
+              id: 7,
+              user: { type: 'Bot' },
+              body: '<!-- copse-e2e-screenshot-review -->\n**Waiting for CI on `abc123abc123`.**',
+            },
+          ]
+        )
+      },
+    },
+  })
+  return { bodies, removed }
+}
+
+describe('reporting a run that rendered no screenshots', () => {
+  it('replaces the waiting notice with what happened, keeping the comment markers', async () => {
+    const { bodies, removed } = await report()
+    assert.equal(bodies.length, 1)
+    const body = bodies[0] ?? ''
+    assert.ok(body.startsWith('<!-- copse-e2e-screenshot-review -->\n### Screenshot evidence\n'))
+    assert.match(
+      body,
+      /<!-- copse-screenshot-review-state -->\n\*\*No screenshots for `abc123abc123`\.\*\* \[CI run 99\]\(https:\/\/github\.com\/copse-dev\/agent-pane\/actions\/runs\/99\) has no complete screenshot evidence: the run did not establish complete eligible screenshot coverage/,
+    )
+    assert.match(body, /<!-- \/copse-screenshot-review-state -->$/)
+    assert.doesNotMatch(body, /- \[ \]|cherry-pick/)
+    assert.deepEqual(removed, ['screenshots-need-review'])
+  })
+
+  it('names the green-run rule for a stack tip', async () => {
+    const { bodies } = await report({ reason: 'stack' })
+    assert.match(
+      bodies[0] ?? '',
+      /a declared stack tip publishes its combined screenshots only from a green run/,
+    )
+  })
+
+  it('keeps evidence or a decision an earlier run recorded for this head', async () => {
+    for (const state of ['pending', 'success']) {
+      const { bodies, removed } = await report({
+        statuses: [
+          { context: 'CLA', state: 'success' },
+          { context: 'Screenshot review', state },
+        ],
+      })
+      assert.deepEqual(bodies, [], state)
+      assert.deepEqual(removed, [])
+    }
+  })
+
+  it('reports over a failed publication, which recorded no evidence', async () => {
+    // Newest first: the fail-closed `error` replaced an older pending review.
+    const { bodies } = await report({
+      statuses: [
+        { context: 'Screenshot review', state: 'error' },
+        { context: 'Screenshot review', state: 'pending' },
+      ],
+    })
+    assert.equal(bodies.length, 1)
+    assert.match(bodies[0] ?? '', /\*\*No screenshots for `abc123abc123`\.\*\*/)
+  })
+
+  it('opens no comment, and leaves a moved or closed parent to a later run', async () => {
+    assert.deepEqual((await report({ comments: [] })).bodies, [])
+    for (const moved of [parent({ sha: 'new-tip' }), parent({ state: 'closed' })]) {
+      const { bodies, removed } = await report({ parent: moved })
+      assert.deepEqual(bodies, [])
+      assert.deepEqual(removed, [])
+    }
+  })
+
+  it('tolerates a reminder that is already gone', async () => {
+    const { bodies } = await report({
+      removeLabel: Object.assign(new Error('gone'), { status: 404 }),
+    })
+    assert.equal(bodies.length, 1)
+    await assert.rejects(report({ removeLabel: Object.assign(new Error('boom'), { status: 500 }) }))
+  })
+
+  it('runs only when discovery found nothing rendered, and binds the run link to the event', () => {
+    const step = steps.find(
+      (candidate) => candidate.name === 'Report a run that rendered no screenshots',
+    )
+    assert.equal(step?.if, "steps.discover.outputs.not-rendered != ''")
+    assert.equal(step.env?.['RUN_URL'], '${{ github.event.workflow_run.html_url }}')
+    assert.equal(step.env['REASON'], '${{ steps.discover.outputs.not-rendered }}')
+    const discover = steps.find((candidate) => candidate.id === 'discover')
+    assert.equal(discover?.env?.['RUN_CONCLUSION'], '${{ github.event.workflow_run.conclusion }}')
+  })
+
+  it('keys rendering on the CI job that uploads the candidates', () => {
+    // Discovery looks this job up by name; renaming it would silently report
+    // every red run as unrendered.
+    const ci = z
+      .object({
+        jobs: z.record(
+          z.string(),
+          z.object({
+            name: z.string().optional(),
+            needs: z.union([z.string(), z.array(z.string())]).optional(),
+          }),
+        ),
+      })
+      .parse(load(readFileSync('.github/workflows/ci.yml', 'utf8')))
+    const job = ci.jobs['screenshot-artifacts']
+    assert.ok(job)
+    assert.equal(job.name, undefined)
+    assert.deepEqual(job.needs, ['precheck', 'build', 'e2e'])
+    assert.match(
+      readFileSync('.github/workflows/ci.yml', 'utf8'),
+      /name: reference-screenshot-candidates-\$\{\{ github\.run_id \}\}/,
+    )
   })
 })
 

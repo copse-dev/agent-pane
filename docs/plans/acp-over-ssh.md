@@ -140,6 +140,24 @@ remaining supply-chain controls. The install fails closed where no approver is
 wired (inside ACP workers). Other agents fail with the catalog's own install
 line to run on the host.
 
+**First-run experience** — one-time host setup is named as such, and its
+progress is visible. The forwarding and install prompts each say they are
+one-time setup for that agent/host (the install is naturally once: later
+turns find the binary). While the agent is being reached, the transport
+reports each stage — connecting, finding the agent, installing (marked
+"one-time setup"), starting — through `acp-remote-setup-progress.ts`, a
+dependency-free async-context seam like the install approver; the turn turns
+them into `agent_setup_progress` chunks that drive the activity row in place
+of "Reasoning…", then hands the row back once the session is acquired. They
+are status only and never enter the transcript or the turn's progress check.
+
+With the Shells pane open, Copse used to open a shell for each new thread (and
+for a worktree hand-off) on its own; on an SSH project that dropped the
+mandatory "Open remote terminal?" prompt into the middle of this setup. Shells
+Copse opens on its own for an SSH project now wait for a click or keypress
+(`src/renderer/terminal/remote-connect.ts`), and only then spawn behind the
+same, still unremembered, approval.
+
 **Gating (the one toggle)** — `acpOverSshEnabled`, in Settings → SSH,
 default **off**. It is only meaningful when `sshWorkspaceEnabled` is also on
 (you cannot remote an ACP agent without an SSH workspace). When **off** on an

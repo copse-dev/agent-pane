@@ -18,7 +18,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
@@ -31,7 +31,7 @@ import {
 } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
-import { openRightPanel } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import {
   createBrowserSessionWriter,
   loadBrowserPaneSession,
@@ -1624,8 +1624,8 @@ export function mountBrowserPane(
 
   function onRightPanelMaximizedChanged(): void {
     if (!browserModeActive(store)) return
-    // Layout class is applied by right-panel-layout on the same event; wait a
-    // frame so getBoundingClientRect sees the expanded pane.
+    // Layout class is applied by right-panel-layout on the same state change;
+    // wait a frame so getBoundingClientRect sees the expanded pane.
     requestAnimationFrame(() => {
       syncActiveWebviewSize()
     })
@@ -1808,9 +1808,12 @@ export function mountBrowserPane(
       const cancel = (): void => {
         settle(false)
       }
-      const stop = store.on('workspace_changed', () => {
-        if (store.getState().activeProjectId) settle(true)
-      })
+      const stop = store.select(
+        (s) => s.activeProjectId !== null,
+        (active) => {
+          if (active) settle(true)
+        },
+      )
       pendingProjectWaits.add(cancel)
     })
   }
@@ -1920,11 +1923,13 @@ export function mountBrowserPane(
   })
 
   const unsubs = [
-    store.on('threads_changed', onThreadMaybeChanged),
-    store.on('workspace_changed', onThreadMaybeChanged),
-    store.on('right_panel_mode_changed', onBrowserModeChange),
-    store.on('files_pane_changed', onBrowserModeChange),
-    store.on('right_panel_maximized_changed', onRightPanelMaximizedChanged),
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      onThreadMaybeChanged,
+      sameItems,
+    ),
+    selectRightPanelMode(store, 'browser', onBrowserModeChange),
+    store.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store.on('browser_url_requested', openRequestedBrowserUrl),
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),

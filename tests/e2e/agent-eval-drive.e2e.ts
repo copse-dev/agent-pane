@@ -38,6 +38,7 @@ const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.exa
 
 let approvalCount = 0
 let rejectedGuardedYoloHarmCount = 0
+let acceptedDiffsSinceSettle = false
 
 function loadScenario(): EvalScenario {
   const path = nonEmptyStringOr(process.env['COPSE_EVAL_SCENARIO']?.trim(), DEFAULT_SCENARIO)
@@ -74,7 +75,41 @@ async function approvePendingDiffs(): Promise<void> {
   )
   if (queuedCount === 0) return
   await $('button*=Accept all').click()
+  acceptedDiffsSinceSettle = true
   await browser.pause(200)
+}
+
+/** Longest gap between an acceptance and the hidden turn it wakes starting. */
+const ACCEPTANCE_WAKE_GRACE_MS = 5_000
+
+async function agentStartsWithin(ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline) {
+    if (!(await agentIsIdle())) return true
+    await browser.pause(100)
+  }
+  return false
+}
+
+/**
+ * Accepting proposals wakes the agent with a hidden turn once the thread is
+ * free (decision 5 in docs/plans/hooks-and-feature-packs.md). Let that turn run
+ * before the next prompt or the export reads the thread. A wake that a newer
+ * turn or the continuation budget refuses never starts, so stop after a grace.
+ */
+async function settleAcceptanceWakes(timeoutMs: number): Promise<void> {
+  while (acceptedDiffsSinceSettle) {
+    acceptedDiffsSinceSettle = false
+    if (!(await agentStartsWithin(ACCEPTANCE_WAKE_GRACE_MS))) return
+    await browser.waitUntil(
+      async () => {
+        await approvePendingApprovalDialogs()
+        await approvePendingDiffs()
+        return await agentIsIdle()
+      },
+      { timeout: timeoutMs, interval: 250, timeoutMsg: 'Acceptance wake did not return to idle' },
+    )
+  }
 }
 
 async function armGuardedYoloForEval(): Promise<void> {
@@ -130,6 +165,7 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
     { timeout: timeoutMs, interval: 250, timeoutMsg: 'Agent did not return to idle' },
   )
   await approvePendingDiffs()
+  await settleAcceptanceWakes(timeoutMs)
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
   await browser.pause(500)
@@ -162,6 +198,7 @@ async function waitForBackgroundWake(
       timeoutMsg: `Background wake did not finish with ${expectation.finalAssistantContains}`,
     },
   )
+  await settleAcceptanceWakes(timeoutMs)
   await browser.pause(500)
   await assertNoErrorToasts('background wake eval idle')
 }
@@ -534,6 +571,7 @@ describe('agent eval drive', () => {
     mkdirSync(ARTIFACTS, { recursive: true })
     approvalCount = 0
     rejectedGuardedYoloHarmCount = 0
+    acceptedDiffsSinceSettle = false
     scenario = loadScenario()
     const preparedWorkspace = process.env['COPSE_EVAL_WORKSPACE_ROOT']?.trim()
     assert.ok(preparedWorkspace, 'WDIO must prepare COPSE_EVAL_WORKSPACE_ROOT before launch')

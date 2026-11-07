@@ -131,10 +131,12 @@ describe('screenshot review packets', () => {
           html_url: 'https://github.com/owner/repo/actions/runs/123',
         }
         const metadata = join(bin, 'run.json')
+        const jobs = join(bin, 'jobs.json')
         writeFileSync(metadata, JSON.stringify(run))
+        writeFileSync(jobs, JSON.stringify({ jobs: [] }))
         writeFileSync(
           join(bin, 'gh'),
-          `#!/usr/bin/env node\nconst fs = require('node:fs'); const p = process.argv.at(-1); process.stdout.write(p.includes('/pulls/') ? ${JSON.stringify(JSON.stringify(pull))} : fs.readFileSync(${JSON.stringify(metadata)}, 'utf8'));\n`,
+          `#!/usr/bin/env node\nconst fs = require('node:fs'); const p = process.argv.at(-1); process.stdout.write(p.includes('/pulls/') ? ${JSON.stringify(JSON.stringify(pull))} : fs.readFileSync(p.includes('/jobs?filter=latest') ? ${JSON.stringify(jobs)} : ${JSON.stringify(metadata)}, 'utf8'));\n`,
           { mode: 0o755 },
         )
         process.env['PATH'] = `${bin}:${oldPath ?? ''}`
@@ -152,6 +154,26 @@ describe('screenshot review packets', () => {
         writeFileSync(metadata, JSON.stringify({ ...run, head_sha: f.evidence.base }))
         assert.throws(() => discoverReview(f.cwd, 'owner/repo', 42, '123'), /current-head CI/)
         writeFileSync(metadata, JSON.stringify({ ...run, path: '.github/workflows/untrusted.yml' }))
+        assert.throws(() => discoverReview(f.cwd, 'owner/repo', 42, '123'), /current-head CI/)
+        // A red run counts only when its candidate job rendered the screenshots.
+        writeFileSync(metadata, JSON.stringify({ ...run, conclusion: 'failure' }))
+        assert.throws(() => discoverReview(f.cwd, 'owner/repo', 42, '123'), /current-head CI/)
+        writeFileSync(
+          jobs,
+          JSON.stringify({ jobs: [{ name: 'screenshot-artifacts', conclusion: 'skipped' }] }),
+        )
+        assert.throws(() => discoverReview(f.cwd, 'owner/repo', 42, '123'), /current-head CI/)
+        writeFileSync(
+          jobs,
+          JSON.stringify({
+            jobs: [
+              { name: 'check', conclusion: 'failure' },
+              { name: 'screenshot-artifacts', conclusion: 'success' },
+            ],
+          }),
+        )
+        assert.equal(discoverReview(f.cwd, 'owner/repo', 42, '123').compare, f.evidence.compare)
+        writeFileSync(metadata, JSON.stringify({ ...run, conclusion: 'cancelled' }))
         assert.throws(() => discoverReview(f.cwd, 'owner/repo', 42, '123'), /current-head CI/)
       } finally {
         if (oldPath === undefined) delete process.env['PATH']

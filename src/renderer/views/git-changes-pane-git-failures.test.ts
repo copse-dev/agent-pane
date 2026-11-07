@@ -99,6 +99,12 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+/** Take the Changes pane off screen and back, which refreshes it. */
+function reopenChanges(store: AppStore): void {
+  store.setState({ rightPanelMode: 'explorer' })
+  store.setState({ rightPanelMode: 'changes' })
+}
+
 function emptyMessage(listRoot: HTMLElement): string | null {
   return listRoot.querySelector<HTMLElement>('.git-changes-empty')?.textContent ?? null
 }
@@ -125,10 +131,9 @@ describe('git changes pane survives failing git IPC reads (#1880)', () => {
     await Promise.resolve()
     assert.equal(emptyMessage(listRoot), 'Not a git repository')
 
-    // The next refresh arrives with the pane's event-driven path (the same one
-    // fs/working-tree changes use); the debounced timer only re-probes while
-    // events keep coming.
-    store.emit('right_panel_mode_changed')
+    // The next refresh arrives when the pane comes back on screen; the debounced
+    // timer only re-probes while fs/working-tree events keep coming.
+    reopenChanges(store)
     // The refresh chain awaits four IPC calls; flush with a macrotask rather
     // than counting microtask ticks.
     await new Promise<void>((resolve) => setTimeout(resolve, 20))
@@ -150,15 +155,15 @@ describe('git changes pane survives failing git IPC reads (#1880)', () => {
 
     try {
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
-      store.emit('right_panel_mode_changed')
+      reopenChanges(store)
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
       assert.equal(warnings.length, 1)
 
-      store.emit('right_panel_mode_changed')
+      reopenChanges(store)
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
       assert.equal(emptyMessage(document.body), 'No changes')
 
-      store.emit('right_panel_mode_changed')
+      reopenChanges(store)
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
       assert.equal(warnings.length, 2)
     } finally {

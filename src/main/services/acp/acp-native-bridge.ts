@@ -1,3 +1,9 @@
+import {
+  createSkillActivationTurn,
+  runWithSkillActivationTurn,
+  type SkillActivationTurn,
+} from '../skills/skill-activation.ts'
+import { runWithIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -35,12 +41,18 @@ import {
 } from '../thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { ACP_WRITE_ACCESS_HANDOFF_NOTE } from './acp-write-access.ts'
-import { unwrapInlineCode } from './session-update-adapter.ts'
-
-import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
 import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
+import { RUN_SHELL_MAX_TIMEOUT_MS } from '../../tools/shell-tool.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
+import { runWithShellRunObserver } from '../exec/shell-output-context.ts'
+import type { AcpTerminalCommandRunner } from './acp-terminals.ts'
+
+/** The registry tool every ACP client terminal command re-enters. */
+const TERMINAL_TOOL = 'run_shell'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -60,10 +72,10 @@ export { BRIDGE_MCP_SERVER_NAME }
  * context-free workspace tools so ACP and native model runs share the same
  * schemas, permission policy, sandbox escape flow, diff queue, and Git/GitHub
  * implementations. Orchestration tools that depend on native-loop context
- * (ask_user, explore subagents, todos, memories, etc.) stay private. The one
- * context-dependent exception is `advisor`: agent-service scopes an advisor
- * context to the whole ACP turn (Copse's view of the transcript), so an
- * external executor can consult the advisor exactly like a native run.
+ * (ask_user, explore subagents, todos, memories, etc.) stay private. The
+ * context-dependent exceptions have explicit per-turn bindings: `advisor`
+ * receives Copse's transcript, and `read_skill` receives an independent bounded
+ * activation allowance. Neither inherits a parent run's AsyncLocalStorage state.
  * Requests must carry the per-session bearer token; the server binds 127.0.0.1
  * on an ephemeral port and lives only for the pooled ACP session.
  */
@@ -77,6 +89,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Workspace reads, searches, and diff-queued edits. Offering these lets an
   // ACP agent opt into the exact same path validation and edit approval model
   // as a native run instead of relying on adapter-specific implementations.
+  'read_skill',
   'read_file',
   'write_file',
   'str_replace',
@@ -114,6 +127,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
   'launch_gui_app',
+  // A desktop grant is thread-owned; its lifetime is bound to the ACP turn below.
+  'isolated_copse',
   // GitHub / CI — run with Copse's gh auth and network access.
   'gh_pr_list',
   'gh_pr_view',
@@ -132,6 +147,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  'git_push',
+  'gh_pr_merge',
+  'gh_pr_comment',
+  'gh_pr_resolve_review_thread',
   // Reading an attached/workspace recording as stills. Frames come back as MCP
   // image content (see `toMcpContent`), so a bridged agent sees the same
   // pictures a native run does rather than a manifest describing images it
@@ -172,6 +191,15 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
   // Only promotes an already-open page or this thread's rendered artefact.
   'browser_show',
+  // Computer use (`copse.computer-use`). Registered only while the plugin is
+  // enabled; every call re-enters the per-app permission gate.
+  'desktop_apps',
+  'desktop_snapshot',
+  'desktop_screenshot',
+  'desktop_click',
+  'desktop_type',
+  'desktop_key',
+  'desktop_menu',
 ]
 
 /**
@@ -229,37 +257,14 @@ function releaseMediatedMcpTools(names: readonly string[]): void {
 }
 
 /**
- * Best-effort check that an ACP permission request describes one of Copse's own
- * bridged native tools, so the client can auto-approve it instead of showing a
- * prompt that only duplicates the bridge's own gate.
- *
- * The signal is the tool-call *title* the external agent sends. ACP does not
- * specify the title's contents, so this recognises only the shape we have
- * observed — the bridge's server name (`BRIDGE_MCP_SERVER_NAME`) prefixing the
- * tool name at the start of the title. Any other shape falls through to a
- * normal prompt, so broadening this stays additive as
- * more agents are observed.
- *
- * This is advisory, not proof: the title is authored by the external agent, so
- * it cannot be made unforgeable (the agent even knows the server name — Copse
- * hands it the bridge in `session/new`). It doesn't need to be. Every bridged
- * call re-enters Copse's native permission gate when the bridge executes it
- * (`ToolRegistry.executeNormalized`), so an honestly-labelled call is still
- * enforced there — read-only tools auto-run, `fetch_url` still origin-gates —
- * and a dishonest agent forging the title is already outside this gate's remit:
- * its own read/edit/execute tools are the larger surface, gated by these same
- * prompts. All this removes is the duplicate approval for the honest case.
- *
- * Codex is a shape this cannot help with: it sends no `title` on permission
- * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
- * bridged calls still double-prompt. Fixing that needs a non-title signal and a
- * trace of a Codex MCP permission request, which we do not have yet. Codex's
- * dot-joined *tool-call* names do match `matchesBridgedToolName`, which is what
- * the agent-eval harness scores.
+ * The tool names a live bridge in this process serves right now: the curated
+ * and plugin tools for the current thread's project, plus the connected MCP
+ * tools live bridges advertised. `resolveAcpToolProvenance` checks a claimed
+ * bridged identity against this set; a call that merely *names* one of these
+ * still has to say so through adapter-authored fields, never a display title
+ * prefix (#1446).
  */
-export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
-  if (!title) return false
-  const text = unwrapInlineCode(title)
+export function bridgedNativeToolsOffered(): string[] {
   return [
     ...activeBridgeToolNames(
       getThreadExecutionContext()?.projectId,
@@ -267,7 +272,106 @@ export function isBridgedNativeToolTitle(title: string | null | undefined): bool
       isThreadCheckoutDeferred(),
     ),
     ...activeMediatedMcpTools.keys(),
-  ].some((tool) => matchesBridgedToolName(text, tool))
+  ]
+}
+
+const DELEGATION_TTL_MS = 10 * 60_000
+
+interface AcpDelegation {
+  toolCallId: string
+  /** Canonical JSON of the ACP request's `rawInput`; null when it carried none. */
+  argsKey: string | null
+  at: number
+}
+
+// Per-thread, per-tool ACP tool calls the ACP layer approved on bridged
+// provenance and the bridge has not yet seen executed. Attribution only: the
+// bridge's own gate authorizes the call whether or not it finds one here.
+const pendingDelegations = new Map<string, AcpDelegation[]>()
+
+const delegationKey = (threadId: string, tool: string): string => `${threadId}\u0000${tool}`
+
+/** JSON with object keys sorted at every level, so equal arguments compare equal. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort()
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  // JSON.stringify(undefined) is undefined at runtime, whatever its type says.
+  return value === undefined ? 'null' : JSON.stringify(value)
+}
+
+function liveDelegations(key: string): AcpDelegation[] {
+  const now = Date.now()
+  return (pendingDelegations.get(key) ?? []).filter((entry) => now - entry.at < DELEGATION_TTL_MS)
+}
+
+function storeDelegations(key: string, entries: AcpDelegation[]): void {
+  if (entries.length === 0) pendingDelegations.delete(key)
+  else pendingDelegations.set(key, entries)
+}
+
+/**
+ * Remember that the ACP layer approved `toolCallId` because it proved to be a
+ * call of `tool` on this thread's bridge, so the bridge's execution record can
+ * name the ACP tool call it carries out. `rawInput` is the ACP request's
+ * arguments, when it had any: the bridge then links only an execution with
+ * the same arguments.
+ */
+export function noteAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  toolCallId: string,
+  rawInput?: unknown,
+): void {
+  const key = delegationKey(threadId, tool)
+  storeDelegations(key, [
+    ...liveDelegations(key),
+    { toolCallId, argsKey: isRecord(rawInput) ? canonicalJson(rawInput) : null, at: Date.now() },
+  ])
+}
+
+/**
+ * The ACP tool call a bridge execution of `tool` with `args` carries out, when
+ * exactly one unexpired delegation could be it: same tool, and the same
+ * arguments when the ACP request had any. When two or more could be, they
+ * cannot be told apart from the MCP request, so all of them are dropped and
+ * none is named. A delegation that carried no arguments (Cursor sends none)
+ * can still be linked to a later execution of the same tool after the call it
+ * approved was abandoned; `dropAcpBridgeDelegation` removes it once the agent
+ * reports that call finished, which bounds that window.
+ */
+export function takeAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  args: unknown,
+): string | null {
+  const key = delegationKey(threadId, tool)
+  const live = liveDelegations(key)
+  const argsKey = canonicalJson(args ?? {})
+  const candidates = live.filter((entry) => entry.argsKey === null || entry.argsKey === argsKey)
+  storeDelegations(
+    key,
+    live.filter((entry) => !candidates.includes(entry)),
+  )
+  return candidates.length === 1 && candidates[0] ? candidates[0].toolCallId : null
+}
+
+/**
+ * Forget a delegation whose ACP tool call the agent reported finished, failed
+ * or cancelled: anything still waiting for it was never executed through the
+ * bridge, and must not be linked to a later execution.
+ */
+export function dropAcpBridgeDelegation(threadId: string, toolCallId: string): void {
+  const prefix = `${threadId}\u0000`
+  for (const key of [...pendingDelegations.keys()]) {
+    if (!key.startsWith(prefix)) continue
+    storeDelegations(
+      key,
+      liveDelegations(key).filter((entry) => entry.toolCallId !== toolCallId),
+    )
+  }
 }
 
 export interface AcpNativeBridge {
@@ -283,6 +387,8 @@ export interface AcpNativeBridge {
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
+  /** Independent run-owned allowance; cleared between prompts. Never capture a parent ALS store. */
+  setSkillActivationTurn: (turn: SkillActivationTurn | null) => void
   /**
    * Bind the turn's already-resolved execution context so bridged tools resolve
    * paths against the same root as the turn itself — in worktree checkout mode
@@ -306,8 +412,32 @@ export interface AcpNativeBridge {
   setTurnSignal: (signal: AbortSignal | null) => void
   /** Attribute successful native workspace edits to the current ACP turn's audit. */
   setWorkspaceWriteObserver: (observer: ((path: string) => void) | null) => void
+  /**
+   * Back one ACP client terminal (`terminal/create`, #623): run a command
+   * through `run_shell` under this turn's bindings, exactly as a bridged
+   * `run_shell` call would run — the same gate, project sandbox and
+   * unsandboxed retry — while `observer` receives its raw output and exit.
+   * Refused, like a bridged call, when no turn is bound.
+   */
+  runShellCommand: AcpTerminalCommandRunner
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
+}
+
+/**
+ * Whether an agent can list a tool with this input schema. The Anthropic API
+ * requires `type: "object"` at the top level, and Claude Code drops every tool
+ * of an MCP server that offers one without it: a single union-shaped schema
+ * hid all of Copse's tools from Claude (#4142). The bridge leaves such a tool
+ * out, with a warning, rather than lose the rest.
+ */
+export function isAgentInputSchema(schema: Record<string, unknown>): boolean {
+  return (
+    schema['type'] === 'object' &&
+    !Object.hasOwn(schema, 'anyOf') &&
+    !Object.hasOwn(schema, 'oneOf') &&
+    !Object.hasOwn(schema, 'allOf')
+  )
 }
 
 function bridgedTools(
@@ -321,7 +451,14 @@ function bridgedTools(
   // 400s the whole request on the openapi-3.0 flavor.
   return registry
     .toMcpTools()
-    .filter((tool) => offered.has(tool.name))
+    .filter((tool) => {
+      if (!offered.has(tool.name)) return false
+      if (isAgentInputSchema(tool.inputSchema)) return true
+      console.warn(
+        `[acp-bridge] not offering "${tool.name}": its input schema is not a top-level object`,
+      )
+      return false
+    })
     .map((tool) =>
       tool.name === ASK_CLASSIFIER_TOOL_NAME
         ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }
@@ -360,6 +497,7 @@ interface BridgeExecuteContext {
   getPendingExecutionContext: () => Promise<ThreadExecutionContext | null> | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   getTurnTreeId: () => ReturnType<typeof getActiveRunTurnTreeId>
+  getSkillActivationTurn: () => SkillActivationTurn | null
   networkScopeAlreadyApplies: boolean
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
@@ -454,6 +592,44 @@ function toMcpContent(
   return blocks
 }
 
+/**
+ * Run `execute` as the owning turn would: thread identity, turn tree, the
+ * turn's resolved execution context, the bridge execution id approvals and the
+ * decision log attribute to, and — for a sandboxed agent — its shared network
+ * scope. Bridge HTTP handlers and ACP client requests are separate async chains
+ * from the turn, so none of this is inherited.
+ */
+function runInTurnBinding<T>(
+  binding: {
+    threadId: string
+    executionContext: ThreadExecutionContext
+    inlineCanvasScope: ReturnType<typeof captureInlineCanvasScope>
+    turnTreeId: ReturnType<typeof getActiveRunTurnTreeId>
+    skillTurn: SkillActivationTurn | null
+    bridgeExecutionId: string
+    networkScopeAlreadyApplies: boolean
+  },
+  execute: () => Promise<T>,
+): Promise<T> {
+  const withPermissionContext = (): Promise<T> =>
+    binding.networkScopeAlreadyApplies
+      ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
+      : execute()
+  return binding.inlineCanvasScope(() =>
+    runWithActiveRunIdentity(binding.threadId, () => {
+      // HTTP requests do not inherit the owning turn's ALS epoch. A wake
+      // must use that human epoch, never a guessed thread-id fallback.
+      if (binding.turnTreeId !== null) setActiveRunTurnTreeId(binding.turnTreeId)
+      return runWithThreadExecutionContext(binding.executionContext, () =>
+        runWithSkillActivationTurn(
+          binding.skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
+          () => runWithBridgeExecutionId(binding.bridgeExecutionId, withPermissionContext),
+        ),
+      )
+    }),
+  )
+}
+
 function buildMcpServer(
   registry: ToolRegistry,
   advisorContext: { current: AdvisorRunnerContext | null },
@@ -521,6 +697,19 @@ function buildMcpServer(
         isError: true,
       }
     }
+    // Capture once: a request must never spend the allowance of a later prompt.
+    const skillTurn = ctx.getSkillActivationTurn()
+    if (name === 'read_skill' && !skillTurn) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Skill reading is unavailable outside a supported coding-agent turn.',
+          },
+        ],
+        isError: true,
+      }
+    }
     const requestKey = String(extra.requestId)
     // MCP request numbers can repeat across sessions/retries and are not ACP
     // transcript IDs. Own the identity of this execution at the host boundary.
@@ -534,9 +723,10 @@ function buildMcpServer(
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
     try {
+      const capturedTurnSignal = ctx.getTurnSignal()
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
-        ctx.getTurnSignal(),
+        capturedTurnSignal,
         ctx.getCallSignal(),
       )
       // The client's idle timeout can be shorter than run_shell's foreground
@@ -572,6 +762,7 @@ function buildMcpServer(
       executeSignal.addEventListener('abort', stopKeepalive, { once: true })
       if (executeSignal.aborted) stopKeepalive()
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
+        const acpToolCallId = takeAcpBridgeDelegation(ctx.threadId, name, request.params.arguments)
         recordDecision({
           kind: 'bridge-request',
           actor: 'system',
@@ -579,40 +770,45 @@ function buildMcpServer(
           subject: name,
           source: 'acp-native-bridge',
           bridgeExecutionId,
+          // The ACP tool call whose ACP-layer approval was delegated to this
+          // gate, when it can be named unambiguously (#1446 attribution).
+          ...(acpToolCallId !== null ? { toolCallId: acpToolCallId } : {}),
           projectId: executionContext.projectId,
           threadId: ctx.threadId,
           // Arguments belong in the private thread blob, like transcript tool
           // arguments, never the redacted decision summary shown in the UI.
           detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
         })
+        if (name === 'isolated_copse') {
+          if (!capturedTurnSignal)
+            throw new Error('Isolated desktop control requires an active agent turn')
+          return runWithIsolatedDesktopLifetime(
+            mergeBridgeExecuteSignal(ctx.sessionSignal, capturedTurnSignal),
+            () => registry.executeNormalized(name, request.params.arguments, executeSignal),
+          )
+        }
         return registry.executeNormalized(name, request.params.arguments, executeSignal)
       }
-      const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        ctx.networkScopeAlreadyApplies
-          ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
-          : execute()
-      // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
-      // the thread identity so approval prompts / idle-deadline pauses attribute
-      // to the owning thread (and cancelApprovalsForThread can find them).
-      //
-      // The turn's full execution context is rebound for the same reason
-      // (#1439): without it, root resolution falls back to the shared checkout,
-      // so a bridged tool in a worktree-mode thread would edit a different tree
-      // than the turn itself. The context is the turn's already-resolved one —
-      // set by agent-service around the prompt — not a fresh per-request
-      // resolve; the guard above already rejected any call with none bound.
-      const inlineCanvasScope = ctx.getInlineCanvasScope()
-      const turnTreeId = ctx.getTurnTreeId()
+      // Rebind the thread identity so approval prompts / idle-deadline pauses
+      // attribute to the owning thread (and cancelApprovalsForThread can find
+      // them), and the turn's full execution context (#1439): without it, root
+      // resolution falls back to the shared checkout, so a bridged tool in a
+      // worktree-mode thread would edit a different tree than the turn itself.
+      // The context is the turn's already-resolved one — set by agent-service
+      // around the prompt — not a fresh per-request resolve; the guard above
+      // already rejected any call with none bound.
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        inlineCanvasScope(() =>
-          runWithActiveRunIdentity(ctx.threadId, () => {
-            // HTTP requests do not inherit the owning turn's ALS epoch. A wake
-            // must use that human epoch, never a guessed thread-id fallback.
-            if (turnTreeId !== null) setActiveRunTurnTreeId(turnTreeId)
-            return runWithThreadExecutionContext(executionContext, () =>
-              runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
-            )
-          }),
+        runInTurnBinding(
+          {
+            threadId: ctx.threadId,
+            executionContext,
+            inlineCanvasScope: ctx.getInlineCanvasScope(),
+            turnTreeId: ctx.getTurnTreeId(),
+            skillTurn,
+            bridgeExecutionId,
+            networkScopeAlreadyApplies: ctx.networkScopeAlreadyApplies,
+          },
+          execute,
         )
       const advisor = advisorContext.current
       const { result, images } =
@@ -732,6 +928,7 @@ export async function startAcpNativeBridge(
   // Capture it at request start and bind it with AsyncLocalStorage during the
   // advisor call; simultaneous bridges can never see one another's transcript.
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
+  let skillTurn: SkillActivationTurn | null = null
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
   let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
@@ -778,6 +975,7 @@ export async function startAcpNativeBridge(
         getPendingExecutionContext: () => pendingExecutionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
         getTurnTreeId: () => turnTreeId,
+        getSkillActivationTurn: () => skillTurn,
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
@@ -822,7 +1020,11 @@ export async function startAcpNativeBridge(
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },
+    setSkillActivationTurn: (turn): void => {
+      skillTurn = turn
+    },
     setExecutionContext: (context): void => {
+      if (context === null) skillTurn = null
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
       turnTreeId =
@@ -836,6 +1038,59 @@ export async function startAcpNativeBridge(
     },
     setWorkspaceWriteObserver: (observer): void => {
       workspaceWriteObserver = observer
+    },
+    runShellCommand: async (compose, observer, terminalSignal): Promise<string> => {
+      if (closed) throw new Error('The coding agent session has ended')
+      if (
+        !registry.has(TERMINAL_TOOL) ||
+        !activeBridgeToolNames(opts.projectId, registry, offerWriteAccess).includes(TERMINAL_TOOL)
+      ) {
+        return 'Copse cannot run shell commands for this thread.'
+      }
+      // Same fail-closed turn boundary as a bridged call (#1439).
+      const pendingBinding = executionContext ? null : pendingExecutionContext
+      const boundContext =
+        executionContext ??
+        (await awaitPendingExecutionContext(pendingBinding, terminalSignal)) ??
+        executionContext
+      if (!boundContext) {
+        return pendingBinding
+          ? 'Command was not run: this turn started without a prompt from the user and was not approved to continue.'
+          : 'Command was not run: it arrived after its agent turn ended, so no thread execution context is bound.'
+      }
+      const bridgeExecutionId = randomUUID()
+      const executeSignal = mergeBridgeExecuteSignal(signal, turnSignal, terminalSignal)
+      return runInTurnBinding(
+        {
+          threadId: opts.threadId,
+          executionContext: boundContext,
+          inlineCanvasScope,
+          turnTreeId,
+          skillTurn,
+          bridgeExecutionId,
+          networkScopeAlreadyApplies,
+        },
+        async () => {
+          const composed = compose(getAgentExecutionRoot())
+          if ('refused' in composed) return `Command was not run: ${composed.refused}`
+          const args = { command: composed.command, timeout_ms: RUN_SHELL_MAX_TIMEOUT_MS }
+          recordDecision({
+            kind: 'bridge-request',
+            actor: 'system',
+            verdict: 'requested',
+            subject: TERMINAL_TOOL,
+            source: 'acp-terminal',
+            bridgeExecutionId,
+            projectId: boundContext.projectId,
+            threadId: opts.threadId,
+            detail: { arguments: args },
+          })
+          const { result } = await runWithShellRunObserver(observer, () =>
+            registry.executeNormalized(TERMINAL_TOOL, args, executeSignal),
+          )
+          return result
+        },
+      )
     },
     close: (): Promise<void> => {
       if (closed) return Promise.resolve()

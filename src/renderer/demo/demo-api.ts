@@ -1,4 +1,5 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
+import { emptyContainerStorage } from '../../shared/types/storage-cleanup.ts'
 import type { ActiveDiff, StreamChunk, Thread, TranscriptAnnotation } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import { backlinksFor } from '@shared/threads/thread-links.ts'
@@ -6,6 +7,7 @@ import type { AutomationPermissionOption, AutomationSchedule } from '@shared/typ
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { ChatGptPlanStatus } from '@shared/types/chatgpt-plan.ts'
 import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
@@ -422,6 +424,10 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  let chatGptPlan: ChatGptPlanStatus = scenario.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null,
+  }
   const guardedYoloPhases = new Map<string, GuardedYoloPhase>(
     scenario.guardedYoloPhase && scenario.threads[0]
       ? [[scenario.threads[0].id, scenario.guardedYoloPhase]]
@@ -574,6 +580,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {},
+      reply: async () => {},
+      onInvoke: () => () => {},
+    },
     threadPrompts: {
       onPrompt: () => () => {},
       reply: async () => {},
@@ -586,9 +598,27 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           running: scenario.mobileCompanion !== undefined,
           url: scenario.mobileCompanion?.url ?? null,
           qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+          localUrl: null,
+          localQrSvg: null,
+          publicName: {
+            serviceUrl: 'https://api.copse.dev',
+            state: 'unregistered',
+            hostname: null,
+            certificate: null,
+            dns: 'unknown',
+            busy: null,
+            lastError: null,
+          },
           rootCertificatePath: null,
+          address: scenario.mobileCompanion ? new URL(scenario.mobileCompanion.url).hostname : null,
           addresses: scenario.mobileCompanion
-            ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
+            ? [
+                {
+                  address: new URL(scenario.mobileCompanion.url).hostname,
+                  interfaceName: 'Wi-Fi',
+                  virtual: false,
+                },
+              ]
             : [],
           devices: [],
           pairing: null,
@@ -601,6 +631,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },
@@ -659,6 +692,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             portBindingAllowed: false,
           },
         ),
+      revokeProjectPortBinding: () => resolved(undefined),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
       onGuardedYoloChanged: (listener) => {
@@ -956,6 +990,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         )
         return resolved(structuredClone([...mcpStatuses]))
       },
+      listUserServers: () => resolved({ path: '/demo/mcp.json', servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe,
     },
     toolPermissions: {
@@ -983,8 +1020,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      containerCleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
       maintenance: () =>
         resolved({
+          containers: emptyContainerStorage(),
           retention: { enabled: true, days: 30 },
           areas: [
             { area: 'runs', bytes: 0, entries: 0, busy: false },
@@ -1048,6 +1087,26 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) =>
+        resolved({
+          matches: threads
+            .filter(
+              (thread) =>
+                thread.archivedAt == null &&
+                thread.messages.some(
+                  (message) =>
+                    message.role === 'user' &&
+                    (message.origin === undefined || message.editedByUser === true) &&
+                    message.content
+                      .normalize('NFC')
+                      .toLowerCase()
+                      .includes(query.normalize('NFC').toLowerCase()),
+                ),
+            )
+            .map((thread) => thread.id),
+          incomplete: false,
+        }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)
@@ -1247,6 +1306,30 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe,
     },
+    machines: {
+      state: () =>
+        resolved({
+          featureEnabled: false,
+          machines: [],
+          addresses: [],
+          sharing: {
+            enabled: false,
+            address: '127.0.0.1',
+            port: 4319,
+            profileIds: [],
+            listening: false,
+            error: null,
+          },
+          shareableModels: [],
+          clients: [],
+          secureStorage: false,
+        }),
+      pair: unsupported,
+      remove: unsupported,
+      share: unsupported,
+      invitation: unsupported,
+      revoke: unsupported,
+    },
     classifiers: {
       list: emptyArray,
       save: unsupported,
@@ -1265,10 +1348,22 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       uninstall: unsupported,
       connect: unsupported,
     },
+    environmentSetup: {
+      status: () => resolved({ offer: false, promptCount: 0 }),
+      review: unsupported,
+      apply: unsupported,
+      undo: unsupported,
+      dismiss: resolvedVoid,
+    },
     chatGptPlan: {
-      status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => (scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()),
+      refreshAccount: () => {
+        const failure = scenario.chatGptPlanRefreshFailure
+        if (!failure) return scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()
+        chatGptPlan = failure.status
+        return Promise.reject(new Error(failure.error))
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -1326,7 +1421,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       refreshHuggingFaceModels: () =>
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved({ version: 'demo', report: null }),
       openLicenseFile: resolvedVoid,
@@ -1472,6 +1567,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onChanged: subscribe,
       setThread: () => resolved(null),
       findByThread: () => resolved(null),
+    },
+    backgroundTasks: {
+      logs: () => resolved(null),
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),

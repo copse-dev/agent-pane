@@ -53,7 +53,7 @@ export const forcedPlanningPlugin: RegisteredPlugin = definePlugin(
   {
     name: FORCED_PLANNING_PLUGIN_ID,
     description:
-      'When the model running a turn rates below a strength threshold, requires an explicit plan (`update_todos`, or a written numbered plan when that tool is unavailable) before it touches any other tool, so smaller and heavily-quantized models can carry longer tasks.',
+      'When the model running a turn rates below a strength threshold, requires an explicit plan in the plan panel, or a written numbered plan when the panel is unavailable, before it uses other tools, so smaller and heavily-quantized models can carry longer tasks.',
     trust: 'first-party',
     stability: 'experimental',
     settings: {

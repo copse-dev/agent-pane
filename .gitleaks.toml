@@ -90,3 +90,29 @@ paths = [
 description = "Inert CLI provider TLS fixture key"
 targetRules = ["private-key"]
 paths = ['''^tests/fixtures/cli-provider-transport/model\.key$''']
+
+[[allowlists]]
+# The environment-setup redaction test first carried an inert `API_TOKEN=` value
+# as a literal (commit 4a4a1866358a on PR #3950). The test now assembles its
+# fake value at run time; this entry clears only that exact literal in the one
+# file's history, so any other credential-shaped value there is still reported.
+description = "Inert environment-setup redaction fixture (history only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''API_TOKEN=abcdef123456''']
+paths = ['''^src/main/services/security/environment-suggestions\.test\.ts$''']
+
+[[allowlists]]
+# The remote-protocol label-grant test first passed a made-up names-service
+# label (`abcdefgh2345`, the shape `[a-z2-7]{12}`) as a literal beside
+# `keys.privateKey` (commit dad470de4fd9 on PR #3992), which the
+# generic-api-key heuristic reads as a key assignment. Labels are public DNS
+# names, not credentials. The test now passes a named constant; this entry
+# clears only that exact literal in the one file's history.
+description = "Remote-protocol test label (history only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''abcdefgh2345''']
+paths = ['''^packages/remote-protocol/src/protocol\.test\.ts$''']

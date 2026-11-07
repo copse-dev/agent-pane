@@ -9,6 +9,7 @@ import { createThread, getThreadMeta } from '../thread-store.ts'
 import {
   attachRemoteAgentPrFromText,
   findThreadForPrUrl,
+  listProjectAgentPrLinks,
   recordRemoteAgentLaunch,
 } from './remote-agent-link-store.ts'
 
@@ -32,7 +33,8 @@ describe('remote-agent-link-store', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     root = mkdtempSync(join(tmpdir(), 'copse-link-store-'))
     process.env['COPSE_WORKSPACE_DIR'] = root
-    storageSet('activeProjectId', 'proj-1')
+    // The window shows a third project: no lookup here may read it (#3958).
+    storageSet('activeProjectId', 'proj-window')
   })
 
   afterEach(() => {
@@ -74,14 +76,51 @@ describe('remote-agent-link-store', () => {
     assert.ok(linked)
     assert.equal(linked.prUrl, 'https://github.com/copse-dev/agent-pane/pull/99')
 
-    // findThreadForPrUrl resolves the active project (set in beforeEach).
-    const hit = await findThreadForPrUrl('https://github.com/copse-dev/agent-pane/pull/99')
+    const hit = await findThreadForPrUrl(
+      'proj-1',
+      'https://github.com/copse-dev/agent-pane/pull/99',
+    )
     assert.deepEqual(hit, {
       prUrl: 'https://github.com/copse-dev/agent-pane/pull/99',
       threadId: 't1',
       agentId: 'agent-1',
       provider: 'cursor',
     })
+  })
+
+  it("lists and finds each project's links in that project, never the window's", async () => {
+    const pr = (n: number): string => `https://github.com/copse-dev/agent-pane/pull/${String(n)}`
+    for (const [projectId, threadId, n] of [
+      ['proj-a', 'ta', 1],
+      ['proj-b', 'tb', 2],
+      ['proj-window', 'tw', 3],
+    ] as const) {
+      await createThread(projectId, thread(threadId))
+      await recordRemoteAgentLaunch({
+        projectId,
+        threadId,
+        provider: 'cursor',
+        agentId: `agent-${threadId}`,
+        createdAt: n,
+      })
+      await attachRemoteAgentPrFromText(projectId, threadId, `PR: ${pr(n)}`)
+    }
+
+    const [linksA, linksB] = await Promise.all([
+      listProjectAgentPrLinks('proj-a'),
+      listProjectAgentPrLinks('proj-b'),
+    ])
+    assert.deepEqual(
+      linksA.map((link) => link.threadId),
+      ['ta'],
+    )
+    assert.deepEqual(
+      linksB.map((link) => link.threadId),
+      ['tb'],
+    )
+    assert.equal((await findThreadForPrUrl('proj-a', pr(1)))?.threadId, 'ta')
+    assert.equal(await findThreadForPrUrl('proj-a', pr(2)), null)
+    assert.equal(await findThreadForPrUrl('proj-b', pr(3)), null)
   })
 
   it('attach is a no-op when the reply carries no PR URL', async () => {

@@ -10,6 +10,7 @@ import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { buildMobileAssets } from './mobile-build.mts'
+import { buildProcessMemoryHelper } from './build-process-memory.mts'
 
 const require = createRequire(import.meta.url)
 const electronPath = expectString(require('electron'))
@@ -31,6 +32,10 @@ await buildMobileAssets()
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
+cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+  recursive: true,
+})
+buildProcessMemoryHelper()
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 
@@ -246,14 +251,19 @@ const videoDecoderCtx = await esbuild.context({
   define,
 })
 buildContexts.push(videoDecoderCtx)
+// Mirrors the production renderer bundle (scripts/build.mts): a code-split ESM
+// entry named app.js with its dynamic imports emitted as hashed chunks. Watch
+// rebuilds never remove a chunk an earlier build wrote, so start from a clean
+// directory once per dev session.
+rmSync('dist/renderer/chunks', { recursive: true, force: true })
 const rendererCtx = await esbuild.context({
-  entryPoints: ['src/renderer/main.ts'],
-  outfile: 'dist/renderer/app.js',
+  entryPoints: { app: 'src/renderer/main.ts' },
+  outdir: 'dist/renderer',
   bundle: true,
   platform: 'browser',
-  // Keep development aligned with the production renderer bundle: noVNC 1.7
-  // uses top-level await for its WebCodecs capability probe.
   format: 'esm',
+  splitting: true,
+  chunkNames: 'chunks/[name]-[hash]',
   sourcemap: true,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' },
   alias: sharedAlias,

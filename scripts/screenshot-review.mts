@@ -56,10 +56,26 @@ const pullSchema = z.object({
 })
 const runSchema = z.object({
   head_sha: z.string(),
-  conclusion: z.literal('success'),
+  conclusion: z.enum(['success', 'failure', 'timed_out']),
   path: z.literal('.github/workflows/ci.yml'),
   html_url: z.string(),
 })
+const jobsSchema = z.object({
+  jobs: z.array(z.object({ name: z.string(), conclusion: z.string().nullable() })),
+})
+
+/**
+ * Whether a run's candidate job passed. The publisher also publishes a red run
+ * whose `screenshot-artifacts` job passed: it needs only precheck, build and e2e, so the
+ * screenshots rendered even if lint or a unit test failed.
+ */
+function renderedScreenshots(jobs: string): boolean {
+  return (
+    safeJsonParse(jobs, decodeWithSchema(jobsSchema))?.jobs.some(
+      (job) => job.name === 'screenshot-artifacts' && job.conclusion === 'success',
+    ) ?? false
+  )
+}
 
 /** Lookup is read-only. The reviewer must still bind the publication to this CI run. */
 export function discoverReview(
@@ -82,14 +98,19 @@ export function discoverReview(
   }
   const pull = safeJsonParse(api(`pulls/${String(pr)}`), decodeWithSchema(pullSchema))
   const workflow = safeJsonParse(api(`actions/runs/${run}`), decodeWithSchema(runSchema))
+  const rendered =
+    workflow?.conclusion === 'success' ||
+    (workflow !== null &&
+      renderedScreenshots(api(`actions/runs/${run}/jobs?filter=latest&per_page=100`)))
   if (
     !pull ||
     pull.head.repo.full_name !== repository ||
     !workflow ||
-    workflow.head_sha !== pull.head.sha
+    workflow.head_sha !== pull.head.sha ||
+    !rendered
   )
     throw new Error(
-      'Need an open same-repository PR and successful current-head CI run; use verified pinned evidence for other publication types',
+      'Need an open same-repository PR and a current-head CI run that rendered its screenshots; use verified pinned evidence for other publication types',
     )
   const branch = `screenshot-compare/pr-${String(pr)}/${pull.head.sha.slice(0, 12)}`
   git(cwd, [

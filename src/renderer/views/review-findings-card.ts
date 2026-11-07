@@ -208,7 +208,12 @@ function groundEl(report: ThreadReviewReport): HTMLElement | null {
     return ground
   }
   for (const check of report.checks) {
-    const mark = check.verdict === 'clean' || check.verdict === 'fixed' ? '✓' : '✗'
+    const mark =
+      check.verdict === 'clean' || check.verdict === 'fixed'
+        ? '✓'
+        : check.verdict === 'undetermined' || check.verdict === 'not-run'
+          ? '?'
+          : '✗'
     ground.append(
       el(
         'span',
@@ -328,7 +333,16 @@ export function createReviewFindingsCardEl(
   const visible = report.findings.filter((finding) => !finding.dismissed)
   const dismissed = report.findings.filter((finding) => finding.dismissed)
   if (report.findings.length === 0) {
-    panel.append(el('div', { class: 'review-report-clean' }, report.note ?? 'Clean.'))
+    panel.append(
+      el(
+        'div',
+        { class: 'review-report-clean' },
+        report.note ??
+          (report.notChecked.length > 0
+            ? 'No findings. Some checks could not be verified.'
+            : 'Clean.'),
+      ),
+    )
   } else {
     if (report.note !== undefined) {
       panel.append(el('div', { class: 'review-report-note' }, report.note))

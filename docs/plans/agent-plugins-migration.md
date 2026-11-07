@@ -3,8 +3,10 @@
 Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 
 **Status: Partially implemented.** Portable discovery and component activation (A),
-plus the product/runtime/storage rename (C), have landed. The marketplace install
-lifecycle and built-in manifest conversion (B) remain.
+plus the product/runtime/storage rename (C), have landed, and the install lifecycle for pinned,
+unsigned skills/MCP packages is implemented (see
+[`feature-pack-marketplace.md`](feature-pack-marketplace.md)). Built-in manifest conversion (B1/B2)
+remains.
 Adopts the [Agent Plugins Specification v1.0.0](https://agent-plugins.org/specification)
 as Copse's on-disk distribution format, carries the intent of closed
 [#1342](https://github.com/copse-dev/agent-pane/pull/1342) forward in that format,
@@ -414,8 +416,8 @@ content and shrink the compiled surface. Trust stays first-party — shipped-wit
 is a source, not a manifest claim.
 
 **B3 — The rest stay compiled, permanently.** `copse.todos` (panel emission),
-`copse.automations` (level-3 view), `copse.parallel-search` (credential-gated native
-tool), and the other typed-contribution plugins stay in the shipped static list. This
+`copse.automations` (level-3 view), and the other typed-contribution plugins stay in
+the shipped static list. This
 is VS Code's built-in-extensions model and hooks-and-feature-packs decision 15, not an
 unfinished migration. If Agent Plugins later standardizes a hooks or UI component
 type, B3 reopens; until then it is closed.

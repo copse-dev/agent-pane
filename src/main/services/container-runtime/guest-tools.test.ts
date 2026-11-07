@@ -12,6 +12,11 @@ describe('GUEST_ALLOWED_TOOLS', () => {
     for (const name of githubShaped) assert.ok(!GUEST_ALLOWED_TOOLS.includes(name), name)
   })
 
+  it('excludes the push and PR maintenance tools from guests', () => {
+    for (const name of ['git_push', 'gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'])
+      assert.ok(!GUEST_ALLOWED_TOOLS.includes(name), name)
+  })
+
   it('excludes unsupported desktop services, interactive tools and extra model routes', () => {
     for (const name of [
       'launch_gui_app',

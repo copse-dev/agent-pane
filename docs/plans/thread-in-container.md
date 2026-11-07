@@ -1039,7 +1039,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 
 ## Phases
 
-- **T0 ✅ — prototype on the branch.** Everything above. Exit gate: the end-to-end test
+- **T0 ✅ — prototype on `main`.** Everything above. Exit gate: the end-to-end test
   passes against a real daemon, and `pnpm run check` is green.
 - **T1 — real provider and a real grind.** Run the container against a real model with the
   broker allowlisting only the provider origin; run one lint- or type-backlog task from

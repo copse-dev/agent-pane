@@ -4,7 +4,9 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 describe('browser-hosted compact titlebar geometry', () => {
   before(async () => {
     await browser.url('/?scenario=chat-layout-styling')
-    await $('#titlebar').waitForDisplayed({ timeout: 30_000 })
+    // #titlebar is an empty placeholder in index.html; the app mounts its
+    // controls only after the code-split renderer chunks load.
+    await $('#titlebar .titlebar-panel-controls').waitForDisplayed({ timeout: 30_000 })
   })
 
   it('keeps blank titlebar space native while controls remain clickable', async () => {

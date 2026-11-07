@@ -2,9 +2,9 @@ import { clear, el } from '../dom/helpers.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId } from '../controller/projects.ts'
+import { attentionThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 import { ASK_USER_ANSWER_MAX_LENGTH, type AskUserQuestion } from '@copse/agent/ask-user-format.ts'
@@ -122,9 +122,23 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       store.emit('side_chat_open_requested', asker.firstSideChatId)
     }
 
+    const actionsOnly = active.presentation?.kind === 'actions'
+    // One question with quick answers is a choice: picking one sends it, and the
+    // free-text field waits behind "Something else…". Several questions still
+    // need every answer collected before anything is sent.
+    const choiceMode =
+      !actionsOnly &&
+      active.questions.length === 1 &&
+      (active.questions[0]?.options?.length ?? 0) > 0
+    const submitBtn = el(
+      'button',
+      { type: 'submit', class: 'ask-user-submit', title: 'Send answer (⌘Enter or Ctrl+Enter)' },
+      'Send answer',
+    )
+    submitBtn.hidden = choiceMode
+
     active.questions.forEach((q, i) => {
       const questionId = `ask-user-question-${String(i)}`
-      const actionsOnly = active?.presentation?.kind === 'actions'
       const input = el('textarea', {
         class: 'ask-user-input',
         rows: '2',
@@ -145,13 +159,18 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       question.innerHTML = renderMarkdown(q.question)
       const field = el('div', { class: 'ask-user-field' }, question)
       if (q.options && q.options.length > 0) {
-        const optionRow = el('div', { class: 'ask-user-options' })
+        const optionRow = el('div', {
+          class: choiceMode ? 'ask-user-options ask-user-options-stacked' : 'ask-user-options',
+          ...(choiceMode ? { role: 'group', 'aria-labelledby': questionId } : {}),
+        })
         for (const option of q.options) {
           const button = el('button', {
             type: 'button',
             class: actionsOnly
               ? `ui-btn ${option === q.options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} ask-user-option ask-user-action`
-              : 'ask-user-option',
+              : choiceMode
+                ? 'ask-user-option ask-user-choice'
+                : 'ask-user-option',
           })
           setInlineMarkdown(button, option)
           const answer = button.textContent
@@ -162,6 +181,10 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           button.addEventListener('click', () => {
             if (actionsOnly) {
               respond([option])
+              return
+            }
+            if (choiceMode) {
+              respond([answer])
               return
             }
             // Insert the rendered label, not its Markdown source, so selecting
@@ -175,6 +198,17 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       }
       if (q.recommendationReason) {
         field.append(el('p', { class: 'ask-user-recommendation-reason' }, q.recommendationReason))
+      }
+      if (choiceMode) {
+        const toggle = el('button', { type: 'button', class: 'ask-user-other' }, 'Something else…')
+        input.hidden = true
+        toggle.addEventListener('click', () => {
+          toggle.hidden = true
+          input.hidden = false
+          submitBtn.hidden = false
+          input.focus()
+        })
+        field.append(toggle)
       }
       if (!actionsOnly) field.append(input)
       form.append(field)
@@ -195,24 +229,11 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       event.preventDefault()
       cancel()
     })
-    form.append(
-      el(
-        'div',
-        { class: 'ask-user-buttons' },
-        cancelBtn,
-        el(
-          'button',
-          {
-            type: 'submit',
-            class: 'ask-user-submit',
-            title: 'Send answer (⌘Enter or Ctrl+Enter)',
-          },
-          'Send answer',
-        ),
-      ),
-    )
+    form.append(el('div', { class: 'ask-user-buttons' }, cancelBtn, submitBtn))
     dialog.showModal()
-    inputs[0]?.focus()
+    // A stray Enter or Space on the focused control must not send an option the
+    // user never chose, so a choice focuses the harmless "Something else…".
+    ;(form.querySelector<HTMLButtonElement>('.ask-user-other') ?? inputs[0])?.focus()
   }
 
   /**
@@ -327,6 +348,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
 
   function submit(): void {
     if (active?.presentation?.kind === 'actions') return
+    // A choice whose free-text field is still hidden has nothing typed to send.
+    if (inputs.some((input) => input.hidden)) return
     respond(inputs.map((input) => input.value))
   }
 
@@ -404,12 +427,17 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
 
   // Follow the focus when the user switches threads: withdraw a question whose
   // thread they just left, then surface a backgrounded one for the thread they
-  // landed on. Also fires on project switches.
-  store.on('threads_changed', () => {
-    withdrawIfUnshowable()
-    showNext()
-    syncAttention()
-  })
+  // landed on (a project switch changes it too), or when the thread a question
+  // surfaces over changes (side-chat parent).
+  store.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)] as const,
+    () => {
+      withdrawIfUnshowable()
+      showNext()
+      syncAttention()
+    },
+    sameItems,
+  )
 
   return {
     pending: () =>

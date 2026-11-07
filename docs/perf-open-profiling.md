@@ -94,6 +94,124 @@ Read the `ttft:*` records between `autopilot:send` and the first renderer span:
 Every record contains phase names, durations, booleans, and chunk kinds only;
 prompts, file contents, thread ids, and workspace paths are not recorded.
 
+## Page load: what runs before `boot()`
+
+Everything above starts the clock at `renderer:boot-start`. Before that line runs,
+the window has already spent a few hundred milliseconds loading `index.html`, its
+stylesheets and `app.js`, and that cost is a function of the eager bundle's size,
+not of the profile. `scripts/perf-page-load.mts` measures it:
+
+```bash
+pnpm run build
+node scripts/perf-page-load.mts --runs 3
+# headless Linux, as root:
+xvfb-run -a node scripts/perf-page-load.mts --runs 3 -- --no-sandbox --disable-gpu
+```
+
+Each run launches the built app against a fresh isolated profile with the mock
+LLM, reads the document's navigation and paint timings in place over the DevTools
+protocol (a reload would be warm: V8's code cache would hide the compile cost),
+and pairs them with the `main:window-create` → `renderer:boot-start` interval
+from the `COPSE_PERF` trace. Columns, all milliseconds from navigation start
+unless noted:
+
+| Column        | Meaning                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| `window→boot` | `main:window-create` → `renderer:boot-start`: the page load as felt       |
+| `interactive` | `domInteractive`: HTML parsed; `app.js` still compiling off-thread        |
+| `DCL`         | `domContentLoaded`: `app.js` evaluated. `DCL − interactive` ≈ bundle cost |
+| `FCP`         | first contentful paint                                                    |
+| `boot`        | the `renderer:boot` span, for reference                                   |
+
+### Where the time went (2026-10-23, dev build, empty profile, Linux container)
+
+A Chromium startup trace (`--trace-startup`) of the main-branch build put the
+page's ~400 ms before `boot()` in three places, none of them network or disk:
+
+| Phase                                         | ms   |
+| --------------------------------------------- | ---- |
+| `v8.parseOnBackground` of `app.js` (7.2 MB)   | ~162 |
+| `v8.evaluateModule` of `app.js` (main thread) | ~77  |
+| `TextResourceDecoder::Decode` of `app.js`     | ~30  |
+| `ParseAuthorStyleSheet` (`app.css`, 466 KB)   | ~4   |
+| `ParseHTML`                                   | ~5   |
+
+So the bundle's byte count is the lever. An esbuild metafile attributed the
+7.2 MB like this (unminified dev build):
+
+| Input                                    | KB   | Needed before first paint?                    |
+| ---------------------------------------- | ---- | --------------------------------------------- |
+| `src/renderer/views`                     | 1973 | yes (the app)                                 |
+| `zod`                                    | 753  | yes, via shared schemas evaluated at import   |
+| `@xterm/xterm` + `addon-fit`             | 446  | no: Shells pane, first tab only               |
+| `@novnc/novnc`                           | 393  | no: Desktop pane, first connect only          |
+| `vscode-material-icons` name table       | 321  | no: file tree, hidden pane by default         |
+| `@copse/streaming-markdown`              | 320  | yes                                           |
+| `src/shared/plugin-catalog.generated.ts` | 319  | no: Settings → Plugins → Browse only          |
+| tiptap + prosemirror                     | ~900 | yes (the composer)                            |
+| `highlight.js`, `dompurify`              | 236  | "lazy" by `import()`, but inlined (see below) |
+
+Two structural findings:
+
+1. **Dynamic imports were not lazy.** The renderer was built with `outfile`, and
+   without `splitting` esbuild inlines every `import()` into the bundle. The
+   highlighter, DOMPurify and dialog modules commented as "code-split" were all
+   parsed and evaluated eagerly.
+2. **A top-level `await` gated the whole bundle.** noVNC 1.7 runs a WebCodecs
+   H.264 decode probe (`VideoDecoder.isConfigSupported`, then a real keyframe
+   decode and `flush()`) behind a module-scope `await`. In a single-file ESM
+   bundle that pauses evaluation of every module after it, `main.ts` included,
+   until the probe settles. It measured 1.5–4 ms here with software decoding
+   and no GPU; on real hardware it is a round trip to the GPU process.
+
+### What changed
+
+- `scripts/build.mts` and `scripts/dev.mts` build the renderer with
+  `splitting: true` into `dist/renderer/` with hashed chunks under `chunks/`, so
+  `import()` is real. The entry is still `app.js`; `index.html` is unchanged.
+- `terminals-pane.ts` imports xterm on the first shell (`addTab` is now async;
+  the first shell of a scope is created once per scope even when two listeners
+  ask in the same tick).
+- `vnc-pane.ts` imports noVNC on the first connect, which also moves its
+  top-level `await` into a chunk nothing waits on at startup.
+
+`app.js` went from 7.23 MB to 5.77 MB (dev build; −20 %). The eager graph also
+pulls one 308 KB shared chunk (streaming-markdown and renderer helpers shared
+with the lazy dialogs), so the eager JS total is 6.08 MB, −16 %.
+
+Measured interleaved (main, branch, main, branch, …) so machine drift hits both
+sides alike; the main build was a copy of `dist/` passed via `--dist`:
+
+| Round  | `window→boot` main → branch | `DCL` main → branch | `FCP` main → branch |
+| ------ | --------------------------- | ------------------- | ------------------- |
+| 1      | 458 → 432                   | 407 → 382           | 500 → 476           |
+| 2      | 463 → 412                   | 410 → 367           | 520 → 468           |
+| 3      | 526 → 516                   | 463 → 454           | 568 → 564           |
+| 4      | 450 → 421                   | 386 → 371           | 480 → 472           |
+| median | 461 → 427                   | 409 → 377           | 510 → 474           |
+
+The branch is faster in every pair, by 10–51 ms on `window→boot` (median −34 ms,
+about 7 % of the page load on this machine). Boot itself (`renderer:boot`) is
+unchanged. The absolute numbers are from a container with no GPU; the share of
+the load spent compiling and evaluating `app.js` is what carries over.
+
+### Measured and not taken
+
+Release builds minify syntax only. Adding `minifyWhitespace` cut the release
+`app.js` from 5.49 MB to 4.34 MB, but three runs each measured `window→boot`
+medians of 448 vs 427 ms with overlapping ranges (391–462 vs 418–473), so it is
+not in this change. Full `minify` would reach 3.33 MB at the cost of readable
+renderer stack traces in builds that ship no source maps.
+
+### Still eager, worth a follow-up
+
+- `plugin-catalog.generated.ts` (319 KB) is only read by Settings → Plugins →
+  Browse and could load on first open now that `import()` splits.
+- `vscode-material-icons` (321 KB) is a synchronous name table behind the file
+  tree's icon URLs; the tree is in a hidden pane at boot.
+- `zod` (753 KB) is evaluated at import by shared schemas; `zod/mini` or
+  deferring schema construction would be a larger change.
+
 ## Reading the report
 
 - **Timeline** — named phases in order. `renderer:boot` is the end-to-end open.

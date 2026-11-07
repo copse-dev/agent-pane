@@ -11,6 +11,7 @@ import {
   type AcpSessionHostMessage,
 } from './acp-session-host-protocol.ts'
 import { parseSessionHostRequest } from './acp-session-host-worker.ts'
+import { acpSessionHostRequest } from './acp-session-host.ts'
 
 const REPO_ROOT = process.cwd()
 const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
@@ -65,14 +66,20 @@ export const SandboxManager = {
   getConfig() { return config },
   updateConfig(next) { config = next },
   isSandboxingEnabled() { return config !== null },
-  async wrapWithSandboxArgv(command, shell) { return { argv: [shell, '-c', command] } },
+  // Like ASRT 0.0.74: read the wrapping process's env after an await and bake
+  // TMPDIR into the command, where it beats the spawn env.
+  async wrapWithSandboxArgv(command, shell) {
+    await new Promise((resolve) => setImmediate(resolve))
+    const tmp = process.env.CLAUDE_CODE_TMPDIR || process.env.CLAUDE_TMPDIR || '/tmp/claude'
+    return { argv: [shell, '-c', 'export TMPDIR=' + JSON.stringify(tmp) + '\\n' + command] }
+  },
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
 `
 
 const RELAY_AGENT =
-  "process.stdout.write(`env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
+  "process.stdout.write(`tmp:${String(process.env.TMPDIR === process.env.TMP && process.env.TMP === process.env.CLAUDE_CODE_TMPDIR)} env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
 
 function spawnWorker(workerPath: string, cwd: string, agentScript = RELAY_AGENT): ChildProcess {
   return spawn(process.execPath, [workerPath], {
@@ -157,7 +164,8 @@ describe('ACP session host worker', () => {
           (message) => message.type === 'network-denial' && message.host === 'blocked.example',
         ),
       )
-      assert.match(await waitForStdout(child, 'env:true'), /env:true/)
+      // The agent's temp variables all agree, ASRT's baked TMPDIR included (#4149).
+      assert.match(await waitForStdout(child, 'env:true'), /tmp:true env:true/)
       const output = waitForStdout(child, 'agent:hello')
       child.stdin?.write('hello\n')
       assert.match(await output, /agent:hello/)
@@ -201,6 +209,43 @@ describe('parseSessionHostRequest', () => {
         }),
       )
       assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+    }
+  })
+
+  it('carries every confinement field the overlay reads across to the host', () => {
+    const config = {
+      command: 'claude-agent-acp',
+      cwd: '/workspace',
+      sandbox: {
+        allowedDomains: ['api.anthropic.com'],
+        homeDirs: ['.claude'],
+        scratchPaths: ['/tmp/claude-${uid}'],
+        allowMacOsTrustd: true,
+        allowMacOsKeychain: true,
+      },
+      readonlyCheckout: true,
+      stateDir: '/profile/workspace/p/t/acp-agent-config/claude-acp',
+      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x' },
+      model: 'not-a-spawn-field',
+    }
+    const request = parseSessionHostRequest(JSON.stringify(acpSessionHostRequest(config)))
+    assert.deepEqual(request, {
+      config: {
+        command: config.command,
+        cwd: config.cwd,
+        sandbox: config.sandbox,
+        readonlyCheckout: true,
+        stateDir: config.stateDir,
+      },
+      allowLocalhost: true,
+    })
+    for (const stateDir of ['', 3, null]) {
+      const parsed = parseSessionHostRequest(
+        JSON.stringify({
+          config: { command: 'a', cwd: '/w', sandbox: { allowedDomains: [] }, stateDir },
+        }),
+      )
+      assert.equal(parsed?.config.stateDir, undefined)
     }
   })
 

@@ -113,16 +113,25 @@ describe('build.mts bundle invariants', () => {
   })
 
   it('emits and loads the initial renderer as an ES module', () => {
-    // noVNC 1.7 uses top-level await for its WebCodecs capability probe. An
-    // IIFE bundle cannot represent that initialization contract.
+    // Code splitting is ESM-only, and noVNC 1.7 (now a lazily loaded chunk)
+    // uses top-level await for its WebCodecs capability probe, which an IIFE
+    // bundle cannot represent. The entry keeps the `app.js` name index.html
+    // loads, with chunks beside it.
     assert.match(
       build,
-      /entryPoints: \[rendererEntry\],[\s\S]*?format: 'esm',[\s\S]*?outfile: `\$\{rendererOutDir\}\/app\.js`/,
+      /entryPoints: \{ app: rendererEntry \},[\s\S]*?format: 'esm',[\s\S]*?splitting: true,[\s\S]*?chunkNames: 'chunks\/\[name\]-\[hash\]',[\s\S]*?outdir: rendererOutDir,/,
     )
     assert.match(
       dev,
-      /entryPoints: \['src\/renderer\/main\.ts'\],[\s\S]*?format: 'esm',[\s\S]*?sourcemap: true/,
+      /entryPoints: \{ app: 'src\/renderer\/main\.ts' \},[\s\S]*?outdir: 'dist\/renderer',[\s\S]*?format: 'esm',[\s\S]*?splitting: true,[\s\S]*?chunkNames: 'chunks\/\[name\]-\[hash\]',[\s\S]*?sourcemap: true/,
     )
+    // Hashed chunk names accumulate across builds; both scripts must clear
+    // the directory or a stale chunk ships (`dist/` is never cleaned).
+    assert.match(
+      build,
+      /rmSync\(`\$\{rendererOutDir\}\/chunks`, \{ recursive: true, force: true \}\)/,
+    )
+    assert.match(dev, /rmSync\('dist\/renderer\/chunks', \{ recursive: true, force: true \}\)/)
     assert.match(rendererHtml, /<script type="module" src="\.\/app\.js"><\/script>/)
     assert.match(rendererMain, /\nexport \{\}\s*$/)
     assert.match(build, /assertModuleParses\(`\$\{rendererOutDir\}\/app\.js`\)/)

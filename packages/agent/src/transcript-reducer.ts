@@ -73,6 +73,7 @@ export class TranscriptReducer {
         if (chunk.images !== undefined) call.images = chunk.images
         if (chunk.content !== undefined) call.content = chunk.content
         if (chunk.locations !== undefined) call.locations = chunk.locations
+        if (chunk.commandPhase !== undefined) call.commandPhase = chunk.commandPhase
         return entry.message
       }
       default:

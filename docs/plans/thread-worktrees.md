@@ -1,9 +1,11 @@
 # Per-thread worktrees
 
-Status: **Active implementation.** Tracking issue
-[#869](https://github.com/copse-dev/agent-pane/issues/869) is open. The execution-context
-foundation shipped in [#1029](https://github.com/copse-dev/agent-pane/pull/1029), and the
-worktree stack continues in open PRs #1035, #1037, #1040, #1043, and #1046.
+Status: **Resolved.** Tracking issue
+[#869](https://github.com/copse-dev/agent-pane/issues/869) is closed. The execution-context
+foundation shipped in [#1029](https://github.com/copse-dev/agent-pane/pull/1029), followed by
+#1035, #1037 and #1040; drafts #1043 and #1046 closed unmerged and were superseded by later PRs
+including #1058 and #1568 (isolate threads by default). Residual work has its own issues
+(#1882, #2475, #2476).
 
 ## Outcome
 

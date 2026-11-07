@@ -60,6 +60,11 @@ function boundedJson(value: unknown): boolean {
 const connection = z
   .discriminatedUnion('type', [
     z.strictObject({
+      type: z.literal('machine'),
+      machineId: z.uuid(),
+      profileId: z.string().regex(/^[a-z0-9-]{1,53}$/),
+    }),
+    z.strictObject({
       type: z.literal('http'),
       protocol: z.enum(HTTP_CLASSIFIER_PROTOCOLS),
       baseUrl: z
@@ -98,6 +103,7 @@ const connection = z
     }),
   ])
   .transform((value): ClassifierProfile['connection'] => {
+    if (value.type === 'machine') return value
     if (value.type === 'http') {
       const { apiKeyEnv, ...required } = value
       return { ...required, ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }) }

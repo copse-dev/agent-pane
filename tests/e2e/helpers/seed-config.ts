@@ -420,7 +420,7 @@ const E2E_WORKSPACE_FILES: Record<string, string> = {
 }
 
 /** Commit date for the fixture's one commit; fixed so the hash never moves. */
-const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+export const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 
 export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
   const root = E2E_WORKSPACE_ROOT
@@ -561,6 +561,8 @@ export function seedEmptyProject(
     nextStepSuggestionEnabled?: boolean
     /** Opt into the experimental unattended container runs (off by default). */
     containerRunsEnabled?: boolean
+    /** Opt into the experimental "Start planning" composer control (off by default). */
+    planModeEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -614,15 +616,6 @@ export function seedEmptyProject(
     autoRunSandboxCommands?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
-    /**
-     * Store a Parallel API key. The `copse.parallel-search` pack is
-     * credential-gated in both directions — the host only registers
-     * `parallel_search` when a key resolves, and Settings only lets the toggle
-     * be turned on once one is saved — so a spec exercising the enabled pack
-     * has to seed one. Same base64-plaintext record shape as
-     * {@link seedOpenRouterFixture}.
-     */
-    parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /** Seed rolling usage-ledger events before the app launches. */
@@ -715,6 +708,9 @@ export function seedEmptyProject(
   if (options?.containerRunsEnabled !== undefined) {
     settings['containerRunsEnabled'] = options.containerRunsEnabled
   }
+  if (options?.planModeEnabled !== undefined) {
+    settings['planModeEnabled'] = options.planModeEnabled
+  }
   if (options?.model) {
     settings['model'] = options.model
   }
@@ -775,15 +771,6 @@ export function seedEmptyProject(
   }
   if (options?.openRouterPricing !== undefined) {
     settings['openRouterPricing'] = options.openRouterPricing
-  }
-  if (options?.parallelApiKey !== undefined) {
-    settings['apiKey'] = {
-      parallel: {
-        v: 1,
-        enc: Buffer.from(options.parallelApiKey, 'utf8').toString('base64'),
-        plain: true,
-      },
-    }
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -1432,6 +1419,246 @@ export function seedTranscriptRebuildFixture(workspaceRoot: string): {
     ],
   })
   return { activeTitle, otherTitle }
+}
+
+/** The prompt the keyed-reconcile spec sends into {@link seedTranscriptReconcileFixture}'s thread. */
+export const TRANSCRIPT_RECONCILE_PROMPT = 'Which tests cover the palette order?'
+
+/**
+ * One finished turn whose reply carries a file path (resolved into a link after
+ * render) and a finished tool card (a disclosure the reader can open). The
+ * keyed-reconcile spec then sends a new prompt and checks that both survive.
+ */
+export function seedTranscriptReconcileFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-transcript-reconcile-project'
+  const threadId = 'e2e-transcript-reconcile-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
+}
+
+/**
+ * The keyed-reconcile thread plus two cards that draw thread-wide state: a
+ * standing `propose_thread` offer (its answer lives on the thread) and the
+ * thread's trailing Copse Reviewer report with one finding the reader can
+ * open. Answering the offer used to rebuild every row, and every chrome sync
+ * recreated the report card.
+ */
+export function seedThreadWideReconcileFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-thread-wide-reconcile-project'
+  const threadId = 'e2e-thread-wide-reconcile-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 3000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-proposal',
+            role: 'assistant',
+            content: 'The ranking deserves its own thread.',
+            toolCalls: [
+              {
+                id: 'tc-reconcile-propose',
+                name: 'propose_thread',
+                args: {
+                  title: 'Split palette ranking out',
+                  summary: 'Move the palette ranking into its own module with its own tests.',
+                  rationale: 'It is a refactor, so it should not ride along with this answer.',
+                  prompt: 'Move the ranking out of command-palette.ts into its own module.',
+                },
+                status: 'done',
+                result: 'Offered to the user.',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        reviewReport: {
+          status: 'done',
+          startedAt: now,
+          models: { reviewer: 'gpt-5', challenger: 'claude-opus-4-8' },
+          lenses: ['correctness'],
+          baseRef: 'HEAD',
+          headCommit: 'abc1234def',
+          dirtyWorkingTree: true,
+          execution: {
+            backend: 'os-sandbox',
+            strength: 'os-sandbox',
+            executed: true,
+            reason: 'own diff behind the OS sandbox',
+          },
+          checks: [{ kind: 'typecheck', verdict: 'clean' }],
+          notChecked: [],
+          findings: [
+            {
+              id: 'aaaabbbbccccdddd',
+              path: TRANSCRIPT_REBUILD_FILE,
+              startLine: 12,
+              endLine: 12,
+              claim: 'Entries added in the same tick keep insertion order only by accident.',
+              class: 'contract',
+              severity: 'medium',
+              confidence: 'medium',
+              verdict: { status: 'unverified', reason: 'Survived challenge: no sort is stable.' },
+              raisedBy: ['gpt-5 (correctness)'],
+              corroboratedBy: [],
+              challengedBy: ['claude-opus-4-8'],
+              evidence: [],
+            },
+          ],
+          appendix: 0,
+          refuted: 0,
+          reviewers: [],
+          verification: null,
+          durationMs: 4_000,
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 3000,
+        updatedAt: now,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
+}
+
+export const THREAD_RETURN_THREAD = 'e2e-thread-return-thread'
+export const THREAD_RETURN_OTHER_THREAD = 'e2e-thread-return-other-thread'
+
+/**
+ * The keyed-reconcile thread beside a second, short thread, so the reader can
+ * switch away and come back. A return used to build every row again.
+ */
+export function seedThreadReturnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-thread-return-project'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: THREAD_RETURN_THREAD,
+    [`threads:${projectId}`]: [
+      {
+        id: THREAD_RETURN_THREAD,
+        title: 'Palette ordering',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-reconcile-user',
+            role: 'user',
+            content: 'Where does the palette decide its order?',
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-reconcile-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            toolCalls: [
+              {
+                id: 'tc-reconcile-read',
+                name: 'read_file',
+                args: { path: TRANSCRIPT_REBUILD_FILE },
+                status: 'done',
+                result: 'export {}\n',
+              },
+            ],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now,
+      },
+      {
+        id: THREAD_RETURN_OTHER_THREAD,
+        title: 'Release notes',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-return-other-user',
+            role: 'user',
+            content: 'Draft the release notes.',
+            createdAt: now - 4000,
+          },
+          {
+            id: 'msg-return-other-assistant',
+            role: 'assistant',
+            content: 'Drafted them under the Unreleased heading.',
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 4000,
+        updatedAt: now - 3000,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false })
 }
 
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */
@@ -2589,6 +2816,12 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     '```bash',
     'node -e "console.log(424242)"',
     '```',
+    '',
+    'Or clean up stale profiles first:',
+    '',
+    '```',
+    "find . -maxdepth 1 -name '.wdio-profile-*' -exec rm -rf {} +",
+    '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -3040,6 +3273,33 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     'ACP error -32603 (Internal error): account/read failed: workspace routing discovery unauthorized (401)',
     '```',
   ].join('\n')
+  // #4147: Claude Code's start-up organization check (managed
+  // `forceLoginOrgUUID`) could not verify the token of a sandboxed agent.
+  // Text is `classifyAgentError`'s output on macOS for the adapter's
+  // exit-code-1 report from a seatbelted agent, with stderr cut to its first
+  // line so the message fits one capture.
+  const claudeOrgContent = [
+    '> [!WARNING]',
+    '> **Claude couldn’t verify its sign-in**',
+    '>',
+    '> This turn couldn’t run because Claude couldn’t confirm its saved sign-in.',
+    '',
+    'Claude checks its sign-in against your organization’s policy when it starts. When that fails, its access token has usually expired: inside Copse’s sandbox it can renew the token but can’t save the new one to the macOS Keychain. If your network was down instead, re-send your message once it’s back.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude auth login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Coding agents.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Internal error',
+    'Details: Claude Code process exited with code 1. stderr: Unable to verify organization for the current authentication token.',
+    '```',
+  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -3093,10 +3353,24 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 5,
           },
+          {
+            id: 'msg-user-claude-org-auth',
+            role: 'user',
+            content: 'Try it again with Claude.',
+            toolCalls: [],
+            createdAt: now + 6,
+          },
+          {
+            id: 'msg-assistant-claude-org-auth',
+            role: 'assistant',
+            content: claudeOrgContent,
+            toolCalls: [],
+            createdAt: now + 7,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 5,
+        updatedAt: now + 7,
       },
     ],
   })

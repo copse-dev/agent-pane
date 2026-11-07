@@ -9,7 +9,12 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-provider-settings-invalidation'
 const STALE_ROUTE = 'acme:model-1'
@@ -132,5 +137,71 @@ describe('stale custom-provider model selection', function () {
     const warning = $('#confirm-dialog')
     if (await warning.isDisplayed()) await $('.confirm-dialog-cancel').click()
     await saveAppScreenshot('provider-settings-invalidated-route.png')
+  })
+})
+
+describe('stale model pinned to one existing thread', function () {
+  this.timeout(90_000)
+  const THREAD_PROJECT_ID = 'e2e-provider-settings-thread-override'
+  const THREAD_ID = 'e2e-thread-stale-model'
+  const STALE_THREAD_MODEL = 'acme:cursor-grok'
+
+  before(async () => {
+    writeE2eEnv({
+      COPSE_PANEL_MOCK_LLM: '0',
+      ANTHROPIC_API_KEY: '',
+      OPENAI_API_KEY: '',
+    })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    resetUserData()
+    const workspaceRoot = seedStableWorkspace()
+    const now = Date.now()
+    writeSeedConfig({
+      projects: [{ id: THREAD_PROJECT_ID, path: workspaceRoot, name: 'workspace' }],
+      activeProjectId: THREAD_PROJECT_ID,
+      activeThreadId: THREAD_ID,
+      [`threads:${THREAD_PROJECT_ID}`]: [
+        {
+          id: THREAD_ID,
+          title: 'Cursor Cloud Agent thread',
+          status: 'idle',
+          messages: [
+            {
+              id: 'e2e-thread-stale-model-msg',
+              role: 'user',
+              content: 'Earlier message in this thread.',
+              createdAt: now - 1_000,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          model: STALE_THREAD_MODEL,
+          createdAt: now - 1_000,
+          updatedAt: now,
+        },
+      ],
+    })
+    await browser.reloadSession()
+  })
+
+  after(() => {
+    writeE2eEnv({})
+    resetUserData()
+  })
+
+  it('offers to change this thread’s own model instead of opening Settings', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('#confirm-dialog').waitForDisplayed({ timeout: 20_000 })
+    await expect($('.confirm-dialog-message')).toHaveText('This thread’s model needs attention')
+    await expect($('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining(STALE_THREAD_MODEL),
+    )
+    await expect($('.confirm-dialog-confirm')).toHaveText('Change Model')
+    await saveElementScreenshot('#confirm-dialog', 'thread-model-override-warning.png')
+    await $('.confirm-dialog-confirm').click()
+    // The thread's own footer model picker opens; nothing in Settings covers
+    // this per-thread choice, so Settings must not open instead.
+    await $('.model-picker-menu').waitForDisplayed({ timeout: 10_000 })
+    await expect($('#settings-dialog')).not.toBeDisplayed()
+    await saveElementScreenshot('.model-picker-menu', 'thread-model-override-picker.png')
   })
 })

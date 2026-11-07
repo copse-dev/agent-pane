@@ -1,3 +1,4 @@
+import { containerStorage } from './container-storage.ts'
 import {
   storageRetentionSchema,
   type StorageMaintenanceState,
@@ -21,13 +22,18 @@ export async function inspectStorageMaintenance(): Promise<StorageMaintenanceSta
   return {
     retention: readStorageRetention(),
     areas: await Promise.all([cleanup.inspect('runs'), cleanup.inspect('builds')]),
+    containers: await containerStorage().inspect(),
   }
 }
-export async function expireStorageData(): Promise<void> {
+export async function expireStorageData(
+  cleanImages: (cutoff: number) => Promise<unknown> = (cutoff) =>
+    containerStorage().clean('worker-images', cutoff),
+): Promise<void> {
   const policy = readStorageRetention()
   if (!policy.enabled) return
   const cutoff = Date.now() - policy.days * 86_400_000
   for (const area of ['runs', 'builds'] as const) await storageCleanup().clean(area, cutoff)
+  await cleanImages(cutoff)
 }
 /** Startup and daily upkeep; errors are visible in diagnostics, never fatal to app startup. */
 export function startStorageMaintenance(): void {

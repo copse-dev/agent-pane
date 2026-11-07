@@ -45,6 +45,8 @@ export interface AgentMetadata extends AgentSummary {
   model: string
   /** `readonly: true` (Cursor) or `permissionMode: plan` (Claude Code). */
   readonly: boolean
+  /** Required isolation, honoured by run_isolated_workers only. */
+  isolation?: 'worktree'
   /** `maxTurns`, clamped against the loop ceiling at run time. */
   maxTurns: number | null
   color: string | null

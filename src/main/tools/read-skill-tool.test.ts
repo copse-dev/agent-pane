@@ -80,6 +80,12 @@ describe('readSkillTool', () => {
     )
     assert.match(result, /Missing bundled references: references\/patterns\.md/)
     assert.match(result, /# Body/)
+    // Prose-inferred paths warn in preflight without blocking the instructions.
+    assert.match(result, /Skill preflight for "linky-refs": untested\./)
+    assert.match(
+      result,
+      /Supporting file "references\/patterns\.md" is missing\. The skill still loads/,
+    )
   })
 
   it('pluralizes the note for more than one missing reference', async () => {
