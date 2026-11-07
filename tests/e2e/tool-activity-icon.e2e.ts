@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -72,7 +72,7 @@ describe('tool activity icon', function () {
       },
       {
         user: 'Run a short shell command',
-        toolResults: [{ name: 'run_shell' }],
+        toolResults: [{ name: 'run_shell', includes: '(no output)' }],
         text: 'The short shell command completed successfully.',
       },
     )
@@ -155,6 +155,11 @@ describe('tool activity icon', function () {
 
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
+    // A late capture must fail rather than silently record a settled row as running.
+    await expect(card).toHaveAttribute('data-status', 'running')
+    const activity = card.$('.tool-activity-icon-slot > .reasoning-activity-icon')
+    await expect(activity).toExist()
+    await expect(activity).toBeDisplayed()
 
     // The screenshot lands ~18s into the 40s command at worst; allow the rest
     // of the sleep plus the follow-up turn with room to spare.
@@ -189,6 +194,13 @@ describe('tool activity icon — nested rollup row', function () {
   // Same 40s command and suite-level timeout reasoning as the suite above.
   this.timeout(120_000)
   let server: ConversationServer
+  const releaseName = 'e2e-tool-activity-release'
+  let releasePath = ''
+  let commandCompleted = false
+
+  function releaseCommand(): void {
+    if (releasePath) writeFileSync(releasePath, '')
+  }
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -205,16 +217,28 @@ describe('tool activity icon — nested rollup row', function () {
     }
     // A shallow source checkout need not have local main. Use real fixture
     // refs for both footer discovery and first-send checkout, never fake names.
-    seedEmptyProject(seedStableWorkspace(), 'e2e-tool-activity-icon-nested-project', {
+    const workspace = seedStableWorkspace()
+    const gitInfo = join(workspace, '.git', 'info')
+    mkdirSync(gitInfo, { recursive: true })
+    releasePath = join(gitInfo, releaseName)
+    rmSync(releasePath, { force: true })
+    seedEmptyProject(workspace, 'e2e-tool-activity-icon-nested-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
     writeSettings({ ...readSeededSettings(), ...server.settings })
-    // Same race as the test above: the command must outlast the approval
-    // helper's 15s no-dialog wait plus the running measurement and screenshot
-    // (and so, like it, needs a `timeout_ms` above run_shell's 30s default).
-    const longCommand =
-      'sleep 40 # Allow the preview server time to load the workspace, restore cached dependencies, compile the application, and finish preparing the local development page before checking its readiness.'
+    // Keep the original command and timeout; the barrier below, rather than
+    // elapsed time, now owns the lifetime of the screenshot's running state.
+    // Preserve the original capped header. The hidden Git-info release belongs
+    // to the fixture, is readable from a linked worktree's sandbox, and never
+    // becomes a workspace file. Even if capture settling outlasts the sleep,
+    // the real command cannot finish until the screenshot helper has returned.
+    const longCommand = [
+      'sleep 40 # Allow the preview server time to load the workspace, restore cached dependencies, compile the application, and finish preparing the local development page before checking its readiness.',
+      'e2e_git_dir=$(git rev-parse --git-common-dir) || exit 1',
+      `e2e_release="$e2e_git_dir/info/${releaseName}"`,
+      'while [ ! -f "$e2e_release" ]; do sleep 0.1; done',
+    ].join('\n')
     server.enqueue(
       {
         user: 'Wait briefly for the preview server to finish starting.',
@@ -222,19 +246,40 @@ describe('tool activity icon — nested rollup row', function () {
       },
       {
         user: 'Wait briefly for the preview server to finish starting.',
-        toolResults: [{ name: 'run_shell' }],
+        toolResults: [{ name: 'run_shell', includes: '(no output)' }],
         text: 'The wait has finished; the preview server can now be checked.',
       },
     )
     await browser.reloadSession()
   })
 
+  afterEach(async function () {
+    releaseCommand()
+    if (this.currentTest?.state === 'failed') {
+      const approval = await $('#approval-dialog').getElement()
+      if (await approval.isDisplayed()) {
+        await approval.$('.approval-reject').click()
+        await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
+      }
+      const stop = await $('.stop-btn').getElement()
+      if ((await stop.isExisting()) && (await stop.isDisplayed())) {
+        await stop.click()
+      }
+    }
+    await waitForAgentIdle(30_000)
+    commandCompleted = this.currentTest?.state === 'passed'
+  })
+
   after(async () => {
+    releaseCommand()
     try {
       server.assertComplete()
     } finally {
       await server.close()
       resetUserData()
+      // A failed/timeout path can report idle before a child has closed. Keep
+      // its release available until the temporary workspace itself is disposed.
+      if (commandCompleted && releasePath) rmSync(releasePath, { force: true })
     }
   })
 
@@ -292,28 +337,43 @@ describe('tool activity icon — nested rollup row', function () {
       }
     }
 
-    const running = await browser.execute(measureNestedRow)
-    if (
-      running.nameRight === null ||
-      running.headerRight === null ||
-      running.messageRight === null ||
-      running.nameWidth === null
-    )
-      throw new Error('Missing running tool row geometry')
-    expect(running.status).toBe('running')
-    // The live spiral alone conveys "running" — the static status glyph
-    // (redundant with it) is hidden rather than also claiming a slot.
-    expect(running.statusVisible).toBe(false)
-    expect(running.nameRight).not.toBe(null)
-    expect(running.headerRight).not.toBe(null)
-    expect(running.messageRight).not.toBe(null)
-    // The label's own right edge never pokes out past the hover pill, which
-    // in turn never pokes out past the message box that clips horizontally.
-    expect(running.nameRight <= running.headerRight).toBe(true)
-    expect(running.headerRight <= running.messageRight).toBe(true)
+    async function assertRunningRow(): Promise<{ text: string | null; nameWidth: number }> {
+      const row = await browser.execute(measureNestedRow)
+      if (
+        row.nameRight === null ||
+        row.headerRight === null ||
+        row.messageRight === null ||
+        row.nameWidth === null
+      )
+        throw new Error('Missing running tool row geometry')
+      expect(row.status).toBe('running')
+      // Keep the live spiral visible while its redundant static glyph is hidden.
+      const activity = nestedCard.$('.tool-activity-icon-slot > .reasoning-activity-icon')
+      await expect(activity).toExist()
+      await expect(activity).toBeDisplayed()
+      expect(row.statusVisible).toBe(false)
+      // The label stays inside the hover pill, which stays inside the message.
+      expect(row.nameRight <= row.headerRight).toBe(true)
+      expect(row.headerRight <= row.messageRight).toBe(true)
+      expect(row.text).toBe(
+        'sleep 40 # Allow the preview server time to load the workspace, restore cached dependencies, co…',
+      )
+      expect(await $('#app').getText()).not.toContain(releaseName)
+      return { text: row.text, nameWidth: row.nameWidth }
+    }
 
-    await browser.pause(600)
-    await saveAppScreenshot('tool-activity-icon-nested-row-running.png')
+    const running = await assertRunningRow()
+    try {
+      await browser.pause(600)
+      await saveAppScreenshot('tool-activity-icon-nested-row-running.png', undefined, async () => {
+        // Check the pinned frame, then keep the barrier held across the helper's
+        // later layout/index waits and actual screenshot exposure.
+        await assertRunningRow()
+      })
+      await assertRunningRow()
+    } finally {
+      releaseCommand()
+    }
 
     await expect(nestedCard).toHaveAttribute('data-status', 'done', { wait: 60_000 })
     await browser.pause(300)
@@ -342,5 +402,7 @@ describe('tool activity icon — nested rollup row', function () {
     })
     const lostToRunning = settled.nameWidth - running.nameWidth
     expect(lostToRunning).toBeLessThanOrEqual(tolerance)
+    await waitForAgentIdle(30_000)
+    server.assertComplete()
   })
 })
