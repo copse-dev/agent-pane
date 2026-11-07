@@ -181,6 +181,18 @@ describe('bounded project context corpus', () => {
     const spine = readFileSync(spinePath, 'utf8')
     writeFileSync(spinePath, spine.replace('messages/u.md', 'agent-history.json'))
     assert.equal(results(await reader().search({ query: 'needle' })).results.length, 0)
+    // Reject Windows separators on every host; the reference must stay in this
+    // thread even when its native path resolver treats backslashes as separators.
+    writeFileSync(
+      spinePath,
+      spine.replace(
+        JSON.stringify('messages/u.md'),
+        JSON.stringify('messages/..\\..\\..\\q\\other\\messages\\u.md'),
+      ),
+    )
+    assert.ok(
+      results(await reader().search({ query: 'needle' })).omissions.includes('unsupported-source'),
+    )
     writeFileSync(spinePath, spine)
     writeFileSync(
       join(dir, 'messages/u.md'),
