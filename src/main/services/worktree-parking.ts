@@ -15,7 +15,7 @@ import {
   retireThreadWorktree,
 } from './worktree-manager.ts'
 import { registerWorktreeParkingRecheck } from './worktree-parking-events.ts'
-import { hasLiveWorktreeWriter } from './worktree-writers.ts'
+import { hasLiveWorktreeWriterWithin } from './worktree-writers.ts'
 
 const createdPrByThread = new Map<string, string>()
 
@@ -23,11 +23,17 @@ function ownerKey(projectId: string, threadId: string): string {
   return `${projectId}\0${threadId}`
 }
 
+/**
+ * This thread's own terminals and background processes hold the checkout
+ * wherever they started (a local terminal starts in the home directory). Any
+ * other writer holds it only from inside it: an ancestor-scoped or unscoped
+ * one, such as another tab's home-directory shell, contains every checkout.
+ */
 function hasCheckoutResources(projectId: string, threadId: string, root: string): boolean {
   return (
     hasTerminalSessions(threadId) ||
     hasBackgroundProcessesForThread({ projectId, threadId }) ||
-    hasLiveWorktreeWriter(root)
+    hasLiveWorktreeWriterWithin(root)
   )
 }
 

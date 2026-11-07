@@ -12,7 +12,7 @@ import { withThreadResourceFence } from './thread-resource-fence.ts'
 import { getThreadMeta, loadProjectThreadMetas, updateMetaOrThrow } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { adoptThreadWorktree, canAdoptThreadWorktree } from './worktree-manager.ts'
-import { hasLiveWorktreeWriter } from './worktree-writers.ts'
+import { hasLiveWorktreeWriterWithin } from './worktree-writers.ts'
 
 /**
  * Which finished run's checkout the next run of the same automation may take over.
@@ -185,10 +185,12 @@ export function getAutomationWorktreeReuse(): AutomationWorktreeReuse {
   singleton ??= createAutomationWorktreeReuse({
     updateMeta: updateMetaOrThrow,
     projectRoot: getProjectRoot,
+    // The thread's own terminals and processes count wherever they run; any
+    // other writer only from inside the checkout (see worktree-parking.ts).
     isLive: (projectId, threadId, root) =>
       hasTerminalSessions(threadId) ||
       hasBackgroundProcessesForThread({ projectId, threadId }) ||
-      hasLiveWorktreeWriter(root),
+      hasLiveWorktreeWriterWithin(root),
     withIdleSession: withIdleAcpSession,
     canAdopt: canAdoptThreadWorktree,
     adopt: adoptThreadWorktree,

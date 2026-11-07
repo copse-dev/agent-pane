@@ -175,10 +175,13 @@ behavior is unchanged. Reaping still reports a failed shutdown after processing 
 sessions, so retaining one uncertain writer cannot prevent safe resource cleanup elsewhere.
 
 These paths also hold the old owner's existing thread-resource fence, re-read settled metadata
-and check native resources and writers of the same root before touching Git. Completed native
-background records and their retained logs do not by themselves block a later clean run; their
-existing running-process policy remains unchanged. This adds no permission, continuation grant,
-cap increase or automatic replay.
+and check native resources and writers of the same root before touching Git. The thread's own
+terminals and background processes count wherever they run; any other writer counts only when
+it is scoped to the checkout or a path inside it. An ancestor-scoped writer, such as a local
+terminal in the home directory that holds `~/.copse/worktrees`, and an unscoped one, such as an
+MCP call, contain every checkout and do not block. Completed native background records and their
+retained logs do not by themselves block a later clean run; their existing running-process policy
+remains unchanged. This adds no permission, continuation grant, cap increase or automatic replay.
 
 The same-root writer check is advisory: this is not a global checkout-writer mutex through
 awaited Git operations. A foreign-thread or unscoped writer that starts after the last check is

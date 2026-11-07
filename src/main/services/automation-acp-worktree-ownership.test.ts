@@ -48,6 +48,7 @@ import {
   startBackgroundProcess,
   stopAllBackgroundProcesses,
 } from './exec/background-process.ts'
+import { __testInjectTerminalSession, destroyAllTerminalSessions } from './exec/terminal-service.ts'
 
 const NOW = Date.parse('2026-11-06T12:00:00Z')
 type Activity =
@@ -57,6 +58,10 @@ type Activity =
   | 'pending-tool'
   | 'terminal-tool'
   | 'same-root-writer'
+  | 'nested-writer'
+  | 'ancestor-writer'
+  | 'unscoped-writer'
+  | 'own-ancestor-terminal'
   | 'completed-native-background'
   | 'late-root-writer'
 type Operation = 'handover' | 'cleanup' | 'scheduled-trigger' | 'pr-parking'
@@ -109,6 +114,7 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
 
   afterEach(async () => {
     for (const release of releases.splice(0)) release()
+    destroyAllTerminalSessions()
     await Promise.allSettled(prompts.splice(0))
     stopAllBackgroundProcesses()
     for (const service of services.splice(0)) service.stop()
@@ -328,6 +334,24 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       await until(() => hasLiveWorktreeWriter(worktree.path))
     }
     if (activity === 'same-root-writer') releases.push(beginWorktreeWriter(worktree.path))
+    if (activity === 'nested-writer') {
+      releases.push(beginWorktreeWriter(join(worktree.path, 'packages', 'app')))
+    }
+    // `scratch` holds the worktrees directory, as the home directory holds
+    // ~/.copse/worktrees: a shell there, or an MCP call (unscoped), contains
+    // every checkout and so is no evidence that this one is in use.
+    if (activity === 'ancestor-writer') releases.push(beginWorktreeWriter(scratch))
+    if (activity === 'unscoped-writer') releases.push(beginWorktreeWriter(null))
+    if (activity === 'own-ancestor-terminal') {
+      // This thread's own local terminal, which starts in the home directory.
+      __testInjectTerminalSession({
+        ownerId: 1,
+        label: 'Local',
+        threadId: previousId,
+        outputText: '',
+      })
+      releases.push(beginWorktreeWriter(scratch))
+    }
     if (activity === 'completed-native-background') {
       const completed = Promise.withResolvers<undefined>()
       const owner = { projectId, threadId: previousId }
@@ -353,6 +377,8 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     const shouldProtect =
       activity !== 'idle' &&
       activity !== 'terminal-tool' &&
+      activity !== 'ancestor-writer' &&
+      activity !== 'unscoped-writer' &&
       activity !== 'completed-native-background'
     assert.equal(
       (await getThreadMeta(projectId, previousId))?.status,
@@ -514,6 +540,10 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       'pending-tool',
       'terminal-tool',
       'same-root-writer',
+      'nested-writer',
+      'ancestor-writer',
+      'unscoped-writer',
+      'own-ancestor-terminal',
       'completed-native-background',
       'late-root-writer',
     ] satisfies Activity[]) {
