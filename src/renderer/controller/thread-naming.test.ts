@@ -113,7 +113,7 @@ test('title requests keep a background thread’s owner after a project switch',
   })
   const api = createFakeApi()
   const owners: string[][] = []
-  api.agent.suggestTitle = async (_text, projectId, threadId) => {
+  api.agent.suggestTitle = async (_text, projectId, threadId): Promise<string | null> => {
     owners.push([projectId, threadId])
     return 'Review project'
   }

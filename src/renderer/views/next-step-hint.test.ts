@@ -52,11 +52,11 @@ describe('next-step hint controller', () => {
     const api = createFakeApi()
     const owners: string[][] = []
     let release: (value: unknown) => void = () => {}
-    api.settings.get = () =>
+    api.settings.get = (): Promise<unknown> =>
       new Promise((resolve) => {
         release = resolve
       })
-    api.agent.suggestNextStep = async (_context, projectId, id) => {
+    api.agent.suggestNextStep = async (_context, projectId, id): Promise<string | null> => {
       owners.push([projectId, id])
       return null
     }
