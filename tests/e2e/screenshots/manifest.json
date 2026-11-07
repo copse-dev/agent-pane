@@ -745,6 +745,14 @@
       "sha256": "df4f7acacaba999f66c04d6782a55ac7862b9bf430bbf21ec7adca412a75fa0e",
       "bytes": 234212
     },
+    "automation-interrupted-fresh-run.png": {
+      "sha256": "43b0be0d4f984efed9f9240a23dd460f07e9c142d7ed280341100ec5ee45dfe1",
+      "bytes": 290393
+    },
+    "automation-interrupted-saved-run.png": {
+      "sha256": "7082e211c9c14f1e722848867a86cbbead1df8471bdd3ab8fa57b4464a14ef60",
+      "bytes": 417059
+    },
     "automation-manager-modal.png": {
       "sha256": "16c2b737d0ad3b7466eb655ac374dc8bb8c210a038956eba6f82bdaeebb658ef",
       "bytes": 274440
@@ -832,6 +840,18 @@
     "automation-worktree-limit-updated.png": {
       "sha256": "b059551b3f47275efeb314ecd934c6478f416b3fc5acab72f9a50941e9e8d462",
       "bytes": 277629
+    },
+    "automation-worktree-retirement-freed.png": {
+      "sha256": "651d8a53ad4bf7ebf99cf7af0a8b5fada954fb110af62c55826818a23b37d23c",
+      "bytes": 292563
+    },
+    "automation-worktree-retirement-held.png": {
+      "sha256": "1e4799c96d2f0b25cc0c9f3a324f0b5b2421580538326eded408830f468ce3c5",
+      "bytes": 256968
+    },
+    "automation-worktree-retirement-unavailable.png": {
+      "sha256": "0e23c338fef916cbf83745fe8e259522c3fe2b691725b1dd3c82e256398d446c",
+      "bytes": 288916
     },
     "background-command-outside-approval.png": {
       "sha256": "51f70b488e43b3bb4f79bf1b70cf5fed9cdfc163a8fe9e2f649f04b5d83ecf77",
@@ -5532,6 +5552,10 @@
     "thread-worktree-file-viewer.png": {
       "sha256": "f6a5b04fe55c854e6460d161cdb4d58081f685b9cae1b890fb5d57b1a858c713",
       "bytes": 303705
+    },
+    "thread-worktree-nested-read-root.png": {
+      "sha256": "0e5334475cbf499b50bae70b399f572387f51fd9c26ce42071d5cc13bb3eece3",
+      "bytes": 292795
     },
     "thread-worktree-rebase-recovery-terminal.png": {
       "sha256": "c8c0c388167225394e9cc7554398905a026eae5dbf38e0febd885c6b8c55242c",
