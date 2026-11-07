@@ -234,10 +234,12 @@ When a published release is found to be bad, dispatch
 and a reason. It works for betas, stable candidates and promoted stable
 releases:
 
-- The GitHub Release becomes a draft. Drafts are absent from `releases.atom` and
-  `releases/latest`, and their assets stop downloading, so neither update check
-  offers the version and no new user can download it. The bytes are kept in the
-  draft for investigation; nothing is deleted.
+- The GitHub Release becomes a draft, so it leaves `releases/latest` and its
+  assets stop downloading. GitHub still lists a bare version tag in
+  `releases.atom`, so the workflow first preserves the binary repository's exact
+  tag object under `halted/<tag>`, then removes the original version alias after
+  drafting. Neither update feed selects the halted version. The draft assets,
+  archived Git object and source repository's tag remain intact.
 - If it was the latest stable release, the newest remaining stable release is
   marked latest again, so the stable feed and download fall back to it. With no
   earlier stable release, the stable feed serves nothing until a corrective
@@ -253,8 +255,10 @@ recover through a corrective newer release, published and (for stable)
 promoted the usual way. Close the halt issue once it is out.
 
 If a halt was raised in error, dispatch the same workflow with `resume`. The
-release is republished unchanged; a stable release becomes latest again only if
-it is still the newest stable one.
+original binary tag is restored from its archived Git object before the release
+is republished unchanged. A stable release becomes latest again only if it is
+still the newest stable one. A mismatched original/archive pair fails closed;
+neither ref is overwritten. A partially completed halt can be retried safely.
 
 ### Rollback policy
 
