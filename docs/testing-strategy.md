@@ -253,6 +253,31 @@ a JavaScript interpreter: new conditional wrappers or runner-side selection mech
 extending the scanner and tests. Review semantic changes to existing conditions even when their
 marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
 
+### Flake visibility
+
+CI reruns a failed e2e shard once (`wdio.ci.conf.ts` keeps `specFileRetries: 0`). A spec that
+fails attempt 1 and passes attempt 2 leaves the job green, so every such disagreement is reported
+instead of dropped ([#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
+
+- **In the shard job.** _Report specs whose shard attempts disagreed_ emits one `::warning::` per
+  spec (shard, failed test titles, first attempt-1 error lines) and a table in the job summary. It
+  also catches a spec cut off by the attempt watchdog that then passed, and a spec that passed
+  attempt 1 and failed on the retry.
+- **Across one run's shards.** The _Publish gate evidence_ workflow, which already downloads every
+  shard's `e2e-evidence-shard-<n>-<run_attempt>` artifact, aggregates them into its job summary.
+  It also flags a spec that failed in one workflow attempt and passed after "Re-run failed jobs"
+  on the same commit.
+- **Per-spec history.** The _E2E flake report_ workflow (`.github/workflows/flake-report.yml`)
+  runs daily after the nightly run, and when its own code changes. It reads the evidence
+  artifacts of recent `schedule`, `merge_group` and `pull_request` CI runs and summarises each
+  spec: runs observed, attempt-1 failures, retried passes, pass→fail on retry, same-commit
+  re-run flips, final failures and flake rate. Locally, where `gh` can download artifacts:
+  `pnpm run flake-report collect <dir> [--runs N]`, then `pnpm run flake-report aggregate <dir>`.
+
+All three are advisory: they read the outcome records as data and can never change a job result.
+The repository caps artifact retention at 5 days, so the history covers about that window. Base
+quarantine and release decisions on this data, not on one sampled red run.
+
 ### Nightly quarantine run
 
 A quarantined spec is one whose `exclusions.json` entry has category `quarantine` and the

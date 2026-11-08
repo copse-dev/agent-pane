@@ -2204,6 +2204,16 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # The retry above turns a spec that failed attempt 1 and passed attempt 2
+      # into a green job with no signal. Name each one in a ::warning:: and the
+      # job summary (docs/testing-strategy.md#flake-visibility). Advisory: the
+      # report always exits 0 and cannot change the shard's result.
+      - name: Report specs whose shard attempts disagreed
+        if: always()
+        continue-on-error: true
+        run: >-
+          node scripts/flake-report.mts shard e2e-evidence/outcomes
+          --log e2e-failure-artifacts/attempt-1.log --shard "${{ matrix.shard }}"
       - name: Preserve per-spec attempts (including partial failures)
         if: always()
         continue-on-error: true
