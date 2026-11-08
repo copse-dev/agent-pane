@@ -287,6 +287,12 @@ A failed `Release (macOS)` run opens an `area:release` issue named
 `Release (macOS) failed for <tag>`, or comments on it if a retry fails too.
 Close it once a later release is published.
 
+A failed `Release dispatch` run opens `Release dispatch failed for <tag>` (or
+for the commit, when the tag lookup itself failed). It means the build may never
+have started, not that it failed: re-run the failed run once the cause, usually
+a GitHub API error, has cleared. It reads current state, so it starts the build
+at most once and does nothing for a commit that releases nothing.
+
 The weekly bump waits for the current version to be published, which a failed
 version never will be. To abandon it once the fix has merged, dispatch
 `Bump release version` with the next version (for example `0.1.0-beta.12` past a

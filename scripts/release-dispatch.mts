@@ -8,12 +8,17 @@
 // Release-cut tags before it reads CI, and the dispatcher reads the tag after
 // CI completed, so at least one of them sees both the tag and final CI.
 //
+// "Finished" is the newest CI push run's status, not its evidence: a failed
+// run still starts the build so preflight reports it, and an API error throws
+// instead of reading as either answer.
+//
 // Loaded by github-script from a sparse checkout, so it imports only the
 // dependency-free safe-json helper.
 
 import { safeJsonParse } from './lib/safe-json.mts'
 
 export const RELEASE_WORKFLOW = 'release-mac.yml'
+export const CI_WORKFLOW = 'ci.yml'
 
 const SHA = /^[0-9a-f]{40}$/
 // A plausible package version, only so a tag ref is never built from junk.
@@ -40,7 +45,12 @@ export interface ReleaseDispatchGitHub {
     }
     actions: {
       listWorkflowRuns: (
-        p: RepoParams & { workflow_id: string; head_sha: string; per_page: number },
+        p: RepoParams & {
+          workflow_id: string
+          head_sha: string
+          per_page: number
+          event?: 'push'
+        },
       ) => Promise<{ data: unknown }>
       createWorkflowDispatch: (
         p: RepoParams & { workflow_id: string; ref: string; inputs: { tag: string } },
@@ -174,4 +184,52 @@ export async function startReleaseBuild(
   })
   ctx.log(`Dispatched Release (macOS) for ${tag}.`)
   return 'started'
+}
+
+/**
+ * Whether the newest push run of CI at the commit, the one preflight reads,
+ * has finished, whatever its conclusion. A re-run in progress counts as not
+ * finished: its completion triggers release-dispatch.yml again.
+ */
+export async function ciFinished(ctx: ReleaseDispatchContext, sha: string): Promise<boolean> {
+  requireSha(sha)
+  const { data } = await ctx.github.rest.actions.listWorkflowRuns({
+    owner: ctx.owner,
+    repo: ctx.repo,
+    workflow_id: CI_WORKFLOW,
+    head_sha: sha,
+    event: 'push',
+    per_page: 100,
+  })
+  const runs = field(data, 'workflow_runs')
+  if (!Array.isArray(runs)) throw new Error('Could not read CI runs')
+  const list: readonly unknown[] = runs
+  let newest = -1
+  let status: unknown
+  for (const run of list) {
+    const number = field(run, 'run_number')
+    if (typeof number !== 'number') throw new Error('Could not read a CI run number')
+    if (number > newest) {
+      newest = number
+      status = field(run, 'status')
+    }
+  }
+  if (newest < 0) ctx.log(`No CI push run found for ${sha} yet.`)
+  return status === 'completed'
+}
+
+/**
+ * Starts the build once CI at the commit has finished; until then, leaves it
+ * to CI's completion, which runs release-dispatch.yml.
+ */
+export async function startReleaseWhenCiFinished(
+  ctx: ReleaseDispatchContext,
+  sha: string,
+  tag: string,
+): Promise<'ci-running' | 'started' | 'already-started'> {
+  if (!(await ciFinished(ctx, sha))) {
+    ctx.log(`CI for ${sha} is still running; its completion starts Release (macOS) for ${tag}.`)
+    return 'ci-running'
+  }
+  return startReleaseBuild(ctx, sha, tag)
 }
