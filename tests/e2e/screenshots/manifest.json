@@ -945,9 +945,25 @@
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
     },
+    "branch-checkout-late-error.png": {
+      "sha256": "12288e2b0c27384eb85a6598d5710f6c457b2d26c4b00f32eee147ad525c0552",
+      "bytes": 99033
+    },
+    "branch-checkout-late-success.png": {
+      "sha256": "d4652490fe511f02fda18ef94cb39ef442de6239af81ce9fe3d58b713996d058",
+      "bytes": 99017
+    },
     "branch-ci-status-evidence.png": {
       "sha256": "7856473097339ef6bd4820d86e3d2e72336e96314ce8420a43f74d57965877f1",
       "bytes": 88769
+    },
+    "branch-continuation-other-draft.png": {
+      "sha256": "356d8fca72fa53a566324a3e2ff541766d53c49c4ee1c72387403d692c186982",
+      "bytes": 88766
+    },
+    "branch-continuation-other-warning.png": {
+      "sha256": "12288e2b0c27384eb85a6598d5710f6c457b2d26c4b00f32eee147ad525c0552",
+      "bytes": 99033
     },
     "bridged-thread-proposals.png": {
       "sha256": "3b264fa1cd26bd7a3f25b47db0cde2f1af8b38f5440bdf087af3d5b189ed319f",
