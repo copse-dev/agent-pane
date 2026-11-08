@@ -29,6 +29,8 @@ import {
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { runWithActiveRunIdentity } from './active-run-identity.ts'
 import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
+import { objectEnvelopeOf } from './tool-input-schema.ts'
+import { setElectronAppRuntime } from './electron-app-runtime.ts'
 
 describe('ToolRegistry', () => {
   it('registers and executes a tool', async () => {
@@ -146,6 +148,12 @@ describe('ToolRegistry', () => {
           msg: z.string().transform((value) => `${value}!`),
           target: z.string(),
         }),
+        // A transform has no JSON Schema, so a real tool advertises its input.
+        rawParameters: {
+          type: 'object',
+          properties: { msg: { type: 'string' }, target: { type: 'string' } },
+          required: ['msg', 'target'],
+        },
         execute: async ({ msg, target }) => `${msg}:${target}`,
       })
 
@@ -374,6 +382,11 @@ describe('ToolRegistry', () => {
             .max(200)
             .transform((value) => value + 1),
         }),
+        rawParameters: {
+          type: 'object',
+          properties: { max_results: { type: 'number', maximum: 200 } },
+          required: ['max_results'],
+        },
         execute: async ({ max_results }) => `value=${String(max_results)}`,
       })
       const result = await reg.executeNormalized(
@@ -983,6 +996,154 @@ describe('ToolRegistry', () => {
       /command not found: frobnicate/,
     )
     setPermissionGateForTests(null)
+  })
+})
+
+describe('ToolRegistry input schemas agents can list (#4142)', () => {
+  const unionParameters = z.union([
+    z.object({ action: z.literal('start') }),
+    z.object({ action: z.literal('click'), x: z.number() }),
+  ])
+  const echo = async (): Promise<string> => 'ok'
+
+  /** Capture console.warn for the duration of `run`. */
+  function warningsDuring(run: () => void): string[] {
+    const warnings: string[] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args.map(String).join(' '))
+    }
+    try {
+      run()
+    } finally {
+      console.warn = original
+    }
+    return warnings
+  }
+
+  afterEach(() => {
+    setElectronAppRuntime(null)
+  })
+
+  it('refuses a first-party tool whose parameters are a union', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({
+        name: 'union_tool',
+        description: 'one shape per action',
+        parameters: unionParameters,
+        execute: echo,
+      })
+    }, /Tool "union_tool" can't be offered to agents: its input schema is not a top-level object/)
+    assert.equal(reg.has('union_tool'), false)
+  })
+
+  it('refuses a first-party tool whose parameters are not an object', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({ name: 'bare', description: 'a string', parameters: z.string(), execute: echo })
+    }, /Tool "bare" can't be offered to agents/)
+  })
+
+  it('refuses first-party rawParameters with a top-level combinator', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({
+        name: 'raw_union',
+        description: 'hand-written union',
+        parameters: unionParameters,
+        rawParameters: { type: 'object', anyOf: [] },
+        execute: echo,
+      })
+    }, /its input schema has a top-level "anyOf"/)
+  })
+
+  it('accepts a union that advertises a flat object envelope', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'enveloped',
+      description: 'one shape per action',
+      parameters: unionParameters,
+      rawParameters: objectEnvelopeOf(unionParameters),
+      execute: echo,
+    })
+    assert.deepEqual(
+      reg.toMcpTools().map((tool) => tool.name),
+      ['enveloped'],
+    )
+    // The envelope is only what agents see: calls are still validated per shape.
+    reg.validateArgs('enveloped', { action: 'click', x: 1 })
+    assert.throws(() => {
+      reg.validateArgs('enveloped', { action: 'click' })
+    })
+  })
+
+  it('keeps an untrusted schema registered but out of both exports, warning once', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'mcp__srv__union',
+      description: 'from an MCP server',
+      parameters: z.unknown(),
+      rawParameters: { type: 'object', properties: {}, oneOf: [] },
+      untrustedSchema: true,
+      execute: echo,
+    })
+    reg.register({
+      name: 'read_file',
+      description: 'read',
+      parameters: z.object({ path: z.string() }),
+      execute: echo,
+    })
+    assert.equal(reg.has('mcp__srv__union'), true)
+    const warnings = warningsDuring(() => {
+      for (let turn = 0; turn < 3; turn++) {
+        assert.deepEqual(
+          reg.toMcpTools().map((tool) => tool.name),
+          ['read_file'],
+        )
+        assert.deepEqual(
+          reg.toLLMTools().map((tool) => tool.name),
+          ['read_file'],
+        )
+      }
+    })
+    assert.deepEqual(warnings, [
+      '[tools] Not offering "mcp__srv__union" to models (draft-2020-12): its input schema has a top-level "oneOf"',
+      '[tools] Not offering "mcp__srv__union" to models (openapi-3.0): its input schema has a top-level "oneOf"',
+    ])
+  })
+
+  it('leaves a schema zod cannot convert out of the native export too, not the whole turn', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'unconvertible',
+      description: 'untrusted and odd',
+      parameters: z.object({ when: z.date() }),
+      untrustedSchema: true,
+      execute: echo,
+    })
+    const warnings = warningsDuring(() => {
+      assert.deepEqual(reg.toLLMTools(), [])
+      assert.deepEqual(reg.toMcpTools(), [])
+    })
+    assert.equal(warnings.length, 2)
+    assert.match(warnings[0] ?? '', /can't be converted to JSON Schema/)
+  })
+
+  it('in a packaged build, registers a bad first-party tool but offers it to no model', () => {
+    setElectronAppRuntime({ userDataPath: '/unused', version: '0.0.0', isPackaged: true })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'union_tool',
+      description: 'one shape per action',
+      parameters: unionParameters,
+      execute: echo,
+    })
+    assert.equal(reg.has('union_tool'), true)
+    warningsDuring(() => {
+      assert.deepEqual(reg.toMcpTools(), [])
+      assert.deepEqual(reg.toLLMTools(), [])
+    })
   })
 })
 

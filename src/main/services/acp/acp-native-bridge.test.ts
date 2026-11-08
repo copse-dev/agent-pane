@@ -1729,14 +1729,21 @@ describe('startAcpNativeBridge', () => {
     })
     assert.ok(bridge)
     assert.equal(bridge.toolsListed(), false)
+    assert.equal(bridge.listedToolNames(), null)
     assert.equal(await bridge.whenToolsListed(20), false, 'an unlisted bridge times out')
     const waiting = bridge.whenToolsListed(10_000)
     assert.equal((await rpc(bridge, LIST_TOOLS, 'wrong-token')).status, 401)
     assert.equal(bridge.toolsListed(), false, 'a request without the token is not the agent')
     for (const init of initialized()) await rpc(bridge, init)
     assert.equal(bridge.toolsListed(), false, 'initialize alone is not a mount')
-    await rpc(bridge, LIST_TOOLS)
+    const listed = await rpc(bridge, LIST_TOOLS)
     assert.equal(bridge.toolsListed(), true)
+    // Exactly what the listing returned: what the agent was given, not the offer.
+    assert.deepEqual(
+      bridge.listedToolNames(),
+      recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name']),
+    )
+    assert.deepEqual([...(bridge.listedToolNames() ?? [])].sort(), ['run_shell', 'staged_diffs'])
     assert.equal(await waiting, true, 'a pending wait wakes on the listing')
     assert.equal(await bridge.whenToolsListed(0), true)
   })
