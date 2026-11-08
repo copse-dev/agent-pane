@@ -57,6 +57,18 @@
       "sha256": "323ec5edc4070742efa08957c14ccb8254da02407f04a833626083eb47412fc9",
       "bytes": 24640
     },
+    "acp-command-preflight-automation.png": {
+      "sha256": "631d82f2a39a34977c6b30f0c7daa663ed776cb9759fdc7e714efecee92aab24",
+      "bytes": 386670
+    },
+    "acp-command-preflight-recovered.png": {
+      "sha256": "958348cf12d0b2d8d182a018b186dab205ca8d15003cff3919d9e9bf5b661598",
+      "bytes": 276931
+    },
+    "acp-command-preflight.png": {
+      "sha256": "61c766fb06d27640bafa2edfd441465ef027933dba6e4b63420ddf130ab00753",
+      "bytes": 352897
+    },
     "acp-config-options-context-menu.png": {
       "sha256": "d04cd78debb703fadb2eacf299df7de6ab3df5913d6f229471c16e1dcfc6a42c",
       "bytes": 12972
