@@ -170,6 +170,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // renderer card remains the approval boundary that actually starts it.
   'propose_thread',
   'list_threads',
+  'read_thread',
   'send_thread_prompt',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',

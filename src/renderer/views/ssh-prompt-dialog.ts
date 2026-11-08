@@ -113,6 +113,17 @@ export function mountSshPromptDialog(api: SshPromptApi): void {
     finish('')
   })
 
+  api.sshPrompt.onDismissed((id) => {
+    const queued = queue.findIndex((request) => request.id === id)
+    if (queued !== -1) queue.splice(queued, 1)
+    if (active?.id !== id) return
+    active = null
+    secretInput.value = ''
+    dialog.close()
+    active = queue.shift() ?? null
+    renderActive()
+  })
+
   api.sshPrompt.onRequest((req) => {
     if (active) queue.push(req)
     else {

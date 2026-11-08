@@ -33,6 +33,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   explore: { running: 'Exploring files', done: 'Explored files' },
   read_explored: { running: 'Quoting explored lines', done: 'Quoted explored lines' },
   read_file: { running: 'Reading file', done: 'Read file' },
+  read_thread: { running: 'Reading conversation', done: 'Read conversation' },
   list_dir: { running: 'Listing directory', done: 'Listed directory' },
   search_code: { running: 'Searching code', done: 'Searched code' },
   search_codebase: { running: 'Searching codebase', done: 'Searched codebase' },

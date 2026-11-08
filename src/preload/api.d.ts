@@ -555,6 +555,7 @@ export interface ApiClient {
     ) => () => void
   }
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => () => void
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
       handler: (req: {

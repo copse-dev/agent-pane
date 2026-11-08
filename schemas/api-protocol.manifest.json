@@ -3255,6 +3255,13 @@
           1
         ]
       },
+      "ssh-prompt:dismissed": {
+        "api": "sshPrompt.onDismissed",
+        "args": [
+          1,
+          1
+        ]
+      },
       "ssh:connection-changed": {
         "api": "sshWorkspace.onConnectionChanged",
         "args": [

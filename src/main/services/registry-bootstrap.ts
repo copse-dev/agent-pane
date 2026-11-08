@@ -50,7 +50,7 @@ import { askUserTool } from '../tools/ask-user-tool.ts'
 import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
-import { listThreadsTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
+import { listThreadsTool, readThreadTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { askClassifierTool } from '../tools/classifier-tool.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -246,6 +246,7 @@ export function createRegistry(): ToolRegistry {
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
   registry.register(proposeThreadTool)
   registry.register(listThreadsTool)
+  registry.register(readThreadTool)
   registry.register(sendThreadPromptTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
   // returns a report; the agent proposes any fixes for the user to approve.
