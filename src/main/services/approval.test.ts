@@ -1041,32 +1041,12 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal((await requestUnderThread(req)).approved, false)
   })
 
-  it('cannot replay a task approval into a new human task', async () => {
-    const taskRequest = { ...req, allowTurnTreeLease: true }
-    const inTask = (epoch: string, signal?: AbortSignal): Promise<ApprovalResponse> =>
-      inTurn(() => {
-        setActiveRunTurnTreeId(asTurnTreeId(epoch))
-        return requestApproval(taskRequest, signal)
-      })
-    parkingHandler()
-    const { signal, abandon } = abandonedSignal()
-    const first = inTask('task-before', signal)
-    abandon()
-    await assert.rejects(first, ApprovalPendingError)
-    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
-    await Promise.resolve()
-    setApprovalHandler(async () => ({ approved: false, remember: false }))
-    assert.equal((await inTask('task-after')).approved, false)
-    assert.equal(
-      (await inTask('task-before')).approved,
-      true,
-      'same task can still claim its answer',
-    )
-  })
-
-  it('does not join a parked task prompt from another epoch, project or root', async () => {
-    const taskRequest = { ...req, allowTurnTreeLease: true }
-    const taskRequestAt = (
+  for (const { label, request } of [
+    { label: 'lease-capable shell', request: { ...req, allowTurnTreeLease: true } },
+    { label: 'one-time shell', request: req },
+    { label: 'one-time MCP', request: { ...req, type: 'mcp' } },
+  ] satisfies Array<{ label: string; request: ApprovalRequest }>) {
+    const requestAt = (
       projectId: string,
       root: string,
       epoch: string,
@@ -1084,31 +1064,72 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
         () =>
           runWithActiveRunIdentity(THREAD, () => {
             setActiveRunTurnTreeId(asTurnTreeId(epoch))
-            return requestApproval(taskRequest, signal)
+            return requestApproval(request, signal)
           }),
       )
-    parkingHandler()
-    const { signal, abandon } = abandonedSignal()
-    const first = taskRequestAt(PROJECT, tmpdir(), 'original', signal)
-    abandon()
-    await assert.rejects(first, ApprovalPendingError)
-    const originalAnswer = release
-    let newPrompts = 0
-    setApprovalHandler(async () => {
-      newPrompts++
-      return { approved: false, remember: false }
-    })
-    const changed = await Promise.all([
-      taskRequestAt(PROJECT, tmpdir(), 'new-task'),
-      taskRequestAt('other-project', tmpdir(), 'original'),
-      taskRequestAt(PROJECT, join(tmpdir(), 'other-root'), 'original'),
-    ])
-    assert.equal(newPrompts, 3)
-    assert.ok(changed.every((response) => !response.approved))
-    originalAnswer?.({ approved: true, remember: false, grantScope: 'turn-tree' })
-    await Promise.resolve()
-    assert.equal((await taskRequestAt(PROJECT, tmpdir(), 'original')).approved, true)
-  })
+
+    for (const changed of [
+      { label: 'epoch', projectId: PROJECT, root: tmpdir(), epoch: 'new-task' },
+      { label: 'project', projectId: 'other-project', root: tmpdir(), epoch: 'original' },
+      { label: 'root', projectId: PROJECT, root: join(tmpdir(), 'other-root'), epoch: 'original' },
+    ]) {
+      it(`${label}: a saved answer cannot cross ${changed.label}`, async () => {
+        parkingHandler()
+        const { signal, abandon } = abandonedSignal()
+        const first = requestAt(PROJECT, tmpdir(), 'original', signal)
+        abandon()
+        await assert.rejects(first, ApprovalPendingError)
+        release?.({ approved: true, remember: false })
+        await Promise.resolve()
+        let newPrompts = 0
+        setApprovalHandler(async () => {
+          newPrompts++
+          return { approved: false, remember: false }
+        })
+        assert.equal(
+          (await requestAt(changed.projectId, changed.root, changed.epoch)).approved,
+          false,
+        )
+        assert.equal(newPrompts, 1)
+        assert.equal(
+          (await requestAt(PROJECT, tmpdir(), 'original')).approved,
+          true,
+          'the original task can still claim its saved answer',
+        )
+        assert.equal((await requestAt(PROJECT, tmpdir(), 'original')).approved, false)
+        assert.equal(newPrompts, 2, 'the saved answer is consumed only once')
+      })
+
+      it(`${label}: a parked prompt cannot cross ${changed.label}`, async () => {
+        parkingHandler()
+        const { signal, abandon } = abandonedSignal()
+        const first = requestAt(PROJECT, tmpdir(), 'original', signal)
+        abandon()
+        await assert.rejects(first, ApprovalPendingError)
+        const originalAnswer = release
+        let newPrompts = 0
+        setApprovalHandler(async () => {
+          newPrompts++
+          return { approved: false, remember: false }
+        })
+        const foreign = requestAt(changed.projectId, changed.root, changed.epoch)
+        try {
+          // Check before awaiting: a broken boundary joins the still-open
+          // original prompt and would otherwise hang instead of failing.
+          assert.equal(newPrompts, 1)
+          assert.equal((await foreign).approved, false)
+          const retry = requestAt(PROJECT, tmpdir(), 'original')
+          assert.equal(newPrompts, 1, 'the same-task retry joins the parked prompt')
+          assert.equal(parkedApprovalCount(), 0, 'the retry replaces the stand-in')
+          originalAnswer?.({ approved: true, remember: false })
+          assert.equal((await retry).approved, true)
+        } finally {
+          originalAnswer?.({ approved: true, remember: false })
+          await foreign
+        }
+      })
+    }
+  }
 
   it('releaseParkedApprovalsForThread detaches the stand-in without closing the prompt', async () => {
     parkingHandler()

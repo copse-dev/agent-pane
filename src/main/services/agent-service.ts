@@ -856,6 +856,7 @@ export async function runAgent(
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
   const admission = new AbortController()
   const revokeTaskApprovals = (): void => {
+    if (admission.signal.reason === 'send_now') return
     shellReplayLeaseStore.revokeThread(threadId)
     discardApprovalsForThread(threadId)
   }
@@ -3166,8 +3167,10 @@ async function runAgentWithInlineCanvas(
 }
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
-  shellReplayLeaseStore.revokeThread(threadId)
-  discardApprovalsForThread(threadId)
+  if (reason !== 'send_now') {
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
   cancelAgentInitiatedAcpTurn(threadId)
