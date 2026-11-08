@@ -309,8 +309,9 @@ jobs:
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
       # Burn-in admission (docs/testing-strategy.md): select the e2e specs this
-      # PR adds, modifies or restores. Planning only; it never fails precheck.
-      # An over-cap plan is reported by the `e2e-burn-in` job instead.
+      # PR adds, modifies or restores. An over-cap plan is not a precheck
+      # failure; the `e2e-burn-in` job reports it. An unreadable registry or a
+      # failed diff still fails here, rather than planning nothing.
       - name: Plan e2e burn-in
         id: burn-in-plan
         if: github.event_name == 'pull_request'
@@ -1670,7 +1671,9 @@ jobs:
       # and overlaps checkout and setup; "Join disk cleanup" waits for it before
       # the suite and logs `df -h` again. A roomy runner pays one `df`.
       # Hosted-only: never delete system directories on a self-hosted box.
-      - name: Free disk on a cramped hosted runner
+      # Anchored so the e2e-burn-in job runs the identical step (`*e2e-free-disk`).
+      - &e2e-free-disk
+        name: Free disk on a cramped hosted runner
         if: runner.environment == 'github-hosted'
         env:
           # The classifier spec needs ~15.6 GB free when it runs, and setup plus
@@ -1803,7 +1806,9 @@ jobs:
         run: node scripts/screenshot-identity.mts prepare
       # Joins "Free disk on a cramped hosted runner" and logs the space the
       # suite starts with, on every hosted shard, cleaned or not.
-      - name: Join disk cleanup and log free space
+      # Anchored for the e2e-burn-in job too (`*e2e-join-disk`).
+      - &e2e-join-disk
+        name: Join disk cleanup and log free space
         if: runner.environment == 'github-hosted'
         env:
           # Winnow-12B's preflight: downloadGb 12.5 x DISK_HEADROOM 1.25.
@@ -2330,7 +2335,9 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.precheck.result == 'success' &&
-      (needs.precheck.outputs.burn_in_status == 'over-cap' ||
+      ((needs.precheck.outputs.burn_in_status == 'over-cap' &&
+        (github.event.pull_request.draft == false ||
+         contains(github.event.pull_request.labels.*.name, 'ci-full'))) ||
        (needs.precheck.outputs.burn_in_status == 'run' && needs.build.result == 'success'))
     runs-on: ubuntu-24.04
     # Ten full runs plus one run per `it` of a long spec, plus setup.
@@ -2353,6 +2360,9 @@ jobs:
           echo "::error title=e2e burn-in over cap::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           exit 1
+      # The e2e job's disk headroom, shared by YAML anchor: the classifier spec's
+      # install preflight needs ~15.6 GB free, which cramped runners lack.
+      - *e2e-free-disk
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -2394,14 +2404,17 @@ jobs:
             echo "::error title=e2e burn-in checkout is dirty before tests::Remove generated files from the checkout or ignore them before starting e2e."
             exit 1
           fi
+      - *e2e-join-disk
       - name: Burn in ${{ matrix.spec }}
         id: burn-in
         timeout-minutes: 70
         env:
-          SPEC: ${{ matrix.spec }}
+          # Off argv on purpose: the reaper's `pkill -f` patterns would match a
+          # spec name such as gortex-*.e2e.ts in this process's command line.
+          E2E_BURN_IN_SPEC: ${{ matrix.spec }}
         run: |
-          echo "name=$(basename "$SPEC" .e2e.ts)" >> "$GITHUB_OUTPUT"
-          node scripts/e2e-burn-in.mts run --spec "$SPEC" --out e2e-burn-in --summary "$GITHUB_STEP_SUMMARY"
+          echo "name=$(basename "$E2E_BURN_IN_SPEC" .e2e.ts)" >> "$GITHUB_OUTPUT"
+          node scripts/e2e-burn-in.mts run --out e2e-burn-in --summary "$GITHUB_STEP_SUMMARY"
       - name: Upload burn-in evidence
         if: always() && steps.burn-in.outputs.name != ''
         continue-on-error: true
@@ -2413,6 +2426,62 @@ jobs:
             e2e-failure-artifacts/
           if-no-files-found: warn
           retention-days: 14
+
+  # One stable check context for burn-in. The matrix job's check names vary by
+  # spec (and read `e2e burn-in (${{ matrix.spec }})` when it is skipped), so
+  # branch protection cannot require them. This job always reports `e2e burn-in`
+  # on every event, merge queues included: it passes when nothing needed burning
+  # in (or on a draft, where the heavy tier does not run) and fails when a
+  # required burn-in failed, was cancelled or never ran. It is not in
+  # `CI Passed`; requiring it is a branch-protection decision.
+  e2e-burn-in-result:
+    name: e2e burn-in
+    needs: [precheck, build, e2e-burn-in]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require a passing burn-in when one was planned
+        env:
+          CANCELLED: ${{ cancelled() }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          PRECHECK_RESULT: ${{ needs.precheck.result }}
+          STATUS: ${{ needs.precheck.outputs.burn_in_status }}
+          RESULT: ${{ needs.e2e-burn-in.result }}
+        run: |
+          set -eu
+          if [ "$CANCELLED" = "true" ]; then
+            echo "Cancelled; this run cannot vouch for burn-in."
+            exit 1
+          fi
+          if [ "$IS_PR" != "true" ]; then
+            echo "Burn-in runs on pull requests only; nothing to require for ${GITHUB_EVENT_NAME}."
+            exit 0
+          fi
+          if [ "$PRECHECK_RESULT" != "success" ]; then
+            echo "precheck did not succeed (result=$PRECHECK_RESULT), so no burn-in plan exists."
+            exit 1
+          fi
+          case "$STATUS" in
+            none|'')
+              echo "No new, changed or restored e2e spec to burn in."
+              exit 0 ;;
+            run|over-cap) ;;
+            *)
+              echo "Unknown burn-in plan status: $STATUS"
+              exit 1 ;;
+          esac
+          if [ "$REQUIRED" != "true" ]; then
+            echo "Draft (or fork) pull request: the heavy tier does not run, so burn-in is not required yet."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "Burn-in was planned (status=$STATUS) but did not pass (result=$RESULT)."
+            exit 1
+          fi
+          echo "Every planned spec passed burn-in."
 
   # Preserve reference screenshots as immutable run evidence. Each e2e shard
   # uploads only PNGs that differ from the checked-out baseline; this job merges

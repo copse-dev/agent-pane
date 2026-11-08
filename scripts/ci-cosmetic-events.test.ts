@@ -160,6 +160,12 @@ describe('cosmetic CI event routing', () => {
         assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
         continue
       }
+      if (name === 'e2e-burn-in-result') {
+        // The stable burn-in context: evaluates on every event, and its own
+        // step fails a cancelled run or a failed precheck.
+        assert.equal(job.if, '${{ always() }}')
+        continue
+      }
       if (name === 'e2e-burn-in') {
         // Runs its over-cap refusal without a build, so it admits itself on
         // precheck success and needs a successful build for any real run.

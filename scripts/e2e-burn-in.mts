@@ -37,7 +37,12 @@ export const BURN_IN_LARGE_LABEL = 'e2e-burn-in-large'
 /** Matrix entry the workflow receives when the cap is exceeded. */
 export const OVER_CAP_MATRIX_ENTRY = 'over-cap'
 
+/** Any spec WDIO would glob, so an unusual file name cannot opt out of selection. */
+const SELECTABLE_SPEC = /^tests\/e2e\/.+\.e2e\.ts$/
+/** Names `run` accepts; a selected spec outside this fails the job with a rename hint. */
 const SPEC_PATH = /^tests\/e2e\/[\w/.-]+\.e2e\.ts$/
+/** Environment variable carrying the spec to `run`, kept off argv (see `runSpec`). */
+export const BURN_IN_SPEC_ENV = 'E2E_BURN_IN_SPEC'
 const REGISTRY_PATH = 'tests/e2e/exclusions.json'
 
 export type BurnInReason = 'added' | 'modified' | 'renamed' | 'restored'
@@ -68,15 +73,20 @@ export function parseMarkerRegistry(text: string): MarkerEntry[] | null {
   return safeJsonParse(text, decodeWithSchema(markerRegistrySchema))?.entries ?? null
 }
 
-/** Parse `git diff --name-status -M` output; a rename or copy reports its new path. */
+/**
+ * Parse `git diff -z --name-status -M` output: NUL-separated, so no path is
+ * quoted or mangled. A rename or copy reports its new path.
+ */
 export function parseNameStatus(text: string): FileChange[] {
   const changes: FileChange[] = []
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue
-    const fields = line.split('\t')
-    const status = fields[0]?.charAt(0)
-    const path = fields.at(-1)
-    if (status && path && fields.length >= 2) changes.push({ status, path })
+  const fields = text.split('\0')
+  for (let i = 0; i < fields.length; i++) {
+    const status = fields[i]?.charAt(0)
+    if (!status) continue
+    const pathCount = status === 'R' || status === 'C' ? 2 : 1
+    const path = fields[i + pathCount]
+    i += pathCount
+    if (path) changes.push({ status, path })
   }
   return changes
 }
@@ -117,7 +127,7 @@ export function selectBurnInSpecs(input: {
     reasons.set(spec, set)
   }
   for (const change of input.changes) {
-    if (!SPEC_PATH.test(change.path)) continue
+    if (!SELECTABLE_SPEC.test(change.path)) continue
     if (change.status === 'A' || change.status === 'C') add(change.path, 'added')
     else if (change.status === 'M' || change.status === 'T') add(change.path, 'modified')
     else if (change.status === 'R') add(change.path, 'renamed')
@@ -247,9 +257,12 @@ export interface RunCounts {
 
 /** Totals from the WDIO spec reporter's `N passing` / `N skipped` / `N failing` lines. */
 export function reporterCounts(output: string): RunCounts {
+  // Only the spec reporter's per-worker lines (`[chrome … #0-0] 1 passing`).
+  // The launcher's `Spec Files: 0 passed, 1 skipped` line counts a spec whose
+  // grep matched nothing as skipped, which must not read as a skipped test.
   const sum = (word: string): number => {
     let total = 0
-    for (const match of output.matchAll(new RegExp(`\\b(\\d+) ${word}\\b`, 'g')))
+    for (const match of output.matchAll(new RegExp(`^\\[[^\\]]+\\] (\\d+) ${word}\\b`, 'gm')))
       total += Number(match[1])
     return total
   }
@@ -320,7 +333,7 @@ function plan(args: readonly string[]): void {
   const base = option(args, '--base')
   if (!base) throw new Error('plan requires --base <rev>')
   const changes = parseNameStatus(
-    execFileSync('git', ['diff', '--name-status', '-M', base, 'HEAD', '--', 'tests/e2e'], {
+    execFileSync('git', ['diff', '-z', '--name-status', '-M', base, 'HEAD', '--', 'tests/e2e'], {
       encoding: 'utf8',
     }),
   )
@@ -414,9 +427,16 @@ function runOnce(
 }
 
 async function run(args: readonly string[]): Promise<void> {
-  const spec = option(args, '--spec')
-  if (!spec || !SPEC_PATH.test(spec) || !existsSync(spec))
-    throw new Error('run requires --spec tests/e2e/<name>.e2e.ts')
+  // CI passes the spec in the environment, not argv: the reaper's `pkill -f`
+  // patterns (for example `[g]ortex`) would otherwise match this process's own
+  // command line for a spec such as tests/e2e/gortex-index-status.e2e.ts.
+  const spec = option(args, '--spec') ?? process.env[BURN_IN_SPEC_ENV]
+  if (!spec || !existsSync(spec))
+    throw new Error(`run requires --spec or ${BURN_IN_SPEC_ENV} naming an existing e2e spec`)
+  if (!SPEC_PATH.test(spec))
+    throw new Error(
+      `${spec}: burn-in runs only spec paths of letters, digits, '_', '-', '.' and '/'. Rename the spec.`,
+    )
   const repeats = Number(option(args, '--repeats') ?? BURN_IN_REPEATS)
   if (!Number.isInteger(repeats) || repeats < 1)
     throw new Error('--repeats must be a positive integer')
