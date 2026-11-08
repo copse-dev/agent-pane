@@ -54091,7 +54091,9 @@ function createModelsAgentsList(api, opts = {}) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Everything Copse can run a turn on. A ChatGPT plan, a coding agent and an API key are separate connections, so use any of them, or all. Agents and model servers on this machine show up on their own. Re-scan also reads API keys from your environment and shell startup files and imports new ones; existing keys are never overwritten."
+      // The Re-scan sentence is the disclosure for the key import that clicking
+      // Re-scan opts into (see rescanAll), so it stays when the rest is cut.
+      "Plans, agents and API keys Copse can use. Agents and model servers on this machine appear on their own. Re-scan also imports new API keys from your environment and shell startup files, without overwriting saved ones."
     ),
     el("div", { class: "acp-list-bar" }, scanStatus, rescan),
     list,
@@ -56560,7 +56562,7 @@ var init_settings_sources_skills = __esm({
     skillsSourcesMarkup = `
   <fieldset id="sources-skills-fieldset">
     <legend>Skills</legend>
-    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <p class="settings-fieldset-desc">Skills the agent can use. They refresh when Sources opens or you reload, and apply from the next turn.</p>
     <div id="sources-skills-list" class="sources-group"></div>
     <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
     <details class="sources-skill-folders">
@@ -56875,7 +56877,7 @@ function createSourcesSection({
       fillSourceList(
         "#sources-instructions-list",
         instructions.map((f3) => makeInstructionRow(f3)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+        "No instruction files yet. Add AGENTS.md to the project root."
       );
       if (instructions.some((f3) => f3.discoveryTruncated)) {
         const note = document.createElement("span");
@@ -69696,20 +69698,15 @@ var init_general_markup = __esm({
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
-                Choose the main chat model and the models used for background tasks. The defaults
-                prefer a model running on this machine, but anything from a provider you have set
-                up can be selected.
+                The chat model, and the models used for background tasks.
               </p>
               <label>
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks
-                  the model that gives the most for what it costs on your plan, and sends the turn
-                  to that provider. You can pin a specific model here instead, or from the picker
-                  beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under its API key\u2019s Options in
-                  Models &amp; agents.
+                  Best value picks the model that gives the most for what it costs on your plans,
+                  and sends each turn to that model's provider. Pin one here or from the chat
+                  picker.
                 </span>
               </label>
               <label>
@@ -70428,8 +70425,7 @@ var init_customise_markup = __esm({
           <section class="settings-section" data-section="customise">
             <h3>Customise</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project, and every plugin extending it. The loaded
-              lists are read-only: edit the files themselves to change what is loaded.
+              What Copse loads for this project. Edit the files to change it.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -70441,16 +70437,7 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files available to the system prompt, in precedence order. Global steering
-                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
-                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
-                <code>AGENTS.md</code>, and always-applied Cursor rules
-                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
-                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them. Nested
-                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
-                formats.
+                Added to the system prompt, in the order they load.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -70473,10 +70460,9 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Agents</legend>
               <p class="settings-fieldset-desc">
-                Subagent definitions found in <code>agents/</code> folders under
-                <code>.copse</code>, <code>.cursor</code>, and <code>.claude</code>, in this
-                project and in your home directory. Hover a row to see its path. Project agents
-                are only read once you trust the project.
+                Subagents from <code>agents/</code> folders in <code>.copse</code>,
+                <code>.cursor</code> and <code>.claude</code>. Project agents load once you trust
+                the project.
               </p>
               <div id="sources-agents-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>

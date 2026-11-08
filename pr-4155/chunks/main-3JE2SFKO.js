@@ -479,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-SOYUUMNI.js";
+} from "./chunk-57HGMO5P.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -12177,7 +12177,6 @@ function buildDismissedActions(proposal, handlers3, rerender) {
 }
 function buildBody(proposal, state, handlers3, rerender) {
   const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
   body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
   if (proposal.rationale) {
     body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
@@ -12218,8 +12217,9 @@ function createThreadProposalCard(proposal, state, handlers3) {
         { class: "thread-proposal-icon", "aria-hidden": "true" },
         gitBranchIcon("ui-icon ui-icon-sm")
       ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+      // The title names the offer, so it leads the card from the header: the
+      // same line reads on a collapsed (answered) card without expanding it.
+      el("h4", { class: "thread-proposal-title" }, proposal.title)
     );
     const pill = statePill(next);
     if (pill) header.append(pill);
