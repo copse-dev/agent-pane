@@ -23,119 +23,92 @@
  * script; `acp-client.ts` is kept bundleable for exactly this reason.
  */
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { z } from 'zod'
 import { baseSandboxConfig } from '../../project-sandbox/config.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { probeAcpAgent, type AcpAgentSpawnConfig } from './acp-client.ts'
-import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { errorMessage } from '@shared/errors.ts'
-import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 export const ACP_PROBE_REQUEST_ENV = 'COPSE_ACP_PROBE_REQUEST'
 
 /** Mirrors the main process's probe budget; the host also enforces its own. */
 const DEFAULT_PROBE_TIMEOUT_MS = 15_000
 
+const sandboxSchema = z.object({
+  allowedDomains: z.array(z.string()),
+  homeDirs: z.array(z.string()).optional(),
+  scratchPaths: z.array(z.string()).optional(),
+  allowMacOsTrustd: z.boolean().optional(),
+  allowMacOsKeychain: z.boolean().optional(),
+})
+
+const probeRequestSchema = z
+  .object({
+    config: z.object({
+      command: z.string().min(1),
+      cwd: z.string().min(1),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()).optional(),
+      sandbox: sandboxSchema.optional(),
+    }),
+    sandboxRequired: z.boolean(),
+    timeoutMs: z.number().positive().optional(),
+  })
+  .refine((request) => !request.sandboxRequired || request.config.sandbox !== undefined)
+
 interface ProbeRequest {
   config: AcpAgentSpawnConfig
+  sandboxRequired: boolean
   timeoutMs?: number
 }
 
 export function parseProbeRequest(raw: string): ProbeRequest | null {
-  // parseJsonUnknown is a bare JSON.parse and throws; a malformed request must
-  // become a structured `{ok:false}` line, never an unhandled rejection.
-  let parsed: unknown
-  try {
-    parsed = parseJsonUnknown(raw)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed)) return null
-  const config = parsed['config']
-  if (!isRecord(config)) return null
-  const command = config['command']
-  const cwd = config['cwd']
-  if (typeof command !== 'string' || typeof cwd !== 'string') return null
-  const timeoutMs = parsed['timeoutMs']
+  const parsed = safeJsonParse(raw, decodeWithSchema(probeRequestSchema))
+  if (!parsed) return null
+  const config = parsed.config
   return {
-    config: readSpawnConfig(config, command, cwd),
-    ...(typeof timeoutMs === 'number' && timeoutMs > 0 ? { timeoutMs } : {}),
+    config: {
+      command: config.command,
+      cwd: config.cwd,
+      ...(config.args === undefined ? {} : { args: config.args }),
+      ...(config.env === undefined ? {} : { env: config.env }),
+      ...(config.sandbox === undefined
+        ? {}
+        : {
+            sandbox: {
+              allowedDomains: config.sandbox.allowedDomains,
+              ...(config.sandbox.homeDirs === undefined
+                ? {}
+                : { homeDirs: config.sandbox.homeDirs }),
+              ...(config.sandbox.scratchPaths === undefined
+                ? {}
+                : { scratchPaths: config.sandbox.scratchPaths }),
+              ...(config.sandbox.allowMacOsTrustd === undefined
+                ? {}
+                : { allowMacOsTrustd: config.sandbox.allowMacOsTrustd }),
+              ...(config.sandbox.allowMacOsKeychain === undefined
+                ? {}
+                : { allowMacOsKeychain: config.sandbox.allowMacOsKeychain }),
+            },
+          }),
+    },
+    sandboxRequired: parsed.sandboxRequired,
+    ...(parsed.timeoutMs === undefined ? {} : { timeoutMs: parsed.timeoutMs }),
   }
 }
 
 /**
- * Rebuild the spawn config field by field rather than asserting the parsed JSON
- * into shape: it arrives over a process boundary, so it is untyped input.
- *
- * Only the fields the probe actually uses are carried — command, args, env, cwd,
- * and the sandbox confines. Dropping `sandbox` would silently unconfine the agent,
- * so it is validated rather than skipped; the session-only fields (model,
- * permissionMode, mcpServers, nativeBridge) are irrelevant to a probe, which never
- * prompts, and are deliberately not forwarded.
+ * Bring up this process's own ASRT only when main requested containment. An
+ * initialization failure must reject the probe before the agent can spawn.
  */
-function readSpawnConfig(
-  config: Record<string, unknown>,
-  command: string,
-  cwd: string,
-): AcpAgentSpawnConfig {
-  const args = config['args']
-  const env = readStringMap(config['env'])
-  const sandbox = readSandboxConfig(config['sandbox'])
-  return {
-    command,
-    cwd,
-    ...(Array.isArray(args) && args.every((a) => typeof a === 'string') ? { args } : {}),
-    ...(env ? { env } : {}),
-    ...(sandbox ? { sandbox } : {}),
+async function initWorkerSandbox(required: boolean): Promise<void> {
+  if (!required) return
+  await SandboxManager.initialize(baseSandboxConfig(), () => Promise.resolve(false), false)
+  if (!SandboxManager.isSandboxingEnabled()) {
+    throw new Error('ACP probe sandbox did not initialize')
   }
-}
-
-/** Copy only string-valued entries, so the result is a string map by construction. */
-function readStringMap(value: unknown): Record<string, string> | undefined {
-  if (!isRecord(value)) return undefined
-  const out: Record<string, string> = {}
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string') out[key] = entry
-  }
-  return out
-}
-
-function readSandboxConfig(value: unknown): AcpAgentSandboxConfig | undefined {
-  if (!isRecord(value)) return undefined
-  const allowedDomains = value['allowedDomains']
-  if (!Array.isArray(allowedDomains) || !allowedDomains.every((d) => typeof d === 'string')) {
-    return undefined
-  }
-  const stringList = (key: string): string[] | undefined => {
-    const list = value[key]
-    return Array.isArray(list) && list.every((p) => typeof p === 'string') ? list : undefined
-  }
-  const homeDirs = stringList('homeDirs')
-  const scratchPaths = stringList('scratchPaths')
-  return {
-    allowedDomains,
-    ...(homeDirs ? { homeDirs } : {}),
-    ...(scratchPaths ? { scratchPaths } : {}),
-    ...(value['allowMacOsTrustd'] === true ? { allowMacOsTrustd: true } : {}),
-    ...(value['allowMacOsKeychain'] === true ? { allowMacOsKeychain: true } : {}),
-  }
-}
-
-/**
- * Bring up this process's own ASRT. Failure is not fatal: the probe then spawns
- * the agent unsandboxed, exactly as the main process degrades when ASRT cannot
- * initialize (missing bwrap, unsupported platform). The isolation this worker
- * exists for still holds — an unsandboxed agent acquires no network scope at all.
- */
-async function initWorkerSandbox(): Promise<void> {
-  try {
-    await SandboxManager.initialize(baseSandboxConfig(), () => Promise.resolve(false), false)
-    setProjectSandboxEnabled(true)
-  } catch (err) {
-    setProjectSandboxEnabled(false)
-    console.error(
-      `[acp-probe-worker] sandbox init failed, probing unsandboxed: ${errorMessage(err)}`,
-    )
-  }
+  setProjectSandboxEnabled(true)
 }
 
 async function main(): Promise<void> {
@@ -146,7 +119,7 @@ async function main(): Promise<void> {
     process.exitCode = 1
     return
   }
-  await initWorkerSandbox()
+  await initWorkerSandbox(request.sandboxRequired)
   try {
     const probe = await probeAcpAgent(request.config, request.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS)
     process.stdout.write(`${JSON.stringify({ ok: true, probe })}\n`)

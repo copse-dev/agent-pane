@@ -236,7 +236,11 @@ long, no user-visible turn, egress needed to exactly one vendor.
 calls its own `SandboxManager.initialize` and returns one JSON line. The original
 implementation fell back to the in-process `probeAcpAgent` when the helper
 failed. Phase 6 retains that fallback only when ASRT is inactive; a sandboxed
-probe fails rather than widening main's public-domain scope.
+probe fails rather than widening main's public-domain scope. Main now sends an
+explicit `sandboxRequired` bit alongside the validated sandbox config. The
+worker rejects a missing or malformed requested sandbox and aborts before
+spawning the agent when ASRT initialization fails. A worker-process regression
+injects that failure and verifies the agent did not start.
 
 Getting there needed the probe's import graph to be free of `node-pty` and
 `electron`, since the worker runs as a plain Node script and a native module in
@@ -255,12 +259,11 @@ Four leaf extractions did it, with no behaviour change:
 `acp-probe-worker.test.ts` bundles the worker and asserts it links neither native —
 the guard that keeps this property from silently regressing.
 
-Not verified in this environment: the _sandboxed_ probe path. The container has no
-`bwrap`, so ASRT cannot initialize and the worker exercises its documented
-degradation to an unsandboxed spawn. The handshake, JSON contract, timeout,
-failure reporting, and the built `dist/main/acp-probe-worker.js` artifact were all
-run end-to-end against a fake ACP agent; confinement itself still wants a check on
-macOS or a bwrap-capable Linux box.
+The handshake, JSON contract, timeout, failure reporting, and built
+`dist/main/acp-probe-worker.js` artifact were run end-to-end against a fake ACP
+agent. The sandbox initialization failure is covered by a worker-process
+regression. A successful sandboxed ACP probe still needs a separate real-runtime
+check on macOS or a bwrap-capable Linux box.
 
 ### Phase 5 — Long-lived ACP sessions (implemented)
 

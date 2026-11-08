@@ -62,7 +62,10 @@ setInterval(() => {}, 1000)
   })
 
   it('does not fall back to a main-process public-domain scope when a sandboxed probe returns no result', async () => {
-    writeFileSync(acpProbeWorkerPath(), 'process.exit(0)\n')
+    writeFileSync(
+      acpProbeWorkerPath(),
+      `require('node:fs').writeFileSync(${JSON.stringify(join(dir, 'sandboxed-request'))}, process.env[${JSON.stringify(ACP_PROBE_REQUEST_ENV)}])\nprocess.exit(0)\n`,
+    )
     let mainScopeUpdates = 0
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'getConfig', () => baseSandboxConfig())
@@ -81,6 +84,7 @@ setInterval(() => {}, 1000)
         /stopped with code 0 and no result/,
       )
       assert.equal(mainScopeUpdates, 0)
+      assert.match(readFileSync(join(dir, 'sandboxed-request'), 'utf8'), /"sandboxRequired":true/)
     } finally {
       setProjectSandboxEnabled(false)
       mock.restoreAll()

@@ -144,7 +144,11 @@ describe('acp probe worker', () => {
 
     const { stdout } = await runWorker(
       workerPath,
-      { config: { command: process.execPath, args: [agentPath], cwd: dir }, timeoutMs: 10_000 },
+      {
+        config: { command: process.execPath, args: [agentPath], cwd: dir },
+        sandboxRequired: false,
+        timeoutMs: 10_000,
+      },
       dir,
     )
 
@@ -173,7 +177,11 @@ describe('acp probe worker', () => {
 
     const { stdout } = await runWorker(
       workerPath,
-      { config: { command: process.execPath, args: [agentPath], cwd: dir }, timeoutMs: 10_000 },
+      {
+        config: { command: process.execPath, args: [agentPath], cwd: dir },
+        sandboxRequired: false,
+        timeoutMs: 10_000,
+      },
       dir,
       { CLAUDE_CODE_TMPDIR: '/user/own/tmp' },
     )
@@ -192,6 +200,7 @@ describe('acp probe worker', () => {
           workerPath,
           {
             config: { command: process.execPath, args: ['-e', 'process.exit(3)'], cwd: dir },
+            sandboxRequired: false,
             timeoutMs: 10_000,
           },
           dir,
@@ -210,10 +219,41 @@ describe('acp probe worker', () => {
     const { stdout } = await runWorker(workerPath, { config: { cwd: dir } }, dir)
     assert.throws(() => parseProbeWorkerOutput(stdout), /invalid probe request/)
   })
+
+  it('never spawns a requested sandboxed agent after ASRT initialization fails', async () => {
+    const dir = makeBundleDir('sandbox-init-fail-')
+    const workerPath = bundleWorker(dir)
+    const marker = join(dir, 'agent-started')
+    const preloader = join(dir, 'fail-asrt.cjs')
+    writeFileSync(
+      preloader,
+      "require('@anthropic-ai/sandbox-runtime').SandboxManager.initialize = async () => { throw new Error('forced ASRT init failure') }\n",
+    )
+
+    const { stdout, code } = await runWorker(
+      workerPath,
+      {
+        config: {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`],
+          cwd: dir,
+          sandbox: { allowedDomains: ['api.example'] },
+        },
+        sandboxRequired: true,
+        timeoutMs: 10_000,
+      },
+      dir,
+      { NODE_OPTIONS: `--require=${preloader}` },
+    )
+
+    assert.equal(code, 1)
+    assert.throws(() => parseProbeWorkerOutput(stdout), /forced ASRT init failure/)
+    assert.throws(() => readFileSync(marker), /ENOENT/)
+  })
 })
 
 describe('parseProbeRequest', () => {
-  it('preserves an explicit trustd grant and rejects truthy non-boolean values', () => {
+  it('preserves an explicit trustd grant and rejects non-boolean values', () => {
     for (const value of [true, false, 'true', 1, null]) {
       const request = parseProbeRequest(
         JSON.stringify({
@@ -222,13 +262,18 @@ describe('parseProbeRequest', () => {
             cwd: '/workspace',
             sandbox: { allowedDomains: ['chatgpt.com'], allowMacOsTrustd: value },
           },
+          sandboxRequired: true,
         }),
       )
-      assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+      if (typeof value === 'boolean') {
+        assert.equal(request?.config.sandbox?.allowMacOsTrustd, value)
+      } else {
+        assert.equal(request, null)
+      }
     }
   })
 
-  it('preserves an explicit keychain grant and rejects truthy non-boolean values', () => {
+  it('preserves an explicit keychain grant and rejects non-boolean values', () => {
     for (const value of [true, false, 'true', 1, null]) {
       const request = parseProbeRequest(
         JSON.stringify({
@@ -237,26 +282,56 @@ describe('parseProbeRequest', () => {
             cwd: '/workspace',
             sandbox: { allowedDomains: ['api.anthropic.com'], allowMacOsKeychain: value },
           },
+          sandboxRequired: true,
         }),
       )
-      assert.equal(request?.config.sandbox?.allowMacOsKeychain, value === true ? true : undefined)
+      if (typeof value === 'boolean') {
+        assert.equal(request?.config.sandbox?.allowMacOsKeychain, value)
+      } else {
+        assert.equal(request, null)
+      }
     }
   })
 
   it('requires a command and cwd', () => {
-    assert.equal(parseProbeRequest('{"config":{"command":"x"}}'), null)
-    assert.equal(parseProbeRequest('{"config":{"cwd":"/tmp"}}'), null)
+    assert.equal(parseProbeRequest('{"config":{"command":"x"},"sandboxRequired":false}'), null)
+    assert.equal(parseProbeRequest('{"config":{"cwd":"/tmp"},"sandboxRequired":false}'), null)
     assert.equal(parseProbeRequest('not json'), null)
     assert.deepEqual(
-      parseProbeRequest('{"config":{"command":"x","cwd":"/tmp"}}')?.config.command,
+      parseProbeRequest('{"config":{"command":"x","cwd":"/tmp"},"sandboxRequired":false}')?.config
+        .command,
       'x',
     )
   })
 
-  it('keeps a positive timeout and drops a nonsensical one', () => {
-    const base = '{"config":{"command":"x","cwd":"/tmp"}'
+  it('keeps a positive timeout and rejects a nonsensical one', () => {
+    const base = '{"config":{"command":"x","cwd":"/tmp"},"sandboxRequired":false'
     assert.equal(parseProbeRequest(`${base},"timeoutMs":500}`)?.timeoutMs, 500)
-    assert.equal(parseProbeRequest(`${base},"timeoutMs":-1}`)?.timeoutMs, undefined)
+    assert.equal(parseProbeRequest(`${base},"timeoutMs":-1}`), null)
+  })
+
+  it('rejects missing or malformed containment when main requested it', () => {
+    const config = { command: 'codex-acp', cwd: '/workspace' }
+    assert.equal(parseProbeRequest(JSON.stringify({ config })), null)
+    assert.equal(parseProbeRequest(JSON.stringify({ config, sandboxRequired: true })), null)
+    assert.equal(
+      parseProbeRequest(
+        JSON.stringify({
+          config: { ...config, sandbox: { allowedDomains: 'api.example' } },
+          sandboxRequired: true,
+        }),
+      ),
+      null,
+    )
+    assert.deepEqual(
+      parseProbeRequest(
+        JSON.stringify({
+          config: { ...config, sandbox: { allowedDomains: ['api.example'] } },
+          sandboxRequired: true,
+        }),
+      )?.config.sandbox?.allowedDomains,
+      ['api.example'],
+    )
   })
 })
 

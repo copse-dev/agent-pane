@@ -97,7 +97,11 @@ export function parseProbeWorkerOutput(stdout: string): AcpAgentProbe | null {
   return null
 }
 
-function runProbeWorker(config: AcpAgentSpawnConfig, timeoutMs: number): Promise<AcpAgentProbe> {
+function runProbeWorker(
+  config: AcpAgentSpawnConfig,
+  timeoutMs: number,
+  sandboxRequired: boolean,
+): Promise<AcpAgentProbe> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [acpProbeWorkerPath()], {
       cwd: config.cwd,
@@ -107,7 +111,7 @@ function runProbeWorker(config: AcpAgentSpawnConfig, timeoutMs: number): Promise
         ...withoutSandboxWrapTmpPin(process.env),
         // Electron must run as Node for a plain script entry.
         ELECTRON_RUN_AS_NODE: '1',
-        [ACP_PROBE_REQUEST_ENV]: JSON.stringify({ config, timeoutMs }),
+        [ACP_PROBE_REQUEST_ENV]: JSON.stringify({ config, sandboxRequired, timeoutMs }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: detachForGroupKill,
@@ -180,7 +184,7 @@ export async function probeAcpAgentIsolated(
 ): Promise<AcpAgentProbe> {
   const sandboxed = willSandboxAcpAgent(config.sandbox)
   try {
-    return await runProbeWorker(config, timeoutMs)
+    return await runProbeWorker(config, timeoutMs, sandboxed)
   } catch (err) {
     if (sandboxed) throw err
     console.warn(
