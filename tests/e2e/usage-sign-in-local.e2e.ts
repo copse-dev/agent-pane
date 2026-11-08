@@ -5,7 +5,8 @@ import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { assertVisibleInSettings } from './helpers/settings-geometry.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-usage-local-sign-in'
@@ -75,9 +76,14 @@ describe('usage sign-in local CLI routing', () => {
     const signIn = $('.usage-plan-provider[data-provider="claude"] .usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     await signIn.click()
-    const status = $('.usage-plan-signin-status')
+    const status = $('.usage-plan-provider[data-provider="claude"] .usage-plan-signin-status')
     await expect(status).toHaveText('Claude sign-in complete.')
     await expect($('#settings-dialog')).toBeDisplayed()
+    // The re-read after sign-in replaced the rejected row; nothing stale is left beside it.
+    const claude = $('.usage-plan-provider[data-provider="claude"][data-status="ok"]')
+    await expect(claude).toBeDisplayed()
+    await expect(claude.$('.usage-plan-signin-btn')).not.toBeExisting()
+    assert.doesNotMatch(await claude.getText(), /credentials were rejected/i)
     await browser.waitUntil(() => existsSync(join(bin, 'calls')), {
       timeout: 15_000,
       timeoutMsg: 'local sign-in CLI fixture did not execute',
@@ -86,8 +92,14 @@ describe('usage sign-in local CLI routing', () => {
     assert.ok(calls.includes(`${homedir()}:auth login`), calls)
     assert.ok(calls.includes(`${homedir()}:auth status`), calls)
     assert.doesNotMatch(calls, /\/remote\/usage-project/)
-    // Keep evidence on the guided result. The unrelated project index
-    // can fail because this fixture deliberately points it at an invalid SSH host.
+    // Keep evidence on the guided result: Settings stayed open (no terminal)
+    // with the outcome in view under the refreshed Claude row. The unrelated
+    // project index can fail because this fixture deliberately points it at
+    // an invalid SSH host.
+    await prepareE2eScreenshot()
+    await assertVisibleInSettings(
+      '.usage-plan-provider[data-provider="claude"] .usage-plan-signin-status',
+    )
     await saveElementScreenshot('#settings-dialog', 'usage-sign-in-local-guided.png')
   })
 })

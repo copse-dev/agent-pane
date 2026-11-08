@@ -6,10 +6,24 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { assertVisibleInSettings } from './helpers/settings-geometry.ts'
 
 const e2eEnvFile = join(process.cwd(), 'tests/e2e/electron-shell/.e2e-env.json')
+const CLAUDE_ROW = '.usage-plan-provider[data-provider="claude"]'
+const CLAUDE_SIGN_IN = `${CLAUDE_ROW} .usage-plan-signin-btn`
+const CLAUDE_SIGN_IN_STATUS = `${CLAUDE_ROW} .usage-plan-signin-status`
 let initialEnv = ''
 let fakeClaudeDir: string | null = null
+
+/**
+ * The status line is what each of these references is for: prove it is on
+ * screen where the user clicked, then frame the Claude row that holds it.
+ */
+async function captureClaudeSignIn(filename: string): Promise<void> {
+  await prepareE2eScreenshot()
+  await assertVisibleInSettings(CLAUDE_SIGN_IN_STATUS)
+  await saveElementScreenshot(CLAUDE_ROW, filename)
+}
 
 function setPlanUsageMock(mode: string): void {
   const env = readFixtureJsonObject(e2eEnvFile)
@@ -110,11 +124,11 @@ describe('settings usage panel plan errors', () => {
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-auth-errors.png')
   })
 
-  it('keeps Settings open and shows guided Claude sign-in progress', async () => {
+  it('shows each guided Claude sign-in outcome under its button, then recovers', async () => {
     if (process.platform === 'win32') return
     fakeClaudeDir = mkdtempSync(join(tmpdir(), 'copse-claude-login-'))
     const fakeClaude = join(fakeClaudeDir, 'claude')
-    writeFileSync(join(fakeClaudeDir, 'mode'), 'pending')
+    writeFileSync(join(fakeClaudeDir, 'mode'), 'nonzero')
     writeFileSync(
       fakeClaude,
       `#!${process.execPath}
@@ -142,54 +156,66 @@ if (process.argv[3] === 'login') {
     await browser.reloadSession()
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
-    await $('.usage-plan-signin-btn').click()
-    const status = $('.usage-plan-signin-status')
-    await expect(status).toBeDisplayed()
-    assert.match(await status.getText(), /Complete Claude sign-in in the browser/)
-    await expect($('.usage-plan-signin-btn')).toBeDisabled()
-    await expect($('#settings-dialog')).toBeDisplayed()
-    await prepareE2eScreenshot()
-    await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-progress.png')
-    writeFileSync(join(fakeClaudeDir, 'ready'), '')
-    await expect(status).toHaveText('Claude sign-in complete.')
+    await expect($(`${CLAUDE_ROW}[data-status="unavailable"]`)).toBeDisplayed()
 
     // The executable boundary owns these outcomes. Keep the real usage IPC,
-    // renderer handler and Settings dialog in the failure/retry loop.
-    for (const [mode, message] of [
+    // renderer handler and Settings dialog in the loop. A failure re-reads
+    // nothing, so the rejected row keeps its button and clicking it again is
+    // the retry; the outcome sits directly under that button each time.
+    for (const [mode, message, shot] of [
       [
         'nonzero',
         'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+        'settings-usage-claude-signin-failed.png',
       ],
       [
         'cancel',
         'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+        null,
       ],
-      ['api-key', 'Claude is using an API key or token, not a Claude subscription sign-in.'],
+      [
+        'api-key',
+        'Claude is using an API key or token, not a Claude subscription sign-in.',
+        'settings-usage-claude-signin-not-subscription.png',
+      ],
     ] as const) {
       writeFileSync(join(fakeClaudeDir, 'mode'), mode)
-      const button = $('.usage-plan-provider[data-provider="claude"] .usage-plan-signin-btn')
-      await expect(button).toBeEnabled()
-      await button.click()
-      await expect(status).toHaveText(message)
-      await expect(button).toBeEnabled()
+      await expect($(CLAUDE_SIGN_IN)).toBeEnabled()
+      await $(CLAUDE_SIGN_IN).click()
+      await expect($(CLAUDE_SIGN_IN_STATUS)).toHaveText(message)
+      await expect($(`${CLAUDE_SIGN_IN_STATUS} .ui-inline-status`)).toHaveAttribute(
+        'data-status-kind',
+        'error',
+      )
+      await expect($(CLAUDE_SIGN_IN)).toBeEnabled()
+      await expect($(`${CLAUDE_ROW}[data-status="unavailable"]`)).toBeDisplayed()
       await expect($('#settings-dialog')).toBeDisplayed()
-      if (mode !== 'cancel') {
-        await prepareE2eScreenshot()
-        if (mode === 'nonzero') {
-          await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-failed.png')
-        } else {
-          await saveElementScreenshot(
-            '#settings-dialog',
-            'settings-usage-claude-signin-not-subscription.png',
-          )
-        }
-      }
-      writeFileSync(join(fakeClaudeDir, 'mode'), 'success')
-      await button.click()
-      await expect(status).toHaveText('Claude sign-in complete.')
-      await expect($('.usage-plan-signin-btn')).toBeEnabled()
+      if (shot) await captureClaudeSignIn(shot)
     }
-    await prepareE2eScreenshot()
-    await saveElementScreenshot('#settings-dialog', 'settings-usage-claude-signin-retry.png')
+
+    writeFileSync(join(fakeClaudeDir, 'mode'), 'pending')
+    await $(CLAUDE_SIGN_IN).click()
+    await expect($(CLAUDE_SIGN_IN_STATUS)).toHaveText(/Complete Claude sign-in in the browser/)
+    await expect($(`${CLAUDE_SIGN_IN_STATUS} .ui-inline-status`)).toHaveAttribute(
+      'data-status-kind',
+      'pending',
+    )
+    await expect($(CLAUDE_SIGN_IN)).toBeDisabled()
+    await expect($('#settings-dialog')).toBeDisplayed()
+    await captureClaudeSignIn('settings-usage-claude-signin-progress.png')
+
+    // Finishing the held login is the successful retry. Its forced re-read
+    // replaces the rejected row with the signed-in plan: no stale rejection
+    // copy or button is left beside "complete", and the outcome stays in the row.
+    writeFileSync(join(fakeClaudeDir, 'ready'), '')
+    await expect($(CLAUDE_SIGN_IN_STATUS)).toHaveText('Claude sign-in complete.')
+    await expect($(`${CLAUDE_SIGN_IN_STATUS} .ui-inline-status`)).toHaveAttribute(
+      'data-status-kind',
+      'ok',
+    )
+    await expect($(`${CLAUDE_ROW}[data-status="ok"]`)).toBeDisplayed()
+    await expect($(CLAUDE_SIGN_IN)).not.toBeExisting()
+    assert.doesNotMatch(await $(CLAUDE_ROW).getText(), /credentials were rejected/i)
+    await captureClaudeSignIn('settings-usage-claude-signin-retry.png')
   })
 })

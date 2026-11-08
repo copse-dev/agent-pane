@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { invalidatePlanUsageCache } from './plan-usage-bridge.ts'
+import { noteClaudeSignIn } from './plan-usage-bridge.ts'
 
 const execFileAsync = promisify(execFile)
 let pendingSignIn: Promise<{ ok: boolean; error?: string }> | null = null
@@ -32,7 +32,7 @@ export function signInToClaude(): Promise<{ ok: boolean; error?: string }> {
           error: 'Claude is using an API key or token, not a Claude subscription sign-in.',
         }
       }
-      invalidatePlanUsageCache()
+      noteClaudeSignIn()
       return { ok: true }
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
