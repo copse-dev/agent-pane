@@ -92,8 +92,9 @@ async function packageVersionAt(ctx: ReleaseDispatchContext, sha: string): Promi
 async function taggedCommit(ctx: ReleaseDispatchContext, tag: string): Promise<string | null> {
   let ref: unknown
   try {
-    ref = (await ctx.github.rest.git.getRef({ owner: ctx.owner, repo: ctx.repo, ref: `tags/${tag}` }))
-      .data
+    ref = (
+      await ctx.github.rest.git.getRef({ owner: ctx.owner, repo: ctx.repo, ref: `tags/${tag}` })
+    ).data
   } catch (error) {
     if (httpStatus(error) === 404) return null
     throw error
@@ -120,7 +121,10 @@ async function taggedCommit(ctx: ReleaseDispatchContext, tag: string): Promise<s
  * commit's version is untagged or tagged elsewhere (an ordinary promotion
  * that releases nothing). Lookup failures other than a missing tag throw.
  */
-export async function releaseTagAt(ctx: ReleaseDispatchContext, sha: string): Promise<string | null> {
+export async function releaseTagAt(
+  ctx: ReleaseDispatchContext,
+  sha: string,
+): Promise<string | null> {
   requireSha(sha)
   const tag = `v${await packageVersionAt(ctx, sha)}`
   const target = await taggedCommit(ctx, tag)
