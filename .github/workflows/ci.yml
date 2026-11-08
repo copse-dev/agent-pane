@@ -2433,9 +2433,16 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
+      # Status functions are only valid in `if:`, so cancellation gets its own
+      # step, as in `ci-passed`.
+      - name: Reject a cancelled run
+        if: ${{ cancelled() }}
+        run: |
+          echo "Cancelled; this run cannot vouch for burn-in."
+          exit 1
       - name: Require a passing burn-in when one was planned
+        if: ${{ !cancelled() }}
         env:
-          CANCELLED: ${{ cancelled() }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
           REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
@@ -2443,10 +2450,6 @@ jobs:
           RESULT: ${{ needs.e2e-burn-in.result }}
         run: |
           set -eu
-          if [ "$CANCELLED" = "true" ]; then
-            echo "Cancelled; this run cannot vouch for burn-in."
-            exit 1
-          fi
           if [ "$IS_PR" != "true" ]; then
             echo "Burn-in runs on pull requests only; nothing to require for ${GITHUB_EVENT_NAME}."
             exit 0

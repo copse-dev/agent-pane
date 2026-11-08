@@ -365,7 +365,15 @@ describe('ci.yml burn-in wiring', () => {
     const result = job('e2e-burn-in-result')
     assert.equal(result.if, '${{ always() }}')
     assert.deepEqual(result.needs, ['precheck', 'build', 'e2e-burn-in'])
-    const script = result.steps[0]?.run
+    const [reject, check] = result.steps
+    assert.equal(reject?.if, '${{ cancelled() }}')
+    assert.match(reject.run ?? '', /exit 1/)
+    assert.equal(check?.if, '${{ !cancelled() }}')
+    // Status functions are invalid outside `if:`; GitHub rejects the whole file.
+    for (const step of result.steps)
+      for (const value of Object.values(step.env ?? {}))
+        assert.doesNotMatch(value, /\b(always|cancelled|success|failure)\(\)/)
+    const script = check.run
     assert.ok(script)
     const verdict = (env: Record<string, string>): number | null =>
       spawnSync('bash', ['-c', script], {
@@ -373,7 +381,6 @@ describe('ci.yml burn-in wiring', () => {
         env: {
           PATH: process.env['PATH'] ?? '',
           GITHUB_EVENT_NAME: 'pull_request',
-          CANCELLED: 'false',
           IS_PR: 'true',
           REQUIRED: 'true',
           PRECHECK_RESULT: 'success',
@@ -392,7 +399,19 @@ describe('ci.yml burn-in wiring', () => {
     assert.equal(verdict({ IS_PR: 'false', STATUS: '', RESULT: 'skipped' }), 0, 'merge queue')
     assert.equal(verdict({ PRECHECK_RESULT: 'failure', STATUS: '' }), 1)
     assert.equal(verdict({ STATUS: 'bogus' }), 1)
-    assert.equal(verdict({ CANCELLED: 'true' }), 1)
+  })
+
+  it('uses status functions only in `if:`, where GitHub accepts them', () => {
+    // A status function in a step's `env:` makes GitHub reject the whole
+    // workflow file, which no job reports (seen on this PR's 9fa6a4a0).
+    for (const [name, definition] of Object.entries(parsed.jobs))
+      for (const step of definition.steps)
+        for (const value of Object.values(step.env ?? {}))
+          assert.doesNotMatch(
+            value,
+            /\b(always|cancelled|success|failure)\(\)/,
+            `${name}: ${value}`,
+          )
   })
 
   it('shares one process reaper between the e2e shards and burn-in', () => {
