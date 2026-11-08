@@ -291,6 +291,11 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
 - **A publisher is not a badge.** A plugin's publisher follows its version in the name line
   (`1.2.3 · Copse`), in muted sentence-case text without a frame — not a caps caption over
   the name, and not a chip beside it.
+- **Labels outside the kit follow the kit.** Review finding severity and class, the plugin panel
+  badge, the roadmap review status, the branch picker's `default` and the memories `external
+  context` marker keep their own colours and frames but take `--badge-font-size`, normal tracking
+  and `::first-letter` sentence case. The image chip's `high` / `low` comes from `::after`, which
+  `::first-letter` cannot reach, so it stays lowercase at its overlay size.
 
 Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
 see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
@@ -378,6 +383,14 @@ approval. Do not reach for the approval chrome for one:
   thread it started, an undo) reachable without expanding it.
 
 Visual eval: `tests/e2e/thread-proposal-card.e2e.ts`.
+
+### Empty states are upright
+
+An empty state (`No output`, an empty tool result, an empty hook test, a plugin that contributes
+nothing, a diff's `\ No newline at end of file`) and an estimate note (`(est.)`) are muted text
+set upright. They are already quiet; a slant adds nothing and reads as emphasis. Italic stays
+where it carries meaning: the `edited` note on a human-edited message, and alt text that stands in
+for an image (`.remote-artifact-unavailable-alt`, `.plan-image-reference`).
 
 ## Design tokens, not magic numbers
 
@@ -767,6 +780,14 @@ It fills the window and its sections run several screens, so it is typed and spa
   locked. Only **first-party** plugins wear the Copse mark (`assets/brand-mark.svg`, copied to the
   renderer by `build.mts`) — a user-installed plugin gets a neutral initial tile, or a sideloaded plugin
   would be wearing our badge of trust.
+- **Settings rows sit on the page.** The plugin-row rule holds for every list in Settings: Sources
+  rows, the plugin Browse catalogue, automations and their permission rows, reviewed MCP servers,
+  agent cards, local classifiers, the OpenAI connection, the Usage value card, Apple development,
+  environment setup, the licences list, SSH hosts and mobile companion devices. No frame, fill or
+  rules between rows; vertical padding and the list's gap separate them, and rows start flush with
+  the section's text. A row that needs a state takes the plate rather than a tinted frame (a
+  blocked automation sits on the warning plate). A scrolling picker such as the remote folder list
+  keeps a visible region, as a raised fill rather than an outline.
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 
@@ -1418,6 +1439,12 @@ tokens alone.
   (a sheen, a radial glow, a fading hatch, an edge and a highlight stacked on one disclosure),
   which was the busiest surface in the transcript for the least important text. Under increased
   contrast it gains a `--border-strong` edge.
+- **Notices are flat plates too.** A warning or error notice outside the transcript (the Activity
+  scheduler and run-issue notices, the Automations attention and scheduler notices, the remote
+  desktop's unencrypted-connection note, the staged-diff conflict banner, the LM Studio context
+  advisory and the MCP untrusted-workspace banner) sets `--sev` to `--warning` or `--danger` and
+  mixes its background at `--callout-plate-fill` over `--bg-elevated`, with no border and primary
+  text. It never mixes its own percentage or carries a fallback hex for a token that always exists.
 
 Expanded reasoning uses the raised plate both while live and after completion, including inside a
 tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not

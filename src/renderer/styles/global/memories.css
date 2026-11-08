@@ -36,17 +36,20 @@
   gap: 4px;
 }
 /* Memory saved during a turn that had ingested external content (Phase 4). */
+/* Sentence case at the badge size (docs/ui-taste.md, "Badges are labels"). */
 .memories-row-taint {
   flex: none;
   align-self: flex-start;
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--warning, #d29922);
   border: 1px dashed var(--warning, #d29922);
   border-radius: var(--radius);
   padding: 0 5px;
+}
+.memories-row-taint::first-letter {
+  text-transform: uppercase;
 }
 .memories-tag {
   font-size: var(--font-size-2xs);

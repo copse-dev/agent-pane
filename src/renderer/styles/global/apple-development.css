@@ -9,10 +9,7 @@
 .apple-development-panel {
   display: grid;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
+  padding: var(--spacing-sm) 0;
 }
 
 .apple-development-heading,
