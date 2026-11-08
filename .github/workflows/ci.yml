@@ -2234,6 +2234,13 @@ jobs:
         run: >-
           node scripts/flake-report.mts shard e2e-evidence/outcomes
           --log e2e-failure-artifacts/attempt-1.log --shard "${{ matrix.shard }}"
+      # Outbound network guard (docs/testing-strategy.md#outbound-network-guard):
+      # one row per non-loopback host the shard's specs tried to reach. The guard
+      # itself fails the offending test; this only makes the list readable.
+      - name: Report outbound network attempts
+        if: always()
+        continue-on-error: true
+        run: node scripts/e2e-network-report.mts e2e-failure-artifacts/attempt-1.log e2e-failure-artifacts/attempt-2.log
       - name: Preserve per-spec attempts (including partial failures)
         if: always()
         continue-on-error: true

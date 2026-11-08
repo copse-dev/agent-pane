@@ -21,6 +21,30 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Refuse (or, in log mode, record) Node egress past loopback before any app
+// module loads; Chromium traffic goes through the proxy wdio.conf.ts passes.
+// See docs/testing-strategy.md#outbound-network-guard.
+if (
+  process.env.COPSE_E2E === '1' &&
+  process.env.COPSE_E2E_NETWORK_LEDGER &&
+  (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce' ||
+    process.env.COPSE_E2E_NETWORK_GUARD === 'log')
+) {
+  require('./network-guard.cjs').install({
+    mode: process.env.COPSE_E2E_NETWORK_GUARD,
+    ledgerPath: process.env.COPSE_E2E_NETWORK_LEDGER,
+    processLabel: 'electron main (Node)',
+  })
+  if (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce') {
+    // Chromium fetches Hunspell dictionaries from redirector.gvt1.com for any
+    // session with spellcheck on (the browser pane's guests). Point that external
+    // dependency at a closed loopback port: the download fails as it would offline.
+    require('electron').app.on('session-created', (session) => {
+      session.setSpellCheckerDictionaryDownloadURL('http://127.0.0.1:9/')
+    })
+  }
+}
+
 // Inject a deterministic LAN interface only for the Mobile Companion settings capture.
 // This lives at the OS dependency boundary in the test launcher, never in product config.
 if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_MOBILE_NETWORK === '1') {
