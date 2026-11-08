@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import * as esbuild from 'esbuild'
@@ -192,6 +192,41 @@ describe('ACP session host worker', () => {
       assert.equal(code, 7)
     } finally {
       child.kill('SIGTERM')
+    }
+  })
+
+  it('does not start an agent when initialization reports protection disabled', async () => {
+    const dir = makeBundleDir('disabled-')
+    const enabledStub = 'isSandboxingEnabled() { return config !== null }'
+    assert.ok(SANDBOX_RUNTIME_STUB.includes(enabledStub))
+    const stub = join(dir, 'sandbox-runtime-disabled.mjs')
+    writeFileSync(
+      stub,
+      SANDBOX_RUNTIME_STUB.replace(enabledStub, 'isSandboxingEnabled() { return false }'),
+    )
+    const child = spawnWorker(
+      bundleWorker(dir, stub),
+      dir,
+      "require('node:fs').writeFileSync('spawned', 'yes')",
+    )
+    const messages: AcpSessionHostMessage[] = []
+    child.on('message', (message: AcpSessionHostMessage) => messages.push(message))
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    try {
+      const exit = await once(child, 'exit')
+      const code: unknown = exit[0]
+      assert.equal(code, 1)
+      assert.ok(
+        messages.some(
+          (message) =>
+            message.type === 'error' &&
+            message.error.includes('Workspace protection did not start'),
+        ),
+      )
+      assert.equal(existsSync(join(dir, 'spawned')), false)
+    } finally {
+      clearTimeout(timeout)
+      child.kill('SIGKILL')
     }
   })
 })

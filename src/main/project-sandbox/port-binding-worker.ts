@@ -57,6 +57,11 @@ async function main(): Promise<void> {
     },
     false,
   )
+  if (!SandboxManager.isSandboxingEnabled()) {
+    throw new Error(
+      'Cannot start this background task safely because workspace protection did not start',
+    )
+  }
 
   const overlay = request.overlay
   const network = overlay.network

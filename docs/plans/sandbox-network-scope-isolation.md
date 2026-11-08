@@ -305,7 +305,7 @@ Each approved binding task now runs in `port-binding-worker.ts`, a standalone
 ASRT owner. The worker applies the same workspace and optional named-read
 overlay plus loopback-only network policy, relays output and violation evidence,
 and stays in the task's process group for stop and timeout cleanup. Its startup
-fails closed if ASRT cannot initialize; it never falls back to main's global
+fails closed if ASRT cannot initialize or reports sandboxing disabled; it never falls back to main's global
 scope. Ordinary contained background commands continue using main's deny-all
 policy. The worker is emitted by the shared standalone-bundle list.
 
@@ -313,6 +313,10 @@ Sandboxed ACP probe and session startup also no longer falls back to an
 in-process launch when the helper fails. That fallback could give an
 already-running contained command the agent's public-domain allowlist. Probes
 without ASRT may still fall back in-process, since they acquire no ASRT scope.
+All three isolated hosts (binding task, ACP probe, ACP session) require
+`SandboxManager.isSandboxingEnabled()` after initialization before spawning. Main
+also checks this result; if false, it records an init failure and later commands
+follow the no-sandbox prompt path.
 
 **Per-thread network sandboxes are not recommended.** Every thread's shell policy
 is already deny-all and identical; threads differ in filesystem root, which

@@ -383,8 +383,10 @@ On macOS, ASRT's network allowlist is process-wide. Approved loopback-binding ba
 and sandboxed ACP sessions and probes run in dedicated ASRT host processes, so their permissions
 cannot widen main's allowlist for already-running contained commands. If a host cannot start or
 initialize ASRT, that sandboxed operation fails rather than acquiring a scope in main or spawning
-an uncontained agent. The overlap gate remains
-for any other main-process scope: while one is active, Copse pauses auto-run and names the holder
+an uncontained agent. A resolved `SandboxManager.initialize()` is insufficient: main and each
+isolated host check `isSandboxingEnabled()` before claiming protection. If it remains false, main
+records an init failure so commands prompt, and isolated hosts stop before spawning. The overlap
+gate remains for any other main-process scope: while one is active, Copse pauses auto-run and names the holder
 in an approval prompt before starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 

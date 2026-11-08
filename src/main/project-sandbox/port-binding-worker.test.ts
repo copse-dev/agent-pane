@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, it, mock } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -260,6 +268,57 @@ describe('port-binding background host', () => {
         cancelEscalation()
       }
     })
+  })
+
+  it('does not wrap or spawn a command when ASRT initialization leaves protection disabled', () => {
+    mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
+    fixture = mkdtempSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures', 'disabled-'))
+    previousCopseDir = process.env['COPSE_DIR']
+    const enabledStub = 'isSandboxingEnabled() { return config !== null }'
+    assert.ok(SANDBOX_RUNTIME_STUB.includes(enabledStub))
+    // initialize resolves and stores its config, but ASRT reports disabled.
+    const stub = join(fixture, 'sandbox-runtime-disabled.mjs')
+    writeFileSync(
+      stub,
+      SANDBOX_RUNTIME_STUB.replace(enabledStub, 'isSandboxingEnabled() { return false }'),
+    )
+    bundleWorker(stub)
+
+    const request = {
+      command: formatArgvForShell(process.execPath, [
+        '-e',
+        "require('node:fs').writeFileSync('spawned', 'yes')",
+      ]),
+      cwd: fixture,
+      overlay: {
+        network: {
+          allowedDomains: ['localhost', '127.0.0.1', '::1'],
+          deniedDomains: [],
+          allowLocalBinding: true,
+        },
+        filesystem: {
+          denyRead: [],
+          allowRead: [],
+          allowWrite: [],
+          denyWrite: [],
+          allowGitConfig: true,
+        },
+      },
+    }
+    const result = spawnSync(process.execPath, [portBindingWorkerPath()], {
+      cwd: fixture,
+      env: {
+        ...process.env,
+        COPSE_DIR: fixture,
+        [PORT_BINDING_REQUEST_ENV]: JSON.stringify(request),
+      },
+      encoding: 'utf8',
+      timeout: 5_000,
+    })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /workspace protection did not start/)
+    assert.equal(existsSync(join(fixture, 'overlay.json')), false)
+    assert.equal(existsSync(join(fixture, 'spawned')), false)
   })
 })
 
