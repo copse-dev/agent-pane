@@ -47,6 +47,7 @@ interface ShellReplayLeaseStoreOptions {
  */
 export class ShellReplayLeaseStore {
   private readonly leases = new Map<string, ShellReplayLease>()
+  private readonly issuedApprovals = new WeakMap<object, ShellReplayLease[]>()
   private readonly now: () => number
   private readonly createId: () => string
 
@@ -55,8 +56,19 @@ export class ShellReplayLeaseStore {
     this.createId = options.createId ?? randomUUID
   }
 
-  issue(identity: ShellReplayLeaseIdentity, command: string): ShellReplayLease {
+  /** One human approval can issue each exact capability only once. */
+  issue(
+    identity: ShellReplayLeaseIdentity,
+    command: string,
+    approval: object,
+  ): ShellReplayLease | null {
     this.prune()
+    const receipts = this.issuedApprovals.get(approval) ?? []
+    if (
+      receipts.some((lease) => sameIdentity(lease.identity, identity) && lease.command === command)
+    ) {
+      return null
+    }
     const lease: ShellReplayLease = {
       id: this.createId(),
       identity: { ...identity },
@@ -72,6 +84,11 @@ export class ShellReplayLeaseStore {
           : SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
     }
     this.leases.set(lease.id, lease)
+    // Keep the receipt while a coalesced or parked caller still holds this
+    // decision. Expiry, exhaustion and revocation must not let a late sibling
+    // issue the same grant again. A new human decision has a fresh object.
+    receipts.push(lease)
+    this.issuedApprovals.set(approval, receipts)
     return { ...lease, identity: { ...lease.identity } }
   }
 

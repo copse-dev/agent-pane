@@ -48,9 +48,9 @@ it('Stop revokes task retries from earlier turns without affecting another chat'
   }
   const other = { ...identity, threadId: 'other-lease-thread' }
   try {
-    shellReplayLeaseStore.issue(identity, 'npm test')
-    shellReplayLeaseStore.issue({ ...identity, containment: 'external' }, 'node check.mjs')
-    shellReplayLeaseStore.issue(other, 'npm test')
+    shellReplayLeaseStore.issue(identity, 'npm test', {})
+    shellReplayLeaseStore.issue({ ...identity, containment: 'external' }, 'node check.mjs', {})
+    shellReplayLeaseStore.issue(other, 'npm test', {})
     // Between machine turns there need not be a live AbortController. Stop is
     // still an explicit revocation of the task's previous replay approvals.
     agentService.abortAgent(identity.threadId)

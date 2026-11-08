@@ -506,6 +506,10 @@ function settleInflight(
   req: ApprovalRequest,
 ): void {
   if (inflight.get(key) !== entry) return
+  // One host-owned response identity per decision, shared by every coalesced
+  // waiter and any parked replay. A handler may reuse its response object;
+  // that must not make a genuinely new approval reuse an old grant receipt.
+  const decision = { ...response }
   inflight.delete(key)
   if (entry.timer) clearTimeout(entry.timer)
   // One shared prompt → one audit event (not one per coalesced waiter).
@@ -524,7 +528,7 @@ function settleInflight(
   recordApprovalDecision(req, response, undefined, toolCallIds, bridgeExecutionIds)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
-    waiter.resolve(response)
+    waiter.resolve(decision)
   }
   entry.waiters.clear()
 }

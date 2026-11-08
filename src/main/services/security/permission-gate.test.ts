@@ -43,7 +43,12 @@ import {
 import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler, supportsInteractiveClientApproval } from '../approval.ts'
+import {
+  pendingApprovalCountForThread,
+  setApprovalHandler,
+  supportsInteractiveClientApproval,
+  type ApprovalResponse,
+} from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -73,7 +78,10 @@ import {
 } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
-import { shellReplayLeaseStore } from './capability-lease.ts'
+import {
+  SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS,
+  shellReplayLeaseStore,
+} from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { AutomationPermission } from '@shared/types'
 import { getAutomationService } from '../automations/automation-service.ts'
@@ -2343,6 +2351,71 @@ describe('turn-tree shell replay leases', () => {
         assert.equal(await ensureShellCommandPermitted('npm test | rg failed', options), true)
       })
       assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('shares one retry budget across callers answered by one approval', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    const opened = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<ApprovalResponse>()
+    setApprovalHandler(async () => {
+      prompts++
+      if (prompts === 1) {
+        opened.resolve(undefined)
+        return answer.promise
+      }
+      return { approved: false, remember: false }
+    })
+    try {
+      await runInTree('tree-coalesced-budget', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        const first = ensureShellCommandPermitted('npm test', options)
+        const second = ensureShellCommandPermitted('npm test', options)
+        await opened.promise
+        assert.equal(pendingApprovalCountForThread(context.threadId), 2)
+        answer.resolve({ approved: true, remember: false, grantScope: 'turn-tree' })
+        assert.deepEqual(await Promise.all([first, second]), [true, true])
+        assert.equal(prompts, 1)
+
+        for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
+          assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+        }
+        assert.equal(await ensureShellCommandPermitted('npm test', options), false)
+        assert.equal(prompts, 2, 'the shared budget is exhausted after ten retries')
+      })
+    } finally {
+      answer.resolve({ approved: false, remember: false })
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('issues a fresh budget for a new approval even when the handler reuses its response', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    const approved: ApprovalResponse = { approved: true, remember: false, grantScope: 'turn-tree' }
+    setApprovalHandler(async () => {
+      prompts++
+      return prompts <= 2 ? approved : { approved: false, remember: false }
+    })
+    try {
+      await runInTree('tree-renewed-budget', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        for (let decision = 1; decision <= 2; decision++) {
+          assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+          assert.equal(prompts, decision)
+          for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
+            assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+          }
+          assert.equal(prompts, decision, 'fresh approval covers its full replay budget')
+        }
+        assert.equal(await ensureShellCommandPermitted('npm test', options), false)
+        assert.equal(prompts, 3)
+      })
     } finally {
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
