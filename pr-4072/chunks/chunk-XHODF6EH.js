@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -27681,6 +27681,19 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/thread-prompt.ts
+function isSubthreadPromptHeldError(reason) {
+  if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${SUBTHREAD_PROMPT_HELD_ERROR_NAME}:`);
+}
+var SUBTHREAD_PROMPT_HELD_ERROR_NAME;
+var init_thread_prompt = __esm({
+  "src/shared/thread-prompt.ts"() {
+    init_errors4();
+    SUBTHREAD_PROMPT_HELD_ERROR_NAME = "SubthreadPromptHeldError";
+  }
+});
+
 // src/renderer/controller/send-now-aborts.ts
 function markSendNowAbort(threadId) {
   sendNowThreads.add(threadId);
@@ -27797,24 +27810,21 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   if (queued) beginPendingDispatch(store, threadId);
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model));
   const run = afterThreadWrites(projectId, threadId, async () => {
-    const operationId = queued?.origin?.kind === "machine" ? queued.origin.operationId : "";
-    if (queued && operationId.startsWith("subthread:")) {
-      const authorized = await api.threadPrompts?.canDispatch(projectId, operationId.slice("subthread:".length), threadId).catch(() => false);
-      if (!authorized) {
-        patchThreadAnywhere(store, threadId, (thread) => ({
-          ...thread,
-          status: "idle",
-          continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
-          pendingMessages: [{ ...queued, autoDispatch: false }, ...thread.pendingMessages ?? []],
-          updatedAt: Date.now()
-        }));
-        syncAgentActivity(store, threadId, false);
-        store.emit("message_queued", threadId, queued.messageId);
-        store.emit("threads_changed");
+    const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
+    if (!queued || parentThreadId === void 0) {
+      await api.agent.run(projectId, threadId, runPayload);
+      return;
+    }
+    const authorized = await api.threadPrompts?.canDispatch(projectId, parentThreadId, threadId).catch(() => false);
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId });
         return;
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err;
       }
     }
-    await api.agent.run(projectId, threadId, runPayload);
+    holdRevokedSubthreadPrompt(store, threadId, queued);
   });
   if (!queued) {
     void run;
@@ -27829,6 +27839,22 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
       drainMessageQueue(store, api, threadId);
     }
   });
+}
+function subthreadParentOf(item) {
+  const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
+}
+function holdRevokedSubthreadPrompt(store, threadId, item) {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: "idle",
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
+    updatedAt: Date.now()
+  }));
+  syncAgentActivity(store, threadId, false);
+  store.emit("message_queued", threadId, item.messageId);
+  store.emit("threads_changed");
 }
 function requeueBusyMessage(store, api, threadId, item) {
   patchThreadAnywhere(store, threadId, (t2) => {
@@ -28088,7 +28114,7 @@ function releaseHeldMessage(store, api, threadId, messageId) {
   store.emit("threads_changed");
   sendQueuedMessageNow(store, api, threadId, messageId);
 }
-var pendingDispatches;
+var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -28099,9 +28125,11 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
+    SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
 });
 
@@ -29203,7 +29231,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
