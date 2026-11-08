@@ -10,6 +10,12 @@ import {
 import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
 import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origin-policy.ts'
+import {
+  isStaticPreviewUrl,
+  PREVIEW_CAPABILITY_HEADER,
+  previewCapabilityUrl,
+  previewRequestCapability,
+} from '../services/browser/static-preview-server.ts'
 
 import { browserAllowedOrigins } from '../services/browser/browser-network-grants.ts'
 import {
@@ -21,6 +27,7 @@ import {
 
 const browserSessions = new Map<string, Electron.Session>()
 const documents = new Map<number, string>()
+const previewAccess = new Map<number, { origin: string; capability: string }>()
 
 // The in-app browser loads arbitrary, agent-chosen external pages, so it is
 // untrusted. Default-deny the powerful web-platform permissions a hostile page
@@ -80,6 +87,29 @@ function configureBrowserSession(
     }
     callback({ cancel: !allowed })
   })
+  sess.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers: Record<string, string> = {}
+    // A page cannot supply or recover the private request header itself.
+    for (const [name, value] of Object.entries(details.requestHeaders)) {
+      if (name.toLowerCase() !== PREVIEW_CAPABILITY_HEADER.toLowerCase()) headers[name] = value
+    }
+    const contentsId = details.webContentsId
+    if (contentsId !== undefined) {
+      const origin = URL.canParse(details.url) ? new URL(details.url).origin : ''
+      const bootstrap =
+        details.resourceType === 'mainFrame' ? previewRequestCapability(details.url) : null
+      if (bootstrap) {
+        previewAccess.set(contentsId, { origin, capability: bootstrap })
+      }
+      const access = previewAccess.get(contentsId)
+      if (access && details.resourceType === 'mainFrame' && origin !== access.origin)
+        previewAccess.delete(contentsId)
+      if (access && origin === access.origin) {
+        headers[PREVIEW_CAPABILITY_HEADER] = access.capability
+      }
+    }
+    callback({ requestHeaders: headers })
+  })
   sess.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(!DENIED_BROWSER_PERMISSIONS.has(permission))
   })
@@ -137,12 +167,22 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame) documents.set(contents.id, details.url)
   })
-  contents.on('destroyed', () => documents.delete(contents.id))
+  contents.on('destroyed', () => {
+    documents.delete(contents.id)
+    previewAccess.delete(contents.id)
+  })
   contents.setWindowOpenHandler(({ url }) => {
     const { openTabUrl } = browserGuestWindowOpen(contents.getType(), url)
     if (openTabUrl && isBrowserPageNavigationAllowed(contents.getURL(), openTabUrl)) {
       const partition = browserPartitionForContents(contents)
-      getMainWindow()?.webContents.send('browser:open-tab', openTabUrl, partition)
+      getMainWindow()?.webContents.send(
+        'browser:open-tab',
+        isStaticPreviewUrl(contents.getURL()) &&
+          new URL(contents.getURL()).origin === new URL(openTabUrl).origin
+          ? previewCapabilityUrl(openTabUrl)
+          : openTabUrl,
+        partition,
+      )
     }
     return { action: 'deny' }
   })

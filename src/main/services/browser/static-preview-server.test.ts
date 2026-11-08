@@ -12,6 +12,9 @@ import {
   getStaticPreviewServer,
   handlePreviewWatchEvent,
   isStaticPreviewUrl,
+  PREVIEW_CAPABILITY_HEADER,
+  previewCapabilityUrl,
+  previewRequestCapability,
   setPreviewStaleSink,
   shutdownStaticPreviewServers,
   staticPreviewEntryUrl,
@@ -31,6 +34,18 @@ async function temporaryRoot(prefix: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), prefix))
   temporaryRoots.push(root)
   return root
+}
+
+function previewHeaders(url: string | URL, init?: RequestInit): Headers {
+  const capability = previewRequestCapability(previewCapabilityUrl(String(url)))
+  assert.ok(capability)
+  const headers = new Headers(init?.headers)
+  headers.set(PREVIEW_CAPABILITY_HEADER, capability)
+  return headers
+}
+
+function previewFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, headers: previewHeaders(url, init) })
 }
 
 describe('static browser preview server', () => {
@@ -57,7 +72,7 @@ describe('static browser preview server', () => {
       false,
     )
 
-    const page = await fetch(first.url)
+    const page = await previewFetch(first.url)
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store')
     assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8')
@@ -70,9 +85,32 @@ describe('static browser preview server', () => {
     assert.ok(csp?.includes("frame-ancestors 'none'"))
     assert.equal(await page.text(), '<h1>Crumb &amp; Bloom</h1>')
 
-    const stylesheet = await fetch(new URL('assets/site.css', first.url))
+    const stylesheet = await previewFetch(new URL('assets/site.css', first.url))
     assert.equal(stylesheet.headers.get('content-type'), 'text/css; charset=utf-8')
     assert.equal(await stylesheet.text(), 'body { color: plum; }')
+  })
+
+  it('refuses raw loopback clients that lack this preview listener’s capability', async () => {
+    const root = await temporaryRoot('copse-static-preview-capability-')
+    await writeFile(join(root, 'index.html'), '<h1>Private project</h1>')
+    await writeFile(join(root, 'app.js'), 'window.projectSource = true')
+    const preview = await getStaticPreviewServer(root)
+
+    for (const path of ['', 'app.js']) {
+      const response = await fetch(new URL(path, preview.url))
+      assert.equal(response.status, 403, path)
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+    }
+    const capabilityUrl = previewCapabilityUrl(preview.url)
+    assert.equal((await fetch(capabilityUrl)).status, 403)
+    const malformed = await fetch(preview.url, {
+      headers: { [PREVIEW_CAPABILITY_HEADER]: 'é'.repeat(43) },
+    })
+    assert.equal(malformed.status, 403)
+    const bootstrap = await previewFetch(capabilityUrl, { redirect: 'manual' })
+    assert.equal(bootstrap.status, 302)
+    assert.equal(bootstrap.headers.get('location'), '/')
+    assert.equal((await previewFetch(preview.url)).status, 200)
   })
 
   it('refuses requests from a rebinding hostname or a different web origin', async () => {
@@ -81,17 +119,17 @@ describe('static browser preview server', () => {
     const preview = await getStaticPreviewServer(root)
     const port = new URL(preview.url).port
 
-    const rebound = await fetch(preview.url, {
+    const rebound = await previewFetch(preview.url, {
       headers: { Host: `attacker.example:${port}`, Origin: `http://attacker.example:${port}` },
     })
     assert.equal(rebound.status, 403)
     assert.equal(await rebound.text(), 'Forbidden')
 
-    const crossOrigin = await fetch(preview.url, {
+    const crossOrigin = await previewFetch(preview.url, {
       headers: { Origin: 'https://attacker.example' },
     })
     assert.equal(crossOrigin.status, 403)
-    assert.equal((await fetch(preview.url)).status, 200)
+    assert.equal((await previewFetch(preview.url)).status, 200)
   })
 
   it('blocks a cross-origin script embed that sends no Origin header', async () => {
@@ -101,7 +139,7 @@ describe('static browser preview server', () => {
     const scriptUrl = new URL('app.js', preview.url)
 
     for (const site of ['cross-site', 'same-site']) {
-      const crossOrigin = await fetch(scriptUrl, {
+      const crossOrigin = await previewFetch(scriptUrl, {
         headers: {
           'Sec-Fetch-Dest': 'script',
           'Sec-Fetch-Mode': 'no-cors',
@@ -113,7 +151,9 @@ describe('static browser preview server', () => {
       assert.equal(crossOrigin.headers.get('x-content-type-options'), 'nosniff')
     }
 
-    const sameOrigin = await fetch(scriptUrl, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
+    const sameOrigin = await previewFetch(scriptUrl, {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    })
     assert.equal(sameOrigin.status, 200)
     assert.equal(sameOrigin.headers.get('cross-origin-resource-policy'), 'same-origin')
   })
@@ -127,12 +167,12 @@ describe('static browser preview server', () => {
     const preview = await getStaticPreviewServer(root)
 
     for (const path of ['.env', '.git/config', '%2Eenv']) {
-      const response = await fetch(new URL(path, preview.url))
+      const response = await previewFetch(new URL(path, preview.url))
       assert.equal(response.status, 404, path)
       assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin')
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     }
-    assert.equal((await fetch(preview.url)).status, 200)
+    assert.equal((await previewFetch(preview.url)).status, 200)
   })
 
   it('keeps prototype isolation when its listener is opened through an IP alias', async () => {
@@ -140,7 +180,7 @@ describe('static browser preview server', () => {
     await writeFile(join(root, 'index.html'), '<h1>Prototype</h1>')
     const preview = await getStaticPreviewServer(root)
     const alias = preview.url.replace('localhost', '127.0.0.1')
-    assert.equal(await (await fetch(alias)).text(), '<h1>Prototype</h1>')
+    assert.equal(await (await previewFetch(alias)).text(), '<h1>Prototype</h1>')
     for (const host of ['127.0.0.1', '[::ffff:127.0.0.1]', 'localhost.', 'preview.localhost']) {
       const url = preview.url.replace('localhost', host)
       assert.equal(isStaticPreviewUrl(url), true)
@@ -179,8 +219,8 @@ describe('static browser preview server', () => {
     flushPreviewStaleForTest()
     assert.deepEqual(stale, [])
 
-    await fetch(preview.url)
-    await fetch(new URL('assets/site.css', preview.url))
+    await previewFetch(preview.url)
+    await previewFetch(new URL('assets/site.css', preview.url))
 
     handlePreviewWatchEvent(root, 'index.html')
     flushPreviewStaleForTest()
@@ -214,7 +254,7 @@ describe('static browser preview server', () => {
     await symlink(join(outside, 'secret.txt'), join(root, 'secret.txt'))
 
     const preview = await getStaticPreviewServer(root)
-    const response = await fetch(new URL('secret.txt', preview.url))
+    const response = await previewFetch(new URL('secret.txt', preview.url))
     assert.equal(response.status, 404)
   })
 
@@ -225,7 +265,8 @@ describe('static browser preview server', () => {
     await writeFile(file, '<p>ok</p>')
 
     const url = await workspacePreviewFileUrl(root, file)
-    assert.match(url, /^http:\/\/localhost:\d+\/pages\/launch\.html$/)
+    assert.match(url, /^http:\/\/localhost:\d+\/pages\/launch\.html\?__copse_preview=/)
+    assert.ok(previewRequestCapability(url))
     assert.equal(new URL(url).protocol, 'http:')
   })
 
@@ -249,8 +290,15 @@ describe('static browser preview server', () => {
     await writeFile(join(root, 'dist', 'demo', 'index.html'), '<p>demo</p>')
 
     const url = await staticPreviewEntryUrl(root, 'dist/demo/index.html?scenario=a&autoplay=0')
-    assert.match(url, /^http:\/\/localhost:\d+\/dist\/demo\/index\.html\?scenario=a&autoplay=0$/)
-    assert.match(await staticPreviewEntryUrl(root, 'dist/demo/'), /\/dist\/demo\/$/)
+    const parsed = new URL(url)
+    assert.match(parsed.pathname, /^\/dist\/demo\/index\.html$/)
+    assert.equal(parsed.searchParams.get('scenario'), 'a')
+    assert.equal(parsed.searchParams.get('autoplay'), '0')
+    assert.ok(previewRequestCapability(url))
+    assert.match(
+      await staticPreviewEntryUrl(root, 'dist/demo/'),
+      /\/dist\/demo\/\?__copse_preview=/,
+    )
 
     // A build that has not written its output yet: fail instead of opening "Not found".
     await assert.rejects(staticPreviewEntryUrl(root, 'dist/other/index.html'), /Nothing to preview/)

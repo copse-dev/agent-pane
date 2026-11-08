@@ -1,7 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { capturePreviewDataUrl } from './session-manager.ts'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  BrowserSessionManager,
+  PREVIEW_ZOOM_FACTOR,
+  capturePreviewDataUrl,
+  setBrowserSessionPlatform,
+} from './session-manager.ts'
+import { getStaticPreviewServer, shutdownStaticPreviewServers } from './static-preview-server.ts'
 
 interface FakeImage {
   isEmpty(): boolean
@@ -74,6 +83,38 @@ function contents(
     },
   }
 }
+
+describe('scoped preview promotion', () => {
+  it('does not turn a denied preview URL into a capability for another task', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-preview-promotion-'))
+    await writeFile(join(root, 'index.html'), '<h1>Private workspace</h1>')
+    try {
+      const preview = await getStaticPreviewServer(root)
+      let shownUrl = ''
+      setBrowserSessionPlatform({
+        createWindow() {
+          throw new Error('This test does not create a browser window')
+        },
+        getAgentSession() {
+          throw new Error('This test does not create an agent session')
+        },
+        showUrl(url) {
+          shownUrl = url
+        },
+        showArtefact() {},
+      })
+
+      new BrowserSessionManager('another-task').showUrl(preview.url)
+
+      assert.equal(shownUrl, preview.url)
+      assert.equal((await fetch(shownUrl)).status, 403)
+    } finally {
+      setBrowserSessionPlatform(null)
+      await shutdownStaticPreviewServers()
+      await rm(root, { recursive: true })
+    }
+  })
+})
 
 describe('capturePreviewDataUrl', () => {
   it('requests a fresh screenshot rather than copying a cached frame twice', async () => {

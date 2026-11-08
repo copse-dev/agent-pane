@@ -38,6 +38,7 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { isStaticPreviewUrl } from '../browser/static-preview-server.ts'
 import {
   canStoreMcpOAuth,
   deleteMcpOAuthRecord,
@@ -427,7 +428,10 @@ export async function signInMcpServer(
         tokens = next
       },
       redirectToAuthorization: async (authorizationUrl) => {
-        if (authorizationUrl.protocol !== 'https:' && authorizationUrl.protocol !== 'http:') {
+        if (
+          (authorizationUrl.protocol !== 'https:' && authorizationUrl.protocol !== 'http:') ||
+          isStaticPreviewUrl(authorizationUrl.href)
+        ) {
           throw new Error('The server returned an authorization URL Copse will not open.')
         }
         await dependencies.openExternal(authorizationUrl.href)

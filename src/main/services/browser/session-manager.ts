@@ -6,6 +6,7 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { previewCapabilityUrl, previewRequestCapability } from './static-preview-server.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -240,6 +241,7 @@ async function applyDefaultTextColor(
  */
 export class BrowserSessionManager {
   private readonly scope: string
+  private readonly previewCapabilities = new Map<string, string>()
 
   constructor(scope = '') {
     this.scope = scope
@@ -248,6 +250,16 @@ export class BrowserSessionManager {
   private tabs: Tab[] = []
   private lastActiveId: string | null = null
   private counter = 0
+
+  /** Only a preview this scoped agent session already opened may be reopened. */
+  private authorizedPreviewUrl(url: string): string {
+    const bootstrap = previewCapabilityUrl(url)
+    const origin = URL.canParse(url) ? new URL(url).origin : ''
+    return this.previewCapabilities.get(origin) === previewRequestCapability(bootstrap) &&
+      this.previewCapabilities.has(origin)
+      ? bootstrap
+      : url
+  }
 
   private createTab(backgroundColor?: string): Tab {
     if (this.tabs.length >= MAX_TABS) {
@@ -306,11 +318,12 @@ export class BrowserSessionManager {
   }
 
   async navigate(url: string, opts?: BrowserNavigateOptions): Promise<NavigateResult> {
+    const requestedUrl = this.authorizedPreviewUrl(url)
     const tab = opts?.newTab ? this.createTab(opts.backgroundColor) : this.resolveTab(opts?.viewId)
     this.lastActiveId = tab.id
     if (opts?.backgroundColor) tab.window.setBackgroundColor(opts.backgroundColor)
     try {
-      await tab.window.webContents.loadURL(url)
+      await tab.window.webContents.loadURL(requestedUrl)
     } catch (err) {
       // Client-side redirects abort the original load; surface other failures.
       const code =
@@ -324,12 +337,22 @@ export class BrowserSessionManager {
       }
     }
     const wc = tab.window.webContents
+    const capability = previewRequestCapability(requestedUrl)
+    if (
+      capability &&
+      URL.canParse(wc.getURL()) &&
+      new URL(wc.getURL()).origin === new URL(requestedUrl).origin
+    )
+      this.previewCapabilities.set(new URL(requestedUrl).origin, capability)
     if (opts?.defaultTextColor) await applyDefaultTextColor(wc, opts.defaultTextColor)
     return { viewId: tab.id, title: wc.getTitle(), url: wc.getURL() }
   }
 
   showUrl(url: string): void {
-    requirePlatform().showUrl(url, browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope))
+    requirePlatform().showUrl(
+      this.authorizedPreviewUrl(url),
+      browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope),
+    )
   }
 
   showArtefact(identity: CanvasArtefactIdentity): void {
@@ -441,6 +464,7 @@ export class BrowserSessionManager {
     }
     this.tabs = []
     this.lastActiveId = null
+    this.previewCapabilities.clear()
   }
 }
 

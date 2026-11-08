@@ -1,6 +1,7 @@
 import { parse as parsePublicSuffix } from 'tldts'
 
 const DUCKDUCKGO_SEARCH_ORIGIN = 'https://duckduckgo.com/'
+export const PREVIEW_CAPABILITY_PARAM = '__copse_preview'
 
 function duckDuckGoSearchUrl(query: string): string {
   const url = new URL(DUCKDUCKGO_SEARCH_ORIGIN)

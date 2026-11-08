@@ -23,7 +23,12 @@ describe('workspace preview security', () => {
     writeFileSync(
       join(workspaceRoot, 'index.html'),
       '<!doctype html><html><head><title>Workspace preview</title></head>' +
-        '<body><h1>Workspace preview</h1><p>Local page</p></body></html>',
+        '<body><h1>Workspace preview</h1><p>Local page</p>' +
+        '<script src="/assets/app.js"></script></body></html>',
+    )
+    writeFileSync(
+      join(workspaceRoot, 'assets', 'app.js'),
+      'document.documentElement.dataset.previewAsset = "loaded"',
     )
     writeFileSync(join(workspaceRoot, '.env'), 'COPSE_PREVIEW_SECRET=never-serve-this')
     egress = await startBrowserPageFixture(43131)
@@ -82,11 +87,12 @@ describe('workspace preview security', () => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       if (!webview) throw new Error('Workspace preview webview missing')
       const result: unknown = await webview.executeJavaScript(
-        "Promise.all([document.querySelector('h1')?.textContent, fetch('/.env').then((response) => response.status)])",
+        "Promise.all([document.querySelector('h1')?.textContent, document.documentElement.dataset.previewAsset, fetch('/.env').then((response) => response.status)])",
       )
       return result
     })
-    expect(guestResult).toEqual(['Workspace preview', 404])
+    expect(guestResult).toEqual(['Workspace preview', 'loaded', 404])
+    expect(await address.getValue()).not.toContain('__copse_preview')
     await saveAppScreenshot('workspace-preview-protected.png', E2E_THREE_PANE_VIEWPORT)
   })
 

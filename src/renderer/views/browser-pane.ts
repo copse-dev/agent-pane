@@ -22,7 +22,11 @@ import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
+import {
+  browserTabLabel,
+  normalizeBrowserUrl,
+  PREVIEW_CAPABILITY_PARAM,
+} from '@shared/browser-url.ts'
 import { artefactUrl } from '@shared/canvas/artefact.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 import {
@@ -129,6 +133,20 @@ function webviewUrl(tab: BrowserTab): string {
   } catch {
     return ''
   }
+}
+
+/** The bootstrap token belongs to the main process, not the visible URL or saved tab. */
+function visibleBrowserUrl(url: string): string {
+  if (!URL.canParse(url)) return url
+  const parsed = new URL(url)
+  if (
+    parsed.protocol !== 'http:' ||
+    (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') ||
+    !parsed.searchParams.has(PREVIEW_CAPABILITY_PARAM)
+  )
+    return url
+  parsed.searchParams.delete(PREVIEW_CAPABILITY_PARAM)
+  return parsed.href
 }
 
 /** Chromium net error: the navigation was superseded, not a real failure. */
@@ -643,9 +661,9 @@ export function mountBrowserPane(
   function displayUrl(tab: BrowserTab): string {
     // Don't surface the (large, opaque) artefact data: URL in the address bar.
     if (tab.artefactTitle) return ''
-    if (tab.pendingUrl) return tab.pendingUrl
+    if (tab.pendingUrl) return visibleBrowserUrl(tab.pendingUrl)
     const loaded = webviewUrl(tab)
-    return loaded === 'about:blank' ? '' : loaded
+    return loaded === 'about:blank' ? '' : visibleBrowserUrl(loaded)
   }
 
   function syncAddressBar(tab: BrowserTab): void {
@@ -872,7 +890,7 @@ export function mountBrowserPane(
   function navigateTab(tab: BrowserTab, rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
     tab.pendingUrl = url === 'about:blank' ? null : url
-    tab.urlInput.value = url === 'about:blank' ? '' : url
+    tab.urlInput.value = url === 'about:blank' ? '' : visibleBrowserUrl(url)
     if (browserModeActive(store)) {
       ensureWebview(tab)
       navigateWebview(tab, url)
@@ -1060,7 +1078,7 @@ export function mountBrowserPane(
   function urlTabFor(url: string, partition: string): BrowserTab | undefined {
     for (const tab of tabs.values()) {
       if (tab.artefactTitle) continue
-      if (displayUrl(tab) === url && tab.partition === partition) return tab
+      if (displayUrl(tab) === visibleBrowserUrl(url) && tab.partition === partition) return tab
     }
     return undefined
   }
@@ -1761,9 +1779,10 @@ export function mountBrowserPane(
       // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
       // (#508) rejects `||`, but `??` alone would change behaviour — these
       // fall back on EMPTY strings, not just null/undefined.
-      url:
+      url: visibleBrowserUrl(
         [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
-        'about:blank',
+          'about:blank',
+      ),
       partition: tab.partition,
       label: tab.label,
       artefactTitle: tab.artefactTitle,
@@ -1841,7 +1860,7 @@ export function mountBrowserPane(
       }
       if (entry.url && entry.url !== 'about:blank') {
         tab.pendingUrl = entry.url
-        tab.urlInput.value = entry.url
+        tab.urlInput.value = visibleBrowserUrl(entry.url)
       }
       if (entry.label) {
         tab.label = entry.label
@@ -1950,7 +1969,7 @@ export function mountBrowserPane(
         // `setActiveTab` / `onBrowserModeChange` already flush a pending URL
         // when the tab is next shown.
         tab.pendingUrl = entry.url
-        tab.urlInput.value = entry.url
+        tab.urlInput.value = visibleBrowserUrl(entry.url)
       }
       if (entry.label) {
         tab.label = entry.label
