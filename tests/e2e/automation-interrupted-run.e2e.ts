@@ -311,7 +311,7 @@ describe('inactive automation after an interrupted app session', function () {
     }
     await $(`.chat-row[data-thread-id="${OLD}"]`).click()
     const card = $('[data-turn-recovery-card]')
-    await expect(card.$('.turn-recovery-title')).toHaveText('TURN INTERRUPTED')
+    await expect(card.$('.turn-recovery-title')).toHaveText('Turn interrupted')
     await expect(card.$('.turn-recovery-button')).toHaveText('Retry this turn')
     await expect(card.$('.turn-recovery-detail')).toHaveText(
       expect.stringContaining('Copse closed before this turn finished.'),
