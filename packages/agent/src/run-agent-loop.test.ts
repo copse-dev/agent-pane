@@ -1559,7 +1559,7 @@ src/renderer/views/projects-pane.ts
       onChunk: (c) => chunks.push(c),
       executeTool: async () => 'ok',
     })
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('LLM call limit')))
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
@@ -1573,9 +1573,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.ok(
-      chunks.some(
-        (c) => c.type === 'text' && c.text.includes('stopped before producing a final answer'),
-      ),
+      chunks.some((c) => c.type === 'text' && c.text.includes('step limit before finishing')),
     )
   })
 
@@ -2024,7 +2022,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.equal(calls, 0)
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time limit')))
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
     assertToolPairingValid(messages)
   })
@@ -2092,7 +2090,7 @@ src/renderer/views/projects-pane.ts
         executeTool: async () => 'ok',
       })
       assert.equal(n, 2, 'no grant without distinct recent tool activity')
-      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
       assert.equal(chunks.at(-1)?.type, 'done')
     })
 
@@ -2113,7 +2111,7 @@ src/renderer/views/projects-pane.ts
         executeTool: async () => 'ok',
       })
       assert.equal(calls(), 2 + MAX_EXTENSION_GRANTS * EXTENSION_GRANT_LLM_CALLS)
-      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
       assert.equal(chunks.at(-1)?.type, 'done')
     })
 
@@ -2131,7 +2129,7 @@ src/renderer/views/projects-pane.ts
         executeTool: async () => 'ok',
       })
       assert.equal(calls(), 2)
-      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
       assert.equal(chunks.at(-1)?.type, 'done')
     })
 
@@ -2206,7 +2204,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => '',
       signal: controller.signal,
     })
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time limit')))
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
   })
 
@@ -2223,7 +2221,7 @@ src/renderer/views/projects-pane.ts
       signal: controller.signal,
     })
     assert.ok(
-      !chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')),
+      !chunks.some((c) => c.type === 'text' && c.text.includes('limit before finishing')),
       'a user abort must not surface the run-limit message',
     )
     assert.equal(chunks.length, 1) // only 'done'
@@ -2524,6 +2522,17 @@ src/renderer/views/projects-pane.ts
     assert.equal(result.isError, true)
     assert.match(result.result, /run deadline expired/)
     assert.doesNotMatch(result.result, /LLM call budget/)
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
+    assert.ok(
+      chunks.some(
+        (chunk) => chunk.type === 'text' && chunk.text.includes('time limit before finishing'),
+      ),
+    )
+    assert.ok(
+      !chunks.some(
+        (chunk) => chunk.type === 'text' && chunk.text.includes('step limit before finishing'),
+      ),
+    )
     assertToolPairingValid(messages)
   })
 

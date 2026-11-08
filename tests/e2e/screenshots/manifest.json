@@ -3817,6 +3817,26 @@
       "sha256": "fe238d814ad8de133780fedb85409930db7001f86793c82a4019c386ad3ad975",
       "bytes": 346709
     },
+    "run-budget-checkpoint-paused.png": {
+      "sha256": "87c7401e1c3745629ada220a36dca994ed63cb05f13aa4a08cce59af5f38963a",
+      "bytes": 390893
+    },
+    "run-budget-deadline-recovery.png": {
+      "sha256": "881a8978ea577965710f71016756efb413255ab6b30834b606cc9180e2d90d9d",
+      "bytes": 362266
+    },
+    "run-budget-exhausted-plan-recovery.png": {
+      "sha256": "cba19cbe97b70156f89cab31c40f1cea0d65c4049b965c83bcab956accb95992",
+      "bytes": 401437
+    },
+    "run-budget-exhausted-plan-summary.png": {
+      "sha256": "e324abdbc677366b7a12b8c3a2cd02b13d3e96a641ef53af106af74303c8d243",
+      "bytes": 387676
+    },
+    "run-budget-explicitly-continued.png": {
+      "sha256": "4a9c7946a279cb399aa60035c5d0eaa37f6480534419176242dc7dca20403f75",
+      "bytes": 373977
+    },
     "screenshot-motion-frame.png": {
       "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
       "bytes": 4566
@@ -4745,6 +4765,10 @@
       "sha256": "2d222c8085171e21785d9a57f33058c4bfb32931bdedfacda3c8eee1873f8c6d",
       "bytes": 47007
     },
+    "settings-usage-responses-cache.png": {
+      "sha256": "0f2b99bf388e505105b2c7a0fdd1b06308c1747a6a1f82ec0247b5dd06ef577b",
+      "bytes": 20415
+    },
     "settings-usage-value-map-card-link.png": {
       "sha256": "ac39493fb26a7dafdd9fd0cee76f11b7f649aaaa94dad139696bd30ccff8badc",
       "bytes": 253268
@@ -5217,6 +5241,14 @@
       "sha256": "fa2b4962b4fb56eeeeb9f06ec8b7dbf610677e74ae774bd8ad490b739defee57",
       "bytes": 109090
     },
+    "subagent-tool-sizing-narrow.png": {
+      "sha256": "64ca2eba72df541da1c17f94ce55d2e88d9ce84db4f69d44d69bc075143479d3",
+      "bytes": 27282
+    },
+    "subagent-tool-sizing-wide.png": {
+      "sha256": "a9364a561b3c4128db8f5123e8a4562eee3bcb51534fe2361377facb8e6253cd",
+      "bytes": 35388
+    },
     "subagent-ungrouped-beside-read.png": {
       "sha256": "4e41b7a7cc4dc70adec6a9e84001d95f3d8a39b89f068c650678e9cee71461f0",
       "bytes": 97802
@@ -5622,8 +5654,8 @@
       "bytes": 255344
     },
     "tool-activity-icon-nested-row-running.png": {
-      "sha256": "dd1382736229cdbcdd59bebf67c5264f4e13bdf5176875bf46c452280dd6ab29",
-      "bytes": 272433
+      "sha256": "cf2da59c0631708f98232a298519098896c7811bec254cafc3bfeef1fe94310d",
+      "bytes": 286926
     },
     "tool-argument-clamp-guidance.png": {
       "sha256": "bcaae741c497efba08cf40ccb2c9d2b8e8543f1f018c2380c20e820546349dae",

@@ -4235,6 +4235,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
       ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
+      ...(recovery.limitReason !== undefined ? { limitReason: recovery.limitReason } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
