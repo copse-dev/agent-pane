@@ -215,8 +215,9 @@ describe('flake-report CLI', () => {
     try {
       const outcomes = join(dir, 'outcomes')
       mkdirSync(outcomes)
-      const write = (name: string, value: SpecOutcome): void =>
+      const write = (name: string, value: SpecOutcome): void => {
         writeFileSync(join(outcomes, name), JSON.stringify(value) + '\n')
+      }
       write('1-0-6-automation-interrupted-run.e2e.ts.json', row(SPEC, 1, 'failed'))
       write('2-0-6-automation-interrupted-run.e2e.ts.json', row(SPEC, 2, 'passed'))
       write('1-0-5-acp-auth-error.e2e.ts.json', row(OTHER, 1, 'passed'))
