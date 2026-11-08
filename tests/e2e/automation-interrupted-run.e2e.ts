@@ -284,7 +284,15 @@ describe('inactive automation after an interrupted app session', function () {
     ]) {
       const toggle = $(selector)
       await toggle.waitForExist({ timeout: 10_000 })
-      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+      await browser.execute((currentSelector) => {
+        const currentToggle = document.querySelector(currentSelector)
+        if (!(currentToggle instanceof HTMLButtonElement))
+          throw new Error(`Missing automation toggle: ${currentSelector}`)
+        const expanded = currentToggle.getAttribute('aria-expanded')
+        if (expanded !== 'true' && expanded !== 'false')
+          throw new Error(`Automation toggle has no expanded state: ${currentSelector}`)
+        if (expanded === 'false') currentToggle.click()
+      }, selector)
     }
     await $(`.chat-row[data-thread-id="${newId}"]`).click()
     await expect($('.messages-list')).toHaveText(
