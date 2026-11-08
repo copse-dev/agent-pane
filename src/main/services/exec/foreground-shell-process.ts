@@ -14,7 +14,11 @@ import {
 } from './subprocess-output-cap.ts'
 import { isPidAlive, terminateProcessTree } from './subprocess-kill.ts'
 import { currentShellRunObserver, mirrorShellOutput } from './shell-output-context.ts'
-import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
+import {
+  adoptSupervisedBackgroundProcess,
+  stopSupervisedBackgroundProcess,
+} from './supervised-background-process.ts'
+import type { BackgroundProcessCompletion } from './background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
 
@@ -58,6 +62,12 @@ export interface ForegroundShellProcess {
   projectId: string
 }
 
+/** An explicit short foreground wait within the command's unchanged total deadline. */
+export interface ShellYieldOptions {
+  yieldAfterMs: number
+  onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+}
+
 // Unlike background tasks these have no id or handle: they end with the tool
 // call. The Process Manager needs them anyway, because they run as direct
 // children of main and would otherwise read as Shared.
@@ -91,10 +101,20 @@ export async function runShellOnce(
   readGrantTargets: readonly string[] = [],
   onDetach?: () => () => Promise<void>,
   readonlyCheckout = false,
+  yieldOptions?: ShellYieldOptions,
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   if (closing) throw new Error('Copse is closing; the command was not started.')
   const owner = getThreadExecutionContext()
+  if (yieldOptions && !owner) throw new Error('A yielding command requires an owning thread.')
+  if (
+    yieldOptions &&
+    (!Number.isInteger(yieldOptions.yieldAfterMs) ||
+      yieldOptions.yieldAfterMs <= 0 ||
+      yieldOptions.yieldAfterMs >= timeout_ms)
+  ) {
+    throw new Error('The foreground yield must be positive and earlier than the command deadline.')
+  }
   const reportPhase = captureCommandPhaseReport()
   // Captured once: child stream callbacks need not run in the caller's context.
   const observer = currentShellRunObserver()
@@ -166,6 +186,7 @@ export async function runShellOnce(
       let detached = false
       let releaseDetached: (() => Promise<void>) | undefined
       let cancelKill: (() => void) | undefined
+      let yieldTimer: ReturnType<typeof setTimeout> | undefined
       const stream = (data: Buffer): void => {
         const text = data.toString()
         observer?.output(text)
@@ -175,19 +196,40 @@ export async function runShellOnce(
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
 
-      const onAbort = AsyncLocalStorage.bind((): void => {
-        if (detached) return
-        if (signal.reason === 'send_now' && owner) {
-          detached = true
-          settled = true
-          cleanup()
-          proc.stdout?.removeListener('data', stream)
-          proc.stderr?.removeListener('data', stream)
+      const detach = AsyncLocalStorage.bind((): void => {
+        if (settled || detached || !owner) return
+        detached = true
+        settled = true
+        cleanup()
+        // Adoption writes the supervised task record asynchronously. Keep
+        // Stop/quit able to cancel the child until the receipt is delivered.
+        shutdownStops.add(stopForShutdown)
+        const stopDuringAdoption = (): void => {
+          if (signal.reason === 'send_now') return
+          stopped = true
+          cancelKill = terminateProcessTree(proc)
+        }
+        signal.addEventListener('abort', stopDuringAdoption, { once: true })
+        const failAdoption = (error: unknown): void => {
+          signal.removeEventListener('abort', stopDuringAdoption)
+          shutdownStops.delete(stopForShutdown)
+          reportPhase('cancelled')
+          cancelKill = terminateProcessTree(proc)
+          reject(error instanceof Error ? error : new Error(String(error)))
+        }
+        proc.stdout?.removeListener('data', stream)
+        proc.stderr?.removeListener('data', stream)
+        try {
           releaseDetached = onDetach?.()
-          // The detached task now ends on its own schedule: that ending lands on
-          // this command's card, as a `run_background` task's does (#3956).
-          const reportEnd = captureLateCommandPhaseReport(owner)
-          void adoptSupervisedBackgroundProcess({
+        } catch (error) {
+          failAdoption(error)
+          return
+        }
+        // The detached task now ends on its own schedule: that ending lands on
+        // this command's card, as a `run_background` task's does (#3956).
+        const reportEnd = captureLateCommandPhaseReport(owner)
+        void adoptSupervisedBackgroundProcess(
+          {
             command,
             cwd,
             proc,
@@ -199,26 +241,41 @@ export async function runShellOnce(
             onCancelled: ({ id }) => {
               void reportEnd('cancelled', { backgroundTaskId: id })
             },
-            onCompletion: async ({ info: completed }) => {
+            onCompletion: async (completion) => {
+              if (stopped) return
+              const completed = completion.info
               await reportEnd(completed.timedOut ? 'timed_out' : 'exited', {
                 backgroundTaskId: completed.id,
                 ...(completed.exitCode !== null ? { exitCode: completed.exitCode } : {}),
               })
+              await yieldOptions?.onCompletion?.(completion)
             },
-          }).then(
-            (info) => {
-              reportPhase('running', { backgroundTaskId: info.id })
-              resolve({ output: outputAcc.toString(), exitCode: 0, backgroundId: info.id })
-            },
-            (error: unknown) => {
+          },
+          () => stopped || closing,
+        )
+          .then(async (info) => {
+            signal.removeEventListener('abort', stopDuringAdoption)
+            shutdownStops.delete(stopForShutdown)
+            if (stopped || closing || (signal.aborted && signal.reason !== 'send_now')) {
+              await stopSupervisedBackgroundProcess(info.id, owner)
               reportPhase('cancelled')
-              cancelKill = terminateProcessTree(proc)
-              reject(error instanceof Error ? error : new Error(String(error)))
-            },
-          )
+              reject(new Error('Command was cancelled while moving to the background.'))
+              return
+            }
+            reportPhase('running', { backgroundTaskId: info.id })
+            resolve({ output: outputAcc.toString(), exitCode: 0, backgroundId: info.id })
+          })
+          .catch(failAdoption)
+      })
+
+      const onAbort = AsyncLocalStorage.bind((): void => {
+        if (detached) return
+        if (signal.reason === 'send_now' && owner) {
+          detach()
           return
         }
         clearTimeout(timer)
+        clearTimeout(yieldTimer)
         stopped = true
         cancelKill = terminateProcessTree(proc)
       })
@@ -227,6 +284,7 @@ export async function runShellOnce(
         if (live) liveForegroundShells.delete(live)
         shutdownStops.delete(stopForShutdown)
         clearTimeout(timer)
+        clearTimeout(yieldTimer)
         cancelKill?.()
         signal.removeEventListener('abort', onAbort)
       }
@@ -255,6 +313,7 @@ export async function runShellOnce(
           reject(timeoutError(timeout_ms, outputAcc.toString()))
         }
       }, timeout_ms)
+      if (yieldOptions) yieldTimer = setTimeout(detach, yieldOptions.yieldAfterMs)
 
       const sandboxViolationCount = (): number =>
         unsandboxed ? 0 : sandboxViolationCountForCommand(command)

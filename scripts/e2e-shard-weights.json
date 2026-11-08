@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -212,6 +212,7 @@
     "tests/e2e/outside-sandbox-approval-copy.e2e.ts": 16.7,
     "tests/e2e/pane-loading.e2e.ts": 21.3,
     "tests/e2e/pane-popout.e2e.ts": 11.8,
+    "tests/e2e/pane-recording.e2e.ts": 14.3,
     "tests/e2e/panel-position.e2e.ts": 7.2,
     "tests/e2e/panel-toggle.e2e.ts": 27.1,
     "tests/e2e/paste-attachment.e2e.ts": 8.6,

@@ -96,7 +96,8 @@ revisiting this document, not silently diverging in an implementation PR.
    write already waiting for its approval response receives no duplicate wake.
    The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
-   follow-ups, bounded background-task completion wakes, change-acceptance wakes, durable CI status-change wakes,
+   follow-ups, bounded background-task completion wakes (including explicit `run_shell`
+   foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
