@@ -34,6 +34,10 @@ import {
 } from '../thread-checkout-transaction.ts'
 import { createHeadlessAutomationRun } from './headless-message-assembler.ts'
 import {
+  reconcileInterruptedAutomationRuns,
+  type AutomationRunLiveness,
+} from './automation-run-recovery.ts'
+import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
 } from '../worktree-parking.ts'
@@ -315,6 +319,7 @@ export interface AutomationService {
     notify: (event: AutomationTriggerEvent) => void,
     dispatch: DispatchHeadlessTurn,
     shownProjectId: () => string | null,
+    isRunActive?: AutomationRunLiveness,
   ): void
   sync(): Promise<void>
   stop(): void
@@ -385,6 +390,7 @@ export function createAutomationService(
   let notify: ((event: AutomationTriggerEvent) => void) | null = null
   let notifiedWindowProjectId: (() => string | null) | null = null
   let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
+  let isRunActive: AutomationRunLiveness | undefined
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -841,8 +847,13 @@ export function createAutomationService(
     triggerAttempts.set(schedule.id, attempt)
     const { signal } = attempt
     try {
-      const scheduleThreads = (await loadThreadMetas(schedule.projectId)).filter(
-        (thread) => thread.automation?.scheduleId === schedule.id,
+      const scheduleThreads = await reconcileInterruptedAutomationRuns(
+        schedule.projectId,
+        (await loadThreadMetas(schedule.projectId)).filter(
+          (thread) => thread.automation?.scheduleId === schedule.id,
+        ),
+        (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
+        () => dependencies.now(),
       )
       signal.throwIfAborted()
       const previous = schedule.lastCreatedThreadId
@@ -1162,8 +1173,13 @@ export function createAutomationService(
       if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
       inFlight.add(schedule.id)
       try {
-        const threads = (await loadThreadMetas(projectId)).filter(
-          (thread) => thread.automation?.scheduleId === schedule.id,
+        const threads = await reconcileInterruptedAutomationRuns(
+          projectId,
+          (await loadThreadMetas(projectId)).filter(
+            (thread) => thread.automation?.scheduleId === schedule.id,
+          ),
+          (ownerProjectId, threadId) => isRunActive?.(ownerProjectId, threadId) ?? null,
+          () => dependencies.now(),
         )
         // A pending or running run owns its checkout; leave it alone.
         const idle = threads.filter((thread) => automationRunBlock(thread) === null)
@@ -1181,10 +1197,11 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender, dispatch, shownProjectId) {
+    start(sender, dispatch, shownProjectId, runtimeIsActive) {
       notify = sender
       notifiedWindowProjectId = shownProjectId
       dispatchHeadlessTurn = dispatch
+      isRunActive = runtimeIsActive
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async (task) => {
@@ -1223,6 +1240,7 @@ export function createAutomationService(
       healthListeners.clear()
       notify = null
       notifiedWindowProjectId = null
+      isRunActive = undefined
     },
     async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return

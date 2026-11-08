@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
+import {
+  reconcileInterruptedAutomationRuns,
+  type AutomationRunLiveness,
+} from './automation-run-recovery.ts'
 import { z } from 'zod'
 import type {
   AutomationFailureCode,
@@ -385,7 +389,7 @@ export interface BranchCiAutomationService {
     threadId: string,
   ): Promise<{ allowed: boolean; reason?: string; retryable?: boolean }>
   poll(): Promise<void>
-  start(sender: (event: AutomationTriggerEvent) => void): void
+  start(sender: (event: AutomationTriggerEvent) => void, isRunActive?: AutomationRunLiveness): void
   sync(): Promise<void>
   stop(): void
 }
@@ -435,6 +439,7 @@ export function createBranchCiAutomationService(
   deps: BranchCiAutomationDependencies,
 ): BranchCiAutomationService {
   const loadThreadMetas = deps.loadProjectThreadMetas ?? loadProjectThreadMetas
+  let isRunActive: AutomationRunLiveness | undefined
   const listeners = new Set<(event: AutomationTriggerEvent) => void>()
   const supervisor = deps.supervisor()
   const inboxStore = deps.inboxStore ?? new FileEventInboxStore()
@@ -549,8 +554,13 @@ export function createBranchCiAutomationService(
           return { allowed: false, reason: 'Automation is unavailable' }
         const stale = await staleReason(definition, record)
         if (stale) return { allowed: false, reason: stale }
-        const threads = (await loadThreadMetas(definition.projectId)).filter(
-          (thread) => thread.automation?.scheduleId === definition.id,
+        const threads = await reconcileInterruptedAutomationRuns(
+          definition.projectId,
+          (await loadThreadMetas(definition.projectId)).filter(
+            (thread) => thread.automation?.scheduleId === definition.id,
+          ),
+          (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
+          () => deps.now(),
         )
         if (
           threads.filter((thread) => thread.createdAt >= deps.now() - 86_400_000).length >=
@@ -852,8 +862,13 @@ export function createBranchCiAutomationService(
     const pendingReady = new Set<number>()
     for (const candidate of result.candidates) {
       if (definition.trigger.kind === 'github-ci-failed') {
-        const prior = (await loadThreadMetas(definition.projectId)).filter(
-          (thread) => thread.automation?.scheduleId === definition.id,
+        const prior = await reconcileInterruptedAutomationRuns(
+          definition.projectId,
+          (await loadThreadMetas(definition.projectId)).filter(
+            (thread) => thread.automation?.scheduleId === definition.id,
+          ),
+          (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
+          () => deps.now(),
         )
         if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
       }
@@ -1264,7 +1279,8 @@ export function createBranchCiAutomationService(
     async poll(): Promise<void> {
       await poll()
     },
-    start(sender: (event: AutomationTriggerEvent) => void): void {
+    start(sender, runtimeIsActive): void {
+      isRunActive = runtimeIsActive
       listeners.add(sender)
       void (async (): Promise<void> => {
         for (const projectId of new Set(definitions().map((item) => item.projectId)))
@@ -1295,6 +1311,7 @@ export function createBranchCiAutomationService(
       if (timer) clearInterval(timer)
       timer = null
       listeners.clear()
+      isRunActive = undefined
       inbox.dispose()
     },
   }
