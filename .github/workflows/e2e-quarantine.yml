@@ -147,7 +147,9 @@ jobs:
           retention-days: 90
       # The rolling record lives in the previous counted run's artifact. If none
       # is found (first night, or it expired), streaks restart from zero: they
-      # can be understated, never overstated.
+      # can be understated, never overstated. The repository's artifact
+      # retention cap (5 days in November 2026) overrides the 90 days requested
+      # here, so the chain survives up to four nights without a successful run.
       - name: Fetch the previous streak record
         if: always() && steps.specs.outcome == 'success'
         run: |
