@@ -2,6 +2,7 @@ import {
   APPEARANCE_DEFAULTS_MIGRATION_SETTING,
   APPEARANCE_DEFAULTS_MIGRATION_VERSION,
   APPLE_DEVELOPMENT_PLUGIN_ID,
+  ASK_USER_ANSWER_MAX_LENGTH,
   AUTOMATIONS_PLUGIN_ID,
   BALANCED_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
@@ -36,6 +37,7 @@ import {
   acpDelegatePrompt,
   activateMobileProject,
   activateWorkspaceReference,
+  activeProjectThreadOf,
   activeThreadOf,
   addHookCard,
   addMessage,
@@ -106,6 +108,7 @@ import {
   createPasteKeyForm,
   createStore,
   createThread,
+  decodeWithSchema,
   definePlugin,
   deleteThread,
   describeAutomationFailure,
@@ -125,6 +128,7 @@ import {
   errorMessage,
   excerptText,
   external_exports,
+  extractGithubPrUrls,
   fetchModelOptions,
   fileExtension,
   findAcpCatalogEntry,
@@ -179,6 +183,7 @@ import {
   init_apple_development_plugin,
   init_array_utils,
   init_artefact_previews,
+  init_ask_user_format,
   init_attach_annotation,
   init_attachment_preview,
   init_automation_failure,
@@ -240,6 +245,7 @@ import {
   init_reserved_prefixes,
   init_reviewer_input,
   init_runtime_transcript,
+  init_safe_json,
   init_send_now_aborts,
   init_settings_dialog,
   init_side_chat,
@@ -260,6 +266,7 @@ import {
   init_todo_steering,
   init_tool_display,
   init_tool_interruption,
+  init_tool_result_reminders,
   init_transcript_state,
   init_types,
   init_ui,
@@ -354,7 +361,6 @@ import {
   parseGithubPrUrl,
   parseRemoteAgentModel,
   parseRemoteAgentModelSelection,
-  parseReviewerInputCall,
   parseThreadProposal,
   patchThreadAnywhere,
   prRelationKey,
@@ -370,6 +376,7 @@ import {
   recordThreadVideos,
   recoverOrphanProject,
   refreshAgentRunPayload,
+  refreshProjectThreadWorktrees,
   registerPromptAttachments,
   registerUiKit,
   releaseHeldMessage,
@@ -388,7 +395,11 @@ import {
   restoreUiScale,
   reviewerInputAnswer,
   reviewerInputRequests,
+  reviewerInputRequestsForCall,
+  safeJsonParse,
+  safeJsonStringify,
   sameItems,
+  sameProjectThreadBesidesDraft,
   sameThreadBesidesDraft,
   saveProjectGroups,
   saveProjects,
@@ -433,6 +444,7 @@ import {
   sidebarLastPromptAt,
   sidebarPrRefs,
   sortThreadsNewestFirst,
+  splitAppendedReminders,
   startHumanTurnTree,
   stripShellCdPrefix,
   stripUrlTrailingPunctuation,
@@ -467,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CHT54NWT.js";
+} from "./chunk-57HGMO5P.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4228,7 +4240,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) return null;
     if (!batch.every((req) => req.allowRemember)) return null;
     const label = batch[0]?.rememberLabel;
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
+    const subject = batch[0]?.rememberSubject;
+    if (!label || !batch.every((req) => req.rememberLabel === label && req.rememberSubject === subject))
+      return null;
     return label;
   }
   function soloRequest() {
@@ -4374,7 +4388,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       return;
     }
     clearSettle();
-    rememberInput.checked = false;
+    rememberInput.checked = rememberGrant() !== null && batch.every((req) => req.rememberDefault === true);
     detailsExpanded = false;
     renderBatch();
     const asker = sideChatPromptOrigin(
@@ -4478,6 +4492,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      rememberDefault,
+      rememberSubject,
       approveLabel,
       collapseDetails,
       approveOnceLabel,
@@ -4501,6 +4517,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        rememberDefault,
+        rememberSubject,
         approveLabel,
         collapseDetails,
         approveOnceLabel,
@@ -4616,37 +4634,6 @@ var init_approval_dialog = __esm({
   }
 });
 
-// packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
-var init_ask_user_format = __esm({
-  "packages/agent/src/ask-user-format.ts"() {
-    init_zod();
-    askUserQuestionSchema = external_exports.object({
-      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
-      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
-      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
-      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
-    }).refine(
-      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
-      {
-        message: "recommendedOption must be one of options",
-        path: ["recommendedOption"]
-      }
-    ).refine(
-      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
-      {
-        message: "A recommendation needs both an option and a reason",
-        path: ["recommendationReason"]
-      }
-    );
-    askUserParamsSchema = external_exports.object({
-      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
-    });
-    ASK_USER_ANSWER_MAX_LENGTH = 8192;
-    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
-  }
-});
-
 // src/renderer/views/activity-view.ts
 function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
@@ -4731,6 +4718,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
+  let shownQuestionSignature = null;
   function canOpen(row2) {
     if (!row2.threadId || !row2.projectId) return false;
     const { projectId } = row2;
@@ -4789,7 +4777,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       chosen === void 0 ? asked.questions.map((_2, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
-    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    const title = row2.threadId ? getThreadById(store2, row2.threadId)?.title : void 0;
+    status.textContent = sent ? `Answered ${title ?? row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
   function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
@@ -4826,9 +4815,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const field = el("div", { class: "activity-answer-field" }, asked);
     if (options.length > 0) {
       const choices = el("div", { class: "activity-options" });
-      for (const option of options) {
+      for (const [optionIndex, option] of options.entries()) {
         const choice = el("button", {
           type: "button",
+          "data-control": `answer-${String(index)}-option-${String(optionIndex)}`,
           class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
         if (actionsOnly) choice.disabled = settling;
@@ -5022,35 +5012,52 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
+  function detailHeader(row2, at2) {
+    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
+    return el(
+      "header",
+      { class: "activity-detail-header" },
+      el(
+        "p",
+        { class: "activity-detail-meta" },
+        el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+        meta
+      ),
+      el(
+        "h3",
+        { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+        row2.threadTitle
+      )
+    );
+  }
   function renderDetail(row2, at2) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      shownQuestionSignature = null;
       return;
     }
-    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
+    const questionSignature = row2.state === "needs-answer" ? JSON.stringify([
+      row2.key,
+      row2.threadId,
+      row2.projectId,
+      row2.want,
+      canOpen(row2),
+      sources3.questions.pending().find((request) => request.id === row2.requestId)
+    ]) : null;
+    if (questionSignature !== null && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && (questionSignature === shownQuestionSignature || document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) && !detail.querySelector("[data-answered]")) {
+      const header = detail.querySelector(".activity-detail-header");
+      const nextHeader = detailHeader(row2, at2);
+      if (header?.textContent !== nextHeader.textContent) header?.replaceWith(nextHeader);
+      detail.querySelector(".activity-answer")?.setAttribute("aria-label", `Send answer: ${row2.want} (${row2.threadTitle})`);
       return;
     }
+    shownQuestionSignature = questionSignature;
     detail.hidden = false;
     detail.dataset["rowKey"] = row2.key;
     detail.dataset["state"] = row2.state;
-    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
     detail.replaceChildren(
-      el(
-        "header",
-        { class: "activity-detail-header" },
-        el(
-          "p",
-          { class: "activity-detail-meta" },
-          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
-          meta
-        ),
-        el(
-          "h3",
-          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
-          row2.threadTitle
-        )
-      ),
+      detailHeader(row2, at2),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
     );
@@ -6563,32 +6570,6 @@ var init_project_groups = __esm({
   }
 });
 
-// packages/std/src/safe-json.ts
-function decodeWithSchema(schema) {
-  return (value) => {
-    const result = schema.safeParse(value);
-    return result.success ? result.data : null;
-  };
-}
-function safeJsonStringify(value, indent) {
-  if (value === void 0 || typeof value === "function" || typeof value === "symbol") {
-    return void 0;
-  }
-  return JSON.stringify(value, null, indent);
-}
-function safeJsonParse(text, decoder) {
-  try {
-    const value = JSON.parse(text);
-    return decoder ? decoder(value) : value;
-  } catch {
-    return null;
-  }
-}
-var init_safe_json = __esm({
-  "packages/std/src/safe-json.ts"() {
-  }
-});
-
 // src/shared/safe-json.ts
 var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
@@ -6742,6 +6723,17 @@ async function cleanUpScheduleRuns(store2, api2, target) {
     const result = await api2.automations.cleanupRuns(target.project.id, target.scheduleId);
     const freed = result.released.length;
     const freedText = `${String(freed)} worktree${freed === 1 ? "" : "s"}`;
+    try {
+      await refreshProjectThreadWorktrees(store2, api2, target.project.id);
+    } catch (error) {
+      showErrorToast(
+        "Cleanup finished, but the run list could not refresh",
+        `${freedText} freed. Reopen the project to refresh its runs.
+
+${ipcErrorMessage(error, "The run list could not be loaded")}`
+      );
+      if (result.retained.length === 0) return;
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0 ? `Nothing to clean up for \u201C${target.scheduleName}\u201D.` : `Freed ${freedText} for \u201C${target.scheduleName}\u201D.`
@@ -7164,6 +7156,7 @@ function mountProjectsPane(root, store2, api2) {
   const prLifecycleCache = /* @__PURE__ */ new Map();
   const prFetchInFlight = /* @__PURE__ */ new Set();
   let prStatusGeneration = 0;
+  let prWorkspaceGeneration = 0;
   function beginThreadRename(threadId, currentTitle) {
     renaming = { threadId, draft: currentTitle || "New Thread" };
     render2();
@@ -7286,6 +7279,7 @@ function mountProjectsPane(root, store2, api2) {
     });
     if (stale.length === 0) return;
     const generation = prStatusGeneration;
+    const workspaceGeneration = prWorkspaceGeneration;
     for (const ref of stale) {
       const key = githubPrKey(ref);
       let lifecycleChanged = false;
@@ -7313,10 +7307,21 @@ function mountProjectsPane(root, store2, api2) {
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached = prLifecycleCache.get(key);
+        if (workspaceGeneration !== prWorkspaceGeneration) {
+          if (cached) {
+            prLifecycleCache.set(key, {
+              ...cached,
+              fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1
+            });
+          }
+          lifecycleChanged = true;
+          return;
+        }
         prLifecycleCache.set(key, {
+          ...cached,
           state: cached?.state ?? "unknown",
-          ...cached?.conflicts !== void 0 ? { conflicts: cached.conflicts } : {},
-          fetchedAt: Date.now()
+          fetchedAt: Date.now(),
+          failed: true
         });
       }).finally(() => {
         if (generation !== prStatusGeneration) return;
@@ -8825,11 +8830,17 @@ function mountProjectsPane(root, store2, api2) {
       render2();
     }),
     selectActiveWorkspace(store2, () => {
+      prWorkspaceGeneration += 1;
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1
+          });
+        }
+      }
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
-      prStatusGeneration += 1;
-      prLifecycleCache.clear();
-      prFetchInFlight.clear();
       render2();
     }),
     store2.on("attention_changed", render2),
@@ -10374,6 +10385,9 @@ function turnRecoveryForMessage(thread, failedMessageId) {
     return { interruptedByRestart: true };
   }
   if (failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") return null;
+  if (failed.turnOutcome.stopReason === "max_steps" || failed.turnOutcome.stopReason === "timeout") {
+    return { limitReason: failed.turnOutcome.stopReason };
+  }
   if (failed.turnOutcome.source !== "provider") return {};
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
     const candidate = thread.messages[index];
@@ -12163,7 +12177,6 @@ function buildDismissedActions(proposal, handlers3, rerender) {
 }
 function buildBody(proposal, state, handlers3, rerender) {
   const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
   body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
   if (proposal.rationale) {
     body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
@@ -12204,8 +12217,9 @@ function createThreadProposalCard(proposal, state, handlers3) {
         { class: "thread-proposal-icon", "aria-hidden": "true" },
         gitBranchIcon("ui-icon ui-icon-sm")
       ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+      // The title names the offer, so it leads the card from the header: the
+      // same line reads on a collapsed (answered) card without expanding it.
+      el("h4", { class: "thread-proposal-title" }, proposal.title)
     );
     const pill = statePill(next);
     if (pill) header.append(pill);
@@ -12529,7 +12543,10 @@ function hydrateAcpResourceImages(root, api2, store2) {
     card.dataset["imagePreviewRequested"] = "true";
     const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(card), path);
     whenImageRead(read, (src) => {
-      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) {
+        delete card.dataset["imagePreviewRequested"];
+        return;
+      }
       showCardImage(card, src, read);
     });
   }
@@ -13454,6 +13471,12 @@ function createToolCardRefresher(host) {
       for (const [key, details] of disclosureElements) {
         if (!details.isConnected) disclosureElements.delete(key);
       }
+    },
+    adoptDisclosureElements(root) {
+      root.querySelectorAll("details[data-disclosure-key]").forEach((details) => {
+        const key = details.dataset["disclosureKey"];
+        if (key) disclosureElements.set(key, details);
+      });
     }
   };
 }
@@ -16857,19 +16880,15 @@ var init_todos_plugin = __esm({
 function pluginCard() {
   const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
   const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
-  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
   const nameLine = el(
     "div",
     { class: "plugin-row-name-line" },
     el("span", { class: "plugin-name" }, PLUGIN_NAME),
-    stability
-  );
-  const title = el(
-    "div",
-    { class: "plugin-row-title" },
+    el("span", { class: "plugin-name-separator", "aria-hidden": "true" }, "\xB7"),
     el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
-    nameLine
+    el("span", { class: "ui-badge plugin-badge-experimental" }, "experimental")
   );
+  const title = el("div", { class: "plugin-row-title" }, nameLine);
   return el(
     "div",
     { class: "plugin-row apple-suggestion-card" },
@@ -17379,6 +17398,7 @@ function createVisualEvidenceSection(evidence) {
   if (evidence.length === 0) return null;
   const section2 = el("div", {
     class: "message-visual-evidence",
+    role: "group",
     "aria-label": "Visual evidence"
   });
   for (const item of evidence) {
@@ -17389,7 +17409,8 @@ function createVisualEvidenceSection(evidence) {
       el(
         "span",
         { class: "visual-evidence-heading" },
-        el("span", { class: "visual-evidence-eyebrow" }, "Visual evidence"),
+        // The caption names the evidence; the section's aria-label says what
+        // kind of block this is, so no visible eyebrow sits above it.
         el("span", { class: "visual-evidence-caption" }, item.caption),
         el(
           "span",
@@ -18121,48 +18142,6 @@ var init_tool_error_format = __esm({
   }
 });
 
-// packages/agent/src/hooks/inject-context.ts
-var SYSTEM_REMINDER_TAG;
-var init_inject_context = __esm({
-  "packages/agent/src/hooks/inject-context.ts"() {
-    init_nullish();
-    SYSTEM_REMINDER_TAG = "system-reminder";
-  }
-});
-
-// src/renderer/views/tool-result-reminders.ts
-function splitAppendedReminders(result, lengths) {
-  const raw = { output: result, reminders: [] };
-  if (lengths === void 0 || lengths.length === 0) return raw;
-  let end = result.length;
-  const reminders = [];
-  for (let index = lengths.length - 1; index >= 0; index -= 1) {
-    const length = lengths[index];
-    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
-    const start = end - length;
-    if (start < SEPARATOR.length) return raw;
-    const block = result.slice(start, end);
-    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
-      return raw;
-    }
-    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
-    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
-    end = start - SEPARATOR.length;
-  }
-  return { output: result.slice(0, end), reminders };
-}
-var OPEN, CLOSE, SEPARATOR;
-var init_tool_result_reminders = __esm({
-  "src/renderer/views/tool-result-reminders.ts"() {
-    init_inject_context();
-    OPEN = `<${SYSTEM_REMINDER_TAG}>
-`;
-    CLOSE = `
-</${SYSTEM_REMINDER_TAG}>`;
-    SEPARATOR = "\n\n";
-  }
-});
-
 // src/renderer/controller/reviewer-input.ts
 function answerReviewerInput(store2, api2, threadId, requestId, answer) {
   const text = answer.trim();
@@ -18320,7 +18299,7 @@ function mountReviewerInput(store2, api2) {
       "Show in conversation"
     );
     origin.addEventListener("click", () => {
-      store2.emit("reviewer_input_jump", request.messageId, request.id);
+      store2.emit("reviewer_input_jump", request.messageId, request.toolCallId ?? request.id);
     });
     row2.append(origin);
     return row2;
@@ -18372,32 +18351,42 @@ function mountReviewerInput(store2, api2) {
   return { toggle, panel, sync, open };
 }
 function createReviewerInputToolCard(call, store2) {
-  const request = parseReviewerInputCall(call, "");
-  if (!request) return null;
+  const requests = reviewerInputRequestsForCall(call, "");
+  const first2 = requests[0];
+  if (!first2) return null;
   const card = el("details", {
     class: "tool-card reviewer-input-card",
     "data-tool-id": call.id,
     "data-status": "done"
   });
-  const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, call.id);
+  const answers = getActiveThread(store2)?.reviewerInputAnswers;
+  const answered = requests.every((request) => reviewerInputAnswer(answers, request.id));
   card.append(
     el(
       "summary",
       { class: "tool-card-header" },
-      answer ? "Answered" : "Needs your input",
+      answered ? "Answered" : "Needs your input",
       " \xB7 ",
-      request.question
-    ),
-    el("p", { class: "reviewer-input-card-context" }, request.context)
+      requests.length === 1 ? first2.question : `${String(requests.length)} questions`
+    )
   );
-  if (answer)
-    card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
-  else {
-    const open = el("button", { type: "button", class: "reviewer-input-origin" }, "Answer question");
-    open.addEventListener("click", () => {
-      store2.emit("reviewer_input_open", request.id);
-    });
-    card.append(open);
+  for (const request of requests) {
+    if (requests.length > 1) card.append(el("p", {}, request.question));
+    card.append(el("p", { class: "reviewer-input-card-context" }, request.context));
+    const answer = reviewerInputAnswer(answers, request.id);
+    if (answer)
+      card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
+    else {
+      const open = el(
+        "button",
+        { type: "button", class: "reviewer-input-origin" },
+        "Answer question"
+      );
+      open.addEventListener("click", () => {
+        store2.emit("reviewer_input_open", request.id);
+      });
+      card.append(open);
+    }
   }
   return card;
 }
@@ -18492,18 +18481,22 @@ function createTurnRecoveryCard(options) {
     actions.append(button);
     return button;
   };
-  action("Retry this turn", options.onRetry);
+  action(options.limitReason === void 0 ? "Retry this turn" : "Continue task", options.onRetry);
   if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
     action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
   }
   const body = el(
     "div",
     { class: "turn-recovery-body" },
-    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-title" },
+      options.limitReason === "max_steps" ? "Run limit reached" : options.limitReason === "timeout" ? "Time limit reached" : "Turn interrupted"
+    ),
     el(
       "div",
       { class: "turn-recovery-detail" },
-      options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+      options.limitReason !== void 0 ? "Your completed work is saved. Continue with a fresh run allowance; inspect the current state before repeating any action." : options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
     )
   );
   if (options.lastKnownGoodLabel !== void 0) {
@@ -18520,7 +18513,7 @@ function createTurnRecoveryCard(options) {
     {
       class: "turn-recovery-card",
       "data-turn-recovery-card": "",
-      "aria-label": "Interrupted turn recovery"
+      "aria-label": options.limitReason === void 0 ? "Interrupted turn recovery" : "Run limit recovery"
     },
     el(
       "span",
@@ -21507,6 +21500,7 @@ function mountConversation(root, store2, api2) {
     rowDrawnFrom.set(element, message2);
   }
   function prependMessageEl(threadId, msgId, before) {
+    if (reattachReturningRow(threadId, msgId, before)) return;
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
@@ -21948,6 +21942,7 @@ function mountConversation(root, store2, api2) {
     const fallback = recovery.lastKnownGoodModel;
     const card = createTurnRecoveryCard({
       ...recovery.interruptedByRestart ? { interruptedByRestart: true } : {},
+      ...recovery.limitReason !== void 0 ? { limitReason: recovery.limitReason } : {},
       ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
       onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
       ...fallback !== void 0 ? {
@@ -22072,7 +22067,10 @@ function mountConversation(root, store2, api2) {
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation);
       });
-    } else backfillPending = false;
+    } else {
+      backfillPending = false;
+      returningRows = /* @__PURE__ */ new Map();
+    }
   }
   function reconcileTranscriptRows(thread, inputs, previous) {
     if (!sameRowEnvironment(inputs, previous)) return false;
@@ -22135,6 +22133,88 @@ function mountConversation(root, store2, api2) {
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     return true;
   }
+  const RECENT_TRANSCRIPTS = 2;
+  const recentTranscripts = /* @__PURE__ */ new Map();
+  let returningRows = /* @__PURE__ */ new Map();
+  function stashTranscript(threadId, inputs) {
+    recentTranscripts.delete(threadId);
+    const thread = getThreadById(store2, threadId);
+    if (!thread || thread.status === "running" || inputs.needsHydration || backfillPending) return;
+    if (disclosures.hasAutoOpen(threadId)) return;
+    const hostsGuest = new Set(
+      Array.from(
+        list.querySelectorAll(".canvas-inline-artefact"),
+        (guest) => guest.closest(".messages-list > [data-message-id]")
+      )
+    );
+    const rows = /* @__PURE__ */ new Map();
+    let current = null;
+    for (const node of Array.from(list.children)) {
+      const key = node instanceof HTMLElement ? node.dataset["messageId"] : void 0;
+      if (key !== void 0) {
+        current = hostsGuest.has(node) ? null : [node];
+        if (current) rows.set(key, current);
+      } else if (current && ROW_CARD_ATTRIBUTES.some((attribute) => node.hasAttribute(attribute))) {
+        current.push(node);
+      } else current = null;
+    }
+    if (rows.size === 0) return;
+    for (const parts of rows.values()) for (const part of parts) part.remove();
+    recentTranscripts.set(threadId, { inputs, rows });
+    while (recentTranscripts.size > RECENT_TRANSCRIPTS) {
+      const oldest = recentTranscripts.keys().next().value;
+      if (oldest === void 0) break;
+      recentTranscripts.delete(oldest);
+    }
+  }
+  function restoreTranscript(thread, inputs) {
+    const stashed = recentTranscripts.get(thread.id);
+    recentTranscripts.delete(thread.id);
+    if (!stashed || needsHydration(thread)) return null;
+    const start = Math.max(0, thread.messages.length - INITIAL_RENDER_WINDOW);
+    for (const message2 of thread.messages.slice(start)) {
+      for (const part of stashed.rows.get(message2.id) ?? []) list.append(part);
+      stashed.rows.delete(message2.id);
+    }
+    backfillPending = start > 0;
+    backfillPrefix = thread.messages.slice(0, start).map((message2) => message2.id);
+    toolCards.adoptDisclosureElements(list);
+    if (!reconcileTranscriptRows(thread, inputs, stashed.inputs)) {
+      toolCards.forgetDisclosureElements();
+      disposeInlineArtefacts(list);
+      clear(list);
+      backfillPending = false;
+      backfillPrefix = [];
+      return null;
+    }
+    returningRows = stashed.rows;
+    syncModelLabels();
+    syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
+    syncHookCardVisibility();
+    finishThreadChrome(thread);
+    syncConciseTurnFooters();
+    refreshStickyImagePrompt();
+    syncAvatarMotion();
+    scrollToBottom(true);
+    return start;
+  }
+  function reattachReturningRow(threadId, msgId, before) {
+    const parts = returningRows.get(msgId);
+    returningRows.delete(msgId);
+    const [element] = parts ?? [];
+    const thread = getThreadById(store2, threadId);
+    const message2 = thread?.messages.find((candidate) => candidate.id === msgId);
+    const signed = element instanceof HTMLElement ? rowSignatures.get(element) : void 0;
+    if (!parts || !thread || !message2 || !signed) return false;
+    if (!sameSignature(signed, transcriptRowSignature(store2, thread, message2))) return false;
+    if (element instanceof HTMLElement && rowDrawnFrom.get(element) !== message2) return false;
+    for (const part of parts) {
+      list.insertBefore(part, before);
+      toolCards.adoptDisclosureElements(part);
+    }
+    return true;
+  }
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
@@ -22153,6 +22233,9 @@ function mountConversation(root, store2, api2) {
     }
     const preservedScrollTop = rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null;
     if (!rebuildingSameThread) transcriptScroll.resetForThread();
+    if (!rebuildingSameThread && renderedThreadId !== null && renderedInputs) {
+      stashTranscript(renderedThreadId, renderedInputs);
+    }
     toolCards.forgetDisclosureElements();
     if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
@@ -22163,8 +22246,21 @@ function mountConversation(root, store2, api2) {
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     renderedInputs = inputs;
+    backfillPending = false;
+    backfillPrefix = [];
     if (!thread) {
       finishThreadChrome(null);
+      return;
+    }
+    returningRows = /* @__PURE__ */ new Map();
+    const restoredFrom = inputs && !rebuildingSameThread ? restoreTranscript(thread, inputs) : null;
+    if (restoredFrom !== null) {
+      if (restoredFrom > 0) {
+        const generation = backfillGeneration;
+        requestAnimationFrame(() => {
+          backfillOlderMessages(thread, restoredFrom, generation);
+        });
+      }
       return;
     }
     if (needsHydration(thread)) {
@@ -22238,6 +22334,7 @@ function mountConversation(root, store2, api2) {
       });
     }),
     store2.on("settings_changed", () => {
+      recentTranscripts.clear();
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
@@ -22471,6 +22568,7 @@ function mountConversation(root, store2, api2) {
   syncFromStore();
   return () => {
     disposed = true;
+    recentTranscripts.clear();
     setBackgroundTaskLogLoader(null);
     archiveReview.dispose();
     selectionQuote.destroy();
@@ -33498,7 +33596,7 @@ function mountFileTree(root, store2, api2) {
       if (generation !== loadGeneration) return;
       clear(target);
       const message2 = err instanceof Error ? err.message : typeof err === "string" ? err : "Could not read folder";
-      target.append(el("div", { class: "sidebar-empty" }, message2));
+      target.append(el("div", { class: "sidebar-empty" }, unwrapIpcErrorText(message2)));
     }
   }
   function refresh() {
@@ -33576,6 +33674,7 @@ var init_file_tree = __esm({
     init_active_thread_owner();
     init_toast();
     init_persistence();
+    init_ipc_error_message();
   }
 });
 
@@ -53567,20 +53666,20 @@ function init$1({
     // ＜＞
   ];
   for (let i2 = 0; i2 < bracketPairs.length; i2++) {
-    const [OPEN2, CLOSE2] = bracketPairs[i2];
-    const UrlOpen = tt(Url$1, OPEN2);
-    tt(UrlNonaccept, OPEN2, UrlOpen);
+    const [OPEN, CLOSE] = bracketPairs[i2];
+    const UrlOpen = tt(Url$1, OPEN);
+    tt(UrlNonaccept, OPEN, UrlOpen);
     const UrlOpenQ = makeState(Url);
     ta(UrlOpen, qsAccepting, UrlOpenQ);
     const UrlOpenSyms = makeState();
     ta(UrlOpen, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpen, CLOSE2, Url$1);
+    tt(UrlOpen, CLOSE, Url$1);
     ta(UrlOpenQ, qsAccepting, UrlOpenQ);
     ta(UrlOpenQ, qsNonAccepting, UrlOpenSyms);
     ta(UrlOpenSyms, qsAccepting, UrlOpenQ);
     ta(UrlOpenSyms, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpenQ, CLOSE2, Url$1);
-    tt(UrlOpenSyms, CLOSE2, Url$1);
+    tt(UrlOpenQ, CLOSE, Url$1);
+    tt(UrlOpenSyms, CLOSE, Url$1);
   }
   tt(Start, LOCALHOST, DomainDotTld);
   tt(Start, NL, Nl);
@@ -63423,10 +63522,10 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     api2.git.currentBranch(projectId, threadId),
     api2.git.promptState(projectId, threadId)
   ]);
-  if (branchResult.status === "rejected") return false;
+  if (branchResult.status === "rejected" || promptResult.status === "rejected") return false;
   if (!targetIsCurrent()) return false;
   const currentBranch = branchResult.value;
-  const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
+  const promptState = promptResult.value;
   const current = getThreadById(store2, threadId);
   if (!current) return false;
   if (threadGitBranchMismatch(current.gitBranch, currentBranch, {
@@ -63449,10 +63548,8 @@ async function sendCodeBlockRunResult(store2, api2, result) {
   };
   const shellAttachment = { kind: "shell", label: shell2.label, content: shell2.content };
   const messageMeta = {
-    ...promptState ? {
-      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
-      dirty: promptState.dirty
-    } : {}
+    ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+    dirty: promptState.dirty
   };
   if (completion) {
     const machineResult = await api2.agent.runMachine({
@@ -65421,7 +65518,11 @@ function createContextWheel() {
     root.classList.toggle("is-interactive", popoverActive && !root.hidden);
     restoreEngagedPopover();
   }
-  return { root, update };
+  function setEstimating(estimating) {
+    if (estimating) root.setAttribute("aria-busy", "true");
+    else root.removeAttribute("aria-busy");
+  }
+  return { root, update, setEstimating };
 }
 var RADIUS, CIRCUMFERENCE, SVG_NS3, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
@@ -69010,7 +69111,11 @@ ${description}
   }
   let estimateTimer = null;
   let estimateSeq = 0;
+  let estimateInFlight = null;
   let estimateEnabled = true;
+  function syncEstimateBusy() {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq);
+  }
   function stopContextEstimates() {
     estimateEnabled = false;
     estimateSeq++;
@@ -69018,6 +69123,7 @@ ${description}
       clearTimeout(estimateTimer);
       estimateTimer = null;
     }
+    syncEstimateBusy();
   }
   function currentInvocables() {
     return mergeInvocables(
@@ -69043,6 +69149,13 @@ ${description}
     });
   }
   async function runContextEstimate() {
+    try {
+      await requestContextEstimate();
+    } finally {
+      syncEstimateBusy();
+    }
+  }
+  async function requestContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
       estimateSeq++;
@@ -69069,10 +69182,13 @@ ${description}
     const estimatedModel = footerChatModel();
     const payload = composeEstimatePayload();
     let breakdown;
+    estimateInFlight = seq;
     try {
       breakdown = await api2.agent.estimateContext(projectId, id, payload);
     } catch {
       return;
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null;
     }
     if (seq !== estimateSeq || getActiveThreadId() !== id) return;
     lastBreakdown = breakdown;
@@ -69086,6 +69202,7 @@ ${description}
       estimateTimer = null;
       void runContextEstimate();
     }, delay);
+    syncEstimateBusy();
   }
   submitBtn.addEventListener("click", () => {
     void submit();
@@ -69219,7 +69336,7 @@ ${description}
   refreshClientActions = clientActionOffers.refresh;
   composer.el.addEventListener("input", refreshClientActions);
   const stopClientActions = [
-    store2.on("threads_changed", refreshClientActions),
+    store2.select(activeProjectThreadOf, refreshClientActions, sameProjectThreadBesidesDraft),
     store2.on("thread_status_changed", refreshClientActions)
   ];
   let sendNowChordAt = 0;
@@ -69966,18 +70083,34 @@ ${reply}`);
     store2.on("message_added", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
-    store2.on("threads_changed", () => {
-      syncComposerThread();
-      executionMode.refresh();
-      footerOverflow.update();
-      guardedYolo.refresh();
-      containerRun.refresh();
-      hideBranchMismatch();
-      hideDirtyWarning();
-      updateState();
-      updateFooter();
-      updateQueueIndicator();
-    }),
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store2.select(
+      (s) => [s.activeProjectId, s.activeThreadId],
+      () => {
+        syncComposerThread();
+        containerRun.refresh();
+      },
+      sameItems
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
+    store2.select(
+      activeProjectThreadOf,
+      () => {
+        executionMode.refresh();
+        footerOverflow.update();
+        guardedYolo.refresh();
+        hideBranchMismatch();
+        hideDirtyWarning();
+        updateState();
+        updateFooter();
+        updateQueueIndicator();
+      },
+      sameProjectThreadBesidesDraft
+    ),
     store2.on("usage_updated", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
@@ -70100,6 +70233,7 @@ var init_input_bar = __esm({
     init_text_expand();
     init_video_expand();
     init_wire_types();
+    init_store();
     init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
@@ -73030,6 +73164,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   let seededProposedPath = null;
   const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let lastOwnerParts = [];
+  let lastOwnerKey = "";
   let displayedOwnerKey = activeOwnerKey();
   let ownerNeedsRefresh = false;
   function activeOwner() {
@@ -73045,7 +73181,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const currentProject = projectId === activeProjectId;
     const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
     const worktree = thread?.worktree;
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -73055,7 +73191,11 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt
-    ]);
+    ];
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey;
+    lastOwnerParts = parts;
+    lastOwnerKey = JSON.stringify(parts);
+    return lastOwnerKey;
   }
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
@@ -73805,10 +73945,29 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("threads_changed", () => {
-      syncOwnerLabel();
+    // The pop-out header names the active thread and its branch.
+    store2.select(
+      (s) => {
+        const thread = s.threads.find((candidate) => candidate.id === s.activeThreadId);
+        return [
+          s.activeProjectId,
+          thread?.id,
+          thread?.title,
+          thread?.worktree?.branch,
+          thread?.gitBranch
+        ];
+      },
+      syncOwnerLabel,
+      sameItems
+    ),
+    // The checkout this pane shows (owner, root, branch, worktree). Titles,
+    // hydration, and updates to other threads do not change it, so they keep
+    // its DOM/selection and skip Git IPC.
+    store2.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
-      if (changesModeActive(store2)) void refresh();
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store2)) void refresh();
+      });
     }),
     // The queue alone. While Changes is open the diff-state selection below
     // repaints it; otherwise keep the list (and its count) current here.
@@ -73821,7 +73980,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       },
       sameQueue
     ),
-    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    // Only the diff state: an ordinary thread switch is the owner selection's job.
     store2.select(
       (s) => [s.activeDiff, s.stagedDiffs],
       () => {
@@ -73831,7 +73990,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     ),
     store2.on("settings_changed", syncReviewGate),
     store2.on("thread_status_changed", syncReviewButton),
-    store2.on("threads_changed", syncReviewButton),
+    store2.select((s) => {
+      const thread = s.threads.find((t) => t.id === s.activeThreadId);
+      return thread === void 0 || thread.status === "running";
+    }, syncReviewButton),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -73881,6 +74043,7 @@ var init_git_changes_pane = __esm({
     init_pane_popout_button();
     init_pane_popout_seed();
     init_array_utils();
+    init_store();
     init_toast();
     init_confirm_dialog();
     init_actions();
@@ -73895,6 +74058,7 @@ var init_git_changes_pane = __esm({
     init_image_path();
     init_panels();
     init_active_workspace();
+    init_persistence();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -74350,6 +74514,38 @@ function collectLinkedPrs(store2) {
     repo: pr.repo,
     number: pr.number
   }));
+}
+function transcriptPrKey(messages) {
+  const cached = transcriptPrKeys.get(messages);
+  if (cached !== void 0) return cached;
+  const key = messages.flatMap((message2) => extractGithubPrUrls(message2.content).map((pr) => pr.url)).join(" ");
+  transcriptPrKeys.set(messages, key);
+  return key;
+}
+function threadPrKey(thread) {
+  const cached = threadPrKeys.get(thread);
+  if (cached !== void 0) return cached;
+  const links = [
+    transcriptPrKey(thread.messages),
+    (thread.prRefs ?? []).map((pr) => pr.url).join(" "),
+    thread.remoteAgentLink?.prUrl ?? "",
+    (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(" ")
+  ];
+  const key = links.every((part) => part === "") ? `${thread.id}\0${String(thread.lastSettledAt ?? "")}` : [
+    thread.id,
+    thread.title,
+    String(thread.archivedAt ?? ""),
+    String(thread.lastSettledAt ?? ""),
+    ...links
+  ].join("\0");
+  threadPrKeys.set(thread, key);
+  return key;
+}
+function prPaneThreadsKey(state) {
+  if (!state.filesPaneOpen || state.rightPanelMode !== "prs") return PR_PANE_INACTIVE;
+  return `prs
+${state.activeThreadId ?? ""}
+${state.threads.map(threadPrKey).join("\n")}`;
 }
 function indexThreadLinks(store2) {
   const links = /* @__PURE__ */ new Map();
@@ -75548,8 +75744,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (prsModeActive(store2)) void refresh();
       else renderList();
     }),
-    store2.on("threads_changed", () => {
-      if (!prsModeActive(store2)) return;
+    // The threads' PR links, titles and finished turns; not streaming,
+    // hydration or other metadata that leaves every key unchanged.
+    store2.select(prPaneThreadsKey, (_next, prev) => {
+      if (prev === PR_PANE_INACTIVE || !prsModeActive(store2)) return;
       threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
@@ -75613,7 +75811,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffEditor = null;
   };
 }
-var STATUS_LABEL2, AGENT_PROVIDER_LABEL;
+var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys, transcriptPrKeys, PR_PANE_INACTIVE;
 var init_pr_pane = __esm({
   "src/renderer/views/pr-pane.ts"() {
     init_helpers();
@@ -75658,6 +75856,9 @@ var init_pr_pane = __esm({
       cursor: "Cursor",
       anthropic: "Claude"
     };
+    threadPrKeys = /* @__PURE__ */ new WeakMap();
+    transcriptPrKeys = /* @__PURE__ */ new WeakMap();
+    PR_PANE_INACTIVE = "";
   }
 });
 
@@ -76386,6 +76587,33 @@ function renderThreadContext(model, handlers3) {
   );
   return host;
 }
+function threadTitlesKey(threads) {
+  const cached = titlesKeys.get(threads);
+  if (cached !== void 0) return cached;
+  const key = threads.map((t) => `${t.id}\0${t.title}`).join("\n");
+  titlesKeys.set(threads, key);
+  return key;
+}
+function contextPanelInputs(state) {
+  if (!state.filesPaneOpen || state.rightPanelMode !== "context") return CONTEXT_PANEL_HIDDEN;
+  const thread = activeThreadOf(state);
+  if (!thread) return { thread, related: [state.activeProjectId] };
+  const parentId = thread.sideChat?.parentThreadId;
+  return {
+    thread,
+    related: [
+      state.activeProjectId,
+      threadTitlesKey(state.threads),
+      parentId === void 0 ? void 0 : state.threads.find((t) => t.id === parentId),
+      ...state.threads.filter((t) => t.sideChat?.parentThreadId === thread.id)
+    ]
+  };
+}
+function sameContextPanelInputs(a, b2) {
+  if (a === b2) return true;
+  if (a === CONTEXT_PANEL_HIDDEN || b2 === CONTEXT_PANEL_HIDDEN) return false;
+  return sameThreadBesidesDraft(a.thread, b2.thread) && sameItems(a.related, b2.related);
+}
 function contextModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "context";
@@ -76803,7 +77031,9 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       restoreThread(store2, threadId);
     },
     jumpToReviewerInput: (messageId, requestId) => {
-      store2.emit("reviewer_input_jump", messageId, requestId);
+      const thread = getActiveThread(store2);
+      const request = thread ? reviewerInputRequests(thread).find((item) => item.id === requestId) : void 0;
+      store2.emit("reviewer_input_jump", messageId, request?.toolCallId ?? requestId);
     }
   };
   function render2() {
@@ -77010,13 +77240,23 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       render2();
       void refreshMentions();
     }),
-    store2.on("threads_changed", () => {
-      if (!contextModeActive(store2)) return;
-      const active = getActiveThread(store2)?.id ?? null;
-      render2();
-      if (active !== mentionedFor) void refreshMentions();
-      else if (storageKey !== activeStorageKey()) void refreshStorage();
-    }),
+    // What `deriveThreadContext` reads: the active thread, every thread's title
+    // (link labels), its side chats and, for a side chat, its parent. Another
+    // thread's turn or metadata does not re-render the panel.
+    store2.select(
+      contextPanelInputs,
+      (_next, prev) => {
+        if (prev === CONTEXT_PANEL_HIDDEN || !contextModeActive(store2)) return;
+        render2();
+        afterPendingThreadPersistence(() => {
+          if (disposed || !contextModeActive(store2)) return;
+          const active = getActiveThread(store2)?.id ?? null;
+          if (active !== mentionedFor) void refreshMentions();
+          else if (storageKey !== activeStorageKey()) void refreshStorage();
+        });
+      },
+      sameContextPanelInputs
+    ),
     store2.on("message_done", () => {
       if (!contextModeActive(store2)) return;
       render2();
@@ -77054,12 +77294,13 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     for (const off of offs) off();
   };
 }
-var SECTION_TITLES;
+var SECTION_TITLES, titlesKeys, CONTEXT_PANEL_HIDDEN;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
     init_file_bytes();
     init_helpers();
     init_icons();
+    init_store();
     init_reviewer_input();
     init_thread_helpers();
     init_panels();
@@ -77071,7 +77312,9 @@ var init_thread_context_panel = __esm({
     init_reviewer_input3();
     init_toast();
     init_settings_dialog();
+    init_active_thread_owner();
     init_active_workspace();
+    init_persistence();
     SECTION_TITLES = {
       requests: "Needs your input",
       repos: "Access",
@@ -77081,6 +77324,8 @@ var init_thread_context_panel = __esm({
       sources: "Sources",
       "resolved-questions": "Resolved questions"
     };
+    titlesKeys = /* @__PURE__ */ new WeakMap();
+    CONTEXT_PANEL_HIDDEN = { thread: void 0, related: [] };
   }
 });
 

@@ -400,6 +400,10 @@
     "label": "Push branch to origin?"
   },
   {
+    "id": "approval-automation-preparation",
+    "label": "Prepare this worktree?"
+  },
+  {
     "id": "approval-web-url",
     "label": "Allow web origin?"
   },
