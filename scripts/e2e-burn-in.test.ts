@@ -280,7 +280,7 @@ describe('ci.yml burn-in wiring', () => {
     assert.equal(step.if, "github.event_name == 'pull_request'")
     assert.ok(step.env?.['ALLOW_LARGE']?.includes(`'${BURN_IN_LARGE_LABEL}'`))
     assert.equal(precheck.outputs?.['burn_in_matrix'], '${{ steps.burn-in-plan.outputs.matrix }}')
-    assert.equal(precheck.outputs?.['burn_in_status'], '${{ steps.burn-in-plan.outputs.status }}')
+    assert.equal(precheck.outputs['burn_in_status'], '${{ steps.burn-in-plan.outputs.status }}')
   })
 
   it('runs one job per spec on the shared build, refusing an over-cap plan first', () => {

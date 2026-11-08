@@ -337,7 +337,7 @@ function plan(args: readonly string[]): void {
   if (!headRegistry) throw new Error(`Invalid ${REGISTRY_PATH}`)
   const selection = selectBurnInSpecs({
     changes,
-    baseRegistry: (baseText && parseMarkerRegistry(baseText)) || [],
+    baseRegistry: (baseText ? parseMarkerRegistry(baseText) : null) ?? [],
     headRegistry,
     ciSpecs: new Set(listCiSpecs()),
     allowLarge: args.includes('--allow-large'),
@@ -390,7 +390,7 @@ function runOnce(
     : [process.execPath, ...wdio]
   return new Promise((resolve) => {
     const chunks: Buffer[] = []
-    const child = spawn(command ?? process.execPath, commandArgs, {
+    const child = spawn(command, commandArgs, {
       env: {
         ...process.env,
         COPSE_E2E_OUTCOMES_DIR: join(out, 'outcomes'),
