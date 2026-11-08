@@ -1198,6 +1198,7 @@ export function mountInputBar(
       size: formatByteSize(a.sizeBytes),
     }))
   let mismatchBranch: string | null = null
+  let branchWarningVersion = 0
   let checkoutInProgress = false
   let dirtyWarningThreadId: string | null = null
   let lastBreakdown: ContextBreakdown | null = null
@@ -1538,6 +1539,7 @@ export function mountInputBar(
   document.addEventListener('keydown', disarmStopOnOtherKey, true)
 
   function showBranchMismatch(branch: string): void {
+    branchWarningVersion++
     mismatchBranch = branch
     branchWarning.hidden = false
     branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
@@ -1548,6 +1550,7 @@ export function mountInputBar(
   }
 
   function hideBranchMismatch(): void {
+    branchWarningVersion++
     mismatchBranch = null
     checkoutInProgress = false
     branchWarning.hidden = true
@@ -1949,9 +1952,19 @@ export function mountInputBar(
     if (!id) return
     const projectId = store.getState().activeProjectId
     if (!projectId) return
+    // The request belongs to this warning and draft, even if navigation returns here.
+    const warningVersion = branchWarningVersion
+    const draftKey = draftFingerprint(composer.expandedValue(), snapshotDraftAttachments())
+    const isCurrent = (): boolean =>
+      branchWarningVersion === warningVersion &&
+      store.getState().activeProjectId === projectId &&
+      getActiveThreadId() === id &&
+      activeComposerThreadId === id &&
+      draftFingerprint(composer.expandedValue(), snapshotDraftAttachments()) === draftKey
     void api.git
       .branchStatus(projectId, id)
       .then(({ currentBranch }) => {
+        if (!isCurrent()) return
         if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
           store.emit('git_branch_changed')
         }
@@ -1959,6 +1972,7 @@ export function mountInputBar(
         void submit()
       })
       .catch((error: unknown) => {
+        if (!isCurrent()) return
         showErrorToast('Failed to read the current branch', error)
       })
   })
@@ -3129,6 +3143,7 @@ export function mountInputBar(
       }, 0)
     },
     unmount(): void {
+      branchWarningVersion++
       window.removeEventListener('beforeunload', stopContextEstimates)
       stopContextEstimates()
       draftAutosave.cancel()
