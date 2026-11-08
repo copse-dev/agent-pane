@@ -107,7 +107,7 @@ transport rides the connection the workspace already opened.
 
 **Auth the agent to its model provider** — by default the agent authenticates
 **on the remote host**, where the code (and the agent binary) live:
-`claude /login` / `cursor-agent login` / a token in the remote shell profile,
+`claude-agent-acp --cli auth login` / `cursor-agent login` / a token in the remote shell profile,
 run once on the host (the re-auth flow opens a terminal on the host for this).
 The remote command line carries only a locale/term allow-list; Copse never
 forwards the local `process.env` or its own provider keys. The agent's
@@ -138,7 +138,10 @@ The approval states that the package firewall does **not** cover
 this install (it runs on the desktop); `--ignore-scripts` and the pin are the
 remaining supply-chain controls. The install fails closed where no approver is
 wired (inside ACP workers). Other agents fail with the catalog's own install
-line to run on the host.
+line to run on the host. The Claude adapter includes the Claude Code CLI it
+runs. Copse uses `claude-agent-acp --cli auth login` for sign-in, so no separate
+native `claude` installation is needed. The sign-in terminal inherits the
+remote PATH found during adapter preflight, including a non-default Node bin.
 
 **First-run experience** — one-time host setup is named as such, and its
 progress is visible. The forwarding and install prompts each say they are

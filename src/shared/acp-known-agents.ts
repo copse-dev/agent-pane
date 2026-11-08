@@ -33,9 +33,11 @@ export interface KnownAcpAgent {
    */
   installPackage?: string
   /**
-   * Parent client whose presence gates this agent in auto-setup. For the Claude
-   * adapter it's `claude` (installing the ACP SDK only makes sense when the user
-   * has Claude); for Cursor it's the `cursor-agent` binary itself. Absent = no gate.
+   * Parent client whose presence gates background auto-setup. For Claude this
+   * avoids offering an install merely because Settings opened; the adapter's
+   * bundled CLI can run without a standalone `claude` executable. An explicit
+   * Claude setup or remote turn may still install the adapter. For Cursor the
+   * gate is the `cursor-agent` binary itself. Absent = no gate.
    */
   requiresClient?: string
   /**
@@ -74,7 +76,7 @@ export interface KnownAcpAgent {
    * that the agent actually advertises this mode, so a stale value is harmless.
    */
   sandboxedPermissionMode?: string
-  /** Shell command that authenticates the agent (e.g. `claude auth login`). */
+  /** Shell command that authenticates the agent (e.g. `claude-agent-acp --cli auth login`). */
   setup?: string
   /**
    * Shell command that renews an existing but expired sign-in when the agent
@@ -307,13 +309,13 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
-    // setup-token only prints a token; it does not save the login this
-    // desktop setup needs. Use the dedicated login command and leave the
-    // account method to the login flow rather than forcing SSO or Console.
-    setup: 'claude auth login',
-    reauth: 'claude auth login',
+    // The adapter delegates --cli to the Claude Code binary bundled with its
+    // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+    // the adapter without a separate `claude` executable on PATH.
+    setup: 'claude-agent-acp --cli auth login',
+    reauth: 'claude-agent-acp --cli auth login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`).',
+    note: 'Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`).',
   },
   {
     id: 'cursor',

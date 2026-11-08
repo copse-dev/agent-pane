@@ -60,13 +60,18 @@ async function codexLoginStatus(
 const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAuthState>>> = {
   'claude-acp': async (deps) => {
     try {
-      const out = await deps.exec('claude', ['auth', 'status'])
+      const out = await deps.exec(deps.agent.command, [
+        ...deps.agent.args,
+        '--cli',
+        'auth',
+        'status',
+      ])
       const parsed = safeJsonParse(out, decodeWithSchema(z.object({ loggedIn: z.boolean() })))
       if (parsed) return state(parsed.loggedIn)
       return 'unknown'
     } catch {
-      // `claude auth status` exits non-zero when logged out, but a missing
-      // binary or an old CLI without `auth` fails the same way.
+      // The bundled CLI can exit non-zero when logged out; a missing adapter
+      // or an old CLI without `auth` fails the same way.
       return 'unknown'
     }
   },

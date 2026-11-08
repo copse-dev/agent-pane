@@ -89,7 +89,7 @@ describe('ACP authentication error presentation', () => {
     resetUserData()
   })
 
-  it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
+  it('shows the bundled Claude sign-in command on a fresh machine', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('[data-testid="connections-add-toggle"]').click()
@@ -109,11 +109,11 @@ describe('ACP authentication error presentation', () => {
       await expect(approval).not.toBeDisplayed()
     }
     const signIn = await $('.acp-cmd-row*=Sign in')
-    await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
+    await expect(signIn.$('.acp-cmd')).toHaveText('claude-agent-acp --cli auth login')
     const note = await $('.acp-known-agent-note')
-    await expect(note).toHaveText(expect.stringContaining('claude auth login'))
+    await expect(note).toHaveText(expect.stringContaining('claude-agent-acp --cli auth login'))
     await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
-    await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
+    await expect(note).not.toHaveText(expect.stringContaining('curl'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
     await expect($('#approval-dialog')).not.toBeDisplayed()
     await saveElementScreenshot('.acp-add-menu .provider-form', 'claude-sign-in.png')

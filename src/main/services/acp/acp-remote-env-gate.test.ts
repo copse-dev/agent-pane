@@ -200,6 +200,7 @@ describe('remoteAcpAuthRequiredHint', () => {
     const hint = remoteAcpAuthRequiredHint(err, acpSshTarget(REMOTE_ROOT), 'claude-acp')
     assert.ok(hint)
     assert.match(hint.message, /dev/)
+    assert.match(hint.message, /claude-agent-acp --cli auth login/)
     assert.match(hint.message, /Settings → General → Coding agents/)
     assert.equal(hint.cause, err)
   })
