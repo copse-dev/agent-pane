@@ -22,6 +22,7 @@ const PREVIEW_CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self'",
+  'worker-src blob:',
   "form-action 'none'",
   "frame-ancestors 'none'",
   "base-uri 'none'",

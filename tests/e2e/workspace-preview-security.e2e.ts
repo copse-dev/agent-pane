@@ -87,11 +87,11 @@ describe('workspace preview security', () => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       if (!webview) throw new Error('Workspace preview webview missing')
       const result: unknown = await webview.executeJavaScript(
-        "Promise.all([document.querySelector('h1')?.textContent, document.documentElement.dataset.previewAsset, fetch('/.env').then((response) => response.status)])",
+        "Promise.all([document.querySelector('h1')?.textContent, document.documentElement.dataset.previewAsset, fetch('/.env').then((response) => response.status), navigator.serviceWorker?.register('/assets/app.js').then(() => 'registered', (error) => error.name) ?? 'unavailable'])",
       )
       return result
     })
-    expect(guestResult).toEqual(['Workspace preview', 'loaded', 404])
+    expect(guestResult).toEqual(['Workspace preview', 'loaded', 404, 'SecurityError'])
     expect(await address.getValue()).not.toContain('__copse_preview')
     await saveAppScreenshot('workspace-preview-protected.png', E2E_THREE_PANE_VIEWPORT)
   })

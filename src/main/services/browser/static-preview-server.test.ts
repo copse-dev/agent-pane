@@ -81,6 +81,7 @@ describe('static browser preview server', () => {
     assert.equal(page.headers.get('referrer-policy'), 'no-referrer')
     const csp = page.headers.get('content-security-policy')
     assert.ok(csp?.includes("connect-src 'self'"))
+    assert.ok(csp?.includes('worker-src blob:'))
     assert.ok(csp?.includes("form-action 'none'"))
     assert.ok(csp?.includes("frame-ancestors 'none'"))
     assert.equal(await page.text(), '<h1>Crumb &amp; Bloom</h1>')
