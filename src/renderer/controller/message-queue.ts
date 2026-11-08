@@ -22,6 +22,7 @@ import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/con
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
 import { afterThreadWrites } from './persistence.ts'
 
@@ -196,7 +197,10 @@ export function refreshAgentRunPayload(
   }
 }
 
-type AgentRunApi = { agent: Pick<ApiClient['agent'], 'run'> }
+type AgentRunApi = {
+  agent: Pick<ApiClient['agent'], 'run'>
+  threadPrompts?: Pick<ApiClient['threadPrompts'], 'canDispatch'>
+}
 
 // A queued dispatch stays pending until main either rejects it as busy or the
 // accepted turn finishes. `done` can cross the IPC boundary before the invoke
@@ -252,9 +256,28 @@ export function dispatchAgentRun(
   perfMark('ttft:renderer-dispatch')
   if (queued) beginPendingDispatch(store, threadId)
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
-  const run = afterThreadWrites(projectId, threadId, () =>
-    api.agent.run(projectId, threadId, runPayload),
-  )
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    if (!queued || parentThreadId === undefined) {
+      await api.agent.run(projectId, threadId, runPayload)
+      return
+    }
+    // The pre-check holds an already-revoked prompt without a round trip to the
+    // dispatcher. Main still decides: a revoke can land between the two invokes,
+    // so `agent.run` rechecks the parent's authority as it dispatches.
+    const authorized = await api.threadPrompts
+      ?.canDispatch(projectId, parentThreadId, threadId)
+      .catch(() => false)
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId })
+        return
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued)
+  })
   if (!queued) {
     void run
     return
@@ -272,6 +295,38 @@ export function dispatchAgentRun(
         drainMessageQueue(store, api, threadId)
       }
     })
+}
+
+const SUBTHREAD_OPERATION_PREFIX = 'subthread:'
+
+/** The parent whose delegated prompt this is, when it came from the `subthreads` tool. */
+function subthreadParentOf(item: QueuedUserMessage): string | undefined {
+  const operationId = item.origin?.kind === 'machine' ? item.origin.operationId : ''
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX)
+    ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length)
+    : undefined
+}
+
+/**
+ * Put a delegated prompt whose parent lost orchestration back at the queue
+ * front, held: it never auto-drains, and the budget unit its drain charged is
+ * returned because no turn ran.
+ */
+function holdRevokedSubthreadPrompt(
+  store: AppStore,
+  threadId: string,
+  item: QueuedUserMessage,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: 'idle',
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...(thread.pendingMessages ?? [])],
+    updatedAt: Date.now(),
+  }))
+  syncAgentActivity(store, threadId, false)
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
 }
 
 function requeueBusyMessage(

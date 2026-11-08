@@ -37,6 +37,9 @@ const api: ApiClient = {
     },
   },
   threadPrompts: {
+    canDispatch: (projectId, parentId, childId) =>
+      ipcRenderer.invoke('thread-prompts:can-dispatch', projectId, parentId, childId),
+    canSubmit: (id) => ipcRenderer.invoke('thread-prompts:can-submit', id),
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
     onPrompt: (handler) => {
@@ -365,8 +368,8 @@ const api: ApiClient = {
     },
   },
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) =>
-      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    run: (projectId, threadId, prompt, delegation) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation),
     runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
