@@ -80,12 +80,13 @@ export function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
     return 'error'
   }
   if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
-  // A command declined or refused before launch returned normally, but nothing
-  // ran: never the green check beside "Did not start" (#3956). A rollup whose
-  // other calls did their work stays done; the declined call's own card says so.
+  // A command declined or refused before launch, or an edit the host deferred,
+  // returned normally, but nothing ran: never the green check beside "Did not
+  // start" (#3956) or "Deferred <path>". A rollup whose other calls did their
+  // work stays done; the call's own card says so.
   if (
     toolCalls.length > 0 &&
-    toolCalls.every((call) => call.commandPhase?.state === 'not_started')
+    toolCalls.every((call) => call.commandPhase?.state === 'not_started' || call.deferred === true)
   ) {
     return 'interrupted'
   }
@@ -257,6 +258,12 @@ export interface ToolCardRefresher {
   forgetDisclosureElements: () => void
   /** Drop only the registrations of elements no longer in the document (rows a reconcile removed). */
   forgetDetachedDisclosureElements: () => void
+  /**
+   * Register again every disclosure under `root` that was bound before and
+   * then forgotten (rows of a thread the view switched away from and back to).
+   * Their toggles are still wired.
+   */
+  adoptDisclosureElements: (root: ParentNode) => void
 }
 
 export interface ToolCardRenderOptions {
@@ -787,6 +794,14 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
       for (const [key, details] of disclosureElements) {
         if (!details.isConnected) disclosureElements.delete(key)
       }
+    },
+    adoptDisclosureElements(root: ParentNode): void {
+      root
+        .querySelectorAll<HTMLDetailsElement>('details[data-disclosure-key]')
+        .forEach((details) => {
+          const key = details.dataset['disclosureKey']
+          if (key) disclosureElements.set(key, details)
+        })
     },
   }
 }

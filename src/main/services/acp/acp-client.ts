@@ -102,7 +102,11 @@ import {
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
-import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
+import {
+  sandboxTmpDirFor,
+  withSandboxTmpEnv,
+  withSandboxWrapTmpDir,
+} from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
@@ -629,14 +633,14 @@ export async function spawnAcpAgentProcess(
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
-      const { argv } = await SandboxManager.wrapWithSandboxArgv(
-        command,
-        shellForSandboxWrap(),
-        overlay,
+      // ASRT bakes this in as the agent's TMPDIR; the spawn env names the same
+      // directory in every other temp variable (#4149).
+      const tmpDir = sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
+      const { argv } = await withSandboxWrapTmpDir(tmpDir, () =>
+        SandboxManager.wrapWithSandboxArgv(command, shellForSandboxWrap(), overlay),
       )
       const file = argv[0]
       if (!file) throw new Error('sandbox wrap produced empty argv')
-      const tmpDir = ensureWorkspaceTmpDir()
       const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
         cwd: config.cwd,
         env: withSandboxShellPath(withSandboxTmpEnv(env, tmpDir)),
@@ -832,6 +836,11 @@ class AcpUpdateQueue {
   } | null = null
   private failure: Error | null = null
 
+  /** Includes an update already handed to the pump's not-yet-resumed waiter. */
+  hasPendingUpdates(): boolean {
+    return this.pending.length > 0 || (this.failure === null && this.waiter === null)
+  }
+
   enqueue(update: SessionUpdate): void {
     if (this.failure !== null) return
     const waiter = this.waiter
@@ -958,6 +967,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
+  /** Close the connection and stop the agent. A failed stop can be retried. */
   dispose: () => Promise<void>
 }
 
@@ -1433,11 +1443,19 @@ export async function openAcpSession(
   let disposal: Promise<void> | null = null
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
-    disposed = true
-    pendingUpdates.clear()
-    terminals?.dispose()
-    connection.close()
-    disposal = Promise.resolve(transport.dispose())
+    if (!disposed) {
+      disposed = true
+      pendingUpdates.clear()
+      terminals?.dispose()
+      connection.close()
+    }
+    // Share a finished or in-flight transport shutdown, but not a failed one:
+    // the agent may still be alive, so the next dispose asks the transport
+    // again instead of replaying the first failure for the session's lifetime.
+    disposal = Promise.resolve(transport.dispose()).catch((error: unknown) => {
+      disposal = null
+      throw error
+    })
     return disposal
   }
 

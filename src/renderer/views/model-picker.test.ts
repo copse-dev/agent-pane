@@ -467,6 +467,59 @@ describe('shared model picker', () => {
     assert.equal(new Set(names).size, 2)
     for (const name of names) assert.match(name, /^--model-picker-\d+$/)
   })
+
+  it('marks only a superseded selected row as running, not a selected row that cannot run', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    let current = 'claude-sonnet-4-6'
+    const picker = mountModelPicker(
+      host,
+      () => current,
+      (value) => {
+        current = value
+      },
+      async () => [
+        {
+          value: 'claude-sonnet-4-6',
+          label: 'Claude Sonnet 4.6 (superseded by Claude Sonnet 5.5)',
+          disabled: true,
+          superseded: true,
+        },
+        {
+          value: 'openrouter:x-ai/grok-4.5',
+          label: 'Grok 4.5 (blocked in Settings)',
+          disabled: true,
+        },
+        { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+      ],
+      { loadOnMount: false },
+    )
+    await picker.refresh()
+    const row = (value: string): HTMLButtonElement => {
+      const option = host.querySelector<HTMLButtonElement>(`[data-value="${value}"]`)
+      assert.ok(option)
+      return option
+    }
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const superseded = row('claude-sonnet-4-6')
+    assert.equal(superseded.disabled, true)
+    assert.ok(superseded.classList.contains('is-selected'))
+    // `.is-selected.is-superseded:disabled` keeps the running model undimmed.
+    assert.ok(superseded.classList.contains('is-superseded'))
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+
+    // A saved choice that cannot run stays selected, disabled and dimmed.
+    current = 'openrouter:x-ai/grok-4.5'
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const blocked = row('openrouter:x-ai/grok-4.5')
+    assert.equal(blocked.disabled, true)
+    assert.ok(blocked.classList.contains('is-selected'))
+    assert.equal(blocked.classList.contains('is-superseded'), false)
+    assert.equal(row('claude-sonnet-4-6').classList.contains('is-selected'), false)
+
+    picker.destroy()
+  })
 })
 
 describe('route retention notice', () => {

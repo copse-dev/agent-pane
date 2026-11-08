@@ -76,7 +76,16 @@ revisiting this document, not silently diverging in an implementation PR.
    background-task supervisor, preserving its process, containment, logs and original
    deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
-5. **One auto-continuation budget.** A single counter per **turn tree** (everything
+5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
+   exception: a parent may start at most four children over its lifetime and keep at
+   most two unarchived children. Owned children cannot orchestrate grandchildren.
+   Each child retains its own continuation budget; this explicitly permits bounded
+   additional model work instead of sharing the parent's counter. Replacing an
+   archived or deleted child still consumes the parent's lifetime start limit.
+   Queued delegated prompts recheck ownership and the parent's grant before dispatch,
+   including after restart; revoked prompts are held and never auto-drain.
+   This exception does not change hook or background-wake accounting.
+   Otherwise, a single counter per **turn tree** (everything
    descending from one human-originated submission). Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
    and originating epoch. The wake waits until the thread runs no turn and no machine
@@ -87,7 +96,8 @@ revisiting this document, not silently diverging in an implementation PR.
    write already waiting for its approval response receives no duplicate wake.
    The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
-   follow-ups, bounded background-task completion wakes, change-acceptance wakes, durable CI status-change wakes,
+   follow-ups, bounded background-task completion wakes (including explicit `run_shell`
+   foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
@@ -127,6 +137,13 @@ revisiting this document, not silently diverging in an implementation PR.
    bridged call rejected. Unlike `dispatchMachine` it does not take the thread's dispatch slot
    (Copse is not running the turn), and the binding ends on the adapter's end-of-turn marker,
    on the next Copse prompt, on session dispose, or after 15 idle minutes.
+   Automatic checkout hand-over and completed-run cleanup must preserve that lease and any
+   unfinished ACP tools even after the dispatched prompt returned. Their idle-only session
+   release checks ownership inside the existing pool operation before closing the connection
+   and holds the operation through the checkout mutation; it never ends active work to make
+   a checkout look idle. Idle reaping uses that same ownership check, including received
+   updates awaiting the pump, self-started leases and cancellation acknowledgements. This
+   does not change continuation charging or explicit Stop/archive.
    A host-native background completion wake has no editable hook message to queue:
    the main-process dispatcher waits for the owning foreground run to release the
    thread, then grants at dispatch time against the latest epoch and spent count it
@@ -145,6 +162,21 @@ revisiting this document, not silently diverging in an implementation PR.
    is reached and todos remain open, the host emits and persists one deterministic
    terminal summary containing the live open plan plus allowances granted by reason.
    It makes no extra model call and does not describe a grant as a completed attempt.
+   A run that reaches its step boundary may still use the existing bounded finalizer.
+   A useful final answer with a closed plan completes normally; an empty finalizer or
+   an open plan retains `max_steps` rather than becoming a completed turn. The saved
+   progress offers an explicit **Continue task** action using a fresh human turn tree,
+   never an automatic budget reset. Deadline stops use the same checkpoint action
+   with a time-limit explanation. These outcomes do not raise any run or continuation
+   allowance or replay a completed tool call.
+   Existing bounded pre-review reconciliation may still close the primary plan before
+   the host's terminal outcome. A successful reconciliation with a closed plan clears
+   the primary loop's stale `max_steps`; an unfinished continuation retains it.
+   Unrelated review remediation cannot establish that an unplanned primary task finished.
+   A deadline stop does not start fresh automatic post-turn work.
+   A `max_steps` outcome does not suppress the deterministic exhausted-continuation
+   summary for an open plan. That summary neither grants another turn nor changes
+   the failed outcome; cancellation and independent errors still suppress it.
 6. **Spine recording is always-on.** Every hook execution writes a `hook_run` event to
    the thread spine (event name, hook id, emitting step, wall-clock duration, exit code,
    `parse_ok`, normalized decision) with raw stdout **and stderr** as blobs (stderr is

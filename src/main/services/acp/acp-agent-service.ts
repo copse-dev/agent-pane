@@ -1,3 +1,4 @@
+import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
@@ -895,6 +896,8 @@ async function runAcpAgentTurn(
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
   // Like the skills block, assembled once per turn; a retry reuses the bytes.
+  // Only a fulfilled assembly is kept: a retry after a failed one assembles
+  // again rather than replaying the failure.
   let turnGuidance: Promise<string | undefined> | null = null
 
   // The thread's model has dropped off the agent's list: say so in the thread.
@@ -991,7 +994,10 @@ async function runAcpAgentTurn(
     const skillToolNames = bridgeMounted ? bridgeToolNames() : []
     const operatorInstructions =
       options.executionMode !== 'agent' && options.turnGuidance
-        ? await (turnGuidance ??= options.turnGuidance(skillToolNames))
+        ? await (turnGuidance ??= options.turnGuidance(skillToolNames).catch((err: unknown) => {
+            turnGuidance = null
+            throw err
+          }))
         : undefined
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
       buildInvokedSkillsBlock(options.invokedSkills ?? [], {
@@ -1030,7 +1036,9 @@ async function runAcpAgentTurn(
     }
     const promptBlocks = buildAcpPromptContent(
       options.userPrompt,
-      fresh ? options.priorMessages : [],
+      fresh
+        ? options.priorMessages
+        : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
         readonlyCheckout,
@@ -1045,7 +1053,7 @@ async function runAcpAgentTurn(
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(
+      const outcome = await runAcpSessionPrompt(
         entry.open,
         promptBlocks,
         model,
@@ -1053,6 +1061,16 @@ async function runAcpAgentTurn(
         ACP_CANCEL_GRACE_MS,
         { onStaleModel },
       )
+      // Stop may cancel a model/config switch before any prompt is sent. Keep
+      // the last confirmed prefix on cancellation or a transport failure so a
+      // retry conservatively includes context the agent may never have seen.
+      if (outcome.stopReason !== 'cancelled') {
+        entry.transcriptCheckpoint = checkpointAcpTranscript(
+          options.priorMessages,
+          options.userPrompt,
+        )
+      }
+      return outcome
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
@@ -1824,7 +1842,17 @@ export const ACP_COPSE_TOOLS_PROMPT_NOTE =
   'reporting validation as complete. run_background does not accept ' +
   'expects_sandbox_block or support outside-sandbox execution. If a command ' +
   'needs that approval path, use copse run_shell with an explicit timeout_ms ' +
-  '(up to 1800000), setting expects_sandbox_block=true when required. Use ' +
+  '(up to 1800000), setting expects_sandbox_block=true when required. Add ' +
+  'yield_after_ms=1000 to transfer the same approved process to supervision ' +
+  'after a short foreground wait; timeout_ms remains its total deadline. ' +
+  'run_shell yield example: ' +
+  '{"command":"pnpm test","timeout_ms":1800000,"yield_after_ms":1000}' +
+  '\nSend a yielding call as the only tool in its response. A still-running ' +
+  'receipt is not success: end the turn and wait for completion ' +
+  'before dependent work. Inspect the task logs and exit status when woken; do not ' +
+  'poll or rerun it. Yielding requires enabled Background tasks and cannot bypass ' +
+  'its explicit Always ask or Blocked setting; if refused, use an ordinary finite ' +
+  'foreground call or the background tool through its own approval path. Use ' +
   'tool deadlines instead of assuming a shell timeout executable is installed ' +
   '(macOS does not provide it by default).'
 
@@ -1900,8 +1928,8 @@ function acpCopseToolsSteering(sandboxed: boolean, readonlyCheckout: boolean): s
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
  * transcript replay and the session notes are only needed when the session is
- * FRESH — a reused session already carries both in its own context, and
- * re-sending them every turn would waste the agent's tokens (`includeNotes:
+ * FRESH — a reused session carries its own turns, while turns from another
+ * provider are caught up from the transcript checkpoint. Re-sending everything every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
  * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
  */

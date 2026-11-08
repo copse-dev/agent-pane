@@ -100,6 +100,8 @@ export interface SpineToolCall {
   resultFormat?: 'markdown'
   /** Lengths of the system-reminder blocks Copse appended to `result` (display metadata). */
   appendedReminderLengths?: number[]
+  /** The host held the call back without running it (display metadata). */
+  deferred?: true
   /** Image data is persisted out of line; this list retains order and labels. */
   images?: SpineToolResultImage[]
   /** Last observed command lifecycle stage (`run_shell` / `run_background`). Small, inline. */

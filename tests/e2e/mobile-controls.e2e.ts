@@ -95,6 +95,14 @@ function action(sessionId: string, payload: object): Record<string, unknown> {
   return { sessionId, issuedAt: Date.now(), requestId: randomUUID(), projectId, ...payload }
 }
 
+/** Whether the desktop transcript is scrolled to its live end. */
+function transcriptAtBottom(): Promise<boolean> {
+  return browser.execute(() => {
+    const list = document.querySelector('.messages-list')
+    return list !== null && list.scrollHeight - list.clientHeight - list.scrollTop <= 1
+  })
+}
+
 describe('Mobile Companion control over verified local HTTPS', function () {
   this.timeout(180_000)
   before(async () => {
@@ -400,6 +408,13 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     await waitForAgentIdle(30_000)
     await stopScenario.assertComplete()
+    // A phone Stop must leave the pinned desktop transcript at its live end.
+    // Check that before the capture below re-scrolls, or it would mask a Stop
+    // that drops the reader off the bottom.
+    await browser.waitUntil(transcriptAtBottom, {
+      timeout: 5_000,
+      timeoutMsg: 'Stop left the pinned desktop transcript off the bottom',
+    })
     await saveAppScreenshot('mobile-controls-stopped-desktop.png', undefined, async () => {
       // Stopping removes activity UI; frame the settled end after the capture resize.
       await browser.execute(() => {

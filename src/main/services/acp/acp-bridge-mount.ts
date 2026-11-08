@@ -139,9 +139,15 @@ export function isAcpBridgeStartupFailure(update: SessionUpdate): boolean {
  * Claude adapter reports it as that call's failed `tool_call_update`
  * (`<tool_use_error>Error: No such tool available: mcp__copse__gh_pr_view</tool_use_error>`).
  * Current CLIs append why, after the name; the second group captures it.
+ *
+ * Anchored: that error is the whole result, so it must lead the text (after an
+ * optional code fence and the `<tool_use_error>` wrapper). A Copse tool that
+ * the call did reach fails with its own message first, and its output may
+ * quote this phrase, e.g. a missing file whose name contains it.
  */
 const NO_SUCH_BRIDGE_TOOL = new RegExp(
-  `No such tool available: mcp__${BRIDGE_MCP_SERVER_NAME}__([A-Za-z0-9_-]+)([^<\n]*)`,
+  `^\\s*(?:\`\`\`[^\\n]*\\n\\s*)?(?:<tool_use_error>)?Error: No such tool available: ` +
+    `mcp__${BRIDGE_MCP_SERVER_NAME}__([A-Za-z0-9_-]+)([^<\\n]*)`,
 )
 
 /**

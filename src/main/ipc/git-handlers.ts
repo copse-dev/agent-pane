@@ -15,12 +15,14 @@ import {
   inspectThreadCheckoutRoot,
   reattachThreadCheckout,
   restoreThreadCheckout,
-  resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
-import { ensureWorkingTreeWatched } from '../services/search/workspace-index-watcher.ts'
+import {
+  checkoutThreadGitBranch,
+  resolveWatchedGitExecutionRoot,
+  resolveWatchedGitRoot,
+} from '../services/thread-git-roots.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import {
-  checkoutGitBranch,
   getBranches,
   getCommittedChanges,
   getCommittedFileDiff,
@@ -49,14 +51,6 @@ export function registerGitHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
 ): void {
   const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
-
-  async function resolveWatchedGitRoot(projectId: string, threadId: string): Promise<string> {
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    // Watch-only: isolated worktrees are otherwise unwatched until an agent
-    // turn starts indexing, and large workspaces may skip the index watcher.
-    ensureWorkingTreeWatched(root)
-    return root
-  }
 
   ipcMain.handle('git:is-available', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -175,7 +169,7 @@ export function registerGitHandlers(
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
+    return getGitPromptState(await resolveWatchedGitExecutionRoot(projectId, threadId))
   })
   ipcMain.handle('git:checkout-branch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -183,8 +177,7 @@ export function registerGitHandlers(
       z.tuple([zProjectId, zThreadId, zGitBranchName]),
       rawArgs,
     )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    await checkoutGitBranch(targetBranch, root)
+    await checkoutThreadGitBranch(projectId, threadId, targetBranch)
   })
   ipcMain.handle('git:list-branches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

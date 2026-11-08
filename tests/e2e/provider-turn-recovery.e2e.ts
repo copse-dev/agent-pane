@@ -114,7 +114,7 @@ describe('explicit provider turn recovery', () => {
     await expect(card).toHaveText('An earlier turn completed with', { containing: true })
     await expect(await card.$$('.turn-recovery-button').getElements()).toBeElementsArrayOfSize(2)
     // A hatched status plate like Review and Comparison: no perimeter border and
-    // a caps title in the plate's severity hue (docs/ui-taste.md).
+    // a sentence-case title in the plate's severity hue (docs/ui-taste.md).
     const plate = await browser.execute(() => {
       const recovery = document.querySelector<HTMLElement>('[data-turn-recovery-card]')
       const title = recovery?.querySelector<HTMLElement>('.turn-recovery-title')
@@ -137,7 +137,7 @@ describe('explicit provider turn recovery', () => {
     })
     expect(plate.missing).toBe(false)
     expect(plate.borderWidths).toEqual(['0px', '0px', '0px', '0px'])
-    expect(plate.titleTransform).toBe('uppercase')
+    expect(plate.titleTransform).toBe('none')
     expect(plate.titleColor).toBe(plate.severityColor)
 
     await savePreparedElementScreenshot('.messages-list', 'provider-turn-recovery.png')

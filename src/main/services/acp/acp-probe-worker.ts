@@ -23,8 +23,7 @@
  * script; `acp-client.ts` is kept bundleable for exactly this reason.
  */
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { baseSandboxConfig, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
-import { pinSandboxWrapTmpDir } from '../../project-sandbox/tmp-env.ts'
+import { baseSandboxConfig } from '../../project-sandbox/config.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { probeAcpAgent, type AcpAgentSpawnConfig } from './acp-client.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
@@ -129,7 +128,6 @@ function readSandboxConfig(value: unknown): AcpAgentSandboxConfig | undefined {
  */
 async function initWorkerSandbox(): Promise<void> {
   try {
-    pinSandboxWrapTmpDir(ensureWorkspaceTmpDir())
     await SandboxManager.initialize(baseSandboxConfig(), () => Promise.resolve(false), false)
     setProjectSandboxEnabled(true)
   } catch (err) {

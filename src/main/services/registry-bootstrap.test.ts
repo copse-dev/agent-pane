@@ -36,7 +36,7 @@ import {
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
-import { isAgentInputSchema } from './tool-input-schema.ts'
+import { agentInputSchemaProblem } from './tool-input-schema.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -69,8 +69,10 @@ it('exports object parameter envelopes for native tools sent to compatible local
   assert.throws(() => {
     registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
   })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
   assert.throws(() => {
-    registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
   })
 })
 
@@ -701,8 +703,12 @@ describe('ACP bridge exposure decisions', () => {
       const native = registry.toLLMTools()
       assert.deepEqual(native.map((tool) => tool.name).sort(), registered, 'none left out natively')
       const rejected = [
-        ...mcp.filter((tool) => !isAgentInputSchema(tool.inputSchema)).map((t) => `mcp:${t.name}`),
-        ...native.filter((tool) => !isAgentInputSchema(tool.parameters)).map((t) => t.name),
+        ...mcp
+          .filter((tool) => agentInputSchemaProblem(tool.inputSchema) !== null)
+          .map((t) => `mcp:${t.name}`),
+        ...native
+          .filter((tool) => agentInputSchemaProblem(tool.parameters) !== null)
+          .map((t) => t.name),
       ]
       assert.deepEqual(rejected, [], 'every tool needs a top-level object input schema')
     } finally {

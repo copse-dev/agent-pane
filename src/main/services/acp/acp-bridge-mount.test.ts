@@ -404,6 +404,24 @@ describe('ACP turn guidance tool set', () => {
     assert.match(shown, /## Copse guidance\n\nGUIDANCE for read_file/)
   })
 
+  it('assembles again on a retry after a failed assembly, instead of replaying it', async () => {
+    await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
+    let calls = 0
+    const { shown, stopReason } = await runTurn('guidance-retry', registryWithOneBridgedTool(), {
+      userPrompt: 'echo-prompt',
+      turnGuidance: () => {
+        calls += 1
+        // A transient-looking failure, which the turn's retry handling retries.
+        return calls === 1
+          ? Promise.reject(new Error('provider overloaded'))
+          : Promise.resolve('GUIDANCE after retry')
+      },
+    })
+    assert.equal(stopReason, 'end_turn')
+    assert.equal(calls, 2, 'the retry assembled the guidance again')
+    assert.match(shown, /## Copse guidance\n\nGUIDANCE after retry/)
+  })
+
   it('names no Copse tool when the agent never listed them', async () => {
     await useFixtureAgent(['--mcp-http'])
     const { seen, turnGuidance } = recordingGuidance()
@@ -504,6 +522,30 @@ describe('acpBridgeToolMissing', () => {
       ". Its MCP server 'copse' needs the user to re-authorize it before its tools work again.",
     ]) {
       assert.equal(acpBridgeToolMissing(withReason(reason), named), null, reason)
+    }
+  })
+
+  it("ignores a Copse tool's own failure that merely quotes the phrase", () => {
+    // The call reached the bridge and read_file failed on its own terms; the
+    // adapter rightly names it mcp__copse__read_file. Only Claude Code's error,
+    // as the result's leading statement, says the agent lacks the tool.
+    for (const output of [
+      'File not found: notes/No such tool available: mcp__copse__read_file',
+      '<tool_use_error>Error: File not found: No such tool available: mcp__copse__read_file</tool_use_error>',
+      'Exit code 1\nNo such tool available: mcp__copse__read_file',
+    ]) {
+      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), null, output)
+      const content = [
+        { type: 'content' as const, content: { type: 'text' as const, text: output } },
+      ]
+      assert.equal(acpBridgeToolMissing(failed({ content }), named), null, output)
+    }
+    // Claude Code's own error leads, bare or fenced as the adapter may render it.
+    for (const output of [
+      'Error: No such tool available: mcp__copse__read_file',
+      '```\n<tool_use_error>Error: No such tool available: mcp__copse__read_file</tool_use_error>\n```',
+    ]) {
+      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), 'read_file', output)
     }
   })
 

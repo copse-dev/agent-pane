@@ -85,6 +85,7 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
 
 /** Drag-select the assistant's rendered markdown, the way a user copying it would. */
 async function selectAssistantText(): Promise<string> {
+  await recordReplyDismissals()
   const text = await browser.execute(() => {
     const paragraph = document.querySelector<HTMLElement>(
       '[data-message-id="msg-assistant-result"] .message-text p',
@@ -99,6 +100,106 @@ async function selectAssistantText(): Promise<string> {
   })
   await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
   return text
+}
+
+declare global {
+  interface Window {
+    /** Events that can dismiss the selection reply, logged from just before the selection. */
+    e2eSelectionReplyEvents?: string[]
+  }
+}
+
+/**
+ * Log what could dismiss the reply after the selection is made: a window blur,
+ * any scroll (the reply listens in the capture phase, so any element counts),
+ * focus moving away, or the selected row being replaced. A failed visibility
+ * check reports this log, so a capture race names its cause.
+ */
+async function recordReplyDismissals(): Promise<void> {
+  await browser.execute(() => {
+    const events: string[] = []
+    window.e2eSelectionReplyEvents = events
+    const started = performance.now()
+    const describe = (target: EventTarget | null): string => {
+      if (target === document) return 'document'
+      if (!(target instanceof Element)) return 'window'
+      const classes = [...target.classList].map((name) => `.${name}`).join('')
+      return `${target.tagName.toLowerCase()}${classes}`
+    }
+    const log = (entry: string): void => {
+      if (window.e2eSelectionReplyEvents !== events) return
+      events.push(`${(performance.now() - started).toFixed(0)}ms ${entry}`)
+    }
+    window.addEventListener('blur', () => {
+      log('window blur')
+    })
+    document.addEventListener(
+      'scroll',
+      (event) => {
+        log(`scroll ${describe(event.target)}`)
+      },
+      true,
+    )
+    document.addEventListener('focusin', (event) => {
+      log(`focus ${describe(event.target)}`)
+    })
+    const row = document.querySelector('[data-message-id="msg-assistant-result"]')
+    if (row?.parentElement) {
+      new MutationObserver(() => {
+        if (!row.isConnected) log('selected row replaced')
+      }).observe(row.parentElement, { childList: true })
+    }
+  })
+}
+
+/**
+ * What the capture must show: the passage painted as selected and the reply
+ * box open beside it. `highlightSnapshot` only proves the selection existed
+ * when it ran; the shell resize, layout and index waits in `saveAppScreenshot`
+ * all come after it. Anything in between that dismisses the reply (a scroll, a
+ * window blur, a re-render) clears the highlight and closes the box, so check
+ * both again inside the capture frame and once more after it. Dismissal never
+ * reopens by itself, so state that survives the capture was in the frame.
+ */
+async function expectSelectionReplyVisible(expectedText: string): Promise<void> {
+  const state = await browser.execute(() => {
+    const native = window.getSelection()?.toString() ?? ''
+    const painted = [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
+      .map((range) => (range instanceof Range ? range.toString() : ''))
+      .join('')
+    const popup = document.querySelector<HTMLElement>('.transcript-selection-quote')
+    const reply = document.querySelector<HTMLElement>('.transcript-selection-reply')
+    const box = reply?.getBoundingClientRect()
+    return {
+      selectedText: (native.length > 0 ? native : painted).trim(),
+      popupHidden: popup?.hidden ?? true,
+      replyVisible:
+        reply !== null &&
+        box !== undefined &&
+        box.width > 0 &&
+        box.height > 0 &&
+        reply.checkVisibility(),
+      replyFocused: reply !== null && document.activeElement === reply,
+      events: window.e2eSelectionReplyEvents ?? [],
+    }
+  })
+  const { events, ...visible } = state
+  const shown =
+    visible.selectedText === expectedText &&
+    !visible.popupHidden &&
+    visible.replyVisible &&
+    visible.replyFocused
+  if (!shown) {
+    throw new Error(
+      `The selection reply was dismissed before the capture: ${JSON.stringify(visible)}\n` +
+        `Events since the selection:\n${events.join('\n') || '(none)'}`,
+    )
+  }
+  expect(state.selectedText.length).toBeGreaterThan(0)
+  expect(state.selectedText).toBe(expectedText)
+  expect(state.popupHidden).toBe(false)
+  expect(state.replyVisible).toBe(true)
+  expect(state.replyFocused).toBe(true)
 }
 
 async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
@@ -183,7 +284,10 @@ describe('selected text stays visible', () => {
     expect(darkText.length).toBeGreaterThan(0)
     expect(dark?.selectedText).toBe(darkText)
     await waitForTodoRowsSettled(3)
-    await saveAppScreenshot('selection-highlight-dark.png')
+    await saveAppScreenshot('selection-highlight-dark.png', undefined, () =>
+      expectSelectionReplyVisible(darkText),
+    )
+    await expectSelectionReplyVisible(darkText)
 
     await switchTheme('light')
     const lightText = await selectAssistantText()
@@ -197,6 +301,9 @@ describe('selected text stays visible', () => {
     // accent, so the current search match must not be built from that pair.
     expect(light?.currentMatchContrast).toBeGreaterThanOrEqual(4.5)
     await waitForTodoRowsSettled(3)
-    await saveAppScreenshot('selection-highlight-light.png')
+    await saveAppScreenshot('selection-highlight-light.png', undefined, () =>
+      expectSelectionReplyVisible(lightText),
+    )
+    await expectSelectionReplyVisible(lightText)
   })
 })

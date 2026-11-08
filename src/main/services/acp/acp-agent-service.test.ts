@@ -12,6 +12,7 @@ import type {
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
+import { runShellTool } from '../../tools/shell-tool.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
@@ -495,6 +496,17 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /logs and exit status before reporting validation as complete/)
     assert.match(prompt, /run_background does not accept expects_sandbox_block/)
     assert.match(prompt, /use copse run_shell with an explicit timeout_ms/)
+    const shellExample = /run_shell yield example: (\{[^\n]+\})/.exec(prompt)?.[1]
+    assert.ok(shellExample, 'the same-process shell yield example must be present')
+    assert.deepEqual(safeJsonParse(shellExample, decodeWithSchema(runShellTool.parameters)), {
+      command: 'pnpm test',
+      timeout_ms: 1_800_000,
+      yield_after_ms: 1_000,
+    })
+    assert.match(prompt, /timeout_ms remains its total deadline/)
+    assert.match(prompt, /still-running receipt is not success/)
+    assert.match(prompt, /yielding call as the only tool in its response/)
+    assert.match(prompt, /cannot bypass its explicit Always ask or Blocked setting/)
     assert.match(prompt, /tool deadlines instead of assuming a shell timeout executable/)
     assert.equal(buildAcpPrompt(user, [], { includeNotes: false }), user)
   })

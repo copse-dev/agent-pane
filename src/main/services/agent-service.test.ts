@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -9,7 +9,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
-import { getSetting, setSetting } from './storage/settings.ts'
+import { getSetting, setSetting, deleteSetting } from './storage/settings.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
@@ -31,6 +31,10 @@ import { acquireAcpSession, disposeAllAcpSessions } from './acp/acp-session-pool
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { createThread, getThreadMeta, deleteProjectThread } from './thread-store.ts'
+import { updateTodosTool } from '../tools/todo-tool.ts'
+import { AGENT_RUN_HARD_MAX_MS } from '@copse/agent/agent-loop-limits.ts'
+import { execFileSync } from 'node:child_process'
+import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 
 async function runSilentAcpToolTurn(continuationBudgetUsed: number): Promise<{
   chunks: StreamChunk[]
@@ -651,11 +655,12 @@ describe('runAgent AgentHost decoupling', () => {
     ])
   })
 
-  it('activates nested instructions on first file access and defers the first edit', async () => {
+  it('defers every edit from one parent response until scoped instructions reach the next request', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
     await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
     const writes: string[] = []
+    const chunks: StreamChunk[] = []
     const registry = new ToolRegistry()
     registry.register(
       defineTool({
@@ -670,6 +675,7 @@ describe('runAgent AgentHost decoupling', () => {
     )
 
     let calls = 0
+    let writesBeforeDelivery: string[] = []
     const provider: LLMProvider = {
       stream: async function* (messages) {
         calls += 1
@@ -685,29 +691,56 @@ describe('runAgent AgentHost decoupling', () => {
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'second-edit-before-instructions',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
         assert.match(system.content, /Never edit before reading this/)
         if (calls === 2) {
+          writesBeforeDelivery = [...writes]
           const deferred = messages.find(
             (message) =>
               message.role === 'tool' &&
               message.toolResults.some((result) => result.toolCallId === 'first-edit'),
           )
           assert.ok(deferred?.role === 'tool')
-          assert.match(deferred.toolResults[0]?.result ?? '', /Edit deferred/)
+          // True for the activating path and for any other edit in the response.
+          assert.deepEqual(
+            deferred.toolResults.map((result) => result.result),
+            Array.from(
+              { length: 2 },
+              () =>
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+            ),
+          )
           assert.deepEqual(writes, [])
           yield {
             type: 'tool_call' as const,
             toolCall: {
-              id: 'retried-edit',
+              id: 'first-edit',
               name: 'write_file',
               args: { path: 'packages/api/router.ts' },
             },
           }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'second-edit-before-instructions',
+              name: 'write_file',
+              args: { path: 'packages/api/handler.ts' },
+            },
+          }
           return
         }
-        assert.deepEqual(writes, ['packages/api/router.ts'])
+        assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
         yield { type: 'text' as const, text: 'Done.' }
       },
     }
@@ -734,7 +767,7 @@ describe('runAgent AgentHost decoupling', () => {
                 'thread-nested',
                 'Make the requested change.',
                 [],
-                { emit: () => undefined },
+                { emit: (_threadId, chunk) => chunks.push(chunk) },
                 registry,
                 {
                   provider,
@@ -747,8 +780,26 @@ describe('runAgent AgentHost decoupling', () => {
             ),
         ),
       )
+      assert.deepEqual(
+        writesBeforeDelivery,
+        [],
+        'no edit may run before its instructions are delivered',
+      )
       assert.equal(calls, 3)
-      assert.deepEqual(writes, ['packages/api/router.ts'])
+      assert.deepEqual(writes, ['packages/api/router.ts', 'packages/api/handler.ts'])
+      // The transcript learns which calls were held back from a structured
+      // marker, not from the reason text the model reads.
+      assert.deepEqual(
+        chunks.flatMap((chunk) =>
+          chunk.type === 'tool_result' ? [[chunk.toolCallId, chunk.deferred]] : [],
+        ),
+        [
+          ['first-edit', true],
+          ['second-edit-before-instructions', true],
+          ['first-edit', undefined],
+          ['second-edit-before-instructions', undefined],
+        ],
+      )
     } finally {
       setDefaultPluginRegistry(null)
       await rm(root, { recursive: true, force: true })
@@ -1081,8 +1132,367 @@ describe('runAgent AgentHost decoupling', () => {
     assert.equal(terminal.outcome.status, 'failed')
     assert.equal(terminal.outcome.stopReason, 'max_steps')
     assert.equal(terminal.outcome.rawStopReason, 'max_steps')
+    assert.equal(terminal.outcome.source, 'host')
     assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
+
+  it('completes when an already-granted pre-review continuation finishes the limited plan', async () => {
+    const received: StreamChunk[] = []
+    const registry = new ToolRegistry()
+    registry.register(updateTodosTool)
+    let providerCalls = 0
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        if (providerCalls === 5) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'close-plan',
+              name: 'update_todos',
+              args: {
+                todos: [{ id: 'remaining', content: 'Finish the migration', status: 'completed' }],
+              },
+            },
+          }
+        } else if (providerCalls >= 6) {
+          yield { type: 'text', text: 'The migration is complete and the plan is closed.' }
+        } else if (providerCalls > 1) {
+          yield { type: 'text', text: 'The migration plan still needs reconciliation.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-limit-reconciled',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-limit-reconciled', () =>
+          agentService.runAgent(
+            'thread-limit-reconciled',
+            'Finish the migration.',
+            [],
+            { emit: (_threadId, chunk) => received.push(chunk) },
+            registry,
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+              maxSteps: 1,
+              adaptiveExtensions: false,
+              turnTreeId: 'tree-limit-reconciled',
+              priorTodos: [{ id: 'remaining', content: 'Finish the migration', status: 'pending' }],
+            },
+          ),
+        ),
+    )
+    assert.equal(providerCalls, 6, 'original turn, three closeouts and one two-step reconciliation')
+    assert.equal(received.filter((chunk) => chunk.type === 'machine_turn_start').length, 1)
+    const budget = received.find((chunk) => chunk.type === 'continuation_budget')
+    assert.ok(budget?.type === 'continuation_budget')
+    assert.equal(budget.used, 4, 'existing bounded closeout/reconciliation grants only')
+    const terminal = received.findLast((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'completed')
+    assert.equal(terminal.outcome.stopReason, 'end_turn')
+    assert.deepEqual(received.at(-1), { type: 'done' })
+  })
+
+  it('retains an unfinished no-plan limit after successful unrelated review remediation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-budget-review-'))
+    execFileSync('git', ['init', '-b', 'main'], { cwd: root })
+    await writeFile(join(root, 'phase-1.txt'), 'original phase\n')
+    execFileSync('git', ['add', '.'], { cwd: root })
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@copse.invalid',
+        'commit',
+        '-m',
+        'baseline',
+      ],
+      { cwd: root },
+    )
+    const received: StreamChunk[] = []
+    let providerCalls = 0
+    let reviews = 0
+    const settings = ['reviewModel', 'extraProviders', 'postTurnReviewMinChangedLines'].map(
+      (key) => ({ key, value: getSetting<unknown>(key, undefined) }),
+    )
+    const plugins = new PluginRegistry()
+    plugins.register(postTurnReviewPlugin)
+    setDefaultPluginRegistry(plugins)
+    await setSetting('reviewModel', 'budget-review:review')
+    await setSetting('extraProviders', [
+      {
+        slug: 'budget-review',
+        label: 'Local review fixture',
+        baseUrl: 'http://127.0.0.1:59991/v1',
+        models: [{ id: 'review', contextWindow: 128_000 }],
+      },
+    ])
+    await setSetting('postTurnReviewMinChangedLines', 0)
+    const network = mock.method(
+      globalThis,
+      'fetch',
+      async (input: string | URL | Request): Promise<Response> => {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+        if (url.pathname.endsWith('/models')) {
+          return Response.json({
+            models: [{ key: 'budget-review', type: 'llm', loaded_context_length: 128_000 }],
+            data: [{ id: 'budget-review', context_length: 128_000 }],
+          })
+        }
+        assert.equal(url.pathname, '/v1/chat/completions')
+        reviews++
+        const text = `The reviewed typo is ${reviews === 1 ? 'still present' : 'fixed'}.\nREVIEW_JSON: ${JSON.stringify(
+          {
+            issuesFound: reviews === 1,
+            requestFollowUp: reviews === 1,
+            todoUpdates: [],
+            followUpPrompt: reviews === 1 ? 'Fix only the typo in phase-1.txt.' : null,
+          },
+        )}`
+        return new Response(
+          `data: ${JSON.stringify({ id: 'review', choices: [{ index: 0, delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+          {
+            headers: { 'content-type': 'text/event-stream' },
+          },
+        )
+      },
+    )
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Write a migration fixture checkpoint',
+        parameters: z.object({ path: z.string(), content: z.string() }),
+        execute: async ({ path, content }) => {
+          assert.equal(path, 'phase-1.txt')
+          await writeFile(join(root, path), content)
+          return 'Checkpoint saved.'
+        },
+      }),
+    )
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        if (providerCalls === 1 || providerCalls === 3) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: `write-${String(providerCalls)}`,
+              name: 'write_file',
+              args: {
+                path: 'phase-1.txt',
+                content: providerCalls === 1 ? 'phase one with typo\n' : 'phase one typo fixed\n',
+              },
+            },
+          }
+        } else if (providerCalls >= 4)
+          yield { type: 'text', text: 'The review correction is complete.' }
+        yield { type: 'done' }
+      },
+    }
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-1',
+            threadId: 'thread-limited-review',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-limited-review', () =>
+              agentService.runAgent(
+                'thread-limited-review',
+                'Complete all twenty migration phases.',
+                [],
+                { emit: (_threadId, chunk) => received.push(chunk) },
+                registry,
+                {
+                  model: 'claude-sonnet-4-6',
+                  provider,
+                  contextWindow: 100_000,
+                  maxSteps: 1,
+                  maxLlmCalls: 4,
+                  adaptiveExtensions: false,
+                  turnTreeId: 'tree-limited-review',
+                },
+              ),
+            ),
+        ),
+      )
+    } finally {
+      network.mock.restore()
+      setDefaultPluginRegistry(null)
+      for (const setting of settings) {
+        if (setting.value === undefined) await deleteSetting(setting.key)
+        else await setSetting(setting.key, setting.value)
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+    assert.equal(providerCalls, 4)
+    assert.equal(reviews, 2)
+    assert.equal(received.filter((chunk) => chunk.type === 'machine_turn_start').length, 1)
+    const terminal = received.findLast((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'failed')
+    assert.equal(terminal.outcome.stopReason, 'max_steps')
+    assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
+  })
+
+  it('does not start fresh post-turn work after finalization spends the shared deadline', async () => {
+    const received: StreamChunk[] = []
+    let providerCalls = 0
+    let now = Date.now()
+    const clock = mock.method(Date, 'now', () => now)
+    try {
+      const provider: LLMProvider = {
+        stream: async function* () {
+          providerCalls++
+          if (providerCalls === 2) now += AGENT_RUN_HARD_MAX_MS
+          yield { type: 'done' }
+        },
+      }
+      await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'thread-finalize-deadline',
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity('thread-finalize-deadline', () =>
+            agentService.runAgent(
+              'thread-finalize-deadline',
+              'Finish the migration.',
+              [],
+              { emit: (_threadId, chunk) => received.push(chunk) },
+              new ToolRegistry(),
+              {
+                model: 'claude-sonnet-4-6',
+                provider,
+                contextWindow: 100_000,
+                maxSteps: 1,
+                adaptiveExtensions: false,
+                turnTreeId: 'tree-finalize-deadline',
+                priorTodos: [
+                  { id: 'remaining', content: 'Finish the migration', status: 'pending' },
+                ],
+              },
+            ),
+          ),
+      )
+    } finally {
+      clock.mock.restore()
+    }
+    assert.equal(providerCalls, 2, 'the original turn and one closeout before the hard deadline')
+    assert.equal(received.filter((chunk) => chunk.type === 'machine_turn_start').length, 0)
+    const terminal = received.findLast((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'failed')
+    assert.equal(terminal.outcome.stopReason, 'timeout')
+    assert.equal(terminal.outcome.source, 'host')
+    assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'timeout' })
+  })
+
+  for (const alreadyUsed of [2, 5] as const) {
+    it(`persists the remaining-plan summary after a step limit with ${String(alreadyUsed)} prior grants`, async () => {
+      const received: StreamChunk[] = []
+      let providerCalls = 0
+      const provider: LLMProvider = {
+        stream: async function* () {
+          providerCalls++
+          yield { type: 'done' }
+        },
+      }
+      const threadId = `thread-step-limit-summary-${String(alreadyUsed)}`
+      const result = await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId,
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, () =>
+            agentService.runAgent(
+              threadId,
+              'Finish the migration and regression tests.',
+              [],
+              { emit: (_threadId, chunk) => received.push(chunk) },
+              new ToolRegistry(),
+              {
+                model: 'claude-sonnet-4-6',
+                provider,
+                contextWindow: 100_000,
+                maxSteps: 1,
+                maxLlmCalls: 10,
+                adaptiveExtensions: false,
+                turnTreeId: `tree-step-limit-summary-${String(alreadyUsed)}`,
+                continuationBudgetUsed: alreadyUsed,
+                priorTodos: [
+                  {
+                    id: 'migration',
+                    content: 'Migrate the remaining modules',
+                    status: 'in_progress',
+                  },
+                  { id: 'tests', content: 'Add the regression tests', status: 'pending' },
+                ],
+              },
+            ),
+          ),
+      )
+      assert.equal(
+        providerCalls,
+        alreadyUsed === 2 ? 4 : 1,
+        'only the original request and the remaining bounded closeout grants may call the model',
+      )
+      const budget = received.find((chunk) => chunk.type === 'continuation_budget')
+      assert.ok(budget?.type === 'continuation_budget')
+      assert.equal(budget.used, 5)
+      const terminal = received.findLast((chunk) => chunk.type === 'turn_outcome')
+      assert.ok(terminal?.type === 'turn_outcome')
+      assert.equal(terminal.outcome.status, 'failed')
+      assert.equal(terminal.outcome.stopReason, 'max_steps')
+      assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
+      const summaries = received.filter(
+        (chunk) => chunk.type === 'text' && chunk.text.includes('automatic continuation limit'),
+      )
+      assert.equal(summaries.length, 1)
+      const summary = summaries[0]
+      assert.ok(summary?.type === 'text')
+      assert.match(summary.text, /In progress: Migrate the remaining modules/)
+      assert.match(summary.text, /Pending: Add the regression tests/)
+      if (alreadyUsed === 2) assert.match(summary.text, /todo closeout: 3/)
+      else assert.match(summary.text, /turn tree was already at its limit/)
+      assert.ok(
+        result.messages.some(
+          (message) => message.role === 'assistant' && message.content === summary.text,
+        ),
+        'the deterministic plan/grants summary must be saved in provider history',
+      )
+    })
+  }
 
   it('explains an exhausted continuation budget with the remaining plan', async () => {
     const received: StreamChunk[] = []

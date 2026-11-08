@@ -647,6 +647,8 @@ describe('fetchModelOptions visibility', () => {
       options.find((option) => option.value === selected)?.label ?? '',
       /blocked in Settings/,
     )
+    // It cannot run, so it is not marked superseded and keeps the dimmed row.
+    assert.equal(options.find((option) => option.value === selected)?.superseded, undefined)
   })
 
   it('normalises raw GPT model ids advertised by an ACP agent', async () => {
@@ -933,6 +935,9 @@ describe('fetchModelOptions visibility', () => {
     const current = options.find((o) => o.value === 'claude-sonnet-4-6')
     assert.ok(current)
     assert.equal(current.disabled, true)
+    // Disabled only because reselecting it is a no-op: it still runs, so the
+    // picker keeps it at full strength instead of dimming it as unavailable.
+    assert.equal(current.superseded, true)
     assert.equal(
       current.label,
       `Claude Sonnet 4.6: ${currentCloudIntellectHint('claude-sonnet-4-6')} (superseded by Claude Sonnet 5.5)`,

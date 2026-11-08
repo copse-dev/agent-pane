@@ -14,6 +14,10 @@ describe('browser-hosted Apple Development target picker', () => {
     await expect(destination).toHaveValue('platform=iOS Simulator,id=E2E-IP17-PRO')
     await expect(destination.$$('option')).toBeElementsArrayOfSize(1)
     await expect(destination.$('option')).toHaveText('iPhone 17 Pro · iOS Simulator')
+    // The configuration and destination tags take the kit corner, not a pill.
+    await expect(panel.$('.apple-development-target-meta span')).toHaveStyle({
+      'border-top-left-radius': '6px',
+    })
 
     await saveElementScreenshot(
       '.apple-development-panel',

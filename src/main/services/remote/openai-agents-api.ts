@@ -485,6 +485,19 @@ export class OpenAiAgentsApi {
       if (!state.pending) {
         if (existing.some((turn) => turn.subagent_id === null && !terminal(turn.status)))
           throw new Error('This OpenAI session already has an active turn.')
+        // Receipts protect ambiguous delivery while their turn is pending.
+        // A new admission can retire only history proven terminal by the host;
+        // save that retirement together with the new pending submission.
+        const settledTurnIds = new Set(
+          existing
+            .filter((turn) => turn.subagent_id === null && terminal(turn.status))
+            .map((turn) => turn.id),
+        )
+        if (state.functionResults) {
+          state.functionResults = state.functionResults.filter(
+            (receipt) => !settledTurnIds.has(receipt.turnId),
+          )
+        }
         state.pending = {
           key: randomUUID(),
           prompt,

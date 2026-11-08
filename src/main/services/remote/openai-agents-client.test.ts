@@ -495,11 +495,13 @@ describe('OpenAI cloud adapter', () => {
       )
     },
   )
-  turnIt('imports exported commits and provisions fresh local code for the follow-up', async () => {
+  turnIt('imports 128-call tasks and provisions fresh follow-up code', async () => {
     let session = 0
     let turn = 0
     let exportAcknowledged = false
     let refusedExportCalls = 0
+    let settledHostCalls = 0
+    let hostExecutions = 0
     let guest = ''
     let base = ''
     let uploaded = Buffer.alloc(0)
@@ -526,6 +528,7 @@ describe('OpenAI cloud adapter', () => {
         session++
         turn = 0
         exportAcknowledged = false
+        settledHostCalls = 0
         guest = join(root, `guest-${String(session)}`)
         mkdirSync(join(guest, 'inputs'), { recursive: true })
         writeFileSync(join(guest, 'inputs/source.part-0'), uploaded)
@@ -564,6 +567,11 @@ describe('OpenAI cloud adapter', () => {
           typeof init?.body === 'string' &&
           init.body.includes('agent.session.input.tool_result')
         ) {
+          if (turn === 1) {
+            assert.match(init.body, /"success":true/)
+            settledHostCalls++
+            return new Response(null, { status: 202 })
+          }
           assert.match(init.body, /"success":false/)
           assert.match(init.body, /This recovery turn only exports/)
           refusedExportCalls++
@@ -586,7 +594,10 @@ describe('OpenAI cloud adapter', () => {
         return page(
           Array.from({ length: turn }, (_, i) => ({
             id: `turn-${String(i + 1)}`,
-            status: i === 1 && !exportAcknowledged ? 'waiting' : 'completed',
+            status:
+              (i === 0 && settledHostCalls < 128) || (i === 1 && !exportAcknowledged)
+                ? 'waiting'
+                : 'completed',
             subagent_id: null,
           })),
         )
@@ -609,19 +620,30 @@ describe('OpenAI cloud adapter', () => {
       }
       return Response.json({
         id: `session-${String(session)}`,
-        status: turn === 2 && !exportAcknowledged ? 'requires_action' : 'idle',
+        status:
+          (turn === 1 && settledHostCalls < 128) || (turn === 2 && !exportAcknowledged)
+            ? 'requires_action'
+            : 'idle',
         required_actions:
-          turn === 2 && !exportAcknowledged
-            ? [
-                {
-                  type: 'function_call',
-                  turn_id: 'turn-2',
-                  call_id: 'unexpected-export-call',
-                  name: 'gh_pr_create',
-                  arguments: { title: 'Unrequested PR', body: '', draft: true },
-                },
-              ]
-            : [],
+          turn === 1 && settledHostCalls < 128
+            ? Array.from({ length: 64 }, (_, index) => ({
+                type: 'function_call',
+                turn_id: 'turn-1',
+                call_id: `read-${String(settledHostCalls + index)}`,
+                name: 'gh_pr_list',
+                arguments: {},
+              }))
+            : turn === 2 && !exportAcknowledged
+              ? [
+                  {
+                    type: 'function_call',
+                    turn_id: 'turn-2',
+                    call_id: 'unexpected-export-call',
+                    name: 'gh_pr_create',
+                    arguments: { title: 'Unrequested PR', body: '', draft: true },
+                  },
+                ]
+              : [],
         environment: { id: 'env' },
         usage: { input_tokens: turn * 10, output_tokens: turn },
       })
@@ -631,9 +653,19 @@ describe('OpenAI cloud adapter', () => {
         threadId: 'thread',
         provider: 'openai',
         userPrompt: prompt,
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(20_000),
         fetchImpl,
         onChunk: () => {},
+        hostTools: {
+          validate: () => {},
+          definitions: [
+            { type: 'function', name: 'gh_pr_list', description: 'List PRs', parameters: {} },
+          ],
+          execute: async () => {
+            hostExecutions++
+            return { success: true, output: 'No open PRs.' }
+          },
+        },
       })
     const first = await run('Make a change')
     assert.equal(first.inputTokens, 20)
@@ -651,6 +683,7 @@ describe('OpenAI cloud adapter', () => {
     await run('Another change')
     assert.equal(session, 2)
     assert.equal(refusedExportCalls, 2)
+    assert.equal(hostExecutions, 256)
     assert.equal(readFileSync(join(root, 'repo/result.txt'), 'utf8'), 'hosted change 2')
   })
 })

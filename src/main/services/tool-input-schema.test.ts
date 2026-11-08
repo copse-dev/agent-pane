@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { z } from 'zod'
 import {
   agentInputSchemaProblem,
-  isAgentInputSchema,
   modelFacingInputSchema,
   objectEnvelopeOf,
   TOOL_SCHEMA_DIALECTS,
@@ -12,7 +11,7 @@ import {
 describe('agentInputSchemaProblem (#4142)', () => {
   it('accepts a plain top-level object', () => {
     assert.equal(agentInputSchemaProblem({ type: 'object', properties: {} }), null)
-    assert.equal(isAgentInputSchema({ type: 'object' }), true)
+    assert.equal(agentInputSchemaProblem({ type: 'object' }) === null, true)
   })
 
   it('rejects a schema without type "object" at the top level', () => {
@@ -28,7 +27,7 @@ describe('agentInputSchemaProblem (#4142)', () => {
         'its input schema is not a top-level object',
         JSON.stringify(schema),
       )
-      assert.equal(isAgentInputSchema(schema), false)
+      assert.equal(agentInputSchemaProblem(schema) === null, false)
     }
   })
 
@@ -36,7 +35,7 @@ describe('agentInputSchemaProblem (#4142)', () => {
     for (const key of ['anyOf', 'oneOf', 'allOf']) {
       const schema = { type: 'object', properties: {}, [key]: [] }
       assert.equal(agentInputSchemaProblem(schema), `its input schema has a top-level "${key}"`)
-      assert.equal(isAgentInputSchema(schema), false)
+      assert.equal(agentInputSchemaProblem(schema) === null, false)
     }
   })
 
@@ -45,13 +44,13 @@ describe('agentInputSchemaProblem (#4142)', () => {
       type: 'object',
       properties: { target: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
     }
-    assert.equal(isAgentInputSchema(schema), true)
+    assert.equal(agentInputSchemaProblem(schema) === null, true)
   })
 
   it('reads own keys only, not inherited ones', () => {
     const inherited: Record<string, unknown> = { type: 'object' }
     Object.setPrototypeOf(inherited, { anyOf: [] })
-    assert.equal(isAgentInputSchema(inherited), true)
+    assert.equal(agentInputSchemaProblem(inherited) === null, true)
   })
 })
 
@@ -130,7 +129,7 @@ describe('objectEnvelopeOf', () => {
 
   it('flattens a union of object shapes into one object agents can list', () => {
     const envelope = objectEnvelopeOf(actions)
-    assert.equal(isAgentInputSchema(envelope), true)
+    assert.equal(agentInputSchemaProblem(envelope) === null, true)
     assert.equal(Object.hasOwn(envelope, '$schema'), false)
     for (const dialect of TOOL_SCHEMA_DIALECTS) {
       assert.ok(

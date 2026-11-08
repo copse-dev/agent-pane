@@ -21,6 +21,14 @@ import { z } from 'zod'
 import { setSetting } from './storage/settings.ts'
 import { copseToolPermissionId } from './security/tool-permissions.ts'
 import { recoverTextToolCalls } from '@copse/agent/parse-text-tool-calls.ts'
+import type { ToolCall } from '@shared/types'
+import {
+  isReviewerInputCall,
+  reviewerInputRequestsForCall,
+} from '@shared/threads/reviewer-input.ts'
+import { askUserTool } from '../tools/ask-user-tool.ts'
+import { runWithActiveRunIdentity } from './active-run-identity.ts'
+import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
 import { objectEnvelopeOf } from './tool-input-schema.ts'
 import { setElectronAppRuntime } from './electron-app-runtime.ts'
 
@@ -206,6 +214,102 @@ describe('ToolRegistry', () => {
       appendedReminderLengths: ['<system-reminder>\nnote\n</system-reminder>'.length],
     })
     setPermissionGateForTests(null)
+  })
+
+  it('preserves unattended questions when a toolGate note is appended (H2)', async () => {
+    const threadId = 'hooked-unattended-questions'
+    setPermissionGateForTests(async (check) => {
+      check.injectContext = '<system-reminder>\nRetain the review note.\n</system-reminder>'
+      return true
+    })
+    beginDeferralMode(threadId)
+    try {
+      const registry = new ToolRegistry()
+      registry.register(askUserTool)
+      const args = {
+        questions: [{ question: 'Which channel?' }, { question: 'Who signs off?' }],
+      }
+      const executed = await runWithActiveRunIdentity(threadId, () =>
+        registry.executeNormalized('ask_user', args, new AbortController().signal),
+      )
+      assert.match(executed.result, /<system-reminder>\nRetain the review note\./)
+      assert.equal(executed.appendedReminderLengths?.length, 1)
+      const call: ToolCall = {
+        id: 'saved-ask',
+        name: 'ask_user',
+        status: 'done',
+        args,
+        ...executed,
+      }
+      assert.equal(isReviewerInputCall(call), true)
+      assert.deepEqual(
+        reviewerInputRequestsForCall(call, 'saved-message').map(({ id, question }) => ({
+          id,
+          question,
+        })),
+        [
+          { id: 'saved-ask:question:0', question: 'Which channel?' },
+          { id: 'saved-ask:question:1', question: 'Who signs off?' },
+        ],
+      )
+    } finally {
+      endDeferralMode(threadId)
+      setPermissionGateForTests(null)
+    }
+  })
+
+  it('saves the questions and choices actually executed after hook rewrites (H1/H2)', async () => {
+    const threadId = 'rewritten-unattended-questions'
+    const original = { questions: [{ question: 'Which channel?', options: ['Stable'] }] }
+    const rewritten = [
+      {
+        question: 'Which release channel?',
+        options: ['Stable', 'Preview'],
+        recommendedOption: 'Preview',
+        recommendationReason: 'The hook requires a short trial.',
+      },
+      { question: 'Who signs off?', options: ['Maintainer'] },
+    ]
+    setPermissionGateForTests(async (check) => {
+      if (check.args === null || typeof check.args !== 'object' || Array.isArray(check.args)) {
+        throw new Error('expected object tool arguments')
+      }
+      Object.assign(check.args, { questions: rewritten })
+      check.injectContext = '<system-reminder>\nRetain the review note.\n</system-reminder>'
+      return true
+    })
+    beginDeferralMode(threadId)
+    try {
+      const registry = new ToolRegistry()
+      registry.register(askUserTool)
+      const executed = await runWithActiveRunIdentity(threadId, () =>
+        registry.executeNormalized('ask_user', original, new AbortController().signal),
+      )
+      const call: ToolCall = {
+        id: 'rewritten-ask',
+        name: 'ask_user',
+        status: 'done',
+        args: original,
+        ...executed,
+      }
+      assert.deepEqual(original.questions, [{ question: 'Which channel?', options: ['Stable'] }])
+      assert.deepEqual(
+        reviewerInputRequestsForCall(call, 'saved-message').map(
+          ({ question, options, recommendation }) => ({ question, options, recommendation }),
+        ),
+        [
+          {
+            question: 'Which release channel?',
+            options: ['Stable', 'Preview'],
+            recommendation: 'Preview — The hook requires a short trial.',
+          },
+          { question: 'Who signs off?', options: ['Maintainer'], recommendation: undefined },
+        ],
+      )
+    } finally {
+      endDeferralMode(threadId)
+      setPermissionGateForTests(null)
+    }
   })
 
   it('leaves the result untouched when no context is injected (H2)', async () => {
