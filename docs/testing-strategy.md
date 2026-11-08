@@ -388,6 +388,32 @@ new tests should keep that trend:
 Net: every new e2e spec should justify why it can't be a component test. The
 default direction is _down_.
 
+### Outbound network guard
+
+E2E tests may only reach loopback. Mocked services (LLM, GitHub, names API, plan usage, Artificial
+Analysis, model cards) are configured in `wdio.conf.ts` `beforeSession`. The guard makes a test that
+depends on a real external service fail by name rather than pass quietly. It is a test boundary and is
+separate from the product's own [browser network policy](browser-network-policy.md).
+
+- **Electron main (Node):** `tests/e2e/electron-shell/network-guard.cjs` is installed by the e2e
+  bootstrap before the app loads. It refuses non-loopback `net.Socket#connect` calls (http, https,
+  tls, `fetch`), DNS lookups and resolver queries, and UDP sends.
+- **Chromium** (renderer, `<webview>` guests, Electron `net`): `wdio.conf.ts` passes
+  `--proxy-server` for a per-worker loopback proxy in `tests/e2e/helpers/network-guard.ts`.
+  Chromium bypasses the proxy for loopback, and the proxy answers everything else with 403.
+- Every attempt goes to one ledger. A root `afterEach` fails the test that made the attempt and names
+  the host, port, process and initiator (a Node stack, or Chromium's request line). If the test has
+  already failed, it keeps its own failure and the attempt is printed with an `[e2e-network-guard]`
+  prefix. Each CI shard prints a per-host table in "Report outbound network attempts".
+- `COPSE_E2E_NETWORK_GUARD=log` records and forwards instead of refusing; use it to survey a
+  change. `off` disables the guard. Real-model eval (`wdio.eval.conf.ts`) does not use the guard.
+- **Fix an offender at its boundary:** an env mock, a loopback fixture server, or an e2e-shell
+  injection like the spellchecker dictionary URL. Never allowlist it. `expectNetworkEgress(host)` is
+  the only per-test exception: the request is still refused, but the test must make it. Current
+  uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
+- Not covered: product child processes (agent CLIs, MCP servers, git), worker threads and utility
+  processes. They run outside Electron main's patched modules.
+
 ## Browser geometry tier
 
 `npm run build:demo && npm run test:demo` is the focused browser-hosted tier from
