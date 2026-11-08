@@ -479,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-3UZLRQYH.js";
+} from "./chunk-EU4MBCM6.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -15153,16 +15153,25 @@ function bindBrowserLinkClicks(root, store2, api2) {
     event.stopPropagation();
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
+      const owner = getActiveThreadOwner(store2);
       void artifactServerOrigin(artifact.agentId, api2.settings).then(async (origin) => {
         if (origin !== artifact.origin) {
           openLink(href);
           return;
         }
-        const url = await api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path);
-        if (url) openBrowserUrl(store2, url);
+        if (!owner) throw new Error("No active chat");
+        const currentOwner = getActiveThreadOwner(store2);
+        if (currentOwner?.projectId !== owner.projectId || currentOwner.threadId !== owner.threadId)
+          return;
+        await api2.remoteAgent.downloadArtifact({
+          ...owner,
+          agentId: artifact.agentId,
+          path: artifact.path
+        });
       }).catch((err) => {
         console.warn("[remote-agent] artifact download failed:", err);
-        showErrorToast("Failed to download agent artifact", err);
+        const reason = err instanceof Error && err.message.includes("This artifact is not linked to the chat.") ? "This artifact is not linked to this chat." : "The download could not be opened.";
+        showErrorToast("Failed to download agent artifact", reason);
       });
       return;
     }
@@ -15186,6 +15195,7 @@ var init_browser_links = __esm({
     init_pr_link_preview();
     init_toast();
     init_remote_agent();
+    init_active_thread_owner();
     OPENAI_AGENTS_ORIGIN = "https://api.openai.com";
   }
 });
@@ -15234,7 +15244,12 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (artifact?.[1] && artifact[2]) {
       event.preventDefault();
       event.stopPropagation();
-      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error) => {
+      const owner2 = getActiveThreadOwner(store2);
+      if (!owner2) {
+        showErrorToast("Failed to save agent artifact", "No active chat");
+        return;
+      }
+      void api2.remoteAgent.downloadArtifact({ ...owner2, agentId: `openai:${artifact[1]}`, path: artifact[2] }).catch((error) => {
         showErrorToast("Failed to save agent artifact", error);
       });
       return;
@@ -18151,7 +18166,6 @@ function answerReviewerInput(store2, api2, threadId, requestId, answer) {
   const request = reviewerInputRequests(thread).find((item) => item.id === requestId);
   if (!request || reviewerInputAnswer(thread.reviewerInputAnswers, requestId)) return false;
   const content = `Answer to your review question \u201C${request.question}\u201D: ${text}`;
-  if (thread.status === "idle") startHumanTurnTree(store2, threadId);
   const messageId = addMessage(store2, threadId, "user", content);
   setReviewerInputAnswer(store2, threadId, {
     id: requestId,
