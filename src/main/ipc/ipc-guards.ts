@@ -18,6 +18,14 @@ export class IpcValidationError extends Error {
   }
 }
 
+/** A request scoped to one project may act only on the project open in its window. */
+export function projectIsActiveForSender(
+  activeProjectId: string | null,
+  requestedProjectId: string,
+): boolean {
+  return activeProjectId !== null && activeProjectId === requestedProjectId
+}
+
 export function assertMainFrameSender(
   event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
   win: Pick<BrowserWindow, 'isDestroyed' | 'webContents'>,

@@ -441,9 +441,16 @@ describe('OpenAI cloud adapter', () => {
       assert.match(decodeURIComponent(link.pathname), /openai:thread/)
       const artifactPath = link.searchParams.get('path')
       assert.ok(artifactPath)
-      assert.equal((await readOpenAiArtifact('thread', artifactPath)).toString(), 'file')
-      await assert.rejects(readOpenAiArtifact('thread', '../../secret'), /Invalid/)
-      await assert.rejects(readOpenAiArtifact('other-thread', artifactPath), /unavailable/)
+      assert.equal((await readOpenAiArtifact('project', 'thread', artifactPath)).toString(), 'file')
+      await assert.rejects(readOpenAiArtifact('project', 'thread', '../../secret'), /Invalid/)
+      await assert.rejects(
+        readOpenAiArtifact('project', 'other-thread', artifactPath),
+        /unavailable/,
+      )
+      await assert.rejects(
+        readOpenAiArtifact('other-project', 'thread', artifactPath),
+        /unavailable/,
+      )
       const cachedFile = join(
         threadDirectoryPath('project', 'thread'),
         'blobs',
@@ -454,7 +461,7 @@ describe('OpenAI cloud adapter', () => {
       const outside = join(root, 'outside.txt')
       writeFileSync(outside, 'private')
       symlinkSync(outside, cachedFile)
-      await assert.rejects(readOpenAiArtifact('thread', artifactPath), /escaped/)
+      await assert.rejects(readOpenAiArtifact('project', 'thread', artifactPath), /escaped/)
       const checkpoint = readFileSync(
         join(threadDirectoryPath('project', 'thread'), 'openai-agent-session.json'),
         'utf8',

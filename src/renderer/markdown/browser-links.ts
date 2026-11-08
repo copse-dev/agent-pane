@@ -5,6 +5,7 @@ import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 import { bindPrLinkPreviews } from './pr-link-preview.ts'
 import { showErrorToast } from '../views/toast.ts'
 import { DEFAULT_CURSOR_AGENT_BASE_URL } from '@shared/remote-agent.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 function linkHttpHref(link: HTMLAnchorElement): string | null {
   const href = link.href
@@ -69,8 +70,8 @@ export function bindBrowserLinkClicks(
   root.classList.add('browser-links-scope')
 
   // Plain external link: honour the setting. On (default) → in-app browser pane;
-  // off → the system browser. The PR-pane and artifact-viewer paths above are
-  // in-app features and stay regardless.
+  // off → the system browser. PR links and agent artifact downloads have their
+  // own handling regardless of this setting.
   const openPlainLink = (href: string): void => {
     if (!store.getState().openLinksInBuiltInBrowser && api?.shell) {
       void api.shell.openExternal(href)
@@ -115,18 +116,33 @@ export function bindBrowserLinkClicks(
     event.stopPropagation()
     const artifact = remoteArtifactFromHref(href)
     if (artifact && api) {
+      const owner = getActiveThreadOwner(store)
       void artifactServerOrigin(artifact.agentId, api.settings)
         .then(async (origin) => {
           if (origin !== artifact.origin) {
             openLink(href)
             return
           }
-          const url = await api.remoteAgent.downloadArtifact(artifact.agentId, artifact.path)
-          if (url) openBrowserUrl(store, url)
+          if (!owner) throw new Error('No active chat')
+          const currentOwner = getActiveThreadOwner(store)
+          if (
+            currentOwner?.projectId !== owner.projectId ||
+            currentOwner.threadId !== owner.threadId
+          )
+            return
+          await api.remoteAgent.downloadArtifact({
+            ...owner,
+            agentId: artifact.agentId,
+            path: artifact.path,
+          })
         })
         .catch((err: unknown) => {
           console.warn('[remote-agent] artifact download failed:', err)
-          showErrorToast('Failed to download agent artifact', err)
+          const reason =
+            err instanceof Error && err.message.includes('This artifact is not linked to the chat.')
+              ? 'This artifact is not linked to this chat.'
+              : 'The download could not be opened.'
+          showErrorToast('Failed to download agent artifact', reason)
         })
       return
     }
