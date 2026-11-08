@@ -43,11 +43,6 @@ export function agentInputSchemaProblem(schema: Record<string, unknown>): string
   return null
 }
 
-/** Whether an agent can list a tool with this input schema (see {@link agentInputSchemaProblem}). */
-export function isAgentInputSchema(schema: Record<string, unknown>): boolean {
-  return agentInputSchemaProblem(schema) === null
-}
-
 /**
  * The input schema a tool declares in `dialect`: its pre-built `rawParameters`
  * as they are, or one derived from its zod `parameters`. Throws when zod cannot

@@ -356,6 +356,24 @@ describe('ACP turn guidance tool set', () => {
     assert.match(shown, /## Copse guidance\n\nGUIDANCE for read_file/)
   })
 
+  it('assembles again on a retry after a failed assembly, instead of replaying it', async () => {
+    await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
+    let calls = 0
+    const { shown, stopReason } = await runTurn('guidance-retry', registryWithOneBridgedTool(), {
+      userPrompt: 'echo-prompt',
+      turnGuidance: () => {
+        calls += 1
+        // A transient-looking failure, which the turn's retry handling retries.
+        return calls === 1
+          ? Promise.reject(new Error('provider overloaded'))
+          : Promise.resolve('GUIDANCE after retry')
+      },
+    })
+    assert.equal(stopReason, 'end_turn')
+    assert.equal(calls, 2, 'the retry assembled the guidance again')
+    assert.match(shown, /## Copse guidance\n\nGUIDANCE after retry/)
+  })
+
   it('names no Copse tool when the agent never listed them', async () => {
     await useFixtureAgent(['--mcp-http'])
     const { seen, turnGuidance } = recordingGuidance()

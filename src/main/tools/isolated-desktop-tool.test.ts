@@ -6,7 +6,7 @@ import {
   APPLE_DESKTOP_KEY_PATTERN,
   appleDesktopRequestSchema,
 } from '../../../scripts/lib/apple-desktop-wire.mts'
-import { isAgentInputSchema } from '../services/tool-input-schema.ts'
+import { agentInputSchemaProblem } from '../services/tool-input-schema.ts'
 import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { createIsolatedDesktopTool, isolatedDesktopTool } from './isolated-desktop-tool.ts'
@@ -45,7 +45,7 @@ describe('isolated_copse input', () => {
   })
 
   it('still advertises a top-level object schema agents accept (#4142)', () => {
-    assert.ok(isAgentInputSchema(advertisedSchema()))
+    assert.ok(agentInputSchemaProblem(advertisedSchema()) === null)
   })
 
   it('advertises exactly the fields some action takes, so only unknown keys are refused', () => {
@@ -152,7 +152,10 @@ describe('isolated_copse key pattern', () => {
     const registry = registryWithIsolatedDesktop()
     const tool = registry.toMcpTools().find(({ name }) => name === 'isolated_copse')
     assert.ok(tool)
-    assert.ok(isAgentInputSchema(tool.inputSchema), 'still a top-level object schema (#4142)')
+    assert.ok(
+      agentInputSchemaProblem(tool.inputSchema) === null,
+      'still a top-level object schema (#4142)',
+    )
     const pattern = advertisedKeyPattern(tool.inputSchema)
     assert.equal(pattern, APPLE_DESKTOP_KEY_PATTERN.source)
 

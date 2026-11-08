@@ -895,6 +895,8 @@ async function runAcpAgentTurn(
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
   // Like the skills block, assembled once per turn; a retry reuses the bytes.
+  // Only a fulfilled assembly is kept: a retry after a failed one assembles
+  // again rather than replaying the failure.
   let turnGuidance: Promise<string | undefined> | null = null
 
   // The thread's model has dropped off the agent's list: say so in the thread.
@@ -989,7 +991,10 @@ async function runAcpAgentTurn(
     const skillToolNames = bridgeMounted ? bridgeToolNames() : []
     const operatorInstructions =
       options.executionMode !== 'agent' && options.turnGuidance
-        ? await (turnGuidance ??= options.turnGuidance(skillToolNames))
+        ? await (turnGuidance ??= options.turnGuidance(skillToolNames).catch((err: unknown) => {
+            turnGuidance = null
+            throw err
+          }))
         : undefined
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
       buildInvokedSkillsBlock(options.invokedSkills ?? [], {
