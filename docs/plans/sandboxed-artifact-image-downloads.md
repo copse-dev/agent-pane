@@ -264,8 +264,10 @@ or raw network error messages that may embed URLs. Decode failures to bounded er
 codes before they cross into renderer logs.
 
 On Windows or unavailable macOS/Linux ASRT, automatic hydration remains unavailable.
-Explicit artifact links continue as their separate user-initiated feature; do not
-label that browser/download path as sandboxed hydration.
+Explicit artifact links continue as their separate user-initiated Save feature;
+do not label that main-process byte fetch as sandboxed hydration. It uses the same
+exact Cursor origin policy and bounded redirect/byte handling, and never places a
+signed URL in renderer state or a browser history.
 
 ## Implementation sequence and acceptance evidence
 
@@ -363,8 +365,8 @@ redirect pattern with an authenticated fixture. A different real origin fails cl
 - Renderer subscriptions that cancel a shared job when the last viewer leaves. Jobs are instead
   bounded by the queue, deduplication and deadlines.
 - A trusted provenance migration for old threads without `remoteAgentLink`. Their images fail
-  closed as `unlinked-agent`. The thread store keeps one current link per thread, so an image
-  from an earlier, replaced agent link is also refused.
+  closed as `unlinked-agent`. Main-recorded launch history now retains up to 128 recent Cursor
+  agent IDs per chat, so an image with an explicit older ID can still hydrate after a relaunch.
 - Download-origin configuration for custom providers. Only Cursor links hydrate; other providers
   answer `unsupported-provider`.
 
@@ -389,10 +391,13 @@ SSRF, signed-URL leak or self-approving origin. Its findings fixed in #4030:
   refetch. Cache invalidation was removed: every read re-authorizes against the durable link,
   and the key carries the credential generation and API origin.
 
-**Explicit-download follow-up:** `remote-agent:download-artifact` now checks the requesting
-thread's durable Cursor link (or OpenAI cache owner) before provider access. Main opens approved
-Cursor download URLs itself; the signed URL no longer crosses to the renderer. This remains a
-separate user-initiated browser/download path, not sandboxed automatic image hydration.
+**Explicit-download follow-up:** `remote-agent:download-artifact` checks the asking window's active
+project, then the requesting chat's durable current link and bounded Cursor launch history (or
+OpenAI cache owner) before provider access. Main reads approved Cursor downloads into a chosen
+file with a size and deadline bound; the signed URL never crosses to the renderer or system
+browser. Automatic image hydration also checks the window's active project and accepts an explicit
+older Cursor ID only when that chat's main-recorded history contains it. The explicit Save path
+remains separate from sandboxed automatic image hydration.
 
 **Residual risks, not fixed here:**
 

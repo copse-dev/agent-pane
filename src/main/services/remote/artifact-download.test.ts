@@ -21,23 +21,23 @@ const REQUEST: RemoteArtifactDownloadRequest = {
 interface Harness {
   download: ReturnType<typeof createArtifactDownloader>
   metadataCalls: Array<{ agentId: string; path: string }>
-  opened: string[]
+  fetched: string[]
   saved: Array<{ path: string; data: Buffer }>
 }
 
 function harness(overrides: Partial<ArtifactDownloadDependencies> = {}): Harness {
   const metadataCalls: Array<{ agentId: string; path: string }> = []
-  const opened: string[] = []
+  const fetched: string[] = []
   const saved: Array<{ path: string; data: Buffer }> = []
-  const readThreadLink: ArtifactDownloadDependencies['readThreadLink'] = async (
+  const readThreadProvenance: ArtifactDownloadDependencies['readThreadProvenance'] = async (
     projectId,
     threadId,
   ) => {
     if (projectId !== 'project' || threadId !== 'thread') throw new Error('unknown thread')
-    return LINK
+    return { link: LINK, cursorAgentIds: ['bc-linked'] }
   }
   const download = createArtifactDownloader({
-    readThreadLink,
+    readThreadProvenance,
     readOpenAiArtifact: async () => Buffer.from('cached artifact'),
     chooseSavePath: async () => '/tmp/artifact.png',
     writeFile: async (path, data) => {
@@ -47,12 +47,13 @@ function harness(overrides: Partial<ArtifactDownloadDependencies> = {}): Harness
       metadataCalls.push({ agentId, path })
       return SIGNED
     },
-    openExternal: async (url) => {
-      opened.push(url)
+    fetchCursorBytes: async (url) => {
+      fetched.push(url)
+      return Buffer.from('downloaded artifact')
     },
     ...overrides,
   })
-  return { download, metadataCalls, opened, saved }
+  return { download, metadataCalls, fetched, saved }
 }
 
 describe('explicit artifact download', () => {
@@ -63,11 +64,14 @@ describe('explicit artifact download', () => {
     assert.equal(zArtifactDownloadRequest.safeParse({ ...REQUEST, extra: 'value' }).success, false)
   })
 
-  it('opens a linked Cursor artifact without returning its signed URL', async () => {
+  it('saves a linked Cursor artifact without returning its signed URL', async () => {
     const h = harness()
     await h.download(REQUEST)
     assert.deepEqual(h.metadataCalls, [{ agentId: 'bc-linked', path: 'artifacts/shot.png' }])
-    assert.deepEqual(h.opened, [SIGNED])
+    assert.deepEqual(h.fetched, [SIGNED])
+    assert.deepEqual(h.saved, [
+      { path: '/tmp/artifact.png', data: Buffer.from('downloaded artifact') },
+    ])
   })
 
   for (const [label, request] of [
@@ -80,7 +84,7 @@ describe('explicit artifact download', () => {
       const h = harness()
       await assert.rejects(h.download(request))
       assert.deepEqual(h.metadataCalls, [])
-      assert.deepEqual(h.opened, [])
+      assert.deepEqual(h.fetched, [])
     })
   }
 
@@ -90,10 +94,50 @@ describe('explicit artifact download', () => {
       { ...LINK, agentId: 'bc-other' },
       { ...LINK, provider: 'openai' } satisfies RemoteAgentLink,
     ]) {
-      const h = harness({ readThreadLink: async () => link })
+      const h = harness({
+        readThreadProvenance: async () => ({ link, cursorAgentIds: [] }),
+      })
       await assert.rejects(h.download(REQUEST), /not linked/)
       assert.deepEqual(h.metadataCalls, [])
     }
+  })
+
+  it('saves an older Cursor agent artifact after the chat starts a new agent', async () => {
+    const h = harness({
+      readThreadProvenance: async () => ({
+        link: { ...LINK, agentId: 'bc-new' },
+        cursorAgentIds: ['bc-linked', 'bc-new'],
+      }),
+    })
+    await h.download(REQUEST)
+    assert.deepEqual(h.metadataCalls, [{ agentId: 'bc-linked', path: 'artifacts/shot.png' }])
+    assert.deepEqual(h.saved, [
+      { path: '/tmp/artifact.png', data: Buffer.from('downloaded artifact') },
+    ])
+  })
+
+  it('accepts a prior Cursor launch after an OpenAI launch, but never history alone', async () => {
+    const switched = harness({
+      readThreadProvenance: async () => ({
+        link: { provider: 'openai', agentId: 'openai-current', createdAt: 2 },
+        cursorAgentIds: ['bc-linked'],
+      }),
+    })
+    await switched.download(REQUEST)
+    assert.deepEqual(switched.metadataCalls, [{ agentId: 'bc-linked', path: 'artifacts/shot.png' }])
+    const unlinked = harness({
+      readThreadProvenance: async () => ({ link: null, cursorAgentIds: ['bc-linked'] }),
+    })
+    await assert.rejects(unlinked.download(REQUEST), /not linked/)
+    assert.deepEqual(unlinked.metadataCalls, [])
+  })
+
+  it('does not contact the provider when the user cancels Save', async () => {
+    const h = harness({ chooseSavePath: async () => null })
+    await h.download(REQUEST)
+    assert.deepEqual(h.metadataCalls, [])
+    assert.deepEqual(h.fetched, [])
+    assert.deepEqual(h.saved, [])
   })
 
   it('rejects a signed URL outside the approved origin before opening it', async () => {
@@ -101,12 +145,12 @@ describe('explicit artifact download', () => {
       resolveCursorUrl: async () => 'https://untrusted.example/file?token=secret',
     })
     await assert.rejects(h.download(REQUEST))
-    assert.deepEqual(h.opened, [])
+    assert.deepEqual(h.fetched, [])
   })
 
   it('does not expose a signed URL in a platform error', async () => {
     const h = harness({
-      openExternal: async () => {
+      fetchCursorBytes: async () => {
         throw new Error(SIGNED)
       },
     })
@@ -114,6 +158,19 @@ describe('explicit artifact download', () => {
       assert.doesNotMatch(error.message, /private-token/)
       return true
     })
+  })
+
+  it('does not expose provider errors containing a signed URL', async () => {
+    const h = harness({
+      resolveCursorUrl: async () => {
+        throw new Error(SIGNED)
+      },
+    })
+    await assert.rejects(h.download(REQUEST), (error: Error) => {
+      assert.doesNotMatch(error.message, /private-token/)
+      return true
+    })
+    assert.deepEqual(h.fetched, [])
   })
 
   it('saves a cached OpenAI artifact from its owning thread', async () => {
@@ -124,7 +181,7 @@ describe('explicit artifact download', () => {
     }
     const reads: Array<{ projectId: string; threadId: string; path: string }> = []
     const h = harness({
-      readThreadLink: async () => null,
+      readThreadProvenance: async () => ({ link: null, cursorAgentIds: [] }),
       readOpenAiArtifact: async (projectId, threadId, path) => {
         reads.push({ projectId, threadId, path })
         return Buffer.from('cached artifact')

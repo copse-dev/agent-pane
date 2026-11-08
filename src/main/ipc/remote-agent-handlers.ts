@@ -1,7 +1,14 @@
-import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from './ipc-guards.ts'
+import {
+  assertMainFrameSender,
+  IpcValidationError,
+  parseIpcArgs,
+  projectIsActiveForSender,
+  zProjectId,
+  zThreadId,
+} from './ipc-guards.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import {
@@ -15,6 +22,7 @@ import {
   createArtifactDownloader,
   zArtifactDownloadRequest,
 } from '../services/remote/artifact-download.ts'
+import { fetchSignedArtifact } from '../services/remote/bounded-artifact-download.ts'
 import { getThreadMeta } from '../services/thread-store.ts'
 import { senderProjectId } from './sender-project-root.ts'
 import { zArtifactImageRequest } from '../services/remote/artifact-image/service.ts'
@@ -26,10 +34,10 @@ export function registerRemoteAgentHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
 ): void {
   const downloadArtifact = createArtifactDownloader({
-    async readThreadLink(projectId, threadId) {
+    async readThreadProvenance(projectId, threadId) {
       const meta = await getThreadMeta(projectId, threadId)
       if (!meta) throw new Error('unknown thread')
-      return meta.remoteAgentLink ?? null
+      return { link: meta.remoteAgentLink ?? null, cursorAgentIds: meta.cursorAgentIds ?? [] }
     },
     readOpenAiArtifact,
     async chooseSavePath(defaultPath) {
@@ -41,17 +49,25 @@ export function registerRemoteAgentHandlers(
     },
     writeFile,
     resolveCursorUrl: (agentId, path) => resolveRemoteArtifactDownloadUrl({ agentId, path }),
-    openExternal: (url) => shell.openExternal(url),
+    fetchCursorBytes: fetchSignedArtifact,
   })
   ipcMain.handle('remote-agent:download-artifact', async (event, request: unknown) => {
     assertMainFrameSender(event, win)
-    return downloadArtifact(parseIpcArgs(zArtifactDownloadRequest, [request]))
+    const parsed = parseIpcArgs(zArtifactDownloadRequest, [request])
+    if (!projectIsActiveForSender(senderProjectId(event.sender), parsed.projectId)) {
+      throw new IpcValidationError('Request rejected: artifact is outside the active project')
+    }
+    return downloadArtifact(parsed)
   })
   // Automatic artifact-image hydration: authorized against the thread's durable
   // remote-agent link and downloaded by a confined host, never by main.
   ipcMain.handle('remote-agent:artifact-image-data-url', (event, request: unknown) => {
     assertMainFrameSender(event, win)
-    return artifactImageService().load(parseIpcArgs(zArtifactImageRequest, [request]))
+    const parsed = parseIpcArgs(zArtifactImageRequest, [request])
+    if (!projectIsActiveForSender(senderProjectId(event.sender), parsed.projectId)) {
+      return { ok: false, code: 'invalid-request', retryable: false }
+    }
+    return artifactImageService().load(parsed)
   })
   ipcMain.handle('remote-agent:models', (event) => {
     assertMainFrameSender(event, win)

@@ -13,20 +13,23 @@ export const zArtifactDownloadRequest = zArtifactImageRequest.extend({
 })
 
 export interface ArtifactDownloadDependencies {
-  readThreadLink(projectId: string, threadId: string): Promise<RemoteAgentLink | null>
+  readThreadProvenance(
+    projectId: string,
+    threadId: string,
+  ): Promise<{ link: RemoteAgentLink | null; cursorAgentIds: readonly string[] }>
   readOpenAiArtifact(projectId: string, threadId: string, path: string): Promise<Buffer>
   chooseSavePath(defaultPath: string): Promise<string | null>
   writeFile(path: string, data: Buffer): Promise<void>
   resolveCursorUrl(agentId: string, path: string): Promise<string>
-  openExternal(url: string): Promise<void>
+  fetchCursorBytes(url: string): Promise<Buffer>
 }
 
 /** Explicit artifact downloads are user-initiated, but transcript links confer no authority. */
 export function createArtifactDownloader(dependencies: ArtifactDownloadDependencies) {
   return async (request: RemoteArtifactDownloadRequest): Promise<void> => {
-    let link: RemoteAgentLink | null
+    let provenance: { link: RemoteAgentLink | null; cursorAgentIds: readonly string[] }
     try {
-      link = await dependencies.readThreadLink(request.projectId, request.threadId)
+      provenance = await dependencies.readThreadProvenance(request.projectId, request.threadId)
     } catch {
       throw new Error('This artifact is not linked to the chat.')
     }
@@ -45,18 +48,32 @@ export function createArtifactDownloader(dependencies: ArtifactDownloadDependenc
       if (destination) await dependencies.writeFile(destination, data)
       return
     }
-    if (!link || link.provider !== 'cursor' || link.agentId !== request.agentId) {
+    if (!provenance.link) throw new Error('This artifact is not linked to the chat.')
+    if (
+      !provenance.cursorAgentIds.includes(request.agentId) &&
+      !(provenance.link.provider === 'cursor' && provenance.link.agentId === request.agentId)
+    ) {
       throw new Error('This artifact is not linked to the chat.')
     }
     const path = validateArtifactPath(request.path)
-    const signedUrl = await dependencies.resolveCursorUrl(link.agentId, path)
-    const approved = checkDownloadUrl(signedUrl, CURSOR_ARTIFACT_DOWNLOAD_ORIGINS)
-    // The URL is a bearer secret. Only main hands it to the system browser;
-    // neither the URL nor a thrown platform error may enter renderer state.
+    const extension = path.match(/\.[a-zA-Z0-9]{1,10}$/)?.[0] ?? ''
+    const destination = await dependencies.chooseSavePath(`agent-artifact${extension}`)
+    if (!destination) return
+    let signedUrl: string
     try {
-      await dependencies.openExternal(approved.href)
+      signedUrl = await dependencies.resolveCursorUrl(request.agentId, path)
     } catch {
-      throw new Error('Could not open the artifact download.')
+      throw new Error('Could not locate the artifact download.')
     }
+    const approved = checkDownloadUrl(signedUrl, CURSOR_ARTIFACT_DOWNLOAD_ORIGINS)
+    // The bearer URL stays in main: bounded bytes go to the user's chosen file,
+    // never to a browser history or renderer state.
+    let data: Buffer
+    try {
+      data = await dependencies.fetchCursorBytes(approved.href)
+    } catch {
+      throw new Error('Could not download the artifact.')
+    }
+    await dependencies.writeFile(destination, data)
   }
 }
