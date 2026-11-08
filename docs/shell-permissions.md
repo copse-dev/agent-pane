@@ -379,10 +379,13 @@ sandbox state, and whatever containment a caller reports. It asks the same execu
 resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
 project that cannot route over SSH counts as unsandboxed rather than local.
 
-On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
-temporarily widens it, a newly started network-capable command could inherit that access. Copse
-therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.
-Structurally read-only commands do not prompt because they cannot open a network connection.
+On macOS, ASRT's network allowlist is process-wide. Approved loopback-binding background tasks
+and sandboxed ACP sessions and probes run in dedicated ASRT host processes, so their permissions
+cannot widen main's allowlist for already-running contained commands. If a host cannot start,
+that sandboxed operation fails rather than acquiring a scope in main. The overlap gate remains
+for any other main-process scope: while one is active, Copse pauses auto-run and names the holder
+in an approval prompt before starting a new network-capable command. Structurally read-only
+commands do not prompt because they cannot open a network connection.
 
 ### Linked worktree recovery
 
