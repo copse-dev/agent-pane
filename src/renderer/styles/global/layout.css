@@ -98,7 +98,6 @@
   padding: var(--spacing-md) var(--projects-action-inset) 0 var(--spacing-md);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   flex-shrink: 0;
@@ -372,8 +371,6 @@
   padding: 6px 8px 2px;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 .context-menu-separator {
@@ -1569,7 +1566,6 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
 }
@@ -2210,7 +2206,6 @@ summary.pr-check-group-heading::-webkit-details-marker {
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   background: none;
@@ -2292,9 +2287,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
   gap: var(--spacing-xs);
 }
 .git-image-diff-label {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .git-image-diff-img {
@@ -2361,7 +2354,6 @@ summary.pr-check-group-heading::-webkit-details-marker {
   padding: var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);

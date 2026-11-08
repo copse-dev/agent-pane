@@ -20,6 +20,23 @@ describe('Activity home final response', () => {
       ignoreCase: true,
     })
     await expect(reply.$('code')).toHaveText('pnpm test -- sandbox')
+    // Group titles and detail labels are sentence case, so they keep normal
+    // tracking: letter-spacing is for caps (docs/ui-taste.md).
+    const tracking = await browser.execute(() =>
+      [
+        ...document.querySelectorAll(
+          '#activity-home .activity-group-title, #activity-home .activity-detail-label',
+        ),
+      ].map((label) => ({
+        text: label.textContent.trim(),
+        transform: getComputedStyle(label).textTransform,
+        spacing: getComputedStyle(label).letterSpacing,
+      })),
+    )
+    expect(tracking.length).toBeGreaterThan(1)
+    for (const label of tracking) {
+      expect(label).toEqual({ text: label.text, transform: 'none', spacing: 'normal' })
+    }
   })
 
   it("shows a finished thread's final response as Markdown", async () => {
