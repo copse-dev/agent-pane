@@ -822,8 +822,8 @@
       "bytes": 32302
     },
     "automation-questions-saved.png": {
-      "sha256": "d4be1736142317910a8e6def6844b5694a819832a2ad762b599b8dac9745a4f8",
-      "bytes": 357852
+      "sha256": "75bae3393a572e387266c6f93a46da1cf3f0746b3cd6eff5a0fce83732afa7e8",
+      "bytes": 355889
     },
     "automation-setup-link-form.png": {
       "sha256": "7f3052a4b829528070e12ff807d95fc87c3e865a16be7b3780462a2b80d3f23f",
@@ -3890,16 +3890,16 @@
       "bytes": 346709
     },
     "run-budget-checkpoint-paused.png": {
-      "sha256": "87c7401e1c3745629ada220a36dca994ed63cb05f13aa4a08cce59af5f38963a",
-      "bytes": 390893
+      "sha256": "99f0b4fae20f1069a4da9b6521bffa79af6b93289c511f374da4fa9870e93ca6",
+      "bytes": 388941
     },
     "run-budget-deadline-recovery.png": {
       "sha256": "881a8978ea577965710f71016756efb413255ab6b30834b606cc9180e2d90d9d",
       "bytes": 362266
     },
     "run-budget-exhausted-plan-recovery.png": {
-      "sha256": "cba19cbe97b70156f89cab31c40f1cea0d65c4049b965c83bcab956accb95992",
-      "bytes": 401437
+      "sha256": "4b505fd51f2026d4af5426db125ce8054a6caf82159bcef47b13af339528f1d1",
+      "bytes": 398709
     },
     "run-budget-exhausted-plan-summary.png": {
       "sha256": "66c4266f89f420598123abcd8c611242871085622c260c2d3e1d23b376fa01ac",
@@ -4246,8 +4246,8 @@
       "bytes": 73482
     },
     "settings-customise.png": {
-      "sha256": "97da608160bf94d7a72eeb50f69731f986a8cc54b2acb0d589035eeeec263478",
-      "bytes": 256226
+      "sha256": "4c53fa636d6d5cbe9ed657e7a0d4a1187924c85ae8d6a5f470df281fe8059fc8",
+      "bytes": 259943
     },
     "settings-dark-factory-plugin.png": {
       "sha256": "baf85bf07080c3b3013b33345dc7a49b18d5e6d3a2fef0de2bae943b0e308470",
