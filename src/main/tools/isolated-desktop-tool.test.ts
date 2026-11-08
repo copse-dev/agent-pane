@@ -6,7 +6,7 @@ import {
   APPLE_DESKTOP_KEY_PATTERN,
   appleDesktopRequestSchema,
 } from '../../../scripts/lib/apple-desktop-wire.mts'
-import { isAgentInputSchema } from '../services/acp/acp-native-bridge.ts'
+import { isAgentInputSchema } from '../services/tool-input-schema.ts'
 import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { createIsolatedDesktopTool, isolatedDesktopTool } from './isolated-desktop-tool.ts'

@@ -1,10 +1,11 @@
 {
-  "source": "automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05",
+  "source": "automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
     "tests/e2e/acp-auth-error.e2e.ts": 38.8,
     "tests/e2e/acp-auto-install-approval.e2e.ts": 7.1,
+    "tests/e2e/acp-bridge-tools-dropped.e2e.ts": 9,
     "tests/e2e/acp-bridge-unavailable.e2e.ts": 11,
     "tests/e2e/acp-catalog-entry.e2e.ts": 15,
     "tests/e2e/acp-detect-mode-no-silent-pin.e2e.ts": 10.3,

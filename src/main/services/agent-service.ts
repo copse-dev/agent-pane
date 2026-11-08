@@ -1388,23 +1388,26 @@ async function runAgentWithInlineCanvas(
     try {
       // Copse-managed ACP turns use the canonical turnStart assembly (decision
       // 20). Agent-managed turns leave the agent's own prompt behavior intact.
-      const operatorInstructions =
+      // The ACP run calls this once it knows which Copse tools the agent has.
+      const turnGuidance =
         options?.executionMode === 'agent'
-          ? ''
-          : await perfSpan('ttft:acp-turn-assembly', () =>
-              assembleAcpTurnStart({
-                userText: promptTextForSubmit(userPrompt),
-                invokedSkills: options?.invokedSkills ?? [],
-                priorTodos: options?.priorTodos ?? [],
-                firstTurn: priorMessages.length === 0,
-                model: executorModel,
-                registry,
-                signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
-                resolvePluginSetting,
-                recordHookRun: recordFunctionHookRun,
-              }),
-            )
+          ? undefined
+          : (bridgeToolNames: readonly string[]): Promise<string | undefined> =>
+              perfSpan('ttft:acp-turn-assembly', () =>
+                assembleAcpTurnStart({
+                  userText: promptTextForSubmit(userPrompt),
+                  invokedSkills: options?.invokedSkills ?? [],
+                  priorTodos: options?.priorTodos ?? [],
+                  firstTurn: priorMessages.length === 0,
+                  model: executorModel,
+                  registry,
+                  bridgeToolNames,
+                  signal: controller.signal,
+                  resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
+                  resolvePluginSetting,
+                  recordHookRun: recordFunctionHookRun,
+                }),
+              )
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -1415,7 +1418,7 @@ async function runAgentWithInlineCanvas(
         bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
-        ...(operatorInstructions ? { operatorInstructions } : {}),
+        ...(turnGuidance ? { turnGuidance } : {}),
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpRunModel ? { model: acpRunModel } : {}),

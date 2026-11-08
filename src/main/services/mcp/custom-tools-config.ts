@@ -128,6 +128,7 @@ export function normalizeCustomTool(
     description: `[custom] ${description}`.trim(),
     parameters: z.unknown(),
     rawParameters,
+    untrustedSchema: true,
     ...(raw.requiresApproval === true ? { requiresApproval: true } : {}),
     async execute(args, signal) {
       const out = await userExecute(args ?? {}, signal)
