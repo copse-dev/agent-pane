@@ -1721,6 +1721,38 @@ describe('startAcpNativeBridge', () => {
     assert.equal(unauthorized.status, 401)
   })
 
+  // #4144: an offered bridge is mounted only once the agent lists its tools.
+  it('records when its own agent lists the tools, and only then', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    assert.equal(bridge.toolsListed(), false)
+    assert.equal(await bridge.whenToolsListed(20), false, 'an unlisted bridge times out')
+    const waiting = bridge.whenToolsListed(10_000)
+    assert.equal((await rpc(bridge, LIST_TOOLS, 'wrong-token')).status, 401)
+    assert.equal(bridge.toolsListed(), false, 'a request without the token is not the agent')
+    for (const init of initialized()) await rpc(bridge, init)
+    assert.equal(bridge.toolsListed(), false, 'initialize alone is not a mount')
+    await rpc(bridge, LIST_TOOLS)
+    assert.equal(bridge.toolsListed(), true)
+    assert.equal(await waiting, true, 'a pending wait wakes on the listing')
+    assert.equal(await bridge.whenToolsListed(0), true)
+  })
+
+  it('stops waiting for a listing when the wait is aborted', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    const stop = new AbortController()
+    const waiting = bridge.whenToolsListed(10_000, stop.signal)
+    stop.abort()
+    assert.equal(await waiting, false)
+  })
+
   it('does not start when no bridgeable tool is registered', async () => {
     const empty = new ToolRegistry()
     bridge = await startAcpNativeBridge(empty, new AbortController().signal, {
