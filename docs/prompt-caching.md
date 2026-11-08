@@ -108,8 +108,10 @@ servers may reject unknown fields. Advanced `extraBody` overrides still win.
 Chat Completions reads `prompt_tokens_details.cached_tokens` into
 `cacheReadTokens`, and OpenRouter's `cache_write_tokens` into
 `cacheCreationTokens`. Both are subsets of `prompt_tokens`, not additional input.
-The Responses adapter reads `input_tokens_details.cached_tokens` into
-`cacheReadTokens`. Cost estimates use the route's cache rates when available;
+The Responses adapter reads `input_tokens_details.cached_tokens` and
+`cache_write_tokens` into `cacheReadTokens` and `cacheCreationTokens`. Both are
+subsets of `input_tokens`; explicit zero is retained and missing or malformed
+cache fields remain absent. Cost estimates use the route's cache rates when available;
 missing rates retain the existing input-rate fallback.
 
 Cloud agents report cache tokens beside, not inside, their input count, so the
@@ -132,19 +134,41 @@ and its [SDK tool-caching contract](https://github.com/OpenRouterTeam/python-sdk
 
 ## Verifying
 
-`cache_read_input_tokens` at zero across repeated requests with a supposedly
-identical prefix means something upstream is varying. Diff the rendered system
-prompt between two turns first — that is where the volatile inputs live
-(auto-attached rules, invoked skills, terminal state).
+Zero cache reads can mean prefix drift, an undersized prefix, an expired entry,
+or a different upstream host. Compare rendered system/tool hashes and the
+request interval before attributing a miss to changing instructions.
 
 For development diagnostics, launch with `COPSE_DEBUG_PROMPT_CACHE=1 pnpm run dev`.
-Completed Anthropic and Chat Completions streams write one `[prompt-cache]` JSON
-record to stderr containing:
+Anthropic, Chat Completions and Responses adapters write a
+`[prompt-cache-dispatch]` JSON record immediately before each SDK request, then
+one `[prompt-cache]` outcome with the same `requestId`. These records contain:
 
 - request ID, transport, model and a hashed comparison scope;
 - SHA-256 hashes of the rendered leading system message and tool definitions;
 - `systemChanged` and `toolsChanged` relative to the previous dispatched request;
 - total input/output tokens and provider-reported cache read/write tokens.
+- dispatch time, elapsed duration, and `completed`, `failed`, `cancelled`,
+  `interrupted` (the consumer stopped reading), or `retry` (an in-stream fallback);
+- a native parent request's `catalog` assembly footprint: hash, advertised/user
+  skill counts, total UTF-8 bytes, user-entry UTF-8 bytes, and approximate tokens.
+
+Count dispatch records, not both lifecycle records. `attemptKind: "sdk-dispatch"`
+names the boundary: adapter fallbacks and stream retries get separate IDs, but
+retries internal to an SDK are not separate HTTP-attempt records. A dispatch
+without an outcome is unfinished (for example, a process exit), not a cache miss.
+Failed/cancelled/interrupted requests may retain partial usage; never treat it as
+a complete bill. No error text is logged. Request hashes are captured after
+adapter transformations, including Responses fallback and request overrides.
+
+Catalog construction is silent, including composer previews/context estimates.
+The native parent loop and its continuations carry their build's footprint;
+auxiliary requests and externally hosted ACP agents do not inherit it.
+`catalog: null` means unmeasured, while a measured empty catalog has zero counts.
+The footprint describes the assembled catalog before redaction, provider
+overrides or server compaction, not exact provider-billed tokens. User-entry bytes
+exclude shared guidance and separators. The token estimate is UTF-16 string
+length divided by four, rounded up. Full invoked skill bodies and skill activation
+frequency are outside this slice. Skill discovery and all prompt text stay unchanged.
 
 Missing usage fields are `null`, distinct from an observed zero. The first
 request has `null` change flags. Comparisons survive provider recreation when
@@ -152,9 +176,8 @@ the thread key, endpoint, model and transport match. Only hashes for the 128
 most recently used scopes are retained; an evicted scope starts fresh. Without
 a thread key, comparison is limited to one provider instance. Disabled
 diagnostics perform no prompt hashing. No prompt, tool schema, endpoint, thread
-ID or API key is written to the diagnostic log. Failed/cancelled streams do not
-emit a completed-stream record. Responses and externally hosted ACP agents are
-not instrumented by this diagnostic.
+ID or API key is written to the diagnostic log. Externally hosted ACP model
+requests are not instrumented by this diagnostic.
 
 The persisted usage ledger (`user-data/usage-events/`) also
 keeps, per call, the cache read/write tokens and the `hostingProvider` that
@@ -169,7 +192,7 @@ and repeat to test invalidation, then send another unchanged-prefix request to
 test reuse. Minimum size, TTL, routing and provider availability still determine
 whether a valid request hits; a request-shape unit test alone cannot prove savings.
 
-`pnpm test -- prompt-caching anthropic-provider openai-provider create-provider`
+`pnpm test -- prompt-cache-measurement prompt-caching skill-prompt responses-provider anthropic-provider openai-provider create-provider`
 covers the request controls, real SDK serialization/SSE parsing, cache accounting,
 cost buckets, cloud/local routing, nonmutation, diagnostic isolation and bounded
 history. These deterministic tests use synthetic responses and make no live calls.

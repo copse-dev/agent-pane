@@ -223,25 +223,32 @@ function renderGroup(label, key, rows) {
   return section
 }
 
+/** Who wrote a message, in words a reader uses: "You" and "Agent", not "USER". */
+function roleLabel(role) {
+  if (role === 'user') return 'You'
+  if (role === 'assistant') return 'Agent'
+  return role ? role.charAt(0).toUpperCase() + role.slice(1) : ''
+}
+
 function renderGroups(rows) {
   groups.replaceChildren(
     renderGroup(
-      'NEEDS YOU',
+      'Needs you',
       'needs-you',
       rows.filter((row) => row.group === 'needs-you'),
     ),
     renderGroup(
-      'WORKING',
+      'Working',
       'working',
       rows.filter((row) => row.group === 'working'),
     ),
     renderGroup(
-      'HAS CHANGES',
+      'Has changes',
       'has-changes',
       rows.filter((row) => row.group === 'has-changes'),
     ),
     renderGroup(
-      'RECENT',
+      'Recent',
       'recent',
       rows.filter((row) => row.group === 'recent'),
     ),
@@ -564,7 +571,7 @@ function renderMessages(list) {
       role = element('div', 'message-role')
       card.prepend(role)
     }
-    role.textContent = message.role
+    role.textContent = roleLabel(message.role)
     let summary = card.querySelector('.message-summary')
     if (message.summary) {
       if (!summary) {
