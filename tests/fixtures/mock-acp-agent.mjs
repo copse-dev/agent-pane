@@ -97,6 +97,16 @@ agent({ name: 'mock-acp-agent' })
       return { stopReason: 'end_turn' }
     }
 
+    const clientRead = /client-read:(\/[^\s]+)/.exec(text)
+    if (clientRead) {
+      const response = await ctx.client.request(methods.client.fs.readTextFile, {
+        sessionId,
+        path: clientRead[1],
+      })
+      await say(`client-read-result:\n${response.content}`)
+      return { stopReason: 'end_turn' }
+    }
+
     // Checked before the substring branches for the same reason as
     // `report-env:`. The command never runs: the call stays in progress until
     // the client's Stop cancels the turn, so the reply below lands in a later

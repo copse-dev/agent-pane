@@ -50,6 +50,8 @@ import { RUN_SHELL_MAX_TIMEOUT_MS } from '../../tools/shell-tool.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { runWithShellRunObserver } from '../exec/shell-output-context.ts'
 import type { AcpTerminalCommandRunner } from './acp-terminals.ts'
+import { readAcpTextFile } from './acp-file-access.ts'
+import type { AcpClientHandlers } from './acp-client.ts'
 
 /** The registry tool every ACP client terminal command re-enters. */
 const TERMINAL_TOOL = 'run_shell'
@@ -420,6 +422,8 @@ export interface AcpNativeBridge {
    * Refused, like a bridged call, when no turn is bound.
    */
   runShellCommand: AcpTerminalCommandRunner
+  /** Client file reads share the live turn binding and native read-file gate. */
+  readTextFile: NonNullable<AcpClientHandlers['readTextFile']>
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -930,6 +934,7 @@ export async function startAcpNativeBridge(
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let skillTurn: SkillActivationTurn | null = null
   let turnSignal: AbortSignal | null = null
+  let fileReadLifetime = new AbortController()
   let executionContext: ThreadExecutionContext | null = null
   let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
   let inlineCanvasScope = captureInlineCanvasScope()
@@ -1024,6 +1029,8 @@ export async function startAcpNativeBridge(
       skillTurn = turn
     },
     setExecutionContext: (context): void => {
+      fileReadLifetime.abort()
+      fileReadLifetime = new AbortController()
       if (context === null) skillTurn = null
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
@@ -1038,6 +1045,33 @@ export async function startAcpNativeBridge(
     },
     setWorkspaceWriteObserver: (observer): void => {
       workspaceWriteObserver = observer
+    },
+    readTextFile: async (request, requestSignal): ReturnType<typeof readAcpTextFile> => {
+      if (closed) throw new Error('The coding agent session has ended')
+      const boundContext =
+        executionContext ??
+        (await awaitPendingExecutionContext(pendingExecutionContext, requestSignal)) ??
+        executionContext
+      if (!boundContext) throw new Error('File was not read: no approved agent turn is bound.')
+      if (boundContext !== executionContext)
+        throw new Error('File was not read: the agent turn changed.')
+      const executeSignal = mergeBridgeExecuteSignal(
+        signal,
+        turnSignal,
+        AbortSignal.any([requestSignal, fileReadLifetime.signal]),
+      )
+      return runInTurnBinding(
+        {
+          threadId: opts.threadId,
+          executionContext: boundContext,
+          inlineCanvasScope,
+          turnTreeId,
+          skillTurn,
+          bridgeExecutionId: randomUUID(),
+          networkScopeAlreadyApplies,
+        },
+        () => readAcpTextFile(request, boundContext.root, executeSignal),
+      )
     },
     runShellCommand: async (compose, observer, terminalSignal): Promise<string> => {
       if (closed) throw new Error('The coding agent session has ended')
@@ -1095,6 +1129,7 @@ export async function startAcpNativeBridge(
     close: (): Promise<void> => {
       if (closed) return Promise.resolve()
       closed = true
+      fileReadLifetime.abort()
       releaseMediatedMcpTools(offeredToolNames)
       return new Promise<void>((resolve) => {
         httpServer.close(() => {

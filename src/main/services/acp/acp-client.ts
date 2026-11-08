@@ -142,7 +142,7 @@ export interface AcpClientHandlers {
     context?: AcpPermissionRequestContext,
   ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
-  readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
+  readTextFile?: (req: ReadTextFileRequest, signal: AbortSignal) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
   writeTextFile?: (req: WriteTextFileRequest) => Promise<WriteTextFileResponse>
 }
@@ -1388,7 +1388,9 @@ export async function openAcpSession(
     })
     .onRequest(methods.client.fs.readTextFile, (ctx): Promise<ReadTextFileResponse> => {
       const readTextFile = handlers.current?.readTextFile
-      return readTextFile ? readTextFile(ctx.params) : UNSUPPORTED('fs/read_text_file')()
+      return readTextFile
+        ? readTextFile(ctx.params, ctx.signal)
+        : UNSUPPORTED('fs/read_text_file')()
     })
     .onRequest(methods.client.fs.writeTextFile, (ctx): Promise<WriteTextFileResponse> => {
       const writeTextFile = handlers.current?.writeTextFile

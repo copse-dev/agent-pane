@@ -1,12 +1,9 @@
 import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
-import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
   ContentBlock,
-  ReadTextFileRequest,
-  ReadTextFileResponse,
   RequestPermissionRequest,
   RequestPermissionResponse,
   PermissionOption,
@@ -134,6 +131,9 @@ import {
 } from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
+import { readAcpTextFile } from './acp-file-access.ts'
+import { runWithWorkspaceRoot } from '../workspace.ts'
+export { sliceLines } from './acp-file-access.ts'
 import {
   ACP_READONLY_CHECKOUT_PROMPT_NOTE,
   AcpReadonlyCheckoutUnavailableError,
@@ -810,6 +810,9 @@ async function runAcpAgentTurn(
   // bridge serves, or none when its agent did not mount one (remote, no HTTP
   // MCP, bridge not started).
   let bridgeToolNames: readonly string[] = []
+  let bridgeFileReader: AcpClientHandlers['readTextFile']
+  let fileReadsActive = false
+  let fileReadLifetime = new AbortController()
   const handlers: AcpClientHandlers = {
     onChunk,
     requestPermission: (req, rpcSignal, context) =>
@@ -832,7 +835,27 @@ async function runAcpAgentTurn(
         mergeAcpPermissionAbortSignals(options.signal, rpcSignal),
         context,
       ),
-    readTextFile: (req) => readTextFile(req, cwd),
+    readTextFile: (req, rpcSignal) => {
+      if (bridgeFileReader) return bridgeFileReader(req, rpcSignal)
+      // Remote/no-bridge sessions still bind their owning thread, never the
+      // workspace the user happens to have selected when the RPC arrives.
+      if (!fileReadsActive)
+        return Promise.reject(new Error('File was not read: the agent turn ended.'))
+      const read = (): ReturnType<typeof readAcpTextFile> =>
+        readAcpTextFile(
+          req,
+          cwd,
+          mergeAcpPermissionAbortSignals(
+            options.signal,
+            AbortSignal.any([rpcSignal, fileReadLifetime.signal]),
+          ),
+        )
+      return runWithActiveRunIdentity(options.threadId, () =>
+        executionContext
+          ? runWithThreadExecutionContext(executionContext, read)
+          : runWithWorkspaceRoot(cwd, read),
+      )
+    },
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
   }
   // New turn: reset the restore point so this turn's first file-write approval
@@ -928,6 +951,9 @@ async function runAcpAgentTurn(
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
     entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
+    bridgeFileReader = entry.bridge?.readTextFile
+    fileReadsActive = true
+    fileReadLifetime = new AbortController()
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
     // behaviour (images dropped). Images-only prompts fail clearly rather than
@@ -981,6 +1007,8 @@ async function runAcpAgentTurn(
       })
       throw err
     } finally {
+      fileReadsActive = false
+      fileReadLifetime.abort()
       entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
@@ -1548,28 +1576,6 @@ function pickPermissionOption(
     if (match) return match
   }
   return undefined
-}
-
-/** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
-async function readTextFile(req: ReadTextFileRequest, root: string): Promise<ReadTextFileResponse> {
-  const absPath = await resolvePathWithinRoot(req.path, root)
-  const content = await fsp.readFile(absPath, 'utf-8')
-  return { content: sliceLines(content, req.line, req.limit) }
-}
-
-/**
- * ACP reads may request a 1-based start line and/or a max line count. Return the
- * whole file when neither is set; otherwise slice without dropping the file's
- * trailing newline semantics.
- */
-export function sliceLines(content: string, line?: number | null, limit?: number | null): string {
-  if ((line === undefined || line === null) && (limit === undefined || limit === null)) {
-    return content
-  }
-  const lines = content.split('\n')
-  const start = line && line > 0 ? line - 1 : 0
-  const end = limit && limit > 0 ? start + limit : lines.length
-  return lines.slice(start, end).join('\n')
 }
 
 /**
