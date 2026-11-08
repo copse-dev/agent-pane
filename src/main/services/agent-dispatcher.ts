@@ -362,6 +362,12 @@ export class AgentDispatcher {
     return this.active.has(dispatchKey(projectId, threadId))
   }
 
+  /** Retained dedupe records do not prove whether a completion wake has settled. */
+  hasMachineOperationRecord(projectId: string, threadId: string): boolean {
+    const prefix = `${dispatchKey(projectId, threadId)}\0`
+    return [...this.machineOperations.keys()].some((key) => key.startsWith(prefix))
+  }
+
   /**
    * Run a history read-modify-write (a review or container-run exchange written
    * outside a turn) while holding the thread's dispatch slot. Waits for any turn

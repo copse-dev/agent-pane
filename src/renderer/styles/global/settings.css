@@ -955,8 +955,6 @@ dialog.settings-overlay::backdrop {
 .provider-capability-title {
   margin: 0;
   font-size: var(--font-size-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .provider-panel-embedded {
@@ -1415,9 +1413,7 @@ dialog.settings-overlay::backdrop {
   margin-top: 6px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.04em;
+  font-size: var(--font-size-xs);
 }
 .frontier-tooltip .tt-muted {
   color: var(--text-muted);
@@ -2007,8 +2003,6 @@ dialog.settings-overlay::backdrop {
 .hook-test-stream-label {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
 }
@@ -2571,8 +2565,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .plugin-settings-heading {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
 }
 .plugin-setting-field {
@@ -2832,6 +2824,30 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
+}
+.automation-preparation-setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+.automation-preparation-review-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.automation-preparation-proposal-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.automation-preparation-review {
+  overflow-wrap: anywhere;
+}
+.automation-preparation-review-commands {
+  display: block;
+  max-height: 16em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
 }
 .automation-label {
   display: flex;

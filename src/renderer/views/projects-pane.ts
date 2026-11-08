@@ -62,6 +62,7 @@ import {
   projectDisplayName,
   removeProject,
   recoverOrphanProject,
+  refreshProjectThreadWorktrees,
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
@@ -326,6 +327,15 @@ async function cleanUpScheduleRuns(
     const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
     const freed = result.released.length
     const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    try {
+      await refreshProjectThreadWorktrees(store, api, target.project.id)
+    } catch (error) {
+      showErrorToast(
+        'Cleanup finished, but the run list could not refresh',
+        `${freedText} freed. Reopen the project to refresh its runs.\n\n${ipcErrorMessage(error, 'The run list could not be loaded')}`,
+      )
+      if (result.retained.length === 0) return
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0

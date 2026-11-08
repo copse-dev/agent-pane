@@ -471,6 +471,8 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
@@ -495,6 +497,8 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          rememberDefault?: boolean
+          rememberSubject?: string
           approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
@@ -1654,6 +1658,8 @@ const api: ApiClient = {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
     permissionOptions: (projectId: string) =>
       ipcRenderer.invoke('automations:permission-options', projectId),
+    reviewPreparation: (projectId, input) =>
+      ipcRenderer.invoke('automations:review-preparation', projectId, input),
     upsert: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert', projectId, input),
     remove: (projectId: string, scheduleId: string) =>

@@ -93,12 +93,33 @@ refreshes the authoritative transcript and status in any renderer that opened th
 mid-turn; the renderer never re-dispatches that completion. This does not provide
 a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
+On admission or user-requested cleanup, main reconciles an earlier run's persisted
+`running` status even when its project stays closed after a restart. Only a run
+proved absent by the live dispatcher, native/container owners and ACP session state
+becomes idle with `interruptedTurnAt`; unchanged metadata and liveness are checked
+again inside the store's atomic write queue. Missing or uncertain runtime proof
+keeps the run busy. Its transcript, checkout, turn epoch and spent continuation
+budget remain intact. This is status repair, never replay of the interrupted turn:
+normal checkout retention, no-overlap, event identity and daily limits still apply
+before a future trigger can create new work.
+Retained background-completion and machine-operation records are conservatively
+unknown, even when their promise may already have settled. They cannot authorize
+repair in a warm process; a fresh process has no such in-memory records. This
+change does not introduce another runtime activity registry or alter completion
+wakes, their deduplication, or continuation accounting.
+An owner admitted just after the repair can still be publishing its own status.
+Admission therefore rechecks liveness after the metadata read and on later
+attempts involving an already-interrupted idle run. A live or uncertain owner
+produces a busy admission view; it never rolls persisted metadata back over that
+owner's write. Ordinary idle history and unsent drafts keep their existing rules.
+
 Prototype boundaries:
 
 - local machine and local wall-clock time only;
 - Copse must be running;
 - standard five-field cron, evaluated once per minute;
-- no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or process recovery;
+- no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or automatic replay
+  of interrupted turns;
 - no webhook ingress; an app-open GitHub Actions branch-failure poller is the first event adapter;
 - inactive-project cron execution requires the desktop main process; no detached runtime.
 
@@ -137,6 +158,40 @@ of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
 - it has no PR (those follow the parking lifecycle) and the requested base branch is unchanged;
 - the project checkout is clean, so a fresh allocation would not have seeded anything this one
   lacks.
+
+A returned ACP prompt is not proof that the checkout is unused. A self-started turn,
+reported unfinished tool, cancellation acknowledgement or in-progress session operation keeps
+automatic hand-over, completed-run release and PR parking blocked. Idle session disposal and
+the checkout mutation share the pool's existing per-thread operation: activity is rechecked
+immediately before closing the connection, and a new acquire waits until the checkout mutation
+finishes. An uncertain shutdown keeps the existing pool entry through idle reaping and failed
+replacement acquisition, and cannot authorize a later automatic mutation. It is not a cached
+verdict: each later reap, acquire or automatic mutation asks the transport to stop again (an SSH
+agent keeps its remote process group until a kill reaches it) and fails with that attempt's
+reason. Once one succeeds the entry leaves the pool and the next acquire starts a fresh agent
+session; a session whose process outlived a failed stop is never resumed. A replacement can be
+requested by a machine wake, so it is not an implicit human override. Explicit Stop and archive
+behavior is unchanged. Reaping still reports a failed shutdown after processing unrelated idle
+sessions, so retaining one uncertain writer cannot prevent safe resource cleanup elsewhere.
+
+These paths also hold the old owner's existing thread-resource fence, re-read settled metadata
+and check native resources and writers of the same root before touching Git. The thread's own
+terminals and background processes count wherever they run; any other writer counts only when
+it is scoped to the checkout or a path inside it. An ancestor-scoped writer, such as a local
+terminal in the home directory that holds `~/.copse/worktrees`, and an unscoped one, such as an
+MCP call, contain every checkout and do not block. Completed native background records and their
+retained logs do not by themselves block a later clean run; their existing running-process policy
+remains unchanged. This adds no permission, continuation grant, cap increase or automatic replay.
+
+PR parking records a PR the turn created (`gh pr create`) in the thread's metadata as soon as
+the turn reports in. Only the Git change waits, while the thread is running or an automation
+run's draft has not started; an ordinary chat's unsent draft is editable text and defers
+nothing.
+
+The same-root writer check is advisory: this is not a global checkout-writer mutex through
+awaited Git operations. A foreign-thread or unscoped writer that starts after the last check is
+outside this ACP-specific guarantee. The old owner's resource fence and ACP pool operation,
+unlike that advisory check, remain held through the checkout mutation.
 
 The result is meant to be indistinguishable from a fresh allocation: every ignored file is
 deleted (confined to the checkout's real path), the branch and tree move to the current base
