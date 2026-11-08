@@ -142,8 +142,9 @@ a minimal environment, a private scratch directory, and a parent IPC channel.
 It sends a single schema-decoded job after startup. No shell command, executable,
 filesystem roots, headers, or sandbox configuration can come from the renderer.
 
-The host initializes its own ASRT manager and supplies a per-job external proxy
-through ASRT's supported proxy configuration. It then starts the fixed bundled
+The host initializes its own ASRT manager, verifies sandboxing is enabled, and supplies a per-job
+external proxy through ASRT's supported proxy configuration. A resolved initialization alone is
+not permission to start a downloader. It then starts the fixed bundled
 downloader inside ASRT. The downloader has:
 
 - Runtime/bundle/system-library reads required to start, but no workspace, profile,
