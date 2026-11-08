@@ -2271,6 +2271,38 @@ describe('turn-tree shell replay leases', () => {
     )
   }
 
+  it('refuses aborted outside retries without spending the task grant', async () => {
+    shellReplayLeaseStore.clear()
+    const controller = new AbortController()
+    controller.abort()
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-aborted', async () => {
+        const options = { executionRoot: root }
+        const command = 'node check.mjs'
+        assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+        assert.equal(
+          await promptExpectedSandboxBlock(command, [], controller.signal, options),
+          false,
+        )
+        assert.equal(await promptUnsandboxedShell(command, [], controller.signal), false)
+        for (let count = 0; count < 10; count++) {
+          assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+        }
+        assert.equal(prompts, 1, 'aborted calls preserve all ten live retries')
+        assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+      })
+      assert.equal(prompts, 2, 'exhaustion asks again')
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
   it('fails closed when a run has no explicit human turn-tree epoch', async () => {
     shellReplayLeaseStore.clear()
     setApprovalHandler(async (request) => {
@@ -2500,7 +2532,8 @@ describe('turn-tree shell replay leases', () => {
       assert.deepEqual(requests, [
         {
           lease: true,
-          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          label:
+            'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
           subject: demo,
         },
       ])
@@ -2563,7 +2596,8 @@ describe('turn-tree shell replay leases', () => {
       assert.deepEqual(requests, [
         {
           lease: true,
-          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          label:
+            'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
           subject: command,
         },
       ])

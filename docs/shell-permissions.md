@@ -901,6 +901,16 @@ processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact 
 
 ## What an approval prompt says
 
+Task retries authorize the exact displayed command in one project, chat, human task,
+execution root and containment mode. The contained option allows ten additional runs
+within 15 minutes; the separately selected outside-sandbox option allows ten within two
+hours. Stop revokes the chat's retries immediately, including saved answers to abandoned
+approval requests. Cancellation also revokes them. A new human task cannot reuse the
+previous task's answer. Restart forgets these memory-only grants; expiry or exhaustion
+requires approval again. Ordinary completion preserves retries for the same task.
+Outside-sandbox scripts still use normal account access, and changing a script's contents
+can change what the same command does. These are not all-command session grants.
+
 Prompt prose explains the effect, execution boundary, and duration of the grant outside the
 detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,
 browser-navigation, and provider-host prompts put only the requested URL there; the surrounding

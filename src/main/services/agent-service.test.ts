@@ -35,6 +35,39 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { AGENT_RUN_HARD_MAX_MS } from '@copse/agent/agent-loop-limits.ts'
 import { execFileSync } from 'node:child_process'
 import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plugin.ts'
+import { shellReplayLeaseStore } from './security/capability-lease.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+
+it('Stop revokes task retries from earlier turns without affecting another chat', () => {
+  const identity = {
+    projectId: 'stop-lease-project',
+    threadId: 'stop-lease-thread',
+    turnTreeId: asTurnTreeId('stop-lease-tree'),
+    executionRoot: '/workspace',
+    containment: 'project-sandbox' as const,
+  }
+  const other = { ...identity, threadId: 'other-lease-thread' }
+  try {
+    shellReplayLeaseStore.issue(identity, 'npm test')
+    shellReplayLeaseStore.issue({ ...identity, containment: 'external' }, 'node check.mjs')
+    shellReplayLeaseStore.issue(other, 'npm test')
+    // Between machine turns there need not be a live AbortController. Stop is
+    // still an explicit revocation of the task's previous replay approvals.
+    agentService.abortAgent(identity.threadId)
+    assert.equal(shellReplayLeaseStore.consume(identity, 'npm test', () => false).matched, false)
+    assert.equal(
+      shellReplayLeaseStore.consume(
+        { ...identity, containment: 'external' },
+        'node check.mjs',
+        () => false,
+      ).matched,
+      false,
+    )
+    assert.equal(shellReplayLeaseStore.consume(other, 'npm test', () => false).matched, true)
+  } finally {
+    shellReplayLeaseStore.clear()
+  }
+})
 
 async function runSilentAcpToolTurn(continuationBudgetUsed: number): Promise<{
   chunks: StreamChunk[]

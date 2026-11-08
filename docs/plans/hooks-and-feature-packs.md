@@ -74,7 +74,9 @@ revisiting this document, not silently diverging in an implementation PR.
    sets send-now — byte-for-byte the user's send-now semantics). Send-now interrupts
    the model turn but transfers an already-running native shell command to the owned
    background-task supervisor, preserving its process, containment, logs and original
-   deadline. Explicit Stop still cancels foreground work. No mid-turn injection
+   deadline. Explicit Stop still cancels foreground work. Run cancellation also
+   revokes task-scoped shell replay grants and pending/saved approval answers;
+   ordinary completion retains same-task retry authority. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
    exception: a parent may start at most four children over its lifetime and keep at

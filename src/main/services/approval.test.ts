@@ -36,7 +36,8 @@ import {
   clearRunDeadline,
   resetRunDeadlinesForTest,
 } from './hooks/run-deadline.ts'
-import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from './thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { storageSet } from './storage/storage.ts'
 import { drainWriteQueue } from './storage/write-queue.ts'
@@ -1009,6 +1010,104 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(discardApprovalsForThread(THREAD), 1)
     assert.equal(parkedApprovalCount(), 0)
     assert.equal(handlerSignal?.aborted, true)
+  })
+
+  it('revokes detached parked prompts and ignores their late answer', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    releaseParkedApprovalsForThread(THREAD)
+    assert.equal(discardApprovalsForThread(THREAD), 1)
+    assert.equal(handlerSignal?.aborted, true)
+    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    assert.equal((await requestUnderThread(req)).approved, false)
+  })
+
+  it('revokes already answered abandoned approvals', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    discardApprovalsForThread(THREAD)
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    assert.equal((await requestUnderThread(req)).approved, false)
+  })
+
+  it('cannot replay a task approval into a new human task', async () => {
+    const taskRequest = { ...req, allowTurnTreeLease: true }
+    const inTask = (epoch: string, signal?: AbortSignal): Promise<ApprovalResponse> =>
+      inTurn(() => {
+        setActiveRunTurnTreeId(asTurnTreeId(epoch))
+        return requestApproval(taskRequest, signal)
+      })
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = inTask('task-before', signal)
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    assert.equal((await inTask('task-after')).approved, false)
+    assert.equal(
+      (await inTask('task-before')).approved,
+      true,
+      'same task can still claim its answer',
+    )
+  })
+
+  it('does not join a parked task prompt from another epoch, project or root', async () => {
+    const taskRequest = { ...req, allowTurnTreeLease: true }
+    const taskRequestAt = (
+      projectId: string,
+      root: string,
+      epoch: string,
+      signal?: AbortSignal,
+    ): Promise<ApprovalResponse> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId: THREAD,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(THREAD, () => {
+            setActiveRunTurnTreeId(asTurnTreeId(epoch))
+            return requestApproval(taskRequest, signal)
+          }),
+      )
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = taskRequestAt(PROJECT, tmpdir(), 'original', signal)
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    const originalAnswer = release
+    let newPrompts = 0
+    setApprovalHandler(async () => {
+      newPrompts++
+      return { approved: false, remember: false }
+    })
+    const changed = await Promise.all([
+      taskRequestAt(PROJECT, tmpdir(), 'new-task'),
+      taskRequestAt('other-project', tmpdir(), 'original'),
+      taskRequestAt(PROJECT, join(tmpdir(), 'other-root'), 'original'),
+    ])
+    assert.equal(newPrompts, 3)
+    assert.ok(changed.every((response) => !response.approved))
+    originalAnswer?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    assert.equal((await taskRequestAt(PROJECT, tmpdir(), 'original')).approved, true)
   })
 
   it('releaseParkedApprovalsForThread detaches the stand-in without closing the prompt', async () => {

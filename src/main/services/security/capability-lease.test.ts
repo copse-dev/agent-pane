@@ -102,6 +102,16 @@ describe('ShellReplayLeaseStore', () => {
     )
   })
 
+  it('forgets grants on restart and refuses denied or absent authority', () => {
+    const store = new ShellReplayLeaseStore()
+    assert.equal(store.consume(identity, 'npm test', () => true).matched, false)
+    store.issue(identity, 'npm test')
+    const restarted = new ShellReplayLeaseStore()
+    assert.equal(restarted.consume(identity, 'npm test', () => true).matched, false)
+    store.clear()
+    assert.equal(store.consume(identity, 'npm test', () => true).matched, false)
+  })
+
   it('allows independently authorized output filters after the exact leased command', () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
     store.issue(identity, 'npm test -- permission-gate')

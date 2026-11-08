@@ -15,7 +15,7 @@ import {
   IpcValidationError,
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
-import { getActiveRunThread } from './thread-models.ts'
+import { getActiveRunThread, getActiveRunTurnTreeId } from './thread-models.ts'
 import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
@@ -296,6 +296,8 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  /** Revocation ownership survives detaching turn-end audit attribution. */
+  readonly ownerThreadId: string | null
   bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
@@ -339,6 +341,7 @@ const inflight = new Map<string, InflightApproval>()
 interface StoredVerdict {
   response: ApprovalResponse
   settledAt: number
+  ownerThreadId: string | null
 }
 
 const abandonedVerdicts = new Map<string, StoredVerdict>()
@@ -358,12 +361,16 @@ function abandonedVerdictKey(threadId: string, promptKey: string): string {
   return `${threadId}\u0000${getAgentExecutionRoot() ?? ''}\u0000${promptKey}`
 }
 
-function storeAbandonedVerdict(ledgerKey: string, response: ApprovalResponse): void {
+function storeAbandonedVerdict(
+  ledgerKey: string,
+  response: ApprovalResponse,
+  ownerThreadId: string | null,
+): void {
   const now = approvalClock()
   for (const [key, entry] of abandonedVerdicts) {
     if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
   }
-  abandonedVerdicts.set(ledgerKey, { response, settledAt: now })
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, ownerThreadId })
 }
 
 function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
@@ -558,15 +565,17 @@ export function cancelApprovalsForThread(threadId: string): number {
 }
 
 /**
- * Tear down every prompt still owned by a thread, including parked ACP
- * stand-ins. Ordinary turn cleanup deliberately preserves those stand-ins for
- * a retry; thread deletion has no future turn to receive one.
+ * Revoke pending and saved approvals for Stop or thread deletion. Ordinary
+ * completion preserves abandoned-call answers for retries in the same task.
  */
 export function discardApprovalsForThread(threadId: string): number {
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.ownerThreadId === threadId) abandonedVerdicts.delete(key)
+  }
   let discarded = 0
   for (const entry of [...inflight.values()]) {
     for (const waiter of [...entry.waiters]) {
-      if (waiter.threadId !== threadId) continue
+      if (waiter.ownerThreadId !== threadId) continue
       waiter.onAbort()
       discarded++
     }
@@ -819,6 +828,13 @@ function requestApprovalUnpaused(
   const key = JSON.stringify([
     dedupePrefix,
     threadId,
+    ...(req.allowTurnTreeLease
+      ? [
+          getThreadExecutionContext()?.projectId ?? null,
+          getAgentExecutionRoot(),
+          getActiveRunTurnTreeId(),
+        ]
+      : []),
     req.standalone ? randomUUID() : approvalDedupeKey(req),
   ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
@@ -871,6 +887,7 @@ function requestApprovalUnpaused(
     }
 
     const waiter: InflightWaiter = {
+      ownerThreadId: threadId,
       resolve,
       signal,
       threadId,
@@ -956,13 +973,14 @@ function parkedWaiter(
   bridgeExecutionId?: string,
 ): InflightWaiter {
   const waiter: InflightWaiter = {
+    ownerThreadId: threadId,
     threadId,
     signal: undefined,
     ledgerKey,
     ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
-      storeAbandonedVerdict(ledgerKey, response)
+      storeAbandonedVerdict(ledgerKey, response, threadId)
     },
     onAbort: () => {
       if (!entry.waiters.has(waiter)) return
