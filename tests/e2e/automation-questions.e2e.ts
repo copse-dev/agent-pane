@@ -94,7 +94,9 @@ describe('unattended automation questions', function () {
           updatedAt: 1,
         },
       ],
-      pluginDisabled: [],
+      // Every other plugin on, but not PII redaction: its contextual classifier
+      // downloads an ONNX model from huggingface.co (the e2e network guard refuses it).
+      pluginDisabled: ['copse.pii-redaction'],
       pluginMigration: { automationsEnablement: true },
       plugin: {
         copse: {

@@ -9,7 +9,10 @@ import { createServer, type Server } from 'node:http'
 import { browser, $, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { makeE2eScratchDir } from './helpers/scratch-dir.ts'
-import { expectNetworkEgress } from './helpers/network-guard.ts'
+import { expectNetworkEgress, networkGuardMode } from './helpers/network-guard.ts'
+
+/** `log` forwards what `enforce` refuses; each test asserts the half its mode owns. */
+const enforcing = networkGuardMode(process.env['COPSE_E2E_NETWORK_GUARD']) === 'enforce'
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -73,11 +76,12 @@ describe('e2e outbound network guard', () => {
       )
       if (!guest) throw new Error('missing browser guest')
       const value: unknown = await guest.executeJavaScript(
-        "fetch('https://example.com/', { cache: 'no-store' }).then((r) => 'status ' + r.status, (e) => 'refused ' + e.name)",
+        // no-cors: an opaque response resolves when forwarded, so only a refusal rejects.
+        "fetch('https://example.com/', { cache: 'no-store', mode: 'no-cors' }).then((r) => 'opaque ' + r.type, (e) => 'refused ' + e.name)",
       )
       return String(value)
     })
-    expect(outcome).toBe('refused TypeError')
+    expect(outcome).toBe(enforcing ? 'refused TypeError' : 'opaque opaque')
   })
 
   it('refuses a browser-pane navigation to a public host', async () => {
@@ -91,7 +95,8 @@ describe('e2e outbound network guard', () => {
       const value: unknown = await guest?.executeJavaScript('document.body.innerText')
       return String(value)
     })
-    expect(body).toContain('[e2e-network-guard] example.org refused')
+    if (enforcing) expect(body).toContain('[e2e-network-guard] example.org refused')
+    else expect(body).not.toContain('[e2e-network-guard]')
   })
 
   it('still reaches a loopback server from the browser pane', async () => {

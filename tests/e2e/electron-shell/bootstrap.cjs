@@ -30,14 +30,22 @@ if (
   (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce' ||
     process.env.COPSE_E2E_NETWORK_GUARD === 'log')
 ) {
-  require('./network-guard.cjs').install({
+  const networkGuard = require('./network-guard.cjs')
+  networkGuard.install({
     mode: process.env.COPSE_E2E_NETWORK_GUARD,
     ledgerPath: process.env.COPSE_E2E_NETWORK_LEDGER,
     processLabel: 'electron main (Node)',
+    // COPSE_NAMES_API_URL is the loopback fake, so the trusted names it issues
+    // resolve nowhere; the real zone is never queried.
+    unresolvableSuffixes: ['.u.copse.me'],
+    // Settings validates saved (fake) provider keys against each provider.
+    fetchStub: networkGuard.fakeKeyRejection,
+    // VNC discovery browses Bonjour; e2e runs on an empty LAN.
+    silentMulticast: true,
   })
   if (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce') {
-    // Chromium fetches Hunspell dictionaries from redirector.gvt1.com for any
-    // session with spellcheck on (the browser pane's guests). Point that external
+    // Chromium fetches Hunspell dictionaries from redirector.gvt1.com (and its
+    // *.gvt1.com redirect) at startup in every spec. Point that external
     // dependency at a closed loopback port: the download fails as it would offline.
     require('electron').app.on('session-created', (session) => {
       session.setSpellCheckerDictionaryDownloadURL('http://127.0.0.1:9/')

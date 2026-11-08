@@ -71,7 +71,7 @@ function runGuarded(mode: 'log' | 'enforce', script: string): { stdout: string; 
   const dir = scratch()
   try {
     const ledgerPath = join(dir, 'ledger.jsonl')
-    const prelude = `require(${JSON.stringify(NODE_GUARD)}).install({ mode: ${JSON.stringify(mode)}, ledgerPath: ${JSON.stringify(ledgerPath)}, processLabel: 'unit child' });\n`
+    const prelude = `require(${JSON.stringify(NODE_GUARD)}).install({ mode: ${JSON.stringify(mode)}, ledgerPath: ${JSON.stringify(ledgerPath)}, processLabel: 'unit child', unresolvableSuffixes: ['.u.copse.me'], fetchStub: require(${JSON.stringify(NODE_GUARD)}).fakeKeyRejection, silentMulticast: true });\n`
     const result = spawnSync(process.execPath, ['-e', prelude + script], {
       encoding: 'utf8',
       timeout: 30_000,
@@ -195,16 +195,72 @@ const note = (name) => (error) => { outcomes[name] = error ? String(error.messag
     )
     assert.deepEqual(reader.map((entry) => `${entry.kind} ${entry.host}`).sort(), [
       'connect 203.0.113.7',
-      'connect example.com',
       'connect example.org',
       'dns.lookup example.net',
       'dns.resolve4 example.edu',
+      'fetch example.com',
       'udp 8.8.8.8',
     ])
     assert.ok(reader.every((entry) => entry.blocked && entry.process === 'unit child'))
     // The initiator is the caller's frame, not the guard's own.
     assert.ok(
       reader.every((entry) => !(entry.stack ?? []).some((f) => f.includes('network-guard.cjs'))),
+    )
+  })
+
+  it('lets IP-literal lookups through and answers stand-in names as unresolved', () => {
+    const { stdout, ledger } = runGuarded(
+      'enforce',
+      `
+const dns = require('node:dns')
+;(async () => {
+  const literal = await dns.promises.lookup('10.1.0.178')
+  const named = await dns.promises.lookup('lan.abcdefgh2345.u.copse.me').then(() => 'resolved', (e) => e.code + ' ' + e.message)
+  process.stdout.write(JSON.stringify({ literal: literal.address, named }))
+})()
+`,
+    )
+    assert.deepEqual(JSON.parse(stdout), {
+      literal: '10.1.0.178',
+      named:
+        'ENOTFOUND [e2e-network-guard] lan.abcdefgh2345.u.copse.me is an e2e stand-in name with no DNS record',
+    })
+    assert.equal(ledger, '')
+  })
+
+  it('answers fake-key validation with 401 and swallows mDNS without recording either', () => {
+    const { stdout, ledger } = runGuarded(
+      'enforce',
+      `
+const dgram = require('node:dgram')
+;(async () => {
+  const models = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: 'Bearer gsk-e2e' } })
+  const key = await fetch(new Request('https://openrouter.ai/api/v1/key', { headers: { Authorization: 'Bearer sk-or-e2e' } }))
+  const anonymous = await fetch('https://api.groq.com/openai/v1/models').then(() => 'sent', (e) => e.cause.code)
+  const udp = dgram.createSocket('udp4')
+  const mdns = await new Promise((resolve) => udp.send('q', 5353, '224.0.0.251', (e) => resolve(e ? e.code : 'quiet')))
+  udp.close()
+  process.stdout.write(JSON.stringify({ models: models.status, key: key.status, anonymous, mdns }))
+})()
+`,
+    )
+    assert.deepEqual(JSON.parse(stdout), {
+      models: 401,
+      key: 401,
+      anonymous: 'ECONNREFUSED',
+      mdns: 'quiet',
+    })
+    // Only the keyless request is real egress.
+    assert.deepEqual(
+      ledger
+        .trim()
+        .split('\n')
+        .map((line) => {
+          const entry: unknown = JSON.parse(line)
+          assert.ok(entry && typeof entry === 'object')
+          return `${String(Reflect.get(entry, 'kind'))} ${String(Reflect.get(entry, 'host'))}`
+        }),
+      ['fetch api.groq.com'],
     )
   })
 

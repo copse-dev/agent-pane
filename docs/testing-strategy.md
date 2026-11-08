@@ -408,9 +408,17 @@ separate from the product's own [browser network policy](browser-network-policy.
 - `COPSE_E2E_NETWORK_GUARD=log` records and forwards instead of refusing; use it to survey a
   change. `off` disables the guard. Real-model eval (`wdio.eval.conf.ts`) does not use the guard.
 - **Fix an offender at its boundary:** an env mock, a loopback fixture server, or an e2e-shell
-  injection like the spellchecker dictionary URL. Never allowlist it. `expectNetworkEgress(host)` is
-  the only per-test exception: the request is still refused, but the test must make it. Current
-  uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
+  injection. Never allowlist it. The e2e shell provides these stand-ins (`bootstrap.cjs`):
+  - The spellchecker dictionary URL points at a closed loopback port. Chromium otherwise fetches
+    Hunspell dictionaries from `redirector.gvt1.com` at startup in every spec.
+  - Provider key checks (`GET …/models` or OpenRouter's `GET /api/v1/key`, sent with a key) get the
+    401 every real provider returns for a fake key.
+  - `*.u.copse.me` names, which the fake names API issues, resolve to nothing.
+  - mDNS (Bonjour) queries go unanswered, as on an empty LAN.
+  - Lookups of IP literals pass, because `listen()` on a LAN address does one and nothing leaves
+    the host. `expectNetworkEgress(host)` is
+    the only per-test exception: the request is still refused, but the test must make it. Current
+    uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
 - Not covered: product child processes (agent CLIs, MCP servers, git), worker threads and utility
   processes. They run outside Electron main's patched modules.
 - **Unit tests:** survey only, not enforced. `COPSE_UNIT_NETWORK_GUARD=log pnpm test` preloads the

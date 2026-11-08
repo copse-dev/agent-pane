@@ -122,7 +122,9 @@ describe('automation attention grouping', function () {
           updatedAt: timestamp,
         })),
       ],
-      pluginDisabled: [],
+      // Every other plugin on, but not PII redaction: its contextual classifier
+      // downloads an ONNX model from huggingface.co (the e2e network guard refuses it).
+      pluginDisabled: ['copse.pii-redaction'],
       packMigration: { automationsEnablement: true },
       pack: {
         copse: {

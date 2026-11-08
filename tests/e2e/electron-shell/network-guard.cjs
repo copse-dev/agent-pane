@@ -44,6 +44,12 @@ function isLoopbackHost(rawHost) {
   return false
 }
 
+/** mDNS (Bonjour) queries: 224.0.0.251 or ff02::fb on port 5353. */
+function isMulticastDns(host, port) {
+  const address = stripBrackets(String(host).toLowerCase()).split('%')[0]
+  return Number(port) === 5353 && (address === '224.0.0.251' || address === 'ff02::fb')
+}
+
 function trimmedStack() {
   const lines = (new Error().stack ?? '').split('\n').slice(1)
   return lines
@@ -57,6 +63,9 @@ function trimmedStack() {
  *   mode: 'log' | 'enforce',
  *   ledgerPath: string,
  *   processLabel: string,
+ *   unresolvableSuffixes?: string[],
+ *   fetchStub?: (url: URL, method: string, headers: Headers) => Response | undefined,
+ *   silentMulticast?: boolean,
  *   onAttempt?: (record: Record<string, unknown>) => void,
  * }} options
  */
@@ -126,10 +135,68 @@ function install(options) {
     return this
   }
 
+  const fetchMethod = (input, init) =>
+    String(
+      init?.method ?? (input instanceof globalThis.Request ? input.method : 'GET'),
+    ).toUpperCase()
+  const fetchHeaders = (input, init) =>
+    new globalThis.Headers(
+      init?.headers ?? (input instanceof globalThis.Request ? input.headers : undefined),
+    )
+
+  // --- fetch (undici): checked at the call so the record carries the caller's
+  // stack; undici opens its socket later, off that stack.
+  const originalFetch = globalThis.fetch
+  if (typeof originalFetch === 'function') {
+    globalThis.fetch = function guardedFetch(input, init) {
+      let url
+      try {
+        url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      } catch {
+        return originalFetch.call(this, input, init)
+      }
+      if (!/^(https?|wss?):$/.test(url.protocol) || isLoopbackHost(url.hostname)) {
+        return originalFetch.call(this, input, init)
+      }
+      const stub = options.fetchStub?.(url, fetchMethod(input, init), fetchHeaders(input, init))
+      if (stub) return Promise.resolve(stub)
+      const port = url.port || (url.protocol === 'https:' || url.protocol === 'wss:' ? 443 : 80)
+      record(
+        'fetch',
+        url.hostname,
+        port,
+        `${fetchMethod(input, init)} ${url.origin}${url.pathname}`,
+      )
+      if (!enforce) return originalFetch.call(this, input, init)
+      const cause = refusal('fetch', url.hostname, port, 'ECONNREFUSED')
+      return Promise.reject(new TypeError('fetch failed', { cause }))
+    }
+  }
+
   // --- dns: direct lookups and resolver queries also leak names off the host.
+  // A lookup of an IP literal never leaves the process (listen() on a LAN address does one).
+  const passes = (hostname) => isLoopbackHost(hostname) || net.isIP(String(hostname)) !== 0
+  // Names the e2e stand-ins issue (the fake names API's `lan.<label>.u.copse.me`) have no
+  // real record; answer as unresolved instead of asking a public resolver.
+  const unresolvable = (hostname) =>
+    (options.unresolvableSuffixes ?? []).some((suffix) =>
+      String(hostname).toLowerCase().replace(/\.$/, '').endsWith(suffix),
+    )
+  const unresolved = (hostname) => {
+    const error = new Error(`${GUARD_TAG} ${hostname} is an e2e stand-in name with no DNS record`)
+    error.code = 'ENOTFOUND'
+    error.hostname = String(hostname)
+    return error
+  }
   const wrapCallbackLookup = (original, kind) =>
     function guardedLookup(hostname, ...rest) {
-      if (isLoopbackHost(hostname)) return original.call(this, hostname, ...rest)
+      if (passes(hostname)) return original.call(this, hostname, ...rest)
+      if (unresolvable(hostname)) {
+        const callback = rest.findLast((value) => typeof value === 'function')
+        const error = unresolved(hostname)
+        if (callback) process.nextTick(() => callback(error))
+        return undefined
+      }
       record(kind, hostname, null)
       if (!enforce) return original.call(this, hostname, ...rest)
       const callback = rest.findLast((value) => typeof value === 'function')
@@ -139,7 +206,10 @@ function install(options) {
     }
   const wrapPromiseLookup = (original, kind) =>
     function guardedPromiseLookup(hostname, ...rest) {
-      if (isLoopbackHost(hostname)) return original.call(this, hostname, ...rest)
+      if (passes(hostname)) return original.call(this, hostname, ...rest)
+      if (unresolvable(hostname)) {
+        return Promise.reject(unresolved(hostname))
+      }
       record(kind, hostname, null)
       if (!enforce) return original.call(this, hostname, ...rest)
       return Promise.reject(refusal(kind, hostname, null, 'ENOTFOUND'))
@@ -189,6 +259,11 @@ function install(options) {
     }
     const host = address ?? remote?.address
     if (host === undefined || isLoopbackHost(host)) return originalSend.apply(this, args)
+    if (options.silentMulticast && isMulticastDns(host, port)) {
+      // An empty LAN: the query goes nowhere and nobody answers.
+      if (callback) process.nextTick(() => callback(null, 0))
+      return undefined
+    }
     record('udp', host, typeof port === 'number' ? port : remote?.port)
     if (!enforce) return originalSend.apply(this, args)
     const error = refusal('udp', host, port, 'ECONNREFUSED')
@@ -207,4 +282,19 @@ function install(options) {
   require('node:module').syncBuiltinESMExports()
 }
 
-module.exports = { install, isLoopbackHost, GUARD_TAG }
+/**
+ * e2e provider keys are fake, so every provider rejects them. Answer the
+ * key-validation probes (`GET …/models`, OpenRouter's `GET /api/v1/key`, sent
+ * with a key) with the 401 the real services return, without leaving the host.
+ */
+function fakeKeyRejection(url, method, headers) {
+  if (method !== 'GET') return undefined
+  if (!headers.has('authorization') && !headers.has('x-api-key')) return undefined
+  if (!/\/models$/.test(url.pathname) && url.pathname !== '/api/v1/key') return undefined
+  return new globalThis.Response(
+    JSON.stringify({ error: { message: `${GUARD_TAG} e2e stand-in: this provider key is fake` } }),
+    { status: 401, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+module.exports = { install, isLoopbackHost, fakeKeyRejection, GUARD_TAG }
