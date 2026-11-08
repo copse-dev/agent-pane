@@ -15,6 +15,46 @@ const ASK_PROMPT = 'Investigate the CI failures and ask which failures to focus 
 const REVIEW_DONE = 'The automated CI review is complete. I saved the question for later.'
 const FOLLOW_UP = 'Ask me which failure to investigate next.'
 
+interface AutomationScheduleState {
+  sectionExpanded: string | null
+  sectionBellCount: number
+  runCount: string | null
+  expanded: string | null
+  headerBellCount: number | null
+  runs: { threadId: string | null; displayed: boolean; attentionDisplayed: boolean }[]
+}
+
+// The sidebar replaces its rows on attention/status updates and toggle clicks.
+// Serialize one document-root read instead of retaining WebDriver parent/row handles.
+function readAutomationSchedule(scheduleId: string): AutomationScheduleState {
+  const schedule = document.querySelector(
+    `.automation-schedule-group[data-schedule-id="${CSS.escape(scheduleId)}"]`,
+  )
+  return {
+    sectionExpanded:
+      document.querySelector('.automation-threads-toggle')?.getAttribute('aria-expanded') ?? null,
+    sectionBellCount: document.querySelectorAll('.automation-threads-toggle .chat-attention-bell')
+      .length,
+    runCount: schedule?.querySelector('.automation-schedule-count')?.textContent.trim() ?? null,
+    expanded:
+      schedule?.querySelector('.automation-schedule-toggle')?.getAttribute('aria-expanded') ?? null,
+    headerBellCount:
+      schedule?.querySelectorAll('.automation-schedule-toggle .chat-attention-bell').length ?? null,
+    runs: Array.from(
+      schedule?.querySelectorAll('.automation-schedule-runs .chat-row') ?? [],
+      (row) => {
+        const bell = row.querySelector('.chat-attention-bell')
+        return {
+          threadId: row.getAttribute('data-thread-id'),
+          displayed: row.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
+          attentionDisplayed:
+            bell?.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ?? false,
+        }
+      },
+    ),
+  }
+}
+
 describe('automation attention grouping', function () {
   this.timeout(180_000)
   before(async () => {
@@ -182,17 +222,19 @@ describe('automation attention grouping', function () {
     await expect($('#ask-user-dialog')).not.toBeDisplayed()
     const automationToggle = $('.automation-threads-toggle')
     await expect(automationToggle).toHaveAttribute('aria-expanded', 'false')
+    const scheduleSelector = `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`
+    // Wait for the open section to render the schedule, then read it from the root.
+    const readRenderedSchedule = async (): Promise<AutomationScheduleState> => {
+      await $(`${scheduleSelector} .automation-schedule-toggle`).waitForExist({ timeout: 5_000 })
+      return await browser.execute(readAutomationSchedule, SCHEDULE_ID)
+    }
 
     // A later human follow-up is interactive. Park its provider before asking,
     // return to the ordinary chat, then let the actual ask_user open attention.
     await automationToggle.click()
-    const initialSchedule = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
-    if (
-      (await initialSchedule.$('.automation-schedule-toggle').getAttribute('aria-expanded')) !==
-      'true'
-    )
-      await initialSchedule.$('.automation-schedule-toggle').click()
-    await initialSchedule.$(`.chat-row[data-thread-id="${startedThreadId}"]`).click()
+    if ((await readRenderedSchedule()).expanded !== 'true')
+      await $(`${scheduleSelector} .automation-schedule-toggle`).click()
+    await $(`${scheduleSelector} .chat-row[data-thread-id="${startedThreadId}"]`).click()
     await expectAssistantReply(REVIEW_DONE)
     await expect($('.stop-btn')).not.toBeDisplayed()
     const followUp = await installMockScenario({
@@ -227,12 +269,9 @@ describe('automation attention grouping', function () {
     await submitComposer()
     await followUp.waitForHold('before-interactive-question', 30_000)
     await $('.chat-row[data-thread-id="regular-chat"]').click()
-    if (
-      (await initialSchedule.$('.automation-schedule-toggle').getAttribute('aria-expanded')) ===
-      'true'
-    )
-      await initialSchedule.$('.automation-schedule-toggle').click()
-    if ((await automationToggle.getAttribute('aria-expanded')) === 'true')
+    if ((await readRenderedSchedule()).expanded === 'true')
+      await $(`${scheduleSelector} .automation-schedule-toggle`).click()
+    if ((await browser.execute(readAutomationSchedule, SCHEDULE_ID)).sectionExpanded === 'true')
       await automationToggle.click()
     await expect(automationToggle).toHaveAttribute('aria-expanded', 'false')
     await expect($('#ask-user-dialog')).not.toBeDisplayed()
@@ -241,7 +280,8 @@ describe('automation attention grouping', function () {
     // unattended questions never hold the run or interrupt the ordinary chat.
     try {
       await browser.waitUntil(
-        async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
+        async () =>
+          (await browser.execute(readAutomationSchedule, SCHEDULE_ID)).sectionExpanded === 'true',
         { timeout: 20_000 },
       )
     } catch {
@@ -387,29 +427,34 @@ describe('automation attention grouping', function () {
           `started thread record: ${threadRecord}`,
       )
     }
-    assert.equal((await automationToggle.$$('.chat-attention-bell').getElements()).length, 0)
-
-    const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
-    await scheduleGroup.waitForExist({ timeout: 5_000 })
-    await expect(scheduleGroup.$('.automation-schedule-count')).toHaveText('4 runs')
-    assert.equal(
-      (await scheduleGroup.$$('.automation-schedule-toggle .chat-attention-bell').getElements())
-        .length,
-      0,
+    const waitingThreadId = runNowResult.threadId
+    assert.ok(waitingThreadId, 'runNow must return the newly started thread ID')
+    await browser.waitUntil(
+      async () => {
+        const state = await browser.execute(readAutomationSchedule, SCHEDULE_ID)
+        return (
+          state.sectionExpanded === 'true' &&
+          state.sectionBellCount === 0 &&
+          state.runCount === '4 runs' &&
+          state.headerBellCount === 0 &&
+          state.expanded === 'false' &&
+          state.runs.length === 1 &&
+          state.runs[0]?.threadId === waitingThreadId &&
+          state.runs[0].displayed &&
+          state.runs[0].attentionDisplayed
+        )
+      },
+      { timeout: 5_000, timeoutMsg: 'attention reveal should show only the newly waiting run' },
     )
-    assert.equal(
-      await scheduleGroup.$('.automation-schedule-toggle').getAttribute('aria-expanded'),
-      'false',
-    )
-
-    const visibleRuns = scheduleGroup.$$('.automation-schedule-runs .chat-row')
-    await browser.waitUntil(async () => (await visibleRuns.getElements()).length === 1, {
-      timeout: 5_000,
-      timeoutMsg: 'attention reveal should hide older automation runs',
-    })
-    const waitingRun = (await visibleRuns.getElements())[0]
-    assert.ok(waitingRun)
-    await expect(waitingRun.$('.chat-attention-bell')).toBeDisplayed()
+    const revealed = await browser.execute(readAutomationSchedule, SCHEDULE_ID)
+    assert.equal(revealed.sectionExpanded, 'true')
+    assert.equal(revealed.sectionBellCount, 0)
+    assert.equal(revealed.runCount, '4 runs')
+    assert.equal(revealed.headerBellCount, 0)
+    assert.equal(revealed.expanded, 'false')
+    assert.deepEqual(revealed.runs, [
+      { threadId: waitingThreadId, displayed: true, attentionDisplayed: true },
+    ])
     // The waiting run was started by `runNow` moments ago, so its trigger time
     // is the wall clock; pin only that text for the capture.
     const restoreRunTime = await pinTextForCapture(
@@ -417,24 +462,30 @@ describe('automation attention grouping', function () {
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
     )
-    await assertScheduleHeadingKeepsTitle(
-      `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`,
-    )
+    await assertScheduleHeadingKeepsTitle(scheduleSelector)
     await saveElementScreenshot('.automation-threads-group', 'automation-attention-group.png')
     await restoreRunTime()
 
-    const waitingThreadId = await waitingRun.getAttribute('data-thread-id')
-    assert.ok(waitingThreadId)
-    await scheduleGroup.$('.automation-schedule-toggle').click()
-    await expect(scheduleGroup.$('.automation-schedule-toggle')).toHaveAttribute(
-      'aria-expanded',
-      'true',
+    await $(`${scheduleSelector} .automation-schedule-toggle`).click()
+    await browser.waitUntil(
+      async () => {
+        const state = await browser.execute(readAutomationSchedule, SCHEDULE_ID)
+        return state.expanded === 'true' && state.runs.length === 4
+      },
+      { timeout: 5_000, timeoutMsg: 'expanding the schedule should reveal all four runs' },
     )
-    assert.equal(
-      (await scheduleGroup.$$('.automation-schedule-runs .chat-row').getElements()).length,
-      4,
+    const expanded = await browser.execute(readAutomationSchedule, SCHEDULE_ID)
+    assert.equal(expanded.expanded, 'true')
+    assert.deepEqual(
+      expanded.runs.map((run) => run.threadId).sort(),
+      [
+        waitingThreadId,
+        'automation-history-1',
+        'automation-history-2',
+        'automation-history-3',
+      ].sort(),
     )
-    await scheduleGroup.$(`.chat-row[data-thread-id="${waitingThreadId}"]`).click()
+    await $(`${scheduleSelector} .chat-row[data-thread-id="${waitingThreadId}"]`).click()
     const askDialog = $('#ask-user-dialog')
     await askDialog.waitForDisplayed({ timeout: 10_000 })
     await askDialog.$('.ask-user-cancel').click()

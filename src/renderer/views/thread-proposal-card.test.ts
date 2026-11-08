@@ -157,7 +157,13 @@ describe('model-proposed thread card', () => {
     assert.equal(proposal.dataset['proposalStatus'], 'pending')
     // Open by default: a standing offer the user has not answered.
     assert.equal(proposal.open, true)
-    assert.equal(proposal.querySelector('.thread-proposal-eyebrow')?.textContent, 'Proposed thread')
+    // The title leads from the header, so a collapsed card still names its offer;
+    // no eyebrow label above it.
+    assert.equal(
+      proposal.querySelector('summary > h4.thread-proposal-title')?.textContent,
+      PROPOSAL_ARGS.title,
+    )
+    assert.equal(proposal.querySelectorAll('.thread-proposal-title').length, 1)
     // Not a permission prompt: nothing modal, nothing approve/reject.
     assert.equal(document.querySelector('.approval-dialog'), null)
     assert.equal(root.querySelector('.thread-proposal .approval-heading'), null)

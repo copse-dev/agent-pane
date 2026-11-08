@@ -78,9 +78,7 @@
   margin-top: var(--spacing-sm);
 }
 .memories-label {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .memories-field {
