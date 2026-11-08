@@ -1636,8 +1636,6 @@ jobs:
       # launcher still provides Xvfb on Linux, while local runs remain headless
       # by default unless developers opt out with the same variable.
       COPSE_E2E_HEADLESS: '0'
-      # TEMPORARY logging pass for the outbound network guard: record and forward.
-      COPSE_E2E_NETWORK_GUARD: log
     steps:
       # Measurement only: the shard's job start, before checkout wipes the
       # workspace (RUNNER_TEMP survives it). The collect step below folds it
