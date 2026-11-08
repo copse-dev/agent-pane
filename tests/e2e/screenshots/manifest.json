@@ -2045,6 +2045,18 @@
       "sha256": "4c99aab6b393e6206289274a97c9e7f852e638b3ded836e76ddb8c1bcd6db9d6",
       "bytes": 403378
     },
+    "foreground-shell-before-quit.png": {
+      "sha256": "4c564835d9fa67e50b4e5dc1f3cc8745bc69a68485cefc3af865c4b5519334b5",
+      "bytes": 278211
+    },
+    "foreground-shell-explicitly-recovered.png": {
+      "sha256": "5046c56bb7a407ba5aefde0811da56e15551b63e689c481a69b6666c1d31a3f1",
+      "bytes": 282957
+    },
+    "foreground-shell-recovery-after-quit.png": {
+      "sha256": "f281a5260fcc523fd164586dba59ea3a3a802c5c7b65684bb017a195f2ed92a7",
+      "bytes": 365715
+    },
     "git-attribution-off.png": {
       "sha256": "17cc9dc1fe532989b34dedb9c25da487f4da72f00ffcd2af5cd45d923e7d9fae",
       "bytes": 37781
