@@ -90,11 +90,11 @@ const displayName = 'Copse Dogfood ' + identity.slice(0, 8)
 const app = join(run, displayName + '.app')
 execFileSync('/bin/cp', ['-cR', sourceApp, app])
 const plist = join(app, 'Contents/Info.plist')
-for (const [key, value] of [
-  ['CFBundleIdentifier', 'dev.copse.dogfood.' + identity],
-  ['CFBundleName', displayName],
-  ['CFBundleDisplayName', displayName],
-])
+for (const [key, value] of Object.entries({
+  CFBundleIdentifier: 'dev.copse.dogfood.' + identity,
+  CFBundleName: displayName,
+  CFBundleDisplayName: displayName,
+}))
   execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plist])
 execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'pipe' })
 
@@ -128,9 +128,9 @@ const prompts = [
   'Build a small reading-list page using only index.html, styles.css and app.js. Include a labelled book-title input, Add button, and list. Adding a nonempty title should create a row and clear the input; ignore whitespace-only titles. Keep all resources local and use no package installs or external services. Explain how to open it locally. Do not commit or publish anything.',
   'Add a Remove button to each book row. Removing one book should preserve the other books. Keep the existing Add behavior and styling. Keep the work local; do not install packages, commit, or publish.',
 ]
-prompts.forEach((prompt, index) =>
-  writeFileSync(join(run, `prompt-${index + 1}.txt`), prompt + '\n'),
-)
+prompts.forEach((prompt, index) => {
+  writeFileSync(join(run, `prompt-${String(index + 1)}.txt`), prompt + '\n')
+})
 const quote = (text: string): string => "'" + text.replaceAll("'", "'\"'\"'") + "'"
 const launch = [
   'env',
