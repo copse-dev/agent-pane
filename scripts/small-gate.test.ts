@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { it } from 'node:test'
+import { it, type TestContext } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { computeSmallGate, parseSmokeInventory } from './lib/small-gate.mts'
@@ -284,11 +284,39 @@ it('partial workflow reruns cannot reuse older passes as complete current covera
   assert.equal(complete.classificationComplete, true)
 })
 
-it('release and version-tag pushes keep full shadow coverage even with an empty diff', () => {
+function cleanGitEnvironment(t: TestContext): NodeJS.ProcessEnv {
+  const root = mkdtempSync(join(tmpdir(), 'small-gate-empty-diff-'))
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+  execFileSync('git', ['init', '-q', root])
+  const env = { ...process.env, GIT_DIR: join(root, '.git'), GIT_WORK_TREE: root }
+  writeFileSync(join(root, '.gitignore'), '*\n')
+  execFileSync('git', ['add', '-f', '.gitignore'], { env })
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.test',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-qm',
+      'empty diff fixture',
+    ],
+    { env },
+  )
+  return env
+}
+
+it('release and version-tag pushes keep full shadow coverage even with an empty diff', (t) => {
+  const env = cleanGitEnvironment(t)
   for (const ref of ['refs/heads/release', 'refs/tags/v0.1.0-beta.15', 'refs/heads/main']) {
     execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
       env: {
-        ...process.env,
+        ...env,
         BASE_SHA: 'HEAD',
         EVENT: 'push',
         GITHUB_REF: ref,
@@ -297,6 +325,7 @@ it('release and version-tag pushes keep full shadow coverage even with an empty 
         STACK_TIP: 'false',
         CI_FULL_LABEL: 'false',
         UPDATE_SCREENSHOTS_LABEL: 'false',
+        SCREENSHOT_REFRESH: 'false',
         GITHUB_RUN_ID: '1',
         GITHUB_RUN_ATTEMPT: '1',
         HEAD_SHA: '',
@@ -311,11 +340,12 @@ it('release and version-tag pushes keep full shadow coverage even with an empty 
   }
 })
 
-it('the screenshot drift refresh PR keeps full shadow coverage with its empty diff', () => {
+it('the screenshot drift refresh PR keeps full shadow coverage with its empty diff', (t) => {
+  const env = cleanGitEnvironment(t)
   for (const refresh of ['true', 'false']) {
     execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
       env: {
-        ...process.env,
+        ...env,
         BASE_SHA: 'HEAD',
         EVENT: 'pull_request',
         GITHUB_REF: 'refs/pull/1/merge',

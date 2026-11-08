@@ -119,6 +119,34 @@ describe('ToolRegistry', () => {
     })
   })
 
+  it('reports cancellation without blaming the user and never executes after a gate abort', async () => {
+    const controller = new AbortController()
+    let executions = 0
+    setPermissionGateForTests(async () => {
+      controller.abort()
+      return true
+    })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'gated',
+      description: 'requires approval',
+      parameters: z.object({}),
+      execute: async () => {
+        executions++
+        return 'ran'
+      },
+    })
+    try {
+      await assert.rejects(reg.execute('gated', {}, controller.signal), {
+        name: 'AbortError',
+        message: 'Tool call "gated" was cancelled before execution.',
+      })
+      assert.equal(executions, 0)
+    } finally {
+      setPermissionGateForTests(null)
+    }
+  })
+
   // H1 (docs/plans/hooks-and-feature-packs.md): the object the permission gate
   // rewrites is also the input the tool executes, after one final schema parse.
   it('executes with hook-rewritten input without applying schema transforms twice', async () => {

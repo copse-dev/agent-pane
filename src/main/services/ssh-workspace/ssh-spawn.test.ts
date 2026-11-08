@@ -19,6 +19,16 @@ import {
   wrapRemoteStdioWithPgid,
 } from './ssh-spawn.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import { setSshControlDirForTests } from './ssh-paths.ts'
+import { shortSocketDirectory } from '../../../../tests/helpers/short-socket-directory.ts'
+
+beforeEach((t) => {
+  setSshControlDirForTests(shortSocketDirectory(t))
+})
+
+afterEach(() => {
+  setSshControlDirForTests(null)
+})
 
 const TEST_HOST: SshWorkspaceHost = {
   id: 'dev-box',

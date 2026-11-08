@@ -111,6 +111,38 @@ export function persistRecordedDecision(decision: RecordedDecision): void {
 }
 
 /**
+ * Record a result that a continuation must be able to read before dispatch.
+ * Honour a scoped host recorder rather than writing into desktop storage from
+ * an explicit/headless host. Such a recorder owns its own persistence.
+ */
+export async function recordDecisionAndWait(
+  input: RecordDecisionInput,
+): Promise<RecordedDecision | null> {
+  const captured: RecordedDecision[] = []
+  const hostRecorder = scopedRecorder.getStore()
+  runWithDecisionRecorder(
+    (decision) => {
+      captured.push(decision)
+    },
+    () => {
+      recordDecision(input)
+    },
+  )
+  const decision = captured[0]
+  if (!decision) return null
+  if (hostRecorder) hostRecorder(decision)
+  else {
+    await appendSpineDecision(
+      decision.projectId,
+      decision.threadId,
+      decision.line,
+      decision.detailContents,
+    )
+  }
+  return decision
+}
+
+/**
  * The running turn's project for a decision on `threadId`. A thread the caller
  * named borrows it only from its own turn. A decision that names no thread
  * belongs to the running turn whatever thread the run identity reports: an

@@ -1,5 +1,7 @@
 import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
+import { AcpTurnEnded } from './turn-end.ts'
+import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -114,7 +116,8 @@ import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -488,7 +491,7 @@ function installAgentInitiatedTurnLease(
     projectId,
     threadId,
     bridge: {
-      setExecutionContext: (context) => {
+      setExecutionContext: (context, turnTreeId) => {
         if (!context) {
           bridge.setExecutionContext(null)
           return
@@ -496,6 +499,7 @@ function installAgentInitiatedTurnLease(
         // The bridge captures per-thread scopes from the async context at bind time.
         runWithThreadExecutionContext(context, () => {
           runWithActiveRunIdentity(threadId, () => {
+            if (turnTreeId !== undefined) setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
             bridge.setExecutionContext(context)
           })
         })
@@ -925,7 +929,9 @@ async function runAcpAgentTurn(
     entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
-    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
+    const promptEnd = new AbortController()
+    const parentSignal = options.bridgeTurnSignal ?? options.signal
+    entry.bridge?.setTurnSignal(AbortSignal.any([parentSignal, promptEnd.signal]))
     entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
@@ -974,13 +980,24 @@ async function runAcpAgentTurn(
           options.userPrompt,
         )
       }
+      promptEnd.abort(
+        new AcpTurnEnded(
+          options.signal.aborted
+            ? 'stopped'
+            : normalizeStopReason(outcome.stopReason.toLowerCase()) === 'end_turn'
+              ? 'completed'
+              : 'failed',
+        ),
+      )
       return outcome
     } catch (err) {
+      promptEnd.abort(new AcpTurnEnded(options.signal.aborted ? 'stopped' : 'failed'))
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })
       throw err
     } finally {
+      promptEnd.abort(new AcpTurnEnded('failed'))
       entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)

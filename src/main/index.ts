@@ -235,6 +235,7 @@ import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
+import { setAcpToolCompletionHandler } from './services/acp/tool-completion.ts'
 import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
@@ -869,6 +870,16 @@ app
     void taskSupervisor.start().catch((error: unknown) => {
       console.error('[task-supervisor] Startup reconciliation failed:', error)
     })
+    setAcpToolCompletionHandler((completion, prompt) =>
+      agentDispatcher.dispatchMachine({
+        projectId: completion.owner.projectId,
+        threadId: completion.owner.threadId,
+        operationId: completion.operationId,
+        turnTreeId: completion.turnTreeId,
+        ...(completion.alreadyObserved ? { alreadyObserved: completion.alreadyObserved } : {}),
+        payload: { userContent: prompt, invokedSkills: [], priorTodos: [] },
+      }),
+    )
     setBackgroundCompletionWakeHandler((completion) => {
       return agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
