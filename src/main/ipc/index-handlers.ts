@@ -12,7 +12,7 @@ import {
   zThreadId,
 } from './ipc-guards.ts'
 import {
-  resolveThreadExecutionContext,
+  inspectThreadReadContext,
   runWithThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
@@ -70,7 +70,8 @@ export function registerIndexHandlers(win: BrowserWindow): void {
         if (root) await whenFileIndexReady(root, target)
         return await resolveFileReferences(candidates, root, undefined, target)
       }
-      const context = await resolveThreadExecutionContext(owner.projectId, owner.threadId)
+      const context = await inspectThreadReadContext(owner.projectId, owner.threadId)
+      if (!context) return []
       return runWithThreadExecutionContext(context, async () => {
         const root = context.root
         await whenFileIndexReady(root)

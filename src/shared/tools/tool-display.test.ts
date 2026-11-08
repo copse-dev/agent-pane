@@ -35,6 +35,56 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  for (const name of ['run_background', 'mcp__copse__run_background', 'mcp.copse.run_background']) {
+    it(`does not claim a rejected ${name} started`, () => {
+      const call: ToolCall = {
+        ...tc('declined', name),
+        args: { action: 'start', command: 'node server.cjs' },
+        result: 'User rejected the run_background tool call.',
+        commandPhase: {
+          state: 'not_started',
+          since: 1,
+          launched: false,
+          reason: 'User rejected the run_background tool call.',
+        },
+      }
+      assert.equal(getToolCallLabel(call), 'Did not start background task')
+      assert.equal(
+        buildToolCallDisplayItems([call], { forceRollup: true })[0]?.label,
+        'Did not start background task',
+      )
+    })
+  }
+
+  it('keeps background launch labels based on typed execution state', () => {
+    const call = tc('background', 'run_background')
+    assert.equal(getToolCallLabel({ ...call, status: 'running' }), 'Starting background task')
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        commandPhase: { state: 'running', since: 1, launched: true, backgroundTaskId: 'task-1' },
+      }),
+      'Started background task',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        result: 'User rejected the run_background tool call.',
+      }),
+      'Started background task',
+      'legacy result prose does not establish an execution phase',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        name: 'mcp__other__run_background',
+        title: 'Other server task',
+        commandPhase: { state: 'not_started', since: 1, launched: false },
+      }),
+      'Other server task',
+    )
+  })
+
   for (const prefix of ['', 'mcp__copse__', 'mcp.copse.', 'copse.', 'copse-']) {
     it(`preserves edit links, grouping and shell summaries for ${prefix || 'bare'} calls`, () => {
       const edit = { ...tc('edit', `${prefix}write_file`), args: { path: 'src/app.ts' } }

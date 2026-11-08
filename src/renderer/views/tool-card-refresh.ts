@@ -258,6 +258,12 @@ export interface ToolCardRefresher {
   forgetDisclosureElements: () => void
   /** Drop only the registrations of elements no longer in the document (rows a reconcile removed). */
   forgetDetachedDisclosureElements: () => void
+  /**
+   * Register again every disclosure under `root` that was bound before and
+   * then forgotten (rows of a thread the view switched away from and back to).
+   * Their toggles are still wired.
+   */
+  adoptDisclosureElements: (root: ParentNode) => void
 }
 
 export interface ToolCardRenderOptions {
@@ -788,6 +794,14 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
       for (const [key, details] of disclosureElements) {
         if (!details.isConnected) disclosureElements.delete(key)
       }
+    },
+    adoptDisclosureElements(root: ParentNode): void {
+      root
+        .querySelectorAll<HTMLDetailsElement>('details[data-disclosure-key]')
+        .forEach((details) => {
+          const key = details.dataset['disclosureKey']
+          if (key) disclosureElements.set(key, details)
+        })
     },
   }
 }

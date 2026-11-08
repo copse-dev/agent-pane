@@ -665,6 +665,11 @@ export function hasBackgroundProcessesForThread(owner: ThreadExecutionOwner): bo
   return [...processes.values()].some((entry) => !entry.exited && sameOwner(entry.owner, owner))
 }
 
+/** Read-only presence, including exited records whose completion callback may still be settling. */
+export function hasBackgroundProcessRecord(owner: ThreadExecutionOwner): boolean {
+  return [...processes.values()].some((entry) => sameOwner(entry.owner, owner))
+}
+
 /** Kill every tracked process — called on app shutdown. */
 export function stopAllBackgroundProcesses(): void {
   for (const entry of processes.values()) {
