@@ -221,6 +221,10 @@
       "sha256": "3c0c4e67c2ad93f42185df6c7b93d72f0aa4a662b566b9d2ec15155c6f913c2e",
       "bytes": 303931
     },
+    "activity-answer-after-refresh.png": {
+      "sha256": "1a1f6184d8eb6ed778984bc79d3bdbcabe6243aaffc584ab147c3f62047ad262",
+      "bytes": 113708
+    },
     "activity-answer-empty.png": {
       "sha256": "b748d3c84f611bd37d7c3d072461e1f001f01008b8285aaf1ab8a63339e34e67",
       "bytes": 113673
