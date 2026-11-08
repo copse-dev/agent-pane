@@ -479,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-7VKEBS5T.js";
+} from "./chunk-UJEKGPFC.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -13080,7 +13080,7 @@ function cardStatus(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started" || call.deferred === true)) {
     return "interrupted";
   }
   return "done";
@@ -88278,12 +88278,15 @@ function createTranscriptReducer(store2, hooks = {}) {
       case "tool_result": {
         const ownerId = findToolCallOwner(store2, threadId, chunk.toolCallId) ?? st.msgId;
         if (ownerId) {
+          const call = findToolCall(store2, ownerId, chunk.toolCallId);
+          if (call && chunk.deferred !== true) delete call.deferred;
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
+            ...chunk.deferred ? { deferred: chunk.deferred } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           hooks.toolResult?.(threadId, ownerId, chunk);
