@@ -291,11 +291,11 @@ export function readShardRecords(candidatesDir: string): ShardRecord[] {
   const decode = decodeWithSchema(shardRecordSchema)
   const records: ShardRecord[] = []
   for (const entry of readdirSync(candidatesDir).sort()) {
-    if (!/^\.shard-[1-8]$/.test(entry)) continue
+    if (!/^\.shard-[1-9]\d*$/.test(entry)) continue
     const record = safeJsonParse(readFileSync(join(candidatesDir, entry), 'utf8'), decode)
     if (record) records.push(record)
   }
-  return records
+  return records.sort((a, b) => a.shard - b.shard)
 }
 
 function git(args: string[]): string {
