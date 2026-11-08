@@ -29538,6 +29538,11 @@ var init_thread_hydration = __esm({
 function describeAutomationFailure(code) {
   return DESCRIPTIONS[code];
 }
+function classifyAutomationCheckoutFailure(message) {
+  if (message.includes("The selected coding agent is not enabled.") || message.includes("cannot start because its configured command is missing or not executable."))
+    return "no-model";
+  return "worktree-failed";
+}
 function classifyAutomationFailureMessage(message) {
   if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
     message
@@ -29567,7 +29572,7 @@ var init_automation_failure = __esm({
       },
       "no-model": {
         title: "Model unavailable",
-        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        remedy: "Check the model or coding agent in Settings \u2192 General \u2192 Models & agents, or pick another model in the automation.",
         action: "open-automations",
         actionLabel: "Edit automation"
       },
@@ -29738,7 +29743,7 @@ function attachAutomationController(store, api) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         const message = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message);
+        const code = checkoutStarted ? classifyAutomationCheckoutFailure(message) : classifyAutomationFailureMessage(message);
         markAutomationStartFailed(store, threadId, { code, message });
         api.automations.reportStartFailure(projectId, threadId, { code, message }).catch((reportError) => {
           console.error("[automations] Could not report a start failure:", reportError);
