@@ -216,6 +216,7 @@ export function buildReviewPrompt(
   parentGoal: string,
   diff: string,
   todos: readonly TodoItem[] = [],
+  currentRequest?: string,
 ): string {
   const trimmedDiff = diff.trim()
   const diffBlock =
@@ -225,6 +226,14 @@ export function buildReviewPrompt(
 
   return [
     `Parent task: ${parentGoal}`,
+    ...(currentRequest?.trim() && currentRequest.trim() !== parentGoal.trim()
+      ? [
+          '',
+          '## Current turn request',
+          currentRequest.trim(),
+          'Review the current request in the context of the parent task. Later user instructions can revise earlier requirements; do not request reverting an explicitly requested change merely to match the earlier task.',
+        ]
+      : []),
     formatTodosForReviewPrompt(todos),
     '',
     'Review the changes the parent agent just made. Working diff:',

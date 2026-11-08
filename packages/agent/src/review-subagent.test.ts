@@ -53,6 +53,22 @@ describe('review-subagent helpers', () => {
     assert.match(prompt, /id: t1/)
   })
 
+  it('carries the follow-up requirement alongside the durable task when reviewing its diff', () => {
+    const first = 'Create index.html containing only <h1>Copse smoke one</h1>.'
+    const followUp = 'Rewrite index.html to contain only <h1>Copse smoke two</h1>.'
+    const prompt = buildReviewPrompt(
+      first,
+      '-<h1>Copse smoke one</h1>\n+<h1>Copse smoke two</h1>',
+      [],
+      followUp,
+    )
+    assert.ok(prompt.includes(first))
+    assert.ok(prompt.includes(followUp))
+    assert.match(prompt, /Later user instructions can revise earlier requirements/)
+    // A first turn retains the ordinary prompt and does not duplicate the request.
+    assert.equal(buildReviewPrompt(first, '+one', [], first), buildReviewPrompt(first, '+one'))
+  })
+
   it('parses structured REVIEW_JSON verdicts', () => {
     const parsed = parseReviewVerdict(`1 likely bug
 

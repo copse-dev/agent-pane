@@ -520,6 +520,9 @@ revisiting this document, not silently diverging in an implementation PR.
     `claude-md-and-agents-md`, preserving Copse's former additive behavior.
 
 29. **Post-turn review specialists investigate; the primary reviewer decides.**
+    The primary review receives the current redacted turn request alongside the
+    durable parent task. A follow-up may revise an earlier requirement; the stored
+    first-turn brief alone must not cause review to undo the requested change.
     The `copse.post-turn-review` plugin may offer host-registered specialist
     checks to its primary reviewer. A specialist definition owns its model,
     prompt, read-only tool allowlist, step/context limits, and output schema;

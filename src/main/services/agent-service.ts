@@ -2990,6 +2990,7 @@ async function runAgentWithInlineCanvas(
             runReviewOnce: (todos) =>
               runPostTurnReviewOnce({
                 parentGoal,
+                currentRequest: promptTextForSubmit(outboundPrompt),
                 todos,
                 provider: reviewProvider,
                 registry,
