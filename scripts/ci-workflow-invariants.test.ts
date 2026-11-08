@@ -1529,6 +1529,21 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /--is-ancestor "\$release_sha" origin\/main/)
   })
 
+  it('walks ancestry from a shallow tag checkout and an unshallowed release', () => {
+    // `fetch-depth: 0` fetched every branch and tag just for this check. The
+    // checkout already writes the tag ref; `release` needs its full history, or
+    // the shallow tag commit has no path to it and the release fails closed.
+    for (const file of ['release-mac.yml', 'release-publish.yml', 'release-promote.yml']) {
+      const source = readFileSync(resolve('.github/workflows', file), 'utf8')
+      assert.doesNotMatch(source, /^ +fetch-depth: 0$/m, file)
+      assert.match(
+        source,
+        /git fetch --no-tags --unshallow origin \+refs\/heads\/release:refs\/remotes\/origin\/release\n/,
+        file,
+      )
+    }
+  })
+
   it('uploads release notes with immutable metadata and does not publish', () => {
     assert.match(workflow, /release-notes\.mts > release\/RELEASE_NOTES\.md/)
     assert.match(
@@ -1955,6 +1970,15 @@ describe('gitleaks workflow invariants', () => {
     )
     assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-24\.04$/m)
   })
+
+  it('fetches only the scanned commit history, not every branch and tag', () => {
+    assert.doesNotMatch(gitleaksWorkflow, /^ +fetch-depth: 0$/m)
+    const fetch = gitleaksWorkflow.indexOf(
+      'git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"',
+    )
+    const scan = gitleaksWorkflow.indexOf('--log-opts="--full-history --diff-filter=tuxdb HEAD"')
+    assert.ok(fetch >= 0 && scan > fetch, 'the scan must walk an unshallowed HEAD')
+  })
 })
 
 describe('Copse Reviewer workflow invariants', () => {
@@ -2065,18 +2089,33 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('keeps complete ancestry in nightly review checkouts', () => {
+  it('fetches complete ancestry for the reviewed refs, not every branch and tag', () => {
     const checkouts = nightlyWorkflow.matchAll(
       /uses: actions\/checkout[^\n]*\n([\s\S]*?)(?=\n {6}-|$)/g,
     )
     let count = 0
     for (const [, step] of checkouts) {
       assert.match(step ?? '', /filter: blob:none/)
-      assert.match(step ?? '', /fetch-depth: 0/)
       assert.match(step ?? '', /persist-credentials: false/)
       count++
     }
     assert.ok(count > 0)
+    // `fetch-depth: 0` also fetched ~575 other branches and every tag. The
+    // merge-base only needs the PR head's and its base's histories, so the jobs
+    // that diff in their own checkout unshallow exactly those two refs.
+    for (const workflow of [nightlyWorkflow, summaryWorkflow])
+      assert.doesNotMatch(workflow, /^ +fetch-depth: 0$/m)
+    for (const [workflow, job, pr] of [
+      [nightlyWorkflow, 'findings', 'PR_NUMBER'],
+      [summaryWorkflow, 'summary', 'number'],
+    ] as const)
+      assert.match(
+        workflowJobBlock(workflow, job),
+        new RegExp(
+          String.raw`git fetch --no-tags --quiet --unshallow origin \\\n +"\+refs/pull/\$\{${pr}\}/head:`,
+        ),
+        `${job} needs the head's and base's complete histories for the merge-base`,
+      )
   })
 
   it('supports a manual summary without executing pull-request code', () => {
