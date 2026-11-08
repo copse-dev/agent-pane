@@ -136,7 +136,7 @@
 .apple-development-target-meta span {
   padding: 0 var(--spacing-xs);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   white-space: nowrap;
 }
