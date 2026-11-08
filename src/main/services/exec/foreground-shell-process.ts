@@ -12,7 +12,7 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
-import { terminateProcessTree } from './subprocess-kill.ts'
+import { isPidAlive, terminateProcessTree } from './subprocess-kill.ts'
 import { currentShellRunObserver, mirrorShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
@@ -62,6 +62,19 @@ export interface ForegroundShellProcess {
 // call. The Process Manager needs them anyway, because they run as direct
 // children of main and would otherwise read as Shared.
 const liveForegroundShells = new Set<ForegroundShellProcess>()
+const shutdownStops = new Set<() => Promise<void>>()
+const pendingShellStarts = new Set<AbortController>()
+let closing = false
+
+/** Drain owned commands before the desktop services and their abort signals disappear. */
+export async function stopAllForegroundShellProcesses(): Promise<void> {
+  closing = true
+  // Authentication and sandbox setup can outlast the quit deadline. Cancel
+  // admission now; the spawn boundaries recheck the signal after their awaits.
+  // Existing command trees must not wait for a pending remote connection.
+  for (const controller of pendingShellStarts) controller.abort()
+  await Promise.all([...shutdownStops].map((stop) => stop()))
+}
 
 /** Every running run_shell command across threads; detached ones move to the background registry. */
 export function listForegroundShellProcesses(): ForegroundShellProcess[] {
@@ -80,6 +93,7 @@ export async function runShellOnce(
   readonlyCheckout = false,
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
+  if (closing) throw new Error('Copse is closing; the command was not started.')
   const owner = getThreadExecutionContext()
   const reportPhase = captureCommandPhaseReport()
   // Captured once: child stream callbacks need not run in the caller's context.
@@ -87,6 +101,7 @@ export async function runShellOnce(
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
       const spawnController = new AbortController()
+      pendingShellStarts.add(spawnController)
       const cancelSpawn = (): void => {
         if (signal.reason !== 'send_now') spawnController.abort(signal.reason)
       }
@@ -119,6 +134,7 @@ export async function runShellOnce(
         }
         return
       } finally {
+        pendingShellStarts.delete(spawnController)
         signal.removeEventListener('abort', cancelSpawn)
       }
 
@@ -209,10 +225,26 @@ export async function runShellOnce(
 
       const cleanup = (): void => {
         if (live) liveForegroundShells.delete(live)
+        shutdownStops.delete(stopForShutdown)
         clearTimeout(timer)
         cancelKill?.()
         signal.removeEventListener('abort', onAbort)
       }
+
+      const stopForShutdown = async (): Promise<void> => {
+        stopped = true
+        const cancel = terminateProcessTree(proc)
+        const deadline = Date.now() + 3_000
+        while (Date.now() < deadline) {
+          const leaderAlive = proc.exitCode === null && proc.signalCode === null
+          const groupAlive =
+            proc.pid !== undefined && process.platform !== 'win32' && isPidAlive(-proc.pid)
+          if (!leaderAlive && !groupAlive) break
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        cancel()
+      }
+      shutdownStops.add(stopForShutdown)
 
       const timer = setTimeout(() => {
         cancelKill = terminateProcessTree(proc)
@@ -283,6 +315,7 @@ export async function runShellOnce(
 
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) onAbort()
+      if (closing) await stopForShutdown()
     })()
   })
 }
