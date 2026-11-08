@@ -825,20 +825,17 @@ function requestApprovalUnpaused(
   // call passes through — shell escalation, MCP, origin — attributes to it.
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
 
-  // Equal questions from different chats authorize different callers. Keep
-  // independent waiters in one chat without sharing consent across chats.
+  // Equal questions from different tasks authorize different callers. Scope
+  // every answer, including one-time answers, to the current execution identity
+  // so a parked prompt or saved verdict cannot follow send-now into a new task.
   // Standalone consent belongs to one caller even if two clients happen to
   // present identical copy (for example, the same six-digit pairing code).
   const key = JSON.stringify([
     dedupePrefix,
     threadId,
-    ...(req.allowTurnTreeLease
-      ? [
-          getThreadExecutionContext()?.projectId ?? null,
-          getAgentExecutionRoot(),
-          getActiveRunTurnTreeId(),
-        ]
-      : []),
+    getThreadExecutionContext()?.projectId ?? null,
+    getAgentExecutionRoot(),
+    getActiveRunTurnTreeId(),
     req.standalone ? randomUUID() : approvalDedupeKey(req),
   ])
   // Only a thread-attributed request can be parked and replayed: the ledger is

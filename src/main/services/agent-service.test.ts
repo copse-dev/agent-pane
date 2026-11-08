@@ -69,6 +69,60 @@ it('Stop revokes task retries from earlier turns without affecting another chat'
   }
 })
 
+it('send-now preserves task retries while interrupting an admitted turn', async () => {
+  const threadId = `send-now-lease-${randomUUID()}`
+  const root = process.cwd()
+  const identity = {
+    projectId: 'send-now-lease-project',
+    threadId,
+    turnTreeId: asTurnTreeId('send-now-lease-tree'),
+    executionRoot: root,
+    containment: 'project-sandbox' as const,
+  }
+  shellReplayLeaseStore.issue(identity, 'npm test', {})
+  shellReplayLeaseStore.issue({ ...identity, containment: 'external' }, 'node check.mjs', {})
+  const chunks: StreamChunk[] = []
+  const pending = runWithThreadExecutionContext(
+    {
+      projectId: identity.projectId,
+      threadId,
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    },
+    () =>
+      agentService.runAgent(
+        threadId,
+        'Continue the same task',
+        [],
+        { emit: (_id, chunk) => chunks.push(chunk) },
+        new ToolRegistry(),
+      ),
+  )
+  try {
+    assert.ok(agentService.listRunningThreadIds().includes(threadId))
+    // A hook can interrupt a turn with send-now and continue in the same
+    // human task. Both the Stop entry point and admission listener see this.
+    agentService.abortAgent(threadId, 'send_now')
+    await pending
+    assert.deepEqual(chunks, [{ type: 'done', stopReason: 'cancelled' }])
+    assert.equal(shellReplayLeaseStore.consume(identity, 'npm test', () => false).matched, true)
+    assert.equal(
+      shellReplayLeaseStore.consume(
+        { ...identity, containment: 'external' },
+        'node check.mjs',
+        () => false,
+      ).matched,
+      true,
+    )
+  } finally {
+    agentService.abortAgent(threadId)
+    await pending
+    shellReplayLeaseStore.clear()
+  }
+})
+
 async function runSilentAcpToolTurn(continuationBudgetUsed: number): Promise<{
   chunks: StreamChunk[]
   invocationCount: number
