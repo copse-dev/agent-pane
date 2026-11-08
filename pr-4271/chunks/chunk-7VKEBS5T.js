@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -29188,7 +29188,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);

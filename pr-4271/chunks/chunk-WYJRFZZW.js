@@ -172,6 +172,13 @@ function dotIcon(className = DEFAULT) {
 function circleIcon(className = DEFAULT) {
   return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
 }
+function recordIcon(className = DEFAULT) {
+  return outlineIcon(
+    "circle-dot",
+    ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"],
+    className
+  );
+}
 function spinnerIcon(className = DEFAULT) {
   return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
 }
@@ -8946,6 +8953,7 @@ export {
   messageQuestionIcon,
   banIcon,
   circleIcon,
+  recordIcon,
   spinnerIcon,
   minusIcon,
   warningIcon,
