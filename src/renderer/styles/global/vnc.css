@@ -180,8 +180,6 @@
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .vnc-nearby-feedback {

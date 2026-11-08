@@ -472,6 +472,54 @@ describe('activity view answering a question in place', () => {
     assert.deepEqual(fake.answers, [])
   })
 
+  it('keeps an untouched question usable while unrelated activity redraws', () => {
+    const { harness, fake } = showAsked()
+    const input = field(harness, 0)
+    const send = sendButton(harness)
+    const choice = harness.view.body.querySelector<HTMLButtonElement>('.activity-option')
+    assert.ok(choice)
+    choice.focus()
+
+    harness.state.clock += ACTIVITY_AGE_REFRESH_MS * 2
+    harness.store.emit('agent_activity', 't1', 'Still working')
+    harness.flush()
+
+    assert.ok(field(harness, 0) === input, 'an unfocused field stays mounted')
+    assert.ok(sendButton(harness) === send, 'a pending click keeps its Send target')
+    assert.ok(choice.isConnected, 'the quick answer stays under the pointer')
+    assert.ok(document.activeElement === choice, 'a redraw must keep keyboard focus')
+    assert.equal(
+      harness.view.body.querySelector('.activity-detail-meta')?.textContent,
+      'Needs an answerworkspace · waiting 17 minutes ago',
+    )
+    choice.click()
+    assert.equal(input.value, 'Postgres')
+    assert.equal(send.disabled, false)
+    assert.deepEqual(fake.answers, [])
+  })
+
+  it('keeps an unfocused answer clickable when its thread is renamed', () => {
+    const { harness, fake } = showAsked()
+    const choice = harness.view.body.querySelector<HTMLButtonElement>('.activity-option')
+    assert.ok(choice)
+    choice.focus()
+    harness.store.setState({ threads: [thread('t1', { title: 'Renamed thread' })] })
+    harness.store.emit('threads_changed')
+    harness.flush()
+
+    assert.ok(choice.isConnected, 'renaming must not remove a quick-answer click target')
+    assert.ok(document.activeElement === choice, 'renaming must keep keyboard focus')
+    assert.equal(
+      harness.view.body.querySelector('.activity-detail-title')?.textContent,
+      'Renamed thread',
+    )
+    assert.ok(sendButton(harness).getAttribute('aria-label')?.includes('Renamed thread'))
+    choice.click()
+    sendButton(harness).click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Postgres', ''] }])
+    assert.equal(harness.view.status.textContent, 'Answered Renamed thread.')
+  })
+
   it('sends one answer per question, in order, and says so', () => {
     const { harness, fake } = showAsked()
     typeInto(field(harness, 0), 'Postgres')
@@ -533,6 +581,39 @@ describe('activity view answering a question in place', () => {
     assert.equal(field(harness, 0).value, 'Postgres')
   })
 
+  it('restores a focused answer after a refused send, without leaving inert controls', () => {
+    const { harness, fake } = showAsked()
+    const input = field(harness, 0)
+    input.focus()
+    typeInto(input, 'SQLite')
+    fake.accept.value = false
+    sendButton(harness).click()
+    harness.flush()
+
+    assert.equal(field(harness, 0).value, 'SQLite')
+    assert.equal(field(harness, 0).disabled, false)
+    assert.equal(sendButton(harness).disabled, false)
+    fake.accept.value = true
+    sendButton(harness).click()
+    assert.deepEqual(fake.answers, [
+      { id: 'ask1', answers: ['SQLite', ''] },
+      { id: 'ask1', answers: ['SQLite', ''] },
+    ])
+  })
+
+  it('updates changed question content rather than retaining an obsolete quick answer', () => {
+    const asked = { ...ASKED, options: [['Postgres', 'SQLite'], []] }
+    const { harness } = showAsked([asked])
+    const choice = harness.view.body.querySelector<HTMLButtonElement>('.activity-option')
+    assert.ok(choice)
+    asked.options = [['MySQL'], []]
+    harness.store.emit('threads_changed')
+    harness.flush()
+
+    assert.equal(choice.isConnected, false)
+    assert.equal(harness.view.body.querySelector('.activity-option')?.textContent, 'MySQL')
+  })
+
   it('reports a question that was answered elsewhere first', () => {
     const { harness, fake } = showAsked()
     fake.accept.value = false
@@ -574,6 +655,26 @@ describe('activity view answering a question in place', () => {
     assert.ok(field(harness, 0) === input, 'the same field node is still on screen')
     assert.ok(document.activeElement === input)
     assert.equal(input.value, 'Post')
+  })
+
+  it('keeps the caret while the selected thread metadata changes', () => {
+    const { harness } = showAsked()
+    const input = field(harness, 0)
+    input.focus()
+    typeInto(input, 'Postgres')
+    input.setSelectionRange(2, 5)
+    harness.store.setState({ threads: [thread('t1', { title: 'Renamed thread' })] })
+    harness.store.emit('threads_changed')
+    harness.flush()
+
+    assert.ok(field(harness, 0) === input)
+    assert.ok(document.activeElement === input)
+    assert.equal(input.selectionStart, 2)
+    assert.equal(input.selectionEnd, 5)
+    assert.equal(
+      harness.view.body.querySelector('.activity-detail-title')?.textContent,
+      'Renamed thread',
+    )
   })
 
   it('holds Send answer off when another question takes the place of the one in view', () => {

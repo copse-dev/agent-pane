@@ -11,6 +11,7 @@ import {
   threadPlanInstructions,
 } from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
+import { withPromptCatalog } from '@copse/llm/prompt-cache-diagnostics.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
@@ -972,7 +973,11 @@ async function runAgentWithInlineCanvas(
             stopReason: normalized,
             ...(chunk.stopReason !== undefined ? { rawStopReason: chunk.stopReason } : {}),
             source:
-              normalized === 'cancelled' ? 'user' : normalized === 'timeout' ? 'host' : 'provider',
+              normalized === 'cancelled'
+                ? 'user'
+                : normalized === 'timeout' || normalized === 'max_steps'
+                  ? 'host'
+                  : 'provider',
             ...(lastTurnEvent !== undefined ? { lastEvent: lastTurnEvent } : {}),
             endedAt: Date.now(),
           }
@@ -1969,6 +1974,7 @@ async function runAgentWithInlineCanvas(
       nestedInstructionTurn,
     })
     const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
+    const parentProvider = withPromptCatalog(provider, systemPromptBuild.promptCatalog)
     const skillActivationTurn = createSkillActivationTurn(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
@@ -2668,7 +2674,7 @@ async function runAgentWithInlineCanvas(
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
               await runWithAgentRunExploreMode(subagentsEnabled, async () => {
                 await runAgentLoop({
-                  provider,
+                  provider: parentProvider,
                   messages: trimmed,
                   tools: parentLoopTools,
                   usageModel: model,
@@ -2771,7 +2777,7 @@ async function runAgentWithInlineCanvas(
         )
 
         const parentContinuationBase: RunParentContinuationOptions = {
-          provider,
+          provider: parentProvider,
           messages: trimmed,
           tools: parentLoopTools,
           contextWindow,
@@ -2824,6 +2830,7 @@ async function runAgentWithInlineCanvas(
         // A long-task wake skips it: those turns would spend the wake chain's shared
         // budget and nudge the agent to cancel items the next wake will resume.
         if (
+          loopStopReason !== 'timeout' &&
           !isPlanningRun() &&
           !options?.longTaskWake &&
           getAgentRunTodos().length > 0 &&
@@ -2831,7 +2838,23 @@ async function runAgentWithInlineCanvas(
         ) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
             await runWithAgentRunExploreMode(subagentsEnabled, async () => {
-              await runPreReviewTodoGate(parentContinuationBase)
+              await runPreReviewTodoGate({
+                ...parentContinuationBase,
+                onChunk: (chunk): void => {
+                  // This gate reconciles the already-open primary plan. A
+                  // successful unrelated review fix cannot prove it complete.
+                  if (
+                    chunk.type === 'done' &&
+                    loopStopReason === 'max_steps' &&
+                    chunk.stopReason === undefined &&
+                    !controller.signal.aborted &&
+                    !hasOpenTodos(getAgentRunTodos())
+                  ) {
+                    loopStopReason = undefined
+                  }
+                  parentContinuationBase.onChunk(chunk)
+                },
+              })
             })
           })
         }
@@ -2855,7 +2878,11 @@ async function runAgentWithInlineCanvas(
         // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
         // setting (orthogonal to enablement) and is read below.
 
-        if (turnChangedFiles && getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)) {
+        if (
+          loopStopReason !== 'timeout' &&
+          turnChangedFiles &&
+          getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)
+        ) {
           const reviewRoute = await buildReviewRoute()
           const reviewProvider = reviewRoute?.provider ?? provider
           const reviewUsageModel = reviewRoute?.usageModel ?? model
@@ -3045,7 +3072,9 @@ async function runAgentWithInlineCanvas(
         const summary = continuationBudgetExhaustedSummary(getAgentRunTodos(), continuationGrants, {
           remaining: continuationBudget.remaining(),
           aborted: controller.signal.aborted,
-          failed: loopStopReason !== undefined,
+          // A finite step/call stop still owes the deterministic plan/grant
+          // summary; only independent failures suppress that explanation.
+          failed: loopStopReason !== undefined && loopStopReason !== 'max_steps',
         })
         if (summary !== null) {
           const separatedSummary = `\n\n${summary}`

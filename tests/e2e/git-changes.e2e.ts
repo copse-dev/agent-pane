@@ -176,8 +176,8 @@ describe('git changes viewer', function () {
     await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
-    // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
-    // so compare case-insensitively. Extra workspace artifacts (e.g. index DBs)
+    // Section titles reflect staged vs unstaged counts; compare case-insensitively
+    // so a header restyle is not a failure. Extra workspace artifacts (e.g. index DBs)
     // may inflate counts; assert the fixture files are present instead.
     const sectionTitles = (await $$('.git-changes-section-title').map((e) => e.getText())).map(
       (t) => t.toLowerCase(),

@@ -283,6 +283,7 @@ async function recordSelection(
   liveHead = COMPARE,
   missingLabel = false,
   body = '',
+  live: { state?: string; repository?: string } = {},
 ): Promise<{ removed: string[]; statuses: string[]; updated: string[]; created: string[] }> {
   const removed: string[] = []
   const statuses: string[] = []
@@ -310,9 +311,12 @@ async function recordSelection(
         pulls: {
           get: async () => ({
             data: {
-              state: 'open',
+              state: live.state ?? 'open',
               body,
-              head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
+              head: {
+                sha: liveHead,
+                repo: { full_name: live.repository ?? 'copse-dev/agent-pane' },
+              },
             },
           }),
         },
@@ -350,10 +354,10 @@ describe('recording a screenshot checkbox decision', () => {
     )
     assert.deepEqual(result.statuses, [HEAD, HEAD, COMPARE, COMPARE])
   })
-  it('clears the reminder after committing the selection and records the reviewed head', async () => {
+  it('clears the reminder and records the reviewed and exact selected follow-up heads', async () => {
     const result = await recordSelection()
     assert.deepEqual(result.removed, ['screenshots-need-review'])
-    assert.deepEqual(result.statuses, [HEAD])
+    assert.deepEqual(result.statuses, [HEAD, COMPARE])
     assert.match(result.updated[0] ?? '', /committing 1 of 2 changed screenshots/)
     assert.deepEqual(result.created, [])
   })
@@ -364,9 +368,17 @@ describe('recording a screenshot checkbox decision', () => {
     assert.deepEqual(result.statuses, [HEAD])
   })
 
+  it('does not carry selection acceptance to a closed or external PR at the same follow-up head', async () => {
+    for (const live of [{ state: 'closed' }, { repository: 'fork/agent-pane' }]) {
+      const result = await recordSelection({}, COMPARE, false, '', live)
+      assert.deepEqual(result.statuses, [HEAD])
+      assert.deepEqual(result.removed, [])
+    }
+  })
+
   it('records the decision when the reminder was already removed', async () => {
     const result = await recordSelection({}, COMPARE, true)
-    assert.deepEqual(result.statuses, [HEAD])
+    assert.deepEqual(result.statuses, [HEAD, COMPARE])
     assert.equal(result.updated.length, 1)
   })
 
