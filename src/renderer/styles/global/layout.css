@@ -1335,7 +1335,7 @@
   flex-shrink: 0;
   padding: 1px 4px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--font-size-3xs);
   line-height: 1.2;
