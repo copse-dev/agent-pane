@@ -2173,13 +2173,6 @@
           1
         ]
       },
-      "shell:open-workspace-file-in-browser": {
-        "api": "shell.openWorkspaceFileInBrowser",
-        "args": [
-          3,
-          3
-        ]
-      },
       "simulator-desktop:close": {
         "api": "simulatorDesktop.close",
         "args": [

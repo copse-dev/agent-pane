@@ -75,6 +75,40 @@ describe('static browser preview server', () => {
     assert.equal(await stylesheet.text(), 'body { color: plum; }')
   })
 
+  it('refuses requests from a rebinding hostname or a different web origin', async () => {
+    const root = await temporaryRoot('copse-static-preview-origin-')
+    await writeFile(join(root, 'index.html'), '<h1>Private preview</h1>')
+    const preview = await getStaticPreviewServer(root)
+    const port = new URL(preview.url).port
+
+    const rebound = await fetch(preview.url, {
+      headers: { Host: `attacker.example:${port}`, Origin: `http://attacker.example:${port}` },
+    })
+    assert.equal(rebound.status, 403)
+    assert.equal(await rebound.text(), 'Forbidden')
+
+    const crossOrigin = await fetch(preview.url, {
+      headers: { Origin: 'https://attacker.example' },
+    })
+    assert.equal(crossOrigin.status, 403)
+    assert.equal((await fetch(preview.url)).status, 200)
+  })
+
+  it('does not serve conventional secret files or Git metadata', async () => {
+    const root = await temporaryRoot('copse-static-preview-secrets-')
+    await mkdir(join(root, '.git'))
+    await writeFile(join(root, 'index.html'), '<h1>Public preview</h1>')
+    await writeFile(join(root, '.env'), 'COPSE_AUDIT_CANARY=1')
+    await writeFile(join(root, '.git', 'config'), 'private remote')
+    const preview = await getStaticPreviewServer(root)
+
+    for (const path of ['.env', '.git/config', '%2Eenv']) {
+      const response = await fetch(new URL(path, preview.url))
+      assert.equal(response.status, 404, path)
+    }
+    assert.equal((await fetch(preview.url)).status, 200)
+  })
+
   it('keeps prototype isolation when its listener is opened through an IP alias', async () => {
     const root = await temporaryRoot('copse-static-preview-alias-')
     await writeFile(join(root, 'index.html'), '<h1>Prototype</h1>')

@@ -3,6 +3,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { embeddedIpv4, normalizeHostname } from '@copse/llm/credential-url.ts'
+import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
 
@@ -102,6 +103,14 @@ function isInsideRoot(root: string, candidate: string): boolean {
   return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
 }
 
+function isPrivatePreviewPath(root: string, path: string): boolean {
+  const inside = relative(root, path)
+  return (
+    inside.split(sep).some((segment) => segment.startsWith('.')) ||
+    (inside !== '' && sensitiveTargetReason(inside, inside) !== null)
+  )
+}
+
 async function resolveRequestFile(root: string, requestUrl: string): Promise<string | null> {
   let pathname: string
   try {
@@ -112,13 +121,13 @@ async function resolveRequestFile(root: string, requestUrl: string): Promise<str
   if (pathname.includes('\0')) return null
 
   const candidate = resolve(root, `.${pathname}`)
-  if (!isInsideRoot(root, candidate)) return null
+  if (!isInsideRoot(root, candidate) || isPrivatePreviewPath(root, candidate)) return null
 
   try {
     const candidateStat = await stat(candidate)
     const file = candidateStat.isDirectory() ? join(candidate, 'index.html') : candidate
     const canonical = await realpath(file)
-    if (!isInsideRoot(root, canonical)) return null
+    if (!isInsideRoot(root, canonical) || isPrivatePreviewPath(root, canonical)) return null
     return (await stat(canonical)).isFile() ? canonical : null
   } catch {
     return null
@@ -131,9 +140,23 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
   if (!rootStat.isDirectory()) throw new Error('The preview root is not a directory.')
 
   const served = new Set<string>()
+  let listeningPort = 0
   const server = createServer((request, response) => {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end()
+      return
+    }
+    // A DNS-rebound page keeps its attacker-controlled Host while connecting to
+    // 127.0.0.1. Accept only the two loopback names Copse advertises and uses.
+    const host = request.headers.host?.toLowerCase()
+    if (
+      !host ||
+      ![`localhost:${String(listeningPort)}`, `127.0.0.1:${String(listeningPort)}`].includes(
+        host,
+      ) ||
+      (request.headers.origin !== undefined && request.headers.origin !== `http://${host}`)
+    ) {
+      response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden')
       return
     }
     void resolveRequestFile(canonicalRoot, request.url ?? '/').then(
@@ -183,6 +206,7 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
       resolvePort(address.port)
     })
   })
+  listeningPort = port
   server.unref()
   const entry: PreviewServerEntry = {
     root: canonicalRoot,
