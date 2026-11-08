@@ -150,6 +150,7 @@ import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import {
   ACP_READONLY_CHECKOUT_PROMPT_NOTE,
+  ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE,
   AcpReadonlyCheckoutUnavailableError,
   acpWriteAccessContinuationPrompt,
 } from './acp-write-access.ts'
@@ -974,7 +975,9 @@ async function runAcpAgentTurn(
       }
     } else if (sessionBridge && bridgeMounted) {
       if (markAcpBridgeAvailable(sessionBridge)) {
-        copseToolsNote = acpCopseToolsConnectedPromptNote(acpCopseToolsSteering(sandboxed))
+        copseToolsNote = acpCopseToolsConnectedPromptNote(
+          acpCopseToolsSteering(sandboxed, readonlyCheckout),
+        )
       }
     } else if (
       // A Stop pressed while the agent was still connecting is not a failed
@@ -1915,10 +1918,11 @@ const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
  * them late (#4144). A sandboxed session also gets back its run_shell and
  * GitHub steering, which the unavailable note told it to ignore.
  */
-function acpCopseToolsSteering(sandboxed: boolean): string {
-  return sandboxed
+function acpCopseToolsSteering(sandboxed: boolean, readonlyCheckout: boolean): string {
+  const toolsNote = sandboxed
     ? `${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${ACP_SANDBOX_GITHUB_STEER}`
     : ACP_COPSE_TOOLS_PROMPT_NOTE
+  return toolsNote + (readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '')
 }
 
 /**
@@ -1956,7 +1960,9 @@ export function buildAcpPrompt(
         (opts?.sandboxed
           ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}`
           : '') +
-        (opts?.readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '') +
+        (opts?.readonlyCheckout
+          ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
+          : '') +
         '\n\n'
       : '') + (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '')
   const operatorBlock = opts?.operatorInstructions

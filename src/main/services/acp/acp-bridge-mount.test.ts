@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type { ContainerRuntimeAttestation } from '@shared/types/unattended-run.ts'
 import { ACP_COPSE_TOOLS_PROMPT_NOTE, runAcpAgentFromSettings } from './acp-agent-service.ts'
@@ -24,6 +25,7 @@ import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import {
   clearRuntimeContainmentForTests,
   declareContainerRuntime,
@@ -61,6 +63,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await disposeAllAcpSessions()
+  setProjectSandboxEnabled(false)
   setWorkspaceRootForTest(null)
   await setSetting('registeredAcpAgents', [])
   await rm(root, { recursive: true, force: true })
@@ -77,7 +80,7 @@ function registryWithOneBridgedTool(): ToolRegistry {
   return registry
 }
 
-async function useFixtureAgent(flags: string[]): Promise<void> {
+async function useFixtureAgent(flags: string[], sandboxed = false): Promise<void> {
   await setSetting('registeredAcpAgents', [
     {
       id: 'bridge-fixture',
@@ -85,6 +88,7 @@ async function useFixtureAgent(flags: string[]): Promise<void> {
       command: process.execPath,
       args: [MOCK_AGENT, ...flags],
       enabled: true,
+      ...(sandboxed ? { sandbox: { allowedDomains: [] } } : {}),
     },
   ])
 }
@@ -96,6 +100,7 @@ async function runTurn(
   opts: {
     userPrompt?: string
     signal?: AbortSignal
+    readonlyCheckout?: boolean
     turnGuidance?: (bridgeToolNames: readonly string[]) => Promise<string | undefined>
   } = {},
 ): Promise<{ stopReason: string; shown: string }> {
@@ -108,6 +113,9 @@ async function runTurn(
       root,
       checkoutMode: 'shared',
       branch: 'main',
+      ...(opts.readonlyCheckout
+        ? { deferredWorktree: { baseBranch: 'main', requestedAt: 1 } }
+        : {}),
     },
     () =>
       runAcpAgentFromSettings({
@@ -179,6 +187,46 @@ async function sandboxedRun<T>(threadId: string, fn: () => Promise<T>): Promise<
 }
 
 describe('ACP native bridge mount (#4144)', () => {
+  it(
+    'withholds write-access instructions until a read-only session lists the bridge',
+    {
+      skip: process.platform === 'win32',
+    },
+    async (t) => {
+      // Inject at the OS containment boundary: the real deferred-checkout and
+      // bridge paths still run, while the fixture only echoes prompts/lists tools.
+      t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+      t.mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
+      t.mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
+        Promise.resolve({
+          argv: [process.execPath, MOCK_AGENT, '--mcp-http'],
+          env: { ...process.env },
+        }),
+      )
+      setProjectSandboxEnabled(true)
+      await useFixtureAgent(['--mcp-http'], true)
+      const registry = registryWithOneBridgedTool()
+      const options = { readonlyCheckout: true }
+      const first = await runTurn('readonly-lists-late', registry, options)
+      assert.equal(first.stopReason, 'end_turn')
+      assert.match(first.shown, /Read-only workspace:/)
+      assert.doesNotMatch(first.shown, /request_write_access/)
+
+      const listing = await runTurn('readonly-lists-late', registry, {
+        ...options,
+        userPrompt: 'list-mcp-tools',
+      })
+      assert.equal(listing.stopReason, 'end_turn')
+      assert.match(listing.shown, /listed/)
+
+      const after = await runTurn('readonly-lists-late', registry, options)
+      assert.equal(after.stopReason, 'end_turn')
+      assert.match(after.shown, /now connected/)
+      assert.match(after.shown, /request_write_access/)
+      assert.match(after.shown, /end your turn/)
+    },
+  )
+
   it('stops claiming Copse tools, and says so once, when the agent never lists them', async () => {
     await useFixtureAgent(['--mcp-http'])
     const registry = registryWithOneBridgedTool()
