@@ -1,14 +1,15 @@
 import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedFooterBranchPickerFixture } from './helpers/seed-config.ts'
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import {
+  saveAppScreenshot,
+  saveFramedElementScreenshot,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
 async function expectPickerContainment(): Promise<void> {
   // Filtering resizes the popup; let CSS anchor fallbacks settle before measuring it.
@@ -209,11 +210,12 @@ describe('footer branch picker', () => {
     await expect(trigger.$('.branch-picker-label')).toHaveText(seed.currentBranch)
     await expect(trigger).toBeFocused()
     // The app-shell screenshot helper dispatches resize, which returns focus
-    // to the composer. The viewport was already pinned by the preceding
-    // capture, so take this frame directly while the real trigger focus is
-    // still present.
-    await browser.pause(100)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'footer-branch-picker-keyboard-focus.png'))
+    // to the composer, so capture the shell as it stands while the real
+    // trigger focus is still present.
+    await withCaptureFrame(async () => {
+      await saveFramedElementScreenshot('#app', 'footer-branch-picker-keyboard-focus.png')
+    })
+    await expect(trigger).toBeFocused()
 
     // A query matching nothing reports an empty state instead of a blank menu.
     await trigger.click()

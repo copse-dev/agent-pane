@@ -1,3 +1,4 @@
+import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { PROVIDER_ENV_VARS } from '../providers/env-key-detection.ts'
 
 /**
@@ -44,12 +45,19 @@ function isSecretEnvKey(key: string): boolean {
   return SECRET_ENV_KEYS.has(key) || SECRET_NAME_PATTERN.test(key)
 }
 
-/** Build a string env for subprocesses spawned on behalf of the renderer (no LLM secrets). */
+/**
+ * Build a string env for subprocesses spawned on behalf of the renderer (no LLM secrets).
+ *
+ * Also drops the `CLAUDE_CODE_TMPDIR` an in-flight ASRT wrap pins in
+ * `process.env` (#4149): an unsandboxed Claude Code started meanwhile would
+ * otherwise keep its own temp files in a directory every sandboxed command can
+ * write. Sandboxed spawns set their temp variables afterwards.
+ */
 export function envForRendererChildProcess(
   base: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(base)) {
+  for (const [key, value] of Object.entries(withoutSandboxWrapTmpPin(base))) {
     if (value === undefined || isSecretEnvKey(key)) continue
     out[key] = value
   }
