@@ -125,17 +125,17 @@ button.thread-context-row:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A row's state or kind — Granted, Active, Trusted, "1 session", PR — is a fact
+   about the row, not a control, so it reads as muted text. Only Revoke, Disable
+   and Manage app permissions beside it keep a frame, because they are buttons. */
 .thread-context-chip {
   flex: none;
   max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
 }
 .thread-context-empty {
   margin: 0;
