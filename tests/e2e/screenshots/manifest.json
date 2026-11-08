@@ -458,8 +458,8 @@
       "bytes": 26128
     },
     "android-desktop-live.png": {
-      "sha256": "ed778b6044ae48cb27702bb12d670fd7e09ef0d15234582b0a2cbff2927a5158",
-      "bytes": 357699
+      "sha256": "4758449bde4bff92ecb3226f0abc241d2958fba31f4aa7561ba1187c535a8a34",
+      "bytes": 361903
     },
     "app-run-android-picker.png": {
       "sha256": "cf17eb8c2e612b16e874afd321382c31afa6ecaab7b3ae4f192f724775b5073f",
@@ -910,8 +910,8 @@
       "bytes": 110378
     },
     "browser-address-selection-sharing-menu.png": {
-      "sha256": "bdfa0ce57969fc9877a9d17d88071f7be7b92e3cbdb7e34552baba317cac5ef1",
-      "bytes": 54637
+      "sha256": "eec7b3368866334acc370d968d84de5a4f5fd1d6b9abc99a67f57e570f9d4161",
+      "bytes": 59522
     },
     "browser-canvas-annotation-after-send.png": {
       "sha256": "99b935704216117562e2ca989dd0af1fcdfda2734f593bedc48ef9b36a8a6976",
@@ -962,8 +962,8 @@
       "bytes": 29135
     },
     "browser-page-html-download-menu.png": {
-      "sha256": "b6d783e2eeba8cdfebbf7517ae58103170f095a86eca856369affd560526c46d",
-      "bytes": 53846
+      "sha256": "fc5cfca5a7d5b69f8545827c96f4e8739702986ec6f56ef698b2a294f237796a",
+      "bytes": 58806
     },
     "browser-preview-missing-entry.png": {
       "sha256": "f5c2556a571ae3fcc81dde7ce5736f81f585413fba5078bdbe02070439f71787",
@@ -1038,8 +1038,8 @@
       "bytes": 363901
     },
     "canvas-artefact-download-menu.png": {
-      "sha256": "926e82d8c424878070b3c737a05e24b3d6ee7db30a42ae93cf108f59dbde0bf5",
-      "bytes": 302105
+      "sha256": "a6f68e730ccf52e1a5d4a6d17763a871cfa52bde5d3587c6eab876dafda92c03",
+      "bytes": 306391
     },
     "canvas-artefact-preview.png": {
       "sha256": "f18ac4c6b8c994d04dc1373227977d21fd16b49adda13e45b13c90e4e05f9138",
@@ -2936,6 +2936,22 @@
     "pane-popout-roadmap.png": {
       "sha256": "9131537c4fa8c9a9855165cb5d00d9c6d8fc5e402240ae49f57a628ffbc2a99f",
       "bytes": 71149
+    },
+    "pane-recording-browser-attached.png": {
+      "sha256": "3248ae57dbdfbd1abc424f05a34d7bfb1d744a71939a83f47c6af20862c11c3c",
+      "bytes": 32432
+    },
+    "pane-recording-browser-live.png": {
+      "sha256": "c2976ebe277b09466ac58fd609088fc160cbfb707435c563075210d0d99b49b1",
+      "bytes": 308061
+    },
+    "pane-recording-desktop-attached.png": {
+      "sha256": "a56a7cb0005475c85921048a2198aee0170e0fe19acaa6aebd2a7d7efa0ab5b6",
+      "bytes": 41233
+    },
+    "pane-recording-desktop-live.png": {
+      "sha256": "e8479ba9cfa1740578e7cc0a33bed571fd57caa7eed7ed63fa0335d60b36fa2b",
+      "bytes": 317450
     },
     "pane-rules-and-roadmap-spacing.png": {
       "sha256": "6c8052f9d8095da5ac7174b4e38877c10035b6bfad627976b97caffc4ab6c24f",
@@ -5930,8 +5946,8 @@
       "bytes": 67571
     },
     "vnc-viewer-control-enabled.png": {
-      "sha256": "c41767b7edd8be8b9ae18e6ab88eceefabcf9b6e7d2cd2014258740757c693e1",
-      "bytes": 41843
+      "sha256": "fafc987fb44b249a3bb1048922052e7986cf2672aa0febb854907f34730630da",
+      "bytes": 45329
     },
     "vnc-viewer-deduped-machines.png": {
       "sha256": "1d257d15a7fb24a07e04c3f12c5c27ea05c148b7998e1c274791ea5b707aee84",
@@ -5942,8 +5958,8 @@
       "bytes": 71236
     },
     "vnc-viewer-read-only.png": {
-      "sha256": "3d37879f35e52da30dad27cde88e782dfcc4ab25d54a8b1dc976e95a418fa0b4",
-      "bytes": 43099
+      "sha256": "3418771ffcc28ad428ae8ec70ed8b9f106e4ede597dd1208b26ee9f36d8d37ec",
+      "bytes": 46868
     },
     "vnc-viewer-remember-password-row.png": {
       "sha256": "a629ca4f132cf6f311d0eaf9e8f1472e6437bf705d793bb4241045980a557658",
@@ -5954,20 +5970,20 @@
       "bytes": 112606
     },
     "vnc-viewer-saved-login.png": {
-      "sha256": "7ed008db4d12602c9fb5d4308b69273ddd5dec381753a042a535cbfbc2aead9b",
-      "bytes": 47158
+      "sha256": "4a2b9318a428f57ea93b51e2603325d7a9dca15984ea0d79379b7defae2b03d3",
+      "bytes": 51205
     },
     "vnc-viewer-share-screen-menu.png": {
-      "sha256": "9676574b3e5831e90bd1b1d29c56e8daafdcda5c8286edc69ad707dd9e9e0eff",
-      "bytes": 5981
+      "sha256": "84d1918258e53abe89e54f731f8bb8c4228047e03da839988d05f08d4b026b63",
+      "bytes": 8980
     },
     "vnc-viewer-shared-screen.png": {
       "sha256": "d2958085f8cd50e07b450d669bddcab03add6718ad65862e2462c9229f5bfb2e",
       "bytes": 293649
     },
     "vnc-viewer-tabs.png": {
-      "sha256": "3438051ef88d214c45630bd2645e2c8d0e6e29f6e47c8a61a71af1aa29ec4510",
-      "bytes": 45700
+      "sha256": "837be62268a85be562c0b76e7dcaf2ec91c7f455f2bc829bc1467849d8a7bcac",
+      "bytes": 49826
     },
     "welcome-empty.png": {
       "sha256": "f05fce71acbc234eadd2b1a095a024b0a48a61ddcdd0a149669786ae42d974a9",
