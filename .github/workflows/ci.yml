@@ -2853,11 +2853,12 @@ jobs:
   # as `labeled` / `ready_for_review` — now leaves a red `CI Passed` on the SHA
   # it was evaluating instead of a skipped one. That is intended: only the
   # replacement run's own green counts. Branch protection reads the newest
-  # check run of that name and release-mac.yml polls the latest-started
-  # `CI Passed`; a run and its replacement share a concurrency group, which
-  # serialises them, so the replacement's gate always starts after the
-  # cancelled gate has finished and its result is the one that wins. The
-  # nightly has its own group, so a trunk push does not supersede it.
+  # check run of that name, and release-mac.yml reads `Full release validation`
+  # from the newest push run at the SHA once release-dispatch.yml starts it; a
+  # run and its replacement share a concurrency group, which serialises them,
+  # so the replacement's gate always starts after the cancelled gate has
+  # finished and its result is the one that wins. The nightly has its own
+  # group, so a trunk push does not supersede it.
   ci-passed:
     # A push to trunk (`main`) intentionally skips the expensive tier. Give that
     # run a distinct check context so its green result on the same head SHA

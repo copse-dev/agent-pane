@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  CI_WORKFLOW,
   RELEASE_WORKFLOW,
+  ciFinished,
   releaseTagAt,
   startReleaseBuild,
+  startReleaseWhenCiFinished,
   type ReleaseDispatchContext,
   type ReleaseDispatchGitHub,
 } from './release-dispatch.mts'
@@ -19,13 +22,15 @@ interface Fake {
   refError?: { status: number }
   tagObject?: unknown
   runs?: unknown
+  ciRuns?: unknown
+  ciError?: { status: number }
 }
 
 interface Calls {
   refs: string[]
   tags: string[]
   dispatches: { workflow_id: string; ref: string; inputs: { tag: string } }[]
-  runLookups: { workflow_id: string; head_sha: string }[]
+  runLookups: { workflow_id: string; head_sha: string; event?: string }[]
 }
 
 function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs: string[] } {
@@ -58,8 +63,14 @@ function context(fake: Fake): { ctx: ReleaseDispatchContext; calls: Calls; logs:
         },
       },
       actions: {
-        listWorkflowRuns: ({ workflow_id, head_sha }) => {
-          calls.runLookups.push({ workflow_id, head_sha })
+        listWorkflowRuns: ({ workflow_id, head_sha, event }) => {
+          calls.runLookups.push({ workflow_id, head_sha, ...(event ? { event } : {}) })
+          if (workflow_id === CI_WORKFLOW) {
+            if (fake.ciError) return Promise.reject(Object.assign(new Error('API'), fake.ciError))
+            return Promise.resolve({
+              data: fake.ciRuns ?? { workflow_runs: [{ run_number: 7, status: 'completed' }] },
+            })
+          }
           return Promise.resolve({ data: fake.runs ?? { total_count: 0, workflow_runs: [] } })
         },
         createWorkflowDispatch: ({ workflow_id, ref, inputs }) => {
@@ -156,5 +167,69 @@ describe('startReleaseBuild', () => {
     await assert.rejects(startReleaseBuild(ctx, SHA, 'v1.2.3'), /existing Release \(macOS\) runs/)
     assert.deepEqual(calls.dispatches, [])
     await assert.rejects(startReleaseBuild(context({}).ctx, 'v1.2.3', 'v1.2.3'))
+  })
+})
+
+describe('ciFinished', () => {
+  it('reads the newest CI push run at the commit, whatever its conclusion', async () => {
+    const { ctx, calls } = context({
+      ciRuns: {
+        workflow_runs: [
+          { run_number: 3, status: 'in_progress' },
+          { run_number: 9, status: 'completed', conclusion: 'failure' },
+        ],
+      },
+    })
+    assert.equal(await ciFinished(ctx, SHA), true)
+    assert.deepEqual(calls.runLookups, [{ workflow_id: 'ci.yml', head_sha: SHA, event: 'push' }])
+  })
+
+  it('treats a newer run or re-run still in progress, or no run yet, as not finished', async () => {
+    for (const ciRuns of [
+      {
+        workflow_runs: [
+          { run_number: 9, status: 'completed' },
+          { run_number: 12, status: 'in_progress' },
+        ],
+      },
+      { workflow_runs: [{ run_number: 9, status: 'queued' }] },
+      { workflow_runs: [] },
+    ]) {
+      assert.equal(await ciFinished(context({ ciRuns }).ctx, SHA), false, JSON.stringify(ciRuns))
+    }
+  })
+
+  it('throws on an API error or unreadable runs instead of answering either way', async () => {
+    // Reading an error as "finished" would dispatch before CI ends and spend the
+    // commit's one automatic run on a preflight that can only fail.
+    await assert.rejects(ciFinished(context({ ciError: { status: 502 } }).ctx, SHA), /API/)
+    await assert.rejects(ciFinished(context({ ciRuns: {} }).ctx, SHA), /CI runs/)
+    await assert.rejects(
+      ciFinished(context({ ciRuns: { workflow_runs: [{ status: 'completed' }] } }).ctx, SHA),
+      /run number/,
+    )
+  })
+})
+
+describe('startReleaseWhenCiFinished', () => {
+  it('leaves the build to CI completion while CI is still running', async () => {
+    const { ctx, calls, logs } = context({
+      ciRuns: { workflow_runs: [{ run_number: 4, status: 'in_progress' }] },
+    })
+    assert.equal(await startReleaseWhenCiFinished(ctx, SHA, 'v1.2.3'), 'ci-running')
+    assert.deepEqual(calls.dispatches, [])
+    assert.match(logs.join('\n'), /still running; its completion starts Release \(macOS\)/)
+  })
+
+  it('starts the build once CI has finished', async () => {
+    const { ctx, calls } = context({})
+    assert.equal(await startReleaseWhenCiFinished(ctx, SHA, 'v1.2.3'), 'started')
+    assert.equal(calls.dispatches.length, 1)
+  })
+
+  it('does not dispatch when the CI read fails', async () => {
+    const { ctx, calls } = context({ ciError: { status: 500 } })
+    await assert.rejects(startReleaseWhenCiFinished(ctx, SHA, 'v1.2.3'))
+    assert.deepEqual(calls.dispatches, [])
   })
 })
