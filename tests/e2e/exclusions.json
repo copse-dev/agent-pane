@@ -10,7 +10,7 @@
       "recordedOn": "2026-11-08",
       "reviewBy": "2026-11-15",
       "coverage": "The macOS Electron spec verifies early failure, preserved draft and attachment, Settings command repair and successful Retry with the original contents. Unit tests cover filesystem lookup and checkout ordering. The spec remains enabled on Linux; Windows executable resolution remains outside this preflight.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip", "this.skip"]
     },
     {
       "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { AUTOMATION_FAILURE_CODES } from './types/automations.ts'
 import {
   AUTOMATION_APPROVAL_STALL_MS,
+  classifyAutomationCheckoutFailure,
   classifyAutomationFailureMessage,
   describeAutomationFailure,
   isApprovalStalled,
@@ -30,6 +31,26 @@ describe('automation failures', () => {
       'worktree-failed',
     )
     assert.equal(classifyAutomationFailureMessage('socket hang up'), 'unknown')
+  })
+
+  it('distinguishes known agent setup errors from checkout errors, including Git auth', () => {
+    for (const message of [
+      'The selected coding agent is not enabled.',
+      'Authentication helper cannot start because its configured command is missing or not executable.',
+    ]) {
+      assert.equal(classifyAutomationCheckoutFailure(message), 'no-model')
+      assert.equal(
+        classifyAutomationCheckoutFailure(`Error invoking remote method: Error: ${message}`),
+        'no-model',
+      )
+    }
+    for (const message of ['checkout unavailable', 'Git authentication failed', 'disk full']) {
+      assert.equal(classifyAutomationCheckoutFailure(message), 'worktree-failed')
+    }
+    assert.match(
+      describeAutomationFailure('no-model').remedy,
+      /Settings → General → Models & agents/,
+    )
   })
 
   it('calls an approval stalled only after the threshold', () => {

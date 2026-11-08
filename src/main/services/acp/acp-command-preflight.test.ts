@@ -25,7 +25,10 @@ describe('local ACP command preflight', () => {
         roots.push(root)
         await assert.rejects(
           preflightLocalAcpModel(`acp:${id}#model`, root, {
-            getAgent: () => agent(join(root, 'missing')),
+            getAgent: (requestedId) => {
+              assert.equal(requestedId, id)
+              return { ...agent(join(root, 'missing')), id }
+            },
           }),
           /configured command is missing or not executable.*Settings → General → Models & agents/,
         )

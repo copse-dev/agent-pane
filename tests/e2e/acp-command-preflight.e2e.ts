@@ -3,10 +3,16 @@ import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildSync } from 'esbuild'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../packages/agent/src/plugins/first-party-plugins.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 import { composerText, setComposerValue } from './helpers/composer.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -36,11 +42,12 @@ describe('missing local coding agent before first send', function () {
   this.timeout(90_000)
   let scratch = ''
   let command = ''
+  let workspace = ''
 
   before(async () => {
     if (process.platform === 'win32') return
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    const workspace = seedStableWorkspace()
+    workspace = seedStableWorkspace()
     scratch = mkdtempSync(join(workspace, 'readiness-'))
     appendFileSync(join(workspace, '.git/info/exclude'), '\nreadiness-*/\n')
     const fixture = join(scratch, 'agent.mjs')
@@ -139,5 +146,100 @@ describe('missing local coding agent before first send', function () {
     await expect(error).not.toBeDisplayed()
     await expect($('.msg-user')).toHaveText(expect.stringContaining(PROMPT))
     await saveAppScreenshot('acp-command-preflight-recovered.png')
+  })
+
+  it('identifies agent setup in a scheduled run while keeping its unsent prompt', async function () {
+    if (process.platform === 'win32') this.skip()
+    const projectId = 'e2e-acp-readiness'
+    const scheduleId = 'readiness-schedule'
+    resetUserData()
+    seedEmptyProject(workspace, projectId, {
+      model: 'acp:codex-acp',
+      subagentsEnabled: false,
+      registeredAcpAgents: [
+        {
+          id: 'codex-acp',
+          title: 'Codex',
+          command: join(scratch, 'missing-agent'),
+          enabled: true,
+        },
+      ],
+      uiAccentColor: '#e7ad52',
+    })
+    writeSeedConfig({
+      projects: [{ id: projectId, path: workspace, name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [],
+      pluginDisabled: EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS.filter(
+        (id) => id !== 'copse.automations',
+      ),
+      packMigration: { automationsEnablement: true },
+      pack: {
+        copse: {
+          automations: {
+            storage: [
+              {
+                id: scheduleId,
+                projectId,
+                name: 'Project health',
+                cron: '0 0 1 1 *',
+                prompt: PROMPT,
+                model: 'acp:codex-acp',
+                enabled: false,
+                createdAt: 1_786_000_000_000,
+                updatedAt: 1_786_000_000_000,
+              },
+            ],
+          },
+        },
+      },
+    })
+    await browser.reloadSession()
+    await $(`.project-entry[data-project-id="${projectId}"] .project-menu-btn`).click()
+    await $('.context-menu-item=Automations').click()
+    const rowSelector = `.automation-row[data-schedule-id="${scheduleId}"]`
+    await $(rowSelector).$('button=Run now').click()
+    await $('[aria-label="Close automations"]').click()
+    const toggle = $('.automation-threads-toggle')
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    // A schedule with one run is a direct row, without a schedule group.
+    await $('.automation-threads-group .chat-row').click()
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('configured command is missing or not executable'),
+    )
+    assert.equal(await composerText(), PROMPT)
+    await expect($('.msg-user')).not.toExist()
+    await expect($('.msg-assistant')).not.toExist()
+    // Reopen after the asynchronous failure: the manager reads the persisted
+    // schedule problem when opened, rather than subscribing to turn failures.
+    await $(`.project-entry[data-project-id="${projectId}"] .project-menu-btn`).click()
+    await $('.context-menu-item=Automations').click()
+    const row = $(rowSelector)
+    const problem = row.$('.automation-row-problem-message')
+    await expect(problem).toHaveAttribute('data-failure-code', 'no-model')
+    await expect(problem.$('.automation-problem-title')).toHaveText('Model unavailable')
+    await expect(problem.$('.automation-problem-message')).toHaveText(
+      expect.stringContaining('configured command is missing or not executable'),
+    )
+    await expect(problem.$('.automation-problem-remedy')).toHaveText(
+      expect.stringContaining('Settings → General → Models & agents'),
+    )
+    await expect(row.$('button=Edit')).toBeDisplayed()
+    const restoreTime = await pinTextForCapture(
+      '.automation-problem-time',
+      /.+/,
+      ' · 8 Nov 2026, 10:00',
+    )
+    const restoreLastRun = await pinTextForCapture(
+      '.automation-row-last-run',
+      /^Last started .+$/,
+      'Last started 8 Nov 2026, 10:00',
+    )
+    try {
+      await saveAppScreenshot('acp-command-preflight-automation.png')
+    } finally {
+      await restoreTime()
+      await restoreLastRun()
+    }
   })
 })
