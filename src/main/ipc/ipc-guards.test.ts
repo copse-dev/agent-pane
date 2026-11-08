@@ -13,6 +13,7 @@ import {
   machineAgentRunSchema,
   parsePortKillArgs,
   parseAcpAuthStatusArgs,
+  projectIsActiveForSender,
   vncDiscoveryHostSchema,
   vncTargetSchema,
   zHttpUrl,
@@ -39,6 +40,14 @@ describe('ipc-guards assertMainFrameSender', () => {
       },
       (err: unknown) => err instanceof IpcValidationError,
     )
+  })
+})
+
+describe('project-scoped artifact IPC', () => {
+  it("accepts only the asking window's active project", () => {
+    assert.equal(projectIsActiveForSender('project-1', 'project-1'), true)
+    assert.equal(projectIsActiveForSender('project-1', 'project-2'), false)
+    assert.equal(projectIsActiveForSender(null, 'project-1'), false)
   })
 })
 

@@ -1812,8 +1812,8 @@
       "remote-agent:download-artifact": {
         "api": "remoteAgent.downloadArtifact",
         "args": [
-          2,
-          2
+          1,
+          1
         ]
       },
       "remote-agent:models": {
