@@ -91,7 +91,10 @@ describe('releaseTagAt', () => {
     const { ctx, calls } = context(annotated)
     assert.equal(await releaseTagAt(ctx, SHA), 'v1.2.3-beta.4')
     assert.deepEqual(calls.tags, [TAG_OBJECT])
-    const elsewhere = context({ ...annotated, tagObject: { object: { type: 'commit', sha: OTHER } } })
+    const elsewhere = context({
+      ...annotated,
+      tagObject: { object: { type: 'commit', sha: OTHER } },
+    })
     assert.equal(await releaseTagAt(elsewhere.ctx, SHA), null)
   })
 
