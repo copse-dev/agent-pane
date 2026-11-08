@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07",
+  "source": "automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -47,6 +47,7 @@
     "tests/e2e/approval-chat-scope.e2e.ts": 17,
     "tests/e2e/archive-attachment.e2e.ts": 7.6,
     "tests/e2e/ask-user-dialog.e2e.ts": 20.4,
+    "tests/e2e/automation-active-acp-worktree.e2e.ts": 7.9,
     "tests/e2e/automation-attention.e2e.ts": 13.5,
     "tests/e2e/automation-branch-ci.e2e.ts": 8.7,
     "tests/e2e/automation-dialog.e2e.ts": 12.6,

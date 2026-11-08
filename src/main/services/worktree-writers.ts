@@ -74,6 +74,23 @@ export function hasLiveWorktreeWriter(root: string): boolean {
   return false
 }
 
+/**
+ * Whether a live writer runs in `root` itself or somewhere inside it: evidence
+ * that the checkout is in use, for deciding whether it may be removed or handed
+ * over. Unlike {@link hasLiveWorktreeWriter}, which must over-report to keep
+ * the diff queue's sweep honest, this ignores unscoped writers and writers
+ * scoped to an ancestor. A home-directory terminal or an MCP call contains
+ * every checkout, so it says nothing about which one it is using; a caller
+ * counts its own thread's terminals and processes separately.
+ */
+export function hasLiveWorktreeWriterWithin(root: string): boolean {
+  const target = resolve(root)
+  for (const scope of liveWriters.values()) {
+    if (scope !== null && contains(target, scope)) return true
+  }
+  return false
+}
+
 function contains(parent: string, child: string): boolean {
   const rel = relative(parent, child)
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))

@@ -17,6 +17,13 @@ import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
+  getSshConnectionManager,
+  resetSshConnectionManagerForTests,
+  setSshTransportFactory,
+} from '../ssh-workspace/connection-manager.ts'
+import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
+import { REMOTE_PGID_PREFIX, resolveRemoteLoginShell } from '../ssh-workspace/remote-env.ts'
+import {
   acpSshTarget,
   buildRemoteAcpCommand,
   buildRemoteAcpLoginCommand,
@@ -35,6 +42,7 @@ import {
   remoteAcpInstallSpec,
   clearRemoteAgentPathCacheForTests,
   resolveCachedRemoteAgentPath,
+  spawnRemoteAcpTransport,
 } from './acp-ssh-transport.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 
@@ -136,6 +144,84 @@ async function setUpSshWorkspace(): Promise<void> {
   storageSet('projects', [{ id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' }])
   setWorkspaceRootForTest(REMOTE_ROOT)
 }
+
+describe('remote ACP transport shutdown', () => {
+  let binDir: string
+  let previousPath: string | undefined
+
+  beforeEach(async () => {
+    resetSshConnectionManagerForTests()
+    clearRemoteAgentPathCacheForTests()
+    // A stand-in `ssh` that answers like the remote PGID wrapper, sends one
+    // JSON-RPC line and then stays connected the way an agent does.
+    binDir = mkdtempSync(join(tmpdir(), 'copse-fake-acp-ssh-'))
+    const fakeSsh = join(binDir, 'ssh')
+    writeFileSync(
+      fakeSsh,
+      `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\n{"jsonrpc":"2.0","method":"ready"}\\n'\nexec cat >/dev/null\n`,
+    )
+    chmodSync(fakeSsh, 0o755)
+    previousPath = process.env['PATH']
+    process.env['PATH'] = `${binDir}:${previousPath ?? ''}`
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+  })
+
+  afterEach(async () => {
+    if (previousPath === undefined) delete process.env['PATH']
+    else process.env['PATH'] = previousPath
+    rmSync(binDir, { recursive: true, force: true })
+    resetSshConnectionManagerForTests()
+    clearRemoteAgentPathCacheForTests()
+    await setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('keeps the remote process group until a kill reaches it, then consumes it', async () => {
+    const ssh = new FakeSshTransport([
+      { when: /^uname -s$/, stdout: 'Linux\n' },
+      { when: /^uname -m$/, stdout: 'x86_64\n' },
+      { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
+      { when: /command -v git$/, stdout: '/usr/bin/git\n' },
+      { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
+      { when: /^kill -TERM -- -4242 /, stdout: '' },
+    ])
+    setSshTransportFactory(() => ssh)
+    const manager = getSshConnectionManager()
+    const connection = await manager.connect('dev')
+    const shell = resolveRemoteLoginShell(connection.capabilities?.shell)
+    await resolveCachedRemoteAgentPath('dev', shell, 'fake-agent', () =>
+      Promise.resolve('/usr/bin'),
+    )
+    const transport = await spawnRemoteAcpTransport(
+      { command: 'fake-agent', cwd: REMOTE_ROOT },
+      { hostId: 'dev', remoteRoot: REMOTE_ROOT },
+    )
+    // The first message arrives only after the PGID marker line was consumed.
+    const reader = transport.stream.readable.getReader()
+    assert.equal((await reader.read()).done, false)
+    reader.releaseLock()
+    const kills = (): number =>
+      ssh.calls.filter((call) => call.kind === 'shell' && call.command.startsWith('kill ')).length
+
+    // The network drops before the idle reaper runs.
+    await manager.disconnect('dev')
+    const dispose = async (): Promise<void> => {
+      await transport.dispose()
+    }
+    await assert.rejects(dispose, /SSH host dev is disconnected/)
+    await assert.rejects(dispose, /SSH host dev is disconnected/)
+    assert.equal(kills(), 0)
+
+    // Reconnected, a retry still knows which remote group to stop.
+    await manager.connect('dev')
+    await dispose()
+    assert.equal(kills(), 1)
+    await dispose()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(kills(), 1, 'a confirmed kill is shared and leaves no group to kill again')
+  })
+})
 
 describe('acpSshTarget gating', () => {
   beforeEach(async () => {
