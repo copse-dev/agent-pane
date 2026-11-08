@@ -209,7 +209,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --pane-header-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
   --browser-chrome-band-height: var(--pane-header-band-height);
   --group-header-font-size: var(--font-size-xs);
-  --group-header-letter-spacing: 0.04em;
+  --group-header-letter-spacing: normal;
   --group-header-font-weight: 600;
 }
 
@@ -989,7 +989,6 @@ copse-ui-field input[type=password],
   padding: var(--spacing-md) var(--projects-action-inset) 0 var(--spacing-md);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   flex-shrink: 0;
@@ -1256,8 +1255,6 @@ copse-ui-field input[type=password],
   padding: 6px 8px 2px;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 .context-menu-separator {
@@ -2293,7 +2290,6 @@ copse-ui-field input[type=password],
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
 }
@@ -2893,7 +2889,6 @@ summary.pr-check-group-heading::-webkit-details-marker {
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   background: none;
@@ -2975,9 +2970,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
   gap: var(--spacing-xs);
 }
 .git-image-diff-label {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .git-image-diff-img {
@@ -3028,7 +3021,6 @@ summary.pr-check-group-heading::-webkit-details-marker {
   padding: var(--spacing-sm);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
@@ -3717,8 +3709,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
   align-content: start;
 }
 .thread-context-section {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
 }
 .thread-context-thread-title {
   padding: 16px 16px 4px;
@@ -3757,10 +3748,8 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .thread-context-group h6 {
   margin: 0 0 4px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .thread-context-rows,
 .thread-context-group {
@@ -3839,10 +3828,8 @@ button.thread-context-row:disabled {
 .thread-context-permission-label {
   margin: 8px 0 3px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .thread-context-section-actions {
   display: flex;
@@ -4885,10 +4872,8 @@ label {
 }
 .model-picker-group-label {
   padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .model-picker-option {
   display: flex;
@@ -5176,8 +5161,6 @@ label {
   color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .turn-recovery-detail,
 .turn-recovery-model-note {
@@ -7040,6 +7023,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position: static;
   transform: none;
   order: 1;
+  flex-shrink: 0;
   width: var(--font-size-sm);
   height: var(--font-size-sm);
 }
@@ -7597,8 +7581,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .hook-card-raw-copy {
   margin-left: auto;
@@ -9854,8 +9836,6 @@ dialog.settings-overlay::backdrop {
 .provider-capability-title {
   margin: 0;
   font-size: var(--font-size-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .provider-panel-embedded {
@@ -10282,9 +10262,7 @@ dialog.settings-overlay::backdrop {
   margin-top: 6px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.04em;
+  font-size: var(--font-size-xs);
 }
 .frontier-tooltip .tt-muted {
   color: var(--text-muted);
@@ -10812,8 +10790,6 @@ dialog.settings-overlay::backdrop {
 .hook-test-stream-label {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
 }
@@ -11304,8 +11280,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .plugin-settings-heading {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
 }
 .plugin-setting-field {
@@ -11549,6 +11523,30 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
+}
+.automation-preparation-setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+.automation-preparation-review-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.automation-preparation-proposal-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.automation-preparation-review {
+  overflow-wrap: anywhere;
+}
+.automation-preparation-review-commands {
+  display: block;
+  max-height: 16em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
 }
 .automation-label {
   display: flex;
@@ -13348,8 +13346,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .container-run-section ul {
   margin: 0;
@@ -14740,9 +14736,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .file-search-section {
   padding: var(--spacing-sm) var(--spacing-sm) 2px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--font-size-xs);
 }
 .file-search-roadmap-icon {
   color: var(--text-muted);
@@ -14858,9 +14852,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .command-palette-section {
   padding: var(--spacing-sm) var(--spacing-sm) 2px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--font-size-xs);
 }
 
 /* src/renderer/styles/global/keyboard-shortcuts.css */
@@ -14908,8 +14900,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .keyboard-shortcuts-row {
   display: flex;
@@ -15422,8 +15412,6 @@ dialog.activity-panel-overlay {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .activity-group-count {
   color: var(--text-muted);
@@ -15639,8 +15627,6 @@ dialog.activity-panel-overlay {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .activity-detail-text,
 .activity-detail-note {
@@ -15804,7 +15790,6 @@ dialog.activity-panel-overlay {
   padding: 11px 18px 7px;
   line-height: 1.4;
   font-weight: 700;
-  letter-spacing: 0.06em;
 }
 .activity-group-toggle {
   display: flex;
@@ -15869,7 +15854,6 @@ dialog.activity-panel-overlay {
 }
 .activity-home .activity-detail-label {
   margin-bottom: 11px;
-  letter-spacing: 0.07em;
 }
 .activity-home .activity-detail-text {
   font-size: var(--font-size-md);
@@ -16115,7 +16099,6 @@ dialog.activity-panel-overlay {
   margin-bottom: var(--spacing-xs);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-secondary);
 }
@@ -16252,7 +16235,6 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
@@ -16316,7 +16298,6 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
@@ -16538,7 +16519,6 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
@@ -17104,7 +17084,7 @@ dialog.activity-panel-overlay {
   margin-top: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
   border-left: 2px solid var(--accent);
   border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   background: var(--bg-elevated);
@@ -17143,23 +17123,22 @@ dialog.activity-panel-overlay {
 .thread-proposal[data-proposal-status=started] .thread-proposal-icon {
   color: var(--text-muted);
 }
-.thread-proposal-eyebrow {
-  font-size: var(--font-size-xs);
+.thread-proposal-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-  white-space: nowrap;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
-.thread-proposal-header-title {
-  color: var(--text-secondary);
+.thread-proposal:not([open]) .thread-proposal-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-}
-.thread-proposal[open] .thread-proposal-header-title {
-  display: none;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 .thread-proposal-state {
   display: inline-flex;
@@ -17195,13 +17174,6 @@ dialog.activity-panel-overlay {
 .thread-proposal-body {
   padding: 0 var(--spacing-md) var(--spacing-md);
 }
-.thread-proposal-title {
-  margin: 0 0 var(--spacing-xs);
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--text-primary);
-}
 .thread-proposal-summary {
   margin: 0;
   color: var(--text-primary);
@@ -17215,7 +17187,7 @@ dialog.activity-panel-overlay {
 .thread-proposal-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-xs) var(--spacing-md);
   margin-top: var(--spacing-sm);
 }
 .thread-proposal-chip {
@@ -17223,11 +17195,8 @@ dialog.activity-panel-overlay {
   align-items: center;
   gap: var(--spacing-xs);
   max-width: 100%;
-  padding: 2px var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -17282,9 +17251,6 @@ dialog.activity-panel-overlay {
   align-items: center;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
-}
-.thread-proposal-actions .ui-btn {
-  padding: var(--spacing-xs) var(--spacing-md);
 }
 .thread-proposal-error {
   color: var(--error);
@@ -18155,9 +18121,7 @@ dialog.activity-panel-overlay {
   margin-top: var(--spacing-sm);
 }
 .memories-label {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .memories-field {
@@ -18434,8 +18398,6 @@ dialog.activity-panel-overlay {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .vnc-nearby-feedback {
   display: flex;
@@ -19029,10 +18991,8 @@ dialog.activity-panel-overlay {
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .roadmap-filter-heading:first-child {
   margin-top: 0;
@@ -19072,7 +19032,6 @@ dialog.activity-panel-overlay {
   font-weight: var(--group-header-font-weight);
   letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
-  text-transform: uppercase;
   cursor: pointer;
 }
 .roadmap-category-header:hover {
