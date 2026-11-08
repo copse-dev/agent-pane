@@ -517,7 +517,6 @@ dialog.activity-panel-overlay {
   padding: 11px 18px 7px;
   line-height: 1.4;
   font-weight: 700;
-  letter-spacing: 0.06em;
 }
 .activity-group-toggle {
   display: flex;
@@ -591,7 +590,6 @@ dialog.activity-panel-overlay {
 }
 .activity-home .activity-detail-label {
   margin-bottom: 11px;
-  letter-spacing: 0.07em;
 }
 .activity-home .activity-detail-text {
   font-size: var(--font-size-md);
