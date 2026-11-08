@@ -10,10 +10,6 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
-import {
-  authorizeBrowserPartitionPreview,
-  browserPartitionHasPreview,
-} from '../../windows/browser-web-contents.ts'
 import { previewCapabilityForUrl } from './static-preview-server.ts'
 
 const MAX_TABS = 8
@@ -173,6 +169,8 @@ interface Tab {
 export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(scope?: string): Session
+  authorizePreview(partition: string, url: string): Promise<void>
+  hasPreview(partition: string, url: string): boolean
   showUrl(url: string, partition: string): void
   /** Promote an already-rendered canvas artefact tab to the front. */
   showArtefact(identity: CanvasArtefactIdentity): void
@@ -340,7 +338,7 @@ export class BrowserSessionManager {
   /** A trusted workspace preview is granted before its first network request. */
   async preview(url: string): Promise<NavigateResult> {
     if (!this.scope) throw new Error('Workspace preview requires a scoped browser task')
-    await authorizeBrowserPartitionPreview(
+    await requirePlatform().authorizePreview(
       browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope),
       url,
     )
@@ -351,9 +349,9 @@ export class BrowserSessionManager {
     const agentPartition = browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope)
     const visiblePartition = browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope)
     if (previewCapabilityForUrl(url)) {
-      if (!browserPartitionHasPreview(agentPartition, url))
+      if (!requirePlatform().hasPreview(agentPartition, url))
         throw new Error('Workspace preview is not open in this browser task')
-      await authorizeBrowserPartitionPreview(visiblePartition, url)
+      await requirePlatform().authorizePreview(visiblePartition, url)
     }
     requirePlatform().showUrl(url, visiblePartition)
   }

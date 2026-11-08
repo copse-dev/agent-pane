@@ -105,6 +105,12 @@ describe('scoped preview promotion', () => {
         getAgentSession() {
           throw new Error('This test does not create an agent session')
         },
+        authorizePreview() {
+          throw new Error('This test does not authorize a preview')
+        },
+        hasPreview() {
+          return false
+        },
         showUrl(url) {
           shownUrl = url
         },
