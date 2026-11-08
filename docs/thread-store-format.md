@@ -71,6 +71,9 @@ Source files remain authoritative; deleting this cache is safe.
                                      #   Shells-tab PTYs (#2433); fish remains shell-managed
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
+                                     # crossThreadPromptCounts: counts per sender/user-turn scope,
+                                     # JSON-encoded [senderThreadId, senderTurnTreeId] keys; absent means zero
+                                     # crossThreadPromptsUsed: legacy unscoped incoming count
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint

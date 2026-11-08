@@ -32,6 +32,9 @@ import type { TurnTreeId } from './turn-tree.ts'
  */
 export const DEFAULT_CONTINUATION_BUDGET = 5
 
+/** Independent prompt cap per destination, per sending thread's user turn. */
+export const DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5
+
 /** The bounded mechanism that received an automatic-turn allowance. */
 export type ContinuationGrantReason =
   | 'todo-closeout'

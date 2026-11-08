@@ -2125,6 +2125,38 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     }
   })
 
+  it('round-trips independent cross-thread prompt allowance metadata', async () => {
+    const scope = JSON.stringify(['source', 'source-user-turn'])
+    await createThread('proj-1', {
+      ...thread('t1'),
+      messages: [
+        {
+          id: 'cross-thread-message',
+          role: 'user',
+          content: 'Continue',
+          createdAt: 1,
+          toolCalls: [],
+          origin: { kind: 'machine', operationId: 'thread:source', crossThreadScope: scope },
+        },
+      ],
+      currentEpoch: 'tree-1',
+      continuationUsed: 5,
+      crossThreadPromptsUsed: 4,
+      crossThreadPromptCounts: { sourceTurn: 5 },
+    })
+    await updateMeta('proj-1', 't1', { crossThreadPromptsUsed: 5 })
+    const loaded = (await loadProjectThreads('proj-1'))[0]
+    assert.equal(loaded?.crossThreadPromptsUsed, 5)
+    assert.deepEqual(loaded.crossThreadPromptCounts, { sourceTurn: 5 })
+    assert.deepEqual(loaded.messages[0]?.origin, {
+      kind: 'machine',
+      operationId: 'thread:source',
+      crossThreadScope: scope,
+    })
+    assert.equal(loaded.continuationUsed, 5)
+    assert.equal(loaded.currentEpoch, 'tree-1')
+  })
+
   it('round-trips and clears the durable machine-turn epoch', async () => {
     await createThread('proj-1', thread('t1'))
     const epoch = { turnTreeId: 'tree-1', continuationUsed: 2 }
