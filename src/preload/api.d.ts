@@ -357,7 +357,17 @@ export interface ApiClient {
     ) => () => void
   }
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    /**
+     * Start a turn. With `delegation`, main starts it only while the parent
+     * still owns the child and holds orchestration, rechecked as it dispatches;
+     * otherwise it rejects with `SubthreadPromptHeldError` and runs nothing.
+     */
+    run: (
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
+    ) => Promise<void>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,

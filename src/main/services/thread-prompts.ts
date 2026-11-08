@@ -2,17 +2,18 @@ import type { BrowserWindow, IpcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs } from '../ipc/ipc-guards.ts'
-import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
+import {
+  SubthreadPromptHeldError,
+  type ThreadPromptCommand,
+  type ThreadPromptResult,
+} from '@shared/thread-prompt.ts'
 import { hasThreadAccess, revokeThreadAccess } from './security/thread-access.ts'
 import { getSetting } from './storage/settings.ts'
 import { getThreadMeta } from './thread-store.ts'
 import type { SettingsValues } from '@shared/settings-contract.ts'
 
-export async function canDispatchSubthread(
-  projectId: string,
-  parentId: string,
-  childId: string,
-): Promise<boolean> {
+/** Main's record that `parentId` created `childId` here, and still holds orchestration. */
+function holdsSubthreadAuthority(projectId: string, parentId: string, childId: string): boolean {
   const owned = getSetting<SettingsValues['threadSubthreadOwners']>(
     'threadSubthreadOwners',
     [],
@@ -23,18 +24,56 @@ export async function canDispatchSubthread(
       entry.threadId === childId &&
       entry.pendingCreation !== true,
   )
-  if (!owned || !hasThreadAccess(parentId, 'orchestrate')) return false
+  return owned && hasThreadAccess(parentId, 'orchestrate')
+}
+
+/**
+ * Whether both threads exist unarchived, failing fast once authority has lapsed.
+ * Callers make the final authority read after this settles.
+ */
+async function subthreadPairIsLive(
+  projectId: string,
+  parentId: string,
+  childId: string,
+): Promise<boolean> {
+  if (!holdsSubthreadAuthority(projectId, parentId, childId)) return false
   const [parent, child] = await Promise.all([
     getThreadMeta(projectId, parentId),
     getThreadMeta(projectId, childId),
   ])
+  return !!parent && !!child && parent.archivedAt === undefined && child.archivedAt === undefined
+}
+
+export async function canDispatchSubthread(
+  projectId: string,
+  parentId: string,
+  childId: string,
+): Promise<boolean> {
   return (
-    !!parent &&
-    !!child &&
-    parent.archivedAt === undefined &&
-    child.archivedAt === undefined &&
-    hasThreadAccess(parentId, 'orchestrate')
+    (await subthreadPairIsLive(projectId, parentId, childId)) &&
+    holdsSubthreadAuthority(projectId, parentId, childId)
   )
+}
+
+/**
+ * `agent:run`'s gate for a parent's delegated prompt. The renderer's
+ * `canDispatch` pre-check and its `agent:run` are separate invokes, so a revoke
+ * can land between them. This rechecks after its last await and calls `start`
+ * in the same synchronous step: a revoke reaches the in-memory settings from a
+ * microtask, so a read even one await earlier could be overtaken. A lapsed
+ * prompt rejects with `SubthreadPromptHeldError` and starts nothing.
+ */
+export async function dispatchSubthreadPrompt(
+  projectId: string,
+  parentId: string,
+  childId: string,
+  start: () => Promise<void>,
+): Promise<void> {
+  const live = await subthreadPairIsLive(projectId, parentId, childId)
+  if (!live || !holdsSubthreadAuthority(projectId, parentId, childId)) {
+    throw new SubthreadPromptHeldError(childId)
+  }
+  return start()
 }
 
 type Send = (

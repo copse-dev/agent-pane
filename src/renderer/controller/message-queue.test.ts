@@ -38,6 +38,7 @@ import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { SubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 
 test('revoked persisted subthread prompts are held at dispatch and refund budget', async () => {
   const store = createProjectStore()
@@ -68,6 +69,86 @@ test('revoked persisted subthread prompts are held at dispatch and refund budget
   assert.equal(held.pendingMessages?.[0]?.autoDispatch, false)
   drainMessageQueue(store, api, child)
   assert.equal(checks, 1)
+})
+
+test('a subthread prompt main holds at dispatch is restored like a failed pre-check', async () => {
+  // The renderer's pre-check passes, then a revoke reaches main before
+  // `agent:run` does; main rejects the run as held across IPC.
+  const heldByMain = new Error(
+    `Error invoking remote method 'agent:run': ${String(new SubthreadPromptHeldError('child'))}`,
+  )
+  async function drainRevoked(revokedBeforePreCheck: boolean): Promise<{
+    thread: {
+      status: Thread['status']
+      continuationUsed: Thread['continuationUsed']
+      pendingMessages: Thread['pendingMessages']
+    }
+    events: string[]
+    runs: unknown[][]
+  }> {
+    const store = createProjectStore()
+    const child = createThread(store)
+    const api = fakeApi()
+    const runs: unknown[][] = []
+    api.threadPrompts.canDispatch = (): Promise<boolean> => Promise.resolve(!revokedBeforePreCheck)
+    api.agent.run = (projectId, threadId, payload, delegation): Promise<void> => {
+      runs.push([projectId, threadId, payload, delegation])
+      return Promise.reject(heldByMain)
+    }
+    enqueueUserMessage(store, child, {
+      messageId: 'delegated',
+      payload: { content: 'Continue' },
+      createdAt: 1,
+      origin: { kind: 'machine', operationId: 'subthread:parent' },
+    })
+    const events: string[] = []
+    store.on('message_queued', (_threadId, messageId) => events.push(`queued:${messageId}`))
+    store.on('threads_changed', () => events.push('threads_changed'))
+    drainMessageQueue(store, api, child)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    // Held means held: a later drain neither dispatches nor rechecks it.
+    drainMessageQueue(store, api, child)
+    const { status, continuationUsed, pendingMessages } = getThread(store, child)
+    return { thread: { status, continuationUsed, pendingMessages }, events, runs }
+  }
+
+  const preCheck = await drainRevoked(true)
+  const atDispatch = await drainRevoked(false)
+  assert.deepEqual(preCheck.runs, [])
+  assert.equal(atDispatch.runs.length, 1)
+  assert.deepEqual(atDispatch.runs[0]?.[3], { parentThreadId: 'parent' })
+  assert.deepEqual(atDispatch.thread, preCheck.thread)
+  assert.deepEqual(atDispatch.events, preCheck.events)
+  assert.equal(atDispatch.thread.status, 'idle')
+  assert.equal(atDispatch.thread.continuationUsed, 0)
+  assert.deepEqual(
+    atDispatch.thread.pendingMessages?.map(({ messageId, autoDispatch }) => ({
+      messageId,
+      autoDispatch,
+    })),
+    [{ messageId: 'delegated', autoDispatch: false }],
+  )
+  assert.ok(atDispatch.events.includes('queued:delegated'))
+})
+
+test('only delegated subthread prompts mark their run for main to recheck', async () => {
+  const store = createProjectStore()
+  const threadId = createThread(store)
+  const api = fakeApi()
+  const delegations: unknown[] = []
+  api.agent.run = (_projectId, _threadId, _payload, ...rest): Promise<void> => {
+    delegations.push(rest)
+    return Promise.resolve()
+  }
+  enqueueUserMessage(store, threadId, {
+    messageId: 'peer',
+    payload: { content: 'From a peer thread' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'thread:source' },
+  })
+  drainMessageQueue(store, api, threadId)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.deepEqual(delegations, [[]])
 })
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }

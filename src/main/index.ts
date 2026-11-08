@@ -8,7 +8,7 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { initThreadPrompts } from './services/thread-prompts.ts'
+import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -208,6 +208,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
   zThreadId,
@@ -1038,16 +1039,26 @@ app
 
     ipcMain.handle(
       'agent:run',
-      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        rawPrompt: string,
+        delegationArg?: unknown,
+      ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await agentDispatcher.dispatch({
-          projectId,
-          threadId,
-          payload: parseAgentRunPayload(rawPrompt),
-        })
+        const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
+        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // A delegated prompt's authority is decided here, not by the renderer's
+        // pre-check: a revoke can land between that check and this invoke.
+        await (delegation
+          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+              agentDispatcher.dispatch(request),
+            )
+          : agentDispatcher.dispatch(request))
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })

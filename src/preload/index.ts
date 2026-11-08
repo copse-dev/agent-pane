@@ -338,8 +338,8 @@ const api: ApiClient = {
     },
   },
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) =>
-      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    run: (projectId, threadId, prompt, delegation) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation),
     runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,

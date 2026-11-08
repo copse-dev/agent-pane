@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { createSubthreadsTool } from './subthreads-tool.ts'
-import { canDispatchSubthread } from '../services/thread-prompts.ts'
+import { canDispatchSubthread, dispatchSubthreadPrompt } from '../services/thread-prompts.ts'
+import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import {
   createThread,
   getProjectThread,
@@ -306,6 +307,34 @@ describe('subthread orchestration', () => {
     assert.ok(child)
     await updateMeta('project', child.id, { archivedAt: 1 })
     assert.equal(await canDispatchSubthread('project', 'parent', childId), false)
+  })
+
+  it('holds a delegated run whose grant is revoked between the pre-check and agent:run', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const childId = id(await run(start))
+    const dispatched: string[] = []
+    const dispatch = (): Promise<void> => {
+      dispatched.push(childId)
+      return Promise.resolve()
+    }
+    // The renderer's pre-check passes and it sends `agent:run`; a revoke is
+    // handled before that invoke reaches main.
+    assert.equal(await canDispatchSubthread('project', 'parent', childId), true)
+    await revokeThreadAccess('parent', 'orchestrate')
+    await assert.rejects(
+      dispatchSubthreadPrompt('project', 'parent', childId, dispatch),
+      isSubthreadPromptHeldError,
+    )
+    assert.deepEqual(dispatched, [])
+    // A revoke that lands while main is still checking also wins.
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const checking = dispatchSubthreadPrompt('project', 'parent', childId, dispatch)
+    await revokeThreadAccess('parent', 'orchestrate')
+    await assert.rejects(checking, isSubthreadPromptHeldError)
+    assert.deepEqual(dispatched, [])
+    await setSetting('threadSubthreadAccess', ['parent'])
+    await dispatchSubthreadPrompt('project', 'parent', childId, dispatch)
+    assert.deepEqual(dispatched, [childId])
   })
 
   it('concurrent retries converge on one child and one prompt', async () => {
