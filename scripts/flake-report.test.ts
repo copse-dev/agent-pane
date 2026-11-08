@@ -125,8 +125,9 @@ describe('flake classification', () => {
       finalFailures: 1,
       flakeRate: 2 / 3,
     })
-    assert.equal(second?.spec, OTHER)
-    assert.equal(second?.flakeRate, 0)
+    assert(second)
+    assert.equal(second.spec, OTHER)
+    assert.equal(second.flakeRate, 0)
   })
 
   it('does not call a pass that came before a failure a re-run flip', () => {
@@ -140,8 +141,10 @@ describe('flake classification', () => {
 
   it('ignores incomplete observations when counting runs', () => {
     const stats = aggregate(observe([row(SPEC, 1, 'running')]))
-    assert.equal(stats[0]?.runsObserved, 0)
-    assert.equal(stats[0]?.flakeRate, 0)
+    const [only] = stats
+    assert(only)
+    assert.equal(only.runsObserved, 0)
+    assert.equal(only.flakeRate, 0)
   })
 })
 
@@ -215,8 +218,9 @@ describe('flake-report CLI', () => {
     try {
       const outcomes = join(dir, 'outcomes')
       mkdirSync(outcomes)
-      const write = (name: string, value: SpecOutcome): void =>
+      const write = (name: string, value: SpecOutcome): void => {
         writeFileSync(join(outcomes, name), JSON.stringify(value) + '\n')
+      }
       write('1-0-6-automation-interrupted-run.e2e.ts.json', row(SPEC, 1, 'failed'))
       write('2-0-6-automation-interrupted-run.e2e.ts.json', row(SPEC, 2, 'passed'))
       write('1-0-5-acp-auth-error.e2e.ts.json', row(OTHER, 1, 'passed'))
