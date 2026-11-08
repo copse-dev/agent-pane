@@ -7,6 +7,12 @@ name: Release (macOS)
 # separate manual workflow so the owner can review the immutable Actions
 # artifacts and publish those exact bytes to the public binary repository
 # without racing an automatic publisher.
+#
+# Started by dispatch only, once CI for the tagged commit has finished:
+# release-dispatch.yml does it from CI's completion, release-cut.yml when CI had
+# already finished. A hand-pushed `v*` tag runs CI at the tag, and that run's
+# completion starts this workflow the same way. A tag trigger here would start
+# before CI finished and fail on pending evidence.
 on:
   workflow_dispatch:
     inputs:
@@ -14,8 +20,6 @@ on:
         description: Existing v<package-version> tag to publish
         required: true
         type: string
-  push:
-    tags: ['v*']
 
 permissions:
   contents: read
@@ -39,8 +43,7 @@ jobs:
     steps:
       # First step in the whole workflow, before the checkout and long before
       # the mac runner: an unset signing secret is the likeliest reason a first
-      # release fails, and discovering it after preflight's CI wait would cost
-      # an hour and a half to learn nothing about the release itself.
+      # release fails, and it says nothing about the release itself.
       - name: Require signing and notarization credentials
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -117,17 +120,15 @@ jobs:
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
           # Only the CI workflow's explicit full-release gate is sufficient.
-          # Missing/in-progress evidence may finish; failed evidence stops now.
-          for attempt in $(seq 1 180); do
-            result=0
-            bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
-            if [ "$result" = 0 ]; then exit 0; fi
-            if [ "$result" != 75 ]; then exit "$result"; fi
-            echo "Waiting for full release validation ($attempt/180)"
-            sleep 30
-          done
-          echo "Timed out waiting for full release validation on $release_sha"
-          exit 1
+          # This run starts once CI for the commit has finished, so the evidence
+          # is read once: pending evidence means it was dispatched too early.
+          result=0
+          bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
+          if [ "$result" = 75 ]; then
+            echo "::error::CI for $release_sha has not finished. Release dispatch starts this workflow when it does; dispatch by hand only after CI completes."
+            exit 1
+          fi
+          exit "$result"
       - name: Preserve the validation used for packaging
         uses: actions/upload-artifact@v7
         with:

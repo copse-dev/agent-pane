@@ -1,0 +1,103 @@
+name: Release dispatch
+
+# Starts `Release (macOS)` when CI finishes for a cut release commit. The
+# release's preflight used to be dispatched as soon as the tag was cut and then
+# hold a hosted runner, polling every 30 seconds for up to 90 minutes, until
+# this same CI run finished. CI's completion is an event, so the build now
+# starts from it instead and its preflight checks the evidence once.
+#
+# A promotion's CI run is on `release`; a hand-pushed tag's CI run is on the
+# tag. Most promotions carry an already-released version, so for them this is a
+# no-op. scripts/release-dispatch.mts explains how this and release-cut.yml
+# cover each other's ordering.
+#
+# A failed CI run still starts the build: its preflight then fails on the
+# failed evidence and opens the release-failure issue, so a red release commit
+# is reported exactly as it was when preflight waited for it.
+#
+# `workflow_run` always runs this file and its scripts from the default branch,
+# never from the run that triggered it. The scripts only read the API and
+# dispatch; `Release (macOS)` itself runs at the tag.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [release, 'v*']
+
+permissions: {}
+
+concurrency:
+  # The promotion's run and a re-run can both complete for one commit. Each
+  # evaluation reads current state, so one pending run can replace another.
+  group: release-dispatch-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write # read CI runs and jobs; dispatch Release (macOS)
+      contents: read # read package.json and the tag at the release commit
+    steps:
+      - name: Load the trusted release dispatch scripts
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/release-dispatch.mts
+            scripts/lib/safe-json.mts
+            scripts/verify-release-validation.sh
+          sparse-checkout-cone-mode: false
+      - id: tag
+        name: Find the release tag at this commit
+        uses: actions/github-script@v9
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const { releaseTagAt } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/release-dispatch.mts`);
+            const tag = await releaseTagAt(
+              { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
+              process.env.RELEASE_SHA,
+            );
+            core.setOutput('tag', tag ?? '');
+      # Wait for the newest CI run and attempt at the commit, the one preflight
+      # will read. A newer run or re-run still in progress completes later and
+      # starts this workflow again.
+      - id: ci
+        name: Require finished CI evidence
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          result=0
+          bash scripts/verify-release-validation.sh "$RELEASE_SHA" > /dev/null || result=$?
+          if [ "$result" = 75 ]; then
+            echo "::notice::CI for $RELEASE_SHA is still running; its completion starts Release (macOS)."
+            echo "finished=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "finished=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Start Release (macOS)
+        if: steps.ci.outputs.finished == 'true'
+        uses: actions/github-script@v9
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        with:
+          script: |
+            const { startReleaseBuild } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/release-dispatch.mts`);
+            await startReleaseBuild(
+              { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
+              process.env.RELEASE_SHA,
+              process.env.TAG,
+            );
