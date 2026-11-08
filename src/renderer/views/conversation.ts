@@ -2198,7 +2198,7 @@ function appendMessageContent(
     body.append(createMessageImages(msg.images))
   }
   // Reasoning usually sits above the answer. When this segment also has tools,
-  // it nests inside the tool rollup instead — collapsed view is just the italic
+  // it nests inside the tool rollup instead — collapsed view is just the rollup
   // summary heading. History renders as settled ("Reasoned").
   if (
     msg.role === 'assistant' &&
@@ -2490,7 +2490,7 @@ function syncReasoningEl(
 
 /**
  * Keep reasoning nested at the top of a turn rollup (and strip any leftover
- * body-level trail) so the collapsed chrome is only the italic summary.
+ * body-level trail) so the collapsed chrome is only the rollup summary.
  */
 function syncNestedRollupReasoning(
   card: HTMLElement,

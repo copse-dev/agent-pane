@@ -117,6 +117,72 @@ describe('Settings lists without frames', () => {
     await saveElementScreenshot('#settings-model-maker-block-host', 'settings-model-subsection.png')
   })
 
+  it("paints a focused agent action's ring in full at the list's edge", async () => {
+    await openSection('general')
+    await $('[data-testid="models-agents-list"] .acp-row').waitForExist()
+    // Reach the first row's last action the way a keyboard user does: focus
+    // what comes before it and press Tab, so the action matches :focus-visible.
+    const target = await browser.execute(() => {
+      const head = document.querySelector('.acp-list .acp-row-head')
+      const actions = head ? [...head.querySelectorAll<HTMLButtonElement>(':scope > button')] : []
+      const last = actions.at(-1)
+      const before =
+        actions.at(-2) ??
+        document.querySelector<HTMLButtonElement>('[data-testid="connections-rescan"]')
+      if (!last || !before) return null
+      last.scrollIntoView({ block: 'center' })
+      before.focus()
+      return last.textContent
+    })
+    assert.ok(target, 'the first agents row has an action')
+    await browser.keys('Tab')
+    const ring = await browser.execute(() => {
+      const action = document.activeElement
+      const list = document.querySelector('.acp-list')
+      if (!(action instanceof HTMLElement) || !list?.contains(action)) return null
+      const style = getComputedStyle(action)
+      // Chromium paints an `auto` ring a few px outside the border box,
+      // whatever width it declares.
+      const width = Number.parseFloat(style.outlineWidth)
+      const reach =
+        Number.parseFloat(style.outlineOffset) +
+        (style.outlineStyle === 'auto' ? Math.max(width, 3) : width)
+      const box = action.getBoundingClientRect()
+      const clippedBy: string[] = []
+      for (let node = action.parentElement; node; node = node.parentElement) {
+        const own = getComputedStyle(node)
+        if (own.overflowX === 'visible' && own.overflowY === 'visible') continue
+        const frame = node.getBoundingClientRect()
+        const left = frame.left + node.clientLeft
+        const top = frame.top + node.clientTop
+        if (
+          box.left - reach < left ||
+          box.top - reach < top ||
+          box.right + reach > left + node.clientWidth ||
+          box.bottom + reach > top + node.clientHeight
+        ) {
+          clippedBy.push(node.id ? `#${node.id}` : `.${node.classList.item(0) ?? node.tagName}`)
+        }
+      }
+      return {
+        label: action.textContent,
+        focusVisible: action.matches(':focus-visible'),
+        outline: style.outlineStyle,
+        flush: Math.abs(list.getBoundingClientRect().right - box.right) <= 1,
+        clippedBy,
+      }
+    })
+    assert.ok(ring, 'Tab moved focus to an action in the agents list')
+    assert.equal(ring.label, target)
+    assert.equal(ring.focusVisible, true)
+    assert.notEqual(ring.outline, 'none', 'the focused action draws a ring')
+    assert.equal(ring.flush, true, 'the action ends at the list edge, where a clip would cut it')
+    assert.deepEqual(ring.clippedBy, [], 'nothing around the list clips the focus ring')
+    // The section's own box ends at the list's edge too, so capture the panel
+    // around it to show the whole ring.
+    await saveElementScreenshot('.settings-content', 'settings-agents-action-focus.png')
+  })
+
   it('shows an example as the custom instructions placeholder', async () => {
     await openSection('agent')
     const field = $('textarea[name="customInstructions"]')

@@ -3344,12 +3344,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 
-/* Coding agents list: logo, name + status chip on one row, action on the right.
-   The rows sit on the page like plugin rows, without a filled card or rules
-   between them. */
-.acp-list {
-  overflow: hidden;
-}
+/* Coding agents list (`.acp-list`): logo, name + status chip on one row, action
+   on the right. The rows sit on the page like plugin rows, without a filled
+   card or rules between them. The list does not clip its overflow either: each
+   row's last action ends flush with the list's edge, so a clip would cut off
+   its focus ring. */
 .acp-list-bar {
   display: flex;
   align-items: baseline;
@@ -3471,6 +3470,15 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+/* The Add menu is still a card, so its rows keep the inset and the rule between
+   them that rows in the unframed list above do without. */
+.acp-add-menu .acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-add-menu .acp-row:last-child {
+  border-bottom: 0;
 }
 /* Models & agents Add menu: group labels between rows, and inline add forms. */
 .connections-menu-group {

@@ -104,7 +104,9 @@ describe('tool call turn rollup', () => {
     // the prose answer (which ran no tools) still has a body-level one.
     await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
 
-    const italicFont = await browser.execute(async () => {
+    // The summary is upright chrome, set in Pliant's own upright face: weight
+    // and colour set it apart, not a slant.
+    const summaryFont = await browser.execute(async () => {
       const el = document.querySelector('.tool-card-rollup > .tool-card-header .tool-name')
       if (!el) return null
       const style = getComputedStyle(el)
@@ -112,11 +114,11 @@ describe('tool call turn rollup', () => {
       return {
         style: style.fontStyle,
         hasLoadedFace: Array.from(document.fonts).some(
-          (face) => face.family === 'Pliant' && face.style === 'italic' && face.status === 'loaded',
+          (face) => face.family === 'Pliant' && face.style === 'normal' && face.status === 'loaded',
         ),
       }
     })
-    expect(italicFont).toEqual({ style: 'italic', hasLoadedFace: true })
+    expect(summaryFont).toEqual({ style: 'normal', hasLoadedFace: true })
 
     await browser.execute(() => {
       const list = document.querySelector('.messages-list')
