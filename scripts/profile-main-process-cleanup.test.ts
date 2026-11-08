@@ -292,6 +292,35 @@ describe('profileProcess activation cleanup', { skip: process.platform === 'win3
     assert.deepEqual(host.closedInspectors, [])
   })
 
+  it('keeps an exit-one empty lsof result unconfirmed after activation', async (context) => {
+    const emptyScan = Object.assign(new Error('Command failed: lsof'), {
+      status: 1,
+      signal: null,
+      stdout: '',
+      stderr: '',
+    })
+    const host = mockProfilerHost(context, [listenerSnapshot(), emptyScan])
+    await assert.rejects(profileProcess(HOST_PID, REQUESTED_PORT, 1), (error: unknown) => {
+      assert.ok(error instanceof AggregateError)
+      assert.match(error.message, /cleanup could not be confirmed.*its inspector may still be open/)
+      assert.ok(error.cause instanceof Error)
+      assert.equal(error.cause.cause, emptyScan)
+      return true
+    })
+    assert.deepEqual(host.signals, [{ pid: HOST_PID, signal: 'SIGUSR1' }])
+    assert.deepEqual(host.closedInspectors, [])
+  })
+
+  it('does not accept a successful empty lsof result as cleanup confirmation', async (context) => {
+    const host = mockProfilerHost(context, [listenerSnapshot(), ''])
+    await assert.rejects(
+      profileProcess(HOST_PID, REQUESTED_PORT, 1),
+      /cleanup could not be confirmed.*its inspector may still be open/,
+    )
+    assert.deepEqual(host.signals, [{ pid: HOST_PID, signal: 'SIGUSR1' }])
+    assert.deepEqual(host.closedInspectors, [])
+  })
+
   it('continues cleanup after a different new listener cannot be inspected', async (context) => {
     const host = mockProfilerHost(
       context,
