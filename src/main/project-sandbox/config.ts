@@ -1237,7 +1237,8 @@ function canonicalizeReadTarget(target: string): string {
           throw linkError
       }
       const parent = dirname(existing)
-      if (parent === existing) throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
+      if (parent === existing)
+        throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
       missing.unshift(basename(existing))
       existing = parent
     }
