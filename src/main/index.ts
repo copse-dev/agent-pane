@@ -1,5 +1,6 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
+import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
@@ -140,6 +141,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  stopAllAgentRuns,
   listRunningThreadIds,
   retryPostTurnReview,
   runReviewForThread,
@@ -714,6 +716,7 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+    interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -1447,8 +1450,13 @@ let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
+let interruptTurnTranscripts: (() => Promise<void>) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  const transcriptDrain = interruptTurnTranscripts?.()
+  setAgentInitiatedTurnAuthority(null)
+  stopAllAgentRuns()
+  await stopAllForegroundShellProcesses()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1492,6 +1500,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await transcriptDrain
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

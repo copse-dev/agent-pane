@@ -45,6 +45,7 @@ import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@sh
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import { isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
@@ -145,6 +146,12 @@ export interface AcpClientHandlers {
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
   writeTextFile?: (req: WriteTextFileRequest) => Promise<WriteTextFileResponse>
+  /**
+   * The agent wrote into its transcript that Copse's own MCP server failed to
+   * start for it ({@link isAcpBridgeStartupFailure}). Return true when the
+   * thread already says so in Copse's words, to drop the agent's line.
+   */
+  onBridgeStartupFailure?: () => boolean
 }
 
 export interface AcpAgentSpawnConfig {
@@ -1257,6 +1264,12 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
           (update.status === 'completed' || update.status === 'failed')
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
+        }
+        if (
+          isAcpBridgeStartupFailure(update) &&
+          open.handlers.current?.onBridgeStartupFailure?.() === true
+        ) {
+          continue
         }
         for (const chunk of sessionUpdateToStreamChunks(update)) {
           open.handlers.current?.onChunk(chunk)
