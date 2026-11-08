@@ -149,7 +149,9 @@ export async function findCompletedVerification(
       field(live, 'state') === 'open' &&
       sha(field(field(live, 'head'), 'sha')) === headSha &&
       sha(field(field(live, 'base'), 'sha')) === baseSha &&
-      ['main', 'codex/ci-native-reuse-probe-base-20261108'].includes(String(field(field(live, 'base'), 'ref'))) &&
+      ['main', 'codex/ci-native-reuse-probe-base-20261108'].includes(
+        String(field(field(live, 'base'), 'ref')),
+      ) &&
       sha(field(live, 'merge_commit_sha')) === input.sha &&
       candidateIdentity({ ...input, payload: { pull_request: live } }) ===
         candidateIdentity(input) &&
