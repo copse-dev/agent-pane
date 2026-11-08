@@ -383,6 +383,17 @@ export interface AcpNativeBridge {
    * to answer "was the tool even offered?" after the fact.
    */
   toolNames: readonly string[]
+  /**
+   * Whether this session's agent has listed the bridge's tools (`tools/list`)
+   * yet. Offering the bridge in `session/new` does not mean the agent mounted
+   * it: until it lists the tools, none of them are in its tool list (#4144).
+   */
+  toolsListed: () => boolean
+  /**
+   * Resolve true as soon as the agent lists the bridge's tools, or false once
+   * `timeoutMs` passes or `signal` aborts without it.
+   */
+  whenToolsListed: (timeoutMs: number, signal?: AbortSignal) => Promise<boolean>
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
@@ -502,6 +513,8 @@ interface BridgeExecuteContext {
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
+  /** The agent asked for the tool list: it has mounted this bridge. */
+  recordToolsListed: () => void
 }
 
 /** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
@@ -641,9 +654,10 @@ function buildMcpServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {}, logging: {} } },
   )
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess),
-  }))
+  server.setRequestHandler(ListToolsRequestSchema, () => {
+    ctx.recordToolsListed()
+    return { tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess) }
+  })
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
   // call a `notifications/cancelled` names. Route it through the bridge-wide
@@ -936,6 +950,16 @@ export async function startAcpNativeBridge(
   let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
+  // Only a request carrying this bridge's bearer token reaches the MCP server,
+  // so a listing here is this session's agent mounting the bridge.
+  let toolsListed = false
+  const toolsListedWaiters = new Set<() => void>()
+  const recordToolsListed = (): void => {
+    if (toolsListed) return
+    toolsListed = true
+    for (const wake of toolsListedWaiters) wake()
+    toolsListedWaiters.clear()
+  }
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -979,6 +1003,7 @@ export async function startAcpNativeBridge(
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
+        recordToolsListed,
       })
       res.on('close', () => {
         onHttpClose()
@@ -1017,6 +1042,28 @@ export async function startAcpNativeBridge(
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
     toolNames: offeredToolNames,
+    toolsListed: () => toolsListed,
+    whenToolsListed: (timeoutMs, waitSignal): Promise<boolean> => {
+      if (toolsListed) return Promise.resolve(true)
+      if (closed || waitSignal?.aborted || timeoutMs <= 0) return Promise.resolve(false)
+      return new Promise<boolean>((resolve) => {
+        const finish = (listed: boolean): void => {
+          clearTimeout(timer)
+          toolsListedWaiters.delete(onListed)
+          waitSignal?.removeEventListener('abort', onAbort)
+          resolve(listed)
+        }
+        const onListed = (): void => {
+          finish(true)
+        }
+        const onAbort = (): void => {
+          finish(false)
+        }
+        const timer = setTimeout(onAbort, timeoutMs)
+        toolsListedWaiters.add(onListed)
+        waitSignal?.addEventListener('abort', onAbort, { once: true })
+      })
+    },
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },

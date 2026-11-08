@@ -221,6 +221,21 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.messages.at(1)?.toolCalls.at(0)?.status, 'done')
   })
 
+  it('preserves accepted output and interrupted status when quit cancels a still-seeding turn', async () => {
+    const turn = harness(() => [])
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    transcript.emit({ type: 'text', text: 'Saved checkpoint.' })
+    const drained = turn.writer.interruptForShutdown()
+    transcript.emit({ type: 'text', text: 'Late output must not complete the turn.' })
+    transcript.emit({ type: 'done', stopReason: 'cancelled' })
+    transcript.end()
+    await drained
+    const thread = await stored()
+    assert.equal(thread.status, 'running', 'restart must detect an interrupted turn')
+    assert.equal(thread.messages.at(-1)?.content, 'Saved checkpoint.')
+    assert.throws(() => turn.writer.begin(PROJECT, 'late-thread'), /closing/)
+  })
+
   it('labels a user Stop the way the window does, on disk and on the wire', async () => {
     const outcome = {
       status: 'cancelled' as const,
