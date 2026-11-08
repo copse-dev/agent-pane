@@ -1660,6 +1660,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () =>
         resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,

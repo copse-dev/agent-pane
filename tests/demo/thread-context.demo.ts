@@ -181,6 +181,27 @@ describe('The thread Context panel', () => {
     await saveElementScreenshot('#pane-files', 'side-chats-context-permissions-decisions.png')
   })
 
+  it('separates its sections with space and labels permission groups in sentence case', async () => {
+    const look = await browser.execute(() => {
+      const sections = [...document.querySelectorAll<HTMLElement>('.thread-context-section')]
+      const permissions = document.querySelector('[data-context-section="permissions"]')
+      return {
+        sections: sections.length,
+        ruled: sections.filter((section) => getComputedStyle(section).borderBottomWidth !== '0px')
+          .length,
+        // innerText is the rendered text, after any text-transform.
+        groups: [
+          ...(permissions?.querySelectorAll<HTMLElement>('.thread-context-permission-label') ?? []),
+        ].map((label) => label.innerText),
+      }
+    })
+    expect(look.sections).toBeGreaterThan(2)
+    expect(look.ruled).toBe(0)
+    expect(look.groups).toEqual(expect.arrayContaining(['This thread', 'Project']))
+    await $('[data-context-section="permissions"]').scrollIntoView({ block: 'start' })
+    await saveElementScreenshot('#pane-files', 'thread-context-sections-unruled.png')
+  })
+
   it('reads permission states as text and keeps a frame only on the buttons', async () => {
     const permissions = $('[data-context-section="permissions"]')
     await permissions.scrollIntoView({ block: 'start' })

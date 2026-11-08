@@ -21,6 +21,7 @@ import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { showErrorToast } from './toast.ts'
 import { awaitPendingThreadPersistence } from '../controller/persistence.ts'
+import { unwrapIpcErrorText } from '../ipc-error-message.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -205,7 +206,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       clear(target)
       const message =
         err instanceof Error ? err.message : typeof err === 'string' ? err : 'Could not read folder'
-      target.append(el('div', { class: 'sidebar-empty' }, message))
+      target.append(el('div', { class: 'sidebar-empty' }, unwrapIpcErrorText(message)))
     }
   }
 

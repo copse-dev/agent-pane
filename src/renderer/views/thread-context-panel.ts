@@ -908,7 +908,11 @@ export function mountThreadContextPane(
       restoreThread(store, threadId)
     },
     jumpToReviewerInput: (messageId, requestId) => {
-      store.emit('reviewer_input_jump', messageId, requestId)
+      const thread = getActiveThread(store)
+      const request = thread
+        ? reviewerInputRequests(thread).find((item) => item.id === requestId)
+        : undefined
+      store.emit('reviewer_input_jump', messageId, request?.toolCallId ?? requestId)
     },
   }
 

@@ -50,6 +50,8 @@ import type {
 import type {
   AutomationFailureCode,
   AutomationPermissionOption,
+  AutomationPreparationInput,
+  AutomationPreparationReview,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationCleanupResult,
@@ -441,6 +443,8 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
@@ -1415,6 +1419,10 @@ export interface ApiClient {
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
     permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
+    reviewPreparation: (
+      projectId: string,
+      input: AutomationPreparationInput,
+    ) => Promise<AutomationPreparationReview>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
