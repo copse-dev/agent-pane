@@ -3,8 +3,83 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMarkdownBoldGlobFixture } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { waitForSettledLayout, withCaptureFrame } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+
+// Keep the existing full-window views: latest content at the natural bottom,
+// then Architecture at its native scrollIntoView target (clamped when needed).
+async function prepareMarkdownCapture(position: 'bottom' | 'architecture'): Promise<void> {
+  await waitForSettledLayout('#input-bar')
+  await waitForSettledLayout('.messages-list')
+  const target = await browser.execute((position) => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    const root = document.querySelector('[data-message-id="msg-assistant-bold-glob"] .message-text')
+    const heading = [...(root?.querySelectorAll('h2') ?? [])].find((h) =>
+      h.textContent.includes('Architecture Notes'),
+    )
+    if (!transcript || !heading) throw new Error('missing markdown capture target')
+    if (position === 'bottom')
+      transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'instant' })
+    else heading.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' })
+    return {
+      scrollTop: transcript.scrollTop,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }
+  }, position)
+  await waitForSettledLayout('.messages-list')
+  const geometry = await browser.execute(() => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    const root = document.querySelector('[data-message-id="msg-assistant-bold-glob"] .message-text')
+    const heading = [...(root?.querySelectorAll('h2') ?? [])].find((h) =>
+      h.textContent.includes('Architecture Notes'),
+    )
+    const list = heading?.nextElementSibling
+    const pane = document.getElementById('pane-chat')
+    const composer = document.getElementById('input-bar')
+    if (!transcript || !heading || !list || !pane || !composer)
+      throw new Error('missing markdown capture geometry')
+    const port = transcript.getBoundingClientRect()
+    const composerRect = composer.getBoundingClientRect()
+    return {
+      fonts: document.fonts.status,
+      appliedInset: Number.parseFloat(
+        getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+      ),
+      expectedInset: Math.max(Math.ceil(composerRect.height), 72),
+      scrollTop: transcript.scrollTop,
+      scrollLeft: transcript.scrollLeft,
+      windowScrollX: window.scrollX,
+      windowScrollY: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      visibleTop: Math.max(0, port.top),
+      visibleBottom: Math.min(window.innerHeight, port.bottom, composerRect.top),
+      headingTop: heading.getBoundingClientRect().top,
+      headingBottom: heading.getBoundingClientRect().bottom,
+      items: [...list.querySelectorAll('li')].map((item) => ({
+        top: item.getBoundingClientRect().top,
+        bottom: item.getBoundingClientRect().bottom,
+      })),
+    }
+  })
+  expect(geometry.fonts).toBe('loaded')
+  expect(geometry.appliedInset).toBe(geometry.expectedInset)
+  expect(geometry.scrollTop).toBe(target.scrollTop)
+  expect(geometry.width).toBe(target.width)
+  expect(geometry.height).toBe(target.height)
+  expect(geometry.scrollLeft).toBe(0)
+  expect(geometry.windowScrollX).toBe(0)
+  expect(geometry.windowScrollY).toBe(0)
+  expect(geometry.headingTop).toBeGreaterThanOrEqual(geometry.visibleTop)
+  expect(geometry.headingBottom).toBeLessThanOrEqual(geometry.visibleBottom)
+  expect(geometry.items).toHaveLength(5)
+  for (const item of geometry.items) {
+    expect(item.top).toBeGreaterThanOrEqual(geometry.visibleTop)
+    expect(item.bottom).toBeLessThanOrEqual(geometry.visibleBottom)
+  }
+}
 
 describe('markdown bold after glob table cells', () => {
   before(async () => {
@@ -66,14 +141,14 @@ describe('markdown bold after glob table cells', () => {
 
     await assertNoErrorToasts('markdown bold glob fixture')
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-full.png'))
-
-    await browser.execute(() => {
-      const heading = [...document.querySelectorAll('.message-text h2')].find((h) =>
-        h.textContent.includes('Architecture Notes'),
-      )
-      heading?.scrollIntoView({ block: 'start' })
+    await withCaptureFrame(async () => {
+      await prepareMarkdownCapture('bottom')
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-full.png'))
     })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-architecture.png'))
+
+    await withCaptureFrame(async () => {
+      await prepareMarkdownCapture('architecture')
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'markdown-bold-glob-architecture.png'))
+    })
   })
 })
