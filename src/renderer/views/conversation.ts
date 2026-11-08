@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   adoptPatchedSignatures,
@@ -984,14 +986,29 @@ function textAfterTimelinePrefix(session: SubagentSession, result: string): stri
  * not settled yet. A result that repeats a timeline message and then adds more
  * (explore's verbatim excerpts) renders only the addition.
  */
+const runAgentDisplaySchema = z.object({
+  report: z.string(),
+  routing: z.object({ warning: z.string().optional() }).optional(),
+})
+
+function runAgentDisplayResult(tc: ToolCall): z.infer<typeof runAgentDisplaySchema> | null {
+  return tc.name === 'run_agent' && tc.result
+    ? safeJsonParse(
+        splitAppendedReminders(tc.result, tc.appendedReminderLengths).output,
+        decodeWithSchema(runAgentDisplaySchema),
+      )
+    : null
+}
+
 function parentResultText(
   tc: ToolCall,
   session: SubagentSession,
   status: ToolCall['status'],
 ): string {
   if (status !== 'done' || !tc.result) return ''
-  if (timelineShowsText(session, tc.result)) return ''
-  return textAfterTimelinePrefix(session, tc.result) ?? tc.result
+  const result = runAgentDisplayResult(tc)?.report ?? tc.result
+  if (timelineShowsText(session, result)) return ''
+  return textAfterTimelinePrefix(session, result) ?? result
 }
 
 function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
@@ -1156,6 +1173,8 @@ function subagentChromeSignature(
     status,
     model: session.model ?? null,
     localFallback: session.localFallback === true,
+    rawResult: tc.name === 'run_agent' ? tc.result : undefined,
+    appendedReminderLengths: tc.name === 'run_agent' ? tc.appendedReminderLengths : undefined,
     args: tc.args,
     preview,
     result,
@@ -1211,6 +1230,9 @@ function populateSubagentCard(
     setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
   }
 
+  if (tc.name === 'run_agent' && isRecord(tc.args) && typeof tc.args['task'] === 'string') {
+    card.append(el('p', { class: 'subagent-task' }, tc.args['task']))
+  }
   const argsSection = createToolArgsSection(tc.args)
   if (argsSection) card.append(argsSection)
 
@@ -1224,6 +1246,22 @@ function populateSubagentCard(
     })
     card.append(resultEl)
     setAssistantMarkdown(resultEl, parentResult, false, api)
+  }
+
+  const runResult = runAgentDisplayResult(tc)
+  if (runResult && status !== 'running') {
+    if (runResult.routing?.warning) {
+      card.append(el('p', { class: 'subagent-routing-warning' }, runResult.routing.warning))
+    }
+    const technical = el('details', { class: 'subagent-technical-details' })
+    technical.append(el('summary', {}, 'Technical details'))
+    const { output, reminders } = splitAppendedReminders(
+      tc.result ?? '',
+      tc.appendedReminderLengths,
+    )
+    technical.append(el('pre', {}, output))
+    card.append(technical)
+    card.append(...reminders.map((reminder) => el('p', { class: 'tool-result-note' }, reminder)))
   }
 
   const followUp = containerRunFollowUp(tc, session, status)
