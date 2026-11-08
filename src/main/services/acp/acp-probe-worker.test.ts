@@ -249,6 +249,33 @@ describe('acp probe worker', () => {
     assert.equal(code, 1)
     assert.throws(() => parseProbeWorkerOutput(stdout), /forced ASRT init failure/)
     assert.throws(() => readFileSync(marker), /ENOENT/)
+
+    const disabledPreloader = join(dir, 'disable-asrt.cjs')
+    writeFileSync(
+      disabledPreloader,
+      "const manager = require('@anthropic-ai/sandbox-runtime').SandboxManager; manager.initialize = async () => {}; manager.isSandboxingEnabled = () => false\n",
+    )
+    const disabled = await runWorker(
+      workerPath,
+      {
+        config: {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`],
+          cwd: dir,
+          sandbox: { allowedDomains: ['api.example'] },
+        },
+        sandboxRequired: true,
+        timeoutMs: 10_000,
+      },
+      dir,
+      { NODE_OPTIONS: `--require=${disabledPreloader}` },
+    )
+    assert.equal(disabled.code, 1)
+    assert.throws(
+      () => parseProbeWorkerOutput(disabled.stdout),
+      /Cannot check this agent safely because workspace protection did not start/,
+    )
+    assert.throws(() => readFileSync(marker), /ENOENT/)
   })
 })
 

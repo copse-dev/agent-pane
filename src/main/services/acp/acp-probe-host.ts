@@ -25,6 +25,7 @@ import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
 /** Bound on the helper's whole life, above the probe's own budget so the inner timeout wins. */
 const HOST_TIMEOUT_GRACE_MS = 5_000
 const WORKER_STDOUT_MAX_BYTES = 256 * 1024
+const WORKER_STDERR_MAX_BYTES = 64 * 1024
 
 export function acpProbeWorkerPath(): string {
   return join(__dirname, 'acp-probe-worker.js')
@@ -118,6 +119,8 @@ function runProbeWorker(
     })
     let stdout = ''
     let stderr = ''
+    let stderrBytes = 0
+    let reportedStderr = false
     let settled = false
     const cancelEscalation = { current: null as (() => void) | null }
     // Settling and stopping the escalation are separate: a timed-out worker is
@@ -139,9 +142,16 @@ function runProbeWorker(
       if (stdout.length < WORKER_STDOUT_MAX_BYTES) stdout += chunk.toString()
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      const text = chunk.toString().trimEnd()
-      if (text) console.warn(`[acp-probe-worker] ${text}`)
+      const remaining = WORKER_STDERR_MAX_BYTES - stderrBytes
+      if (remaining > 0) {
+        const kept = chunk.subarray(0, remaining)
+        stderr += kept.toString()
+        stderrBytes += kept.length
+      }
+      if (!reportedStderr) {
+        reportedStderr = true
+        console.warn('[acp-probe-worker] worker wrote to stderr')
+      }
     })
     child.once('error', (err) => {
       finish(() => {
@@ -157,6 +167,9 @@ function runProbeWorker(
             resolve(probe)
             return
           }
+          // This bounded excerpt stays in the rejected Error for diagnosis.
+          // Current callers either mask it in Settings or swallow it during
+          // auto-setup; never log arbitrary worker stderr directly here.
           reject(
             new Error(
               `Checking the coding agent stopped with code ${String(code)} and no result${

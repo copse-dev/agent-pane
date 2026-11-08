@@ -90,4 +90,36 @@ setInterval(() => {}, 1000)
       mock.restoreAll()
     }
   })
+
+  it('bounds stderr from a failing worker and logs only a fixed diagnostic', async () => {
+    writeFileSync(
+      acpProbeWorkerPath(),
+      "process.stderr.write('x'.repeat(512 * 1024), () => process.exit(2))\n",
+    )
+    const warnings: string[] = []
+    mock.method(console, 'warn', (...parts: unknown[]) => {
+      warnings.push(parts.map(String).join(' '))
+    })
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    try {
+      await assert.rejects(
+        probeAcpAgentIsolated({
+          command: process.execPath,
+          cwd: dir,
+          sandbox: { allowedDomains: ['api.example'] },
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof Error)
+          assert.match(error.message, /stopped with code 2 and no result/)
+          assert.ok(error.message.length <= 66 * 1024)
+          return true
+        },
+      )
+      assert.deepEqual(warnings, ['[acp-probe-worker] worker wrote to stderr'])
+    } finally {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+    }
+  })
 })

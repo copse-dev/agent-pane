@@ -106,7 +106,7 @@ async function initWorkerSandbox(required: boolean): Promise<void> {
   if (!required) return
   await SandboxManager.initialize(baseSandboxConfig(), () => Promise.resolve(false), false)
   if (!SandboxManager.isSandboxingEnabled()) {
-    throw new Error('ACP probe sandbox did not initialize')
+    throw new Error('Cannot check this agent safely because workspace protection did not start')
   }
   setProjectSandboxEnabled(true)
 }
