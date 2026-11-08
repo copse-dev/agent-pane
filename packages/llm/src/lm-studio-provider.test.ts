@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
+import {
+  ChatMessage,
+  LMStudioClient,
+  ToolCallRequestError,
+  type Chat,
+  type FileHandle,
+  type LLMRespondOpts,
+} from '@lmstudio/sdk'
 import { LMStudioProvider, lmStudioWebSocketUrl } from './lm-studio-provider.ts'
 import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
@@ -388,6 +395,69 @@ describe('LMStudioProvider', () => {
           toolResults: [{ toolCallId: 'prior-call', content: 'contents' }],
         },
       ],
+    )
+  })
+
+  it('delivers tool screenshots to the SDK after their tool results', async () => {
+    const fake = new FakeClient()
+    // Construct handles locally; no request is made to an LM Studio server.
+    const sdk = new LMStudioClient({ baseUrl: 'ws://127.0.0.1:1234' })
+    const prepared: string[] = []
+    const provider = new LMStudioProvider('local-vision-model', {
+      client: {
+        model: (): Promise<FakeModel> => fake.model(),
+        prepareImageBase64: (name, data): Promise<FileHandle> => {
+          prepared.push(data)
+          const message = ChatMessage.from({
+            role: 'user',
+            content: [
+              { type: 'file', name, identifier: `base64:${data}`, fileType: 'image', sizeBytes: 3 },
+            ],
+          })
+          const [file] = message.getFiles(sdk)
+          assert.ok(file)
+          return Promise.resolve(file)
+        },
+      },
+    })
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'Inspect the isolated desktop.' },
+      {
+        role: 'assistant',
+        content: [{ id: 'screen', name: 'isolated_copse', args: { action: 'screenshot' } }],
+      },
+      {
+        role: 'tool',
+        toolResults: [
+          {
+            toolCallId: 'screen',
+            result: 'Screenshots attached.',
+            images: [
+              { name: 'before.png', dataUrl: 'data:image/png;base64,YWJj' },
+              { name: 'after.jpg', dataUrl: 'data:image/jpeg;base64,ZGVm' },
+              { name: 'invalid', dataUrl: 'https://example.invalid/image.png' },
+            ],
+          },
+        ],
+      },
+    ]
+    for await (const _ of provider.stream(messages, [])) {
+      /* drain */
+    }
+    assert.deepEqual(prepared, ['YWJj', 'ZGVm'])
+    const chat = fake.modelHandle.chat?.getMessagesArray()
+    assert.ok(chat)
+    assert.deepEqual(
+      chat.map((message) => message.getRole()),
+      ['user', 'assistant', 'tool', 'user'],
+    )
+    assert.deepEqual(chat[2]?.getToolCallResults(), [
+      { toolCallId: 'screen', content: 'Screenshots attached.' },
+    ])
+    assert.match(chat[3]?.getText() ?? '', /before\.png[\s\S]*after\.jpg/)
+    assert.deepEqual(
+      chat[3]?.getFiles(sdk).map((file) => file.identifier),
+      ['base64:YWJj', 'base64:ZGVm'],
     )
   })
 

@@ -115,6 +115,33 @@ async function raw(link: EgressLink, body: string): Promise<string> {
   return result
 }
 describe('run-scoped host inference', () => {
+  it('finishes the host stream before a consumer stops at done and starts its next turn', async (t) => {
+    let settled = 0
+    let cancelled = 0
+    let continuedAfterDone = false
+    const f = fixture(t, {
+      async *stream(_messages, _tools, signal) {
+        try {
+          yield { type: 'done', stopReason: 'end_turn' }
+          continuedAfterDone = true
+          yield { type: 'text', text: 'Must not read beyond the terminal chunk' }
+        } finally {
+          // Providers may finish transport cleanup after emitting their terminal chunk.
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          if (signal?.aborted) cancelled += 1
+          settled += 1
+        }
+      },
+    })
+    for (let turn = 1; turn <= 2; turn += 1) {
+      for await (const chunk of f.provider.stream([{ role: 'user', content: 'Next' }], [])) {
+        if (chunk.type === 'done') break
+      }
+      assert.equal(settled, turn, 'done must not race ahead of host stream completion')
+    }
+    assert.equal(cancelled, 0)
+    assert.equal(continuedAfterDone, false)
+  })
   it('streams tools, text and usage over stdio with no guest credential', async (t) => {
     const f = fixture(t, echo)
     assert.equal((await collect(f.provider)).length, 4)
@@ -351,6 +378,46 @@ describe('run-scoped host inference', () => {
     const chunks = await collect(f.provider)
     assert.equal(calls, 2)
     assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+  })
+  it('waits for cancellation when a consumer stops mid-stream and immediately recovers', async (t) => {
+    let calls = 0
+    let active = 0
+    const f = fixture(t, {
+      async *stream(_messages, _tools, signal) {
+        calls += 1
+        active += 1
+        assert.equal(active, 1, 'the host must never overlap provider requests')
+        try {
+          if (calls === 1) {
+            assert.ok(signal)
+            yield { type: 'reasoning', text: 'reasoning limit reached' }
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) resolve()
+              else
+                signal.addEventListener(
+                  'abort',
+                  () => {
+                    resolve()
+                  },
+                  { once: true },
+                )
+            })
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            signal.throwIfAborted()
+          }
+          yield { type: 'text', text: 'recovered' }
+          yield { type: 'done' }
+        } finally {
+          active -= 1
+        }
+      },
+    })
+    for await (const chunk of f.provider.stream([], [])) {
+      if (chunk.type === 'reasoning') break
+    }
+    const chunks = await collect(f.provider)
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+    assert.equal(calls, 2)
   })
   it('stops waiting for a cancelled predecessor as soon as the waiting request is stopped', async (t) => {
     let started: () => void = () => {}

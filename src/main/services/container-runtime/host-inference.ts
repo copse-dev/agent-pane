@@ -22,6 +22,7 @@ const CANCELLED_SLOT_RELEASE_MS = 60_000
 interface InferenceSlot {
   /** Aborts when the guest disconnects or the run stops. */
   readonly signal: AbortSignal
+  readonly stream: Duplex
   readonly released: Promise<void>
   readonly release: () => void
 }
@@ -65,6 +66,12 @@ export class HostInference {
     }
     signal.addEventListener('abort', abortStream, { once: true })
     let slot: InferenceSlot | null = null
+    const releaseSlot = (): void => {
+      if (slot === null) return
+      this.active = null
+      slot.release()
+      slot = null
+    }
     const send = (value: unknown): Promise<void> =>
       new Promise((resolve, reject) => {
         const line = JSON.stringify(value) + '\n'
@@ -81,7 +88,10 @@ export class HostInference {
       signal.throwIfAborted()
       const previous = this.active
       if (previous !== null) {
-        if (!previous.signal.aborted)
+        // RESET destroys the mux stream synchronously, but its close event (and
+        // therefore signal) arrives on a later tick. An immediate recovery OPEN
+        // may already be in this batch; wait for cleanup without admitting overlap.
+        if (!previous.signal.aborted && !previous.stream.destroyed)
           throw new Error('Only one inference request may run at a time')
         await this.waitForRelease(previous, signal)
         signal.throwIfAborted()
@@ -91,7 +101,7 @@ export class HostInference {
       const released = new Promise<void>((resolve) => {
         release = resolve
       })
-      slot = { signal, released, release }
+      slot = { signal, stream, released, release }
       this.active = slot
       const parts: Buffer[] = []
       let bytes = 0
@@ -131,20 +141,22 @@ export class HostInference {
         await send({ chunk })
         if (this.used >= this.options.tokenCeiling)
           throw new Error('Host inference token budget reached')
+        if (chunk.type === 'done') break
       }
+      // The terminal frame lets the guest immediately begin its next turn.
+      // Release only after the provider finishes, but before publishing that frame.
+      releaseSlot()
       await send({ end: true })
       stream.end()
     } catch (error) {
+      releaseSlot()
       if (!stream.destroyed) {
         const message = error instanceof Error ? error.message : 'Host inference failed'
         await send({ error: message.slice(0, 4096) }).catch(() => {})
         stream.end()
       }
     } finally {
-      if (slot !== null) {
-        this.active = null
-        slot.release()
-      }
+      releaseSlot()
       signal.removeEventListener('abort', abortStream)
       stream.removeListener('close', disconnected)
       stream.removeListener('error', disconnected)

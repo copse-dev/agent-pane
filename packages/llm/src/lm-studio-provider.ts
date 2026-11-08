@@ -20,7 +20,14 @@ import {
 import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import { toolResultImageFollowUp } from './tool-result-images.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMTool,
+  ProviderStreamChunk,
+  UserContent,
+} from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RespondOptions = Pick<
@@ -424,20 +431,7 @@ async function toLmStudioChat(
       continue
     }
     if (message.role === 'user') {
-      if (typeof message.content === 'string') {
-        chat.append('user', message.content)
-        continue
-      }
-      const text = message.content
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n')
-      const images = await Promise.all(
-        message.content
-          .filter((part) => part.type === 'image')
-          .map((part, index) => prepareImage(client, part.dataUrl, index)),
-      )
-      chat.append('user', text, images.length ? { images } : undefined)
+      await appendUserContent(chat, message.content, client)
       continue
     }
     if (message.role === 'assistant') {
@@ -467,8 +461,31 @@ async function toLmStudioChat(
         content: result.result,
       })),
     })
+    const images = toolResultImageFollowUp(message.toolResults)
+    if (images) await appendUserContent(chat, images, client)
   }
   return chat
+}
+
+async function appendUserContent(
+  chat: Chat,
+  content: UserContent,
+  client: ClientAdapter,
+): Promise<void> {
+  if (typeof content === 'string') {
+    chat.append('user', content)
+    return
+  }
+  const text = content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+  const images = await Promise.all(
+    content
+      .filter((part) => part.type === 'image')
+      .map((part, index) => prepareImage(client, part.dataUrl, index)),
+  )
+  chat.append('user', text, images.length ? { images } : undefined)
 }
 
 async function prepareImage(
