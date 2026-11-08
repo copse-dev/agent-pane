@@ -209,9 +209,7 @@ describe('automation checkout while an ACP background tool owns it', function ()
         },
       ],
       [`threads:${PROJECT}`]: [],
-      // Every other plugin on, but not PII redaction: its contextual classifier
-      // downloads an ONNX model from huggingface.co (the e2e network guard refuses it).
-      pluginDisabled: ['copse.pii-redaction'],
+      pluginDisabled: [],
       pluginMigration: { automationsEnablement: true },
       plugin: {
         copse: {

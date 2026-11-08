@@ -297,4 +297,31 @@ function fakeKeyRejection(url, method, headers) {
   )
 }
 
-module.exports = { install, isLoopbackHost, fakeKeyRejection, GUARD_TAG }
+/**
+ * Specs that enable every plugin turn on PII redaction, whose contextual
+ * classifier fetches an ONNX model from the Hugging Face hub on first use.
+ * Answer as an unreachable hub would (404): the product then falls back to
+ * heuristics-only redaction, as it does offline.
+ */
+function modelHubUnavailable(url) {
+  const host = url.hostname.toLowerCase()
+  if (host !== 'huggingface.co' && host !== 'hf.co' && !host.endsWith('.hf.co')) return undefined
+  return new globalThis.Response(`${GUARD_TAG} e2e stand-in: the model hub is unavailable`, {
+    status: 404,
+    headers: { 'content-type': 'text/plain' },
+  })
+}
+
+/** Every e2e fetch stand-in, in one place for bootstrap.cjs. */
+function e2eFetchStub(url, method, headers) {
+  return fakeKeyRejection(url, method, headers) ?? modelHubUnavailable(url)
+}
+
+module.exports = {
+  install,
+  isLoopbackHost,
+  fakeKeyRejection,
+  modelHubUnavailable,
+  e2eFetchStub,
+  GUARD_TAG,
+}

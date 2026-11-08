@@ -413,6 +413,9 @@ separate from the product's own [browser network policy](browser-network-policy.
     Hunspell dictionaries from `redirector.gvt1.com` at startup in every spec.
   - Provider key checks (`GET …/models` or OpenRouter's `GET /api/v1/key`, sent with a key) get the
     401 every real provider returns for a fake key.
+  - The Hugging Face hub (`huggingface.co`, `*.hf.co`) answers 404. Specs that enable every plugin
+    turn on PII redaction, whose classifier would otherwise download a model; it falls back to
+    heuristics-only, as it does offline.
   - `*.u.copse.me` names, which the fake names API issues, resolve to nothing.
   - mDNS (Bonjour) queries go unanswered, as on an empty LAN.
   - Lookups of IP literals pass, because `listen()` on a LAN address does one and nothing leaves

@@ -38,8 +38,9 @@ if (
     // COPSE_NAMES_API_URL is the loopback fake, so the trusted names it issues
     // resolve nowhere; the real zone is never queried.
     unresolvableSuffixes: ['.u.copse.me'],
-    // Settings validates saved (fake) provider keys against each provider.
-    fetchStub: networkGuard.fakeKeyRejection,
+    // Settings validates saved (fake) provider keys against each provider, and
+    // PII redaction's classifier fetches its model from the Hugging Face hub.
+    fetchStub: networkGuard.e2eFetchStub,
     // VNC discovery browses Bonjour; e2e runs on an empty LAN.
     silentMulticast: true,
   })

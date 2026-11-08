@@ -71,7 +71,7 @@ function runGuarded(mode: 'log' | 'enforce', script: string): { stdout: string; 
   const dir = scratch()
   try {
     const ledgerPath = join(dir, 'ledger.jsonl')
-    const prelude = `require(${JSON.stringify(NODE_GUARD)}).install({ mode: ${JSON.stringify(mode)}, ledgerPath: ${JSON.stringify(ledgerPath)}, processLabel: 'unit child', unresolvableSuffixes: ['.u.copse.me'], fetchStub: require(${JSON.stringify(NODE_GUARD)}).fakeKeyRejection, silentMulticast: true });\n`
+    const prelude = `require(${JSON.stringify(NODE_GUARD)}).install({ mode: ${JSON.stringify(mode)}, ledgerPath: ${JSON.stringify(ledgerPath)}, processLabel: 'unit child', unresolvableSuffixes: ['.u.copse.me'], fetchStub: require(${JSON.stringify(NODE_GUARD)}).e2eFetchStub, silentMulticast: true });\n`
     const result = spawnSync(process.execPath, ['-e', prelude + script], {
       encoding: 'utf8',
       timeout: 30_000,
@@ -228,7 +228,7 @@ const dns = require('node:dns')
     assert.equal(ledger, '')
   })
 
-  it('answers fake-key validation with 401 and swallows mDNS without recording either', () => {
+  it('answers fake-key validation with 401, the model hub with 404 and swallows mDNS, recording none', () => {
     const { stdout, ledger } = runGuarded(
       'enforce',
       `
@@ -237,10 +237,12 @@ const dgram = require('node:dgram')
   const models = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: 'Bearer gsk-e2e' } })
   const key = await fetch(new Request('https://openrouter.ai/api/v1/key', { headers: { Authorization: 'Bearer sk-or-e2e' } }))
   const anonymous = await fetch('https://api.groq.com/openai/v1/models').then(() => 'sent', (e) => e.cause.code)
+  const hub = await fetch('https://huggingface.co/org/model/resolve/main/config.json')
+  const cdn = await fetch('https://us.aws.cdn.hf.co/xet/abc')
   const udp = dgram.createSocket('udp4')
   const mdns = await new Promise((resolve) => udp.send('q', 5353, '224.0.0.251', (e) => resolve(e ? e.code : 'quiet')))
   udp.close()
-  process.stdout.write(JSON.stringify({ models: models.status, key: key.status, anonymous, mdns }))
+  process.stdout.write(JSON.stringify({ models: models.status, key: key.status, anonymous, hub: hub.status, cdn: cdn.status, mdns }))
 })()
 `,
     )
@@ -248,6 +250,8 @@ const dgram = require('node:dgram')
       models: 401,
       key: 401,
       anonymous: 'ECONNREFUSED',
+      hub: 404,
+      cdn: 404,
       mdns: 'quiet',
     })
     // Only the keyless request is real egress.
