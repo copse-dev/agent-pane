@@ -2,6 +2,7 @@ import {
   APPEARANCE_DEFAULTS_MIGRATION_SETTING,
   APPEARANCE_DEFAULTS_MIGRATION_VERSION,
   APPLE_DEVELOPMENT_PLUGIN_ID,
+  ASK_USER_ANSWER_MAX_LENGTH,
   AUTOMATIONS_PLUGIN_ID,
   BALANCED_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
@@ -107,6 +108,7 @@ import {
   createPasteKeyForm,
   createStore,
   createThread,
+  decodeWithSchema,
   definePlugin,
   deleteThread,
   describeAutomationFailure,
@@ -181,6 +183,7 @@ import {
   init_apple_development_plugin,
   init_array_utils,
   init_artefact_previews,
+  init_ask_user_format,
   init_attach_annotation,
   init_attachment_preview,
   init_automation_failure,
@@ -242,6 +245,7 @@ import {
   init_reserved_prefixes,
   init_reviewer_input,
   init_runtime_transcript,
+  init_safe_json,
   init_send_now_aborts,
   init_settings_dialog,
   init_side_chat,
@@ -262,6 +266,7 @@ import {
   init_todo_steering,
   init_tool_display,
   init_tool_interruption,
+  init_tool_result_reminders,
   init_transcript_state,
   init_types,
   init_ui,
@@ -356,7 +361,6 @@ import {
   parseGithubPrUrl,
   parseRemoteAgentModel,
   parseRemoteAgentModelSelection,
-  parseReviewerInputCall,
   parseThreadProposal,
   patchThreadAnywhere,
   prRelationKey,
@@ -372,6 +376,7 @@ import {
   recordThreadVideos,
   recoverOrphanProject,
   refreshAgentRunPayload,
+  refreshProjectThreadWorktrees,
   registerPromptAttachments,
   registerUiKit,
   releaseHeldMessage,
@@ -390,6 +395,9 @@ import {
   restoreUiScale,
   reviewerInputAnswer,
   reviewerInputRequests,
+  reviewerInputRequestsForCall,
+  safeJsonParse,
+  safeJsonStringify,
   sameItems,
   sameProjectThreadBesidesDraft,
   sameThreadBesidesDraft,
@@ -436,6 +444,7 @@ import {
   sidebarLastPromptAt,
   sidebarPrRefs,
   sortThreadsNewestFirst,
+  splitAppendedReminders,
   startHumanTurnTree,
   stripShellCdPrefix,
   stripUrlTrailingPunctuation,
@@ -470,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-76VKX4W5.js";
+} from "./chunk-57HGMO5P.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4231,7 +4240,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) return null;
     if (!batch.every((req) => req.allowRemember)) return null;
     const label = batch[0]?.rememberLabel;
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
+    const subject = batch[0]?.rememberSubject;
+    if (!label || !batch.every((req) => req.rememberLabel === label && req.rememberSubject === subject))
+      return null;
     return label;
   }
   function soloRequest() {
@@ -4377,7 +4388,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       return;
     }
     clearSettle();
-    rememberInput.checked = false;
+    rememberInput.checked = rememberGrant() !== null && batch.every((req) => req.rememberDefault === true);
     detailsExpanded = false;
     renderBatch();
     const asker = sideChatPromptOrigin(
@@ -4481,6 +4492,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      rememberDefault,
+      rememberSubject,
       approveLabel,
       collapseDetails,
       approveOnceLabel,
@@ -4504,6 +4517,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        rememberDefault,
+        rememberSubject,
         approveLabel,
         collapseDetails,
         approveOnceLabel,
@@ -4619,37 +4634,6 @@ var init_approval_dialog = __esm({
   }
 });
 
-// packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
-var init_ask_user_format = __esm({
-  "packages/agent/src/ask-user-format.ts"() {
-    init_zod();
-    askUserQuestionSchema = external_exports.object({
-      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
-      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
-      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
-      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
-    }).refine(
-      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
-      {
-        message: "recommendedOption must be one of options",
-        path: ["recommendedOption"]
-      }
-    ).refine(
-      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
-      {
-        message: "A recommendation needs both an option and a reason",
-        path: ["recommendationReason"]
-      }
-    );
-    askUserParamsSchema = external_exports.object({
-      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
-    });
-    ASK_USER_ANSWER_MAX_LENGTH = 8192;
-    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
-  }
-});
-
 // src/renderer/views/activity-view.ts
 function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
@@ -4734,6 +4718,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
+  let shownQuestionSignature = null;
   function canOpen(row2) {
     if (!row2.threadId || !row2.projectId) return false;
     const { projectId } = row2;
@@ -4792,7 +4777,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       chosen === void 0 ? asked.questions.map((_2, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
-    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    const title = row2.threadId ? getThreadById(store2, row2.threadId)?.title : void 0;
+    status.textContent = sent ? `Answered ${title ?? row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
   function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
@@ -4829,9 +4815,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const field = el("div", { class: "activity-answer-field" }, asked);
     if (options.length > 0) {
       const choices = el("div", { class: "activity-options" });
-      for (const option of options) {
+      for (const [optionIndex, option] of options.entries()) {
         const choice = el("button", {
           type: "button",
+          "data-control": `answer-${String(index)}-option-${String(optionIndex)}`,
           class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
         if (actionsOnly) choice.disabled = settling;
@@ -5025,35 +5012,52 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
+  function detailHeader(row2, at2) {
+    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
+    return el(
+      "header",
+      { class: "activity-detail-header" },
+      el(
+        "p",
+        { class: "activity-detail-meta" },
+        el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+        meta
+      ),
+      el(
+        "h3",
+        { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+        row2.threadTitle
+      )
+    );
+  }
   function renderDetail(row2, at2) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      shownQuestionSignature = null;
       return;
     }
-    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
+    const questionSignature = row2.state === "needs-answer" ? JSON.stringify([
+      row2.key,
+      row2.threadId,
+      row2.projectId,
+      row2.want,
+      canOpen(row2),
+      sources3.questions.pending().find((request) => request.id === row2.requestId)
+    ]) : null;
+    if (questionSignature !== null && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && (questionSignature === shownQuestionSignature || document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) && !detail.querySelector("[data-answered]")) {
+      const header = detail.querySelector(".activity-detail-header");
+      const nextHeader = detailHeader(row2, at2);
+      if (header?.textContent !== nextHeader.textContent) header?.replaceWith(nextHeader);
+      detail.querySelector(".activity-answer")?.setAttribute("aria-label", `Send answer: ${row2.want} (${row2.threadTitle})`);
       return;
     }
+    shownQuestionSignature = questionSignature;
     detail.hidden = false;
     detail.dataset["rowKey"] = row2.key;
     detail.dataset["state"] = row2.state;
-    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
     detail.replaceChildren(
-      el(
-        "header",
-        { class: "activity-detail-header" },
-        el(
-          "p",
-          { class: "activity-detail-meta" },
-          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
-          meta
-        ),
-        el(
-          "h3",
-          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
-          row2.threadTitle
-        )
-      ),
+      detailHeader(row2, at2),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
     );
@@ -6566,32 +6570,6 @@ var init_project_groups = __esm({
   }
 });
 
-// packages/std/src/safe-json.ts
-function decodeWithSchema(schema) {
-  return (value) => {
-    const result = schema.safeParse(value);
-    return result.success ? result.data : null;
-  };
-}
-function safeJsonStringify(value, indent) {
-  if (value === void 0 || typeof value === "function" || typeof value === "symbol") {
-    return void 0;
-  }
-  return JSON.stringify(value, null, indent);
-}
-function safeJsonParse(text, decoder) {
-  try {
-    const value = JSON.parse(text);
-    return decoder ? decoder(value) : value;
-  } catch {
-    return null;
-  }
-}
-var init_safe_json = __esm({
-  "packages/std/src/safe-json.ts"() {
-  }
-});
-
 // src/shared/safe-json.ts
 var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
@@ -6745,6 +6723,17 @@ async function cleanUpScheduleRuns(store2, api2, target) {
     const result = await api2.automations.cleanupRuns(target.project.id, target.scheduleId);
     const freed = result.released.length;
     const freedText = `${String(freed)} worktree${freed === 1 ? "" : "s"}`;
+    try {
+      await refreshProjectThreadWorktrees(store2, api2, target.project.id);
+    } catch (error) {
+      showErrorToast(
+        "Cleanup finished, but the run list could not refresh",
+        `${freedText} freed. Reopen the project to refresh its runs.
+
+${ipcErrorMessage(error, "The run list could not be loaded")}`
+      );
+      if (result.retained.length === 0) return;
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0 ? `Nothing to clean up for \u201C${target.scheduleName}\u201D.` : `Freed ${freedText} for \u201C${target.scheduleName}\u201D.`
@@ -10396,6 +10385,9 @@ function turnRecoveryForMessage(thread, failedMessageId) {
     return { interruptedByRestart: true };
   }
   if (failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") return null;
+  if (failed.turnOutcome.stopReason === "max_steps" || failed.turnOutcome.stopReason === "timeout") {
+    return { limitReason: failed.turnOutcome.stopReason };
+  }
   if (failed.turnOutcome.source !== "provider") return {};
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
     const candidate = thread.messages[index];
@@ -12185,7 +12177,6 @@ function buildDismissedActions(proposal, handlers3, rerender) {
 }
 function buildBody(proposal, state, handlers3, rerender) {
   const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
   body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
   if (proposal.rationale) {
     body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
@@ -12226,8 +12217,9 @@ function createThreadProposalCard(proposal, state, handlers3) {
         { class: "thread-proposal-icon", "aria-hidden": "true" },
         gitBranchIcon("ui-icon ui-icon-sm")
       ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+      // The title names the offer, so it leads the card from the header: the
+      // same line reads on a collapsed (answered) card without expanding it.
+      el("h4", { class: "thread-proposal-title" }, proposal.title)
     );
     const pill = statePill(next);
     if (pill) header.append(pill);
@@ -18150,48 +18142,6 @@ var init_tool_error_format = __esm({
   }
 });
 
-// packages/agent/src/hooks/inject-context.ts
-var SYSTEM_REMINDER_TAG;
-var init_inject_context = __esm({
-  "packages/agent/src/hooks/inject-context.ts"() {
-    init_nullish();
-    SYSTEM_REMINDER_TAG = "system-reminder";
-  }
-});
-
-// src/renderer/views/tool-result-reminders.ts
-function splitAppendedReminders(result, lengths) {
-  const raw = { output: result, reminders: [] };
-  if (lengths === void 0 || lengths.length === 0) return raw;
-  let end = result.length;
-  const reminders = [];
-  for (let index = lengths.length - 1; index >= 0; index -= 1) {
-    const length = lengths[index];
-    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
-    const start = end - length;
-    if (start < SEPARATOR.length) return raw;
-    const block = result.slice(start, end);
-    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
-      return raw;
-    }
-    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
-    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
-    end = start - SEPARATOR.length;
-  }
-  return { output: result.slice(0, end), reminders };
-}
-var OPEN, CLOSE, SEPARATOR;
-var init_tool_result_reminders = __esm({
-  "src/renderer/views/tool-result-reminders.ts"() {
-    init_inject_context();
-    OPEN = `<${SYSTEM_REMINDER_TAG}>
-`;
-    CLOSE = `
-</${SYSTEM_REMINDER_TAG}>`;
-    SEPARATOR = "\n\n";
-  }
-});
-
 // src/renderer/controller/reviewer-input.ts
 function answerReviewerInput(store2, api2, threadId, requestId, answer) {
   const text = answer.trim();
@@ -18349,7 +18299,7 @@ function mountReviewerInput(store2, api2) {
       "Show in conversation"
     );
     origin.addEventListener("click", () => {
-      store2.emit("reviewer_input_jump", request.messageId, request.id);
+      store2.emit("reviewer_input_jump", request.messageId, request.toolCallId ?? request.id);
     });
     row2.append(origin);
     return row2;
@@ -18401,32 +18351,42 @@ function mountReviewerInput(store2, api2) {
   return { toggle, panel, sync, open };
 }
 function createReviewerInputToolCard(call, store2) {
-  const request = parseReviewerInputCall(call, "");
-  if (!request) return null;
+  const requests = reviewerInputRequestsForCall(call, "");
+  const first2 = requests[0];
+  if (!first2) return null;
   const card = el("details", {
     class: "tool-card reviewer-input-card",
     "data-tool-id": call.id,
     "data-status": "done"
   });
-  const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, call.id);
+  const answers = getActiveThread(store2)?.reviewerInputAnswers;
+  const answered = requests.every((request) => reviewerInputAnswer(answers, request.id));
   card.append(
     el(
       "summary",
       { class: "tool-card-header" },
-      answer ? "Answered" : "Needs your input",
+      answered ? "Answered" : "Needs your input",
       " \xB7 ",
-      request.question
-    ),
-    el("p", { class: "reviewer-input-card-context" }, request.context)
+      requests.length === 1 ? first2.question : `${String(requests.length)} questions`
+    )
   );
-  if (answer)
-    card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
-  else {
-    const open = el("button", { type: "button", class: "reviewer-input-origin" }, "Answer question");
-    open.addEventListener("click", () => {
-      store2.emit("reviewer_input_open", request.id);
-    });
-    card.append(open);
+  for (const request of requests) {
+    if (requests.length > 1) card.append(el("p", {}, request.question));
+    card.append(el("p", { class: "reviewer-input-card-context" }, request.context));
+    const answer = reviewerInputAnswer(answers, request.id);
+    if (answer)
+      card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
+    else {
+      const open = el(
+        "button",
+        { type: "button", class: "reviewer-input-origin" },
+        "Answer question"
+      );
+      open.addEventListener("click", () => {
+        store2.emit("reviewer_input_open", request.id);
+      });
+      card.append(open);
+    }
   }
   return card;
 }
@@ -18521,18 +18481,22 @@ function createTurnRecoveryCard(options) {
     actions.append(button);
     return button;
   };
-  action("Retry this turn", options.onRetry);
+  action(options.limitReason === void 0 ? "Retry this turn" : "Continue task", options.onRetry);
   if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
     action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
   }
   const body = el(
     "div",
     { class: "turn-recovery-body" },
-    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-title" },
+      options.limitReason === "max_steps" ? "Run limit reached" : options.limitReason === "timeout" ? "Time limit reached" : "Turn interrupted"
+    ),
     el(
       "div",
       { class: "turn-recovery-detail" },
-      options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+      options.limitReason !== void 0 ? "Your completed work is saved. Continue with a fresh run allowance; inspect the current state before repeating any action." : options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
     )
   );
   if (options.lastKnownGoodLabel !== void 0) {
@@ -18549,7 +18513,7 @@ function createTurnRecoveryCard(options) {
     {
       class: "turn-recovery-card",
       "data-turn-recovery-card": "",
-      "aria-label": "Interrupted turn recovery"
+      "aria-label": options.limitReason === void 0 ? "Interrupted turn recovery" : "Run limit recovery"
     },
     el(
       "span",
@@ -21978,6 +21942,7 @@ function mountConversation(root, store2, api2) {
     const fallback = recovery.lastKnownGoodModel;
     const card = createTurnRecoveryCard({
       ...recovery.interruptedByRestart ? { interruptedByRestart: true } : {},
+      ...recovery.limitReason !== void 0 ? { limitReason: recovery.limitReason } : {},
       ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
       onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
       ...fallback !== void 0 ? {
@@ -33631,7 +33596,7 @@ function mountFileTree(root, store2, api2) {
       if (generation !== loadGeneration) return;
       clear(target);
       const message2 = err instanceof Error ? err.message : typeof err === "string" ? err : "Could not read folder";
-      target.append(el("div", { class: "sidebar-empty" }, message2));
+      target.append(el("div", { class: "sidebar-empty" }, unwrapIpcErrorText(message2)));
     }
   }
   function refresh() {
@@ -33709,6 +33674,7 @@ var init_file_tree = __esm({
     init_active_thread_owner();
     init_toast();
     init_persistence();
+    init_ipc_error_message();
   }
 });
 
@@ -53700,20 +53666,20 @@ function init$1({
     // ＜＞
   ];
   for (let i2 = 0; i2 < bracketPairs.length; i2++) {
-    const [OPEN2, CLOSE2] = bracketPairs[i2];
-    const UrlOpen = tt(Url$1, OPEN2);
-    tt(UrlNonaccept, OPEN2, UrlOpen);
+    const [OPEN, CLOSE] = bracketPairs[i2];
+    const UrlOpen = tt(Url$1, OPEN);
+    tt(UrlNonaccept, OPEN, UrlOpen);
     const UrlOpenQ = makeState(Url);
     ta(UrlOpen, qsAccepting, UrlOpenQ);
     const UrlOpenSyms = makeState();
     ta(UrlOpen, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpen, CLOSE2, Url$1);
+    tt(UrlOpen, CLOSE, Url$1);
     ta(UrlOpenQ, qsAccepting, UrlOpenQ);
     ta(UrlOpenQ, qsNonAccepting, UrlOpenSyms);
     ta(UrlOpenSyms, qsAccepting, UrlOpenQ);
     ta(UrlOpenSyms, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpenQ, CLOSE2, Url$1);
-    tt(UrlOpenSyms, CLOSE2, Url$1);
+    tt(UrlOpenQ, CLOSE, Url$1);
+    tt(UrlOpenSyms, CLOSE, Url$1);
   }
   tt(Start, LOCALHOST, DomainDotTld);
   tt(Start, NL, Nl);
@@ -63556,10 +63522,10 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     api2.git.currentBranch(projectId, threadId),
     api2.git.promptState(projectId, threadId)
   ]);
-  if (branchResult.status === "rejected") return false;
+  if (branchResult.status === "rejected" || promptResult.status === "rejected") return false;
   if (!targetIsCurrent()) return false;
   const currentBranch = branchResult.value;
-  const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
+  const promptState = promptResult.value;
   const current = getThreadById(store2, threadId);
   if (!current) return false;
   if (threadGitBranchMismatch(current.gitBranch, currentBranch, {
@@ -63582,10 +63548,8 @@ async function sendCodeBlockRunResult(store2, api2, result) {
   };
   const shellAttachment = { kind: "shell", label: shell2.label, content: shell2.content };
   const messageMeta = {
-    ...promptState ? {
-      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
-      dirty: promptState.dirty
-    } : {}
+    ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+    dirty: promptState.dirty
   };
   if (completion) {
     const machineResult = await api2.agent.runMachine({
@@ -77067,7 +77031,9 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       restoreThread(store2, threadId);
     },
     jumpToReviewerInput: (messageId, requestId) => {
-      store2.emit("reviewer_input_jump", messageId, requestId);
+      const thread = getActiveThread(store2);
+      const request = thread ? reviewerInputRequests(thread).find((item) => item.id === requestId) : void 0;
+      store2.emit("reviewer_input_jump", messageId, request?.toolCallId ?? requestId);
     }
   };
   function render2() {
