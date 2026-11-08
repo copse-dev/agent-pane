@@ -103,3 +103,18 @@ describe('parseThreadMetaValue usage', () => {
     assert.deepEqual(parseThreadMetaValue(meta(usage))?.usage, usage)
   })
 })
+
+describe('persisted Cursor launch history', () => {
+  it('keeps bounded string IDs and drops malformed histories', () => {
+    const base = meta({ inputTokens: 0, outputTokens: 0 })
+    assert.deepEqual(
+      parseThreadMetaValue({ ...base, cursorAgentIds: ['bc-1', 'bc-2'] })?.cursorAgentIds,
+      ['bc-1', 'bc-2'],
+    )
+    for (const invalid of [['bc-1', 3], [''], Array.from({ length: 129 }, () => 'bc')]) {
+      const parsed = parseThreadMetaValue({ ...base, cursorAgentIds: invalid })
+      assert.ok(parsed)
+      assert.equal(Object.hasOwn(parsed, 'cursorAgentIds'), false)
+    }
+  })
+})

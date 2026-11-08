@@ -64,11 +64,15 @@ const stateFile = (projectId: string, threadId: string): string =>
   join(threadDirectoryPath(projectId, threadId), 'openai-agent-session.json')
 
 /** Read only a cached artifact belonging to a known thread; never accept a local path. */
-export async function readOpenAiArtifact(threadId: string, artifact: string): Promise<Buffer> {
+export async function readOpenAiArtifact(
+  projectId: string,
+  threadId: string,
+  artifact: string,
+): Promise<Buffer> {
   if (!/^[a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10}$/.test(artifact))
     throw new Error('Invalid OpenAI artifact reference.')
   const owner = storageGet(storageKey(threadId))
-  if (typeof owner !== 'string') throw new Error('OpenAI artifact thread is unavailable.')
+  if (owner !== projectId) throw new Error('OpenAI artifact thread is unavailable.')
   const directory = threadDirectoryPath(owner, threadId)
   const root = await realpath(directory)
   const target = await realpath(join(directory, 'blobs', 'openai-artifacts', artifact))

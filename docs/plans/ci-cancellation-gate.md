@@ -162,7 +162,11 @@ job would leave another queue delay before acceptance. Therefore this recheck ru
 inside the aggregate, with read-only contents/actions/pull-request permissions and
 no candidate checkout, install, write token or status copying. It uses runner-provided
 Node without downloaded actions, so action preparation cannot delay the initial
-cancellation/dependency rejection. Late invalidation,
+cancellation/dependency rejection. This bounded control script is the sole exception
+to workflow Node setup: it executes no application code or packages and checks
+TypeScript-stripping support before any API read. An incompatible hosted Node fails
+closed. All application/build/test jobs still use the repository's `.nvmrc` version.
+Late invalidation,
 expiry or API uncertainty fails this metadata run: its native jobs were already
 skipped, so new real verification is required. Only an early discovery miss can
 fall back to native work within the same run. A later successful attempt cannot

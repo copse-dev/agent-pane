@@ -346,44 +346,71 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
   detach()
 })
 
-test('a checkout failure is recorded on the run and reported to main as a worktree failure', async (context) => {
-  context.mock.method(console, 'error', () => {})
-  const store = createStore({
-    activeProjectId: 'project-a',
-    workspaceRoot: '/repo',
-    threads: [automationThread()],
-  })
-  const reports: Array<{ projectId: string; threadId: string; code: string; message: string }> = []
-  const api: AutomationControllerApi = {
-    agent: {
-      prepareCheckout: () => Promise.reject(new Error('Cannot create linked worktree')),
-      run: () => Promise.resolve(),
-    },
-    automations: {
-      list: () => Promise.resolve([]),
-      listBranchCi: () => Promise.resolve([]),
-      onTriggered: () => () => {},
-      canStart: () => Promise.resolve({ allowed: true }),
-      reportStartFailure: (projectId, threadId, failure) => {
-        reports.push({ projectId, threadId, ...failure })
-        return Promise.resolve(true)
+for (const failure of [
+  { message: 'Cannot create linked worktree', code: 'worktree-failed' },
+  { message: 'Git authentication failed', code: 'worktree-failed' },
+  {
+    message:
+      'Authentication helper cannot start because its configured command is missing or not executable.',
+    code: 'no-model',
+  },
+  { message: 'The selected coding agent is not enabled.', code: 'no-model' },
+]) {
+  test(`records the checkout cause through IPC: ${failure.message}`, async (context) => {
+    context.mock.method(console, 'error', () => {})
+    const store = createStore({
+      activeProjectId: 'project-a',
+      workspaceRoot: '/repo',
+      threads: [automationThread()],
+    })
+    const reports: Array<{ projectId: string; threadId: string; code: string; message: string }> =
+      []
+    let dispatches = 0
+    const api: AutomationControllerApi = {
+      agent: {
+        prepareCheckout: () =>
+          Promise.reject(
+            new Error(
+              "Error invoking remote method 'agent:prepare-checkout': Error: " + failure.message,
+            ),
+          ),
+        run: () => {
+          dispatches += 1
+          return Promise.resolve()
+        },
       },
-    },
-    threads: { loadProject: () => Promise.resolve([]), loadMessages: () => Promise.resolve([]) },
-  }
-  const detach = attachAutomationController(store, api)
-  await tick()
+      automations: {
+        list: () => Promise.resolve([]),
+        listBranchCi: () => Promise.resolve([]),
+        onTriggered: () => () => {},
+        canStart: () => Promise.resolve({ allowed: true }),
+        reportStartFailure: (projectId, threadId, failure) => {
+          reports.push({ projectId, threadId, ...failure })
+          return Promise.resolve(true)
+        },
+      },
+      threads: { loadProject: () => Promise.resolve([]), loadMessages: () => Promise.resolve([]) },
+    }
+    const detach = attachAutomationController(store, api)
+    await tick()
 
-  const automation = store.getState().threads[0]?.automation
-  assert.equal(automation?.failure?.code, 'worktree-failed')
-  assert.match(automation.failure.message, /Cannot create linked worktree/)
-  assert.ok(automation.startFailedAt !== undefined)
-  assert.equal(reports.length, 1)
-  assert.equal(reports[0]?.code, 'worktree-failed')
-  assert.equal(reports[0].projectId, 'project-a')
+    const automation = store.getState().threads[0]?.automation
+    assert.equal(automation?.failure?.code, failure.code)
+    assert.equal(automation.failure.message, failure.message)
+    assert.ok(automation.startFailedAt !== undefined)
+    assert.equal(reports.length, 1)
+    assert.equal(reports[0]?.code, failure.code)
+    assert.equal(reports[0].projectId, 'project-a')
 
-  detach()
-})
+    assert.equal(dispatches, 0)
+    assert.equal(store.getState().threads[0]?.draftPrompt, 'Review CI and report any failures.')
+    assert.equal(
+      store.getState().threads[0]?.messages.filter((message) => message.role === 'user').length,
+      0,
+    )
+    detach()
+  })
+}
 
 test('a trigger for an inactive project remains persisted until that project opens', async () => {
   const created = automationThread()

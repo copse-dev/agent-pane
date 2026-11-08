@@ -106,7 +106,7 @@ test('CI-built Node worker images receive their version from .nvmrc', () => {
   }
 })
 
-test('every workflow job that executes Node sets it up first', () => {
+test('Node jobs set up the repository version except the bounded hosted control script', () => {
   const nodeCommand = /(^|[;&|()\s])(node|npm|npx|pnpm)(?=\s|$)/
   let nodeJobCount = 0
 
@@ -120,6 +120,33 @@ test('every workflow job that executes Node sets it up first', () => {
       if (commandIndex === -1) continue
 
       nodeJobCount++
+      if (file === '.github/workflows/ci.yml' && job.name === 'ci-passed') {
+        // This control-plane script must not download actions before rejecting
+        // cancellation. It runs only pinned-base policy, never application code.
+        // Keep the exception narrow: one final inline invocation, hosted image,
+        // capability check, and no checkout, packages or other Node commands.
+        assert.match(job.text, /^ {4}runs-on: ubuntu-24\.04$/m)
+        assert.doesNotMatch(executableLines, /^\s*(?:-\s*)?uses:/m)
+        assert.equal([...executableLines.matchAll(new RegExp(nodeCommand, 'gm'))].length, 1)
+        assert.match(executableLines, /^ {10}node <<'NODE'$/m)
+        const finalStepIndex = executableLines.indexOf(
+          '- name: Revalidate native evidence before success',
+        )
+        assert.ok(finalStepIndex >= 0 && commandIndex > finalStepIndex)
+        assert.match(executableLines, /typeof stripTypeScriptTypes !== 'function'/)
+        assert.equal(executableLines.match(/\bimport\s*\(/g)?.length, 1)
+        assert.ok(
+          executableLines.includes(
+            "const policy = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);",
+          ),
+        )
+        assert.equal(executableLines.match(/\brequire\s*\(/g)?.length, 2)
+        assert.ok(executableLines.includes("const { readFileSync } = require('node:fs');"))
+        assert.ok(
+          executableLines.includes("const { stripTypeScriptTypes } = require('node:module');"),
+        )
+        continue
+      }
       const directSetupIndex = executableLines.indexOf('uses: actions/setup-node@')
       const compositeSetupIndex = executableLines.indexOf('uses: ./.github/actions/setup')
       const setupIndices = [directSetupIndex, compositeSetupIndex].filter((index) => index >= 0)
