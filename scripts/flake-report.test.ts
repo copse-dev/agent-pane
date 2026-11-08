@@ -141,6 +141,20 @@ describe('flake classification', () => {
     assert.deepEqual(rerunFlips(observations), [])
   })
 
+  it('counts a failure whose retry the watchdog cut off as a final failure', () => {
+    const observations = observe([row(SPEC, 1, 'failed'), row(SPEC, 2, 'running')])
+    assert.equal(observations[0]?.verdict, 'failed')
+    const stats = aggregate(observations)
+    const [only] = stats
+    assert(only)
+    assert.equal(only.attempt1Failures, 1)
+    assert.equal(only.finalFailures, 1)
+    assert.doesNotMatch(
+      historySummary({ title: 'T', runs: 1 }, stats, []),
+      /No spec failed on any attempt/,
+    )
+  })
+
   it('ignores incomplete observations when counting runs', () => {
     const stats = aggregate(observe([row(SPEC, 1, 'running')]))
     const [only] = stats

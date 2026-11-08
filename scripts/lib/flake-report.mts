@@ -169,7 +169,11 @@ export function aggregate(observations: readonly Observation[]): SpecStats[] {
         retriedPasses,
         passedThenFailed,
         rerunFlips: flipCount,
-        finalFailures: rows.filter((row) => (row.attempt2 ?? row.attempt1) === 'failed').length,
+        // From the verdict, not `attempt2 ?? attempt1`: an attempt 2 the watchdog killed is still
+        // `running`, and that must not hide a recorded attempt-1 failure.
+        finalFailures: rows.filter(
+          (row) => row.verdict === 'failed' || row.verdict === 'passed-then-failed',
+        ).length,
         flakeRate: runsObserved ? (retriedPasses + passedThenFailed + flipCount) / runsObserved : 0,
         runs: rows
           .filter((row) => isFlaky(row.verdict) || row.verdict === 'failed')
