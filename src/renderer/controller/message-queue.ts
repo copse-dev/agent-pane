@@ -196,7 +196,10 @@ export function refreshAgentRunPayload(
   }
 }
 
-type AgentRunApi = { agent: Pick<ApiClient['agent'], 'run'> }
+type AgentRunApi = {
+  agent: Pick<ApiClient['agent'], 'run'>
+  threadPrompts?: Pick<ApiClient['threadPrompts'], 'canDispatch'>
+}
 
 // A queued dispatch stays pending until main either rejects it as busy or the
 // accepted turn finishes. `done` can cross the IPC boundary before the invoke
@@ -252,9 +255,28 @@ export function dispatchAgentRun(
   perfMark('ttft:renderer-dispatch')
   if (queued) beginPendingDispatch(store, threadId)
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
-  const run = afterThreadWrites(projectId, threadId, () =>
-    api.agent.run(projectId, threadId, runPayload),
-  )
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const operationId = queued?.origin?.kind === 'machine' ? queued.origin.operationId : ''
+    if (queued && operationId.startsWith('subthread:')) {
+      const authorized = await api.threadPrompts
+        ?.canDispatch(projectId, operationId.slice('subthread:'.length), threadId)
+        .catch(() => false)
+      if (!authorized) {
+        patchThreadAnywhere(store, threadId, (thread) => ({
+          ...thread,
+          status: 'idle',
+          continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+          pendingMessages: [{ ...queued, autoDispatch: false }, ...(thread.pendingMessages ?? [])],
+          updatedAt: Date.now(),
+        }))
+        syncAgentActivity(store, threadId, false)
+        store.emit('message_queued', threadId, queued.messageId)
+        store.emit('threads_changed')
+        return
+      }
+    }
+    await api.agent.run(projectId, threadId, runPayload)
+  })
   if (!queued) {
     void run
     return

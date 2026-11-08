@@ -7,6 +7,10 @@ export interface ThreadPromptCommand {
   thread: Thread
   text: string
   expiresAt: number
+  /** Main-authorized child creation requires an isolated checkout before dispatch. */
+  requireWorktree?: boolean
+  /** The main-owned grant that authorizes this submission. */
+  authorizingAccess?: 'orchestrate'
 }
 
 export type ThreadPromptResult = { ok: true; queued: boolean } | { ok: false; error: string }
