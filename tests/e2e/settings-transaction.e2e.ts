@@ -15,18 +15,15 @@ describe('ordinary Settings transaction IPC', () => {
     resetUserData()
   })
 
-  it('round-trips null and merges role edits while rejecting a partial invalid save', async () => {
+  it('persists and merges role edits while rejecting a partial invalid save', async () => {
     await browser.execute(async () => {
       await window.api.settings.update({
         theme: 'dark',
-        claudePlanMonthlyFeeUsd: null,
         roleModels: { coder: 'old', research: 'keep' },
       })
       await window.api.settings.update({ roleAssignments: { coder: 'chosen' } })
     })
     const before = await browser.execute(() => window.api.settings.getSnapshot())
-    assert.ok(Object.hasOwn(before, 'claudePlanMonthlyFeeUsd'))
-    assert.equal(before.claudePlanMonthlyFeeUsd, null)
     assert.deepEqual(before.roleModels, { coder: 'chosen', research: 'keep' })
 
     const rejected = await browser.execute(async () => {
@@ -43,8 +40,6 @@ describe('ordinary Settings transaction IPC', () => {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const reopened = await browser.execute(() => window.api.settings.getSnapshot())
-    assert.ok(Object.hasOwn(reopened, 'claudePlanMonthlyFeeUsd'))
-    assert.equal(reopened.claudePlanMonthlyFeeUsd, null)
     assert.equal(reopened.theme, 'dark')
     assert.deepEqual(reopened.roleModels, { coder: 'chosen', research: 'keep' })
   })

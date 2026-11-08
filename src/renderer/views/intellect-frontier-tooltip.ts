@@ -210,28 +210,13 @@ export function pointTooltipContent(
       ),
       ttRow('tt-muted', `Off-plan you'd pay ${formatPrice(p.planDetail.apiPricePerMTok)} blended.`),
     )
-    if (p.planDetail.priorLimitHits) {
-      const { hit, total } = p.planDetail.priorLimitHits
-      root.append(
-        ttRow(
-          'tt-muted',
-          `Limit hit in ${String(hit)}/${String(total)} prior windows · still treating as included.`,
-        ),
-      )
-    }
   }
   // Plan window spent: it's plotted at its real price now, not as included.
   if (p.planLimitReached) {
-    const prior = p.planLimitReached.priorLimitHits
-    const priorNote = prior
-      ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.`
-      : ''
     root.append(
       ttRow(
         'tt-muted',
-        prior
-          ? `${p.planLimitReached.label} usually exhausted · plotted at off-plan price.${priorNote}`
-          : `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} · plotted at its off-plan price.`,
+        `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} · plotted at its off-plan price.`,
       ),
     )
   }

@@ -36,19 +36,11 @@ export interface PlanInclusion {
 }
 
 /** How the value map should re-price plan-covered models. */
-export type PlanCoverageMode = 'plan' | 'inference' | 'expected'
+export type PlanCoverageMode = 'plan' | 'inference'
 
 export interface PlanCoverageOptions {
   mode?: PlanCoverageMode
-  /**
-   * Prior completed-window exhaustion counts keyed by window id (from
-   * `windowExhaustionRates`). Used only in `expected` mode.
-   */
-  windowExhaustion?: ReadonlyMap<string, { hit: number; total: number }>
 }
-
-/** Expected-plan mode: plot at API price when ≥ half of prior windows hit 100%. */
-export const EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5
 
 /** Lower-cased model family Claude's per-model weekly windows are keyed by. */
 function claudeModelFamily(modelId: string): string | null {
@@ -174,24 +166,12 @@ export function applyPlanCoverage(
   const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot)
   if (!inclusion) return candidate
 
-  const exhaustion = options.windowExhaustion?.get(inclusion.windowId)
-  const expectedExhausted =
-    mode === 'expected' &&
-    exhaustion !== undefined &&
-    exhaustion.total > 0 &&
-    exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD
-  const priorLimitHits =
-    mode === 'expected' && exhaustion && exhaustion.total > 0
-      ? { hit: exhaustion.hit, total: exhaustion.total }
-      : undefined
-
-  if (inclusion.exhausted || expectedExhausted) {
+  if (inclusion.exhausted) {
     return {
       ...candidate,
       planLimitReached: {
         label: inclusion.windowLabel,
         resetsAt: inclusion.resetsAt,
-        ...(priorLimitHits ? { priorLimitHits } : {}),
       },
     }
   }
@@ -203,7 +183,6 @@ export function applyPlanCoverage(
       usedPercent: inclusion.usedPercent,
       resetsAt: inclusion.resetsAt,
       apiPricePerMTok: candidate.costPerMTok,
-      ...(priorLimitHits ? { priorLimitHits } : {}),
     },
   }
 }

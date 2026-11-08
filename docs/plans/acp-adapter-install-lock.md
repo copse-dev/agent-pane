@@ -546,9 +546,8 @@ with no escape hatch is how a CVE fix sits unmerged for a week.
   pass. Fail closed: absent evidence blocks the merge.
 - **`'codex'` is overloaded — do not find-and-replace it.** It is the ACP agent
   id _and_ an unrelated plan-usage provider name persisted in usage history
-  ([`plan-usage-bridge.ts`](../../src/main/services/plan-usage-bridge.ts),
-  [`plan-window-history.ts`](../../src/shared/usage/plan-window-history.ts) both
-  write `provider: 'codex'`). Only the agent-id namespace moves to `codex-acp`;
+  ([`plan-usage-bridge.ts`](../../src/main/services/plan-usage-bridge.ts)
+  writes `provider: 'codex'`). Only the agent-id namespace moves to `codex-acp`;
   a repo-wide rename corrupts stored usage records. `acp-agent-service.ts`'s
   `agent.id !== 'codex'` check is the agent namespace and does move.
 - **Never let the registry version become the pin.** It is an hourly unreviewed

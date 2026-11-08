@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; settings-usage-sections provisional at the median (7.9s) until its first CI run is measured, 2026-11-07",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -350,7 +350,7 @@
     "tests/e2e/settings-usage-auth-errors.e2e.ts": 7.6,
     "tests/e2e/settings-usage-classifiers.e2e.ts": 8.1,
     "tests/e2e/settings-usage-codex-chatpass.e2e.ts": 7.4,
-    "tests/e2e/settings-usage-plan-worth-it.e2e.ts": 6.9,
+    "tests/e2e/settings-usage-sections.e2e.ts": 7.9,
     "tests/e2e/settings-usage-token-expired.e2e.ts": 8,
     "tests/e2e/settings-usage-unconfirmed-plans.e2e.ts": 7.7,
     "tests/e2e/settings-usage-value-map-card-link.e2e.ts": 10.2,

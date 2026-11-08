@@ -93,10 +93,8 @@ describe('settings usage panel plan errors', () => {
     )
     assert.doesNotMatch(planText, /`/, 'no plan-usage copy shows raw backtick delimiters')
 
-    // The worth-it card, the ledger and the value map load after the plan cards.
-    // They set the page's height, which the scrollbar and the content under the
-    // action bar show, so capture once all three have drawn.
-    await expect($('.usage-worth-section .usage-worth-card')).toBeExisting()
+    // Wait for the ledger and value map to settle the page height before capture.
+    await expect($('.usage-worth-section')).not.toBeExisting()
     await expect($('.usage-period-body .usage-headline')).toBeExisting()
     await expect($('.frontier-fieldset .frontier-chart > *')).toBeExisting()
     await prepareE2eScreenshot()
