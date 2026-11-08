@@ -6,6 +6,7 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { createErrorToastGuard } from './tests/e2e/helpers/error-toast-guard.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
@@ -26,6 +27,7 @@ import { removeE2eTree } from './tests/e2e/helpers/remove-tree.ts'
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 const KEEP_EVAL_WDIO = process.env['COPSE_EVAL_KEEP_WDIO'] === '1'
+const errorToastGuard = createErrorToastGuard(assertNoErrorToasts)
 
 function codexEvalPermissionMode(): string {
   const requested = process.env['COPSE_EVAL_ACP_PERMISSION_MODE']?.trim()
@@ -108,9 +110,14 @@ export const config: WebdriverIO.Config = {
   mochaOpts: {
     ui: 'bdd',
     timeout: Number(process.env['COPSE_EVAL_MOCHA_TIMEOUT_MS'] ?? 45 * 60_000),
+    rootHooks: { afterEach: errorToastGuard.afterEach },
   },
-  afterTest: async (test) => {
-    await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'agent eval')
+  afterTest: async (test, context: { test?: object }, result) => {
+    await errorToastGuard.recordAfterTest(
+      context.test,
+      typeof test.title === 'string' ? test.title : 'agent eval',
+      result.passed,
+    )
   },
   async beforeSession(_config, capabilities) {
     delete process.env['ELECTRON_RUN_AS_NODE']
