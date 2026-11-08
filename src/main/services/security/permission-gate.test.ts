@@ -3842,6 +3842,30 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  it('does not reuse a directory grant through a symlink followed by dot-dot', async () => {
+    await withRoot(async (root, readDir) => {
+      const outside = mkdtempSync(`${readDir}-outside-`)
+      try {
+        const sub = join(outside, 'sub')
+        mkdirSync(sub)
+        const note = join(outside, 'note.txt')
+        writeFileSync(note, 'outside the approved directory')
+        symlinkSync(sub, join(readDir, 'link'))
+        const rawPath = `${readDir}/link/../note.txt`
+        await runWithActiveRunIdentity('thread-read-parent-link', () =>
+          runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        )
+        const linked = await runWithActiveRunIdentity('thread-read-parent-link', () =>
+          runGate(`cat ${rawPath}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(linked.permitted, false)
+        assert.ok(linked.prompt, 'the raw traversal must require its own approval')
+      } finally {
+        rmSync(outside, { recursive: true, force: true })
+      }
+    })
+  })
+
   it('limits a file grant to that file and requires every target in a command to be covered', async () => {
     await withRoot(async (root, readDir) => {
       const note = join(readDir, 'note.txt')

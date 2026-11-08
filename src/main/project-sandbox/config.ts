@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { hasParentTraversalSegment } from '@copse/shell-guard/read-outside-project.ts'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
@@ -1211,6 +1212,9 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
  * is canonicalized instead and the leaf re-joined.
  */
 function canonicalizeReadTarget(target: string): string {
+  if (hasParentTraversalSegment(target)) {
+    throw new Error('Read target contains a parent path segment; retry with its canonical path.')
+  }
   const resolved = resolve(target)
   let existing = resolved
   const missing: string[] = []

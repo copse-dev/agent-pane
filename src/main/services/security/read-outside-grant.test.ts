@@ -139,6 +139,10 @@ describe('read-outside grant coverage', () => {
     assert.equal(covered(join(link, 'secret.txt')), false)
   })
 
+  it('does not cover a raw parent traversal hidden by lexical resolution', () => {
+    assert.equal(covered(`${granted}/link/../note.txt`), false)
+  })
+
   it('revokes a file grant when the approved path is replaced by a symlink', () => {
     const approved = join(base, 'approved.txt')
     const destination = join(base, 'secret.txt')

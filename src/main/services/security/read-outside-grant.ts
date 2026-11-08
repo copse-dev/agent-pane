@@ -1,6 +1,9 @@
 import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
+import {
+  hasParentTraversalSegment,
+  sensitiveTargetReason,
+} from '@copse/shell-guard/read-outside-project.ts'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
 /**
@@ -153,6 +156,7 @@ export function hasReadOutsideProjectGrant(
   const paths = grantedPaths.get(threadId)
   if (!paths) return false
   return targets.every((target) => {
+    if (hasParentTraversalSegment(target)) return false
     const resolved = resolve(target)
     const canonical = canonicalReadTarget(resolved)
     if (canonical === null || sensitiveTargetReason(target, canonical) !== null) return false

@@ -798,6 +798,11 @@ a token the shell would expand (braces, `*`/`?`/`[` globs, `$`, backticks, quote
 `~` past the start, extglob parentheses) asks again, because `dir/{..,sub}/x` sits under `dir` as
 text but reads `dir/../x`. Repeating the exact approved token is still covered.
 
+A path token containing a `..` segment is ineligible for this narrower read question, even if
+lexically resolving it appears to stay within an approved directory. The kernel follows a symlink
+before applying `..`, while a text-only `path.resolve` would erase the link. Such commands use the
+ordinary shell approval route; the read overlay also rejects a raw target with a parent segment.
+
 The approved root is identity-pinned while it exists: replacing a granted file or directory, or
 retargeting a granted symlink, revokes that grant and asks again. Before reusing a directory grant,
 Copse resolves the requested path (including existing ancestors of a missing leaf) and checks that

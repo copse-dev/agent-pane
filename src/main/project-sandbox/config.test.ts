@@ -1572,6 +1572,16 @@ describe('readAllowedSandboxOverlay', () => {
     }
   })
 
+  it('refuses parent segments before lexical normalization hides a linked directory', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const target = `${dir}/link/../note.txt`
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [target]), /parent path segment/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('canonicalizes through the parent when the target does not exist yet', () => {
     const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
     try {
