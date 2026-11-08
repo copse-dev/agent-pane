@@ -142,6 +142,10 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
   const served = new Set<string>()
   let listeningPort = 0
   const server = createServer((request, response) => {
+    // Browsers can load scripts and other no-cors resources without an Origin
+    // header. Keep those responses inside this origin, including error pages.
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
+    response.setHeader('X-Content-Type-Options', 'nosniff')
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end()
       return
@@ -154,7 +158,10 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
       ![`localhost:${String(listeningPort)}`, `127.0.0.1:${String(listeningPort)}`].includes(
         host,
       ) ||
-      (request.headers.origin !== undefined && request.headers.origin !== `http://${host}`)
+      (request.headers.origin !== undefined && request.headers.origin !== `http://${host}`) ||
+      (request.headers['sec-fetch-site'] !== undefined &&
+        request.headers['sec-fetch-site'] !== 'same-origin' &&
+        request.headers['sec-fetch-site'] !== 'none')
     ) {
       response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden')
       return
@@ -171,7 +178,6 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
           'Content-Security-Policy': PREVIEW_CONTENT_SECURITY_POLICY,
           'Content-Type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
           'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
           'X-Frame-Options': 'DENY',
         })
         if (request.method === 'HEAD') {

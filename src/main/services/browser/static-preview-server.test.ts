@@ -94,6 +94,30 @@ describe('static browser preview server', () => {
     assert.equal((await fetch(preview.url)).status, 200)
   })
 
+  it('blocks a cross-origin script embed that sends no Origin header', async () => {
+    const root = await temporaryRoot('copse-static-preview-embed-')
+    await writeFile(join(root, 'app.js'), 'window.previewSource = "private"')
+    const preview = await getStaticPreviewServer(root)
+    const scriptUrl = new URL('app.js', preview.url)
+
+    for (const site of ['cross-site', 'same-site']) {
+      const crossOrigin = await fetch(scriptUrl, {
+        headers: {
+          'Sec-Fetch-Dest': 'script',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': site,
+        },
+      })
+      assert.equal(crossOrigin.status, 403, site)
+      assert.equal(crossOrigin.headers.get('cross-origin-resource-policy'), 'same-origin')
+      assert.equal(crossOrigin.headers.get('x-content-type-options'), 'nosniff')
+    }
+
+    const sameOrigin = await fetch(scriptUrl, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
+    assert.equal(sameOrigin.status, 200)
+    assert.equal(sameOrigin.headers.get('cross-origin-resource-policy'), 'same-origin')
+  })
+
   it('does not serve conventional secret files or Git metadata', async () => {
     const root = await temporaryRoot('copse-static-preview-secrets-')
     await mkdir(join(root, '.git'))
@@ -105,6 +129,8 @@ describe('static browser preview server', () => {
     for (const path of ['.env', '.git/config', '%2Eenv']) {
       const response = await fetch(new URL(path, preview.url))
       assert.equal(response.status, 404, path)
+      assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin')
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     }
     assert.equal((await fetch(preview.url)).status, 200)
   })
