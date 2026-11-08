@@ -311,6 +311,28 @@ picked up: platform and environment gaps cannot pass on this Linux runner either
   then remove the CI exclusion and the registry entry in the same PR. Nothing is posted to the
   tracker automatically.
 
+### Flake-risk ratchet
+
+`pnpm run check:flake-risks` (in `check:local` and the CI precheck) counts known flake risks per
+file and compares them with [`scripts/flake-risk-baseline.json`](../scripts/flake-risk-baseline.json).
+Like the accessibility baseline, it only shrinks: a file above its recorded count fails (a new file
+allows zero) with the file, line and preferred alternative, and a file below it fails until the
+baseline is lowered in the same PR (`pnpm run check:flake-risks -- --write` lowers it and refuses
+to raise it). The committed baseline may not grow against the base ref; a git rename carries its
+count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint rule, because
+`eslint-suppressions.json` stays empty. Rules (tracking [#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
+
+| Rule                    | Counts                                                                                                                                                                                    | Prefer                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `e2e-fixed-pause`       | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline       | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop |
+| `unit-wall-clock-sleep` | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and local helpers returning one; a missing or literal `0` delay is a yield, not counted | `node:test` `mock.timers`, or await the event itself                       |
+| `e2e-checkout-seed`     | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                      | `seedStableWorkspace()` or a temp repo                                     |
+| `e2e-fixed-port`        | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                            | `listen(0)` and read `server.address().port`                               |
+
+An attempt-count loop is not a deadline, so a pause inside one still counts. A port the product
+itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
+baseline until the probe can be pointed elsewhere.
+
 ### Cost and tier selection
 
 The e2e tier is the expensive, flake-prone one (runner OOM / disk / Electron
