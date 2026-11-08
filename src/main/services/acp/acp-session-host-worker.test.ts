@@ -292,6 +292,7 @@ describe('parseSessionHostRequest', () => {
       },
       readonlyCheckout: true,
       stateDir: '/profile/workspace/p/t/acp-agent-config/claude-acp',
+      chatReadRoots: ['/profile/workspace/p/t'],
       nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x' },
       model: 'not-a-spawn-field',
     }
@@ -303,6 +304,7 @@ describe('parseSessionHostRequest', () => {
         sandbox: config.sandbox,
         readonlyCheckout: true,
         stateDir: config.stateDir,
+        chatReadRoots: config.chatReadRoots,
       },
       allowLocalhost: true,
     })
