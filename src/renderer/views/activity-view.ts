@@ -267,6 +267,7 @@ export function createActivityView(
   let selectedIndex = 0
   // The row the detail pane last drew: a different one there has not been read.
   let shownKey: string | null = null
+  let shownQuestionSignature: string | null = null
 
   function canOpen(row: ActivityRow): boolean {
     if (!row.threadId || !row.projectId) return false
@@ -350,8 +351,9 @@ export function createActivityView(
     // A draft survives a send that did not go: the controls come back on the next
     // redraw with the text still in them.
     if (sent) drafts.delete(requestId)
+    const title = row.threadId ? getThreadById(store, row.threadId)?.title : undefined
     status.textContent = sent
-      ? `Answered ${row.threadTitle}.`
+      ? `Answered ${title ?? row.threadTitle}.`
       : 'That question was already answered.'
     scheduleRender()
   }
@@ -404,9 +406,10 @@ export function createActivityView(
     const field = el('div', { class: 'activity-answer-field' }, asked)
     if (options.length > 0) {
       const choices = el('div', { class: 'activity-options' })
-      for (const option of options) {
+      for (const [optionIndex, option] of options.entries()) {
         const choice = el('button', {
           type: 'button',
+          'data-control': `answer-${String(index)}-option-${String(optionIndex)}`,
           class: actionsOnly
             ? `ui-btn ${option === options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} activity-option activity-answer-action`
             : 'ui-btn ui-btn-secondary activity-option',
@@ -635,43 +638,69 @@ export function createActivityView(
     return el('div', { class: 'activity-detail-actions' }, ...actions)
   }
 
+  function detailHeader(row: ActivityRow, at: number): HTMLElement {
+    const meta = [row.projectName, ageText(row, at)].filter((part) => part !== null).join(' · ')
+    return el(
+      'header',
+      { class: 'activity-detail-header' },
+      el(
+        'p',
+        { class: 'activity-detail-meta' },
+        el('span', { class: 'activity-detail-state' }, STATE_LONG[row.state]),
+        meta,
+      ),
+      el(
+        'h3',
+        { id: `${host.idPrefix}-detail-title`, class: 'activity-detail-title' },
+        row.threadTitle,
+      ),
+    )
+  }
+
   function renderDetail(row: ActivityRow | undefined, at: number): void {
     if (!row) {
       detail.replaceChildren()
       detail.hidden = true
+      shownQuestionSignature = null
       return
     }
-    // Someone typing an answer keeps their caret, selection and IME composition:
-    // the pane is left as it is until they leave the field.
+    const questionSignature =
+      row.state === 'needs-answer'
+        ? JSON.stringify([
+            row.key,
+            row.threadId,
+            row.projectId,
+            row.want,
+            canOpen(row),
+            sources.questions.pending().find((request) => request.id === row.requestId),
+          ])
+        : null
+    // Preserve the whole untouched question, including unfocused controls: a
+    // redraw between pointer-down and pointer-up must not remove the click target.
+    // Rebuild after a refused send so its disabled controls can be used again.
     if (
-      row.state === 'needs-answer' &&
+      questionSignature !== null &&
       detail.dataset['rowKey'] === row.key &&
       detail.dataset['state'] === row.state &&
-      document.activeElement instanceof HTMLTextAreaElement &&
-      detail.contains(document.activeElement)
+      (questionSignature === shownQuestionSignature ||
+        (document.activeElement instanceof HTMLTextAreaElement &&
+          detail.contains(document.activeElement))) &&
+      !detail.querySelector('[data-answered]')
     ) {
+      const header = detail.querySelector('.activity-detail-header')
+      const nextHeader = detailHeader(row, at)
+      if (header?.textContent !== nextHeader.textContent) header?.replaceWith(nextHeader)
+      detail
+        .querySelector('.activity-answer')
+        ?.setAttribute('aria-label', `Send answer: ${row.want} (${row.threadTitle})`)
       return
     }
+    shownQuestionSignature = questionSignature
     detail.hidden = false
     detail.dataset['rowKey'] = row.key
     detail.dataset['state'] = row.state
-    const meta = [row.projectName, ageText(row, at)].filter((part) => part !== null).join(' · ')
     detail.replaceChildren(
-      el(
-        'header',
-        { class: 'activity-detail-header' },
-        el(
-          'p',
-          { class: 'activity-detail-meta' },
-          el('span', { class: 'activity-detail-state' }, STATE_LONG[row.state]),
-          meta,
-        ),
-        el(
-          'h3',
-          { id: `${host.idPrefix}-detail-title`, class: 'activity-detail-title' },
-          row.threadTitle,
-        ),
-      ),
+      detailHeader(row, at),
       el('div', { class: 'activity-detail-body' }, ...detailContent(row)),
       detailActions(row),
     )

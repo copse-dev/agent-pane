@@ -71,6 +71,10 @@ describe('browser-hosted automation permission preferences', () => {
     assert.ok(switchPosition.x > headingPosition.x, 'permission switch should trail the heading')
     assert.match(await form.$('.automation-permissions').getText(), /Copse action/)
     assert.match(await form.$('.automation-permissions').getText(), /MCP tool/)
+    // The kind tags are labels, not actions: the kit corner, not a pill.
+    await expect(form.$('.automation-permission-kind')).toHaveStyle({
+      'border-top-left-radius': '6px',
+    })
     await form.$('.automation-permissions').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-permissions', 'automation-permission-editor.png')
 

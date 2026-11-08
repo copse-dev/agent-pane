@@ -458,6 +458,13 @@
           3
         ]
       },
+      "automations:review-preparation": {
+        "api": "automations.reviewPreparation",
+        "args": [
+          2,
+          2
+        ]
+      },
       "automations:run-now": {
         "api": "automations.runNow",
         "args": [

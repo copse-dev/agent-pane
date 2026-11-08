@@ -69,6 +69,18 @@ export function terminateProcessTree(
       )
     })
   }
+  return terminateLocalProcessTree(proc, graceMs)
+}
+
+/**
+ * {@link terminateProcessTree} for this machine only: a registered remote
+ * process group is left registered, for a caller that kills it itself and must
+ * be able to retry when that kill fails.
+ */
+export function terminateLocalProcessTree(
+  proc: ChildProcess,
+  graceMs = SUBPROCESS_KILL_GRACE_MS,
+): () => void {
   signalProcessTree(proc, 'SIGTERM')
 
   // Not unref'd: the timer must fire to guarantee escalation, and the caller always

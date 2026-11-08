@@ -22,7 +22,6 @@
   margin-bottom: var(--spacing-xs);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-secondary);
 }
@@ -180,7 +179,6 @@
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
@@ -252,7 +250,6 @@
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
@@ -479,7 +476,6 @@
   gap: var(--spacing-sm);
   font-weight: var(--group-header-font-weight);
   font-size: var(--group-header-font-size);
-  text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
