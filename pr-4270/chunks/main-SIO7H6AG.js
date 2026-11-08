@@ -479,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-57HGMO5P.js";
+} from "./chunk-HUP3FKBW.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -541,6 +541,7 @@ import {
   penLineIcon,
   playIcon,
   plusIcon,
+  recordIcon,
   refreshIcon,
   renderMarkdown,
   runningStatusIcon,
@@ -561,7 +562,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -2163,8 +2164,8 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   function syncSideChatBadge() {
     if (!sideChatBadge) return;
     const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store2.getState();
-    const active = threads.find((thread) => thread.id === activeThreadId);
-    const mainId = active?.sideChat?.parentThreadId ?? active?.id;
+    const active2 = threads.find((thread) => thread.id === activeThreadId);
+    const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
     const rows = mainId === void 0 ? [] : sideChatsOf(threads, mainId);
     const unread = rows.filter((row2) => row2.unread).length;
     const btn = buttons.get("side-chat");
@@ -2193,8 +2194,8 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     // The badge's count and unread state for the open thread's side chats.
     store2.select(
       (s) => {
-        const active = activeThreadOf(s);
-        const mainId = active?.sideChat?.parentThreadId ?? active?.id;
+        const active2 = activeThreadOf(s);
+        const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
         const rows = mainId === void 0 ? [] : sideChatsOf(s.threads, mainId);
         return [rows.length, rows.filter((row2) => row2.unread).length];
       },
@@ -4176,7 +4177,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let arrivals = 0;
   const queue = [];
   let batch = [];
-  let active = false;
+  let active2 = false;
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
@@ -4377,7 +4378,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, settleMs);
   }
   function show2() {
-    if (active) return;
+    if (active2) return;
     if (cancelCoalesce) {
       cancelCoalesce();
       cancelCoalesce = null;
@@ -4404,11 +4405,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
       dialog.show();
     }
     rejectButton.focus({ preventScroll: true });
-    active = true;
+    active2 = true;
     syncAttention();
   }
   function scheduleShow2() {
-    if (active || coalesceScheduled) return;
+    if (active2 || coalesceScheduled) return;
     if (!queue.some(isShowable)) {
       syncAttention();
       return;
@@ -4421,14 +4422,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, coalesceMs);
   }
   function withdrawUnshowable() {
-    if (!active) return;
+    if (!active2) return;
     const withdrawn = batch.filter((req) => !isShowable(req));
     if (withdrawn.length === 0) return;
     batch = batch.filter((req) => isShowable(req));
     queue.unshift(...withdrawn);
     if (batch.length === 0) {
       closeDialog();
-      active = false;
+      active2 = false;
       clearSettle();
       return;
     }
@@ -4437,7 +4438,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     startSettle();
   }
   function appendToOpen() {
-    if (!active) return;
+    if (!active2) return;
     if (drainShowableIntoBatch() > 0) {
       renderBatch();
       startSettle();
@@ -4450,10 +4451,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const wasStandalone = batch.some((req) => req.id === id && req.standalone);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
-    if (wasInBatch && active) {
+    if (wasInBatch && active2) {
       if (batch.length === 0) {
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
         if (dialog.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle();
@@ -4465,12 +4466,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     syncAttention();
   }
   function resolve(approved, remember) {
-    if (!active || batch.length === 0) return;
+    if (!active2 || batch.length === 0) return;
     const answered = batch;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
-    active = false;
+    active2 = false;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
@@ -4532,22 +4533,22 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
+      if (active2 && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
         if (dialog.open) startSettle();
-      } else if (active && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      } else if (active2 && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
-      } else if (active) appendToOpen();
+      } else if (active2) appendToOpen();
       else scheduleShow2();
       syncAttention();
     }
@@ -4559,7 +4560,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     (s) => [s.activeThreadId, threadRelationsKey(s.threads)],
     () => {
       withdrawUnshowable();
-      if (active) appendToOpen();
+      if (active2) appendToOpen();
       else show2();
     },
     sameItems
@@ -5399,20 +5400,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
   }
   function captureFocus() {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement)) return null;
-    const toggled = active.dataset["groupToggle"];
+    const active2 = document.activeElement;
+    if (!(active2 instanceof HTMLElement)) return null;
+    const toggled = active2.dataset["groupToggle"];
     if (toggled !== void 0) return { area: "toggle", group: toggled };
-    const projectKey = active.dataset["projectKey"];
-    if (projectKey !== void 0 && strip.contains(active)) return { area: "strip", projectKey };
-    const foldKey = list.contains(active) && active.matches(".activity-fold-toggle") ? active.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
     if (foldKey !== void 0) return { area: "fold", key: foldKey };
-    if (list.contains(active)) return { area: "list" };
-    if (detail.contains(active)) {
+    if (list.contains(active2)) return { area: "list" };
+    if (detail.contains(active2)) {
       return {
         area: "detail",
         key: detail.dataset["rowKey"] ?? "",
-        control: active.dataset["control"] ?? ""
+        control: active2.dataset["control"] ?? ""
       };
     }
     return null;
@@ -9903,7 +9904,7 @@ function trackGuestScroll(options) {
   let inFlight3 = false;
   let idleTimer = null;
   let interval = null;
-  const emit = (position2) => {
+  const emit2 = (position2) => {
     if (position2.x === lastX && position2.y === lastY) return;
     lastX = position2.x;
     lastY = position2.y;
@@ -9928,7 +9929,7 @@ function trackGuestScroll(options) {
     if (disposed || !enabled || inFlight3 || !polling && strokeDepth === 0 && !guestFocused) return;
     inFlight3 = true;
     void options.fetchPosition().then((position2) => {
-      if (!disposed && position2) emit(position2);
+      if (!disposed && position2) emit2(position2);
     }).catch(() => {
     }).finally(() => {
       inFlight3 = false;
@@ -10493,7 +10494,7 @@ function createInputSmoother(options) {
   let settle = null;
   let requesting = false;
   let synchronousFrames = false;
-  function emit(text) {
+  function emit2(text) {
     if (text === emitted)
       return;
     emitted = text;
@@ -10534,7 +10535,7 @@ function createInputSmoother(options) {
       revealed = Math.min(target.length, revealed + rate(dtMs, backlog) * dtMs);
     const end = revealBoundary(target, Math.floor(revealed));
     revealed = Math.max(revealed, end);
-    emit(target.slice(0, end));
+    emit2(target.slice(0, end));
     if (end < target.length)
       schedule();
     else
@@ -10558,7 +10559,7 @@ function createInputSmoother(options) {
   function releaseAll() {
     cancel();
     revealed = target.length;
-    emit(target);
+    emit2(target);
     settleNow();
   }
   function push(text) {
@@ -13079,7 +13080,7 @@ function cardStatus(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started" || call.deferred === true)) {
     return "interrupted";
   }
   return "done";
@@ -14071,29 +14072,29 @@ function setMoving(img, moving) {
 }
 function createAgentAvatarMotion() {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let active = null;
+  let active2 = null;
   let visible = false;
   const sync = () => {
-    if (active) setMoving(active, visible && !document.hidden && !reducedMotion.matches);
+    if (active2) setMoving(active2, visible && !document.hidden && !reducedMotion.matches);
   };
   const observer = new window.IntersectionObserver((entries) => {
     for (const entry of entries) {
-      if (entry.target === active) visible = entry.isIntersecting;
+      if (entry.target === active2) visible = entry.isIntersecting;
     }
     sync();
   });
   const setActive = (img) => {
-    if (active === img) return;
-    if (active) {
-      observer.unobserve(active);
-      setMoving(active, false);
-      active.removeAttribute("data-avatar-active");
+    if (active2 === img) return;
+    if (active2) {
+      observer.unobserve(active2);
+      setMoving(active2, false);
+      active2.removeAttribute("data-avatar-active");
     }
-    active = img;
+    active2 = img;
     visible = false;
-    if (active) {
-      active.setAttribute("data-avatar-active", "");
-      observer.observe(active);
+    if (active2) {
+      active2.setAttribute("data-avatar-active", "");
+      observer.observe(active2);
     }
   };
   reducedMotion.addEventListener("change", sync);
@@ -17000,8 +17001,8 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     return project ? projectDisplayName(project) : "This project";
   };
   const renderReminder = () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (!reminder) {
       host.hidden = true;
       return;
@@ -17081,13 +17082,13 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     await offer(activeProjectId, suggestion);
   };
   acceptLink.addEventListener("click", () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
   });
   dismissLink.addEventListener("click", () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (!reminder) return;
     answer(reminder.projectId, "dismissed");
     reminders.delete(reminder.projectId);
@@ -33823,7 +33824,7 @@ function listCriteria(tokens) {
 function parsePlanDocument(body) {
   const tokens = T.lex(body, { gfm: true });
   const sections = /* @__PURE__ */ new Map();
-  let active = null;
+  let active2 = null;
   for (const token of tokens) {
     if (token.type === "heading" && token.depth !== void 0) {
       const text = tokenText(token).trim().toLowerCase();
@@ -33831,12 +33832,12 @@ function parsePlanDocument(body) {
       if (label) {
         const content = [];
         if (!sections.has(label)) sections.set(label, content);
-        active = { depth: token.depth, tokens: content };
+        active2 = { depth: token.depth, tokens: content };
         continue;
       }
-      if (active && token.depth <= active.depth) active = null;
+      if (active2 && token.depth <= active2.depth) active2 = null;
     }
-    active?.tokens.push(token);
+    active2?.tokens.push(token);
   }
   return {
     sections: new Map([...sections].map(([label, content]) => [label, blockText(content)])),
@@ -36128,9 +36129,9 @@ var init_dist4 = __esm({
       @internal
       */
       computeWrapping(target) {
-        let seen = /* @__PURE__ */ Object.create(null), active = [{ match: this, type: null, via: null }];
-        while (active.length) {
-          let current = active.shift(), match = current.match;
+        let seen = /* @__PURE__ */ Object.create(null), active2 = [{ match: this, type: null, via: null }];
+        while (active2.length) {
+          let current = active2.shift(), match = current.match;
           if (match.matchType(target)) {
             let result = [];
             for (let obj = current; obj.type; obj = obj.via)
@@ -36140,7 +36141,7 @@ var init_dist4 = __esm({
           for (let i2 = 0; i2 < match.next.length; i2++) {
             let { type, next } = match.next[i2];
             if (!type.isLeaf && !type.hasRequiredAttrs() && !(type.name in seen) && (!current.type || next.validEnd)) {
-              active.push({ match: type.contentMatch, type, via: current });
+              active2.push({ match: type.contentMatch, type, via: current });
               seen[type.name] = true;
             }
           }
@@ -37201,28 +37202,28 @@ var init_dist4 = __esm({
       serializeFragment(fragment, options = {}, target) {
         if (!target)
           target = doc(options).createDocumentFragment();
-        let top = target, active = [];
+        let top = target, active2 = [];
         fragment.forEach((node) => {
-          if (active.length || node.marks.length) {
+          if (active2.length || node.marks.length) {
             let keep = 0, rendered = 0;
-            while (keep < active.length && rendered < node.marks.length) {
+            while (keep < active2.length && rendered < node.marks.length) {
               let next = node.marks[rendered];
               if (!this.marks[next.type.name]) {
                 rendered++;
                 continue;
               }
-              if (!next.eq(active[keep][0]) || next.type.spec.spanning === false)
+              if (!next.eq(active2[keep][0]) || next.type.spec.spanning === false)
                 break;
               keep++;
               rendered++;
             }
-            while (keep < active.length)
-              top = active.pop()[1];
+            while (keep < active2.length)
+              top = active2.pop()[1];
             while (rendered < node.marks.length) {
               let add = node.marks[rendered++];
               let markDOM = this.serializeMark(add, node.isInline, options);
               if (markDOM) {
-                active.push([add, top]);
+                active2.push([add, top]);
                 top.appendChild(markDOM.dom);
                 top = markDOM.contentDOM || markDOM.dom;
               }
@@ -41320,18 +41321,18 @@ function flattenH(rect, top) {
   return { top: y2, bottom: y2, left: rect.left, right: rect.right };
 }
 function withFlushedState(view, state, f2) {
-  let viewState = view.state, active = view.root.activeElement;
+  let viewState = view.state, active2 = view.root.activeElement;
   if (viewState != state)
     view.updateState(state);
-  if (active != view.dom)
+  if (active2 != view.dom)
     view.focus();
   try {
     return f2();
   } finally {
     if (viewState != state)
       view.updateState(viewState);
-    if (active != view.dom && active)
-      active.focus();
+    if (active2 != view.dom && active2)
+      active2.focus();
   }
 }
 function endOfTextblockVertical(view, state, dir) {
@@ -41576,7 +41577,7 @@ function iterDeco(parent, deco, onWidget, onNode) {
     }
     return;
   }
-  let decoIndex = 0, active = [], restNode = null;
+  let decoIndex = 0, active2 = [], restNode = null;
   for (let parentIndex = 0; ; ) {
     let widget, widgets;
     while (decoIndex < locals.length && locals[decoIndex].to == offset) {
@@ -41608,19 +41609,19 @@ function iterDeco(parent, deco, onWidget, onNode) {
     } else {
       break;
     }
-    for (let i2 = 0; i2 < active.length; i2++)
-      if (active[i2].to <= offset)
-        active.splice(i2--, 1);
+    for (let i2 = 0; i2 < active2.length; i2++)
+      if (active2[i2].to <= offset)
+        active2.splice(i2--, 1);
     while (decoIndex < locals.length && locals[decoIndex].from <= offset && locals[decoIndex].to > offset)
-      active.push(locals[decoIndex++]);
+      active2.push(locals[decoIndex++]);
     let end = offset + child.nodeSize;
     if (child.isText) {
       let cutAt = end;
       if (decoIndex < locals.length && locals[decoIndex].from < cutAt)
         cutAt = locals[decoIndex].from;
-      for (let i2 = 0; i2 < active.length; i2++)
-        if (active[i2].to < cutAt)
-          cutAt = active[i2].to;
+      for (let i2 = 0; i2 < active2.length; i2++)
+        if (active2[i2].to < cutAt)
+          cutAt = active2[i2].to;
       if (cutAt < end) {
         restNode = child.cut(cutAt - offset);
         child = child.cut(0, cutAt - offset);
@@ -41631,7 +41632,7 @@ function iterDeco(parent, deco, onWidget, onNode) {
       while (decoIndex < locals.length && locals[decoIndex].to < end)
         decoIndex++;
     }
-    let outerDeco = child.isInline && !child.isLeaf ? active.filter((d) => !d.inline) : active.slice();
+    let outerDeco = child.isInline && !child.isLeaf ? active2.filter((d) => !d.inline) : active2.slice();
     onNode(child, outerDeco, deco.forChild(offset, child), index);
     offset = end;
   }
@@ -62899,7 +62900,7 @@ function mountPlanDocumentEditor(onChange, onSelection, identity = { id: "plan",
     documentButton.setAttribute("aria-pressed", String(!sourceMode));
     sourceButton.setAttribute("aria-pressed", String(sourceMode));
   }
-  function addFormat(label, text, run4, active = () => false) {
+  function addFormat(label, text, run4, active2 = () => false) {
     const button = el(
       "button",
       {
@@ -62916,7 +62917,7 @@ function mountPlanDocumentEditor(onChange, onSelection, identity = { id: "plan",
     button.addEventListener("click", () => {
       if (!locked) run4();
     });
-    formatButtons.push({ button, active });
+    formatButtons.push({ button, active: active2 });
     formatting.append(button);
   }
   addFormat(
@@ -64761,9 +64762,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
   }
   function scrollActiveRowIntoView() {
-    const active = list.querySelector(".branch-picker-option.is-active");
-    if (!active) return;
-    const activeBounds = active.getBoundingClientRect();
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
     const listBounds = list.getBoundingClientRect();
     if (activeBounds.top < listBounds.top) {
       list.scrollTop += activeBounds.top - listBounds.top;
@@ -64863,8 +64864,8 @@ function mountFooterBranchStatus(host, store2, api2) {
         list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
       }
     }
-    const active = list.querySelector(".branch-picker-option.is-active");
-    if (open && active) filterInput.setAttribute("aria-activedescendant", active.id);
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
     schedulePopupBoundary();
   }
@@ -67822,6 +67823,39 @@ var init_container_run_control = __esm({
   }
 });
 
+// src/renderer/recording/active-recordings.ts
+function emit() {
+  const snapshot = [...active.values()];
+  for (const listener of listeners) listener(snapshot);
+}
+function addActiveRecording(recording) {
+  active.set(recording.id, recording);
+  emit();
+  return () => {
+    if (active.get(recording.id) !== recording) return;
+    active.delete(recording.id);
+    emit();
+  };
+}
+function subscribeActiveRecordings(listener) {
+  listeners.add(listener);
+  listener([...active.values()]);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function formatRecordingClock(ms) {
+  const total2 = Math.max(0, Math.floor(ms / 1e3));
+  return `${String(Math.floor(total2 / 60))}:${String(total2 % 60).padStart(2, "0")}`;
+}
+var active, listeners;
+var init_active_recordings = __esm({
+  "src/renderer/recording/active-recordings.ts"() {
+    active = /* @__PURE__ */ new Map();
+    listeners = /* @__PURE__ */ new Set();
+  }
+});
+
 // src/renderer/keyboard-shortcuts.ts
 function isTypingTarget(target) {
   if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
@@ -67912,6 +67946,7 @@ function pasteBelongsElsewhere(target) {
 }
 function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
+  const recordingChips = el("div", { class: "attachment-chips recording-chips" });
   const composer = mountComposerEditor();
   composer.setPlaceholder("Message\u2026");
   const submitBtn = el(
@@ -68405,6 +68440,7 @@ ${context}` : text;
   );
   root.insertBefore(followUps.root, inputRow);
   root.insertBefore(chips, inputRow);
+  root.insertBefore(recordingChips, chips);
   const defaultPlaceholder = "Message\u2026";
   const followUpPlaceholder = "Send follow-up";
   const nextStepHint = mountNextStepHint(store2, api2, () => {
@@ -69905,6 +69941,51 @@ ${reply}`);
     }
   };
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers);
+  let recordingClockTimer = null;
+  let recordingClocks = [];
+  function renderRecordingChips(recordings) {
+    recordingClocks = [];
+    recordingChips.replaceChildren(
+      ...recordings.map((recording) => {
+        const clock = el("span", { class: "recording-chip-clock" });
+        recordingClocks.push({ clock, startedAt: recording.startedAt });
+        const stop = el(
+          "button",
+          { type: "button", "aria-label": `Stop recording ${recording.label}` },
+          closeIcon("ui-icon ui-icon-sm")
+        );
+        stop.addEventListener("click", () => {
+          recording.stop();
+        });
+        const chip2 = el(
+          "span",
+          {
+            class: "attachment-chip recording-chip",
+            title: `${recording.label} \u2014 becomes a video attachment when you stop`
+          },
+          el("span", { class: "recording-dot", "aria-hidden": "true" }),
+          el("span", { class: "attachment-chip-label" }, `Recording ${recording.label}`),
+          clock,
+          stop
+        );
+        return chip2;
+      })
+    );
+    tickRecordingClocks();
+    if (recordings.length > 0 && recordingClockTimer === null) {
+      recordingClockTimer = window.setInterval(tickRecordingClocks, 500);
+    } else if (recordings.length === 0 && recordingClockTimer !== null) {
+      window.clearInterval(recordingClockTimer);
+      recordingClockTimer = null;
+    }
+  }
+  function tickRecordingClocks() {
+    const now = performance.now();
+    for (const { clock, startedAt } of recordingClocks) {
+      clock.textContent = formatRecordingClock(now - startedAt);
+    }
+  }
+  const unsubscribeRecordings = subscribeActiveRecordings(renderRecordingChips);
   attachBtn.addEventListener("click", () => {
     fileInput.click();
   });
@@ -70199,6 +70280,8 @@ ${reply}`);
       });
       unbindDrop();
       unregisterAttachments();
+      unsubscribeRecordings();
+      if (recordingClockTimer !== null) window.clearInterval(recordingClockTimer);
       imageDescriptionSeq++;
       descriptionPicker?.destroy();
       modelPicker.destroy();
@@ -70283,6 +70366,7 @@ var init_input_bar = __esm({
     init_estimate_cost();
     init_model_selection();
     init_perf();
+    init_active_recordings();
     init_keyboard_shortcuts();
     init_dialog_shell();
     init_active_workspace();
@@ -71191,9 +71275,9 @@ function mountRightPanelLayout(store2) {
       syncPaneMaximizeButton(btn, maximized);
     }
     if (!maximized) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active)) {
-      active.blur();
+    const active2 = document.activeElement;
+    if (active2 instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active2)) {
+      active2.blur();
     }
   }
   syncLayout();
@@ -72425,9 +72509,9 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (!task) return;
     selectedId = id;
     for (const t of tasks.values()) {
-      const active = t.id === id;
-      t.tab.classList.toggle("is-active", active);
-      t.panel.hidden = !active;
+      const active2 = t.id === id;
+      t.tab.classList.toggle("is-active", active2);
+      t.panel.hidden = !active2;
     }
     showTaskView(true);
     scrollPanelToBottom(task);
@@ -72549,14 +72633,14 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     return null;
   }
   function onScopeSwitch() {
-    const active = currentThreadId();
+    const active2 = currentThreadId();
     for (const task of tasks.values()) {
-      const visible = isTabVisibleForScope(task, active);
+      const visible = isTabVisibleForScope(task, active2);
       task.tab.hidden = !visible;
       if (!visible) task.panel.hidden = true;
     }
     const selected = selectedId ? tasks.get(selectedId) : null;
-    if (selected && !isTabVisibleForScope(selected, active)) clearSelection();
+    if (selected && !isTabVisibleForScope(selected, active2)) clearSelection();
     syncSectionVisibility();
   }
   function onThreadMaybeChanged() {
@@ -72900,8 +72984,8 @@ function renderImageDiff(container, diff) {
   if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
     return;
   }
-  const active = document.activeElement;
-  const focusedAlt = active && container.contains(active) ? active.getAttribute("alt") : null;
+  const active2 = document.activeElement;
+  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
@@ -73933,8 +74017,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   });
   const unsubs = [
-    selectRightPanelMode(store2, "changes", (active) => {
-      if (active) void refresh();
+    selectRightPanelMode(store2, "changes", (active2) => {
+      if (active2) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
       adoptActiveOwner();
@@ -75713,9 +75797,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store2, api2);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
-    selectRightPanelMode(store2, "prs", (active) => {
+    selectRightPanelMode(store2, "prs", (active2) => {
       syncWatch();
-      if (active) void refresh();
+      if (active2) void refresh();
     }),
     selectActiveWorkspace(store2, () => {
       threadRelationshipRequest++;
@@ -76148,8 +76232,8 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    selectRightPanelMode(store2, "memories", (active) => {
-      if (active) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "memories", (active2) => {
+      if (active2) void refresh({ preserveDirty: true });
     }),
     selectActiveWorkspace(store2, () => {
       selectedId = null;
@@ -76689,7 +76773,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     result.append(el("p", { class: "thread-context-permission-label" }, "This thread"));
     const grants = [
       { access: "read", label: "Read other threads" },
-      { access: "send", label: "Send prompts to other threads" }
+      { access: "send", label: "Send prompts to other threads" },
+      { access: "orchestrate", label: "Orchestrate own subthreads" }
     ].filter(({ access }) => currentGrants[access]);
     if (grants.length === 0) {
       result.append(emptyNote("No saved conversation access."));
@@ -76876,9 +76961,20 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       const project = store2.getState().projects.find((candidate) => candidate.id === projectId);
       const projectRoot = project?.path;
       if (!projectRoot) return;
-      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] = await Promise.all([
+      const [
+        read,
+        send,
+        orchestrate,
+        context,
+        guardedYolo,
+        trusted,
+        savedOrigins,
+        overrides,
+        decisions
+      ] = await Promise.all([
         api2.settings.get("threadReadAccess"),
         api2.settings.get("threadSendAccess"),
+        api2.settings.get("threadSubthreadAccess"),
         api2.security.getContextPermissions(projectId, threadId, projectRoot),
         api2.security.getGuardedYolo(threadId),
         api2.workspace.isTrusted(),
@@ -76890,6 +76986,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       accessGrants = {
         read: Array.isArray(read) && read.includes(threadId),
         send: Array.isArray(send) && send.includes(threadId),
+        orchestrate: Array.isArray(orchestrate) && orchestrate.includes(threadId),
         context,
         guardedYolo: guardedYolo.phase,
         workspaceTrusted: trusted,
@@ -77235,8 +77332,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
         void refreshAccess();
       }
     }),
-    selectRightPanelMode(store2, "context", (active) => {
-      if (!active) return;
+    selectRightPanelMode(store2, "context", (active2) => {
+      if (!active2) return;
       render2();
       void refreshMentions();
     }),
@@ -77250,8 +77347,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
         render2();
         afterPendingThreadPersistence(() => {
           if (disposed || !contextModeActive(store2)) return;
-          const active = getActiveThread(store2)?.id ?? null;
-          if (active !== mentionedFor) void refreshMentions();
+          const active2 = getActiveThread(store2)?.id ?? null;
+          if (active2 !== mentionedFor) void refreshMentions();
           else if (storageKey !== activeStorageKey()) void refreshStorage();
         });
       },
@@ -77331,8 +77428,8 @@ var init_thread_context_panel = __esm({
 
 // src/renderer/views/side-chat-panel.ts
 function resolveSideChatSelection(threads, activeThreadId, remembered) {
-  const active = threads.find((thread) => thread.id === activeThreadId);
-  const mainId = active ? active.sideChat?.parentThreadId ?? active.id : null;
+  const active2 = threads.find((thread) => thread.id === activeThreadId);
+  const mainId = active2 ? active2.sideChat?.parentThreadId ?? active2.id : null;
   if (mainId === null) return { mainId, rows: [], selectedId: null };
   const rows = sideChatsOf(threads, mainId, true).sort(
     (a, b2) => Number(a.archived) - Number(b2.archived)
@@ -77340,7 +77437,7 @@ function resolveSideChatSelection(threads, activeThreadId, remembered) {
   const choice = remembered.get(mainId);
   const chosen = rows.find((row2) => row2.id === choice && !row2.archived);
   const selected = chosen ?? rows.find((row2) => !row2.archived) ?? rows.find((row2) => row2.id === choice);
-  const own = active?.sideChat ? rows.find((row2) => row2.id === active.id) : void 0;
+  const own = active2?.sideChat ? rows.find((row2) => row2.id === active2.id) : void 0;
   return { mainId, rows, selectedId: (own ?? selected ?? rows[0])?.id ?? null };
 }
 function messageEl(message2, streaming, host, nodes) {
@@ -80405,8 +80502,8 @@ Notes: ${notes}` : prompt;
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    selectRightPanelMode(store2, "roadmap", (active) => {
-      if (active) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "roadmap", (active2) => {
+      if (active2) void refresh({ preserveDirty: true });
     }),
     // Saves return before their complexity stamp lands (roadmap-complexity.ts);
     // pick the badge up when main says the stamp arrived.
@@ -80659,6 +80756,353 @@ var init_browser_pane_session = __esm({
     init_persistence();
     MAX_STORED_URL_LENGTH = 4096;
     BROWSER_SESSION_SAVE_DEBOUNCE_MS = 500;
+  }
+});
+
+// src/renderer/recording/canvas-fit.ts
+function evenFrameSize(width, height) {
+  return {
+    width: Math.max(2, width - width % 2),
+    height: Math.max(2, height - height % 2)
+  };
+}
+function fitRect(sourceWidth, sourceHeight, width, height) {
+  if (sourceWidth <= 0 || sourceHeight <= 0) return { x: 0, y: 0, width, height };
+  const scale2 = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale2;
+  const drawHeight = sourceHeight * scale2;
+  return {
+    x: (width - drawWidth) / 2,
+    y: (height - drawHeight) / 2,
+    width: drawWidth,
+    height: drawHeight
+  };
+}
+function drawFitted(context, source, width, height) {
+  if (source.width === width && source.height === height) {
+    context.drawImage(source, 0, 0);
+    return;
+  }
+  const rect = fitRect(source.width, source.height, width, height);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(source, rect.x, rect.y, rect.width, rect.height);
+}
+var init_canvas_fit = __esm({
+  "src/renderer/recording/canvas-fit.ts"() {
+  }
+});
+
+// src/renderer/recording/canvas-recorder.ts
+function pickRecordingMimeType(isTypeSupported) {
+  return RECORDING_MIME_CANDIDATES.find((type) => isTypeSupported(type)) ?? null;
+}
+function recordingLimitReached(elapsedMs, bytes2) {
+  if (bytes2 >= RECORDING_MAX_BYTES) return "size-limit";
+  if (elapsedMs >= RECORDING_MAX_DURATION_MS) return "duration-limit";
+  return null;
+}
+function startCanvasRecording(source) {
+  const mimeType = pickRecordingMimeType((type) => MediaRecorder.isTypeSupported(type));
+  if (!mimeType) throw new Error("This build cannot encode WebM video.");
+  const frame = evenFrameSize(source.width, source.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create a canvas to record into.");
+  const paint = () => {
+    if (source.width > 0 && source.height > 0) {
+      drawFitted(context, source, frame.width, frame.height);
+    }
+  };
+  paint();
+  const stream = canvas.captureStream();
+  const recorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: RECORDING_BITS_PER_SECOND
+  });
+  const chunks = [];
+  const startedAt = performance.now();
+  let bytes2 = 0;
+  let endedAt = null;
+  let stopReason = null;
+  const finished = new Promise((resolve, reject) => {
+    recorder.addEventListener("stop", () => {
+      for (const t of stream.getTracks()) t.stop();
+      resolve({
+        blob: new Blob(chunks, { type: "video/webm" }),
+        durationMs: (endedAt ?? performance.now()) - startedAt,
+        reason: stopReason ?? "source-ended"
+      });
+    });
+    recorder.addEventListener("error", (event) => {
+      for (const t of stream.getTracks()) t.stop();
+      window.clearInterval(ticker);
+      const cause = event instanceof ErrorEvent ? event.error : null;
+      reject(cause instanceof Error ? cause : new Error("The recorder failed."));
+    });
+  });
+  const elapsedMs = () => (endedAt ?? performance.now()) - startedAt;
+  function stop(reason = "user") {
+    if (stopReason !== null) return finished;
+    stopReason = reason;
+    endedAt = performance.now();
+    window.clearInterval(ticker);
+    if (recorder.state !== "inactive") recorder.stop();
+    return finished;
+  }
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size === 0) return;
+    chunks.push(event.data);
+    bytes2 += event.data.size;
+    const limit = recordingLimitReached(elapsedMs(), bytes2);
+    if (limit) void stop(limit);
+  });
+  const ticker = window.setInterval(() => {
+    const limit = recordingLimitReached(elapsedMs(), bytes2);
+    if (limit) {
+      void stop(limit);
+      return;
+    }
+    paint();
+  }, RECORDING_FRAME_MS);
+  recorder.start(RECORDING_CHUNK_MS);
+  return { elapsedMs, recordedBytes: () => bytes2, stop, finished };
+}
+var RECORDING_MAX_DURATION_MS, RECORDING_MAX_BYTES, RECORDING_BITS_PER_SECOND, RECORDING_CHUNK_MS, RECORDING_FRAME_MS, RECORDING_MIME_CANDIDATES;
+var init_canvas_recorder = __esm({
+  "src/renderer/recording/canvas-recorder.ts"() {
+    init_video_media();
+    init_canvas_fit();
+    RECORDING_MAX_DURATION_MS = 5 * 6e4;
+    RECORDING_MAX_BYTES = MAX_VIDEO_BYTES - 16 * 1024 * 1024;
+    RECORDING_BITS_PER_SECOND = 25e5;
+    RECORDING_CHUNK_MS = 1e3;
+    RECORDING_FRAME_MS = 100;
+    RECORDING_MIME_CANDIDATES = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm"
+    ];
+  }
+});
+
+// src/renderer/recording/surface-recorder.ts
+function fileStamp(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+function createSurfaceRecorder(options) {
+  const clock = el("span", { class: "recording-indicator-clock" });
+  const stopButton = el(
+    "button",
+    { type: "button", class: "recording-indicator-stop", "aria-label": "Stop recording" },
+    el("span", { class: "recording-indicator-stop-glyph", "aria-hidden": "true" }),
+    "Stop"
+  );
+  const indicator = el(
+    "div",
+    { class: "recording-indicator", role: "status", hidden: true },
+    el("span", { class: "recording-dot", "aria-hidden": "true" }),
+    el("span", { class: "recording-indicator-label" }, "Recording"),
+    clock,
+    stopButton
+  );
+  let session = null;
+  let starting = false;
+  let disposed = false;
+  const isDisposed = () => disposed;
+  function renderClock() {
+    if (!session) return;
+    clock.textContent = `${formatRecordingClock(session.recording.elapsedMs())} / ${formatRecordingClock(RECORDING_MAX_DURATION_MS)}`;
+  }
+  function setRecordingUi(recording) {
+    indicator.hidden = !recording;
+    options.onChange?.(recording);
+  }
+  async function start() {
+    if (session || starting || disposed) return;
+    if (!getPromptAttachmentHandlers()) {
+      showToast("Open a thread before recording.", { variant: "error" });
+      return;
+    }
+    starting = true;
+    let capture = null;
+    try {
+      capture = await options.openCapture();
+      if (isDisposed()) {
+        capture.dispose();
+        return;
+      }
+      const recording = startCanvasRecording(capture.canvas);
+      const label = `${options.sourceKind()} \u2014 ${options.sourceLabel()}`;
+      const id = `recording-${String(++nextRecordingId)}`;
+      const current = {
+        recording,
+        capture,
+        label,
+        startedAt: /* @__PURE__ */ new Date(),
+        tick: window.setInterval(renderClock, 250),
+        unregister: addActiveRecording({
+          id,
+          label,
+          startedAt: performance.now() - recording.elapsedMs(),
+          stop: () => {
+            stop("user");
+          }
+        })
+      };
+      session = current;
+      renderClock();
+      setRecordingUi(true);
+      void recording.finished.then(
+        (result) => finish(current, result),
+        (error) => {
+          teardown(current);
+          showErrorToast("Recording failed", error);
+        }
+      );
+    } catch (error) {
+      capture?.dispose();
+      showErrorToast("Could not start recording", error);
+    } finally {
+      starting = false;
+    }
+  }
+  function teardown(current) {
+    if (session !== current) return;
+    session = null;
+    window.clearInterval(current.tick);
+    current.unregister();
+    current.capture.dispose();
+    setRecordingUi(false);
+  }
+  async function finish(current, result) {
+    teardown(current);
+    if (result.blob.size === 0 || result.durationMs < MIN_KEPT_RECORDING_MS) {
+      showToast("The recording was too short to keep.");
+      return;
+    }
+    const handlers3 = getPromptAttachmentHandlers();
+    if (!handlers3) {
+      showToast("Open a thread to keep the recording.", { variant: "error" });
+      return;
+    }
+    await handlers3.attachVideo({
+      name: `Recording \u2014 ${current.label} \u2014 ${fileStamp(current.startedAt)}.webm`,
+      mimeType: "video/webm",
+      bytes: await result.blob.arrayBuffer()
+    });
+    const notice = STOP_NOTICES[result.reason];
+    if (notice) showToast(notice);
+  }
+  function stop(reason = "user") {
+    if (session) void session.recording.stop(reason);
+  }
+  stopButton.addEventListener("click", () => {
+    stop("user");
+  });
+  return {
+    indicator,
+    isRecording: () => session !== null,
+    toggle: () => {
+      if (session) stop("user");
+      else void start();
+    },
+    stop,
+    dispose: () => {
+      disposed = true;
+      stop("source-ended");
+    }
+  };
+}
+var MIN_KEPT_RECORDING_MS, STOP_NOTICES, nextRecordingId;
+var init_surface_recorder = __esm({
+  "src/renderer/recording/surface-recorder.ts"() {
+    init_prompt_attachments();
+    init_helpers();
+    init_toast();
+    init_active_recordings();
+    init_canvas_recorder();
+    MIN_KEPT_RECORDING_MS = 500;
+    STOP_NOTICES = {
+      "duration-limit": `Recording stopped at the ${formatRecordingClock(RECORDING_MAX_DURATION_MS)} limit and was added to the thread.`,
+      "size-limit": "Recording stopped at the size limit and was added to the thread.",
+      "source-ended": "The connection ended. The recording up to that point was added to the thread."
+    };
+    nextRecordingId = 0;
+  }
+});
+
+// src/renderer/recording/screencast-capture.ts
+async function openScreencastCapture(api2, webContentsId, onEnded) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create a canvas to record into.");
+  let requested = 0;
+  let drawn = 0;
+  let disposed = false;
+  let resolveFirstFrame = null;
+  const firstFrame = new Promise((resolve) => {
+    resolveFirstFrame = resolve;
+  });
+  const stopFrames = api2.onRecordingFrame((id, jpeg) => {
+    if (id !== webContentsId || disposed) return;
+    const sequence = ++requested;
+    void createImageBitmap(new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" })).then(
+      (bitmap) => {
+        if (disposed || sequence < drawn) {
+          bitmap.close();
+          return;
+        }
+        drawn = sequence;
+        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+        }
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        resolveFirstFrame?.();
+      },
+      () => {
+      }
+    );
+  });
+  const stopEnded = api2.onRecordingEnded((id) => {
+    if (id === webContentsId && !disposed) onEnded();
+  });
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    stopFrames();
+    stopEnded();
+    void api2.stopRecording(webContentsId).catch(() => {
+    });
+  };
+  try {
+    await api2.startRecording(webContentsId);
+    let timer = 0;
+    const timedOut = new Promise((resolve) => {
+      timer = window.setTimeout(() => {
+        resolve("timeout");
+      }, FIRST_FRAME_TIMEOUT_MS);
+    });
+    const outcome = await Promise.race([firstFrame, timedOut]);
+    window.clearTimeout(timer);
+    if (outcome === "timeout") {
+      throw new Error("The tab is not painting. Show the Browser pane and try again.");
+    }
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+  return { canvas, dispose };
+}
+var FIRST_FRAME_TIMEOUT_MS;
+var init_screencast_capture = __esm({
+  "src/renderer/recording/screencast-capture.ts"() {
+    FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
 
@@ -81480,11 +81924,19 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       searchIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Open inspector")
     );
+    const recordItemLabel = el("span", {}, "Record this tab");
+    const recordItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      recordIcon("ui-icon ui-icon-sm"),
+      recordItemLabel
+    );
     const menu = el(
       "div",
       { class: "browser-menu", role: "menu", hidden: "" },
       shareTextItem,
       shareScreenshotItem,
+      recordItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
       downloadCanvasItem,
       exportPdfItem,
@@ -81503,6 +81955,56 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       },
       penLineIcon("ui-icon ui-icon-sm")
     );
+    const recordBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "browser-nav-btn browser-record-btn",
+        "aria-label": "Record this tab",
+        "data-tooltip": "Record this tab",
+        "aria-pressed": "false"
+      },
+      recordIcon("ui-icon ui-icon-sm")
+    );
+    let tabRef = null;
+    const recorder = createSurfaceRecorder({
+      sourceKind: () => "Tab",
+      sourceLabel: () => {
+        if (!tabRef) return "browser";
+        try {
+          return new URL(webviewUrl(tabRef)).host || (webviewTitle(tabRef) ?? tabRef.label);
+        } catch {
+          return webviewTitle(tabRef) ?? tabRef.label;
+        }
+      },
+      openCapture: async () => {
+        const id2 = tabRef ? shareableWebContentsId(tabRef) : null;
+        const browserApi = api2?.browser;
+        if (id2 === null || !browserApi?.startRecording || !browserApi.stopRecording || !browserApi.onRecordingFrame || !browserApi.onRecordingEnded) {
+          throw new Error("Load a page before recording it.");
+        }
+        return await openScreencastCapture(
+          {
+            startRecording: browserApi.startRecording,
+            stopRecording: browserApi.stopRecording,
+            onRecordingFrame: browserApi.onRecordingFrame,
+            onRecordingEnded: browserApi.onRecordingEnded
+          },
+          id2,
+          () => {
+            recorder.stop("source-ended");
+          }
+        );
+      },
+      onChange: (recording) => {
+        recordBtn.setAttribute("aria-pressed", String(recording));
+        const label2 = recording ? "Stop recording" : "Record this tab";
+        recordBtn.setAttribute("aria-label", label2);
+        recordBtn.setAttribute("data-tooltip", label2);
+        recordItemLabel.textContent = label2;
+        webviewHost.classList.toggle("is-recording", recording);
+      }
+    });
     const toolbar = el(
       "div",
       { class: "browser-toolbar" },
@@ -81511,6 +82013,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       reloadBtn,
       urlInput,
       goBtn,
+      recorder.indicator,
+      recordBtn,
       annotateBtn,
       menuWrap
     );
@@ -81549,6 +82053,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      recorder,
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -81565,6 +82070,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         }
       })
     };
+    tabRef = tab;
     const annotationLayer = () => {
       if (!tab.annotation) {
         tab.annotation = mountAnnotationLayer(webviewHost, {
@@ -81631,6 +82137,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        recordItem.disabled = !recorder.isRecording() && (shareableId === null || !api2?.browser.startRecording);
         const artefact = downloadableArtefact(tab);
         downloadCanvasLabel.textContent = artefact ? "Download canvas" : "Download page";
         downloadCanvasItem.disabled = artefact ? !api2?.browser.exportArtefact : shareableId === null || !api2?.browser.exportPage;
@@ -81666,6 +82173,14 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       void api2.browser.shareScreenshot(id2).catch((error) => {
         showErrorToast("Could not share browser screenshot", error);
       });
+    });
+    recordItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      recorder.toggle();
+    });
+    recordBtn.addEventListener("click", () => {
+      setMenuOpen(false);
+      recorder.toggle();
     });
     exportPdfItem.addEventListener("click", () => {
       setMenuOpen(false);
@@ -81734,6 +82249,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.webview?.remove();
     tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
+    tab.recorder.dispose();
     tab.tabSwitch.remove();
     tabs.delete(tabId);
     scheduleSessionSave();
@@ -81748,10 +82264,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function onBrowserModeChange() {
-    const active = browserModeActive(store2);
+    const active2 = browserModeActive(store2);
     scheduleSessionSave();
     for (const tab of tabs.values()) syncAnnotationScroll(tab);
-    if (active) {
+    if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
@@ -81789,6 +82305,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webview?.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
+      tab.recorder.dispose();
       tab.tabSwitch.remove();
     }
     tabs.clear();
@@ -81892,18 +82409,18 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function whenProjectActive() {
     if (store2.getState().activeProjectId) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const settle = (active) => {
+      const settle = (active2) => {
         stop();
         pendingProjectWaits.delete(cancel);
-        resolve(active);
+        resolve(active2);
       };
       const cancel = () => {
         settle(false);
       };
       const stop = store2.select(
         (s) => s.activeProjectId !== null,
-        (active) => {
-          if (active) settle(true);
+        (active2) => {
+          if (active2) settle(true);
         }
       );
       pendingProjectWaits.add(cancel);
@@ -82040,6 +82557,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webview?.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
+      tab.recorder.dispose();
       tab.tabSwitch.remove();
     }
     tabs.clear();
@@ -82069,6 +82587,8 @@ var init_browser_pane = __esm({
     init_scroll_tracker();
     init_toast();
     init_tooltip();
+    init_surface_recorder();
+    init_screencast_capture();
     NET_ERROR_ABORTED = -3;
     NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
@@ -82706,6 +83226,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     },
     "Control desktop"
   );
+  const recordButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-record-btn", hidden: true },
+    el("span", { class: "recording-dot is-idle", "aria-hidden": "true" }),
+    "Record screen"
+  );
   const shareButton = el(
     "button",
     { type: "button", class: "ui-btn vnc-share-btn", hidden: true },
@@ -82938,11 +83464,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     forgetLoginButton,
     controlButton,
     captureActions,
+    recordButton,
     deviceNavigation,
     disconnectButton
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
+  const recorder = createSurfaceRecorder({
+    sourceKind: () => simulatorSessionId ? selectedSimulator()?.platform === "android" ? "Emulator" : "Simulator" : "Desktop",
+    sourceLabel: () => connectedMachineName ?? selectedMachineName(),
+    openCapture: () => {
+      const canvas = screen.querySelector("canvas");
+      if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) {
+        return Promise.reject(new Error("Connect to a desktop before recording it."));
+      }
+      return Promise.resolve({ canvas, dispose: () => {
+      } });
+    },
+    onChange: (recording) => {
+      recordButton.hidden = recording || !connectedAtLeastOnce;
+      screen.classList.toggle("is-recording", recording);
+    }
+  });
+  recordButton.after(recorder.indicator);
   const empty2 = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty2);
   let rfb = null;
@@ -83070,13 +83614,14 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       deviceList.append(item);
     }
   }
-  function setSessionUi(active, connected = false) {
+  function setSessionUi(active2, connected = false) {
     controlsRoot.scrollTop = 0;
-    if (active) controlsBody.scrollTop = 0;
-    setupFields.hidden = active;
-    connectButton.hidden = active;
-    disconnectButton.hidden = !active;
+    if (active2) controlsBody.scrollTop = 0;
+    setupFields.hidden = active2;
+    connectButton.hidden = active2;
+    disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
+    recordButton.hidden = !connected || recorder.isRecording();
     shareButton.hidden = !connected;
     annotateButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
@@ -83084,18 +83629,18 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     backButton.hidden = !connected || !android2;
     overviewButton.hidden = !connected || !android2;
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
-    portInput.disabled = active;
-    addressInput.disabled = active;
-    setupUsernameInput.disabled = active;
-    setupPasswordInput.disabled = active;
-    machineSelect.disabled = active;
-    discoverButton.disabled = active;
-    nearbyButton.disabled = active;
+    portInput.disabled = active2;
+    addressInput.disabled = active2;
+    setupUsernameInput.disabled = active2;
+    setupPasswordInput.disabled = active2;
+    machineSelect.disabled = active2;
+    discoverButton.disabled = active2;
+    nearbyButton.disabled = active2;
     for (const button of deviceList.querySelectorAll(".vnc-device-header")) {
-      button.disabled = active;
+      button.disabled = active2;
     }
     for (const button of discoveredPorts.querySelectorAll("button")) {
-      button.disabled = active;
+      button.disabled = active2;
     }
     empty2.hidden = connected;
     screen.hidden = !connected;
@@ -83170,6 +83715,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     targetInput.value = "";
   }
   function clearViewer(title, kind = "idle", detail = "") {
+    recorder.stop("source-ended");
     annotation?.dispose();
     annotation = null;
     annotateButton.setAttribute("aria-pressed", "false");
@@ -83982,13 +84528,22 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     event.preventDefault();
     event.stopPropagation();
     showContextMenu(event.clientX, event.clientY, [
-      { label: "Share screen with model", onSelect: shareCurrentScreen }
+      { label: "Share screen with model", onSelect: shareCurrentScreen },
+      {
+        label: recorder.isRecording() ? "Stop recording" : "Record screen",
+        onSelect: () => {
+          recorder.toggle();
+        }
+      }
     ]);
   };
   connectButton.addEventListener("click", () => {
     void connect();
   });
   disconnectButton.addEventListener("click", disconnect);
+  recordButton.addEventListener("click", () => {
+    recorder.toggle();
+  });
   controlButton.addEventListener("click", () => {
     setControlEnabled(!controlEnabled);
   });
@@ -84118,8 +84673,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value
     );
   });
-  const stopMode = selectRightPanelMode(store2, "vnc", (active) => {
-    if (!active) return;
+  const stopMode = selectRightPanelMode(store2, "vnc", (active2) => {
+    if (!active2) return;
     void loadMachines();
     if (options.isActive()) {
       if (rfb) rfb.focus();
@@ -84152,6 +84707,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       discoveryGeneration++;
       nearbyGeneration++;
       sshHostsGeneration++;
+      recorder.dispose();
       rfb?.disconnect();
       channel?.close();
       simulatorView?.cleanup();
@@ -84239,12 +84795,12 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     if (!selected) return;
     activeTabId = tabId;
     for (const tab of tabs.values()) {
-      const active = tab.id === tabId;
-      tab.tabButton.classList.toggle("is-active", active);
-      tab.tabButton.setAttribute("aria-selected", String(active));
-      tab.tabButton.tabIndex = active ? 0 : -1;
-      tab.controlsPanel.hidden = !active;
-      tab.viewerPanel.hidden = !active;
+      const active2 = tab.id === tabId;
+      tab.tabButton.classList.toggle("is-active", active2);
+      tab.tabButton.setAttribute("aria-selected", String(active2));
+      tab.tabButton.tabIndex = active2 ? 0 : -1;
+      tab.controlsPanel.hidden = !active2;
+      tab.viewerPanel.hidden = !active2;
     }
     if (vncModeActive(store2)) selected.session.focus();
   }
@@ -84382,6 +84938,7 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
+    init_surface_recorder();
     init_vnc_ssh_host_form();
     init_active_workspace();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
@@ -85380,7 +85937,7 @@ function mountAskUserDialog(api2, store2) {
   const dialog = el("dialog", { id: "ask-user-dialog" }, form);
   document.body.append(dialog);
   const queue = [];
-  let active = null;
+  let active2 = null;
   const changeListeners = /* @__PURE__ */ new Set();
   let arrivals = 0;
   let escapeHeld = false;
@@ -85396,30 +85953,30 @@ function mountAskUserDialog(api2, store2) {
     for (const listener of [...changeListeners]) listener();
   }
   function renderActive() {
-    if (!active) return;
+    if (!active2) return;
     clear(form);
     inputs = [];
-    const asker = sideChatPromptOrigin(store2, [active.threadId]);
+    const asker = sideChatPromptOrigin(store2, [active2.threadId]);
     form.append(
       el(
         "h3",
         { class: "ask-user-title" },
-        active.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
+        active2.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
       )
     );
     if (asker) {
       form.append(el("p", { class: "ask-user-origin" }, asker.label));
       store2.emit("side_chat_open_requested", asker.firstSideChatId);
     }
-    const actionsOnly = active.presentation?.kind === "actions";
-    const choiceMode = !actionsOnly && active.questions.length === 1 && (active.questions[0]?.options?.length ?? 0) > 0;
+    const actionsOnly = active2.presentation?.kind === "actions";
+    const choiceMode = !actionsOnly && active2.questions.length === 1 && (active2.questions[0]?.options?.length ?? 0) > 0;
     const submitBtn = el(
       "button",
       { type: "submit", class: "ask-user-submit", title: "Send answer (\u2318Enter or Ctrl+Enter)" },
       "Send answer"
     );
     submitBtn.hidden = choiceMode;
-    active.questions.forEach((q2, i2) => {
+    active2.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
       const input = el("textarea", {
         class: "ask-user-input",
@@ -85484,7 +86041,7 @@ function mountAskUserDialog(api2, store2) {
       if (!actionsOnly) field.append(input);
       form.append(field);
     });
-    if (active.presentation?.kind === "actions") {
+    if (active2.presentation?.kind === "actions") {
       dialog.showModal();
       const actions = form.querySelectorAll(".ask-user-action");
       actions[actions.length - 1]?.focus();
@@ -85500,25 +86057,25 @@ function mountAskUserDialog(api2, store2) {
     (form.querySelector(".ask-user-other") ?? inputs[0])?.focus();
   }
   function withdrawIfUnshowable() {
-    if (!active || isShowable(active)) return;
+    if (!active2 || isShowable(active2)) return;
     dialog.close();
-    queue.unshift(active);
-    active = null;
+    queue.unshift(active2);
+    active2 = null;
   }
   function showNext() {
-    if (active || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return;
+    if (active2 || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return;
     const idx = queue.findIndex(isShowable);
     if (idx === -1) {
       syncAttention();
       return;
     }
-    active = queue.splice(idx, 1)[0] ?? null;
-    if (!active) return;
+    active2 = queue.splice(idx, 1)[0] ?? null;
+    if (!active2) return;
     renderActive();
     syncAttention();
   }
   function scheduleNext() {
-    if (presentationTimer !== void 0 || active || queue.length === 0) return;
+    if (presentationTimer !== void 0 || active2 || queue.length === 0) return;
     presentationTimer = window.setTimeout(() => {
       presentationTimer = void 0;
       showNext();
@@ -85555,9 +86112,9 @@ function mountAskUserDialog(api2, store2) {
     subtree: true
   });
   function settle(request, answers) {
-    if (active === request) {
+    if (active2 === request) {
       dialog.close();
-      active = null;
+      active2 = null;
     } else {
       const idx = queue.indexOf(request);
       if (idx === -1) return;
@@ -85571,22 +86128,22 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   }
   function respond(answers) {
-    if (active) settle(active, answers);
+    if (active2) settle(active2, answers);
   }
   function answerFrom(id, answers) {
-    const request = active?.id === id ? active : queue.find((req) => req.id === id);
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
     if (request === void 0 || answers.length !== request.questions.length) return false;
     settle(request, [...answers]);
     return true;
   }
   function submit() {
-    if (active?.presentation?.kind === "actions") return;
+    if (active2?.presentation?.kind === "actions") return;
     if (inputs.some((input) => input.hidden)) return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
-    if (!active) return;
-    respond(active.questions.map(() => ""));
+    if (!active2) return;
+    respond(active2.questions.map(() => ""));
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -85608,7 +86165,7 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
-    if (active?.id === req.id || queue.some((request) => request.id === req.id)) return;
+    if (active2?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
       ...req.presentation === void 0 ? {} : { presentation: req.presentation },
@@ -85621,9 +86178,9 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   });
   api2.agent.onAskUserCancelled(({ id }) => {
-    if (active?.id === id) {
+    if (active2?.id === id) {
       dialog.close();
-      active = null;
+      active2 = null;
       showNext();
       syncAttention();
       return;
@@ -85642,7 +86199,7 @@ function mountAskUserDialog(api2, store2) {
     sameItems
   );
   return {
-    pending: () => [...active ? [active] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
+    pending: () => [...active2 ? [active2] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
       id: req.id,
       ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
@@ -85757,7 +86314,7 @@ function mountSshPromptDialog(api2) {
     secretButtons
   );
   const queue = [];
-  let active = null;
+  let active2 = null;
   function showKind(kind) {
     const confirm = kind === "confirm";
     secretField.hidden = confirm;
@@ -85766,33 +86323,33 @@ function mountSshPromptDialog(api2) {
     confirmButtons.hidden = !confirm;
   }
   function renderActive() {
-    if (!active) return;
-    promptEl.textContent = active.prompt;
+    if (!active2) return;
+    promptEl.textContent = active2.prompt;
     secretInput.value = "";
     rememberInput.checked = true;
     const rememberLabel = rememberField.querySelector(".ssh-prompt-remember-label");
     if (rememberLabel) {
-      rememberLabel.textContent = active.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
+      rememberLabel.textContent = active2.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
     }
-    showKind(active.kind);
+    showKind(active2.kind);
     dialog.showModal();
-    if (active.kind === "secret") secretInput.focus();
+    if (active2.kind === "secret") secretInput.focus();
     else confirmApprove.focus();
   }
   function finish(value, remember = false) {
-    if (!active) return;
-    const id = active.id;
-    active = null;
+    if (!active2) return;
+    const id = active2.id;
+    active2 = null;
     dialog.close();
     void api2.sshPrompt.respond(id, value, remember);
     if (queue.length > 0) {
-      active = queue.shift() ?? null;
+      active2 = queue.shift() ?? null;
       renderActive();
     }
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!active || active.kind !== "secret") return;
+    if (!active2 || active2.kind !== "secret") return;
     finish(secretInput.value, rememberInput.checked);
   });
   dialog.addEventListener("cancel", (event) => {
@@ -85803,16 +86360,16 @@ function mountSshPromptDialog(api2) {
     finish("");
   });
   confirmApprove.addEventListener("click", () => {
-    if (!active || active.kind !== "confirm") return;
+    if (!active2 || active2.kind !== "confirm") return;
     finish("yes");
   });
   confirmReject.addEventListener("click", () => {
     finish("");
   });
   api2.sshPrompt.onRequest((req) => {
-    if (active) queue.push(req);
+    if (active2) queue.push(req);
     else {
-      active = req;
+      active2 = req;
       renderActive();
     }
   });
@@ -85839,33 +86396,33 @@ function mountUpdatePromptDialog(api2) {
   );
   document.body.append(dialog);
   const queue = [];
-  let active = null;
+  let active2 = null;
   function finish(buttonIndex) {
-    if (!active) return;
-    const id = active.id;
-    active = null;
+    if (!active2) return;
+    const id = active2.id;
+    active2 = null;
     dialog.close();
     void api2.updatePrompt.respond(id, buttonIndex);
     if (queue.length > 0) {
-      active = queue.shift() ?? null;
+      active2 = queue.shift() ?? null;
       renderActive();
     }
   }
   function renderActive() {
-    if (!active) return;
-    messageEl2.textContent = active.message;
-    if (active.detail) {
-      detailEl.textContent = active.detail;
+    if (!active2) return;
+    messageEl2.textContent = active2.message;
+    if (active2.detail) {
+      detailEl.textContent = active2.detail;
       detailEl.hidden = false;
     } else {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
-    renderChangelog(changelogEl, active);
+    renderChangelog(changelogEl, active2);
     dialog.classList.toggle("has-changelog", !changelogEl.hidden);
-    const defaultIndex = active.defaultIndex ?? 0;
+    const defaultIndex = active2.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
-      ...active.buttons.map((label, index) => {
+      ...active2.buttons.map((label, index) => {
         const isPrimary = index === defaultIndex;
         const button = el(
           "button",
@@ -85886,12 +86443,12 @@ function mountUpdatePromptDialog(api2) {
   }
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
-    finish(active?.cancelIndex ?? (active ? active.buttons.length - 1 : -1));
+    finish(active2?.cancelIndex ?? (active2 ? active2.buttons.length - 1 : -1));
   });
   api2.updatePrompt.onRequest((req) => {
-    if (active) queue.push(req);
+    if (active2) queue.push(req);
     else {
-      active = req;
+      active2 = req;
       renderActive();
     }
   });
@@ -86404,12 +86961,12 @@ function mountCommandPalette(store2, api2) {
   }
   function storeThreadHits() {
     const { projects, threads, activeProjectId } = store2.getState();
-    const active = projects.find((p) => p.id === activeProjectId);
-    if (!active) return [];
+    const active2 = projects.find((p) => p.id === activeProjectId);
+    if (!active2) return [];
     return threads.map((t) => ({
       threadId: t.id,
-      projectId: active.id,
-      projectName: projectDisplayName(active),
+      projectId: active2.id,
+      projectName: projectDisplayName(active2),
       title: t.title,
       updatedAt: 0,
       prRefs: t.prRefs ?? []
@@ -86594,8 +87151,8 @@ function createNetworkActivityView(threadLabel2) {
     table.hidden = rows.length === 0;
     empty2.hidden = rows.length > 0;
     empty2.textContent = snapshot === void 0 ? "Network activity is unavailable in this runtime." : snapshot.rows.length === 0 ? "No network activity yet. Captured commands and connections will appear here." : "No activity matches these filters.";
-    const active = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
-    summary.textContent = `${String(active)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
+    const active2 = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
+    summary.textContent = `${String(active2)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
   }
   search.addEventListener("input", () => {
     render2(current, now);
@@ -87162,24 +87719,34 @@ async function acceptThreadPrompt(store2, api2, command2) {
     let current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || current.messagesLoaded === false || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
-    if (!current.worktreeChoice && current.messages.length === 0) {
+    if (!current.worktreeChoice && current.messages.length === 0 || command2.requireWorktree && (!current.worktree || current.worktree.retiredAt !== void 0)) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
         command2.text,
-        "automatic",
+        command2.requireWorktree ? "worktree" : "automatic",
         current.model
       );
       if (Date.now() >= command2.expiresAt)
         return { ok: false, error: "This prompt expired while preparing the checkout." };
+      if (command2.requireWorktree && prepared.checkoutMode !== "worktree")
+        return { ok: false, error: "Subthreads require an isolated checkout." };
       applyPreparedThreadCheckout(store2, threadId, prepared);
       current = getThreadById(store2, threadId);
       if (!current || current.archivedAt !== void 0)
         return { ok: false, error: "The destination conversation is unavailable." };
     }
+    if (!await api2.threadPrompts.canSubmit(command2.id))
+      return {
+        ok: false,
+        error: "The prompt was cancelled, expired, or its permission was revoked."
+      };
+    current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
+      return { ok: false, error: "The destination conversation is unavailable." };
     const origin = {
       kind: "machine",
-      operationId: `thread:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
     };
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
@@ -87734,12 +88301,15 @@ function createTranscriptReducer(store2, hooks = {}) {
       case "tool_result": {
         const ownerId = findToolCallOwner(store2, threadId, chunk.toolCallId) ?? st.msgId;
         if (ownerId) {
+          const call = findToolCall(store2, ownerId, chunk.toolCallId);
+          if (call && chunk.deferred !== true) delete call.deferred;
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
+            ...chunk.deferred ? { deferred: chunk.deferred } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           hooks.toolResult?.(threadId, ownerId, chunk);
@@ -89128,10 +89698,10 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (!message2) return;
       const current = store2.getState();
       if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
-      const active = current.threads.find((candidate) => candidate.id === threadId);
-      if (!active || refreshKey(projectId, active) !== key) return;
-      const merged = mergeImportedCursorResult(active, message2);
-      if (merged === active) return;
+      const active2 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active2 || refreshKey(projectId, active2) !== key) return;
+      const merged = mergeImportedCursorResult(active2, message2);
+      if (merged === active2) return;
       store2.setState({
         threads: current.threads.map(
           (candidate) => candidate.id === threadId ? merged : candidate
@@ -90189,14 +90759,14 @@ async function boot() {
   const { projects, projectGroups, activeProjectId, activeThreadId } = await loadProjects(api);
   endLoadProjects({ projects: projects.length });
   const [firstProject] = projects;
-  const active = firstProject ? projects.find((p) => p.id === activeProjectId) ?? firstProject : void 0;
-  store.setState({ projects, projectGroups, activeProjectId: active?.id ?? null });
+  const active2 = firstProject ? projects.find((p) => p.id === activeProjectId) ?? firstProject : void 0;
+  store.setState({ projects, projectGroups, activeProjectId: active2?.id ?? null });
   markNavigationRestored({ activeProjectId, activeThreadId });
-  if (active) {
+  if (active2) {
     ensureLayout();
     mark("renderer:layout-mounted");
     const endRestore = begin("renderer:restore-project");
-    await restoreProject(store, api, active.id, activeThreadId);
+    await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
     void preloadSidebarThreads(store, api);
