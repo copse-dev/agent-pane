@@ -1,0 +1,185 @@
+name: E2E quarantine (nightly)
+
+# Quarantined specs (tests/e2e/exclusions.json category `quarantine`, excluded
+# by wdio.ci.conf.ts) run nowhere else. This runs them once a night, with no
+# shard or spec retry, records a pass per spec, and reports consecutive passing
+# nights so a stabilised spec can be restored. See docs/testing-strategy.md
+# "Nightly quarantine run".
+#
+# Advisory by construction: a separate workflow that no required check or `CI
+# Passed` depends on, and the spec step is `continue-on-error`, so a failing
+# quarantined spec never changes any run's conclusion.
+on:
+  # An hour and a half after CI's 06:17 nightly, so that run's `dist-tar` is
+  # normally ready to reuse. If it is not, the job builds its own.
+  schedule:
+    - cron: '47 7 * * *'
+  workflow_dispatch:
+  # Changes to the runner or the registry show their quarantine result on the
+  # PR. These runs report a preview and never extend the recorded streaks.
+  pull_request:
+    paths:
+      - .github/workflows/e2e-quarantine.yml
+      - wdio.quarantine.conf.ts
+      - scripts/e2e-quarantine.mts
+      - scripts/lib/e2e-quarantine.mts
+      - tests/e2e/exclusions.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: e2e-quarantine-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quarantine:
+    # Same-repository code only: fork PRs never run e2e.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    # Setup plus at most a 14-minute run (the same per-attempt cap as a CI shard).
+    timeout-minutes: 45
+    env:
+      COPSE_E2E_HEADLESS: '0'
+      GH_TOKEN: ${{ github.token }}
+      # Only the scheduled run on main is a "night" for streak purposes.
+      COUNTED: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' }}
+    steps:
+      # Reuse the scheduled CI run's build when it has published one today, and
+      # test the commit that build came from.
+      - name: Find today's nightly CI build
+        id: ci
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          today="$(date -u +%F)"
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=schedule&branch=main&per_page=5" \
+            --jq ".workflow_runs[] | select(.created_at | startswith(\"$today\")) | \"\(.id) \(.head_sha)\"")"
+          while read -r id sha; do
+            [ -n "$id" ] || continue
+            live="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts?name=dist-tar" \
+              --jq '[.artifacts[] | select(.expired == false)] | length')"
+            if [ "$live" -gt 0 ]; then
+              echo "Reusing dist-tar from CI run $id ($sha)"
+              echo "run_id=$id" >> "$GITHUB_OUTPUT"
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<< "$runs"
+          echo "No live dist-tar from today's scheduled CI run; building here instead."
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.ci.outputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: List quarantined specs
+        id: specs
+        run: |
+          set -euo pipefail
+          specs="$(node scripts/e2e-quarantine.mts specs)"
+          count="$(printf '%s' "$specs" | grep -c . || true)"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "$count quarantined spec(s):"
+          printf '%s\n' "$specs"
+      - name: Cache verified R2 baseline objects
+        if: steps.specs.outputs.count != '0'
+        uses: actions/cache@v6
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
+      # Same sandbox prerequisites as the CI e2e shards on a hosted runner.
+      - name: Install Linux sandbox dependencies
+        if: steps.specs.outputs.count != '0'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+      - name: Reuse the nightly CI build
+        if: steps.specs.outputs.count != '0' && steps.ci.outputs.run_id != ''
+        env:
+          CI_RUN_ID: ${{ steps.ci.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$CI_RUN_ID" -R "$GITHUB_REPOSITORY" -n dist-tar -D "$RUNNER_TEMP/dist"
+          tar -xf "$RUNNER_TEMP/dist/dist.tar"
+      - name: Build
+        if: steps.specs.outputs.count != '0' && steps.ci.outputs.run_id == ''
+        run: npm run build
+      - name: Run quarantined specs (advisory, no retry)
+        id: run
+        if: steps.specs.outputs.count != '0'
+        continue-on-error: true
+        timeout-minutes: 16
+        run: |
+          set -uo pipefail
+          if [ -n "$(git status --porcelain=v1)" ]; then
+            git status --short
+            echo "::error title=e2e checkout is dirty before tests::Remove generated files before the quarantine run."
+            exit 1
+          fi
+          # As in the CI shards: keep re-rendered reference PNGs from making a
+          # later blank shared-checkout thread stop at the dirty-worktree prompt.
+          mapfile -d '' -t refs < <(git ls-files -z -- tests/e2e/screenshots/)
+          if [ "${#refs[@]}" -gt 0 ]; then git update-index --assume-unchanged -- "${refs[@]}"; fi
+          printf '\n/tests/e2e/screenshots/*.png\n' >> "$(git rev-parse --git-path info/exclude)"
+          mkdir -p e2e-failure-artifacts
+          COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT=1 \
+            timeout -k 15 840 npm run test:e2e:quarantine 2>&1 | tee e2e-failure-artifacts/quarantine.log
+          exit "${PIPESTATUS[0]}"
+      - name: Upload per-spec outcomes
+        if: always() && steps.specs.outputs.count != '0'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-quarantine-outcomes-${{ github.run_attempt }}
+          path: |
+            e2e-evidence/outcomes/
+            e2e-failure-artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+      # The rolling record lives in the previous counted run's artifact. If none
+      # is found (first night, or it expired), streaks restart from zero: they
+      # can be understated, never overstated.
+      - name: Fetch the previous streak record
+        if: always() && steps.specs.outcome == 'success'
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/previous"
+          ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/e2e-quarantine.yml/runs?event=schedule&branch=main&status=completed&per_page=10" \
+            --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID) | .id" || true)"
+          for id in $ids; do
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n e2e-quarantine-history -D "$RUNNER_TEMP/previous" 2>/dev/null; then
+              echo "Previous record from run $id"
+              exit 0
+            fi
+          done
+          echo "No previous streak record; streaks start from this run."
+      - name: Report pass streaks
+        if: always() && steps.specs.outcome == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-quarantine
+          counted=()
+          if [ "$COUNTED" = "true" ]; then counted=(--counted); fi
+          node scripts/e2e-quarantine.mts report \
+            --outcomes e2e-evidence/outcomes \
+            --history "$RUNNER_TEMP/previous/history.json" \
+            --out e2e-quarantine/history.json \
+            --commit "$(git rev-parse HEAD)" \
+            "${counted[@]}"
+      - name: Retain the streak record
+        if: always() && steps.specs.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-quarantine-history
+          path: e2e-quarantine/history.json
+          if-no-files-found: error
+          retention-days: 90
