@@ -48,4 +48,47 @@ describe('branch continuation stays with its original chat', () => {
       await expect($('body')).toHaveAttribute('data-agent-runs', '0')
     })
   }
+
+  for (const outcome of ['success', 'error'] as const) {
+    it(`keeps the other chat warning and draft after a late checkout ${outcome}`, async () => {
+      await browser.url(`${page}?other-warning&checkout=${outcome}`)
+      await $('.chat-row[data-thread-id="branch-first"].selected').waitForExist()
+      await setComposerValue('Continue the first change.')
+      await $('.submit-btn').click()
+      await expect($('.composer-branch-warning')).toBeDisplayed()
+      await $('.composer-branch-checkout-btn').click()
+      await expect($('body')).toHaveAttribute('data-checkout-state', 'held')
+      await expect($('body')).toHaveAttribute('data-checkout-project', 'branch-project')
+      await expect($('body')).toHaveAttribute('data-checkout-thread', 'branch-first')
+      await expect($('body')).toHaveAttribute('data-checkout-branch', 'feature/first')
+      await expect($('.composer-branch-checkout-btn')).toBeDisabled()
+
+      await $('.chat-row[data-thread-id="branch-second"]').click()
+      await setComposerValue('Keep this second draft for later.')
+      await $('.submit-btn').click()
+      await expect($('.composer-branch-warning')).toBeDisplayed()
+      await expect($('.composer-branch-warning')).toHaveText(
+        expect.stringContaining('feature/second'),
+      )
+      const otherWarning = await $('.composer-branch-warning').getText()
+      await $('#finish-branch-checkout').click()
+      await expect($('body')).toHaveAttribute('data-checkout-state', 'returned')
+      await expect($('.chat-row[data-thread-id="branch-second"]')).toHaveElementClass('selected')
+      await expect($('.prompt-input')).toHaveText('Keep this second draft for later.')
+      await expect($('.composer-branch-warning')).toBeDisplayed()
+      await expect($('.composer-branch-warning')).toHaveText(otherWarning)
+      await expect($('.composer-branch-checkout-btn')).toBeEnabled()
+      await expect($('.composer-branch-continue-btn')).toBeEnabled()
+      await expect($('.toast')).not.toExist()
+      await expect($('body')).toHaveAttribute('data-agent-runs', '0')
+      await saveAppScreenshot(
+        outcome === 'success'
+          ? 'branch-checkout-late-success.png'
+          : 'branch-checkout-late-error.png',
+      )
+      await expect($('.prompt-input')).toHaveText('Keep this second draft for later.')
+      await expect($('.composer-branch-warning')).toHaveText(otherWarning)
+      await expect($('body')).toHaveAttribute('data-agent-runs', '0')
+    })
+  }
 })
