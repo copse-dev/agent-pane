@@ -24,6 +24,8 @@ const ROADMAP_SHOT = 'image-expand-roadmap.png'
 const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
 const COMPOSER_ANNOTATION_SHOT = 'image-expand-composer-annotation-update.png'
 const COMPOSER_UPDATED_SHOT = 'image-expand-composer-updated-chip.png'
+// The running-recordings row shares `.attachment-chips` and sits first.
+const DRAFT_ATTACHMENT_ROW = '.attachment-chips:not(.recording-chips)'
 const IMAGE_COPY_MENU_SHOT = 'image-expand-copy-menu.png'
 const THREAD_COPY_MENU_SHOT = 'image-expand-thread-copy-menu.png'
 const TEXT_COPY_MENU_SHOT = 'attachment-preview-text-copy-menu.png'
@@ -545,7 +547,7 @@ describe('Screenshot click-to-expand', () => {
     const composerRadius = await chipRadius('.attachment-chips .image-chip')
     assert.ok(composerRadius, 'expected the composer image chip')
     assert.equal(composerRadius.chip, composerRadius.token)
-    await saveElementScreenshot('.attachment-chips', 'composer-attachment-chip.png')
+    await saveElementScreenshot(DRAFT_ATTACHMENT_ROW, 'composer-attachment-chip.png')
 
     await thumb.click()
     const dialog = $('dialog.attachment-preview-dialog[open]')
@@ -574,7 +576,7 @@ describe('Screenshot click-to-expand', () => {
     )
     await expect($$('.attachment-chips .image-chip')).toBeElementsArrayOfSize(1)
     await expect(thumb).not.toHaveAttribute('src', expandedSrc)
-    await saveElementScreenshot('.attachment-chips', COMPOSER_UPDATED_SHOT)
+    await saveElementScreenshot(DRAFT_ATTACHMENT_ROW, COMPOSER_UPDATED_SHOT)
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {
