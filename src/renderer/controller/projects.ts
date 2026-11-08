@@ -600,6 +600,9 @@ function applyProjectSelection(
   // keep persisting, and fold any carried threads of the incoming project back
   // into its list (#1841).
   if (outgoingId && outgoingId !== id) {
+    // The composer stayed editable while an uncached destination loaded.
+    // Capture its final text while the outgoing thread still owns the store.
+    if (store.getState().activeProjectId === outgoingId) store.emit('composer_draft_flush')
     // `outgoingThreads` was captured when activation began so the initial
     // persistence flush has a stable input. The agent can keep streaming while
     // workspace.set/loadProject are in flight, though, and those chunks replace
@@ -833,6 +836,9 @@ function activate(
   sshHost: string | undefined,
   pendingThreadId: string | null,
 ): void {
+  // Publish the editor's draft before taking the outgoing persistence/cache
+  // snapshot. A later composer switch may only find a carried running thread.
+  if (store.getState().activeProjectId !== id) store.emit('composer_draft_flush')
   const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState()
   // Already on this project — a click on it is a decision to stay, so any switch
   // still running to a different one is cancelled rather than left to land.
