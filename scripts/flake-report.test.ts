@@ -13,6 +13,7 @@ import {
   escapeCommandProperty,
   extractFailureDetail,
   historySummary,
+  historyText,
   observe,
   rerunFlips,
   shardAnnotations,
@@ -124,6 +125,7 @@ describe('flake classification', () => {
       rerunFlips: 1,
       finalFailures: 1,
       flakeRate: 2 / 3,
+      runs: ['100/1', '200/1'],
     })
     assert(second)
     assert.equal(second.spec, OTHER)
@@ -207,6 +209,19 @@ describe('rendering', () => {
     const observations = observe([row(OTHER, 1, 'passed')])
     const markdown = historySummary({ title: 'T', runs: 1 }, aggregate(observations), [])
     assert.match(markdown, /No spec failed on any attempt\./)
+  })
+
+  it('prints only specs with a failure in the terminal table', () => {
+    const stats = aggregate(
+      observe([row(OTHER, 1, 'passed'), row(SPEC, 1, 'failed'), row(SPEC, 2, 'passed')]),
+    )
+    const text = historyText(stats)
+    assert.match(text, /automation-interrupted-run/)
+    assert.doesNotMatch(text, /acp-auth-error/)
+    assert.equal(
+      historyText(aggregate(observe([row(OTHER, 1, 'passed')]))),
+      'No failures across 1 spec(s).\n',
+    )
   })
 })
 
@@ -298,7 +313,7 @@ describe('flake-report CLI', () => {
       assert.match(markdown, /failed in run 100 attempt 1, passed in run 100 attempt 2/)
       assert.match(
         markdown,
-        /\| `tests\/e2e\/acp-auth-error\.e2e\.ts` \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 100% \|/,
+        /\| `tests\/e2e\/acp-auth-error\.e2e\.ts` \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 100% \| 100\/1 \|/,
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })

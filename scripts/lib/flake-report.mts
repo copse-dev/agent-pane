@@ -143,6 +143,8 @@ export interface SpecStats {
   finalFailures: number
   /** Flaky events (retried passes, pass→fail, re-run flips) per run observed. */
   flakeRate: number
+  /** `runId/runAttempt` of each flaky or finally failing observation, oldest first. */
+  runs: string[]
 }
 
 export function aggregate(observations: readonly Observation[]): SpecStats[] {
@@ -169,6 +171,10 @@ export function aggregate(observations: readonly Observation[]): SpecStats[] {
         rerunFlips: flipCount,
         finalFailures: rows.filter((row) => (row.attempt2 ?? row.attempt1) === 'failed').length,
         flakeRate: runsObserved ? (retriedPasses + passedThenFailed + flipCount) / runsObserved : 0,
+        runs: rows
+          .filter((row) => isFlaky(row.verdict) || row.verdict === 'failed')
+          .sort(order)
+          .map((row) => `${row.runId}/${String(row.runAttempt)}`),
       }
     })
     .sort(
@@ -328,11 +334,11 @@ export function historySummary(
   }
   lines.push(
     '',
-    '| Spec | Runs observed | Attempt-1 failures | Retried passes | Pass→fail on retry | Re-run flips | Final failures | Flake rate |',
-    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Spec | Runs observed | Attempt-1 failures | Retried passes | Pass→fail on retry | Re-run flips | Final failures | Flake rate | Runs (id/attempt) |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
     ...flaky.map(
       (row) =>
-        `| \`${row.spec}\` | ${String(row.runsObserved)} | ${String(row.attempt1Failures)} | ${String(row.retriedPasses)} | ${String(row.passedThenFailed)} | ${String(row.rerunFlips)} | ${String(row.finalFailures)} | ${percent(row.flakeRate)} |`,
+        `| \`${row.spec}\` | ${String(row.runsObserved)} | ${String(row.attempt1Failures)} | ${String(row.retriedPasses)} | ${String(row.passedThenFailed)} | ${String(row.rerunFlips)} | ${String(row.finalFailures)} | ${percent(row.flakeRate)} | ${row.runs.slice(-5).join(', ') || '—'} |`,
     ),
   )
   if (flips.length)
@@ -349,7 +355,10 @@ export function historySummary(
 }
 
 /** Plain-text table for a terminal. */
-export function historyText(stats: readonly SpecStats[]): string {
+export function historyText(all: readonly SpecStats[]): string {
+  // Only specs with any failure: a 500-row table of zeros buries the signal.
+  const stats = all.filter((row) => row.attempt1Failures + row.finalFailures + row.rerunFlips > 0)
+  if (!stats.length) return `No failures across ${String(all.length)} spec(s).\n`
   const header = ['spec', 'runs', 'a1-fail', 'retried', 'pass→fail', 'flips', 'final-fail', 'rate']
   const rows = stats.map((row) => [
     row.spec,
