@@ -147,10 +147,17 @@ Monday. Publishing is the only routine manual step:
    `main` commit the run read, so later merges to `main` do not restart its CI;
    a dispatch fast-forwards it to the current `main`.
 3. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
-   version on `release`, creates `v<version>` at that exact commit, and starts
-   `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
-   ordinary promotions cut nothing.
-4. `Release (macOS)` re-checks the tag, the version match, reachability from
+   version on `release` and creates `v<version>` at that exact commit. A
+   promotion whose version is already tagged is a no-op, so ordinary promotions
+   cut nothing.
+4. When CI for the promoted commit finishes,
+   [`Release dispatch`](../.github/workflows/release-dispatch.yml) finds the tag
+   at that commit and starts `Release (macOS)`. Nothing waits for CI: the CI
+   run's completion is the trigger. If the tag was cut after CI had already
+   finished (a recovery run of `Cut release tag`), that workflow starts the build
+   itself. A commit gets one `Release (macOS)` run automatically; a failed CI run
+   still starts it, so the failure is reported (see [Failed releases](#failed-releases)).
+5. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `Full release validation` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
    signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
@@ -158,7 +165,7 @@ Monday. Publishing is the only routine manual step:
    artifact containing the combined feeds, checksums, and notes generated from
    the `## <version>` section of `CHANGELOG.md`. It does not create a GitHub
    Release.
-5. Review and install-test the artifact for each architecture. When accepted,
+6. Review and install-test the artifact for each architecture. When accepted,
    manually dispatch `Publish release artifacts` with the tag and successful
    `Release (macOS)` run ID, within 30 days of that run, before its artifacts
    expire ([publication window](#publication-window)). The publisher verifies
@@ -174,12 +181,12 @@ Monday. Publishing is the only routine manual step:
    signed build, immutable Actions artifact, and published SHA256 manifest are
    the integrity chain available on this GitHub Team plan. Publishing is what
    lets the next Monday's bump proceed.
-6. Review the published GitHub Release notes and add known issues before
+7. Review the published GitHub Release notes and add known issues before
    announcing the release.
 
 From bump to signed artifacts takes about a day: the bump merges on Monday,
-that day's promotion runs the full tier, and the signed build waits for the
-tagged commit's `Full release validation` before its roughly hour-long packaging run.
+that day's promotion runs the full tier, and the signed build starts when the
+tagged commit's CI, including `Full release validation`, finishes.
 
 ### Publication window
 
@@ -370,7 +377,10 @@ Dispatch it from the tag itself (choose the tag under "Use workflow from", or
 `gh workflow run release-mac.yml --ref <tag> -f tag=<tag>`). A dispatch run
 records the commit of the ref it ran from, and `Publish release artifacts`
 accepts only a run of the tag's commit, so a rebuild dispatched from `main`
-can never be published.
+can never be published. It also reads CI evidence once rather than waiting, so
+dispatch it only after the tagged commit's CI has finished. A hand-pushed `v*`
+tag needs no dispatch: CI runs at the tag, and its completion starts the build
+through `Release dispatch`.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows
@@ -464,7 +474,8 @@ or turn advisory evaluations into required gates.
 
 Packaging resolves evidence through the CI workflow's push runs for the tag SHA,
 checks repository/workflow/event provenance, and pins the successful run attempt.
-It waits for pending evidence and fails on failed or unavailable completed evidence.
+It is started only once that CI has finished, reads the evidence once, and fails on
+pending, failed or unavailable evidence.
 Publishing revalidates the same run and attempt before writing to the public release
 repository. A later rerun changes the record and requires packaging again; publication
 cannot silently substitute the new run. If Actions evidence expires before publication,
