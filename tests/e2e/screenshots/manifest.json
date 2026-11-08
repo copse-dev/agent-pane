@@ -785,6 +785,14 @@
       "sha256": "dd11fca438b379c03bd07a0b57906922574cae0e801df16f9ee64aa103be67be",
       "bytes": 318355
     },
+    "automation-question-interactive-follow-up.png": {
+      "sha256": "28efbfe47993dcbd042a614dbb92e1667ddeedf6d0d24bc0dbd887a672e152bf",
+      "bytes": 32302
+    },
+    "automation-questions-saved.png": {
+      "sha256": "d4be1736142317910a8e6def6844b5694a819832a2ad762b599b8dac9745a4f8",
+      "bytes": 357852
+    },
     "automation-setup-link-form.png": {
       "sha256": "7ab720e0442a3ab8ff4fd4e141530c7a50240a07eb3189681c0996893fd85b36",
       "bytes": 140712
