@@ -3665,6 +3665,10 @@
       "sha256": "52619a2aeccd01705392fd908f3e05125089117e7a9b29f92ae70280c009227b",
       "bytes": 315590
     },
+    "read-outside-parent-traversal-reprompt.png": {
+      "sha256": "0e28f13ed9420de1ec18ab8cc542fb1f44ad3202e70d10688b24db646073a19d",
+      "bytes": 7090
+    },
     "read-skill-unknown-guidance.png": {
       "sha256": "996d37b12bb6fa05bce7766a0df56ba3f4fca916f52a882b89995c4c59e582f5",
       "bytes": 157352
