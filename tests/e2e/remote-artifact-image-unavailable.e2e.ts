@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import {
   resetUserData,
   seedRemoteAgentModelsFixture,
@@ -117,6 +121,13 @@ describe('remote artifact image unavailable states', () => {
               toolCalls: [],
               createdAt: now,
             },
+            {
+              id: 'msg-artifact-download',
+              role: 'assistant',
+              content: `Download the [other screenshot](${fixture.apiBase}/v1/agents/${SPOOFED_AGENT}/artifacts/download?path=artifacts/other.png).`,
+              toolCalls: [],
+              createdAt: now + 1,
+            },
           ],
           usage: { inputTokens: 0, outputTokens: 0 },
           remoteAgentLink: { provider: 'cursor', agentId: LINKED_AGENT, createdAt: now - 1 },
@@ -179,5 +190,19 @@ describe('remote artifact image unavailable states', () => {
     // Park the pointer off the message so its hover-only actions stay hidden.
     await browser.action('pointer').move({ x: 4, y: 4, origin: 'viewport' }).perform()
     await saveElementScreenshot(message, 'remote-artifact-image-origin-denied.png')
+  })
+
+  it('rejects a clicked artifact link for an agent outside the chat', async () => {
+    const before = fixture?.artifactRequests().length ?? 0
+    const link = $('[data-message-id="msg-artifact-download"] a')
+    await link.waitForDisplayed()
+    await link.click()
+    const toast = $('.toast-error')
+    await toast.waitForDisplayed({ timeout: 10_000 })
+    await expect(toast).toHaveText(expect.stringContaining('not linked to this chat'))
+    expect(fixture?.artifactRequests().length).toBe(before)
+    await saveAppScreenshot('remote-artifact-download-unlinked.png')
+    // The e2e error ledger records even expected toasts until a new session.
+    await browser.reloadSession()
   })
 })

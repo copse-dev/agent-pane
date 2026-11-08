@@ -22,14 +22,22 @@ describe('markdown browser links', () => {
     const root = document.createElement('div')
     root.innerHTML =
       '<a href="https://api.openai.com/v1/agents/openai%3Athread/artifacts/download?path=artifact.patch">Download</a>'
-    const store = createStore({ filesPaneOpen: false })
+    const store = createStore({
+      filesPaneOpen: false,
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+    })
     let downloads = 0
     const unbind = bindBrowserLinkClicks(root, store, {
       remoteAgent: {
-        downloadArtifact: async (id) => {
-          assert.equal(id, 'openai:thread')
+        downloadArtifact: async (request) => {
+          assert.deepEqual(request, {
+            projectId: 'project',
+            threadId: 'thread',
+            agentId: 'openai:thread',
+            path: 'artifact.patch',
+          })
           downloads++
-          return ''
         },
       },
     })
@@ -71,7 +79,7 @@ describe('markdown browser links', () => {
     store.on('browser_url_requested', (url) => requested.push(url))
     const opened: string[] = []
     const unbind = bindBrowserLinkClicks(root, store, {
-      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      remoteAgent: { downloadArtifact: async () => undefined },
       shell: { openExternal: async (url) => void opened.push(url) },
     })
 
@@ -159,20 +167,28 @@ describe('markdown browser links', () => {
     assert.equal(requested, false)
   })
 
-  it('resolves remote artifact links before opening the browser panel', async () => {
+  it('requests a linked artifact without putting its signed URL in the browser panel', async () => {
     const href =
       'https://api.cursor.com/v1/agents/bc-00000000-0000-0000-0000-000000000001/artifacts/download?path=artifacts%2Fscreenshot.png'
     const root = document.createElement('div')
     root.innerHTML = `<a href="${href}">Open</a>`
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+    })
     const requested: string[] = []
     store.on('browser_url_requested', (url) => requested.push(url))
     const unbind = bindBrowserLinkClicks(root, store, {
       remoteAgent: {
-        downloadArtifact: async (agentId, path) => {
-          assert.equal(agentId, 'bc-00000000-0000-0000-0000-000000000001')
-          assert.equal(path, 'artifacts/screenshot.png')
-          return 'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png'
+        downloadArtifact: async (request) => {
+          assert.deepEqual(request, {
+            projectId: 'project',
+            threadId: 'thread',
+            agentId: 'bc-00000000-0000-0000-0000-000000000001',
+            path: 'artifacts/screenshot.png',
+          })
         },
       },
     })
@@ -183,11 +199,9 @@ describe('markdown browser links', () => {
 
     unbind()
     assert.equal(event.defaultPrevented, true)
-    assert.equal(store.getState().filesPaneOpen, true)
-    assert.equal(store.getState().rightPanelMode, 'browser')
-    assert.deepEqual(requested, [
-      'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png',
-    ])
+    assert.equal(store.getState().filesPaneOpen, false)
+    assert.equal(store.getState().rightPanelMode, 'explorer')
+    assert.deepEqual(requested, [])
   })
 
   it('treats an artifact-shaped link on another host as an ordinary link', async () => {
@@ -203,7 +217,6 @@ describe('markdown browser links', () => {
       remoteAgent: {
         downloadArtifact: async () => {
           downloads++
-          return 'https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com/screenshot.png'
         },
       },
     })
@@ -223,13 +236,16 @@ describe('markdown browser links', () => {
       'https://agents.internal.example/v1/agents/bc-1/artifacts/download?path=artifacts%2Fa.png'
     const root = document.createElement('div')
     root.innerHTML = `<a href="${href}">Open</a>`
-    const store = createStore({ filesPaneOpen: false })
+    const store = createStore({
+      filesPaneOpen: false,
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+    })
     let downloads = 0
     const unbind = bindBrowserLinkClicks(root, store, {
       remoteAgent: {
         downloadArtifact: async () => {
           downloads++
-          return ''
         },
       },
       settings: {
@@ -259,7 +275,7 @@ describe('markdown browser links', () => {
       prRequested.push({ owner, repo, number }),
     )
     const unbind = bindBrowserLinkClicks(root, store, {
-      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      remoteAgent: { downloadArtifact: async () => undefined },
       gh: {
         status: async () => ({
           installed: true,
@@ -289,7 +305,7 @@ describe('markdown browser links', () => {
     const requested: string[] = []
     store.on('browser_url_requested', (url) => requested.push(url))
     const unbind = bindBrowserLinkClicks(root, store, {
-      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      remoteAgent: { downloadArtifact: async () => undefined },
       gh: {
         status: async () => ({
           installed: false,
@@ -327,7 +343,7 @@ describe('markdown browser links', () => {
     store.on('browser_url_requested', (url) => browserRequested.push(url))
     let ghStatusChecked = false
     const unbind = bindBrowserLinkClicks(root, store, {
-      remoteAgent: { downloadArtifact: async () => 'https://example.com' },
+      remoteAgent: { downloadArtifact: async () => undefined },
       gh: {
         status: async () => {
           ghStatusChecked = true

@@ -389,11 +389,13 @@ SSRF, signed-URL leak or self-approving origin. Its findings fixed in #4030:
   refetch. Cache invalidation was removed: every read re-authorizes against the durable link,
   and the key carries the credential generation and API origin.
 
+**Explicit-download follow-up:** `remote-agent:download-artifact` now checks the requesting
+thread's durable Cursor link (or OpenAI cache owner) before provider access. Main opens approved
+Cursor download URLs itself; the signed URL no longer crosses to the renderer. This remains a
+separate user-initiated browser/download path, not sandboxed automatic image hydration.
+
 **Residual risks, not fixed here:**
 
-- The older explicit-download IPC (`remote-agent:download-artifact`) still returns a signed URL
-  to the renderer for any agent ID, with no thread authorization. It is a separate, user-initiated
-  path and needs its own change.
 - A path-only image (`artifacts/…` with no agent in the URL) resolves against the thread's
   _current_ link, so after a relaunch it may name a newer run's artifact of the same path.
 - Inside an approved tunnel, a compromised downloader could send any `Host` header to the same
