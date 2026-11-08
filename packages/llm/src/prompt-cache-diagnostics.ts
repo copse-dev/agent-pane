@@ -1,5 +1,29 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { ModelUsage } from './wire-types.ts'
+import type { LLMProvider, ModelUsage, PromptCatalogFootprint } from './wire-types.ts'
+import { hasLastUsage } from './provider-usage.ts'
+
+export type PromptAttemptOutcome = 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'retry'
+
+/** Only decorate the parent loop's provider; auxiliary calls keep their own catalog. */
+export function withPromptCatalog(
+  inner: LLMProvider,
+  catalog: PromptCatalogFootprint | undefined,
+): LLMProvider {
+  if (catalog === undefined) return inner
+  const wrapped: LLMProvider & { readonly lastUsage: unknown } = {
+    get compactionIdentity() {
+      return inner.compactionIdentity
+    },
+    // Callers normally read usage from the original provider; retain this accessor
+    // for hosts that pass the decorated provider through the fallback usage path.
+    get lastUsage() {
+      return hasLastUsage(inner) ? inner.lastUsage : undefined
+    },
+    stream: (messages, tools, signal, options) =>
+      inner.stream(messages, tools, signal, { ...options, promptCatalog: catalog }),
+  }
+  return wrapped
+}
 
 interface PrefixHashes {
   systemHash: string
@@ -43,7 +67,8 @@ export class PromptCacheDiagnostics {
     system: unknown,
     tools: unknown,
     items: readonly unknown[] = [],
-  ): (usage: ModelUsage | null) => void {
+    catalog?: PromptCatalogFootprint,
+  ): (usage: ModelUsage | null, outcome?: PromptAttemptOutcome) => void {
     if (process.env['COPSE_DEBUG_PROMPT_CACHE'] !== '1') return () => {}
     const scopeHash = hash([this.transport, this.model, this.endpoint, this.cacheKey])
     const hashes = {
@@ -73,14 +98,32 @@ export class PromptCacheDiagnostics {
       firstChangedInputIndex: previous && items.length > 0 ? changedAt : null,
       systemChanged: previous ? previous.systemHash !== hashes.systemHash : null,
       toolsChanged: previous ? previous.toolsHash !== hashes.toolsHash : null,
+      startedAt: Date.now(),
+      attemptKind: 'sdk-dispatch',
+      catalog: catalog
+        ? {
+            catalogHash: catalog.catalogHash,
+            advertisedSkills: catalog.advertisedSkills,
+            userSkills: catalog.userSkills,
+            utf8Bytes: catalog.utf8Bytes,
+            userEntryUtf8Bytes: catalog.userEntryUtf8Bytes,
+            approximateTokens: catalog.approximateTokens,
+          }
+        : null,
     }
+    console.error('[prompt-cache-dispatch]', JSON.stringify(request))
+    let finished = false
     // Capture metadata at request start, not stream completion: interleaved
     // streams must not compare against each other's later state.
-    return (usage) => {
+    return (usage, outcome = 'completed') => {
+      if (finished) return
+      finished = true
       console.error(
         '[prompt-cache]',
         JSON.stringify({
           ...request,
+          outcome,
+          durationMs: Date.now() - request.startedAt,
           inputTokens: usage?.inputTokens ?? null,
           outputTokens: usage?.outputTokens ?? null,
           cacheReadTokens: usage?.cacheReadTokens ?? null,

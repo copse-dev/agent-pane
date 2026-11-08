@@ -1,4 +1,4 @@
-import { installMockScenario } from './helpers/mock-scenario.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -7,14 +7,15 @@ import { $, browser, expect } from '@wdio/globals'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-automation-attention'
 const SCHEDULE_ID = 'schedule-ci-review-attention'
 const ASK_PROMPT = 'Investigate the CI failures and ask which failures to focus on.'
+const REVIEW_DONE = 'The automated CI review is complete. I saved the question for later.'
+const FOLLOW_UP = 'Ask me which failure to investigate next.'
 
 describe('automation attention grouping', function () {
-  // The attention wait below is 75s on its own — see the comment there. The
-  // rest of the spec then drives a reveal, an expand, and an ask_user dialog.
   this.timeout(180_000)
   before(async () => {
     resetUserData()
@@ -114,7 +115,7 @@ describe('automation attention grouping', function () {
 
   it('reveals only the automation run waiting for attention', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await installMockScenario(
+    const unattended = await installMockScenario(
       {
         title: 'CI review',
         turns: [
@@ -136,7 +137,10 @@ describe('automation attention grouping', function () {
                   },
                 ],
               },
-              { text: 'The CI investigation was cancelled.' },
+              {
+                text: REVIEW_DONE,
+                expectToolResults: [{ name: 'ask_user', includes: 'Saved for human review' }],
+              },
             ],
             allowAbort: true,
           },
@@ -155,31 +159,90 @@ describe('automation attention grouping', function () {
       [PROJECT_ID, SCHEDULE_ID] as const,
     )
 
+    assert.equal(runNowResult.disposition, 'started')
+    const startedThreadId = runNowResult.threadId
+    assert.ok(startedThreadId)
+    await unattended.waitForComplete(30_000)
+    await unattended.assertComplete()
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          async ({ projectId, threadId }) => {
+            const thread = (await window.api.threads.loadProject(projectId)).find(
+              (candidate) => candidate.id === threadId,
+            )
+            // This sidebar endpoint returns metadata. The full reply is
+            // checked through the conversation after selecting the run.
+            return thread?.status === 'idle'
+          },
+          { projectId: PROJECT_ID, threadId: startedThreadId },
+        ),
+      { timeout: 30_000, timeoutMsg: 'The unattended question blocked independent completion' },
+    )
+    await expect($('#ask-user-dialog')).not.toBeDisplayed()
     const automationToggle = $('.automation-threads-toggle')
-    // #1719. The reveal here can only come from `attentionAutomationThreads`:
-    // no other term of `automationExpanded` (projects-pane.ts) applies to a
-    // freshly booted profile. So this waits on the run `runNow` started
-    // allocating its worktree, spawning, running a mock turn and reaching the
-    // `ask_user` gate — `runNow` resolves at *started*, covering none of it.
-    //
-    // **A duration theory was tried and disproved.** 30s looked like the
-    // problem, so it went to 75s; run 31414645268 then failed with byte-
-    // identical state — `runNow` started with a real thread id, toggle at
-    // `aria-expanded=false`, **0 attention bells**. Two and a half times the
-    // budget changed nothing, so the run is not merely slow. It is left at 75s
-    // because the sibling spec needs that much for its own boundary and it
-    // costs nothing, but it is not the fix and should not be read as one.
-    //
-    // What the diagnostics could NOT answer, and now do: automation rows live
-    // in `.automation-thread-rows`, which is built only inside
-    // `if (automationExpanded)`. So the collapsed group hides every row, and
-    // counting `.chats-list .chat-row` was never going to see the new run at
-    // all. The added probes ask whether the thread `runNow` returned reached
-    // the sidebar in any form, and what the group's own count says.
+    await expect(automationToggle).toHaveAttribute('aria-expanded', 'false')
+
+    // A later human follow-up is interactive. Park its provider before asking,
+    // return to the ordinary chat, then let the actual ask_user open attention.
+    await automationToggle.click()
+    const initialSchedule = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
+    if (
+      (await initialSchedule.$('.automation-schedule-toggle').getAttribute('aria-expanded')) !==
+      'true'
+    )
+      await initialSchedule.$('.automation-schedule-toggle').click()
+    await initialSchedule.$(`.chat-row[data-thread-id="${startedThreadId}"]`).click()
+    await expectAssistantReply(REVIEW_DONE)
+    await expect($('.stop-btn')).not.toBeDisplayed()
+    const followUp = await installMockScenario({
+      title: 'CI review',
+      turns: [
+        {
+          user: FOLLOW_UP,
+          responses: [
+            {
+              waitFor: 'before-interactive-question',
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: {
+                    questions: [
+                      {
+                        question: 'Which CI failure should I investigate?',
+                        options: ['Latest failure', 'All failures'],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            { text: 'The CI investigation was cancelled.' },
+          ],
+          allowAbort: true,
+        },
+      ],
+    })
+    await setComposerValue(FOLLOW_UP)
+    await submitComposer()
+    await followUp.waitForHold('before-interactive-question', 30_000)
+    await $('.chat-row[data-thread-id="regular-chat"]').click()
+    if (
+      (await initialSchedule.$('.automation-schedule-toggle').getAttribute('aria-expanded')) ===
+      'true'
+    )
+      await initialSchedule.$('.automation-schedule-toggle').click()
+    if ((await automationToggle.getAttribute('aria-expanded')) === 'true')
+      await automationToggle.click()
+    await expect(automationToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect($('#ask-user-dialog')).not.toBeDisplayed()
+    await followUp.release('before-interactive-question')
+    // Only the genuine interactive question should reveal the run. Saved
+    // unattended questions never hold the run or interrupt the ordinary chat.
     try {
       await browser.waitUntil(
         async () => (await automationToggle.getAttribute('aria-expanded')) === 'true',
-        { timeout: 75_000 },
+        { timeout: 20_000 },
       )
     } catch {
       const startedThreadId = runNowResult.threadId
@@ -375,5 +438,7 @@ describe('automation attention grouping', function () {
     const askDialog = $('#ask-user-dialog')
     await askDialog.waitForDisplayed({ timeout: 10_000 })
     await askDialog.$('.ask-user-cancel').click()
+    await followUp.waitForComplete()
+    await followUp.assertComplete()
   })
 })

@@ -3,7 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import {
-  parseReviewerInputCall,
+  reviewerInputRequestsForCall,
   reviewerInputAnswer,
   reviewerInputRequests,
   type ReviewerInputRequest,
@@ -149,7 +149,7 @@ export function mountReviewerInput(
       'Show in conversation',
     )
     origin.addEventListener('click', () => {
-      store.emit('reviewer_input_jump', request.messageId, request.id)
+      store.emit('reviewer_input_jump', request.messageId, request.toolCallId ?? request.id)
     })
     row.append(origin)
     return row
@@ -208,32 +208,42 @@ export function createReviewerInputToolCard(
   call: ToolCall,
   store: AppStore,
 ): HTMLDetailsElement | null {
-  const request = parseReviewerInputCall(call, '')
-  if (!request) return null
+  const requests = reviewerInputRequestsForCall(call, '')
+  const first = requests[0]
+  if (!first) return null
   const card = el('details', {
     class: 'tool-card reviewer-input-card',
     'data-tool-id': call.id,
     'data-status': 'done',
   })
-  const answer = reviewerInputAnswer(getActiveThread(store)?.reviewerInputAnswers, call.id)
+  const answers = getActiveThread(store)?.reviewerInputAnswers
+  const answered = requests.every((request) => reviewerInputAnswer(answers, request.id))
   card.append(
     el(
       'summary',
       { class: 'tool-card-header' },
-      answer ? 'Answered' : 'Needs your input',
+      answered ? 'Answered' : 'Needs your input',
       ' · ',
-      request.question,
+      requests.length === 1 ? first.question : `${String(requests.length)} questions`,
     ),
-    el('p', { class: 'reviewer-input-card-context' }, request.context),
   )
-  if (answer)
-    card.append(el('p', { class: 'reviewer-input-card-answer' }, `Your answer: ${answer.text}`))
-  else {
-    const open = el('button', { type: 'button', class: 'reviewer-input-origin' }, 'Answer question')
-    open.addEventListener('click', () => {
-      store.emit('reviewer_input_open', request.id)
-    })
-    card.append(open)
+  for (const request of requests) {
+    if (requests.length > 1) card.append(el('p', {}, request.question))
+    card.append(el('p', { class: 'reviewer-input-card-context' }, request.context))
+    const answer = reviewerInputAnswer(answers, request.id)
+    if (answer)
+      card.append(el('p', { class: 'reviewer-input-card-answer' }, `Your answer: ${answer.text}`))
+    else {
+      const open = el(
+        'button',
+        { type: 'button', class: 'reviewer-input-origin' },
+        'Answer question',
+      )
+      open.addEventListener('click', () => {
+        store.emit('reviewer_input_open', request.id)
+      })
+      card.append(open)
+    }
   }
   return card
 }
