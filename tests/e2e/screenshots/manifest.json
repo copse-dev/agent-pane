@@ -1310,8 +1310,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "a08e26ac6946920f916610f0038d0166eec9200946d8c897e897d2f893aeb59f",
-      "bytes": 40312
+      "sha256": "3570f7fc8ed5f3d727c40dfa0220c0b2bd2dea08b83f0361d3e3a5a457a5aa1d",
+      "bytes": 40759
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -3302,8 +3302,8 @@
       "bytes": 364353
     },
     "project-port-grant-revoked.png": {
-      "sha256": "fb3b5d7268235c56b9d404cd16efe83d1b82d316ce9ea84e5e8086480404e9e1",
-      "bytes": 360401
+      "sha256": "5d52146a96372143f90416af77e1f13f52fd5bf1bcc8fa1bba31cabb8f92faee",
+      "bytes": 358620
     },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
@@ -3816,6 +3816,14 @@
     "roadmap-thread-reopened.png": {
       "sha256": "fe238d814ad8de133780fedb85409930db7001f86793c82a4019c386ad3ad975",
       "bytes": 346709
+    },
+    "run-agent-appended-reminder.png": {
+      "sha256": "27f31fdfce26b42fcc148c25a8040b1528434c80672c53a3be8d9e12c6451188",
+      "bytes": 145897
+    },
+    "run-agent-configured-role.png": {
+      "sha256": "d07a5fd0fefe3f393d4d105824c45a8507dddc40a3aeacae604a7dfd907c4045",
+      "bytes": 131207
     },
     "screenshot-motion-frame.png": {
       "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
