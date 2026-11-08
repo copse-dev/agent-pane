@@ -1,21 +1,60 @@
 import ts from 'typescript'
 import { z } from 'zod'
 
-export const exclusionRegistrySchema = z.strictObject({
-  version: z.literal(1),
-  entries: z.array(
-    z.strictObject({
-      spec: z.string().regex(/^tests\/e2e\/.+\.e2e\.ts$/),
-      category: z.enum(['quarantine', 'external-service', 'platform', 'environment']),
-      reason: z.string().min(1),
-      tracker: z.url().regex(/^https:\/\/github\.com\/copse-dev\/agent-pane\/issues\/[1-9]\d*$/),
-      ownerRole: z.string().min(1),
-      recordedOn: z.iso.date(),
+/** A quarantine is a short loan: at most this many days per record or renewal. */
+export const MAX_QUARANTINE_DAYS = 14
+/**
+ * Non-quarantine exclusions never expire, but their last real pass goes stale.
+ * Matches the 90-day retention of CI evidence artifacts, after which the linked
+ * run usually no longer holds its outcomes.
+ */
+export const LAST_VERIFIED_WARN_DAYS = 90
+const DAY_MS = 86_400_000
+const issueUrl = z.url().regex(/^https:\/\/github\.com\/copse-dev\/agent-pane\/issues\/[1-9]\d*$/)
+/** A GitHub login, never a role or an "assignment pending" placeholder. */
+const githubLogin = z.string().regex(/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i)
+
+const common = {
+  spec: z.string().regex(/^tests\/e2e\/.+\.e2e\.ts$/),
+  reason: z.string().trim().min(1),
+  tracker: issueUrl,
+  ownerRole: z.string().min(1),
+  recordedOn: z.iso.date(),
+  coverage: z.string().min(1),
+  markers: z.array(z.string().min(1)).min(1),
+}
+
+const quarantineEntrySchema = z.strictObject({
+  ...common,
+  category: z.literal('quarantine'),
+  /** The accountable person; `null` records that nobody has accepted it yet. */
+  owner: githubLogin.nullable(),
+  reviewBy: z.iso.date(),
+  /** At most one renewal. It needs a new reason and its own short deadline. */
+  renewal: z
+    .strictObject({
+      renewedOn: z.iso.date(),
+      reason: z.string().trim().min(1),
       reviewBy: z.iso.date(),
-      coverage: z.string().min(1),
-      markers: z.array(z.string().min(1)).min(1),
-    }),
-  ),
+    })
+    .optional(),
+})
+
+const standingEntrySchema = z.strictObject({
+  ...common,
+  category: z.enum(['external-service', 'platform', 'environment']),
+  /** The last real on-device or real-service pass; `null` when none is recorded. */
+  lastVerified: z
+    .strictObject({
+      on: z.iso.date(),
+      evidence: z.url().regex(/^https:\/\/github\.com\/copse-dev\/agent-pane\//),
+    })
+    .nullable(),
+})
+
+export const exclusionRegistrySchema = z.strictObject({
+  version: z.literal(2),
+  entries: z.array(z.discriminatedUnion('category', [quarantineEntrySchema, standingEntrySchema])),
 })
 
 export type ExclusionRegistry = z.infer<typeof exclusionRegistrySchema>
@@ -190,7 +229,10 @@ function specExclusions(file: ts.SourceFile): Exclusion[] {
         const title = node.arguments[0]
         if (!title || !ts.isStringLiteralLike(title))
           throw new Error(`${file.fileName}: ${wrapper} needs a literal title for exclusion review`)
-        found.push({ spec: file.fileName, marker: `${wrapper}: ${title.text}` })
+        found.push({
+          spec: file.fileName,
+          marker: `${wrapper}: ${title.text}`,
+        })
       }
     }
     if (
@@ -205,7 +247,10 @@ function specExclusions(file: ts.SourceFile): Exclusion[] {
         (ts.isIdentifier(receiver) &&
           ['describe', 'it', 'context', 'specify', 'test'].includes(receiver.text))
       ) {
-        found.push({ spec: file.fileName, marker: `${receiver.getText(file)}.skip` })
+        found.push({
+          spec: file.fileName,
+          marker: `${receiver.getText(file)}.skip`,
+        })
       }
     }
     ts.forEachChild(node, visit)
@@ -214,14 +259,31 @@ function specExclusions(file: ts.SourceFile): Exclusion[] {
   return found
 }
 
+/** Only the CI config's exclude list keeps a quarantined spec runnable by the nightly job. */
+export const QUARANTINE_MARKER = 'wdio.ci.conf.ts: exclude'
+
+export interface ExclusionReport {
+  /** Malformed or inconsistent records. Always fail. */
+  errors: string[]
+  /** Expired or unowned quarantines. Warn by default; fail in enforcing mode. */
+  quarantine: string[]
+  /** Stale or missing last-verified records. Always warnings. */
+  stale: string[]
+}
+
+function daysBetween(from: string, to: string): number {
+  return (Date.parse(to) - Date.parse(from)) / DAY_MS
+}
+
 export function validateExclusionRegistry(
   registry: ExclusionRegistry,
   actual: readonly Exclusion[],
   sourcePaths: ReadonlySet<string>,
   today: string,
-): { errors: string[]; due: string[] } {
+): ExclusionReport {
   const errors: string[] = []
-  const due: string[] = []
+  const quarantine: string[] = []
+  const stale: string[] = []
   const recorded = new Set<string>()
   for (const entry of registry.entries) {
     if (recorded.has(entry.spec)) errors.push(`Duplicate registry entry: ${entry.spec}`)
@@ -233,12 +295,53 @@ export function validateExclusionRegistry(
       .sort()
     if (JSON.stringify(markers) !== JSON.stringify([...entry.markers].sort()))
       errors.push(`Exclusions changed or removed: ${entry.spec}`)
-    if (entry.reviewBy < entry.recordedOn)
-      errors.push(`Review date precedes inventory date: ${entry.spec}`)
-    if (entry.reviewBy <= today) due.push(entry.spec)
+    if (entry.recordedOn > today) errors.push(`Inventory date is in the future: ${entry.spec}`)
+    if (entry.category === 'quarantine') {
+      if (entry.markers.length !== 1 || entry.markers[0] !== QUARANTINE_MARKER)
+        errors.push(
+          `Quarantine must be exactly one ${QUARANTINE_MARKER} entry, not an in-spec skip: ${entry.spec}`,
+        )
+      const span = daysBetween(entry.recordedOn, entry.reviewBy)
+      if (span < 0) errors.push(`Review date precedes inventory date: ${entry.spec}`)
+      else if (span > MAX_QUARANTINE_DAYS)
+        errors.push(
+          `Quarantine review must be within ${String(MAX_QUARANTINE_DAYS)} days of recording: ${entry.spec}`,
+        )
+      const renewal = entry.renewal
+      if (renewal) {
+        if (renewal.renewedOn < entry.recordedOn)
+          errors.push(`Renewal precedes inventory date: ${entry.spec}`)
+        if (renewal.renewedOn > today) errors.push(`Renewal date is in the future: ${entry.spec}`)
+        const renewedSpan = daysBetween(renewal.renewedOn, renewal.reviewBy)
+        if (renewedSpan <= 0 || renewedSpan > MAX_QUARANTINE_DAYS)
+          errors.push(
+            `Renewed review must be 1-${String(MAX_QUARANTINE_DAYS)} days after renewal: ${entry.spec}`,
+          )
+        if (renewal.reason.trim() === entry.reason.trim())
+          errors.push(`Renewal needs a new reason: ${entry.spec}`)
+      }
+      const deadline = renewal?.reviewBy ?? entry.reviewBy
+      if (deadline <= today) quarantine.push(`Quarantine expired on ${deadline}: ${entry.spec}`)
+      if (entry.owner === null) quarantine.push(`Quarantine has no named owner: ${entry.spec}`)
+    } else if (entry.lastVerified === null) {
+      stale.push(`No real pass recorded for ${entry.category} exclusion: ${entry.spec}`)
+    } else if (entry.lastVerified.on > today) {
+      errors.push(`Last-verified date is in the future: ${entry.spec}`)
+    } else if (daysBetween(entry.lastVerified.on, today) > LAST_VERIFIED_WARN_DAYS) {
+      stale.push(
+        `Last real pass ${entry.lastVerified.on} is older than ${String(LAST_VERIFIED_WARN_DAYS)} days: ${entry.spec}`,
+      )
+    }
   }
   for (const spec of new Set(actual.map((item) => item.spec))) {
     if (!recorded.has(spec)) errors.push(`Unrecorded exclusion: ${spec}`)
   }
-  return { errors, due }
+  return { errors, quarantine, stale }
+}
+
+export type ExclusionCheckMode = 'warn' | 'enforce'
+
+/** PR prechecks warn on quarantine policy; the nightly run and release gate enforce it. */
+export function exclusionCheckFails(report: ExclusionReport, mode: ExclusionCheckMode): boolean {
+  return report.errors.length > 0 || (mode === 'enforce' && report.quarantine.length > 0)
 }
