@@ -5,6 +5,8 @@ import {
   planTranscriptRows,
   relinkReadingAnchor,
   sameExceptTurnOutcome,
+  ROW_CARD_ATTRIBUTES,
+  sameSignature,
   transcriptRowElement,
   transcriptRowSignature,
   type TranscriptRowSignature,
@@ -3650,6 +3652,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * scrollToBottom here would fight the scroll-anchoring the caller performs.
    */
   function prependMessageEl(threadId: string, msgId: string, before: Node | null): void {
+    if (reattachReturningRow(threadId, msgId, before)) return
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
     list.insertBefore(msgEl, before)
@@ -4232,6 +4235,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
       ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
+      ...(recovery.limitReason !== undefined ? { limitReason: recovery.limitReason } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
@@ -4435,7 +4439,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation)
       })
-    } else backfillPending = false
+    } else {
+      backfillPending = false
+      returningRows = new Map()
+    }
   }
 
   /**
@@ -4519,6 +4526,121 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return true
   }
 
+  // The rows of recently viewed threads, detached when the view switched away
+  // from them, so returning to one reconciles those rows (keeping their
+  // resolved links and open disclosures) instead of building every row again.
+  // A thread is stashed only while nothing can change its rows behind the
+  // view's back: idle, fully rendered, with no automatic disclosure pending.
+  // Each row is its message element followed by its anchored cards.
+  const RECENT_TRANSCRIPTS = 2
+  const recentTranscripts = new Map<
+    string,
+    { readonly inputs: TranscriptInputs; readonly rows: Map<string, Element[]> }
+  >()
+  // Stashed rows older than the window a return restores at once; the
+  // backfill reattaches each one that still draws its message.
+  let returningRows = new Map<string, Element[]>()
+
+  /** Detach thread `threadId`'s rows from the list and keep them for a return. */
+  function stashTranscript(threadId: string, inputs: TranscriptInputs): void {
+    recentTranscripts.delete(threadId)
+    const thread = getThreadById(store, threadId)
+    if (!thread || thread.status === 'running' || inputs.needsHydration || backfillPending) return
+    if (disclosures.hasAutoOpen(threadId)) return
+    // An inline canvas guest does not survive being detached; a row that
+    // hosts one is built again on the return.
+    const hostsGuest = new Set(
+      Array.from(list.querySelectorAll('.canvas-inline-artefact'), (guest) =>
+        guest.closest('.messages-list > [data-message-id]'),
+      ),
+    )
+    const rows = new Map<string, Element[]>()
+    let current: Element[] | null = null
+    for (const node of Array.from(list.children)) {
+      const key = node instanceof HTMLElement ? node.dataset['messageId'] : undefined
+      if (key !== undefined) {
+        current = hostsGuest.has(node) ? null : [node]
+        if (current) rows.set(key, current)
+      } else if (current && ROW_CARD_ATTRIBUTES.some((attribute) => node.hasAttribute(attribute))) {
+        current.push(node)
+      } else current = null
+    }
+    if (rows.size === 0) return
+    for (const parts of rows.values()) for (const part of parts) part.remove()
+    recentTranscripts.set(threadId, { inputs, rows })
+    while (recentTranscripts.size > RECENT_TRANSCRIPTS) {
+      const oldest = recentTranscripts.keys().next().value
+      if (oldest === undefined) break
+      recentTranscripts.delete(oldest)
+    }
+  }
+
+  /**
+   * Put the stashed rows of `thread`'s newest-first window back into the
+   * (cleared) list and reconcile them with the thread as it is now, then
+   * finish exactly as a fresh build does; older history backfills as it does
+   * after a fresh build, reattaching stashed rows that still draw their
+   * message. Returns the backfill's start, or null, leaving the list empty,
+   * when there is nothing to restore or the rows cannot be reconciled; the
+   * caller then builds the list fresh.
+   */
+  function restoreTranscript(thread: Thread, inputs: TranscriptInputs): number | null {
+    const stashed = recentTranscripts.get(thread.id)
+    recentTranscripts.delete(thread.id)
+    if (!stashed || needsHydration(thread)) return null
+    const start = Math.max(0, thread.messages.length - INITIAL_RENDER_WINDOW)
+    for (const message of thread.messages.slice(start)) {
+      for (const part of stashed.rows.get(message.id) ?? []) list.append(part)
+      stashed.rows.delete(message.id)
+    }
+    backfillPending = start > 0
+    backfillPrefix = thread.messages.slice(0, start).map((message) => message.id)
+    toolCards.adoptDisclosureElements(list)
+    if (!reconcileTranscriptRows(thread, inputs, stashed.inputs)) {
+      toolCards.forgetDisclosureElements()
+      disposeInlineArtefacts(list)
+      clear(list)
+      backfillPending = false
+      backfillPrefix = []
+      return null
+    }
+    returningRows = stashed.rows
+    // The same batched tail work a fresh build does, and the same landing at
+    // the live end.
+    syncModelLabels()
+    syncUserActions()
+    syncAcpResourceReferences(list, api, store)
+    syncHookCardVisibility()
+    finishThreadChrome(thread)
+    syncConciseTurnFooters()
+    refreshStickyImagePrompt()
+    syncAvatarMotion()
+    scrollToBottom(true)
+    return start
+  }
+
+  /**
+   * Reattach the stashed row of `msgId` before `before` when it still draws
+   * the message as the thread holds it now (see restoreTranscript). Returns
+   * whether it did; otherwise the caller builds the row.
+   */
+  function reattachReturningRow(threadId: string, msgId: string, before: Node | null): boolean {
+    const parts = returningRows.get(msgId)
+    returningRows.delete(msgId)
+    const [element] = parts ?? []
+    const thread = getThreadById(store, threadId)
+    const message = thread?.messages.find((candidate) => candidate.id === msgId)
+    const signed = element instanceof HTMLElement ? rowSignatures.get(element) : undefined
+    if (!parts || !thread || !message || !signed) return false
+    if (!sameSignature(signed, transcriptRowSignature(store, thread, message))) return false
+    if (element instanceof HTMLElement && rowDrawnFrom.get(element) !== message) return false
+    for (const part of parts) {
+      list.insertBefore(part, before)
+      toolCards.adoptDisclosureElements(part)
+    }
+    return true
+  }
+
   function rebuildForThread(): void {
     const thread = getActiveThread(store)
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
@@ -4547,6 +4669,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const preservedScrollTop =
       rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null
     if (!rebuildingSameThread) transcriptScroll.resetForThread()
+    if (!rebuildingSameThread && renderedThreadId !== null && renderedInputs) {
+      stashTranscript(renderedThreadId, renderedInputs)
+    }
     toolCards.forgetDisclosureElements()
     if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
@@ -4557,8 +4682,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
     renderedInputs = inputs
+    backfillPending = false
+    backfillPrefix = []
     if (!thread) {
       finishThreadChrome(null)
+      return
+    }
+    returningRows = new Map()
+    const restoredFrom = inputs && !rebuildingSameThread ? restoreTranscript(thread, inputs) : null
+    if (restoredFrom !== null) {
+      if (restoredFrom > 0) {
+        const generation = backfillGeneration
+        requestAnimationFrame(() => {
+          backfillOlderMessages(thread, restoredFrom, generation)
+        })
+      }
       return
     }
     // A freshly selected thread arrives as metadata only (`messages: []`,
@@ -4655,6 +4793,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       })
     }),
     store.on('settings_changed', () => {
+      // A stashed row is synced with the settings only once it is back.
+      recentTranscripts.clear()
       agentNamesRequested = false
       agentNamesRevision++
       syncModelLabels()
@@ -4926,6 +5066,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   syncFromStore()
   return () => {
     disposed = true
+    recentTranscripts.clear()
     setBackgroundTaskLogLoader(null)
     archiveReview.dispose()
     selectionQuote.destroy()

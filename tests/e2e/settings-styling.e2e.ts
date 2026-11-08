@@ -301,7 +301,7 @@ describe('settings styling', function () {
     await saveElementScreenshot('#settings-dialog', 'settings-styling-footer.png')
   })
 
-  it('renders plugins as cards with a publisher eyebrow and a labelled toggle', async () => {
+  it('renders plugin rows on the page with the publisher in the name line', async () => {
     await $('.settings-nav-btn[data-section="customise"]').click()
     // Registry plugins carry no origin; Cursor and bundled-skill rows sort in beside them.
     await $('.plugin-row:not([data-plugin-origin])').waitForDisplayed({ timeout: 30_000 })
@@ -315,7 +315,7 @@ describe('settings styling', function () {
       const list = document.querySelector<HTMLElement>('#plugins-list')
       const row = list?.querySelector<HTMLElement>('.plugin-row:not([data-plugin-origin])')
       const name = row?.querySelector<HTMLElement>('.plugin-name')
-      const eyebrow = row?.querySelector<HTMLElement>(
+      const publisher = row?.querySelector<HTMLElement>(
         '.plugin-badge-first-party, .plugin-badge-user',
       )
       const toggleControl = row?.querySelector<HTMLElement>('.plugin-toggle-control')
@@ -327,10 +327,12 @@ describe('settings styling', function () {
         '.plugin-toggle-state[data-side="off"]',
       )
       const mark = row?.querySelector<HTMLImageElement>('.plugin-icon-copse img')
-      if (!list || !row || !name || !eyebrow || !toggleControl || !onLabel || !offLabel) return null
+      if (!list || !row || !name || !publisher || !toggleControl || !onLabel || !offLabel) {
+        return null
+      }
       const rowRect = row.getBoundingClientRect()
       const nameRect = name.getBoundingClientRect()
-      const eyebrowRect = eyebrow.getBoundingClientRect()
+      const publisherRect = publisher.getBoundingClientRect()
       const toggleRect = toggleControl.getBoundingClientRect()
       const trackRect = toggleControl
         .querySelector<HTMLElement>('.toggle-switch-track')
@@ -345,10 +347,13 @@ describe('settings styling', function () {
         groupHeadings: Array.from(list.querySelectorAll<HTMLElement>('.plugins-group-heading')).map(
           (el) => el.textContent.trim(),
         ),
-        cardBackground: getComputedStyle(row).backgroundColor,
-        cardRadius: Number.parseFloat(getComputedStyle(row).borderTopLeftRadius),
-        eyebrowAboveName: eyebrowRect.bottom <= nameRect.top + 1,
-        eyebrowTransform: getComputedStyle(eyebrow).textTransform,
+        rowBackground: getComputedStyle(row).backgroundColor,
+        rowBorder: getComputedStyle(row).borderTopWidth,
+        publisherInNameLine:
+          publisher.parentElement?.classList.contains('plugin-row-name-line') === true &&
+          publisherRect.left >= nameRect.right &&
+          publisherRect.top < nameRect.bottom,
+        publisherTransform: getComputedStyle(publisher).textTransform,
         nameSize: Number.parseFloat(getComputedStyle(name).fontSize),
         descSize: desc ? Number.parseFloat(getComputedStyle(desc).fontSize) : 0,
         toggleOnTheRight: toggleRect.right > rowRect.left + rowRect.width / 2,
@@ -404,12 +409,13 @@ describe('settings styling', function () {
       plugins.groupHeadings.includes('Active'),
       `plugins are grouped by state, got ${plugins.groupHeadings.join(', ')}`,
     )
-    // A plugin reads as a card: it paints its own surface and rounds its corners,
-    // rather than being a hairline box on the section background.
-    assert.notEqual(plugins.cardBackground, 'rgba(0, 0, 0, 0)')
-    assert.ok(plugins.cardRadius >= 8, `plugin card radius ${String(plugins.cardRadius)}`)
-    assert.equal(plugins.eyebrowAboveName, true, 'the publisher sits above the plugin name')
-    assert.equal(plugins.eyebrowTransform, 'uppercase')
+    // A plugin row sits on the page: no surface or frame of its own, so the gap
+    // between rows separates them (docs/ui-taste.md).
+    assert.equal(plugins.rowBackground, 'rgba(0, 0, 0, 0)')
+    assert.equal(plugins.rowBorder, '0px')
+    // The publisher follows the version on the name's line, in sentence case.
+    assert.equal(plugins.publisherInNameLine, true, 'the publisher sits in the name line')
+    assert.equal(plugins.publisherTransform, 'none')
     assert.ok(plugins.nameSize > plugins.descSize, 'the plugin name leads its description')
     assert.equal(plugins.toggleOnTheRight, true, 'the toggle sits opposite the title')
     // Off/On flank the switch and the live side is the emphasised one.

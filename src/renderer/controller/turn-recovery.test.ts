@@ -86,6 +86,48 @@ function addFinishedAssistant(
 }
 
 describe('explicit failed-turn recovery', () => {
+  for (const reason of ['max_steps', 'timeout'] as const) {
+    it(`continues a ${reason} checkpoint with a new human allowance and the current model`, () => {
+      const { store, api, runs, selections } = setup()
+      const threadId = createThread(store)
+      const failedId = addFinishedAssistant(store, threadId, 'Fifty migration phases are saved.', {
+        ...outcome('failed', 'local', 'model-a', 'host'),
+        stopReason: reason,
+      })
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((thread) =>
+            thread.id === threadId
+              ? { ...thread, currentEpoch: 'exhausted-human-turn', continuationUsed: 5 }
+              : thread,
+          ),
+      })
+      assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), failedId), {
+        limitReason: reason,
+      })
+      assert.equal(runs.length, 0)
+      assert.equal(
+        recoverFailedTurn(store, api, 'project-1', threadId, failedId, 'current-model'),
+        true,
+      )
+      const thread = getThreadById(store, threadId)
+      assert.ok(thread)
+      assert.equal(thread.continuationUsed, 0)
+      assert.notEqual(thread.currentEpoch, 'exhausted-human-turn')
+      assert.equal(runs.length, 1)
+      assert.equal(selections.length, 0)
+      assert.equal(
+        parseAgentRunPayload(runs[0]?.payload ?? '').userContent,
+        INTERRUPTED_TURN_CONTINUATION,
+      )
+      assert.equal(
+        thread.messages.find((message) => message.id === failedId)?.content,
+        'Fifty migration phases are saved.',
+      )
+    })
+  }
+
   it('offers an interrupted restart before any assistant output and continues only on click', () => {
     const { store, api, runs } = setup()
     const threadId = createThread(store)

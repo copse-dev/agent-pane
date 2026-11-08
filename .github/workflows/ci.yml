@@ -2394,8 +2394,11 @@ jobs:
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
-    # cold runner, not the steady state.
-    timeout-minutes: 20
+    # cold runner, not the steady state. Raised again from 20 because the
+    # filter itself scales with the candidate count: a PR restyling shared
+    # surfaces rendered ~870 changed screenshots and the filter step took
+    # over 17 minutes, so 20 cancelled the job in most runs.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
