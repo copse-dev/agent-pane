@@ -18151,7 +18151,6 @@ function answerReviewerInput(store2, api2, threadId, requestId, answer) {
   const request = reviewerInputRequests(thread).find((item) => item.id === requestId);
   if (!request || reviewerInputAnswer(thread.reviewerInputAnswers, requestId)) return false;
   const content = `Answer to your review question \u201C${request.question}\u201D: ${text}`;
-  if (thread.status === "idle") startHumanTurnTree(store2, threadId);
   const messageId = addMessage(store2, threadId, "user", content);
   setReviewerInputAnswer(store2, threadId, {
     id: requestId,
