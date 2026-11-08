@@ -43,8 +43,10 @@ ports and owned processes in the task evidence before launch.
 Use `list_threads` with `project_id`, a narrow `query`, and `include_state: true` to retrieve
 saved briefs, plans, recorded checkout metadata and native commit/PR receipts in one bounded
 response. State pages default to 10 results and accept at most 20; use `offset` to continue.
-Truncation and omitted counts are explicit. Ordinary catalog searches retain their existing
-pagination. This uses the existing conversation-read consent and grants no sending access.
+State titles are capped at 240 characters with an explicit truncation flag; mentioned PR links
+and other unneeded catalog fields are omitted. Truncation and omitted counts are explicit.
+Ordinary catalog searches retain their existing pagination. This uses the existing
+conversation-read consent and grants no sending access.
 
 The state is saved metadata, not a live resource lock or a verification verdict. Confirm actual
 checkout ownership before writing. An idle chat or completed todo does not establish acceptance;

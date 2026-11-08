@@ -52,7 +52,10 @@ interface CompactThreadState {
 }
 
 function compactText(text: string, limit: number): CompactText {
-  return { text: text.slice(0, limit), truncated: text.length > limit }
+  const before = text.charCodeAt(limit - 1)
+  const after = text.charCodeAt(limit)
+  const splitsPair = before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff
+  return { text: text.slice(0, splitsPair ? limit - 1 : limit), truncated: text.length > limit }
 }
 
 /** Saved coordination facts, never inferred completion or transcript/tool payloads. */
@@ -97,7 +100,7 @@ export const listThreadsTool = defineTool({
   name: 'list_threads',
   provenance: 'external',
   description:
-    'Find other conversations by title and summary, newest updated first across projects. Returns up to 50 results by default; use offset and limit to page through older matches, or project_id to narrow the search. Set include_state for a compact saved brief, plan, recorded checkout and native commit/PR receipts without replaying transcripts (default 10 results, limit at most 20). Briefs are capped at 1000 characters, plans at 10 items of 240 characters with unfinished work first, receipts at the latest three of each kind; truncation and totals are explicit. Saved status and checked-off plans are not verified task acceptance, and recorded checkout paths are not validated live ownership. First use asks permission to read all other threads; approval belongs only to this thread and never grants sending. Read the returned spine paths with read_file for detailed evidence.',
+    'Find other conversations by title and summary, newest updated first across projects. Returns up to 50 results by default; use offset and limit to page through older matches, or project_id to narrow the search. Set include_state for a compact saved brief, plan, recorded checkout and native commit/PR receipts without replaying transcripts (default 10 results, limit at most 20). Compact titles are capped at 240 characters, briefs at 1000, plans at 10 items of 240 characters with unfinished work first, receipts at the latest three of each kind; truncation and totals are explicit. Compact results omit mentioned PR lists and catalog digests. Saved status and checked-off plans are not verified task acceptance, and recorded checkout paths are not validated live ownership. First use asks permission to read all other threads; approval belongs only to this thread and never grants sending. Read the returned spine paths with read_file for detailed evidence.',
   parameters: z.object({
     query: z.string().optional(),
     project_id: z.string().min(1).optional(),
@@ -141,7 +144,15 @@ export const listThreadsTool = defineTool({
             page.map(async (hit) => {
               const meta = await getThreadMeta(hit.projectId, hit.id)
               if (!meta || meta.archivedAt !== undefined) return null
-              return { ...hit, state: compactThreadState(meta) }
+              const title = compactText(meta.title, 240)
+              return {
+                projectId: hit.projectId,
+                id: hit.id,
+                title: title.text,
+                titleTruncated: title.truncated,
+                spinePath: hit.spinePath,
+                state: compactThreadState(meta),
+              }
             }),
           )
         ).filter((hit) => hit !== null)

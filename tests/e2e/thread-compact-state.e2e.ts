@@ -49,6 +49,14 @@ describe('compact saved worker state', () => {
           workingBrief: 'Own the label repair. Verification belongs to the other worker.',
           todos: [{ id: 'repair', content: 'Repair label normalization', status: 'completed' }],
           gitBranch: 'codex/repair-label',
+          prRefs: [
+            {
+              owner: 'acme',
+              repo: 'CATALOG_MENTION_PAYLOAD',
+              number: 999,
+              url: 'https://github.com/acme/CATALOG_MENTION_PAYLOAD/pull/999',
+            },
+          ],
           messages: [
             {
               id: 'repair-history',
@@ -127,7 +135,10 @@ describe('compact saved worker state', () => {
     assert.match(content, /Repair label normalization/)
     assert.match(content, /Run independent label checks/)
     assert.match(content, /recorded-not-verified/)
-    assert.doesNotMatch(content, /PRIVATE_TRANSCRIPT_BODY|UNRELATED_OLD_TOOL_LOG/)
+    assert.doesNotMatch(
+      content,
+      /PRIVATE_TRANSCRIPT_BODY|UNRELATED_OLD_TOOL_LOG|CATALOG_MENTION_PAYLOAD/,
+    )
     // The native result contains the profile's temporary path. Assert it while
     // expanded, then capture the normal completed disclosure without path noise.
     await tool.$('summary').click()

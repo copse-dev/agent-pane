@@ -85,8 +85,9 @@ outside-project path grant. A file or directory alias into another thread still 
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
 
 `list_threads` searches conversation titles and summaries and returns paths for the existing
-read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
-approval. Reading never grants sending. Both grants are persisted in main-owned settings,
+read tools. Under the same read grant, `include_state` also returns saved briefs, plans,
+recorded checkout data and native production receipts. `send_thread_prompt` asks a separate
+**Send prompts to your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing

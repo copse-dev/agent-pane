@@ -14,6 +14,7 @@ import { runSerialized } from '@copse/thread-store/write-queue.ts'
 import {
   commitProductionSchema,
   prProductionSchema,
+  prRefSchema,
 } from '@copse/thread-store/thread-pr-relations.ts'
 import { runWithApprovalHandler } from '../services/approval.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
@@ -259,6 +260,138 @@ describe('conversation tools', () => {
     })
   })
 
+  it('bounds compact discovery despite long titles and hundreds of mentioned pull requests', async () => {
+    const title = `Review campaign progress ${'and verify current ownership '.repeat(150)}`
+    const prRefs = Array.from({ length: 300 }, (_, index) => ({
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      number: index + 1,
+      url: `https://github.com/copse-dev/agent-pane/pull/${String(index + 1)}`,
+    }))
+    for (let index = 0; index < 20; index++) {
+      await createThread('thread-tools-project', {
+        id: `campaign-${String(index).padStart(2, '0')}`,
+        title,
+        workingBrief:
+          'Verify the assigned fix and report its current head and acceptance evidence.',
+        status: 'idle',
+        messages: [],
+        todos: [{ id: 'verify', content: 'Check the assigned fix', status: 'pending' }],
+        prRefs,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: index + 2,
+      })
+    }
+    await setSetting('threadReadAccess', ['thread-tools-source'])
+    await runWithActiveRunIdentity('thread-tools-source', async () => {
+      const catalog = normalizeToolExecuteResult(
+        await listThreadsTool.execute({ limit: 20 }, signal),
+      ).result
+      const catalogRows = safeJsonParse(
+        catalog,
+        decodeWithSchema(
+          z.array(
+            z.object({
+              id: z.string(),
+              title: z.string(),
+              prRefs: z.array(prRefSchema),
+              spinePath: z.string(),
+            }),
+          ),
+        ),
+      )
+      assert.ok(catalogRows)
+      assert.equal(catalogRows.length, 20)
+      assert.equal(catalogRows[0]?.title, title)
+      assert.equal(catalogRows[0].prRefs.length, 300)
+      assert.doesNotMatch(catalog, /"titleTruncated":/)
+
+      const compact = normalizeToolExecuteResult(
+        await listThreadsTool.execute({ include_state: true, limit: 20 }, signal),
+      ).result
+      assert.ok(
+        compact.length < 25_000,
+        `compact discovery returned ${String(compact.length)} characters`,
+      )
+      const compactRows = safeJsonParse(
+        compact,
+        decodeWithSchema(
+          z.array(
+            z.strictObject({
+              projectId: z.literal('thread-tools-project'),
+              id: z.string(),
+              title: z.string(),
+              titleTruncated: z.boolean(),
+              spinePath: z.string(),
+              state: stateRowsSchema.element.shape.state,
+            }),
+          ),
+        ),
+      )
+      assert.ok(compactRows)
+      assert.equal(compactRows.length, 20)
+      assert.equal(compactRows[0]?.title, title.slice(0, 240))
+      assert.equal(compactRows[0].titleTruncated, true)
+      assert.equal(compactRows[0].id, catalogRows[0].id)
+      assert.equal(compactRows[0].spinePath, catalogRows[0].spinePath)
+      assert.equal(compactRows[0].state.productions.totalPullRequests, 0)
+    })
+  })
+
+  it('preserves complete emoji at title, brief and plan truncation boundaries', async () => {
+    await setSetting('threadReadAccess', ['thread-tools-source'])
+    for (const crossesBoundary of [true, false]) {
+      const padding = crossesBoundary ? 1 : 2
+      const titlePrefix = 'T'.repeat(240 - padding)
+      const briefPrefix = 'B'.repeat(1000 - padding)
+      const planPrefix = 'P'.repeat(240 - padding)
+      await updateMeta('thread-tools-project', 'thread-tools-destination', {
+        title: `${titlePrefix}🪵`,
+        workingBrief: `${briefPrefix}🌳`,
+        todos: [{ id: 'verify', content: `${planPrefix}🌱`, status: 'in_progress' }],
+      })
+      const output = await runWithActiveRunIdentity(
+        'thread-tools-source',
+        async () =>
+          normalizeToolExecuteResult(await listThreadsTool.execute({ include_state: true }, signal))
+            .result,
+      )
+      const rows = safeJsonParse(output, decodeWithSchema(stateRowsSchema))
+      assert.ok(rows)
+      const state = rows[0]?.state
+      assert.ok(state)
+      assert.deepEqual(state.brief, {
+        text: crossesBoundary ? briefPrefix : `${briefPrefix}🌳`,
+        truncated: crossesBoundary,
+      })
+      assert.deepEqual(state.plan.items, [
+        {
+          content: crossesBoundary ? planPrefix : `${planPrefix}🌱`,
+          status: 'in_progress',
+          truncated: crossesBoundary,
+        },
+      ])
+      const titledRows = safeJsonParse(
+        output,
+        decodeWithSchema(
+          z.array(
+            z.object({
+              title: z.string(),
+              titleTruncated: z.boolean(),
+            }),
+          ),
+        ),
+      )
+      assert.deepEqual(titledRows, [
+        {
+          title: crossesBoundary ? titlePrefix : `${titlePrefix}🪵`,
+          titleTruncated: crossesBoundary,
+        },
+      ])
+    }
+  })
+
   it('rejects oversized state pages instead of silently skipping rows for the next offset', async () => {
     await runWithApprovalHandler(
       async () => {
@@ -317,7 +450,7 @@ describe('conversation tools', () => {
     assert.equal(plan.items[1]?.status, 'pending')
   })
 
-  for (const interruption of ['revoke', 'cancel', 'remove-project'] as const) {
+  for (const interruption of ['revoke', 'cancel'] as const) {
     it(`withholds saved state when ${interruption} occurs while a store read waits`, async () => {
       await setSetting('threadReadAccess', ['thread-tools-source'])
       const controller = new AbortController()
@@ -332,14 +465,37 @@ describe('conversation tools', () => {
         listThreadsTool.execute({ include_state: true }, controller.signal),
       )
       if (interruption === 'revoke') await revokeThreadAccess('thread-tools-source', 'read')
-      else if (interruption === 'cancel') controller.abort()
-      else storageSet('projects', [])
+      else controller.abort()
       released.resolve(undefined)
       await blocked
       const result = normalizeToolExecuteResult(await reading).result
       assert.doesNotMatch(result, /Investigate build failures|"state":/)
     })
   }
+
+  it('withholds a project removed after its catalog read was queued', async () => {
+    await setSetting('threadReadAccess', ['thread-tools-source'])
+    const entered = Promise.withResolvers<undefined>()
+    const released = Promise.withResolvers<undefined>()
+    const blocked = runSerialized('thread-store:thread-tools-project', async () => {
+      entered.resolve(undefined)
+      await released.promise
+    })
+    await entered.promise
+    const reading = runWithActiveRunIdentity('thread-tools-source', () =>
+      listThreadsTool.execute({ include_state: true }, signal),
+    )
+    // The granted access check yields once. The list operation then captures
+    // projects and queues the catalog before this second queue operation.
+    await Promise.resolve()
+    const removed = runSerialized('thread-store:thread-tools-project', () => {
+      storageSet('projects', [])
+    })
+    released.resolve(undefined)
+    await blocked
+    await removed
+    assert.equal(normalizeToolExecuteResult(await reading).result, '[]')
+  })
 
   for (const removal of ['delete', 'archive'] as const) {
     it(`omits a selected worker if ${removal} runs between catalog and metadata reads`, async () => {
