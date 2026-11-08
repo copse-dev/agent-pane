@@ -193,7 +193,11 @@ async function discover(
   runHeadSha = SHA,
   setFailed: (message: string) => void = assert.fail,
   files: PrFile[] | Error = [],
-  run: { conclusion?: string; jobs?: WorkflowJob[] } = {},
+  run: {
+    conclusion?: string
+    jobs?: WorkflowJob[]
+    latest?: { id: number; run_attempt: number } | null
+  } = {},
 ): Promise<Map<string, string>> {
   const outputs = new Map<string, string>()
   const listWorkflowRunArtifacts = (): void => {}
@@ -202,7 +206,13 @@ async function discover(
   await execute('Resolve the live parent PR and exact artifact', {
     context,
     process: {
-      env: { RUN_ID: '99', RUN_HEAD_SHA: runHeadSha, RUN_CONCLUSION: run.conclusion ?? 'success' },
+      env: {
+        RUN_ID: '99',
+        RUN_HEAD_SHA: runHeadSha,
+        RUN_CONCLUSION: run.conclusion ?? 'success',
+        RUN_ATTEMPT: '1',
+        SOURCE_WORKFLOW_ID: '7',
+      },
     },
     core: {
       ...core,
@@ -212,7 +222,27 @@ async function discover(
     github: {
       rest: {
         pulls: { get: async () => ({ data: liveParent }), listFiles },
-        actions: { listWorkflowRunArtifacts, listJobsForWorkflowRun },
+        actions: {
+          listWorkflowRunArtifacts,
+          listJobsForWorkflowRun,
+          listWorkflowRuns: async (args: Record<string, unknown>) => {
+            assert.deepEqual(JSON.parse(JSON.stringify(args)), {
+              owner: 'copse-dev',
+              repo: 'agent-pane',
+              workflow_id: 7,
+              branch: liveParent.head.ref,
+              head_sha: runHeadSha,
+              event: 'pull_request',
+              per_page: 1,
+            })
+            return {
+              data: {
+                workflow_runs:
+                  run.latest === null ? [] : [run.latest ?? { id: 99, run_attempt: 1 }],
+              },
+            }
+          },
+        },
       },
       paginate: async (method: unknown, params: { run_id?: number; filter?: string }) => {
         if (method === listJobsForWorkflowRun) {
@@ -238,6 +268,22 @@ async function discover(
 }
 
 describe('screenshot publication', () => {
+  it('rejects an old publisher after a newer same-head source run or attempt without any evidence writes', async () => {
+    for (const latest of [{ id: 100, run_attempt: 1 }, { id: 99, run_attempt: 2 }, null]) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], { latest })
+      assert.equal(outputs.get('superseded'), 'true')
+      assert.equal(outputs.get('eligible'), 'false')
+      assert.equal(outputs.get('has-artifact'), 'false')
+      assert.equal(outputs.get('gate-sha'), undefined)
+      assert.equal(outputs.get('artifact-id'), undefined)
+    }
+    assert.equal(
+      (await discover()).get('eligible'),
+      'true',
+      'the latest source attempt remains resumable',
+    )
+  })
+
   it('binds zero and nonzero evidence to the actual conditional immutable-upload outcome', async () => {
     for (const state of ['success', 'failure', 'missing', 'duplicate']) {
       const jobs = evidenceJobs().map((job) =>
@@ -1364,7 +1410,8 @@ async function publish(
   env: Record<string, string> = {},
   liveParent = parent(),
   previous = false,
-): Promise<{ bodies: string[]; deleted: string[] }> {
+): Promise<{ bodies: string[]; deleted: string[]; disposition: string | undefined }> {
+  let disposition: string | undefined
   const bodies: string[] = []
   const deleted: string[] = []
   const recordBody = async ({ body }: { body: string }): Promise<void> => {
@@ -1372,7 +1419,12 @@ async function publish(
   }
   await execute('Link screenshot evidence from the parent', {
     context,
-    core,
+    core: {
+      ...core,
+      setOutput: (key: string, value: string) => {
+        if (key === 'disposition') disposition = value
+      },
+    },
     process: {
       env: {
         PARENT_NUMBER: '123',
@@ -1408,7 +1460,7 @@ async function publish(
           : [],
     },
   })
-  return { bodies, deleted }
+  return { bodies, deleted, disposition }
 }
 
 describe('parent screenshot evidence comment', () => {
@@ -1762,13 +1814,20 @@ describe('parent screenshot evidence comment', () => {
 
   it('deletes the just-pushed compare branch and posts no stale link when the parent advances', async () => {
     const result = await publish({}, parent({ sha: 'new-tip' }), true)
-    assert.deepEqual(result, { bodies: [], deleted: [`heads/${COMPARE_BRANCH}`] })
+    assert.deepEqual(result, {
+      bodies: [],
+      deleted: [`heads/${COMPARE_BRANCH}`],
+      disposition: 'superseded',
+    })
     const unpushed = await publish({ COMPARE_PUSHED: '' }, parent({ state: 'closed' }), true)
-    assert.deepEqual(unpushed, { bodies: [], deleted: [] })
+    assert.deepEqual(unpushed, { bodies: [], deleted: [], disposition: 'superseded' })
   })
 
   it('does not add no-change comments, but replaces an older evidence comment', async () => {
-    assert.deepEqual((await publish({ ARTIFACT_ID: '' })).bodies, [])
+    const empty = await publish({ ARTIFACT_ID: '' })
+    assert.deepEqual(empty.bodies, [])
+    assert.equal(empty.disposition, 'no-comment-needed')
+    assert.equal((await publish()).disposition, 'published')
     const { bodies } = await publish({ ARTIFACT_ID: '' }, parent(), true)
     assert.match(bodies[0] ?? '', /no filtered screenshot candidates/)
   })
