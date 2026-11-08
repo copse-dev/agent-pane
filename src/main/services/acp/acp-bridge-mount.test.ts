@@ -459,6 +459,30 @@ describe('acpBridgeToolMissing', () => {
     }
   })
 
+  it("ignores a Copse tool's own failure that merely quotes the phrase", () => {
+    // The call reached the bridge and read_file failed on its own terms; the
+    // adapter rightly names it mcp__copse__read_file. Only Claude Code's error,
+    // as the result's leading statement, says the agent lacks the tool.
+    for (const output of [
+      'File not found: notes/No such tool available: mcp__copse__read_file',
+      '<tool_use_error>Error: File not found: No such tool available: mcp__copse__read_file</tool_use_error>',
+      'Exit code 1\nNo such tool available: mcp__copse__read_file',
+    ]) {
+      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), null, output)
+      const content = [
+        { type: 'content' as const, content: { type: 'text' as const, text: output } },
+      ]
+      assert.equal(acpBridgeToolMissing(failed({ content }), named), null, output)
+    }
+    // Claude Code's own error leads, bare or fenced as the adapter may render it.
+    for (const output of [
+      'Error: No such tool available: mcp__copse__read_file',
+      '```\n<tool_use_error>Error: No such tool available: mcp__copse__read_file</tool_use_error>\n```',
+    ]) {
+      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), 'read_file', output)
+    }
+  })
+
   it('reads only failed results that name a Copse tool', () => {
     assert.equal(
       acpBridgeToolMissing(
