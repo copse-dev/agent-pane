@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { transcriptMeta } from '@shared/store/transcript-state.ts'
 import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
@@ -21,6 +22,8 @@ import {
   saveNavigation,
   saveProjects,
   serializedSet,
+  acceptRuntimeThreadMeta,
+  invalidateProjectThreadLoads,
 } from './persistence.ts'
 import type { RendererStorageKey } from '@shared/storage-keys.ts'
 import { resumePendingQueues } from './message-queue.ts'
@@ -401,6 +404,52 @@ export function attachProjectThreadCache(store: AppStore): () => void {
       cacheThreads(activeProjectId, threads)
     }
   })
+}
+
+/** Refresh main-owned checkout state after cleanup without replacing local edits. */
+export async function refreshProjectThreadWorktrees(
+  store: AppStore,
+  api: ApiClient,
+  projectId: string,
+): Promise<void> {
+  invalidateProjectThreadLoads(api, projectId)
+  let revision: number
+  let loaded: Thread[]
+  do {
+    revision = projectThreadLoadRevision(api, projectId)
+    loaded = await api.threads.loadProject(projectId)
+  } while (
+    isListedProject(store, projectId) &&
+    revision !== projectThreadLoadRevision(api, projectId)
+  )
+  if (!isListedProject(store, projectId)) return
+  const byId = new Map(loaded.map((thread) => [thread.id, thread]))
+  function refreshed<T extends { id: string; worktree?: Thread['worktree'] }>(thread: T): T {
+    const latest = byId.get(thread.id)
+    if (!latest || JSON.stringify(latest.worktree) === JSON.stringify(thread.worktree))
+      return thread
+    const next = { ...thread }
+    if (latest.worktree) next.worktree = latest.worktree
+    else delete next.worktree
+    return next
+  }
+  const runtime = (thread: Thread): Thread => {
+    const next = refreshed(thread)
+    if (next !== thread) acceptRuntimeThreadMeta(projectId, next, transcriptMeta(thread))
+    return next
+  }
+  const state = store.getState()
+  const threads = state.activeProjectId === projectId ? state.threads.map(runtime) : state.threads
+  const backgroundThreads = state.backgroundThreads.map((entry) => {
+    if (entry.projectId !== projectId) return entry
+    const thread = runtime(entry.thread)
+    return thread === entry.thread ? entry : { ...entry, thread }
+  })
+  store.setState({ threads, backgroundThreads })
+  const cached = threadCache.get(projectId)
+  if (state.activeProjectId === projectId) cacheThreads(projectId, threads)
+  else if (cached) threadCache.set(projectId, cached.map(refreshed))
+  store.emit('sidebar_threads_loaded')
 }
 
 /** Main guards root commits; dependent IPC waits for the latest selection. */

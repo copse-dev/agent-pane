@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { configureThreadStore } from '@copse/thread-store/environment.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
@@ -11,6 +15,20 @@ import {
 import { isRecord } from '@shared/unknown-value.ts'
 import { addMessage, getThreadById, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import { startHumanTurnTree } from './message-queue.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { withoutMainOwnedThreadFields } from '../../main/ipc/thread-meta-guard.ts'
+import {
+  createThread as createStoredThread,
+  getThreadMeta,
+  loadProjectThreadMetas,
+  updateMeta,
+} from '../../main/services/thread-store.ts'
+import {
+  __resetPersistenceForTest,
+  flushProjectThreads,
+  invalidateProjectThreadLoads,
+  loadThreads,
+} from './persistence.ts'
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
@@ -600,3 +618,115 @@ for (const phase of ['metadata', 'messages']) {
     dispose()
   })
 }
+
+test(
+  'a delayed headless transcript cannot autosave over a newer main-owned retirement',
+  { timeout: 5_000 },
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-retirement-producer-'))
+    configureThreadStore({ workspaceRoot: () => root, listProjectIds: () => ['project-a'] })
+    __resetPersistenceForTest()
+    let detach = (): void => undefined
+    try {
+      const created = automationThread('retired-run')
+      created.status = 'running'
+      created.draftPrompt = ''
+      created.worktree = {
+        path: join(root, 'checkout'),
+        branch: 'copse/finished-run',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: 100,
+        seededFromDirtyProject: false,
+      }
+      await createStoredThread('project-a', created)
+      const store = createStore({ activeProjectId: 'project-a', threads: [created] })
+      const harness = controllerApi([])
+      const base = createFakeApi()
+      const api = {
+        ...base,
+        agent: { ...base.agent, ...harness.api.agent },
+        automations: { ...base.automations, ...harness.api.automations },
+        threads: { ...base.threads, ...harness.api.threads },
+      }
+      api.threads.loadProject = (): Promise<Thread[]> => loadProjectThreadMetas('project-a')
+      const patches: Array<Record<string, unknown>> = []
+      api.threads.updateMeta = (projectId, threadId, patch): Promise<void> => {
+        patches.push({ ...patch })
+        return updateMeta(projectId, threadId, withoutMainOwnedThreadFields({ ...patch }))
+      }
+      await loadThreads(api, 'project-a')
+      await updateMeta('project-a', created.id, { status: 'idle', updatedAt: 200 })
+      const messages: Thread['messages'] = [
+        {
+          id: 'settled-answer',
+          role: 'assistant',
+          content: 'Finished.',
+          toolCalls: [],
+          createdAt: 200,
+        },
+      ]
+      let releaseFirst = (_messages: Thread['messages']): void => undefined
+      let reachedMessages = (): void => undefined
+      const messagesStarted = new Promise<void>((resolve): void => {
+        reachedMessages = resolve
+      })
+      let messageReads = 0
+      api.threads.loadMessages = (): Promise<Thread['messages']> => {
+        if (++messageReads > 1) return Promise.resolve(messages)
+        reachedMessages()
+        return new Promise<Thread['messages']>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      detach = attachAutomationController(store, api)
+      harness.emitTrigger({
+        projectId: 'project-a',
+        scheduleId: 'schedule-ci',
+        threadId: created.id,
+        triggeredAt: 100,
+        disposition: 'started',
+        headlessSettled: true,
+      })
+      await messagesStarted
+      await updateMeta('project-a', created.id, {
+        worktree: { ...created.worktree, retiredAt: 300 },
+      })
+      // A supported fresh metadata read completes after cleanup, before the old
+      // transcript request returns. Keep that main-owned result visible locally.
+      invalidateProjectThreadLoads(api, 'project-a')
+      const retired = await loadThreads(api, 'project-a')
+      assert.equal(retired[0]?.worktree?.retiredAt, 300)
+      store.setState({ threads: retired })
+      let unsubscribe = (): void => undefined
+      const applied = new Promise<void>((resolve): void => {
+        unsubscribe = store.on('threads_changed', () => {
+          unsubscribe()
+          resolve()
+        })
+      })
+      releaseFirst(messages)
+      await applied
+      await flushProjectThreads(api, 'project-a', store.getState().threads)
+      const saved = await getThreadMeta('project-a', created.id)
+      console.log(
+        '[retirement-producer]',
+        JSON.stringify({
+          worktreePatches: patches.filter((patch) => Object.hasOwn(patch, 'worktree')),
+          storedWorktree: saved?.worktree,
+          rendererWorktree: getThreadById(store, created.id)?.worktree,
+          dispatchedRuns: harness.runs.length,
+        }),
+      )
+      assert.equal(saved?.worktree?.retiredAt, 300)
+      assert.equal(getThreadById(store, created.id)?.worktree?.retiredAt, 300)
+      assert.deepEqual(getThreadById(store, created.id)?.messages, messages)
+      assert.equal(harness.runs.length, 0)
+    } finally {
+      detach()
+      __resetPersistenceForTest()
+      configureThreadStore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)

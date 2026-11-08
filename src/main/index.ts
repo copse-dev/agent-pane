@@ -165,7 +165,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestThreadFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -1315,10 +1315,7 @@ app
         if (!parsed.success) {
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
-        const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        const thread = await getProjectThread(projectId, threadId)
-        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
-        return suggestFollowUps(parsed.data, root, executor)
+        return suggestThreadFollowUps(projectId, threadId, parsed.data)
       },
     )
 
