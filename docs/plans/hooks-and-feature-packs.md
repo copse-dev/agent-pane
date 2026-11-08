@@ -127,6 +127,13 @@ revisiting this document, not silently diverging in an implementation PR.
    bridged call rejected. Unlike `dispatchMachine` it does not take the thread's dispatch slot
    (Copse is not running the turn), and the binding ends on the adapter's end-of-turn marker,
    on the next Copse prompt, on session dispose, or after 15 idle minutes.
+   Automatic checkout hand-over and completed-run cleanup must preserve that lease and any
+   unfinished ACP tools even after the dispatched prompt returned. Their idle-only session
+   release checks ownership inside the existing pool operation before closing the connection
+   and holds the operation through the checkout mutation; it never ends active work to make
+   a checkout look idle. Idle reaping uses that same ownership check, including received
+   updates awaiting the pump, self-started leases and cancellation acknowledgements. This
+   does not change continuation charging or explicit Stop/archive.
    A host-native background completion wake has no editable hook message to queue:
    the main-process dispatcher waits for the owning foreground run to release the
    thread, then grants at dispatch time against the latest epoch and spent count it
