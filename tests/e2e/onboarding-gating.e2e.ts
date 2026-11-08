@@ -4,7 +4,6 @@ import { readSeededSettings, resetUserData, seedOnboardingFixture } from './help
 // When onboarding shows and — just as important — when it never shows again.
 // Dismissing in any form marks it complete, and a completed profile boots
 // straight to the app.
-// TEMPORARY (PR #4273): comment-only edit to exercise e2e burn-in; dropped before review.
 describe('onboarding gating', () => {
   before(async () => {
     seedOnboardingFixture()
