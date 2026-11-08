@@ -7,7 +7,7 @@ import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
 } from '../services/exec/subprocess-output-cap.ts'
-import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { SandboxManager, type WrapWithSandboxOptions } from '@anthropic-ai/sandbox-runtime'
 import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
@@ -196,17 +196,32 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     const executed = `set -o pipefail\n${command}`
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
-    mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
-      Promise.resolve({
-        argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
-        env: { ...process.env },
-      }),
+    // The denial lands on the sandboxed attempt of `executed`, keyed as ASRT keys it:
+    // the run's own commandId when the wrapper is given one, else the command text.
+    let deniedRunKey: string | undefined
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (
+        wrapped: string,
+        _binShell?: unknown,
+        _customConfig?: unknown,
+        _abortSignal?: AbortSignal,
+        _cwd?: string,
+        options?: WrapWithSandboxOptions,
+      ) => {
+        if (wrapped.includes(executed)) deniedRunKey ??= options?.commandId ?? wrapped
+        return Promise.resolve({
+          argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
+          env: { ...process.env },
+        })
+      },
     )
     mock.method(
       SandboxManager.getSandboxViolationStore(),
       'getViolationsForCommand',
       (c: string) =>
-        c === executed ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
+        c === deniedRunKey ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
     )
     setProjectSandboxEnabled(true)
     cleanups.push(() => {

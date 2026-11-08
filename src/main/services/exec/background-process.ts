@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import {
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  sandboxViolationCountForRun,
   spawnBackgroundProcess,
 } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
@@ -451,7 +451,7 @@ export async function startBackgroundProcess(
       if (entry.violationId) {
         entry.violationCount = Math.max(
           entry.violationCount,
-          sandboxViolationCountForCommand(entry.violationId),
+          sandboxViolationCountForRun(entry.violationId),
         )
       }
       // Cancelled/timed-out work has no complete result to attribute. Release
@@ -508,7 +508,7 @@ export function backgroundSandboxRetryReasons(
     return null
   entry.violationCount = Math.max(
     entry.violationCount,
-    sandboxViolationCountForCommand(entry.violationId),
+    sandboxViolationCountForRun(entry.violationId),
   )
   const detection = detectSandboxFailure({
     exitCode: entry.exitCode,

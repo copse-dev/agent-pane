@@ -17,7 +17,7 @@ import { configureHooksDialects } from '@copse/hooks-dialects/environment.ts'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  sandboxViolationCountForRun,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
@@ -32,9 +32,10 @@ configureHooksDialects({
         cwd: opts.cwd,
         env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        violationId: opts.violationId,
         ...(opts.signal ? { signal: opts.signal } : {}),
       }),
-    violationCount: (command) => sandboxViolationCountForCommand(command),
+    violationCount: (violationId) => sandboxViolationCountForRun(violationId),
     afterCommand: () => {
       afterSandboxedCommand()
     },
