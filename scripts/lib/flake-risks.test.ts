@@ -157,6 +157,47 @@ describe('unit-wall-clock-sleep', () => {
     assert.equal(finding?.rule, 'unit-wall-clock-sleep')
     assert.match(FLAKE_RULE_ADVICE['unit-wall-clock-sleep'], /mock\.timers/)
   })
+
+  it('counts each call of an async helper that awaits a sleep, not its body', () => {
+    const text = [
+      'async function wait(ms: number): Promise<void> {',
+      '  await new Promise((r) => setTimeout(r, ms))',
+      '}',
+      'const pause = async (ms = 20) => { log(ms); await new Promise((r) => setTimeout(r, ms)) }',
+      'const arrow = async () => await new Promise((r) => setTimeout(r, 15))',
+      'await wait(500)',
+      'await wait(900)',
+      'await wait(0)',
+      'await pause()',
+      'await arrow()',
+    ].join('\n')
+    assert.deepEqual(lines(unit, text), [6, 7, 9, 10])
+  })
+})
+
+describe('e2e wall-clock sleeps', () => {
+  it('counts them as fixed pauses outside a deadline loop', () => {
+    const text = [
+      "import { setTimeout as delay } from 'node:timers/promises'",
+      'await new Promise((r) => setTimeout(r, 500))',
+      'await delay(200)',
+      'await browser.execute(async () => { await new Promise((r) => setTimeout(r, 50)) })',
+      'const deadline = Date.now() + 5_000',
+      'while (Date.now() < deadline) {',
+      '  await new Promise((r) => setTimeout(r, 100))',
+      '}',
+      'await new Promise((r) => setTimeout(r, 0))',
+    ].join('\n')
+    const findings = scanFlakeRisks(spec, text)
+    assert.deepEqual(
+      findings.map((finding) => [finding.rule, finding.line]),
+      [
+        ['e2e-fixed-pause', 2],
+        ['e2e-fixed-pause', 3],
+        ['e2e-fixed-pause', 4],
+      ],
+    )
+  })
 })
 
 describe('e2e-checkout-seed', () => {

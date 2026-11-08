@@ -80,7 +80,9 @@ export function scanFlakeRisks(path: string, text: string): FlakeFinding[] {
     scanCheckoutSeeds(file, bindings, report)
     scanFixedPorts(file, report)
   }
-  if (unit) scanSleeps(file, bindings, report)
+  // In e2e a wall-clock sleep is a fixed pause by another name; a poll interval stays exempt.
+  if (unit) scanSleeps(file, bindings, 'unit-wall-clock-sleep', report)
+  if (e2e) scanSleeps(file, bindings, 'e2e-fixed-pause', report)
   return found.sort((a, b) => a.line - b.line || a.rule.localeCompare(b.rule))
 }
 
@@ -101,6 +103,8 @@ interface Bindings {
   checkoutAliases: Set<string>
   /** Local functions whose result is a wall-clock sleep promise. */
   sleepHelpers: Map<string, ts.SignatureDeclaration>
+  /** The terminal `await` inside an async sleep helper: counted at its call sites instead. */
+  helperSites: Set<ts.Node>
 }
 
 const TIMER_MODULES = new Set(['node:timers/promises', 'timers/promises'])
@@ -140,6 +144,7 @@ function collectBindings(file: ts.SourceFile): Bindings {
     seedNamespaces: new Set(),
     checkoutAliases: new Set(),
     sleepHelpers: new Map(),
+    helperSites: new Set(),
   }
   let importsBrowserName = false
   for (const statement of file.statements) {
@@ -187,11 +192,8 @@ function collectBindings(file: ts.SourceFile): Bindings {
         if (ts.isIdentifier(init) && bindings.browser.has(init.text))
           bindings.browser.add(node.name.text)
         if (isConst && isProcessCwd(init)) bindings.checkoutAliases.add(node.name.text)
-        if (
-          (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) &&
-          returnedSleep(init, bindings)
-        )
-          bindings.sleepHelpers.set(node.name.text, init)
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+          registerHelper(node.name.text, init, bindings)
       } else if (
         ts.isObjectBindingPattern(node.name) &&
         ts.isIdentifier(init) &&
@@ -208,8 +210,7 @@ function collectBindings(file: ts.SourceFile): Bindings {
         }
       }
     }
-    if (ts.isFunctionDeclaration(node) && node.name && returnedSleep(node, bindings))
-      bindings.sleepHelpers.set(node.name.text, node)
+    if (ts.isFunctionDeclaration(node) && node.name) registerHelper(node.name.text, node, bindings)
   })
   return bindings
 }
@@ -499,18 +500,40 @@ function sleepOf(expression: ts.Expression, bindings: Bindings): SleepDelay | nu
   return null
 }
 
-/** The sleep a helper returns (expression body, or a `return`), without awaiting it. */
-function returnedSleep(
-  fn: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
-  bindings: Bindings,
-): SleepDelay | null {
+type HelperFunction = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression
+
+interface HelperSleep extends SleepDelay {
+  /** The helper's own terminal `await`, when it awaits the sleep rather than returning it. */
+  site?: ts.AwaitExpression
+}
+
+/** The sleep a helper returns, or (async) awaits as its last statement or expression body. */
+function returnedSleep(fn: HelperFunction, bindings: Bindings): HelperSleep | null {
   if (!fn.body) return null
-  if (!ts.isBlock(fn.body)) return sleepOf(fn.body, bindings)
+  const awaited = (expression: ts.Expression): HelperSleep | null => {
+    const node = strip(expression)
+    if (!ts.isAwaitExpression(node)) return sleepOf(node, bindings)
+    const sleep = sleepOf(node.expression, bindings)
+    return sleep ? { ...sleep, site: node } : null
+  }
+  if (!ts.isBlock(fn.body)) return awaited(fn.body)
   for (const statement of fn.body.statements) {
     if (ts.isReturnStatement(statement) && statement.expression)
-      return sleepOf(statement.expression, bindings)
+      return awaited(statement.expression)
+  }
+  const last = fn.body.statements.at(-1)
+  if (last && ts.isExpressionStatement(last)) {
+    const node = strip(last.expression)
+    if (ts.isAwaitExpression(node)) return awaited(node)
   }
   return null
+}
+
+function registerHelper(name: string, fn: HelperFunction, bindings: Bindings): void {
+  const sleep = returnedSleep(fn, bindings)
+  if (!sleep) return
+  bindings.sleepHelpers.set(name, fn)
+  if (sleep.site) bindings.helperSites.add(sleep.site)
 }
 
 /** Map a helper's delay parameter to the call's argument (or the parameter default). */
@@ -551,12 +574,15 @@ function isYield(delay: ts.Expression | null): boolean {
 function scanSleeps(
   file: ts.SourceFile,
   bindings: Bindings,
+  rule: FlakeRule,
   report: (rule: FlakeRule, node: ts.Node) => void,
 ): void {
   forEachDescendant(file, (node) => {
-    if (!ts.isAwaitExpression(node)) return
+    if (!ts.isAwaitExpression(node) || bindings.helperSites.has(node)) return
     const sleep = sleepOf(node.expression, bindings)
-    if (sleep && !isYield(sleep.delay)) report('unit-wall-clock-sleep', node)
+    if (!sleep || isYield(sleep.delay)) return
+    if (rule === 'e2e-fixed-pause' && insideDeadlineLoop(node)) return
+    report(rule, node)
   })
 }
 
