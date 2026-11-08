@@ -57,4 +57,11 @@ describe('nightly quarantine workflow', () => {
     )
     assert.match(step('Report pass streaks'), /counted=\(--counted\)/)
   })
+
+  it('reads only the latest scheduled run, so a night without a record restarts streaks', () => {
+    const fetch = step('Fetch the previous streak record')
+    assert.match(fetch, /status=completed&per_page=1"/)
+    assert.doesNotMatch(fetch, /\bfor id in\b/)
+    assert.equal(fetch.split('gh run download').length - 1, 1)
+  })
 })

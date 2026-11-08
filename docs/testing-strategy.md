@@ -275,11 +275,12 @@ picked up: platform and environment gaps cannot pass on this Linux runner either
   `e2e-quarantine-history` artifact from the previous scheduled run on `main`. Only that scheduled
   run counts as a night. Pull-request runs, which happen when the workflow, its scripts or the
   registry change, and manual dispatches show a preview and are not recorded. If the previous
-  record has expired or cannot be read, streaks start again from zero. The repository caps artifact
-  retention (5 days in November 2026, below the 90 days the workflow requests), so the chain
-  survives up to four nights without a successful run. A night whose job failed
-  before it ran the specs, for example during setup, leaves no record, so it neither extends nor
-  breaks a streak.
+  record has expired or cannot be read, streaks start again from zero. Only the latest completed
+  scheduled run's record is used, never an older one. A night that left no record, because of a
+  setup failure, a timeout or cancellation, or an expired artifact, therefore restarts every streak
+  instead of being skipped. Skipping it could carry a streak across a night that did not pass. The
+  repository caps artifact retention (5 days in November 2026, below the 90 days the workflow
+  requests), which is enough because the chain only reads the previous night.
 - **Restore candidates.** At 10 consecutive passing nights, the run emits a warning annotation and a
   job-summary line. That is evidence for a restore, not the restore itself. Confirm the root cause,
   then remove the CI exclusion and the registry entry in the same PR. Nothing is posted to the
