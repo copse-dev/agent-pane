@@ -511,7 +511,7 @@ async function acquireAcpSessionUnlocked(
       // reap, acquire or checkout change asks again, and so either confirms
       // the writer stopped or reports why it still cannot.
       if (disposal) return disposal
-      open.agentInitiated?.end()
+      open.agentInitiated?.end('session-closed')
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
