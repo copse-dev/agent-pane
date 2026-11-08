@@ -93,6 +93,30 @@ const PROXY_ENV_KEYS = [
   'NODE_USE_ENV_PROXY',
 ]
 
+type RootHookContext = ThisParameterType<typeof errorToastGuard.afterEach> &
+  ThisParameterType<typeof networkGuard.afterEach>
+
+/**
+ * One root `afterEach` for both guards. Egress is checked first, because a
+ * refused request usually also surfaces as an error toast and only the network
+ * guard names the host. The toast guard always runs, so its per-test state is
+ * consumed. If both fail, the egress error is the one thrown.
+ */
+async function guardedAfterEach(this: RootHookContext): Promise<void> {
+  let egress: Error | undefined
+  try {
+    networkGuard.afterEach.call(this)
+  } catch (error) {
+    egress = error instanceof Error ? error : new Error(String(error))
+  }
+  try {
+    await errorToastGuard.afterEach.call(this)
+  } catch (toastError) {
+    if (egress === undefined) throw toastError
+  }
+  if (egress !== undefined) throw egress
+}
+
 const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
@@ -201,9 +225,7 @@ export const config: WebdriverIO.Config = {
     ui: 'bdd',
     timeout: 30_000,
     rootHooks: {
-      // Egress first: a blocked request usually surfaces as an error toast too,
-      // and the guard's message names the host the toast does not.
-      afterEach: [networkGuard.afterEach, errorToastGuard.afterEach],
+      afterEach: guardedAfterEach,
       afterAll: networkGuard.afterAll,
     },
   },

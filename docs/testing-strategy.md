@@ -413,6 +413,13 @@ separate from the product's own [browser network policy](browser-network-policy.
   uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
 - Not covered: product child processes (agent CLIs, MCP servers, git), worker threads and utility
   processes. They run outside Electron main's patched modules.
+- **Unit tests:** survey only, not enforced. `COPSE_UNIT_NETWORK_GUARD=log pnpm test` preloads the
+  same Node guard (`scripts/lib/unit-network-guard.cjs`) into every test process, and every Node
+  process a test spawns, and writes `.tmp/network-guard-<time>.jsonl`. Enforcement is a follow-up
+  under [#2719](https://github.com/copse-dev/agent-pane/issues/2719). On 8 Nov 2026 the survey found
+  `huggingface.co` reached from `agent-service.test.ts` and `acp-app-entry.test.ts`, and
+  `openrouter.ai` and `models.lan` from `container-provider.test.ts`. Undici's connection runs off
+  the caller's stack, so `fetch` attempts carry no initiator frame.
 
 ## Browser geometry tier
 

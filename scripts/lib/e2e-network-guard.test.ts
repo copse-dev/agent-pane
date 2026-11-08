@@ -76,7 +76,15 @@ function runGuarded(mode: 'log' | 'enforce', script: string): { stdout: string; 
       encoding: 'utf8',
       timeout: 30_000,
       // A host proxy would otherwise carry undici fetch through an allowed loopback hop.
-      env: { ...process.env, NODE_USE_ENV_PROXY: '', HTTPS_PROXY: '', HTTP_PROXY: '' },
+      // An inherited unit preload would install first and own the guard.
+      env: {
+        ...process.env,
+        NODE_USE_ENV_PROXY: '',
+        HTTPS_PROXY: '',
+        HTTP_PROXY: '',
+        NODE_OPTIONS: '',
+        COPSE_UNIT_NETWORK_GUARD: '',
+      },
     })
     assert.equal(result.status, 0, result.stderr)
     let ledger = ''
