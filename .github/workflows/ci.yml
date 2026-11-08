@@ -2826,6 +2826,9 @@ jobs:
           const { readFileSync } = require('node:fs');
           const { stripTypeScriptTypes } = require('node:module');
           async function main() {
+            if (typeof stripTypeScriptTypes !== 'function') {
+              throw new Error('Runner Node does not support the trusted policy runtime.');
+            }
             const payload = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
             if (process.env.GITHUB_EVENT_NAME !== 'pull_request' || payload.action !== 'edited' ||
                 payload.pull_request.head.repo?.id !== payload.repository.id ||

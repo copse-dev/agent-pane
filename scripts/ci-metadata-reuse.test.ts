@@ -399,7 +399,7 @@ describe('trusted workflow wiring', () => {
     input: ReuseInput,
     expected: string,
     request: ReturnType<typeof fixture>['request'],
-    policyUnavailable = false,
+    faults: { policyUnavailable?: boolean; unsupportedRuntime?: boolean } = {},
   ): Promise<string[]> {
     const aggregate = workflow.jobs['ci-passed']
     const last = aggregate?.steps?.at(-1)
@@ -455,8 +455,8 @@ describe('trusted workflow wiring', () => {
           )
           assert.equal(url.searchParams.get('ref'), BASE)
           return {
-            ok: !policyUnavailable,
-            status: policyUnavailable ? 503 : 200,
+            ok: !faults.policyUnavailable,
+            status: faults.policyUnavailable ? 503 : 200,
             json: async () => ({
               type: 'file',
               encoding: 'base64',
@@ -504,7 +504,9 @@ describe('trusted workflow wiring', () => {
             },
           }
         assert.equal(name, 'node:module')
-        return { stripTypeScriptTypes }
+        return {
+          stripTypeScriptTypes: faults.unsupportedRuntime ? undefined : stripTypeScriptTypes,
+        }
       },
       loadPolicy: async (source: string) => {
         assert.equal(source, stripTypeScriptTypes(trustedPolicy))
@@ -519,6 +521,7 @@ describe('trusted workflow wiring', () => {
     })
     await execution
     assert.equal(runtime.exitCode, failures.length ? 1 : 0)
+    if (faults.unsupportedRuntime) assert.equal(reads, 0)
     return failures
   }
 
@@ -593,7 +596,17 @@ describe('trusted workflow wiring', () => {
       ).length,
       1,
     )
-    assert.equal((await finalRecheck(input, source, f.request, true)).length, 1)
+    assert.equal(
+      (await finalRecheck(input, source, f.request, { policyUnavailable: true })).length,
+      1,
+    )
+  })
+
+  it('fails before API reads when runner Node cannot load the trusted policy', async () => {
+    const { f, input, source } = await discovered()
+    const failures = await finalRecheck(input, source, f.request, { unsupportedRuntime: true })
+    assert.equal(failures.length, 1)
+    assert.match(failures[0] ?? '', /does not support the trusted policy runtime/)
   })
 
   it('does not run final API verification after cancellation or a failed dependency gate', () => {

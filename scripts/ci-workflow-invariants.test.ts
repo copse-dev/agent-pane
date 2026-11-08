@@ -505,7 +505,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.doesNotMatch(
       aggregate,
-      /^\s*uses:|actions\/checkout|api_get|curl |gh api|GH_TOKEN|: write/m,
+      /^\s*(?:-\s*)?uses:|actions\/checkout|api_get|curl |gh api|GH_TOKEN|: write/m,
     )
     const finalRecheck = aggregate.indexOf('- name: Revalidate native evidence before success')
     assert.ok(finalRecheck > aggregate.indexOf('- name: Check upstream job results'))
