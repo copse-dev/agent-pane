@@ -45,6 +45,10 @@
       "sha256": "34d3d109daaf6129847e347c05726bfb92e5e0aa76bf98b32f6cd390d01510ae",
       "bytes": 278015
     },
+    "acp-bridge-tools-dropped.png": {
+      "sha256": "3775e2655010563afdfc7703bcc9b3921c171b66c421624f3c5171958bd61856",
+      "bytes": 321013
+    },
     "acp-bridge-unavailable.png": {
       "sha256": "f753a7c0a985308a7df8081863fcad44d250b8521527449b80d4bf1c21a24c9f",
       "bytes": 310841
