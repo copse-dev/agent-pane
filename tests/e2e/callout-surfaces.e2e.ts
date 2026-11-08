@@ -11,8 +11,8 @@ import { parkPointer, saveAppScreenshot, saveElementScreenshot } from './helpers
  * transcript, selection in the sidebar, nesting under a tool card — and looked
  * the same doing all of them. Nesting and standing asks keep it (see `docs/ui-taste.md` ->
  * "Rails mark nesting and standing asks"). Containment became a plate, flat
- * for the agent's own prose, softly hatched glass for long reasoning, and
- * stronger hatch for short status annotations. Selection became the fill alone.
+ * for the agent's own prose, a plain raised plate for long reasoning, and
+ * hatch for short status annotations. Selection became the fill alone.
  *
  * `accent-rails.test.ts` pins that at the stylesheet level, which is where a
  * reinstated rail would be caught. What it cannot see is the result: whether
@@ -142,18 +142,13 @@ describe('callout surfaces', () => {
     // Two kinds must not resolve to the same wash, or the hue is doing nothing.
     expect(found['note']?.backgroundColor).not.toBe(found['caution']?.backgroundColor)
 
-    // Long reasoning fades its hatch under the center of the glass; short
-    // status annotations retain their even texture.
-    const reasoningImage = found['reasoning']?.backgroundImage ?? ''
+    // Long reasoning is a plain raised plate: a fill, no edge and no texture.
+    // Short status annotations keep their hatch.
     expect({
       borderLeftWidth: found['reasoning']?.borderLeftWidth,
-      etched: reasoningImage.includes('linear-gradient'),
-      faded:
-        reasoningImage.includes('radial-gradient') &&
-        reasoningImage.indexOf('radial-gradient') <
-          reasoningImage.indexOf('repeating-linear-gradient'),
-      hatched: reasoningImage.includes('repeating-linear-gradient'),
-    }).toEqual({ borderLeftWidth: '1px', etched: true, faded: true, hatched: true })
+      patterned: found['reasoning']?.backgroundImage !== 'none',
+      filled: found['reasoning']?.backgroundColor !== 'rgba(0, 0, 0, 0)',
+    }).toEqual({ borderLeftWidth: '0px', patterned: false, filled: true })
     for (const key of ['review', 'comparison'] as const) {
       expect({
         key,
@@ -298,7 +293,13 @@ describe('callout surfaces', () => {
             shadow: style.boxShadow,
           }
         })
-        expect(reasoning).toEqual({ image: 'none', border: '1px', shadow: 'none' })
+        // The thinking plate is already a flat fill; only increased contrast
+        // adds its edge.
+        expect(reasoning).toEqual({
+          image: 'none',
+          border: feature.name === 'prefers-contrast' ? '1px' : '0px',
+          shadow: 'none',
+        })
       }
       // The pointer rests where the Settings dialog was dismissed, which can be
       // over this message, fading its hover-only Copy button into the frame.
