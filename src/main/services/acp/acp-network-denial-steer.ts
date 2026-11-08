@@ -95,17 +95,103 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
   return lines.join('\n')
 }
 
+/** Bridged tools that reach GitHub from the host, besides every `gh_*` tool. */
+const GITHUB_BRIDGE_TOOLS: ReadonlySet<string> = new Set([
+  'git_fetch',
+  'get_ci_status',
+  'get_ci_failure_logs',
+  'wait_for_ci_checks',
+])
+
+function isGithubBridgeTool(name: string): boolean {
+  return name.startsWith('gh_') || GITHUB_BRIDGE_TOOLS.has(name)
+}
+
 /**
- * Appended to {@link ACP_SANDBOX_PROMPT_NOTE}. That note steers filesystem work
- * to the bridge but says only that network destinations are blocked, and GitHub
- * is the one an agent reaches for unprompted — cheaper to name the bridged path
- * up front than to let a turn end on a blocked `gh` call and an audit card.
+ * What a sandboxed agent's own `gh` prints. Since #4109 the agent's sandbox
+ * keeps `~/.config/gh` unreadable, and it must stay that way because the
+ * directory holds the user's token. `gh` reads that config before anything else,
+ * so every subcommand fails here, before authentication or the network. The
+ * error reads like a broken login, and an agent that takes it for one loops on
+ * `gh auth login` or asks the user to open the directory. Quoting it lets the
+ * agent recognise the failure when it happens. `gh` prints the absolute path,
+ * never `~`, so the quote shows a `<home>` placeholder where the agent will see
+ * its home directory. The copy matches the `gh-config-read` signature in
+ * `sandbox-denial-signatures.ts`, and a test holds the two together.
  */
-export const ACP_SANDBOX_GITHUB_STEER =
-  'For GitHub work (pull requests, issues, Actions, `gh`), use the "copse" MCP ' +
-  "server's GitHub and CI tools when available: they run on Copse's host gh/API " +
-  "path and need no github.com entry in this agent's sandbox.allowedDomains. " +
-  'Use gh_api_read for other GitHub reads (instead of `gh api`/`gh api graphql`) ' +
-  'and git_fetch to fetch branches or PR heads from origin. Do ' +
-  'not call github.com or api.github.com from this process unless the user has ' +
-  'widened that allowlist.'
+export const ACP_SANDBOX_GH_CONFIG_ERROR =
+  'failed to read configuration: open <home>/.config/gh/config.yml: operation not permitted'
+
+const GH_OWN_SHELL_DENIAL =
+  `If \`gh\` fails in your own shell with "${ACP_SANDBOX_GH_CONFIG_ERROR}" ` +
+  "(<home> being your home directory's absolute path), this " +
+  "sandbox is keeping gh's config, which holds the user's GitHub token, unreadable. " +
+  'It is not a missing login. Do not retry it, do not run `gh auth login`, and do not ask ' +
+  "for access to ~/.config/gh. Adding GitHub to this agent's sandbox.allowedDomains " +
+  'does not fix it either.'
+
+const GITHUB_NO_DIRECT_EGRESS =
+  'Do not call github.com or api.github.com from this process, for example with curl, ' +
+  "unless the user has added it to this agent's sandbox.allowedDomains."
+
+/**
+ * Appended to `ACP_SANDBOX_PROMPT_NOTE` (issue #4145). That note steers
+ * filesystem work to the bridge but says only that network destinations are
+ * blocked. GitHub is the destination agents reach for unprompted, and `gh` in
+ * the agent's own shell cannot work at all, so the note names the bridged route
+ * up front. Waiting for the turn to end on a failed `gh` call is too late: Copse
+ * only sees the agent's own shell output after the fact and cannot add to it.
+ *
+ * The route depends on the tools the agent has listed from the "copse" MCP
+ * server this session (`bridgeToolNames`): an offer is not a mount (#4144).
+ * Pointing at tools that are not in the agent's tool list (#4142) leaves it no
+ * way forward, so the copy names the listed GitHub tools, falls back to
+ * `run_shell` (which can ask to run `gh` outside the sandbox), and with neither,
+ * including a bridge the agent never connected to, says plainly that GitHub is
+ * out of reach.
+ */
+export function acpSandboxGithubSteer(bridgeToolNames: readonly string[]): string {
+  const route = githubRoute(bridgeToolNames)
+  return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
+}
+
+function githubRoute(bridgeToolNames: readonly string[]): string {
+  const githubTools = bridgeToolNames.filter(isGithubBridgeTool)
+  const hasRunShell = bridgeToolNames.includes('run_shell')
+  const shellFallback = hasRunShell
+    ? 'run `gh` through its run_shell tool, which can ask the user to run it outside this sandbox.'
+    : null
+  if (githubTools.length > 0) {
+    const sentences = [
+      'For GitHub work (pull requests, issues, Actions, CI), use the "copse" MCP ' +
+        "server's GitHub tools: they run on Copse's host gh login and need no github.com " +
+        `entry in this agent's sandbox.allowedDomains. Offered here: ${githubTools.join(', ')}.`,
+    ]
+    if (githubTools.includes('gh_api_read')) {
+      sentences.push(
+        'Use gh_api_read for any other GitHub read (instead of `gh api`/`gh api graphql`).',
+      )
+    }
+    if (githubTools.includes('git_fetch')) {
+      sentences.push('Use git_fetch to fetch branches or PR heads from origin.')
+    }
+    if (shellFallback) sentences.push(`For anything they do not cover, ${shellFallback}`)
+    return sentences.join(' ')
+  }
+  if (shellFallback) {
+    return (
+      'For GitHub work (pull requests, issues, Actions, `gh`): the "copse" MCP server ' +
+      `offers no GitHub tools in this session, so ${shellFallback}`
+    )
+  }
+  const unavailable =
+    bridgeToolNames.length === 0
+      ? 'the "copse" MCP server is not available in this session'
+      : 'the "copse" MCP server offers no GitHub or shell tools in this session'
+  return (
+    `For GitHub work (pull requests, issues, Actions, \`gh\`): ${unavailable}, and ` +
+    'your own `gh` cannot read its login in this sandbox, so this session has no ' +
+    'signed-in route to GitHub. Tell the user that GitHub could not be reached from ' +
+    'this sandboxed session instead of retrying.'
+  )
+}

@@ -25,15 +25,31 @@
  * | ---------------- | -------------------------------------------------------------- |
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
  * | `stop-mid-command` | start an `execute` call, reply while it runs, end on cancel |
+ * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
+ * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
+ * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
  * | `ask-execute`    | request an `execute` permission with no command or title       |
  * | `run-kindless`   | request permission for `rm -rf build` with no tool `kind`      |
  * | `ask`            | request permission, then report the client's answer            |
  * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
  * | anything else    | echo it back as an agent message chunk                         |
  *
- * `report-env:` is checked first: a turn driven through Copse's own prompt
- * builder carries a preamble whose words (`task`, …) would otherwise trip the
- * substring branches below.
+ * `report-env:`, `say:`, `list-mcp-tools` and `echo-prompt` are checked first: a
+ * turn driven through Copse's own prompt builder carries a preamble whose words
+ * (`task`, …) would otherwise trip the substring branches below.
+ *
+ * Flags steer how it treats the MCP servers Copse offers in `session/new`
+ * (#4144):
+ *
+ * | flag                   | behaviour                                                    |
+ * | ---------------------- | ------------------------------------------------------------ |
+ * | `--mcp-http`           | advertise `mcpCapabilities.http`, so Copse offers its bridge  |
+ * | `--list-mcp-tools`     | list each offered http server's tools before `session/new` returns |
+ * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
+ * |                        | way Claude Agent ACP does for a client without notices        |
+ *
+ * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
+ * until a `list-mcp-tools` prompt mounts it late.
  *
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
@@ -65,19 +81,62 @@ function promptText(blocks) {
   return blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
+const flags = new Set(process.argv.slice(2))
+
+/** One stateless MCP request over streamable HTTP, as an agent's MCP client sends it. */
+async function mcpRequest(server, id, method) {
+  const headers = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+  }
+  for (const header of server.headers ?? []) headers[header.name] = header.value
+  const params =
+    method === 'initialize'
+      ? {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'mock-acp-agent', version: '0' },
+        }
+      : {}
+  const response = await globalThis.fetch(server.url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+  })
+  await response.text()
+}
+
+/** Mount servers the way an agent's MCP client does: initialize, then list the tools. */
+async function listTools(servers) {
+  for (const server of servers) {
+    await mcpRequest(server, 1, 'initialize')
+    await mcpRequest(server, 2, 'tools/list')
+  }
+}
+
 let nextSessionId = 0
 /** Turns parked until the client cancels them (`stop-mid-command`). */
 const awaitingCancel = new Set()
+/** The http MCP servers each session was offered, by session id. */
+const offeredServers = new Map()
+const reportedFailures = new Set()
 
 agent({ name: 'mock-acp-agent' })
   .onRequest('initialize', () => ({
     protocolVersion: PROTOCOL_VERSION,
-    agentCapabilities: { loadSession: false },
+    agentCapabilities: {
+      loadSession: false,
+      ...(flags.has('--mcp-http') ? { mcpCapabilities: { http: true } } : {}),
+    },
   }))
   .onRequest('authenticate', () => ({}))
-  .onRequest('session/new', () => {
+  .onRequest('session/new', async (ctx) => {
     nextSessionId += 1
-    return { sessionId: `mock-session-${String(nextSessionId)}` }
+    const sessionId = `mock-session-${String(nextSessionId)}`
+    const servers = (ctx.params.mcpServers ?? []).filter((server) => server.type === 'http')
+    offeredServers.set(sessionId, servers)
+    if (flags.has('--list-mcp-tools')) await listTools(servers)
+    return { sessionId }
   })
   .onRequest('session/prompt', async (ctx) => {
     const { sessionId, prompt } = ctx.params
@@ -87,6 +146,27 @@ agent({ name: 'mock-acp-agent' })
         sessionId,
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: chunk } },
       })
+
+    // Claude Agent ACP's transcript fallback for a failed client MCP server
+    // (reportMcpServerStartupFailures + noticeOrTranscriptUpdate, 0.100.0).
+    if (flags.has('--report-mcp-failure') && !reportedFailures.has(sessionId)) {
+      reportedFailures.add(sessionId)
+      for (const server of offeredServers.get(sessionId) ?? []) {
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'text',
+              text: `**MCP server "${server.name}" failed to start:** Its tools are unavailable in this session. Run /mcp for the error.`,
+            },
+            _meta: {
+              claudeCode: { kind: 'mcpServerStatus', server: server.name, status: 'failed' },
+            },
+          },
+        })
+      }
+    }
 
     // A null value means the var was absent, distinct from an empty string.
     const reportEnv = /report-env:([A-Za-z0-9_,]+)/.exec(text)
@@ -118,6 +198,23 @@ agent({ name: 'mock-acp-agent' })
         awaitingCancel.add(resolve)
       })
       return { stopReason: 'cancelled' }
+    }
+
+    const sayLine = /say:([^\n]*)/.exec(text)
+    if (sayLine) {
+      await say(sayLine[1].trim())
+      return { stopReason: 'end_turn' }
+    }
+
+    if (text.includes('list-mcp-tools')) {
+      await listTools(offeredServers.get(sessionId) ?? [])
+      await say('listed')
+      return { stopReason: 'end_turn' }
+    }
+
+    if (text.includes('echo-prompt')) {
+      await say(`prompt:${text}`)
+      return { stopReason: 'end_turn' }
     }
 
     if (text.includes('crash')) {
