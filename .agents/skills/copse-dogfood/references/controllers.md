@@ -47,6 +47,11 @@ does not prove the agent loaded those tools.
 4. Drive the journey and save observable evidence before
    `{ "action": "stop" }` revokes access and deletes the VM.
 
+Create the disposable project before opening guest Settings. The empty welcome
+screen does not expose the sidebar Settings button. Once the project is open,
+use the visible Settings entry; the current key schema does not accept the comma
+shortcut. Do not repeat clicks on an absent sidebar or guess unsupported keys.
+
 The current grant lasts at most 15 minutes / 100,000 input-and-output tokens and
 has no shared host folders, credentials, host display, or general network access.
 Use an offline, dependency-free sample. Package downloads, host-repository repairs,
@@ -54,6 +59,10 @@ authenticated ACP inside the guest, and overnight runs are not supplied by this
 route. The guest cannot start another isolated Copse. Stop/cancellation/expiry
 revokes access; an ACP grant is also bound to its parent turn/session. Keep an
 interactive journey within that lifetime and capture evidence as it proceeds.
+Chat, auxiliary tasks and automatic review share that token grant. A second edit
+can be written before its turn or review exhausts the grant; record that as partial,
+not a completed journey. Preserve default review unless the scenario explicitly
+specifies otherwise, and label reviewer-off runs as configured passes.
 
 Copse's `desktop_*` tools block the host Copse app to prevent self-approval.
 `launch_gui_app` can open a branch window but does not grant control of it or VM
