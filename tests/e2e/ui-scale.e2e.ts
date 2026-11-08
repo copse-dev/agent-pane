@@ -6,6 +6,7 @@ import {
   saveAppViewportScreenshot,
   saveElementScreenshot,
   waitForSettledLayout,
+  withCaptureFrame,
 } from './helpers/screenshot.ts'
 
 interface UiScaleSnapshot {
@@ -85,37 +86,50 @@ async function visualViewportSnapshot(): Promise<VisualViewportSnapshot | null> 
   })
 }
 
-// Compare scale at a fixed transcript position. Settings focus and the capture
-// resize can otherwise leave the transcript scrolled under its sticky prompt.
-async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
-  await saveAppViewportScreenshot(filename, async () => {
-    await browser.execute(() => {
-      const transcript = document.querySelector<HTMLElement>('.messages-list')
-      if (!transcript) throw new Error('missing scale comparison transcript')
-      transcript.scrollTo({ top: 0, behavior: 'instant' })
-    })
-    await waitForSettledLayout('.messages-list')
-    const geometry = await browser.execute(() => {
-      const transcript = document.querySelector<HTMLElement>('.messages-list')
-      const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
-      const result = document.querySelector(
-        '[data-message-id="msg-assistant-result"] .message-text p',
-      )
-      if (!transcript || !prompt || !result) throw new Error('missing scale comparison content')
-      return {
-        scrollTop: transcript.scrollTop,
-        viewportTop: transcript.getBoundingClientRect().top,
-        viewportBottom: transcript.getBoundingClientRect().bottom,
-        promptBottom: prompt.getBoundingClientRect().bottom,
-        resultTop: result.getBoundingClientRect().top,
-        resultBottom: result.getBoundingClientRect().bottom,
-      }
-    })
-    expect(geometry.scrollTop).toBe(0)
-    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.promptBottom)
-    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.viewportTop)
-    expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+// Compare scale at a fixed transcript position. Reuse this preparation for the
+// native-window shot without applying the comparison helper's viewport sizing.
+async function prepareScaleComparisonCapture(): Promise<void> {
+  await waitForSettledLayout('#input-bar')
+  await browser.execute(() => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    if (!transcript) throw new Error('missing scale comparison transcript')
+    transcript.scrollTo({ top: 0, behavior: 'instant' })
   })
+  await waitForSettledLayout('.messages-list')
+  const geometry = await browser.execute(() => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+    const result = document.querySelector(
+      '[data-message-id="msg-assistant-result"] .message-text p',
+    )
+    const pane = document.getElementById('pane-chat')
+    const composer = document.getElementById('input-bar')
+    if (!transcript || !prompt || !result || !pane || !composer)
+      throw new Error('missing scale comparison content')
+    return {
+      fonts: document.fonts.status,
+      appliedInset: Number.parseFloat(
+        getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+      ),
+      expectedInset: Math.max(Math.ceil(composer.getBoundingClientRect().height), 72),
+      scrollTop: transcript.scrollTop,
+      viewportTop: transcript.getBoundingClientRect().top,
+      viewportBottom: transcript.getBoundingClientRect().bottom,
+      promptBottom: prompt.getBoundingClientRect().bottom,
+      resultTop: result.getBoundingClientRect().top,
+      resultBottom: result.getBoundingClientRect().bottom,
+    }
+  })
+  expect(geometry.fonts).toBe('loaded')
+  expect(geometry.appliedInset).toBe(geometry.expectedInset)
+  expect(geometry.scrollTop).toBe(0)
+  expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.promptBottom)
+  expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.viewportTop)
+  expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+}
+
+async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
+  await saveAppViewportScreenshot(filename, prepareScaleComparisonCapture)
 }
 
 describe('interface scale (--ui-scale)', () => {
@@ -158,7 +172,11 @@ describe('interface scale (--ui-scale)', () => {
     ).toBeLessThan(1)
     expect(visualViewport?.offsetLeft).toBe(0)
     expect(visualViewport?.offsetTop).toBe(0)
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
+    await withCaptureFrame(async () => {
+      await prepareScaleComparisonCapture()
+      expect(await visualViewportSnapshot()).toEqual(visualViewport)
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
+    })
     await saveScaleComparisonScreenshot('ui-scale-default.png')
 
     await $('[aria-label="Settings"]').click()
