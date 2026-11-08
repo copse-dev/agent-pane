@@ -3249,6 +3249,10 @@
       "sha256": "45d278df556354446d3c45b18711c5f95e98ae83075fd71fdf90c24a9db9783f",
       "bytes": 25254
     },
+    "project-port-grant-revoked.png": {
+      "sha256": "8f573b33f385b672ca46c49c793aabae144f49c3b4bf042728c68f3eee6a06e9",
+      "bytes": 358621
+    },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
       "bytes": 84841
@@ -4617,6 +4621,22 @@
       "sha256": "6fe9d2b0c5e5f3165f9e0c7ea203c10de8baa6ac1f3a6bfe2a0fbb8f5a76d7ab",
       "bytes": 30977
     },
+    "settings-usage-claude-signin-failed.png": {
+      "sha256": "f3b61e362c55594052586074d2557708ab245715f600aa2908998faece972740",
+      "bytes": 33354
+    },
+    "settings-usage-claude-signin-not-subscription.png": {
+      "sha256": "70c859188fd5bbf1d32054508b10a97394cbc7ab562936ec29c4e7bd7f12b1fd",
+      "bytes": 34349
+    },
+    "settings-usage-claude-signin-progress.png": {
+      "sha256": "ca15c0b5beb435b4ad3e03aae738787e8af451e7ef69a2e9cceca158e1c80cbd",
+      "bytes": 31604
+    },
+    "settings-usage-claude-signin-retry.png": {
+      "sha256": "d323e33c5554165d2731d41a439a38772ee2004597b6aa2336d9bdda8ebfebc5",
+      "bytes": 49282
+    },
     "settings-usage-codex-chatpass.png": {
       "sha256": "427525b74a943f6e2fa78b5ab1e77d0835f77ead44d12cde9afef77b556359b3",
       "bytes": 280526
@@ -4650,8 +4670,8 @@
       "bytes": 283658
     },
     "settings-usage-plan-unconfirmed.png": {
-      "sha256": "02caefb70229d2e60b20285cc6130cf75ba94b61cdfeecaf306d48a0d6504406",
-      "bytes": 234870
+      "sha256": "b1ae24cd0a500c96ce6a85dce1f885216be227a758cb185b831d351ed57a17a3",
+      "bytes": 233072
     },
     "settings-usage-plan-worth-it-inference.png": {
       "sha256": "6edb771f1ac0772672a591613cb47e38116e60480b7f71b0273c4f1c4d992a4c",
@@ -5696,6 +5716,10 @@
     "update-prompt-changelog.png": {
       "sha256": "d05646e8095aec9c1ef9c9038a9bb2f401b39340dd577533552a38247ae9414c",
       "bytes": 41159
+    },
+    "usage-sign-in-local-guided.png": {
+      "sha256": "e96a7f6c3fd3150e407778c27f622b028bdec27fa05817552244dfe08abb982a",
+      "bytes": 235877
     },
     "user-prompt-fill-dark.png": {
       "sha256": "02f0949d1eb6589108754a4ac6d10986b6174e52801dc23ea29b9a12f30eadf7",
