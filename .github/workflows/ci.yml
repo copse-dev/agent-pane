@@ -100,7 +100,7 @@ jobs:
             if (context.eventName !== 'pull_request' || context.payload.action !== 'edited' ||
                 context.payload.pull_request.head.repo?.id !== context.payload.repository.id ||
                 context.payload.pull_request.base.repo?.id !== context.payload.repository.id ||
-                context.payload.pull_request.base.ref !== 'main') return;
+                !['main', 'codex/ci-native-reuse-probe-base-20261108'].includes(context.payload.pull_request.base.ref)) return;
             try {
               const { data } = await github.rest.repos.getContent({
                 ...context.repo, path: 'scripts/ci-metadata-reuse.mts',
