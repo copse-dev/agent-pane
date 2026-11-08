@@ -1212,16 +1212,46 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
  */
 function canonicalizeReadTarget(target: string): string {
   const resolved = resolve(target)
-  try {
-    return realpathSync.native(resolved)
-  } catch {
-    // Leaf missing: canonicalize the deepest existing ancestor instead.
+  let existing = resolved
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return resolve(realpathSync.native(existing), ...missing)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !Object.hasOwn(error, 'code') ||
+        Reflect.get(error, 'code') !== 'ENOENT'
+      )
+        throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
+      try {
+        if (lstatSync(existing).isSymbolicLink()) {
+          throw new Error(`Read target traverses a dangling symlink: ${target}`, { cause: error })
+        }
+      } catch (linkError) {
+        if (
+          !(linkError instanceof Error) ||
+          !Object.hasOwn(linkError, 'code') ||
+          Reflect.get(linkError, 'code') !== 'ENOENT'
+        )
+          throw linkError
+      }
+      const parent = dirname(existing)
+      if (parent === existing) throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
+      missing.unshift(basename(existing))
+      existing = parent
+    }
   }
-  try {
-    return join(realpathSync.native(dirname(resolved)), basename(resolved))
-  } catch {
-    return resolved
+}
+
+/** macOS's fixed /var, /tmp and /etc aliases are not user-controlled links. */
+function canonicalSystemAlias(target: string): string {
+  if (process.platform !== 'darwin') return target
+  for (const alias of ['/var', '/tmp', '/etc']) {
+    if (target !== alias && !target.startsWith(`${alias}${sep}`)) continue
+    return resolve(realpathSync.native(alias), relative(alias, target))
   }
+  return target
 }
 
 function isDirectoryPath(path: string): boolean {
@@ -1271,6 +1301,12 @@ export function readAllowedSandboxOverlay(
     // guessing a base here could widen a path the analysis never approved.
     if (!isAbsolute(target)) continue
     const canonical = canonicalizeReadTarget(target)
+    // The prompt names the path the agent supplied, not a link's destination.
+    // Reject a target that acquires a different read authority through a link,
+    // including one planted between permission and this per-spawn overlay.
+    if (canonical !== canonicalSystemAlias(resolve(target))) {
+      throw new Error('Read target traverses a symlink; retry with its canonical path.')
+    }
     grantedRead.push(canonical)
     if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
   }

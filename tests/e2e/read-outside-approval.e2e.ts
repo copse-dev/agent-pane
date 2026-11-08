@@ -1,8 +1,11 @@
 import { submitComposer } from './helpers/composer.ts'
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { prepareMockToolTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // A command that only reads outside the project asks the read-access question
 // instead of the generic "Run outside sandbox?" escape hatch: the decision leads,
@@ -61,5 +64,54 @@ describe('read access outside the project approval', () => {
     await saveAppScreenshot('read-outside-approval-expanded.png')
 
     await dialog.$('.approval-reject').click()
+  })
+
+  it('asks again when a granted directory contains a link to an outside file', async function () {
+    this.timeout(90_000)
+    const root = mkdtempSync(
+      join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'copse-e2e-read-link-'),
+    )
+    try {
+      const granted = join(root, 'granted')
+      mkdirSync(granted)
+      const outside = join(root, 'outside.txt')
+      writeFileSync(outside, 'outside the granted directory')
+      const link = join(granted, 'linked.txt')
+      symlinkSync(outside, link)
+
+      await prepareMockToolTurn(
+        'List this notes directory.',
+        { name: 'run_shell', args: { command: `ls -la ${granted}` } },
+        'The notes directory was listed.',
+      )
+      await submitComposer()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText(
+        'Allow read access outside of the project?',
+      )
+      await dialog.$('.approval-approve').click()
+      await expectAssistantReply('The notes directory was listed.')
+
+      await prepareMockToolTurn(
+        'Read the linked note.',
+        { name: 'run_shell', args: { command: `cat ${link}` } },
+        'The linked file read was declined.',
+      )
+      await submitComposer()
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText(
+        'Allow read access outside of the project?',
+      )
+      await expect(dialog.$('.approval-reasons')).toHaveText(expect.stringContaining(link))
+      await saveElementScreenshot(
+        '#approval-dialog .approval-heading',
+        'read-outside-linked-target-reprompt.png',
+      )
+      await dialog.$('.approval-reject').click()
+      await expectAssistantReply('The linked file read was declined.')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

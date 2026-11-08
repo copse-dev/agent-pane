@@ -1532,15 +1532,41 @@ describe('readAllowedSandboxOverlay', () => {
     }
   })
 
-  it('spells a symlinked target the way the kernel sees it', () => {
+  it('refuses a linked target rather than granting its unapproved destination', () => {
     const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
     try {
       const real = join(dir, 'real')
       mkdirSync(real)
       const link = join(dir, 'link')
       symlinkSync(real, link)
-      const allowRead = readAllowedSandboxOverlay(workspace, [link]).filesystem?.allowRead ?? []
-      assert.ok(allowRead.includes(real))
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [link]), /symlink/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a linked ancestor even when the read target does not exist yet', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const real = join(dir, 'real')
+      mkdirSync(real)
+      const link = join(dir, 'link')
+      symlinkSync(real, link)
+      assert.throws(
+        () => readAllowedSandboxOverlay(workspace, [join(link, 'missing', 'secret.txt')]),
+        /symlink/,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a dangling link as a read target', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const link = join(dir, 'link')
+      symlinkSync(join(dir, 'absent'), link)
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [link]), /symlink/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

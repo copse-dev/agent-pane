@@ -103,6 +103,42 @@ describe('read-outside grant coverage', () => {
     assert.deepEqual(listReadOutsideProjectGrants(thread), [])
   })
 
+  it('does not reuse a directory grant for a descendant symlink outside that directory', () => {
+    const outside = join(base, 'outside.txt')
+    writeFileSync(outside, 'not approved')
+    const link = join(granted, 'sub', 'link.txt')
+    symlinkSync(outside, link)
+
+    assert.equal(covered(link), false)
+    assert.equal(covered(join(granted, 'sub', 'x')), true)
+  })
+
+  it('does not reuse a directory grant for a disguised credential inside it', () => {
+    const secret = join(granted, 'sub', '.env')
+    writeFileSync(secret, 'not approved')
+    const link = join(granted, 'sub', 'ordinary.txt')
+    symlinkSync(secret, link)
+
+    assert.equal(covered(link), false)
+  })
+
+  it('checks the destination of a linked parent when the leaf is missing', () => {
+    const outside = join(base, 'outside')
+    mkdirSync(outside)
+    const link = join(granted, 'sub', 'link')
+    symlinkSync(outside, link)
+
+    assert.equal(covered(join(link, 'not-yet-created.txt')), false)
+  })
+
+  it('does not treat a dangling descendant symlink as a missing literal path', () => {
+    const link = join(granted, 'sub', 'dangling')
+    symlinkSync(join(base, 'not-yet-created'), link)
+
+    assert.equal(covered(link), false)
+    assert.equal(covered(join(link, 'secret.txt')), false)
+  })
+
   it('revokes a file grant when the approved path is replaced by a symlink', () => {
     const approved = join(base, 'approved.txt')
     const destination = join(base, 'secret.txt')

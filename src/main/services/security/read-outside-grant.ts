@@ -1,5 +1,6 @@
 import { lstatSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
 /**
@@ -96,6 +97,35 @@ function coversPath(granted: string, directory: boolean, target: string): boolea
   return child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
 }
 
+/** Resolve existing ancestors too, so a missing leaf cannot hide a parent link. */
+function canonicalReadTarget(target: string): string | null {
+  let existing = target
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return resolve(realpathSync.native(existing), ...missing)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !Object.hasOwn(error, 'code') ||
+        Reflect.get(error, 'code') !== 'ENOENT'
+      )
+        return null
+      // ENOENT also covers a dangling link. Treat it as unresolved authority,
+      // rather than reconstructing it as a supposedly missing literal leaf.
+      try {
+        if (lstatSync(existing).isSymbolicLink()) return null
+      } catch {
+        // The component itself is missing; try its parent.
+      }
+      const parent = dirname(existing)
+      if (parent === existing) return null
+      missing.unshift(basename(existing))
+      existing = parent
+    }
+  }
+}
+
 export function grantReadOutsideProject(threadId: string, targets: readonly string[]): void {
   const paths = grantedPaths.get(threadId) ?? new Map<string, GrantedPath>()
   for (const target of targets) {
@@ -124,10 +154,15 @@ export function hasReadOutsideProjectGrant(
   if (!paths) return false
   return targets.every((target) => {
     const resolved = resolve(target)
+    const canonical = canonicalReadTarget(resolved)
+    if (canonical === null || sensitiveTargetReason(target, canonical) !== null) return false
     return [...paths].some(
       ([granted, grant]) =>
         stillNamesApprovedPath(granted, grant.identity) &&
-        coversPath(granted, grant.directory, resolved),
+        coversPath(granted, grant.directory, resolved) &&
+        (granted === resolved ||
+          (grant.identity !== null &&
+            coversPath(grant.identity.realpath, grant.directory, canonical))),
     )
   })
 }
