@@ -694,8 +694,8 @@
       "bytes": 238352
     },
     "automation-create-modal.png": {
-      "sha256": "905d8cb01c5707726e1841139ca434f21068c95d0661e68ee9183eb44241f8a7",
-      "bytes": 274585
+      "sha256": "515e00516ef461fe5271b157b134aaa9853f3eb96ae7924649b834080877d563",
+      "bytes": 289770
     },
     "automation-deferred-context.png": {
       "sha256": "6be56d786f17de68264e2b0a99ca2a0b0f58f844e057974e7d6d0c4caadf285e",
@@ -777,6 +777,22 @@
       "sha256": "782b6e8877f2527409f7e1a1b9f6dca02bd372cc77989468bd9f3b96ca184e9a",
       "bytes": 31887
     },
+    "automation-preparation-approval.png": {
+      "sha256": "5fede4afd8b7a69663f0a42f87570fec87e44591d6e5674898aeb65216743148",
+      "bytes": 39455
+    },
+    "automation-preparation-setup-changed.png": {
+      "sha256": "4741bd39e2762af902b27e0bdfad883aa512f3b07f8c04e4c03da63d2fa0e083",
+      "bytes": 127830
+    },
+    "automation-preparation-setup-review.png": {
+      "sha256": "6e15a6a2e9f6d6aa634171caa0cafd0b7a19006ccae5ceb7e21fa49d7a642dd6",
+      "bytes": 156186
+    },
+    "automation-preparation-setup-saved.png": {
+      "sha256": "0ba2bde948d578ecec0fd1843cbf6a2569d467e6b9cecfdf3c4180348c9c17d3",
+      "bytes": 174238
+    },
     "automation-project-menu-inactive.png": {
       "sha256": "93ba95c36f20720d21758d16a0393f061e80ee5c83ca097d192b446266f73cb4",
       "bytes": 240121
@@ -794,8 +810,8 @@
       "bytes": 357852
     },
     "automation-setup-link-form.png": {
-      "sha256": "7ab720e0442a3ab8ff4fd4e141530c7a50240a07eb3189681c0996893fd85b36",
-      "bytes": 140712
+      "sha256": "7f3052a4b829528070e12ff807d95fc87c3e865a16be7b3780462a2b80d3f23f",
+      "bytes": 126095
     },
     "automation-setup-link.png": {
       "sha256": "e5101e6bcedb536e6747c7f4610a09a231012c5acd7e9ac0dbcfc954ab00e3b7",
@@ -3962,16 +3978,16 @@
       "bytes": 289921
     },
     "settings-automation-form-page-2.png": {
-      "sha256": "0242fd0a17e6d1c89d2b294cab0a8189d14eab5fa33ae8b8de6e593b9ee7e5d5",
-      "bytes": 256914
+      "sha256": "59b5056541f2bfc4979f02e929d9c7844d150bdf40e9ec7bce301d8c92ec4433",
+      "bytes": 256023
     },
     "settings-automation-form.png": {
       "sha256": "1db431d6be2ae0313bb1b3b5901bd1470937e8a1e22be19fe0a1fcc3a0fddb79",
       "bytes": 154242
     },
     "settings-automation-push-grant.png": {
-      "sha256": "9ef0e6ee6fa953219d0b8c1779af3714344d3d6554975bcec3f20f46012d888b",
-      "bytes": 44395
+      "sha256": "ee6057dcc4847a64d37f0db891d9b71865c1a55aa780cf36d33269d67560265d",
+      "bytes": 76442
     },
     "settings-automations-run-now-hover.png": {
       "sha256": "d0d8954984465bcb714b8a9c54cda189ced69ef720a5f76f1f90f3ab06649503",
