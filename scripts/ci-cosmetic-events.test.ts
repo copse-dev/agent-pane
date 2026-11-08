@@ -28,6 +28,7 @@ const meaningfulLabels = [
   'bench-doctrine',
   'eval-tool-preference',
   'bench-agent-eval',
+  'e2e-burn-in-large',
 ]
 
 type EventContext = {
@@ -157,6 +158,13 @@ describe('cosmetic CI event routing', () => {
       }
       if (name === 'screenshot-baselines') {
         assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
+        continue
+      }
+      if (name === 'e2e-burn-in') {
+        // Runs its over-cap refusal without a build, so it admits itself on
+        // precheck success and needs a successful build for any real run.
+        assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
+        assert.ok(job.if?.includes("needs.build.result == 'success'"))
         continue
       }
       if (/always\(|cancelled\(/.test(job.if ?? '')) {
