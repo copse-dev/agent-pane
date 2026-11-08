@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { expectCaptureFitsWidth } from './helpers/capture-fit.ts'
 
 describe('paired remote chat connection', () => {
   it('shows live output, edits a next prompt, and preserves a draft across disconnection', async () => {
@@ -102,7 +103,21 @@ describe('paired remote chat connection', () => {
     await expect($('#remote-tools')).toHaveText('No tool activity in this chat yet.')
     await $('#chat-tab').click()
     await expect($('#composer')).toBeDisplayed()
-    await saveElementScreenshot('#thread', 'remote-chat-connected-phone.png', { frame: 'document' })
+    // Nothing may run off a phone from a small Android (350) to a large iPhone (390).
+    for (const width of [350, 375, 390]) {
+      await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+      })
+      await expectCaptureFitsWidth('.shell')
+    }
+    // Frame the page column, not #thread: the shell holds the phone's side gutters.
+    await saveElementScreenshot('.shell', 'remote-chat-connected-phone.png', {
+      frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('.shell'),
+    })
     await $('#next-prompt').click()
     await expect($('#message')).toHaveValue('Test the release build on my phone.')
     await $('#message').setValue('Test the release build on my phone, including reconnect.')
@@ -120,8 +135,13 @@ describe('paired remote chat connection', () => {
     await browser.sendCommand('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-color-scheme', value: 'dark' }],
     })
-    await saveElementScreenshot('#thread', 'remote-chat-reconnected-phone-dark.png', {
+    // Reconnecting repaints the live reply at the desktop's streaming pace.
+    await expect($('#messages')).toHaveText(
+      expect.stringContaining('The release build is ready for testing.'),
+    )
+    await saveElementScreenshot('.shell', 'remote-chat-reconnected-phone-dark.png', {
       frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('.shell'),
     })
     await $('#send').click()
     await expect($('#message')).toHaveValue('')

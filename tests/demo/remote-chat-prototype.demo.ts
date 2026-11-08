@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { expectCaptureFitsWidth } from './helpers/capture-fit.ts'
 
 describe('remote chat interaction prototype', () => {
   beforeEach(async () => {
@@ -17,7 +18,11 @@ describe('remote chat interaction prototype', () => {
     await $('#suggestions button').click()
     await expect($('#prompt')).toHaveValue('Run the focused tests')
     await expect($$('.message.user')).toBeElementsArrayOfSize(1)
-    await saveElementScreenshot('#stage', 'remote-chat-prototype-desktop.png')
+    // A document page: the default frame pins Copse's #app shell, which this page lacks.
+    await saveElementScreenshot('#stage', 'remote-chat-prototype-desktop.png', {
+      frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('#stage'),
+    })
   })
 
   it('recovers a completed host response once after disconnect without losing a draft', async () => {
@@ -55,17 +60,33 @@ describe('remote chat interaction prototype', () => {
     await $('#menu').click()
     await $('[data-thread="remote"]').click()
     await expect($('#prompt')).toHaveValue('Keep this local draft')
-    const overflow = await browser.execute(
-      () => document.documentElement.scrollWidth > window.innerWidth,
-    )
-    expect(overflow).toBe(false)
+    // Nothing may run off a phone from a small Android (350) to a large iPhone (390).
+    for (const width of [350, 375, 390]) {
+      await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+      })
+      await expectCaptureFitsWidth('#stage')
+    }
+    await browser.sendCommand('Emulation.clearDeviceMetricsOverride', {})
     await expect($('#send')).toBeDisplayed()
-    await saveElementScreenshot('#stage', 'remote-chat-prototype-phone-light.png')
+    await saveElementScreenshot('#stage', 'remote-chat-prototype-phone-light.png', {
+      frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('#stage'),
+    })
     await $('#theme').click()
     await expect($('html')).toHaveAttribute('data-theme', 'dark')
-    await saveElementScreenshot('#stage', 'remote-chat-prototype-phone-dark.png')
+    await saveElementScreenshot('#stage', 'remote-chat-prototype-phone-dark.png', {
+      frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('#stage'),
+    })
     await $('#nav-changes').click()
     await expect($('#panel-content')).toHaveText(expect.stringContaining('Working changes'))
-    await saveElementScreenshot('#app', 'remote-chat-prototype-phone-changes.png')
+    await saveElementScreenshot('#workspace', 'remote-chat-prototype-phone-changes.png', {
+      frame: 'document',
+      beforeCapture: () => expectCaptureFitsWidth('#workspace'),
+    })
   })
 })

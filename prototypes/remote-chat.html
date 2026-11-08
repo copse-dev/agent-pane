@@ -297,6 +297,20 @@
         border-bottom: 1px solid var(--line);
         min-height: 70px;
       }
+      /* The title gives way first; the menu and Changes keep their size. */
+      .chat-header > button {
+        flex: none;
+      }
+      .thread-heading {
+        flex: 1;
+        min-width: 0;
+      }
+      .thread-heading > * {
+        display: block;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
       .chat-header h4 {
         font-size: 14px;
         margin: 0;
@@ -323,6 +337,7 @@
         color: var(--warn);
       }
       .connection button {
+        flex: none;
         font-size: 11px;
         min-height: 28px;
         padding: 3px 8px;
@@ -450,6 +465,10 @@
         display: flex;
         gap: 7px;
       }
+      .file .mono {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
       .add {
         color: var(--green);
       }
@@ -561,8 +580,13 @@
       .phone .right .tabs {
         padding-top: 16px;
       }
+      /* Only a panel drawn over the chat needs closing. */
       .close-panel {
+        display: none;
         margin-left: auto;
+      }
+      .phone .close-panel {
+        display: block;
       }
       .phone .app.show-sidebar .sidebar {
         display: flex;
@@ -612,6 +636,9 @@
         }
         .inspect-button {
           display: block !important;
+        }
+        .close-panel {
+          display: block;
         }
       }
       @media (max-width: 620px) {
@@ -703,7 +730,8 @@
         <span>Your workspace, wherever you are.</span><span class="spacer"></span>
         <p>Same conversation. Your own view.</p>
       </div>
-      <div id="app" class="app">
+      <!-- Not #app: screenshot helpers resize that id as the Copse window shell. -->
+      <div id="workspace" class="app">
         <aside class="sidebar">
           <div class="brand">Copse</div>
           <div class="project">▾ &nbsp; copse-panel</div>
@@ -724,12 +752,11 @@
         <section class="chat" aria-label="Conversation">
           <header class="chat-header">
             <button id="menu" class="phone-menu" aria-label="Open threads">☰</button>
-            <div>
+            <div class="thread-heading">
               <h4 id="thread-title">Remote chat protocol</h4>
               <small>copse-panel &nbsp; / &nbsp; remote-chat</small>
             </div>
-            <span class="spacer"></span
-            ><button id="inspect" class="outline" aria-label="Open changes">
+            <button id="inspect" class="outline" aria-label="Open changes">
               Changes <span class="add">3</span>
             </button>
           </header>
@@ -982,13 +1009,13 @@
           drafts[active] = $('prompt').value
           active = id
           $('prompt').value = drafts[id] || ''
-          $('app').classList.remove('show-sidebar')
+          $('workspace').classList.remove('show-sidebar')
           render()
         }
         function setPanel(next) {
           panel = next
           renderPanel()
-          $('app').classList.add('show-panel')
+          $('workspace').classList.add('show-panel')
         }
         function renderPanel() {
           const root = $('panel-content')
@@ -1123,16 +1150,16 @@
             : matchMedia('(prefers-color-scheme:dark)').matches
           document.documentElement.dataset.theme = dark ? 'light' : 'dark'
         }
-        $('menu').onclick = () => $('app').classList.toggle('show-sidebar')
+        $('menu').onclick = () => $('workspace').classList.toggle('show-sidebar')
         document
           .querySelectorAll('[data-thread]')
           .forEach((b) => (b.onclick = () => selectThread(b.dataset.thread)))
         document
           .querySelectorAll('[data-panel]')
           .forEach((b) => (b.onclick = () => setPanel(b.dataset.panel)))
-        $('close-panel').onclick = () => $('app').classList.remove('show-panel')
+        $('close-panel').onclick = () => $('workspace').classList.remove('show-panel')
         $('inspect').onclick = () => setPanel('changes')
-        $('nav-chat').onclick = () => $('app').classList.remove('show-panel')
+        $('nav-chat').onclick = () => $('workspace').classList.remove('show-panel')
         $('nav-changes').onclick = () => setPanel('changes')
         $('nav-plan').onclick = () => setPanel('plan')
         $('nav-activity').onclick = () => setPanel('activity')
