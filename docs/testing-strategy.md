@@ -253,6 +253,39 @@ a JavaScript interpreter: new conditional wrappers or runner-side selection mech
 extending the scanner and tests. Review semantic changes to existing conditions even when their
 marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
 
+### Nightly quarantine run
+
+A quarantined spec is one whose `exclusions.json` entry has category `quarantine` and the
+`wdio.ci.conf.ts: exclude` marker. The CI gate never runs it, so
+[`e2e-quarantine.yml`](../.github/workflows/e2e-quarantine.yml) does, once a night at 07:47 UTC.
+`pnpm run test:e2e:quarantine` runs [`wdio.quarantine.conf.ts`](../wdio.quarantine.conf.ts), which
+takes the CI config's settings and reads its spec list from the registry when it loads. Adding or
+restoring a quarantine therefore needs no workflow or config edit, and an in-spec skip is never
+picked up: platform and environment gaps cannot pass on this Linux runner either.
+
+- **Advisory.** The workflow is separate from CI, no required check depends on it, and the spec step
+  is `continue-on-error`. A failing quarantined spec never changes any run's conclusion. With no
+  quarantined specs, the job reports that and exits successfully.
+- **No retry.** No shard retry and `specFileRetries: 0`. A pass means the first attempt passed. A
+  crash or timeout that leaves no final outcome counts as not passing.
+- **Reuses the nightly build.** The scheduled run downloads `dist-tar` from that day's scheduled CI
+  run and checks out its commit. When that artifact is missing, the job builds its own.
+- **Pass streaks.** `scripts/e2e-quarantine.mts report` adds the night's per-spec outcomes
+  (artifact `e2e-quarantine-outcomes-<attempt>`) to a rolling 60-night record. That record is the
+  `e2e-quarantine-history` artifact from the previous scheduled run on `main`. Only that scheduled
+  run counts as a night. Pull-request runs, which happen when the workflow, its scripts or the
+  registry change, and manual dispatches show a preview and are not recorded. If the previous
+  record has expired or cannot be read, streaks start again from zero. Only the latest completed
+  scheduled run's record is used, never an older one. A night that left no record, because of a
+  setup failure, a timeout or cancellation, or an expired artifact, therefore restarts every streak
+  instead of being skipped. Skipping it could carry a streak across a night that did not pass. The
+  repository caps artifact retention (5 days in November 2026, below the 90 days the workflow
+  requests), which is enough because the chain only reads the previous night.
+- **Restore candidates.** At 10 consecutive passing nights, the run emits a warning annotation and a
+  job-summary line. That is evidence for a restore, not the restore itself. Confirm the root cause,
+  then remove the CI exclusion and the registry entry in the same PR. Nothing is posted to the
+  tracker automatically.
+
 ### Cost and tier selection
 
 The e2e tier is the expensive, flake-prone one (runner OOM / disk / Electron
