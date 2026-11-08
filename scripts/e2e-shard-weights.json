@@ -1,5 +1,5 @@
 {
-  "source": "automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -383,6 +383,8 @@
     "tests/e2e/ssh-titlebar-target.e2e.ts": 5.1,
     "tests/e2e/staged-diff-ui.e2e.ts": 17.2,
     "tests/e2e/subagent-badge-model-label.e2e.ts": 7.7,
+    "tests/e2e/subthread-orchestration-recovery.e2e.ts": 8,
+    "tests/e2e/subthread-orchestration.e2e.ts": 8,
     "tests/e2e/supervised-task-recovery.e2e.ts": 6.6,
     "tests/e2e/supervised-tasks.e2e.ts": 6.4,
     "tests/e2e/terminal-display.e2e.ts": 13.3,
