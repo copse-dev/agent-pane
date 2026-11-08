@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-UJEKGPFC.js";
+} from "./chunks/chunk-HUP3FKBW.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -1808,6 +1808,15 @@ var init_demo_bridged_tools = __esm({
 
 // src/shared/approval-copy.ts
 function threadAccessApproval(access) {
+  if (access === "orchestrate")
+    return {
+      title: "Allow subthread orchestration?",
+      body: "",
+      bodyAdvice: "Allow this thread to start subthreads in isolated checkouts, read their conversations, and send them further instructions. This allows additional model usage. Only subthreads created by this thread are included; their normal permissions and limits still apply.",
+      bodyFooter: "Applies only to this thread until revoked in the thread\u2019s Context panel \u2192 Permissions.",
+      approveLabel: "Allow orchestration",
+      allowRemember: false
+    };
   return {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
@@ -5150,6 +5159,7 @@ var init_demo_scenarios = __esm({
           rightPanelMode: "context",
           threadReadAccess: [SIDE_CHATS_MAIN_ID],
           threadSendAccess: [SIDE_CHATS_MAIN_ID],
+          threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
           webAllowedOrigins: ["https://example.org:443"],
           toolPermissionOverrides: { "copse:run_shell": "ask" },
           layout: {
@@ -5557,7 +5567,7 @@ var init_demo_scenarios = __esm({
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
-      ...["read", "send"].map(
+      ...["read", "send", "orchestrate"].map(
         (access) => approvalRiskScenario(`approval-thread-${access}`, {
           id: `thread-${access}`,
           type: "mcp",
@@ -5820,11 +5830,21 @@ function createDemoApi(scenario2, options = {}) {
       }
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {
       },
       reply: async () => {
       },
-      revokeAccess: async () => {
+      revokeAccess: (threadId, access) => {
+        const key = access === "read" ? "threadReadAccess" : access === "send" ? "threadSendAccess" : "threadSubthreadAccess";
+        const grants = settings.get(key);
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id) => id !== threadId) : []
+        );
+        return resolvedVoid();
       }
     },
     mobile: {
@@ -7479,7 +7499,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-EE57GDMR.js").then(async (main) => {
+    void import("./chunks/main-SIO7H6AG.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
