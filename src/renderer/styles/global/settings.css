@@ -2833,6 +2833,30 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-md);
   font-weight: 600;
 }
+.automation-preparation-setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+.automation-preparation-review-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.automation-preparation-proposal-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.automation-preparation-review {
+  overflow-wrap: anywhere;
+}
+.automation-preparation-review-commands {
+  display: block;
+  max-height: 16em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
 .automation-label {
   display: flex;
   margin-bottom: 0;

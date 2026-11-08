@@ -3,6 +3,7 @@ import { refreshIcon, warningIcon } from '../dom/icons.ts'
 
 export interface TurnRecoveryCardOptions {
   interruptedByRestart?: true
+  limitReason?: 'max_steps' | 'timeout'
   lastKnownGoodLabel?: string
   onRetry: () => boolean
   onRetryWithLastKnownGood?: () => boolean
@@ -29,7 +30,7 @@ export function createTurnRecoveryCard(options: TurnRecoveryCardOptions): HTMLEl
     return button
   }
 
-  action('Retry this turn', options.onRetry)
+  action(options.limitReason === undefined ? 'Retry this turn' : 'Continue task', options.onRetry)
   if (options.lastKnownGoodLabel !== undefined && options.onRetryWithLastKnownGood !== undefined) {
     action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood)
   }
@@ -37,13 +38,23 @@ export function createTurnRecoveryCard(options: TurnRecoveryCardOptions): HTMLEl
   const body = el(
     'div',
     { class: 'turn-recovery-body' },
-    el('div', { class: 'turn-recovery-title' }, 'Turn interrupted'),
+    el(
+      'div',
+      { class: 'turn-recovery-title' },
+      options.limitReason === 'max_steps'
+        ? 'Run limit reached'
+        : options.limitReason === 'timeout'
+          ? 'Time limit reached'
+          : 'Turn interrupted',
+    ),
     el(
       'div',
       { class: 'turn-recovery-detail' },
-      options.interruptedByRestart
-        ? 'Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action.'
-        : 'Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically.',
+      options.limitReason !== undefined
+        ? 'Your completed work is saved. Continue with a fresh run allowance; inspect the current state before repeating any action.'
+        : options.interruptedByRestart
+          ? 'Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action.'
+          : 'Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically.',
     ),
   )
   if (options.lastKnownGoodLabel !== undefined) {
@@ -61,7 +72,8 @@ export function createTurnRecoveryCard(options: TurnRecoveryCardOptions): HTMLEl
     {
       class: 'turn-recovery-card',
       'data-turn-recovery-card': '',
-      'aria-label': 'Interrupted turn recovery',
+      'aria-label':
+        options.limitReason === undefined ? 'Interrupted turn recovery' : 'Run limit recovery',
     },
     el(
       'span',
