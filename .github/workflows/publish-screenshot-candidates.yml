@@ -88,7 +88,6 @@ jobs:
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          SOURCE_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -140,18 +139,86 @@ jobs:
               return;
             }
 
-            // A delayed publisher retry must not overwrite a newer same-head
-            // render. One bounded read also rejects an obsolete source attempt;
-            // no passing tests are rerun and no artifact is downloaded here.
-            const { data: sourceRuns } = await github.rest.actions.listWorkflowRuns({
-              owner, repo, workflow_id: Number(process.env.SOURCE_WORKFLOW_ID),
-              branch: parent.head.ref, head_sha: runHeadSha, event: 'pull_request', per_page: 1,
+            // Reject an obsolete attempt of this exact source run. A separate
+            // same-head metadata run is not replacement evidence, even when it
+            // completed: it may have failed before rendering anything.
+            const { data: sourceRun } = await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: runId,
             });
-            const latestRun = sourceRuns.workflow_runs[0];
-            if (!latestRun || latestRun.id !== runId ||
-                latestRun.run_attempt !== Number(process.env.RUN_ATTEMPT)) {
+            if (!sourceRun || sourceRun.id !== runId ||
+                sourceRun.run_attempt !== Number(process.env.RUN_ATTEMPT)) {
               core.setOutput('superseded', 'true');
-              core.notice(`Run ${runId} is no longer the latest source attempt for this head; publishing nothing.`);
+              core.notice(`Run ${runId} no longer matches this source attempt; publishing nothing.`);
+              return;
+            }
+
+            // Publication is serialized per PR, but retries can arrive out of
+            // order. Preserve a newer already-published verdict, including its
+            // pending candidates or later manual decision. A merely newer CI
+            // run is not proof: metadata-only or failed runs may render nothing.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner, repo, ref: runHeadSha, per_page: 100,
+            });
+            const runPrefix = `https://github.com/${owner}/${repo}/actions/runs/`;
+            const inspected = new Set();
+            let sourceRuns;
+            let uncachedLookups = 0;
+            for (const status of statuses) {
+              if (status.context !== 'Screenshot review' ||
+                  !['pending', 'success'].includes(status.state) ||
+                  !/^(?:[1-9][0-9]* changed screenshots? awaits? review:|No changed reference screenshots$|Combined stack needs explicit screenshot review$|No eligible reference screenshot specs \(oracle plan\)$)/.test(status.description || '') ||
+                  !status.target_url?.startsWith(runPrefix) ||
+                  !/^[1-9][0-9]*$/.test(status.target_url.slice(runPrefix.length))) continue;
+              const publishedId = Number(status.target_url.slice(runPrefix.length));
+              if (!Number.isSafeInteger(publishedId)) {
+                core.setFailed('Cannot establish publication order within the bounded evidence lookup; preserving the current review.');
+                return;
+              }
+              if (publishedId === runId) continue;
+              if (inspected.has(publishedId)) continue;
+              inspected.add(publishedId);
+              // Batch normal same-head source metadata in one read. Only
+              // unlisted/foreign proofs need individual lookups, capped at 3.
+              if (!sourceRuns) {
+                const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                  owner, repo, workflow_id: sourceRun.workflow_id, branch: parent.head.ref,
+                  head_sha: runHeadSha, event: 'pull_request', per_page: 100,
+                });
+                sourceRuns = new Map(runs.workflow_runs.map((run) => [run.id, run]));
+              }
+              let publishedRun = sourceRuns.get(publishedId);
+              if (!publishedRun) {
+                if (uncachedLookups >= 3) {
+                  core.setFailed('Cannot establish publication order within the bounded evidence lookup; preserving the current review.');
+                  return;
+                }
+                uncachedLookups += 1;
+                ({ data: publishedRun } = await github.rest.actions.getWorkflowRun({
+                  owner, repo, run_id: publishedId,
+                }));
+              }
+              if (!publishedRun || publishedRun.id !== publishedId) {
+                core.setFailed('Published verdict source identity is unavailable; preserving the current review.');
+                return;
+              }
+              // Statuses belong to a SHA shared by potentially several PRs.
+              if (publishedRun.head_sha !== runHeadSha || publishedRun.workflow_id !== sourceRun.workflow_id ||
+                  publishedRun.head_branch !== parent.head.ref ||
+                  publishedRun.head_repository?.full_name !== `${owner}/${repo}`) continue;
+              if (!publishedRun.pull_requests?.length ||
+                  !Number.isSafeInteger(publishedRun.run_number) || !Number.isSafeInteger(sourceRun.run_number)) {
+                core.setFailed('Published verdict PR or sequence is unavailable; preserving the current review.');
+                return;
+              }
+              if (!publishedRun.pull_requests.some((pull) => pull.number === number)) continue;
+              if (publishedRun.run_number > sourceRun.run_number) {
+                core.setOutput('superseded', 'true');
+                core.notice(`Run ${publishedId} already published a newer verdict for this head; keeping its evidence and review.`);
+                return;
+              }
+            }
+            if (statuses.length >= 100) {
+              core.setFailed('Publication history is truncated; preserving the current review instead of guessing its source.');
               return;
             }
 
@@ -1317,6 +1384,7 @@ jobs:
       - name: Write publication receipt
         id: receipt
         if: always()
+        continue-on-error: true
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
@@ -1399,6 +1467,7 @@ jobs:
 
       - name: Preserve publication receipt
         if: always() && steps.receipt.outcome == 'success'
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: screenshot-publication-${{ github.run_id }}-${{ github.run_attempt }}

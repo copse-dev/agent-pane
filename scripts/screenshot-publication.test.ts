@@ -180,6 +180,15 @@ function evidenceJobs(
   ]
 }
 
+interface PublishedWorkflowRun {
+  id: number
+  run_number: number
+  workflow_id?: number
+  head_sha?: string
+  head_branch?: string
+  pull_requests?: { number: number }[]
+}
+
 async function discover(
   liveParent = parent(),
   artifacts: WorkflowArtifact[] = [
@@ -196,7 +205,12 @@ async function discover(
   run: {
     conclusion?: string
     jobs?: WorkflowJob[]
-    latest?: { id: number; run_attempt: number } | null
+    latest?: { id: number; run_attempt: number; status?: string } | null
+    source?: { id: number; run_attempt: number } | null
+    publishedStatuses?: StatusWrite[]
+    publishedRun?: PublishedWorkflowRun
+    publishedRuns?: PublishedWorkflowRun[]
+    lookupFailure?: boolean
   } = {},
 ): Promise<Map<string, string>> {
   const outputs = new Map<string, string>()
@@ -222,9 +236,48 @@ async function discover(
     github: {
       rest: {
         pulls: { get: async () => ({ data: liveParent }), listFiles },
+        repos: {
+          listCommitStatusesForRef: async ({ ref }: { ref: string }) => {
+            assert.equal(ref, runHeadSha)
+            return { data: run.publishedStatuses ?? [] }
+          },
+        },
         actions: {
           listWorkflowRunArtifacts,
           listJobsForWorkflowRun,
+          getWorkflowRun: async (args: Record<string, unknown>) => {
+            assert.equal(args['owner'], 'copse-dev')
+            assert.equal(args['repo'], 'agent-pane')
+            if (args['run_id'] === 99) {
+              return {
+                data:
+                  run.source === null
+                    ? null
+                    : {
+                        id: 99,
+                        run_attempt: 1,
+                        workflow_id: 7,
+                        run_number: 99,
+                        head_sha: runHeadSha,
+                        ...run.source,
+                      },
+              }
+            }
+            const publishedRun =
+              run.publishedRuns?.find((entry) => entry.id === args['run_id']) ?? run.publishedRun
+            assert.equal(args['run_id'], publishedRun?.id)
+            if (run.lookupFailure) throw new Error('Published run lookup unavailable')
+            return {
+              data: {
+                workflow_id: 7,
+                head_sha: runHeadSha,
+                head_branch: liveParent.head.ref,
+                head_repository: { full_name: 'copse-dev/agent-pane' },
+                pull_requests: [{ number: 123 }],
+                ...publishedRun,
+              },
+            }
+          },
           listWorkflowRuns: async (args: Record<string, unknown>) => {
             assert.deepEqual(JSON.parse(JSON.stringify(args)), {
               owner: 'copse-dev',
@@ -233,12 +286,29 @@ async function discover(
               branch: liveParent.head.ref,
               head_sha: runHeadSha,
               event: 'pull_request',
-              per_page: 1,
+              per_page: 100,
             })
+            if (run.lookupFailure) throw new Error('Published run lookup unavailable')
             return {
               data: {
-                workflow_runs:
-                  run.latest === null ? [] : [run.latest ?? { id: 99, run_attempt: 1 }],
+                workflow_runs: [
+                  ...(run.publishedRuns ?? (run.publishedRun ? [run.publishedRun] : [])),
+                  ...(run.latest ? [{ ...run.latest, run_number: run.latest.id }] : []),
+                ]
+                  .map((entry) => ({
+                    workflow_id: 7,
+                    head_sha: runHeadSha,
+                    head_branch: liveParent.head.ref,
+                    head_repository: { full_name: 'copse-dev/agent-pane' },
+                    pull_requests: [{ number: 123 }],
+                    ...entry,
+                  }))
+                  .filter(
+                    (entry) =>
+                      entry.workflow_id === 7 &&
+                      entry.head_sha === runHeadSha &&
+                      entry.head_branch === liveParent.head.ref,
+                  ),
               },
             }
           },
@@ -268,9 +338,9 @@ async function discover(
 }
 
 describe('screenshot publication', () => {
-  it('rejects an old publisher after a newer same-head source run or attempt without any evidence writes', async () => {
-    for (const latest of [{ id: 100, run_attempt: 1 }, { id: 99, run_attempt: 2 }, null]) {
-      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], { latest })
+  it('rejects an obsolete or missing exact source attempt without any evidence writes', async () => {
+    for (const source of [{ id: 100, run_attempt: 1 }, { id: 99, run_attempt: 2 }, null]) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], { source })
       assert.equal(outputs.get('superseded'), 'true')
       assert.equal(outputs.get('eligible'), 'false')
       assert.equal(outputs.get('has-artifact'), 'false')
@@ -282,6 +352,205 @@ describe('screenshot publication', () => {
       'true',
       'the latest source attempt remains resumable',
     )
+  })
+
+  it('preserves valid source evidence when another same-head metadata run is newer', async () => {
+    for (const status of ['queued', 'in_progress', 'completed']) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+        latest: { id: 100, run_attempt: 1, status },
+      })
+      assert.equal(outputs.get('eligible'), 'true', status)
+      assert.equal(outputs.get('artifact-id'), '42', status)
+      assert.equal(outputs.get('superseded'), undefined, status)
+    }
+  })
+
+  it('does not replace evidence already published by a newer render of the same head', async () => {
+    for (const count of ['0', '2']) {
+      const newer = await gate({ RUN_ID: '100', CANDIDATE_COUNT: count })
+      for (const decided of [false, true]) {
+        const publishedStatuses = [
+          ...(decided
+            ? [
+                {
+                  sha: SHA,
+                  context: 'Screenshot review',
+                  state: 'success',
+                  description: 'Declined by @reviewer',
+                  target_url: 'https://github.com/copse-dev/agent-pane/pull/123',
+                },
+              ]
+            : []),
+          ...newer.writes,
+        ]
+        const outputs = await discover(
+          parent({ labels: ['screenshots-need-review'] }),
+          undefined,
+          SHA,
+          assert.fail,
+          [],
+          { publishedStatuses, publishedRun: { id: 100, run_number: 100 } },
+        )
+        assert.equal(outputs.get('superseded'), 'true')
+        assert.equal(outputs.get('eligible'), 'false')
+        assert.equal(outputs.get('gate-sha'), undefined, 'no gate, label or compare write can run')
+        assert.equal(outputs.get('not-rendered'), undefined, 'no stale evidence comment can run')
+        assert.equal(outputs.get('artifact-id'), undefined)
+      }
+    }
+  })
+
+  it('does not treat older, foreign-workflow or other-head statuses as replacement evidence', async () => {
+    const publishedStatuses = (await gate({ RUN_ID: '100' })).writes
+    for (const publishedRun of [
+      { id: 100, run_number: 98 },
+      { id: 100, run_number: 100, workflow_id: 8 },
+      { id: 100, run_number: 100, head_sha: 'b'.repeat(40) },
+      { id: 100, run_number: 100, head_branch: 'codex/another-pr' },
+      { id: 100, run_number: 100, pull_requests: [{ number: 456 }] },
+    ]) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+        publishedStatuses,
+        publishedRun,
+      })
+      assert.equal(outputs.get('eligible'), 'true')
+      assert.equal(outputs.get('superseded'), undefined)
+    }
+    const same = await discover(parent(), undefined, SHA, assert.fail, [], {
+      publishedStatuses: (await gate()).writes,
+    })
+    assert.equal(same.get('eligible'), 'true', 'the published source run itself remains resumable')
+  })
+
+  it('finds newer published evidence beneath a later old-source retry', async () => {
+    const newer = (await gate({ RUN_ID: '100' })).writes
+    for (const prefix of [(await gate()).writes, (await gate({ RUN_ID: '98' })).writes]) {
+      const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+        publishedStatuses: [...prefix, ...newer],
+        publishedRuns: [
+          { id: 98, run_number: 98 },
+          { id: 100, run_number: 100 },
+        ],
+      })
+      assert.equal(outputs.get('superseded'), 'true')
+      assert.equal(outputs.get('gate-sha'), undefined)
+    }
+  })
+
+  it('preserves the combined-stack pending verdict even after an earlier individual decision', async () => {
+    const description = 'Combined stack needs explicit screenshot review'
+    assert.ok(
+      readFileSync('scripts/screenshot-stack.mts', 'utf8').includes(
+        `description: '${description}'`,
+      ),
+    )
+    const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+      publishedStatuses: [
+        {
+          sha: SHA,
+          context: 'Screenshot review',
+          state: 'success',
+          description: 'Accepted by @reviewer',
+        },
+        {
+          sha: SHA,
+          context: 'Screenshot review',
+          state: 'pending',
+          description,
+          target_url: 'https://github.com/copse-dev/agent-pane/actions/runs/100',
+        },
+      ],
+      publishedRun: { id: 100, run_number: 100 },
+    })
+    assert.equal(outputs.get('superseded'), 'true')
+    assert.equal(outputs.get('gate-sha'), undefined)
+    assert.equal(outputs.get('not-rendered'), undefined)
+  })
+
+  it('batches ordinary published verdicts without imposing the foreign lookup cap on them', async () => {
+    const pending = (await gate()).writes[0]
+    assert.ok(pending)
+    const publishedRuns = Array.from({ length: 6 }, (_, index) => ({
+      id: 100 + index,
+      run_number: 80 + index,
+    }))
+    const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
+      publishedRuns,
+      publishedStatuses: publishedRuns.map((run) => ({
+        ...pending,
+        target_url: `https://github.com/copse-dev/agent-pane/actions/runs/${String(run.id)}`,
+      })),
+    })
+    assert.equal(outputs.get('eligible'), 'true')
+  })
+
+  it('preserves the current review when publication history or source association is unknown', async () => {
+    const newer = (await gate({ RUN_ID: '100' })).writes
+    const unrelated: StatusWrite = {
+      sha: SHA,
+      context: 'Other check',
+      state: 'success',
+      description: 'Passed',
+    }
+    for (const run of [
+      { publishedStatuses: Array.from({ length: 100 }, () => unrelated) },
+      { publishedStatuses: newer, publishedRun: { id: 100, run_number: 100, pull_requests: [] } },
+    ]) {
+      const failures: string[] = []
+      const outputs = await discover(
+        parent(),
+        undefined,
+        SHA,
+        (message) => failures.push(message),
+        [],
+        run,
+      )
+      assert.equal(failures.length, 1)
+      assert.equal(outputs.get('eligible'), 'false')
+      assert.equal(outputs.get('gate-sha'), undefined)
+      assert.equal(outputs.get('not-rendered'), undefined)
+    }
+    await assert.rejects(
+      discover(parent(), undefined, SHA, assert.fail, [], {
+        publishedStatuses: newer,
+        publishedRun: { id: 100, run_number: 100 },
+        lookupFailure: true,
+      }),
+      /Published run lookup unavailable/,
+    )
+  })
+
+  it('bounds distinct proof lookups and does not spend the bound on duplicate or current-source statuses', async () => {
+    const pending = (await gate({ RUN_ID: '100' })).writes[0]
+    assert.ok(pending)
+    const publishedRuns = Array.from({ length: 4 }, (_, index) => ({
+      id: 100 + index,
+      run_number: 100 + index,
+      workflow_id: 8,
+    }))
+    const foreign = publishedRuns.map((run) => ({
+      ...pending,
+      target_url: `https://github.com/copse-dev/agent-pane/actions/runs/${String(run.id)}`,
+    }))
+    const failures: string[] = []
+    const blocked = await discover(
+      parent(),
+      undefined,
+      SHA,
+      (message) => failures.push(message),
+      [],
+      {
+        publishedRuns,
+        publishedStatuses: foreign,
+      },
+    )
+    assert.match(failures[0] ?? '', /bounded evidence lookup/)
+    assert.equal(blocked.get('gate-sha'), undefined)
+    const resumed = await discover(parent(), undefined, SHA, assert.fail, [], {
+      publishedRuns,
+      publishedStatuses: [...foreign.slice(0, 3), ...foreign.slice(0, 3), ...(await gate()).writes],
+    })
+    assert.equal(resumed.get('eligible'), 'true')
   })
 
   it('binds zero and nonzero evidence to the actual conditional immutable-upload outcome', async () => {

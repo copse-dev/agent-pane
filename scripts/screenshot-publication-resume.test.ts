@@ -19,6 +19,7 @@ const steps = z
             env: z.record(z.string(), z.string()).optional(),
             if: z.string().optional(),
             uses: z.string().optional(),
+            'continue-on-error': z.boolean().optional(),
             with: z.record(z.string(), z.unknown()).optional(),
           }),
         ),
@@ -273,5 +274,23 @@ describe('publication completion receipts', () => {
       upload.with['name'],
       'screenshot-publication-${{ github.run_id }}-${{ github.run_attempt }}',
     )
+  })
+  it('keeps receipt failures advisory while real publication failures still fail closed', () => {
+    for (const name of ['Write publication receipt', 'Preserve publication receipt']) {
+      assert.equal(steps.find((entry) => entry.name === name)?.['continue-on-error'], true, name)
+    }
+    for (const name of [
+      'Resolve the live parent PR and exact artifact',
+      'Validate and apply candidate PNGs',
+      'Upload verified candidates to R2',
+      'Gate the parent on screenshot review',
+      'Link screenshot evidence from the parent',
+      'Attest combined screenshot stack coverage',
+    ]) {
+      const step = steps.find((entry) => entry.name === name)
+      assert.ok(step, name)
+      assert.notEqual(step['continue-on-error'], true, name)
+    }
+    assert.match(steps.at(-1)?.if ?? '', /failure\(\)/)
   })
 })
