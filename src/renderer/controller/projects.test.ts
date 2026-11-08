@@ -14,6 +14,7 @@ import {
   isProjectSwitchInFlight,
   paginateSidebarThreads,
   preloadSidebarThreads,
+  refreshProjectThreadWorktrees,
   dismissOrphanProject,
   listOrphanProjects,
   parseDismissedOrphanStores,
@@ -2394,4 +2395,47 @@ test('folder-open callers still await activation after the conversation becomes 
   release()
   assert.equal(await opened, true)
   assert.equal(await secondOpen, true)
+})
+
+test('checkout cleanup refresh updates the owning cached project without replacing another project', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const finished = thread('finished', 'Finished run')
+  finished.draftPrompt = 'Keep local draft'
+  finished.worktree = {
+    path: '/worktrees/finished',
+    branch: 'copse/finished',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+  }
+  const active = thread('active', 'Other project')
+  active.draftPrompt = 'Keep the active project draft'
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'b',
+    activeThreadId: active.id,
+    workspaceRoot: '/b',
+    threads: [active],
+    backgroundThreads: [{ projectId: 'a', thread: finished }],
+  })
+  setThreadCacheForTest('a', [finished])
+  const loaded = {
+    ...finished,
+    draftPrompt: '',
+    messages: [],
+    worktree: { ...finished.worktree, retiredAt: 5 },
+  }
+  const api = makeApi({ loadProjectThreads: async (id) => (id === 'a' ? [loaded] : []) })
+  await refreshProjectThreadWorktrees(store, api, 'a')
+  assert.equal(store.getState().activeProjectId, 'b')
+  assert.equal(store.getState().activeThreadId, active.id)
+  assert.equal(store.getState().threads[0], active)
+  assert.equal(store.getState().backgroundThreads[0]?.thread.worktree?.retiredAt, 5)
+  assert.equal(store.getState().backgroundThreads[0]?.thread.draftPrompt, finished.draftPrompt)
+  assert.equal(getSidebarThreads(store, 'a')[0]?.worktree?.retiredAt, 5)
 })

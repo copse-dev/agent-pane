@@ -11,6 +11,21 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // then Architecture at its native scrollIntoView target (clamped when needed).
 async function prepareMarkdownCapture(position: 'bottom' | 'architecture'): Promise<void> {
   await waitForSettledLayout('#input-bar')
+  // A stable composer box alone does not establish that its reserved height matches.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const pane = document.getElementById('pane-chat')
+        const composer = document.getElementById('input-bar')
+        if (!pane || !composer) return false
+        const appliedInset = Number.parseFloat(
+          getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+        )
+        const expectedInset = Math.max(Math.ceil(composer.getBoundingClientRect().height), 72)
+        return document.fonts.status === 'loaded' && appliedInset === expectedInset
+      }),
+    { timeoutMsg: 'Markdown capture composer reserve did not match its measured height' },
+  )
   await waitForSettledLayout('.messages-list')
   const target = await browser.execute((position) => {
     const transcript = document.querySelector<HTMLElement>('.messages-list')

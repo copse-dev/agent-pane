@@ -221,6 +221,10 @@
       "sha256": "3c0c4e67c2ad93f42185df6c7b93d72f0aa4a662b566b9d2ec15155c6f913c2e",
       "bytes": 303931
     },
+    "activity-answer-after-refresh.png": {
+      "sha256": "1a1f6184d8eb6ed778984bc79d3bdbcabe6243aaffc584ab147c3f62047ad262",
+      "bytes": 113708
+    },
     "activity-answer-empty.png": {
       "sha256": "b748d3c84f611bd37d7c3d072461e1f001f01008b8285aaf1ab8a63339e34e67",
       "bytes": 113673
@@ -690,8 +694,8 @@
       "bytes": 238352
     },
     "automation-create-modal.png": {
-      "sha256": "905d8cb01c5707726e1841139ca434f21068c95d0661e68ee9183eb44241f8a7",
-      "bytes": 274585
+      "sha256": "515e00516ef461fe5271b157b134aaa9853f3eb96ae7924649b834080877d563",
+      "bytes": 289770
     },
     "automation-deferred-context.png": {
       "sha256": "6be56d786f17de68264e2b0a99ca2a0b0f58f844e057974e7d6d0c4caadf285e",
@@ -773,6 +777,22 @@
       "sha256": "782b6e8877f2527409f7e1a1b9f6dca02bd372cc77989468bd9f3b96ca184e9a",
       "bytes": 31887
     },
+    "automation-preparation-approval.png": {
+      "sha256": "5fede4afd8b7a69663f0a42f87570fec87e44591d6e5674898aeb65216743148",
+      "bytes": 39455
+    },
+    "automation-preparation-setup-changed.png": {
+      "sha256": "4741bd39e2762af902b27e0bdfad883aa512f3b07f8c04e4c03da63d2fa0e083",
+      "bytes": 127830
+    },
+    "automation-preparation-setup-review.png": {
+      "sha256": "6e15a6a2e9f6d6aa634171caa0cafd0b7a19006ccae5ceb7e21fa49d7a642dd6",
+      "bytes": 156186
+    },
+    "automation-preparation-setup-saved.png": {
+      "sha256": "0ba2bde948d578ecec0fd1843cbf6a2569d467e6b9cecfdf3c4180348c9c17d3",
+      "bytes": 174238
+    },
     "automation-project-menu-inactive.png": {
       "sha256": "93ba95c36f20720d21758d16a0393f061e80ee5c83ca097d192b446266f73cb4",
       "bytes": 240121
@@ -781,9 +801,17 @@
       "sha256": "dd11fca438b379c03bd07a0b57906922574cae0e801df16f9ee64aa103be67be",
       "bytes": 318355
     },
+    "automation-question-interactive-follow-up.png": {
+      "sha256": "28efbfe47993dcbd042a614dbb92e1667ddeedf6d0d24bc0dbd887a672e152bf",
+      "bytes": 32302
+    },
+    "automation-questions-saved.png": {
+      "sha256": "d4be1736142317910a8e6def6844b5694a819832a2ad762b599b8dac9745a4f8",
+      "bytes": 357852
+    },
     "automation-setup-link-form.png": {
-      "sha256": "7ab720e0442a3ab8ff4fd4e141530c7a50240a07eb3189681c0996893fd85b36",
-      "bytes": 140712
+      "sha256": "7f3052a4b829528070e12ff807d95fc87c3e865a16be7b3780462a2b80d3f23f",
+      "bytes": 126095
     },
     "automation-setup-link.png": {
       "sha256": "e5101e6bcedb536e6747c7f4610a09a231012c5acd7e9ac0dbcfc954ab00e3b7",
@@ -3341,6 +3369,10 @@
       "sha256": "b8b7c414ca6f33c78ad6afff2fb5d2042427327f8d222ea85911d27b6753a83b",
       "bytes": 266564
     },
+    "project-switch-unsent-draft-restored.png": {
+      "sha256": "6405d66f45a31a1e2f95d984f5f29ce63ffb223c87070decfdf1185fd3f925a2",
+      "bytes": 271551
+    },
     "projects-drag-after.png": {
       "sha256": "f707756387a138ae08dce5f1ab6006f6164d8d8d0991e84dd356eb4a6b66021f",
       "bytes": 26650
@@ -3817,6 +3849,26 @@
       "sha256": "fe238d814ad8de133780fedb85409930db7001f86793c82a4019c386ad3ad975",
       "bytes": 346709
     },
+    "run-budget-checkpoint-paused.png": {
+      "sha256": "87c7401e1c3745629ada220a36dca994ed63cb05f13aa4a08cce59af5f38963a",
+      "bytes": 390893
+    },
+    "run-budget-deadline-recovery.png": {
+      "sha256": "881a8978ea577965710f71016756efb413255ab6b30834b606cc9180e2d90d9d",
+      "bytes": 362266
+    },
+    "run-budget-exhausted-plan-recovery.png": {
+      "sha256": "cba19cbe97b70156f89cab31c40f1cea0d65c4049b965c83bcab956accb95992",
+      "bytes": 401437
+    },
+    "run-budget-exhausted-plan-summary.png": {
+      "sha256": "e324abdbc677366b7a12b8c3a2cd02b13d3e96a641ef53af106af74303c8d243",
+      "bytes": 387676
+    },
+    "run-budget-explicitly-continued.png": {
+      "sha256": "4a9c7946a279cb399aa60035c5d0eaa37f6480534419176242dc7dca20403f75",
+      "bytes": 373977
+    },
     "screenshot-motion-frame.png": {
       "sha256": "57cf6a15625e12c6105aaa94f80f6e7b67003353e40b5753df921947f67f4608",
       "bytes": 4566
@@ -3926,16 +3978,16 @@
       "bytes": 289921
     },
     "settings-automation-form-page-2.png": {
-      "sha256": "0242fd0a17e6d1c89d2b294cab0a8189d14eab5fa33ae8b8de6e593b9ee7e5d5",
-      "bytes": 256914
+      "sha256": "59b5056541f2bfc4979f02e929d9c7844d150bdf40e9ec7bce301d8c92ec4433",
+      "bytes": 256023
     },
     "settings-automation-form.png": {
       "sha256": "1db431d6be2ae0313bb1b3b5901bd1470937e8a1e22be19fe0a1fcc3a0fddb79",
       "bytes": 154242
     },
     "settings-automation-push-grant.png": {
-      "sha256": "9ef0e6ee6fa953219d0b8c1779af3714344d3d6554975bcec3f20f46012d888b",
-      "bytes": 44395
+      "sha256": "ee6057dcc4847a64d37f0db891d9b71865c1a55aa780cf36d33269d67560265d",
+      "bytes": 76442
     },
     "settings-automations-run-now-hover.png": {
       "sha256": "d0d8954984465bcb714b8a9c54cda189ced69ef720a5f76f1f90f3ab06649503",
@@ -4745,6 +4797,10 @@
       "sha256": "2d222c8085171e21785d9a57f33058c4bfb32931bdedfacda3c8eee1873f8c6d",
       "bytes": 47007
     },
+    "settings-usage-responses-cache.png": {
+      "sha256": "0f2b99bf388e505105b2c7a0fdd1b06308c1747a6a1f82ec0247b5dd06ef577b",
+      "bytes": 20415
+    },
     "settings-usage-value-map-card-link.png": {
       "sha256": "ac39493fb26a7dafdd9fd0cee76f11b7f649aaaa94dad139696bd30ccff8badc",
       "bytes": 253268
@@ -5217,6 +5273,14 @@
       "sha256": "fa2b4962b4fb56eeeeb9f06ec8b7dbf610677e74ae774bd8ad490b739defee57",
       "bytes": 109090
     },
+    "subagent-tool-sizing-narrow.png": {
+      "sha256": "64ca2eba72df541da1c17f94ce55d2e88d9ce84db4f69d44d69bc075143479d3",
+      "bytes": 27282
+    },
+    "subagent-tool-sizing-wide.png": {
+      "sha256": "a9364a561b3c4128db8f5123e8a4562eee3bcb51534fe2361377facb8e6253cd",
+      "bytes": 35388
+    },
     "subagent-ungrouped-beside-read.png": {
       "sha256": "4e41b7a7cc4dc70adec6a9e84001d95f3d8a39b89f068c650678e9cee71461f0",
       "bytes": 97802
@@ -5622,8 +5686,8 @@
       "bytes": 255344
     },
     "tool-activity-icon-nested-row-running.png": {
-      "sha256": "dd1382736229cdbcdd59bebf67c5264f4e13bdf5176875bf46c452280dd6ab29",
-      "bytes": 272433
+      "sha256": "cf2da59c0631708f98232a298519098896c7811bec254cafc3bfeef1fe94310d",
+      "bytes": 286926
     },
     "tool-argument-clamp-guidance.png": {
       "sha256": "bcaae741c497efba08cf40ccb2c9d2b8e8543f1f018c2380c20e820546349dae",

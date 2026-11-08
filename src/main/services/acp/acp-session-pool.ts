@@ -536,6 +536,19 @@ export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
   return entry ? cancelAgentInitiatedTurn(entry.open) : false
 }
 
+/** Runtime ownership includes self-started turns and tools reported between prompts. */
+export function hasActiveAcpTurn(threadId: string): boolean {
+  if (threadOperations.has(threadId)) return true
+  const entry = pool.get(threadId)
+  return (
+    entry !== undefined &&
+    (entry.open.turnStop !== null ||
+      entry.open.agentInitiated?.isActive() === true ||
+      entry.open.agentInitiatedCancel !== undefined ||
+      acpSessionActivity(entry.open).hasPendingTools)
+  )
+}
+
 /** Tear down every pooled session (app shutdown). */
 export async function disposeAllAcpSessions(): Promise<void> {
   await Promise.all([...threadOperations.values()])
