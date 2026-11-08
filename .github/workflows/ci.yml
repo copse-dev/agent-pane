@@ -2663,7 +2663,8 @@ jobs:
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
     # Metadata runs require fresh static/unit work plus either real heavy work
-    # or the independent exact-candidate verification job. Cancellation still fails.
+    # or exact-candidate native evidence revalidated here after all fresh work.
+    # Cancellation and dependency failures are rejected before any API lookup.
     if: ${{ always() }}
     needs:
       [
@@ -2679,7 +2680,10 @@ jobs:
       ]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - name: Reject canceled workflow
         if: ${{ cancelled() }}
@@ -2789,7 +2793,7 @@ jobs:
               echo "Invalid completed-verification route."
               exit 1
             fi
-            echo "Fresh static/unit gates passed; exact-candidate native verification: $VERIFIED_SOURCE"
+            echo "Fresh static/unit gates passed; final native revalidation remains required: $VERIFIED_SOURCE"
             exit 0
           fi
           # Zero-shard / screenshot-only plans intentionally SKIP heavy jobs
@@ -2804,6 +2808,80 @@ jobs:
             exit 1
           fi
           echo "All CI jobs passed (or were intentionally skipped)."
+
+      # Do this in the aggregate, after its shell gate, rather than a separate
+      # job whose output could become stale while the aggregate waits in queue.
+      # Native jobs were skipped already: late invalidation must fail this run.
+      - name: Revalidate native evidence before success
+        if: ${{ success() && !cancelled() && needs.precheck.outputs.verified_source != '' }}
+        env:
+          SOURCE: ${{ needs.precheck.outputs.verified_source }}
+          CHECKS_RUNNER: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
+          E2E_RUNNER: ${{ vars.SELF_HOSTED_E2E || 'ubuntu-24.04' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        # Runner-provided Node only: a `uses:` action would be downloaded during
+        # job initialization, before the cancellation/dependency shell gates.
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+          const { stripTypeScriptTypes } = require('node:module');
+          async function main() {
+            const payload = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+            if (process.env.GITHUB_EVENT_NAME !== 'pull_request' || payload.action !== 'edited' ||
+                payload.pull_request.head.repo?.id !== payload.repository.id ||
+                payload.pull_request.base.repo?.id !== payload.repository.id ||
+                !['main', 'codex/ci-native-reuse-probe-base-20261108'].includes(payload.pull_request.base.ref) || !process.env.SOURCE) {
+              throw new Error('Missing final native-verification authority.');
+            }
+            // Only GET requests to the Actions-provided API origin. No redirects,
+            // candidate checkout, packages, external action or credential logging.
+            const request = async (route, parameters) => {
+              if (!route.startsWith('GET /repos/')) throw new Error('Unexpected API route');
+              const remaining = { ...parameters };
+              const path = route.slice(4).replace(/\{([^}]+)\}/g, (_, key) => {
+                if (!Object.hasOwn(remaining, key)) throw new Error('Missing API parameter');
+                const value = remaining[key];
+                delete remaining[key];
+                return encodeURIComponent(value);
+              });
+              const url = new URL(path, process.env.GITHUB_API_URL);
+              for (const [key, value] of Object.entries(remaining)) url.searchParams.set(key, value);
+              const response = await fetch(url, {
+                headers: {
+                  authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                  accept: 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                },
+                redirect: 'error', signal: AbortSignal.timeout(15000),
+              });
+              if (!response.ok) throw new Error(`GitHub read failed: HTTP ${response.status}`);
+              return { data: await response.json() };
+            };
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+            const { data } = await request('GET /repos/{owner}/{repo}/contents/{path}', {
+              owner, repo, path: 'scripts/ci-metadata-reuse.mts', ref: payload.pull_request.base.sha,
+            });
+            if (data.type !== 'file' || data.encoding !== 'base64') {
+              throw new Error('Pinned native-verification policy is unavailable.');
+            }
+            const source = stripTypeScriptTypes(Buffer.from(data.content, 'base64').toString('utf8'));
+            const policy = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+            const result = await policy.findCompletedVerification(request, {
+              eventName: process.env.GITHUB_EVENT_NAME, payload, sha: process.env.GITHUB_SHA,
+              runId: Number(process.env.GITHUB_RUN_ID), now: Date.now(),
+              runnerImage: `${process.env.ImageOS}/${process.env.ImageVersion}`,
+              checksRunner: process.env.CHECKS_RUNNER, e2eRunner: process.env.E2E_RUNNER,
+            });
+            if (result !== process.env.SOURCE) {
+              throw new Error('Native verification changed or became unavailable during this run; real native verification is required.');
+            }
+            console.log(`Final native verification remains valid: ${result}`);
+          }
+          main().catch((error) => {
+            console.error(`Final native verification unavailable: ${error.message}`);
+            process.exitCode = 1;
+          });
+          NODE
 
   # A separate contract from the merge gate: no skipped jobs or selected suite
   # can authorize release packaging. Always evaluate failures/cancellation.

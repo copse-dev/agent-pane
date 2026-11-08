@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { stripTypeScriptTypes } from 'node:module'
 import { describe, it } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
@@ -369,6 +370,8 @@ describe('trusted workflow wiring', () => {
             .array(
               z.object({
                 name: z.string().optional(),
+                if: z.string().optional(),
+                env: z.record(z.string(), z.string()).optional(),
                 run: z.string().optional(),
                 with: z.object({ script: z.string().optional() }).loose().optional(),
               }),
@@ -378,6 +381,238 @@ describe('trusted workflow wiring', () => {
       ),
     })
     .parse(load(readFileSync('.github/workflows/ci.yml', 'utf8')))
+
+  async function discovered(): Promise<{
+    f: ReturnType<typeof fixture>
+    input: ReuseInput
+    source: string
+  }> {
+    const f = fixture()
+    // The event is immutable; subsequent live PR responses may change.
+    const input = { ...f.input, payload: structuredClone(f.input.payload) }
+    const source = await findCompletedVerification(f.request, input)
+    assert.ok(source)
+    return { f, input, source }
+  }
+
+  async function finalRecheck(
+    input: ReuseInput,
+    expected: string,
+    request: ReturnType<typeof fixture>['request'],
+    policyUnavailable = false,
+  ): Promise<string[]> {
+    const aggregate = workflow.jobs['ci-passed']
+    const last = aggregate?.steps?.at(-1)
+    assert.ok(last)
+    assert.equal(last.name, 'Revalidate native evidence before success')
+    assert.equal(last.env?.['SOURCE'], '${{ needs.precheck.outputs.verified_source }}')
+    assert.ok(last.run)
+    assert.match(last.run, /^node <<'NODE'\n[\s\S]*\nNODE\n?$/)
+    const script = last.run.replace(/^node <<'NODE'\n/, '').replace(/\nNODE\n?$/, '')
+    // Inject only HTTP and module-import boundaries; execute the actual final
+    // script, including the REST adapter, and the real trusted verifier.
+    const importExpression =
+      "await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)"
+    assert.equal(script.split(importExpression).length, 2)
+    const executable = script.replace(importExpression, 'await loadPolicy(source)')
+    const trustedPolicy = readFileSync('scripts/ci-metadata-reuse.mts', 'utf8')
+    const failures: string[] = []
+    const [ImageOS, ImageVersion] = input.runnerImage.split('/')
+    const runtime = {
+      env: {
+        SOURCE: expected,
+        ImageOS,
+        ImageVersion,
+        CHECKS_RUNNER: input.checksRunner,
+        E2E_RUNNER: input.e2eRunner,
+        GITHUB_EVENT_NAME: input.eventName,
+        GITHUB_EVENT_PATH: '/event.json',
+        GITHUB_SHA: input.sha,
+        GITHUB_RUN_ID: String(input.runId),
+        GITHUB_REPOSITORY: 'copse-dev/agent-pane',
+        GITHUB_API_URL: 'https://api.github.com',
+        GITHUB_TOKEN: 'test-read-only-token',
+      },
+      exitCode: 0,
+    }
+    let reads = 0
+    const execution: unknown = runInNewContext(executable, {
+      process: runtime,
+      fetch: async (url: URL, options: RequestInit) => {
+        reads++
+        assert.equal(url.origin, 'https://api.github.com')
+        assert.equal(
+          new Headers(options.headers).get('authorization'),
+          'Bearer test-read-only-token',
+        )
+        assert.equal(options.redirect, 'error')
+        assert.equal(options.method, undefined, 'default GET only')
+        assert.ok(options.signal)
+        if (reads === 1) {
+          assert.equal(
+            decodeURIComponent(url.pathname),
+            '/repos/copse-dev/agent-pane/contents/scripts/ci-metadata-reuse.mts',
+          )
+          assert.equal(url.searchParams.get('ref'), BASE)
+          return {
+            ok: !policyUnavailable,
+            status: policyUnavailable ? 503 : 200,
+            json: async () => ({
+              type: 'file',
+              encoding: 'base64',
+              content: Buffer.from(trustedPolicy).toString('base64'),
+            }),
+          }
+        }
+        const routes = [
+          '/repos/{owner}/{repo}/pulls/{pull_number}',
+          '/repos/{owner}/{repo}/contents/{path}',
+          '/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
+          '/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs',
+          '/repos/{owner}/{repo}/actions/runs/{run_id}',
+        ]
+        for (const route of routes) {
+          const keys: string[] = []
+          const pattern = route.replace(/\{([^}]+)\}/g, (_token: string, key: string) => {
+            keys.push(key)
+            return '([^/]+)'
+          })
+          const match = new RegExp(`^${pattern}$`).exec(url.pathname)
+          if (!match) continue
+          const params: Record<string, string | number> = Object.fromEntries(url.searchParams)
+          keys.forEach((key, index) => {
+            params[key] = decodeURIComponent(match[index + 1] ?? '')
+          })
+          for (const key of ['pull_number', 'run_id', 'attempt_number', 'per_page'])
+            if (Object.hasOwn(params, key)) params[key] = Number(params[key])
+          const { data } = await request(`GET ${route}`, params)
+          return { ok: true, status: 200, json: async () => data }
+        }
+        throw new Error(`Unexpected read ${url.href}`)
+      },
+      URL,
+      AbortSignal,
+      Date: { now: () => input.now },
+      Buffer,
+      require: (name: string) => {
+        if (name === 'node:fs')
+          return {
+            readFileSync: (path: string, encoding: string): string => {
+              assert.equal(path, '/event.json')
+              assert.equal(encoding, 'utf8')
+              return JSON.stringify(input.payload)
+            },
+          }
+        assert.equal(name, 'node:module')
+        return { stripTypeScriptTypes }
+      },
+      loadPolicy: async (source: string) => {
+        assert.equal(source, stripTypeScriptTypes(trustedPolicy))
+        return { findCompletedVerification }
+      },
+      console: {
+        error: (message: string) => {
+          failures.push(message)
+        },
+        log: () => {},
+      },
+    })
+    await execution
+    assert.equal(runtime.exitCode, failures.length ? 1 : 0)
+    return failures
+  }
+
+  it('revalidates unchanged original evidence inside the aggregate after fresh work', async () => {
+    const { f, input, source } = await discovered()
+    assert.deepEqual(
+      await finalRecheck({ ...input, now: NOW + 20 * 60_000 }, source, f.request),
+      [],
+    )
+    assert.equal(f.calls.filter((route) => route.endsWith('/pulls/{pull_number}')).length, 4)
+    assert.deepEqual(workflow.jobs['ci-passed']?.permissions, {
+      contents: 'read',
+      actions: 'read',
+      'pull-requests': 'read',
+    })
+  })
+
+  it('rejects an original source retry that starts or fails during fresh metadata work', async () => {
+    for (const state of [
+      { status: 'in_progress', conclusion: null },
+      { status: 'completed', conclusion: 'failure' },
+    ]) {
+      const { f, input, source } = await discovered()
+      Object.assign(f.run, state, { run_attempt: 2, updated_at: new Date(NOW).toISOString() })
+      assert.equal((await finalRecheck(input, source, f.request)).length, 1)
+    }
+  })
+
+  it('rejects a different successful source instead of silently replacing the selected receipt', async () => {
+    const { f, input, source } = await discovered()
+    f.runs.unshift({ ...f.run, id: 15, updated_at: new Date(NOW).toISOString() })
+    assert.equal(
+      await findCompletedVerification(f.request, input),
+      'https://github.com/copse-dev/agent-pane/actions/runs/15/attempts/1',
+    )
+    assert.equal((await finalRecheck(input, source, f.request)).length, 1)
+  })
+
+  it('rejects live candidate or declaration changes after discovery', async () => {
+    for (const override of [
+      { head: { sha: 'e'.repeat(40) } },
+      { base: { sha: 'e'.repeat(40), ref: 'main' } },
+      { merge_commit_sha: 'e'.repeat(40) },
+      { draft: true },
+      { labels: [] },
+      { body: '<!-- copse-screenshot-stack: changed during fresh work -->' },
+    ]) {
+      const { f, input, source } = await discovered()
+      Object.assign(f.pr, override)
+      assert.equal((await finalRecheck(input, source, f.request)).length, 1)
+    }
+  })
+
+  it('rejects late expiry, native image drift and runner-policy changes', async () => {
+    const { f, input, source } = await discovered()
+    for (const override of [
+      { now: NOW + 24 * 60 * 60_000 },
+      { runnerImage: 'ubuntu24/20261102.1.0' },
+      { checksRunner: 'copse-checks' },
+      { e2eRunner: 'copse-e2e' },
+    ])
+      assert.equal((await finalRecheck({ ...input, ...override }, source, f.request)).length, 1)
+  })
+
+  it('fails late API or pinned-policy uncertainty after native work was skipped', async () => {
+    const { f, input, source } = await discovered()
+    assert.equal(
+      (
+        await finalRecheck(input, source, async () => {
+          throw new Error('API unavailable after discovery')
+        })
+      ).length,
+      1,
+    )
+    assert.equal((await finalRecheck(input, source, f.request, true)).length, 1)
+  })
+
+  it('does not run final API verification after cancellation or a failed dependency gate', () => {
+    const condition = workflow.jobs['ci-passed']?.steps?.at(-1)?.if
+    assert.ok(condition)
+    for (const [success, cancelled, source, expected] of [
+      [true, false, 'receipt', true],
+      [true, true, 'receipt', false],
+      [false, false, 'receipt', false],
+      [true, false, '', false],
+    ]) {
+      const result: unknown = runInNewContext(condition.slice(3, -2), {
+        success: () => success,
+        cancelled: () => cancelled,
+        needs: { precheck: { outputs: { verified_source: source } } },
+      })
+      assert.equal(result, expected)
+    }
+  })
 
   it('loads pinned base policy without candidate imports or a write token', () => {
     const reuse = workflow.jobs['verification-reuse']
@@ -463,8 +698,9 @@ describe('trusted workflow wiring', () => {
     const publisher = readFileSync('.github/workflows/publish-screenshot-candidates.yml', 'utf8')
     const guard = publisher.indexOf("job.name === 'precheck'")
     assert.ok(guard > 0)
-    assert.ok(publisher.indexOf("core.setOutput('not-rendered', 'e2e')") > guard)
-    const block = publisher.slice(guard, publisher.indexOf('const successfulStep', guard))
+    for (const reason of ['e2e', 'stack'])
+      assert.ok(publisher.indexOf(`core.setOutput('not-rendered', '${reason}')`) > guard)
+    const block = publisher.slice(guard, publisher.indexOf('// A red run can still', guard))
     assert.match(block, /Reusing verified native suites/)
     assert.match(block, /return;/)
     assert.doesNotMatch(block, /setOutput|createCommitStatus|createComment|updateComment/)
