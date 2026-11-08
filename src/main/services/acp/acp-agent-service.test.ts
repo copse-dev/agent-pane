@@ -444,6 +444,26 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
+  it('keeps the read-only restriction without naming an unavailable write-access tool', () => {
+    const prompt = buildAcpPrompt('Inspect the project', [], {
+      readonlyCheckout: true,
+      copseTools: false,
+    })
+    assert.match(prompt, /Read-only workspace:/)
+    assert.match(prompt, /cannot write there/)
+    assert.doesNotMatch(prompt, /request_write_access/)
+    assert.match(prompt, /Tell the user/)
+  })
+
+  it('keeps the write-access instructions when a read-only session has Copse tools', () => {
+    const prompt = buildAcpPrompt('Change the project', [], {
+      readonlyCheckout: true,
+      copseTools: true,
+    })
+    assert.match(prompt, /request_write_access/)
+    assert.match(prompt, /end your turn/)
+  })
+
   it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
     const user = 'Please implement the complete feature, then show it working.'
     const fresh = buildAcpPrompt(user, [])
