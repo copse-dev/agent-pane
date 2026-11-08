@@ -1201,7 +1201,9 @@ jobs:
   # PR prechecks only warn on an expired or unowned quarantine so it cannot block
   # unrelated work; the nightly run enforces it. Its own job, with no dependents,
   # so a failure marks the scheduled run red without cancelling the nightly e2e.
+  # Like every job, it is admitted through precheck.
   quarantine-expiry:
+    needs: precheck
     if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
