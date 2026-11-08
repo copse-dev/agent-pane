@@ -1533,6 +1533,8 @@ describe('release-mac.yml workflow invariants', () => {
     // `fetch-depth: 0` fetched every branch and tag just for this check. The
     // checkout already writes the tag ref; `release` needs its full history, or
     // the shallow tag commit has no path to it and the release fails closed.
+    // `--unshallow` aborts on a complete clone, so a checkout that regains
+    // `fetch-depth: 0` breaks this fetch: drop the depth, never the flag.
     for (const file of ['release-mac.yml', 'release-publish.yml', 'release-promote.yml']) {
       const source = readFileSync(resolve('.github/workflows', file), 'utf8')
       assert.doesNotMatch(source, /^ +fetch-depth: 0$/m, file)
@@ -1972,6 +1974,8 @@ describe('gitleaks workflow invariants', () => {
   })
 
   it('fetches only the scanned commit history, not every branch and tag', () => {
+    // `--unshallow` aborts on a complete clone, so the two assertions go
+    // together: restoring `fetch-depth: 0` breaks the fetch, not just the size.
     assert.doesNotMatch(gitleaksWorkflow, /^ +fetch-depth: 0$/m)
     const fetch = gitleaksWorkflow.indexOf(
       'git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"',
@@ -2103,6 +2107,8 @@ describe('Copse Reviewer workflow invariants', () => {
     // `fetch-depth: 0` also fetched ~575 other branches and every tag. The
     // merge-base only needs the PR head's and its base's histories, so the jobs
     // that diff in their own checkout unshallow exactly those two refs.
+    // `--unshallow` aborts on a complete clone, so a checkout that regains
+    // `fetch-depth: 0` breaks these fetches: drop the depth, never the flag.
     for (const workflow of [nightlyWorkflow, summaryWorkflow])
       assert.doesNotMatch(workflow, /^ +fetch-depth: 0$/m)
     for (const [workflow, job, pr] of [
