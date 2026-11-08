@@ -52,8 +52,8 @@ export const permissionsMarkup = `
                   <code>git push</code> and <code>gh pr create</code>. Force pushes, branch
                   deletes, installs, <code>npx</code>, project scripts and anything with
                   <code>$(…)</code> always ask. It applies only in a trusted project with the
-                  setting above on, while the project sandbox is running: with no sandbox, on
-                  Windows, or if it failed to start, every shape asks. At the write levels,
+                  setting above on, and only while the project sandbox is running. Without a
+                  sandbox, on Windows, or if it failed to start, every shape asks. At the write levels,
                   <code>git commit</code>, <code>checkout</code> and <code>push</code> run the
                   project's git hooks inside the project sandbox.
                 </span>
@@ -275,10 +275,10 @@ export const permissionsMarkup = `
               </label>
               <p class="field-hint">
                 Copse fetches origin's default branch hourly and when a thread starts, so new
-                threads begin from current code. Only its stored copy of origin's branch changes,
-                never your checkout or branches. It uses your Git credentials but not the
-                project's Git config. Turn off to stop contacting origin; threads then start from
-                your last fetch.
+                threads begin from current code. It updates only its stored copy of origin's branch;
+                your checkout and branches are never changed. The fetch uses your Git credentials
+                but ignores the project's Git configuration. Turn off to stop contacting origin;
+                threads then start from your last fetch.
               </p>
             </fieldset>
           </section>
