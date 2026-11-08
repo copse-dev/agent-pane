@@ -1,6 +1,11 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import {
+  BROWSER_SESSION_PARTITION,
+  browserSessionPartition,
+  browserThreadScope,
+} from '@shared/browser-session.ts'
+import {
   isStaticPreviewUrl,
   workspacePreviewFileUrl,
 } from '../services/browser/static-preview-server.ts'
@@ -8,6 +13,7 @@ import { resolvePathWithinRoot, resolveSshHostForWorkspaceRoot } from '../servic
 import { assertMainFrameSender, IpcValidationError, parseIpcArgs } from './ipc-guards.ts'
 import { threadPathArgs } from './thread-path-args.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { authorizeBrowserPartitionPreview } from '../windows/browser-web-contents.ts'
 
 export function registerShellHandlers(win: BrowserWindow): void {
   ipcMain.handle('shell:open-external', (event, url: unknown) => {
@@ -29,6 +35,11 @@ export function registerShellHandlers(win: BrowserWindow): void {
       throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
     }
     const abs = await resolvePathWithinRoot(relPath, root)
-    return workspacePreviewFileUrl(root, abs)
+    const url = await workspacePreviewFileUrl(root, abs)
+    await authorizeBrowserPartitionPreview(
+      browserSessionPartition(BROWSER_SESSION_PARTITION, browserThreadScope(projectId, threadId)),
+      url,
+    )
+    return url
   })
 }

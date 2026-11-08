@@ -5,7 +5,6 @@ import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { embeddedIpv4, normalizeHostname } from '@copse/llm/credential-url.ts'
 import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
-import { PREVIEW_CAPABILITY_PARAM } from '@shared/browser-url.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
 export const PREVIEW_CAPABILITY_HEADER = 'X-Copse-Preview-Capability'
@@ -52,7 +51,7 @@ interface PreviewServerEntry {
   root: string
   server: Server
   url: string
-  /** Never returned to a page; a capability URL only bootstraps one browser guest. */
+  /** Never returned to a page; main grants it to the browser session. */
   capability: string
   /** Recursive watch on `root`, so an edit to a served file reaches the pane. */
   watcher: FSWatcher | null
@@ -98,21 +97,9 @@ function previewEntryForRequest(url: string): PreviewServerEntry | null {
   return [...servers.values()].find((entry) => new URL(entry.url).origin === parsed.origin) ?? null
 }
 
-/** Add a bootstrap capability; the listener redirects it away before page JS runs. */
-export function previewCapabilityUrl(url: string): string {
-  const entry = previewEntryForRequest(url)
-  if (!entry) return url
-  const parsed = new URL(url)
-  parsed.searchParams.set(PREVIEW_CAPABILITY_PARAM, entry.capability)
-  return parsed.href
-}
-
-/** Only a navigation carrying this active listener's capability may bind a browser guest. */
-export function previewRequestCapability(url: string): string | null {
-  const entry = previewEntryForRequest(url)
-  if (!entry) return null
-  const supplied = new URL(url).searchParams.get(PREVIEW_CAPABILITY_PARAM)
-  return supplied === entry.capability ? entry.capability : null
+/** Main-process-only credential for an active preview origin. */
+export function previewCapabilityForUrl(url: string): string | null {
+  return previewEntryForRequest(url)?.capability ?? null
 }
 
 /** Whether this URL belongs to a Copse-owned static prototype server. */
@@ -210,27 +197,6 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
         request.headers['sec-fetch-site'] !== 'none')
     ) {
       response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden')
-      return
-    }
-    let requested: URL
-    try {
-      requested = new URL(request.url ?? '/', 'http://localhost')
-    } catch {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
-      return
-    }
-    if (requested.searchParams.has(PREVIEW_CAPABILITY_PARAM)) {
-      if (requested.searchParams.get(PREVIEW_CAPABILITY_PARAM) !== capability) {
-        response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden')
-        return
-      }
-      requested.searchParams.delete(PREVIEW_CAPABILITY_PARAM)
-      response
-        .writeHead(302, {
-          'Cache-Control': 'no-store',
-          Location: `${requested.pathname}${requested.search}`,
-        })
-        .end()
       return
     }
     void resolveRequestFile(canonicalRoot, request.url ?? '/').then(
@@ -392,7 +358,7 @@ export async function workspacePreviewFileUrl(root: string, absolutePath: string
     .split(sep)
     .map(encodeURIComponent)
     .join('/')
-  return previewCapabilityUrl(staticPreviewUrl(preview.url, previewPath))
+  return staticPreviewUrl(preview.url, previewPath)
 }
 
 /**
@@ -408,7 +374,7 @@ export async function staticPreviewEntryUrl(root: string, entryPath = '/'): Prom
       `Nothing to preview at "${entryPath}": no such file in the workspace. If it is a build output, finish the build before previewing.`,
     )
   }
-  return previewCapabilityUrl(url)
+  return url
 }
 
 export function staticPreviewUrl(baseUrl: string, entryPath = '/'): string {

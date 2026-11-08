@@ -13,8 +13,7 @@ import {
   handlePreviewWatchEvent,
   isStaticPreviewUrl,
   PREVIEW_CAPABILITY_HEADER,
-  previewCapabilityUrl,
-  previewRequestCapability,
+  previewCapabilityForUrl,
   setPreviewStaleSink,
   shutdownStaticPreviewServers,
   staticPreviewEntryUrl,
@@ -37,7 +36,7 @@ async function temporaryRoot(prefix: string): Promise<string> {
 }
 
 function previewHeaders(url: string | URL, init?: RequestInit): Headers {
-  const capability = previewRequestCapability(previewCapabilityUrl(String(url)))
+  const capability = previewCapabilityForUrl(String(url))
   assert.ok(capability)
   const headers = new Headers(init?.headers)
   headers.set(PREVIEW_CAPABILITY_HEADER, capability)
@@ -102,15 +101,11 @@ describe('static browser preview server', () => {
       assert.equal(response.status, 403, path)
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     }
-    const capabilityUrl = previewCapabilityUrl(preview.url)
-    assert.equal((await fetch(capabilityUrl)).status, 403)
+    assert.ok(previewCapabilityForUrl(preview.url))
     const malformed = await fetch(preview.url, {
       headers: { [PREVIEW_CAPABILITY_HEADER]: 'é'.repeat(43) },
     })
     assert.equal(malformed.status, 403)
-    const bootstrap = await previewFetch(capabilityUrl, { redirect: 'manual' })
-    assert.equal(bootstrap.status, 302)
-    assert.equal(bootstrap.headers.get('location'), '/')
     assert.equal((await previewFetch(preview.url)).status, 200)
   })
 
@@ -266,8 +261,8 @@ describe('static browser preview server', () => {
     await writeFile(file, '<p>ok</p>')
 
     const url = await workspacePreviewFileUrl(root, file)
-    assert.match(url, /^http:\/\/localhost:\d+\/pages\/launch\.html\?__copse_preview=/)
-    assert.ok(previewRequestCapability(url))
+    assert.match(url, /^http:\/\/localhost:\d+\/pages\/launch\.html$/)
+    assert.ok(previewCapabilityForUrl(url))
     assert.equal(new URL(url).protocol, 'http:')
   })
 
@@ -291,15 +286,9 @@ describe('static browser preview server', () => {
     await writeFile(join(root, 'dist', 'demo', 'index.html'), '<p>demo</p>')
 
     const url = await staticPreviewEntryUrl(root, 'dist/demo/index.html?scenario=a&autoplay=0')
-    const parsed = new URL(url)
-    assert.match(parsed.pathname, /^\/dist\/demo\/index\.html$/)
-    assert.equal(parsed.searchParams.get('scenario'), 'a')
-    assert.equal(parsed.searchParams.get('autoplay'), '0')
-    assert.ok(previewRequestCapability(url))
-    assert.match(
-      await staticPreviewEntryUrl(root, 'dist/demo/'),
-      /\/dist\/demo\/\?__copse_preview=/,
-    )
+    assert.match(url, /^http:\/\/localhost:\d+\/dist\/demo\/index\.html\?scenario=a&autoplay=0$/)
+    assert.ok(previewCapabilityForUrl(url))
+    assert.match(await staticPreviewEntryUrl(root, 'dist/demo/'), /\/dist\/demo\/$/)
 
     // A build that has not written its output yet: fail instead of opening "Not found".
     await assert.rejects(staticPreviewEntryUrl(root, 'dist/other/index.html'), /Nothing to preview/)

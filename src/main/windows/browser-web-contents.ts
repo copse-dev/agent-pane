@@ -11,11 +11,10 @@ import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
 import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origin-policy.ts'
 import {
-  isStaticPreviewUrl,
   PREVIEW_CAPABILITY_HEADER,
-  previewCapabilityUrl,
-  previewRequestCapability,
+  previewCapabilityForUrl,
 } from '../services/browser/static-preview-server.ts'
+import { grantPreviewSessionAccess } from '../services/browser/preview-session-grant.ts'
 
 import { browserAllowedOrigins } from '../services/browser/browser-network-grants.ts'
 import {
@@ -27,7 +26,38 @@ import {
 
 const browserSessions = new Map<string, Electron.Session>()
 const documents = new Map<number, string>()
-const previewAccess = new Map<number, { origin: string; capability: string }>()
+const previewGrants = new Map<string, Map<string, string>>()
+
+/**
+ * Grant a trusted task's browser partition access to one preview listener.
+ * Clear origin storage left from a previous app version or reused port before
+ * the first authenticated navigation. This removes old service workers and
+ * caches that could carry data from a different workspace at the same origin.
+ */
+export async function authorizeBrowserPartitionPreview(
+  partition: string,
+  url: string,
+): Promise<void> {
+  const capability = previewCapabilityForUrl(url)
+  const sess = getBrowserSessionForPartition(partition)
+  if (!capability || !sess) throw new Error('No active workspace preview for this browser task')
+  const origin = new URL(url).origin
+  let grants = previewGrants.get(partition)
+  if (!grants) {
+    grants = new Map()
+    previewGrants.set(partition, grants)
+  }
+  await grantPreviewSessionAccess(grants, origin, capability, () =>
+    sess.clearStorageData({ origin }),
+  )
+}
+
+export function browserPartitionHasPreview(partition: string, url: string): boolean {
+  const capability = previewCapabilityForUrl(url)
+  return (
+    capability !== null && previewGrants.get(partition)?.get(new URL(url).origin) === capability
+  )
+}
 
 // The in-app browser loads arbitrary, agent-chosen external pages, so it is
 // untrusted. Default-deny the powerful web-platform permissions a hostile page
@@ -52,6 +82,7 @@ const DENIED_BROWSER_PERMISSIONS = new Set<string>([
 
 function configureBrowserSession(
   sess: Electron.Session,
+  partition: string,
   scope: string,
   originAccess: BrowserOriginAccess,
 ): void {
@@ -93,21 +124,10 @@ function configureBrowserSession(
     for (const [name, value] of Object.entries(details.requestHeaders)) {
       if (name.toLowerCase() !== PREVIEW_CAPABILITY_HEADER.toLowerCase()) headers[name] = value
     }
-    const contentsId = details.webContentsId
-    if (contentsId !== undefined) {
-      const origin = URL.canParse(details.url) ? new URL(details.url).origin : ''
-      const bootstrap =
-        details.resourceType === 'mainFrame' ? previewRequestCapability(details.url) : null
-      if (bootstrap) {
-        previewAccess.set(contentsId, { origin, capability: bootstrap })
-      }
-      const access = previewAccess.get(contentsId)
-      if (access && details.resourceType === 'mainFrame' && origin !== access.origin)
-        previewAccess.delete(contentsId)
-      if (access && origin === access.origin) {
-        headers[PREVIEW_CAPABILITY_HEADER] = access.capability
-      }
-    }
+    const origin = URL.canParse(details.url) ? new URL(details.url).origin : ''
+    const capability = previewGrants.get(partition)?.get(origin)
+    if (capability && capability === previewCapabilityForUrl(details.url))
+      headers[PREVIEW_CAPABILITY_HEADER] = capability
     callback({ requestHeaders: headers })
   })
   sess.setPermissionRequestHandler((_wc, permission, callback) => {
@@ -127,6 +147,7 @@ export function getBrowserSessionForPartition(partition: string): Electron.Sessi
     // Agent automation keeps its separate profile and explicit origin grants.
     configureBrowserSession(
       sess,
+      partition,
       marker < 0 ? '' : partition.slice(marker + 1),
       isVisibleBrowserSessionPartition(partition) ? 'public-web' : 'allowlisted',
     )
@@ -167,22 +188,12 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame) documents.set(contents.id, details.url)
   })
-  contents.on('destroyed', () => {
-    documents.delete(contents.id)
-    previewAccess.delete(contents.id)
-  })
+  contents.on('destroyed', () => documents.delete(contents.id))
   contents.setWindowOpenHandler(({ url }) => {
     const { openTabUrl } = browserGuestWindowOpen(contents.getType(), url)
     if (openTabUrl && isBrowserPageNavigationAllowed(contents.getURL(), openTabUrl)) {
       const partition = browserPartitionForContents(contents)
-      getMainWindow()?.webContents.send(
-        'browser:open-tab',
-        isStaticPreviewUrl(contents.getURL()) &&
-          new URL(contents.getURL()).origin === new URL(openTabUrl).origin
-          ? previewCapabilityUrl(openTabUrl)
-          : openTabUrl,
-        partition,
-      )
+      getMainWindow()?.webContents.send('browser:open-tab', openTabUrl, partition)
     }
     return { action: 'deny' }
   })

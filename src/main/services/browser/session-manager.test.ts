@@ -85,6 +85,13 @@ function contents(
 }
 
 describe('scoped preview promotion', () => {
+  it('rejects preview creation without a task scope', async () => {
+    await assert.rejects(
+      new BrowserSessionManager().preview('http://localhost:43123/'),
+      /scoped browser task/,
+    )
+  })
+
   it('does not turn a denied preview URL into a capability for another task', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-preview-promotion-'))
     await writeFile(join(root, 'index.html'), '<h1>Private workspace</h1>')
@@ -104,10 +111,13 @@ describe('scoped preview promotion', () => {
         showArtefact() {},
       })
 
-      new BrowserSessionManager('another-task').showUrl(preview.url)
+      await assert.rejects(
+        new BrowserSessionManager('another-task').showUrl(preview.url),
+        /not open in this browser task/,
+      )
 
-      assert.equal(shownUrl, preview.url)
-      assert.equal((await fetch(shownUrl)).status, 403)
+      assert.equal(shownUrl, '')
+      assert.equal((await fetch(preview.url)).status, 403)
     } finally {
       setBrowserSessionPlatform(null)
       await shutdownStaticPreviewServers()
