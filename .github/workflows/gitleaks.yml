@@ -39,19 +39,12 @@ jobs:
         run: git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"
       # gitleaks-action v2 requires a separate license for organization-owned
       # repositories. Run the open-source CLI directly and verify the pinned
-      # release asset before executing it instead.
+      # release asset before executing it instead. The shared installer (also
+      # used by CI's precheck) falls back to the release asset API when the
+      # direct download fails, and checks the same checksum on either route.
       - name: Install pinned gitleaks CLI
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          path="${RUNNER_TEMP}/${archive}"
-          curl --fail --location --retry 3 \
-            --output "${path}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
-          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
-          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
-          "${RUNNER_TEMP}/gitleaks" version
+        run: bash scripts/install-gitleaks.sh
       # Default `gitleaks git` implies `--all --full-history`, which walks every
       # ref in the clone — when this used `fetch-depth: 0`, that included
       # machine-managed branches like `demo-previews` whose minified bundles trip

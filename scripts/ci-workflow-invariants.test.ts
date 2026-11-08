@@ -1983,6 +1983,22 @@ describe('gitleaks workflow invariants', () => {
     const scan = gitleaksWorkflow.indexOf('--log-opts="--full-history --diff-filter=tuxdb HEAD"')
     assert.ok(fetch >= 0 && scan > fetch, 'the scan must walk an unshallowed HEAD')
   })
+
+  it('installs through the shared installer with the same pins as CI precheck', () => {
+    // The installer's API fallback names one immutable release asset, so both
+    // workflows must pin the version and checksum it was written for.
+    assert.match(
+      gitleaksWorkflow,
+      /- name: Install pinned gitleaks CLI\n {8}shell: bash\n {8}run: bash scripts\/install-gitleaks\.sh\n/,
+    )
+    assert.doesNotMatch(gitleaksWorkflow, /releases\/download/)
+    for (const pin of ['GITLEAKS_VERSION', 'GITLEAKS_LINUX_X64_SHA256']) {
+      const value = new RegExp(String.raw`^ +${pin}: (\S+)$`, 'm')
+      const standalone = gitleaksWorkflow.match(value)?.[1]
+      assert.ok(standalone, `gitleaks.yml must pin ${pin}`)
+      assert.equal(ciWorkflow.match(value)?.[1], standalone, `${pin} must match ci.yml`)
+    }
+  })
 })
 
 describe('Copse Reviewer workflow invariants', () => {
