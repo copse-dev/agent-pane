@@ -25,7 +25,7 @@ on:
     # `edited` is required for base-branch retargets. The tier and oracle diff
     # both depend on the current base; without a new run, a head checked against
     # one base can retain stale CI after it is moved to another (#2520).
-    # Title/body-only edits use isolated concurrency but still test the candidate.
+    # Title/body edits may reuse exact-candidate heavy suites under the policy below.
     types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
     # No `branches:` filter — PRs into `main` and the promotion PRs into
     # `release` both run this workflow. Which TIER they get is decided per job by
@@ -47,14 +47,12 @@ on:
 permissions:
   contents: read
 
-# Every dispatched CI run must test its candidate and publish its own aggregate.
-# A later metadata-only suite can leave CI Passed Expected despite an earlier
-# exact-head success. Never fill that gap with a green no-op or copied result.
-# Title/body edits and the Copse feedback label still get isolated concurrency:
-# they cannot cancel or replace a pending source run. Retargets and unknown edit
-# keys keep the normal source group. The edit predicate compares all change keys
-# and defaults to normal routing on unknown keys or serialisation drift.
-# scripts/ci-cosmetic-events.test.ts pins concurrency and autoformat routing.
+# Every run verifies its candidate: metadata edits run fresh static/unit gates.
+# Native suites may be reused only through verification-reuse's pinned
+# base policy and GitHub-owned records of an exact-candidate completed full run.
+# No status is copied; stale, missing or untrusted evidence runs real suites.
+# Metadata concurrency stays isolated so it cannot replace pending source CI.
+# Retargets and unknown edit keys keep ordinary routing.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
   group: >-
@@ -75,6 +73,57 @@ concurrency:
     toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) }}
 
 jobs:
+  # Read-only, hosted trust boundary. Never imports candidate code or artifacts.
+  # Missing policy on an older base safely disables the optimization at rollout.
+  verification-reuse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      source: ${{ steps.verify.outputs.source }}
+      image: ${{ steps.verify.outputs.image }}
+    steps:
+      - name: Verify completed candidate suites
+        id: verify
+        uses: actions/github-script@v9
+        env:
+          CHECKS_RUNNER: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
+          E2E_RUNNER: ${{ vars.SELF_HOSTED_E2E || 'ubuntu-24.04' }}
+        with:
+          script: |
+            core.setOutput('source', '');
+            const runnerImage = `${process.env.ImageOS}/${process.env.ImageVersion}`;
+            core.setOutput('image', runnerImage);
+            if (context.eventName !== 'pull_request' || context.payload.action !== 'edited' ||
+                context.payload.pull_request.head.repo?.id !== context.payload.repository.id ||
+                context.payload.pull_request.base.repo?.id !== context.payload.repository.id ||
+                context.payload.pull_request.base.ref !== 'main') return;
+            try {
+              const { data } = await github.rest.repos.getContent({
+                ...context.repo, path: 'scripts/ci-metadata-reuse.mts',
+                ref: context.payload.pull_request.base.sha,
+              });
+              if (data.type !== 'file' || data.encoding !== 'base64') return;
+              const { stripTypeScriptTypes } = require('node:module');
+              const source = stripTypeScriptTypes(Buffer.from(data.content, 'base64').toString('utf8'));
+              const policy = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+              const result = await policy.findCompletedVerification(github.request, {
+                eventName: context.eventName, payload: context.payload, sha: context.sha,
+                runId: context.runId, now: Date.now(),
+                runnerImage,
+                checksRunner: process.env.CHECKS_RUNNER, e2eRunner: process.env.E2E_RUNNER,
+              });
+              if (result) {
+                core.setOutput('source', result);
+                await core.summary.addRaw(`Verified native suites: ${result}. Fresh static/unit gates still run.`).write();
+              }
+            } catch (error) {
+              core.notice(`Completed verification unavailable; running real suites: ${error.message}`);
+            }
+
   # Job timeouts: every job below sets `timeout-minutes`, and
   # scripts/ci-workflow-invariants.test.ts fails the build if a new one forgets.
   # GitHub's default is 360 minutes, which is survivable on hosted runners (you
@@ -142,6 +191,7 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
+    needs: verification-reuse
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -161,6 +211,7 @@ jobs:
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
     # specs), and the runner-dependent shard fan-out (e2e_shards / shard_total).
     outputs:
+      verified_source: ${{ steps.native-runtime.outputs.image == needs.verification-reuse.outputs.image && needs.verification-reuse.outputs.source || '' }}
       shadow_mode: ${{ steps.small-gate.outputs.shadow_mode }}
       shadow_count: ${{ steps.small-gate.outputs.shadow_count }}
       mode: ${{ steps.plan.outputs.mode }}
@@ -178,6 +229,18 @@ jobs:
       # everything even as a draft and reviews it without ownership scoping.
       screenshot_refresh: ${{ steps.screenshot-refresh.outputs.refresh }}
     steps:
+      # Capture before checkout/setup can execute candidate code. Missing or
+      # self-hosted image identity never qualifies for completed-suite reuse.
+      - name: Capture native runner image
+        id: native-runtime
+        run: echo "image=${ImageOS:-unknown}/${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Native runtime v1 / ${{ steps.native-runtime.outputs.image }}
+        run: echo "Recorded the hosted runner image before candidate execution."
+      - name: Reusing verified native suites
+        if: needs.verification-reuse.outputs.source != '' && steps.native-runtime.outputs.image == needs.verification-reuse.outputs.image
+        env:
+          SOURCE: ${{ needs.verification-reuse.outputs.source }}
+        run: echo "Native suites verified at $SOURCE; current static/unit/browser work remains required."
       - name: Verify merge-queue GitHub client methods
         uses: actions/github-script@v9
         with:
@@ -200,6 +263,12 @@ jobs:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Queues also leave no token; public history/base fetches need none.
           persist-credentials: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      - name: >-
+          Candidate verification v1 / ${{ github.sha }} / ${{ github.event.pull_request.head.sha }} / ${{ github.event.pull_request.base.sha }} / ${{ github.base_ref }} / ${{ github.event.pull_request.draft }} / ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }} / ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }} / ${{ contains(github.event.pull_request.labels.*.name, 'bench-agent') }} / ${{ contains(github.event.pull_request.labels.*.name, 'bench-doctrine') }} / ${{ contains(github.event.pull_request.labels.*.name, 'eval-tool-preference') }} / ${{ contains(github.event.pull_request.labels.*.name, 'bench-agent-eval') }} / ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }} / ${{ vars.SELF_HOSTED_E2E || 'ubuntu-24.04' }}
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       # Full history of the commit under test, for the oracle's base diff and the
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
@@ -1494,6 +1563,7 @@ jobs:
     # Draft PRs are unaffected: the `draft == false` clause below still applies,
     # so neither a subset nor a full plan dispatches shards on work in progress.
     if: >-
+      needs.precheck.outputs.verified_source == '' &&
       needs.precheck.outputs.e2e_shard_total != '0' &&
       (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
       (github.event_name != 'pull_request' ||
@@ -1617,6 +1687,13 @@ jobs:
       # by default unless developers opt out with the same variable.
       COPSE_E2E_HEADLESS: '0'
     steps:
+      # Capture before checkout/setup can execute candidate code. Missing or
+      # self-hosted image identity never qualifies for completed-suite reuse.
+      - name: Capture native runner image
+        id: native-runtime
+        run: echo "image=${ImageOS:-unknown}/${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Native runtime v1 / ${{ steps.native-runtime.outputs.image }}
+        run: echo "Recorded the hosted runner image before candidate execution."
       # Measurement only: the shard's job start, before checkout wipes the
       # workspace (RUNNER_TEMP survives it). The collect step below folds it
       # into the shard's provenance marker so `screenshot-artifacts` can report
@@ -2585,11 +2662,21 @@ jobs:
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
-    # Metadata runs earn this result through the same candidate jobs as source
-    # runs; there is no success path that bypasses dependency validation.
+    # Metadata runs require fresh static/unit work plus either real heavy work
+    # or the independent exact-candidate verification job. Cancellation still fails.
     if: ${{ always() }}
     needs:
-      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
+      [
+        verification-reuse,
+        precheck,
+        screenshot-baselines,
+        check,
+        review-cell,
+        bench,
+        build,
+        e2e,
+        screenshot-artifacts,
+      ]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
@@ -2606,6 +2693,10 @@ jobs:
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+          VERIFICATION_RESULT: ${{ needs.verification-reuse.result }}
+          VERIFIED_SOURCE: ${{ needs.verification-reuse.outputs.source }}
+          REUSED_SOURCE: ${{ needs.precheck.outputs.verified_source }}
+          PR_METADATA: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           BASELINES_RESULT: ${{ needs.screenshot-baselines.result }}
@@ -2636,6 +2727,10 @@ jobs:
           fi
           if [ "$BASELINES_RESULT" != "success" ]; then
             echo "Required R2 baseline hydration did not complete successfully."
+            exit 1
+          fi
+          if [ -n "$REUSED_SOURCE" ] && { [ "$REUSED_SOURCE" != "$VERIFIED_SOURCE" ] || [ "$VERIFICATION_RESULT" != "success" ] || [ "$FORK_PR" = "true" ] || [ "$PR_METADATA" != "true" ]; }; then
+            echo "Invalid completed-verification authority."
             exit 1
           fi
           if [ "$FORK_PR" = "true" ]; then
@@ -2687,6 +2782,15 @@ jobs:
                 exit 1
               fi
             fi
+          fi
+          if [ -n "$REUSED_SOURCE" ]; then
+            if [ "$VERIFICATION_RESULT" != "success" ] || [ "$PR_METADATA" != "true" ] ||
+               [ "$MERGE_GROUP" = "true" ] || [ "$BUILD_RESULT" != "success" ] || [ "$E2E_RESULT" != "skipped" ]; then
+              echo "Invalid completed-verification route."
+              exit 1
+            fi
+            echo "Fresh static/unit gates passed; exact-candidate native verification: $VERIFIED_SOURCE"
+            exit 0
           fi
           # Zero-shard / screenshot-only plans intentionally SKIP heavy jobs
           # (#1233). They may not disguise failures or cancellations above.

@@ -137,7 +137,13 @@ describe('cosmetic CI event routing', () => {
       return (typeof dependencies === 'string' ? [dependencies] : (dependencies ?? [])).some(rooted)
     }
     for (const [name, job] of Object.entries(workflow.jobs)) {
-      if (name === 'precheck' || name === 'autoformat' || name === 'ci-passed') continue
+      if (
+        name === 'verification-reuse' ||
+        name === 'precheck' ||
+        name === 'autoformat' ||
+        name === 'ci-passed'
+      )
+        continue
       assert.ok(rooted(name), `${name} must inherit the precheck admission boundary`)
       if (name === 'full-release-validation') {
         assert.ok(job.if)
@@ -171,7 +177,7 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
-  it('has no metadata shortcut in the required aggregate or precheck', () => {
+  it('keeps fresh precheck and units on metadata events; reuse has its own verification boundary', () => {
     const aggregate = binding('ci-passed')
     assert.equal(binding('precheck').if, undefined)
     assert.ok(aggregate.steps?.some((step) => step.env?.['PRECHECK_RESULT']))

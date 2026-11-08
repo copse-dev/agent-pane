@@ -38,6 +38,10 @@ const successfulPr = {
   MODE: 'full',
   ANY_FAILURE: 'false',
   ANY_CANCELLED: 'false',
+  VERIFICATION_RESULT: 'success',
+  VERIFIED_SOURCE: '',
+  REUSED_SOURCE: '',
+  PR_METADATA: 'false',
   PRECHECK_RESULT: 'success',
   CHECK_RESULT: 'success',
   BASELINES_RESULT: 'success',
@@ -76,6 +80,10 @@ describe('required CI gate bindings', () => {
       MODE: '${{ needs.precheck.outputs.mode }}',
       ANY_FAILURE: "${{ contains(needs.*.result, 'failure') }}",
       ANY_CANCELLED: "${{ contains(needs.*.result, 'cancelled') }}",
+      VERIFICATION_RESULT: '${{ needs.verification-reuse.result }}',
+      VERIFIED_SOURCE: '${{ needs.verification-reuse.outputs.source }}',
+      REUSED_SOURCE: '${{ needs.precheck.outputs.verified_source }}',
+      PR_METADATA: "${{ github.event_name == 'pull_request' && github.event.action == 'edited' }}",
       PRECHECK_RESULT: '${{ needs.precheck.result }}',
       CHECK_RESULT: '${{ needs.check.result }}',
       BASELINES_RESULT: '${{ needs.screenshot-baselines.result }}',
@@ -101,6 +109,31 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
     assert.equal(gate({ ...invalid, METADATA_ONLY: 'true' }), 1)
     assert.equal(gate({ PRECHECK_RESULT: 'skipped', CHECK_RESULT: 'skipped' }), 1)
     assert.equal(gate({ ANY_CANCELLED: 'true', METADATA_ONLY: 'true' }), 1)
+  })
+
+  it('accepts verified metadata reuse only after fresh unit/static work and never on source/queue/fork events', () => {
+    const reuse = {
+      VERIFIED_SOURCE: 'https://github.com/copse-dev/agent-pane/actions/runs/10/attempts/1',
+      REUSED_SOURCE: 'https://github.com/copse-dev/agent-pane/actions/runs/10/attempts/1',
+      PR_METADATA: 'true',
+      BUILD_RESULT: 'success',
+      E2E_RESULT: 'skipped',
+    }
+    assert.equal(gate(reuse), 0)
+    assert.equal(gate({ ...reuse, REUSED_SOURCE: '', E2E_RESULT: 'success' }), 0)
+    for (const invalid of [
+      { VERIFICATION_RESULT: 'skipped' },
+      { VERIFIED_SOURCE: '' },
+      { PR_METADATA: 'false' },
+      { FORK_PR: 'true' },
+      { MERGE_GROUP: 'true' },
+      { CHECK_RESULT: 'skipped' },
+      { PRECHECK_RESULT: 'skipped' },
+      { ANY_FAILURE: 'true' },
+      { ANY_CANCELLED: 'true' },
+      { BUILD_RESULT: 'skipped' },
+    ])
+      assert.equal(gate({ ...reuse, ...invalid }), 1)
   })
 
   it('fails the whole-run cancellation step before dependency acceptance can run', () => {

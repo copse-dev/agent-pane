@@ -252,7 +252,10 @@ describe('ci.yml workflow invariants', () => {
     }
     const checkRoutes = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)]
       .flatMap((match) => (match[1] ? [match[1]] : []))
-      .filter((name) => jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'))
+      .filter(
+        (name) =>
+          name !== 'verification-reuse' && jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'),
+      )
     assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
     for (const name of checkRoutes) {
       for (const sameRepo of [false, true]) {
@@ -260,6 +263,8 @@ describe('ci.yml workflow invariants', () => {
       }
       assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
     }
+    for (const event of ['push', 'pull_request', 'merge_group'])
+      assert.equal(route('verification-reuse', event, true), 'ubuntu-24.04')
     assert.equal(route('precheck', 'pull_request', false), 'ubuntu-24.04')
     assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
     for (const sameRepo of [false, true]) {
@@ -646,7 +651,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[\s*verification-reuse,\s*precheck,\s*screenshot-baselines,\s*check,\s*review-cell,\s*bench,\s*build,\s*e2e,\s*screenshot-artifacts,?\s*\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })

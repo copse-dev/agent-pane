@@ -123,3 +123,50 @@ Local tests evaluate the actual YAML routing and execute the actual aggregate
 shell, including rejected skipped work and successful full/subset/skip controls.
 They cannot prove GitHub merge eligibility. A live authorized positive-control
 probe remains necessary before calling the Expected-check behavior repaired.
+
+## Exact-candidate native-suite reuse — 8 November 2026
+
+The metadata policy above is amended narrowly: title/body-only edits into protected
+`main` still dispatch CI and run fresh static, unit, build and browser verification.
+They may reuse a completed **full native suite** for the exact event candidate.
+`CI Passed` remains the same real aggregate; no status is copied and cancellation
+still fails. Ready, label, source, retarget, queue, release and fork events retain
+real verification. Screenshot stack declarations before or after the edit disable
+reuse, preserving their declaration-bound combined validation.
+
+The hosted, read-only `verification-reuse` job loads its verifier from the event's
+pinned protected base, before candidate code. The candidate workflow and verifier
+must match that base. Its key includes merge SHA, source head, base SHA/ref, draft,
+CI labels, runner policy and the hosted native image. Runtime markers are recorded
+before checkout or setup can execute candidate code. Self-hosted/unknown images do
+not qualify. Source, dependency, test and runtime configuration changes therefore
+need new real verification; changed CI policy cannot approve its own reuse.
+
+Only GitHub's completed Actions job/step records count. One successful full source
+run must contain the real nine native shard steps, immutable screenshot collection,
+precheck, unit, build, baseline and aggregate jobs. Artifacts, caches, PR text and
+commit statuses are not receipts. The bounded history must be complete; a newer
+failed/running attempt (including an older run ID), ambiguous or missing records,
+API failure, or evidence older than 24 hours falls back to real suites. Reused runs
+are never original evidence. Live PR identity and the run/attempt history are
+rechecked before returning the original run URL.
+
+The screenshot publisher makes no mutation for a reuse run. Original candidates,
+failed publication, pending reviews and manual holds remain attached to the source
+run. Fresh browser results are checked on every edit; their raw `screenshots-demo` artifact remains available, but metadata reuse does not create a new screenshot review or approve those new images. This first optimization does
+not reuse the externally resolved browser runtime.
+
+Examples: a validation-paragraph edit after an exact full success can omit the nine
+native jobs. The same edit after a base move, source push, runner-image change or
+failed retry runs them again. Removing or changing a stack declaration also runs
+real combined verification. The two historical metadata runs for #4276/#4279 each
+executed 469 native specs: this policy targets **938 redundant native executions**
+across that pair. Their 35,378 unit passes and 249 browser specs remain fresh work
+under this deliberately limited policy. These counts are historical opportunity,
+not a claim that those old runs were eligible receipts or were avoided in practice.
+
+Rollout is fail-closed: a base without this verifier performs real suites. The policy
+PR itself changes its trusted files and cannot reuse its own verification. A live
+premerge probe must identify its controlled base-allowlist substitution separately
+from the production protected-main policy; it cannot claim to change main's branch
+protection or establish a merge approval.
