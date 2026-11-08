@@ -207,6 +207,8 @@ export type ProviderStreamChunk =
        * model; display metadata for the transcript (see `ToolCall`).
        */
       appendedReminderLengths?: number[]
+      /** The host held the call back without running it (see `ToolCall.deferred`). */
+      deferred?: true
       /** Images returned by the tool, rendered beside its transcript card. */
       images?: ToolResultImage[]
     }

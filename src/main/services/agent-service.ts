@@ -69,6 +69,7 @@ import {
   invalidateNestedInstructionDiscoveryForWrite,
 } from './project-instructions.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
+import { createParentInstructionDelivery } from './parent-instruction-delivery.ts'
 import {
   clearActiveRunThread,
   recordThreadModel,
@@ -1988,6 +1989,7 @@ async function runAgentWithInlineCanvas(
       systemPromptBuild.instructionMetadata.activeInstructionContents,
     )
     let activeNestedInstructionBytes = systemPromptBuild.instructionMetadata.activeNestedBytes
+    const parentInstructionDelivery = createParentInstructionDelivery(parentProvider)
     // Names of nested files activated by a tool call, held until the next step
     // boundary so the notice lands after that call's tool_result.
     const pendingNestedInstructionNotices: string[] = []
@@ -2349,19 +2351,24 @@ async function runAgentWithInlineCanvas(
             }
             pendingNestedInstructionNotices.push(...activation.injectedNames)
             if (activation.block) {
+              parentInstructionDelivery.requireDelivery(activation.block)
               const leadingSystem = trimmed.find((message) => message.role === 'system')
               if (leadingSystem?.role === 'system') {
                 leadingSystem.content += `\n\n---\n\n${activation.block}`
               }
-              // An edit must not land before the newly applicable rules have
-              // reached the model. Reads can proceed: their result and the new
-              // leading-system block arrive together before the next step.
-              if (isEditTool(name)) {
-                return (
-                  'Edit deferred because this path activated nested AGENTS.md instructions. ' +
-                  'Review the newly loaded workspace instructions, then retry the same edit.'
-                )
-              }
+            }
+          }
+          // All edits from this response wait, including one whose path was
+          // already marked active by an earlier tool call, or that no nested
+          // scope covers at all. Reads can proceed. `deferred` keeps the card
+          // from reading as a completed edit.
+          if (isEditTool(name) && parentInstructionDelivery.hasPendingInstructions) {
+            return {
+              result:
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+              deferred: true,
             }
           }
           if (isEditTool(name)) turnChangedFiles = true
@@ -2674,7 +2681,7 @@ async function runAgentWithInlineCanvas(
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
               await runWithAgentRunExploreMode(subagentsEnabled, async () => {
                 await runAgentLoop({
-                  provider: parentProvider,
+                  provider: parentInstructionDelivery.provider,
                   messages: trimmed,
                   tools: parentLoopTools,
                   usageModel: model,
@@ -2777,7 +2784,7 @@ async function runAgentWithInlineCanvas(
         )
 
         const parentContinuationBase: RunParentContinuationOptions = {
-          provider: parentProvider,
+          provider: parentInstructionDelivery.provider,
           messages: trimmed,
           tools: parentLoopTools,
           contextWindow,
