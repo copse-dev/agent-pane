@@ -45,6 +45,10 @@
       "sha256": "ad1465c2e856a9b67a7e5b72782f5d64b6b3e44e3f8c036c8db9d14083fc472c",
       "bytes": 324788
     },
+    "acp-bridge-unavailable.png": {
+      "sha256": "f753a7c0a985308a7df8081863fcad44d250b8521527449b80d4bf1c21a24c9f",
+      "bytes": 310841
+    },
     "acp-catalog-model-labels.png": {
       "sha256": "323ec5edc4070742efa08957c14ccb8254da02407f04a833626083eb47412fc9",
       "bytes": 24640
@@ -3302,8 +3306,8 @@
       "bytes": 364353
     },
     "project-port-grant-revoked.png": {
-      "sha256": "fb3b5d7268235c56b9d404cd16efe83d1b82d316ce9ea84e5e8086480404e9e1",
-      "bytes": 360401
+      "sha256": "8f573b33f385b672ca46c49c793aabae144f49c3b4bf042728c68f3eee6a06e9",
+      "bytes": 358621
     },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
