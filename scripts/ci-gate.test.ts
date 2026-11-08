@@ -61,7 +61,8 @@ function gate(overrides: Record<string, string> = {}): number | null {
   // The child environment is exactly the Actions bindings: no PATH, no
   // inherited variables. The script therefore only works while it uses shell
   // built-ins (echo, printf, [, case, exit), which is also what keeps the
-  // hosted gate free of checkout, install and network dependencies.
+  // dependency/cancellation decision free of checkout, install and network.
+  // Reuse then needs the aggregate's final read-only policy recheck.
   const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
     encoding: 'utf8',
     env: { ...successfulPr, ...overrides },
@@ -111,7 +112,7 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
     assert.equal(gate({ ANY_CANCELLED: 'true', METADATA_ONLY: 'true' }), 1)
   })
 
-  it('accepts verified metadata reuse only after fresh unit/static work and never on source/queue/fork events', () => {
+  it('admits reuse to final revalidation only after fresh work and never on source/queue/fork events', () => {
     const reuse = {
       VERIFIED_SOURCE: 'https://github.com/copse-dev/agent-pane/actions/runs/10/attempts/1',
       REUSED_SOURCE: 'https://github.com/copse-dev/agent-pane/actions/runs/10/attempts/1',

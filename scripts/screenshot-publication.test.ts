@@ -668,6 +668,32 @@ describe('screenshot publication', () => {
     }
   })
 
+  it('preserves original publication on reused runs, including late stack-tip failures', async () => {
+    for (const conclusion of ['success', 'failure']) {
+      for (const body of ['', `<!-- copse-screenshot-stack: #122@${SHA} tip=#123 -->`]) {
+        const outputs = await discover(parent({ body }), undefined, SHA, assert.fail, [], {
+          conclusion,
+          jobs: [
+            {
+              name: 'precheck',
+              conclusion: 'success',
+              steps: [{ name: 'Reusing verified native suites', conclusion: 'success' }],
+            },
+          ],
+        })
+        // No output can authorize publication, not-rendered reporting, a new
+        // gate, or clearing the original publisher's error/review label.
+        assert.deepEqual(
+          [...outputs],
+          [
+            ['eligible', 'false'],
+            ['has-artifact', 'false'],
+          ],
+        )
+      }
+    }
+  })
+
   it('publishes stacked PRs only from a green run, reporting the tip', async () => {
     const run = {
       conclusion: 'failure',

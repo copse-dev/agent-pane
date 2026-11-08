@@ -138,6 +138,22 @@ jobs:
               return;
             }
 
+            // A green draft run can have skipped every renderer. Verify the
+            // actual plan and all its shard steps, even when no PNG differs.
+            // These are job records for this exact run, not PR-controlled metrics.
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: runId, filter: 'latest', per_page: 100,
+            });
+            // Reuse creates no new screenshot evidence. Preserve the original
+            // publisher even when it is queued or failed on quota; this run
+            // cannot clear its error, pending review or held images.
+            if (jobs.some((job) => job.name === 'precheck' &&
+              (job.steps || []).some((step) => step.name === 'Reusing verified native suites' &&
+                step.conclusion === 'success'))) {
+              core.notice('Keeping screenshot evidence with the original verified source run.');
+              return;
+            }
+
             // A red run can still have rendered this head: `screenshot-artifacts`
             // needs only precheck, build and e2e. Publish that rather than leave the PR on
             // a notice; when nothing rendered, the report step says so instead.
@@ -155,21 +171,6 @@ jobs:
               }
             }
 
-            // A green draft run can have skipped every renderer. Verify the
-            // actual plan and all its shard steps, even when no PNG differs.
-            // These are job records for this exact run, not PR-controlled metrics.
-            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
-              owner, repo, run_id: runId, filter: 'latest', per_page: 100,
-            });
-            // Reuse creates no new screenshot evidence. Preserve the original
-            // publisher even when it is queued or failed on quota; this run
-            // cannot clear its error, pending review or held images.
-            if (jobs.some((job) => job.name === 'precheck' &&
-              (job.steps || []).some((step) => step.name === 'Reusing verified native suites' &&
-                step.conclusion === 'success'))) {
-              core.notice('Keeping screenshot evidence with the original verified source run.');
-              return;
-            }
             const successfulStep = (job, name) => {
               const matches = (job.steps || []).filter((step) => step.name === name);
               return matches.length === 1 && matches[0].conclusion === 'success';

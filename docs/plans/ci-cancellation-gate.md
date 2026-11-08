@@ -38,8 +38,10 @@ under the existing rules. No production branch rules change.
 - Run the aggregate with `always()` on **fixed GitHub-hosted capacity**, never
   `SELF_HOSTED_CHECKS`. The old #1669 stall was an always-running gate queued
   behind the self-hosted fleet.
-- Keep it to shell built-ins, with no checkout, install, network call, or token
-  permissions and a five-minute execution cap. Hosted queue time is not bounded
+- Keep cancellation/dependency decisions to shell built-ins, with no checkout,
+  install or network call, and a five-minute execution cap. The original gate
+  had no token permissions; the November metadata amendment below adds a final
+  read-only recheck only after those decisions pass. Hosted queue time is not bounded
   by that cap; a GitHub-wide runner outage remains outside this change.
 - Use a separate conditional step for whole-run cancellation. Status functions
   such as `cancelled()` are not supported in step environment expressions.
@@ -151,9 +153,26 @@ API failure, or evidence older than 24 hours falls back to real suites. Reused r
 are never original evidence. Live PR identity and the run/attempt history are
 rechecked before returning the original run URL.
 
+Discovery is not final authority. After fresh work completes, `CI Passed` loads
+the same pinned-base policy again as its **last step**, after cancellation and
+dependency rejection. It must revalidate the **same original run/attempt URL**,
+current live identity, runtime image and complete history immediately before
+success. A retry can begin or fail while the fresh jobs run; an earlier read-only
+job would leave another queue delay before acceptance. Therefore this recheck runs
+inside the aggregate, with read-only contents/actions/pull-request permissions and
+no candidate checkout, install, write token or status copying. It uses runner-provided
+Node without downloaded actions, so action preparation cannot delay the initial
+cancellation/dependency rejection. Late invalidation,
+expiry or API uncertainty fails this metadata run: its native jobs were already
+skipped, so new real verification is required. Only an early discovery miss can
+fall back to native work within the same run. A later successful attempt cannot
+silently replace the originally selected receipt.
+
 The screenshot publisher makes no mutation for a reuse run. Original candidates,
 failed publication, pending reviews and manual holds remain attached to the source
-run. Fresh browser results are checked on every edit; their raw `screenshots-demo` artifact remains available, but metadata reuse does not create a new screenshot review or approve those new images. This first optimization does
+run, even when a late stack declaration invalidates the reused run. Authenticated
+reuse detection precedes all ordinary-parent publication outputs, including failed
+stack reporting. Fresh browser results are checked on every edit; their raw `screenshots-demo` artifact remains available, but metadata reuse does not create a new screenshot review or approve those new images. This first optimization does
 not reuse the externally resolved browser runtime.
 
 Examples: a validation-paragraph edit after an exact full success can omit the nine
