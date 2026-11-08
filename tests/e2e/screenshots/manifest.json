@@ -5533,6 +5533,10 @@
       "sha256": "7b1eaaaf7afe97c9cf15e6703e950efcaa038d59a270311dbb2603b1bccf73b8",
       "bytes": 283261
     },
+    "thread-compact-worker-state.png": {
+      "sha256": "51f9de65b40c7178a60f6326c09f4c910fcfdfa76981111949bc5c67dcda0d52",
+      "bytes": 305784
+    },
     "thread-context-after-archive.png": {
       "sha256": "39c2c80bb254e3b2d9b4ce5f5e8055f0589162430132801c3f48c71fb5bf29a5",
       "bytes": 37806
