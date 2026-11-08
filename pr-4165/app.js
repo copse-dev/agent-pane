@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-UPCB4N4W.js";
+} from "./chunks/chunk-7Q5CJHC7.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -5571,6 +5571,18 @@ var init_demo_scenarios = __esm({
           ...gitPushApproval("copse/friendly-action-names-213c32", sha)
         })
       ),
+      approvalRiskScenario("approval-automation-preparation", {
+        id: "automation-preparation",
+        title: "Prepare this worktree?",
+        type: "shell",
+        body: "Install dependencies:\n'corepack' 'pnpm@10.34.5' 'install' '--frozen-lockfile' '--ignore-scripts' '--prod=false'\nProject setup:\n'node' 'scripts/prepare-native-artifacts.mts'",
+        bodyAdvice: "Install locked dependencies with lifecycle scripts disabled. Project setup executes repository code.",
+        bodyFooter: "Network: allowed during preparation; checks stay offline. Writes are limited to this project and Copse-managed caches.\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.",
+        allowRemember: true,
+        rememberLabel: "Remember for this automation (\u201CMorning caretaker\u201D)",
+        rememberDefault: true,
+        rememberSubject: "project/schedule/preparation-plan"
+      }),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -6777,6 +6789,7 @@ function createDemoApi(scenario2, options = {}) {
     automations: {
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -7466,7 +7479,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-RY5PSRCL.js").then(async (main) => {
+    void import("./chunks/main-GWQ2RTJK.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
