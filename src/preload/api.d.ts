@@ -3,6 +3,7 @@ import type {
   RemoteArtifactImageRequest,
   RemoteArtifactImageResult,
 } from '@shared/remote-artifact-image.ts'
+import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type {
   AppRunOwner,
   AppRunSelection,
@@ -988,8 +989,8 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
-    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
-    downloadArtifact: (agentId: string, path: string) => Promise<string>
+    /** Authorize an artifact for this chat and open its download outside the renderer. */
+    downloadArtifact: (request: RemoteArtifactDownloadRequest) => Promise<void>
     /** Hydrate one artifact image for the thread on screen; see sandboxed-artifact-image-downloads.md. */
     artifactImageDataUrl: (
       request: RemoteArtifactImageRequest,
