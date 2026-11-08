@@ -479,7 +479,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-UJEKGPFC.js";
+} from "./chunk-HUP3FKBW.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -76773,7 +76773,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     result.append(el("p", { class: "thread-context-permission-label" }, "This thread"));
     const grants = [
       { access: "read", label: "Read other threads" },
-      { access: "send", label: "Send prompts to other threads" }
+      { access: "send", label: "Send prompts to other threads" },
+      { access: "orchestrate", label: "Orchestrate own subthreads" }
     ].filter(({ access }) => currentGrants[access]);
     if (grants.length === 0) {
       result.append(emptyNote("No saved conversation access."));
@@ -76960,9 +76961,20 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       const project = store2.getState().projects.find((candidate) => candidate.id === projectId);
       const projectRoot = project?.path;
       if (!projectRoot) return;
-      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] = await Promise.all([
+      const [
+        read,
+        send,
+        orchestrate,
+        context,
+        guardedYolo,
+        trusted,
+        savedOrigins,
+        overrides,
+        decisions
+      ] = await Promise.all([
         api2.settings.get("threadReadAccess"),
         api2.settings.get("threadSendAccess"),
+        api2.settings.get("threadSubthreadAccess"),
         api2.security.getContextPermissions(projectId, threadId, projectRoot),
         api2.security.getGuardedYolo(threadId),
         api2.workspace.isTrusted(),
@@ -76974,6 +76986,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       accessGrants = {
         read: Array.isArray(read) && read.includes(threadId),
         send: Array.isArray(send) && send.includes(threadId),
+        orchestrate: Array.isArray(orchestrate) && orchestrate.includes(threadId),
         context,
         guardedYolo: guardedYolo.phase,
         workspaceTrusted: trusted,
@@ -87706,24 +87719,34 @@ async function acceptThreadPrompt(store2, api2, command2) {
     let current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || current.messagesLoaded === false || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
-    if (!current.worktreeChoice && current.messages.length === 0) {
+    if (!current.worktreeChoice && current.messages.length === 0 || command2.requireWorktree && (!current.worktree || current.worktree.retiredAt !== void 0)) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
         command2.text,
-        "automatic",
+        command2.requireWorktree ? "worktree" : "automatic",
         current.model
       );
       if (Date.now() >= command2.expiresAt)
         return { ok: false, error: "This prompt expired while preparing the checkout." };
+      if (command2.requireWorktree && prepared.checkoutMode !== "worktree")
+        return { ok: false, error: "Subthreads require an isolated checkout." };
       applyPreparedThreadCheckout(store2, threadId, prepared);
       current = getThreadById(store2, threadId);
       if (!current || current.archivedAt !== void 0)
         return { ok: false, error: "The destination conversation is unavailable." };
     }
+    if (!await api2.threadPrompts.canSubmit(command2.id))
+      return {
+        ok: false,
+        error: "The prompt was cancelled, expired, or its permission was revoked."
+      };
+    current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
+      return { ok: false, error: "The destination conversation is unavailable." };
     const origin = {
       kind: "machine",
-      operationId: `thread:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
     };
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
