@@ -93,7 +93,28 @@ describe('workspace preview security', () => {
     })
     expect(guestResult).toEqual(['Workspace preview', 'loaded', 404, '', 'SecurityError'])
     expect(await address.getValue()).not.toContain('__copse_preview')
-    await saveAppScreenshot('workspace-preview-protected.png', E2E_THREE_PANE_VIEWPORT)
+    // The listener chooses a random port. Pin only the displayed address for
+    // the reference capture after verifying the real URL and page contents.
+    const previewAddress = await address.getValue()
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (input) {
+        input.value = 'http://localhost:4321/index.html'
+        input.blur()
+      }
+    })
+    try {
+      await saveAppScreenshot('workspace-preview-protected.png', E2E_THREE_PANE_VIEWPORT)
+    } finally {
+      await browser.execute((url) => {
+        const input = document.querySelector<HTMLInputElement>(
+          '.browser-tab-panel.is-active .browser-url-input',
+        )
+        if (input) input.value = url
+      }, previewAddress)
+    }
   })
 
   it('blocks a workspace page from navigating off-origin with file contents', async () => {
