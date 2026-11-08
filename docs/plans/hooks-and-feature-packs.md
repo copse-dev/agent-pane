@@ -128,6 +128,13 @@ revisiting this document, not silently diverging in an implementation PR.
    bridged call rejected. Unlike `dispatchMachine` it does not take the thread's dispatch slot
    (Copse is not running the turn), and the binding ends on the adapter's end-of-turn marker,
    on the next Copse prompt, on session dispose, or after 15 idle minutes.
+   Automatic checkout hand-over and completed-run cleanup must preserve that lease and any
+   unfinished ACP tools even after the dispatched prompt returned. Their idle-only session
+   release checks ownership inside the existing pool operation before closing the connection
+   and holds the operation through the checkout mutation; it never ends active work to make
+   a checkout look idle. Idle reaping uses that same ownership check, including received
+   updates awaiting the pump, self-started leases and cancellation acknowledgements. This
+   does not change continuation charging or explicit Stop/archive.
    A host-native background completion wake has no editable hook message to queue:
    the main-process dispatcher waits for the owning foreground run to release the
    thread, then grants at dispatch time against the latest epoch and spent count it
@@ -146,6 +153,21 @@ revisiting this document, not silently diverging in an implementation PR.
    is reached and todos remain open, the host emits and persists one deterministic
    terminal summary containing the live open plan plus allowances granted by reason.
    It makes no extra model call and does not describe a grant as a completed attempt.
+   A run that reaches its step boundary may still use the existing bounded finalizer.
+   A useful final answer with a closed plan completes normally; an empty finalizer or
+   an open plan retains `max_steps` rather than becoming a completed turn. The saved
+   progress offers an explicit **Continue task** action using a fresh human turn tree,
+   never an automatic budget reset. Deadline stops use the same checkpoint action
+   with a time-limit explanation. These outcomes do not raise any run or continuation
+   allowance or replay a completed tool call.
+   Existing bounded pre-review reconciliation may still close the primary plan before
+   the host's terminal outcome. A successful reconciliation with a closed plan clears
+   the primary loop's stale `max_steps`; an unfinished continuation retains it.
+   Unrelated review remediation cannot establish that an unplanned primary task finished.
+   A deadline stop does not start fresh automatic post-turn work.
+   A `max_steps` outcome does not suppress the deterministic exhausted-continuation
+   summary for an open plan. That summary neither grants another turn nor changes
+   the failed outcome; cancellation and independent errors still suppress it.
 6. **Spine recording is always-on.** Every hook execution writes a `hook_run` event to
    the thread spine (event name, hook id, emitting step, wall-clock duration, exit code,
    `parse_ok`, normalized decision) with raw stdout **and stderr** as blobs (stderr is

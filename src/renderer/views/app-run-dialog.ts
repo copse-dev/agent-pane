@@ -514,9 +514,12 @@ export function openAppRunDialog(
     panel.element,
   )
   const unsubscribe = selectActiveWorkspace(store, close)
-  const unsubscribeThread = store.on('threads_changed', () => {
-    if (store.getState().activeThreadId !== (owner.threadId ?? null)) close()
-  })
+  const unsubscribeThread = store.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close()
+    },
+  )
   dialog.addEventListener(
     'close',
     () => {

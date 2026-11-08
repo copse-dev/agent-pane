@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -19,6 +19,9 @@ import type {
 import type { AutomationWorktreeRelease } from '../worktree-parking.ts'
 import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
+import { copseToolPermissionId } from '../security/tool-permissions.ts'
+import { readWorktreePreparationPlan } from '../worktree-preparation-plan.ts'
 import { createThread, getThreadMeta, updateMetaOrThrow } from '../thread-store.ts'
 import {
   createAutomationService,
@@ -145,6 +148,139 @@ function schedulerTask(input: {
 describe('AutomationService', () => {
   beforeEach(() => {
     storageSet(STORAGE_KEY, [])
+  })
+
+  it('can save an exact current preparation selection before the first automation run', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'automation-upfront-preparation-'))
+    const previousProjects = storageGet('projects')
+    writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+    const plan = readWorktreePreparationPlan(root)
+    const permission: AutomationPermission = {
+      kind: 'worktree-preparation',
+      toolName: 'prepare_worktree',
+      directory: '.',
+      planFingerprint: plan.contentFingerprint,
+      offline: true,
+    }
+    const service = createAutomationService({
+      now: () => 10,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    try {
+      const schedule = await service.upsert('project-a', {
+        name: 'Prepared caretaker',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review this project.',
+        model: 'gpt-5.4',
+        enabled: false,
+        permissions: [permission],
+      })
+      assert.deepEqual(schedule.permissions, [permission])
+      assert.equal(schedule.lastCreatedThreadId, undefined)
+    } finally {
+      storageSet('projects', previousProjects)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  for (const change of ['inputs', 'ask', 'block'] as const) {
+    it(`rechecks a newly selected preparation at save after ${change} changes`, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'automation-preparation-save-'))
+      const previousProjects = storageGet('projects')
+      const previousOverrides = getSetting('toolPermissionOverrides', {})
+      writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+      writeFileSync(join(root, 'package-lock.json'), '{}')
+      storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+      const service = createAutomationService({
+        now: () => 10,
+        isPluginEnabled: () => true,
+        createProjectThread: () => Promise.resolve(),
+        loadProjectThreadMetas: () => Promise.resolve([]),
+        releasePreviousRun: () => Promise.resolve({ released: true }),
+      })
+      try {
+        await setSetting('toolPermissionOverrides', {})
+        const reviewed = service.reviewPreparation('project-a', { offline: true })
+        if (change === 'inputs') writeFileSync(join(root, 'package-lock.json'), '{"changed":true}')
+        else
+          await setSetting('toolPermissionOverrides', {
+            [copseToolPermissionId('prepare_worktree')]: change,
+          })
+        await assert.rejects(
+          service.upsert('project-a', {
+            name: 'Prepared caretaker',
+            cron: '0 9 * * 1-5',
+            prompt: 'Review this project.',
+            model: 'gpt-5.4',
+            enabled: false,
+            permissions: [reviewed.permission],
+          }),
+          change === 'inputs' ? /setup has changed/ : change === 'ask' ? /Always ask/ : /blocked/,
+        )
+        assert.deepEqual(service.list('project-a'), [])
+      } finally {
+        storageSet('projects', previousProjects)
+        await setSetting('toolPermissionOverrides', previousOverrides)
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it('can edit and revoke a retained stale preparation without reviewing an unchanged selection', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'automation-preparation-revoke-'))
+    const previousProjects = storageGet('projects')
+    const previousOverrides = getSetting('toolPermissionOverrides', {})
+    writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+    const service = createAutomationService({
+      now: () => 10,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    const input: AutomationScheduleInput = {
+      name: 'Prepared caretaker',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review this project.',
+      model: 'gpt-5.4',
+      enabled: false,
+    }
+    try {
+      await setSetting('toolPermissionOverrides', {})
+      const reviewed = service.reviewPreparation('project-a', {})
+      const schedule = await service.upsert('project-a', {
+        ...input,
+        permissions: [reviewed.permission],
+      })
+      writeFileSync(join(root, 'package-lock.json'), '{"changed":true}')
+      await setSetting('toolPermissionOverrides', {
+        [copseToolPermissionId('prepare_worktree')]: 'block',
+      })
+      const edited = await service.upsert('project-a', {
+        ...input,
+        id: schedule.id,
+        name: 'Renamed',
+      })
+      assert.deepEqual(edited.permissions, [reviewed.permission])
+      const revoked = await service.upsert('project-a', {
+        ...input,
+        id: schedule.id,
+        permissions: [],
+      })
+      assert.equal(revoked.permissions, undefined)
+      assert.equal(service.list('project-a')[0]?.permissions, undefined)
+    } finally {
+      storageSet('projects', previousProjects)
+      await setSetting('toolPermissionOverrides', previousOverrides)
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps schedules project-scoped and preserves the chosen model', async () => {

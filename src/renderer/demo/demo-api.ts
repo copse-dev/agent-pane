@@ -692,6 +692,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             portBindingAllowed: false,
           },
         ),
+      revokeProjectPortBinding: () => resolved(undefined),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
       onGuardedYoloChanged: (listener) => {
@@ -1643,6 +1644,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () =>
         resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
