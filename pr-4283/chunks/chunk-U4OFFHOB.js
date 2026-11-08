@@ -52175,8 +52175,8 @@ function createAcpAgentsSection(api, opts = {}) {
           probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
-      }).catch((err) => {
-        setInlineStatus(modelStatus, "error", err instanceof Error ? err.message : String(err));
+      }).catch(() => {
+        setInlineStatus(modelStatus, "error", "Could not check this coding agent. Try again.");
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
