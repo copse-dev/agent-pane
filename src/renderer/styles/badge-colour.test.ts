@@ -118,7 +118,6 @@ const RECIPE_CHIPS = [
   'provider-form-tag',
   'provider-privacy-badge',
   'mcp-origin-chip',
-  'plugin-badge-stable',
   'plugin-badge-experimental',
 ] as const
 
