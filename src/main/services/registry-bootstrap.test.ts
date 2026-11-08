@@ -34,7 +34,7 @@ import {
   setDefaultPluginRegistry,
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
-import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
+import { BRIDGE_TOOL_NAMES, isAgentInputSchema } from './acp/acp-native-bridge.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -67,8 +67,10 @@ it('exports object parameter envelopes for native tools sent to compatible local
   assert.throws(() => {
     registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
   })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
   assert.throws(() => {
-    registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
   })
 })
 
@@ -647,6 +649,19 @@ describe('ACP bridge exposure decisions', () => {
     for (const name of nativeOnly) {
       assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
     }
+  })
+
+  it('gives every bridged core tool an input schema agents accept (#4142)', () => {
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+    const rejected = createRegistry()
+      .toMcpTools()
+      .filter(
+        (tool) => BRIDGE_TOOL_NAMES.includes(tool.name) && !isAgentInputSchema(tool.inputSchema),
+      )
+      .map((tool) => tool.name)
+    assert.deepEqual(rejected, [], 'a bridged tool needs a top-level object input schema')
+    assert.equal(isAgentInputSchema({ anyOf: [{ type: 'object' }] }), false)
+    assert.equal(isAgentInputSchema({ type: 'object', anyOf: [] }), false)
   })
 
   it('classifies every first-party plugin tool for ACP exposure', () => {

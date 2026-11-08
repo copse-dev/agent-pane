@@ -243,7 +243,14 @@ const EXTERNAL_PATTERNS: Array<{
   // its own alternative. `fetch` and read-only `submodule` are deliberately absent
   // here — see the dedicated matchers below.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|remote|archive)\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|archive)\b/i,
+    reason: 'git network operation',
+    commandWord: true,
+  },
+  // Listing configured remote URLs opens no network connection. Every other
+  // remote shape, including show/update and configuration writes, stays external.
+  {
+    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*remote\b(?!\s*(?:(?:-v|--verbose)\s*)?(?:$|[;|&\n]))/i,
     reason: 'git network operation',
     commandWord: true,
   },
@@ -890,6 +897,37 @@ const TEXT_TO_ACTION_HEADS: ReadonlySet<string> = new Set([
 /** Text no expansion can change: no variable, substitution or brace expansion. */
 const UNEXPANDED_TEXT = /^[^$`{}]*$/
 
+/** Literal single-quoted spans, respecting double quotes and shell escapes. */
+function singleQuotedRanges(command: string): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = []
+  let quote: 'single' | 'double' | null = null
+  let start = 0
+  for (let index = 0; index < command.length; index++) {
+    const char = command[index]
+    if (quote === 'single') {
+      if (char === "'") {
+        ranges.push({ start, end: index })
+        quote = null
+      }
+      continue
+    }
+    if (char === '\\') {
+      index++
+      continue
+    }
+    if (quote === 'double') {
+      if (char === '"') quote = null
+      continue
+    }
+    if (char === '"') quote = 'double'
+    else if (char === "'") {
+      quote = 'single'
+      start = index + 1
+    }
+  }
+  return ranges
+}
+
 /**
  * A backslash escaping anything but `/`, or ending the token. `/etc/x\ y` splits
  * at the escaped space, so the token `/etc/x\` matches no live word in either
@@ -964,14 +1002,23 @@ function maskInertOperandPaths(command: string): string {
   }
   if (!flush(false)) return command
   if (inert.length === 0) return command
-  const masked = command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) => {
-    if (!UNEXPANDED_TEXT.test(path) || NON_SLASH_ESCAPE.test(path)) return match
-    const unescaped = unescapeShellText(path)
-    return inert.some((word) => word.includes(path)) &&
-      !live.some((word) => word.includes(path) || word.includes(unescaped))
-      ? `${lead}inert-operand`
-      : match
-  })
+  const literalRanges = singleQuotedRanges(command)
+  const masked = command.replace(
+    ABSOLUTE_PATH_TOKENS,
+    (match, lead: string, path: string, offset: number) => {
+      const start = offset + lead.length
+      const literalBraces =
+        /^[^$`]*$/.test(path) &&
+        literalRanges.some((range) => start >= range.start && start + path.length <= range.end)
+      if ((!UNEXPANDED_TEXT.test(path) && !literalBraces) || NON_SLASH_ESCAPE.test(path))
+        return match
+      const unescaped = unescapeShellText(path)
+      return inert.some((word) => word.includes(path)) &&
+        !live.some((word) => word.includes(path) || word.includes(unescaped))
+        ? `${lead}inert-operand`
+        : match
+    },
+  )
   // `../` is only text when no word the command opens climbs out at all. The
   // parser expands `$x` and `${x:-../..}` away, so any `$` keeps the traversal.
   const climbsOnlyInText =

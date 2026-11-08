@@ -103,7 +103,7 @@ import {
   getMcpServerStatuses,
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
-import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
+import { disposeAllAcpSessions, hasActiveAcpTurn } from './services/acp/acp-session-pool.ts'
 import { initApproval, requestApproval } from './services/approval.ts'
 import {
   setSimulatorDesktopPanelPresenter,
@@ -167,7 +167,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestThreadFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -226,7 +226,11 @@ import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
-import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import {
+  hasBackgroundProcessRecord,
+  hasBackgroundProcessesForThread,
+  stopAllBackgroundProcesses,
+} from './services/exec/background-process.ts'
 import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
 import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
@@ -833,6 +837,24 @@ app
         },
       },
     )
+    const isAutomationRunActive = (projectId: string, threadId: string): boolean | null => {
+      if (
+        agentDispatcher.isActive(projectId, threadId) ||
+        listRunningThreadIds().includes(threadId) ||
+        hasActiveAcpTurn(threadId) ||
+        getContainerRunService().isActive(threadId) ||
+        hasBackgroundProcessesForThread({ projectId, threadId })
+      )
+        return true
+      // A retained completion/dedupe record is ambiguous, not evidence that
+      // its asynchronous wake has finished. Cold startup has neither record.
+      if (
+        agentDispatcher.hasMachineOperationRecord(projectId, threadId) ||
+        hasBackgroundProcessRecord({ projectId, threadId })
+      )
+        return null
+      return false
+    }
     getAutomationService().start(
       (event) => {
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
@@ -841,13 +863,14 @@ app
       // The project the receiving window shows; once it is gone nothing would
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
+      isAutomationRunActive,
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
     getBranchCiAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    })
+    }, isAutomationRunActive)
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
@@ -1295,10 +1318,7 @@ app
         if (!parsed.success) {
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
-        const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        const thread = await getProjectThread(projectId, threadId)
-        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
-        return suggestFollowUps(parsed.data, root, executor)
+        return suggestThreadFollowUps(projectId, threadId, parsed.data)
       },
     )
 

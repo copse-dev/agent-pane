@@ -344,15 +344,14 @@ jobs:
               // the screenshot commit this selection made.
               const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               if (parent.state === 'open' && parent.head.sha === process.env.COMMIT && parent.head.repo?.full_name === `${owner}/${repo}`) {
-                if (parent.body?.includes('<!-- copse-screenshot-stack:') &&
-                    parent.body.includes(`tip=#${number} -->`)) {
-                  await github.rest.repos.createCommitStatus({
-                    owner, repo, sha: process.env.COMMIT, state: 'success', context: 'Screenshot review',
-                    description: `Accepted by @${actor}; screenshot-only follow-up of ${sha12}`,
-                    target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
-                  });
-                  await bindDecision(process.env.COMMIT);
-                }
+                // Carry the decision only to this exact published selection.
+                // A declared tip still earns fresh combined coverage separately.
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: process.env.COMMIT, state: 'success', context: 'Screenshot review',
+                  description: `Accepted by @${actor}; screenshot-only follow-up of ${sha12}`,
+                  target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                });
+                await bindDecision(process.env.COMMIT);
                 try {
                   await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
                 } catch (error) {

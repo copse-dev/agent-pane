@@ -209,12 +209,10 @@
 }
 
 .turn-recovery-title {
-  /* Plate title recipe shared with `.review-panel-header`: severity-tinted caps. */
+  /* Plate title recipe shared with `.review-panel-header`: severity-tinted, sentence case. */
   color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .turn-recovery-detail,
@@ -598,10 +596,10 @@
 ) {
   display: none;
 }
-/* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
-   that marks commentary, but fade it toward the center over a solid etched
-   surface so longer text remains easy to read. The surface is scoped to [open]: a <details>
-   cannot be laid out as a grid without Chromium's ::details-content box
+/* Reasoning ("thinking") disclosure, shown above the answer. Open, it sits on one
+   plain raised plate: no sheen, glow, hatch, outline or highlight
+   (docs/ui-taste.md, "Containment is a plate"). The surface is scoped to [open]: a
+   <details> cannot be laid out as a grid without Chromium's ::details-content box
    reflowing the body, and a closed disclosure is one summary line with no plate. */
 .message-reasoning {
   --sev: var(--accent);
@@ -610,29 +608,13 @@
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
-  --reasoning-glass-fill: color-mix(in srgb, var(--bg-elevated) 96%, var(--accent) 4%);
   padding: var(--spacing-md) var(--spacing-lg);
-  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--text-primary) 5%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(ellipse 75% 95% at center, var(--reasoning-glass-fill) 18%, transparent 100%),
-    repeating-linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--sev) 6%, transparent) 0 1px,
-      transparent 1px 12px
-    ),
-    var(--reasoning-glass-fill);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: var(--bg-elevated);
 }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+/* Increased contrast gets an edge, so the plate does not rest on a fill alone. */
+@media (prefers-contrast: more) {
   .message-reasoning[open] {
-    border-color: var(--border-strong);
-    background: var(--bg-elevated);
-    box-shadow: none;
+    border: 1px solid var(--border-strong);
   }
 }
 .message-reasoning:not([open]) {
@@ -892,7 +874,8 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px dashed var(--border-subtle);
-  border-radius: 999px;
+  /* A disclosure, not a call to action: the kit corner, not a pill (docs/ui-taste.md). */
+  border-radius: var(--radius);
   padding: 1px 7px;
   margin: 0;
   cursor: pointer;
@@ -1174,16 +1157,11 @@
   min-width: 0;
   gap: 1px;
 }
-.visual-evidence-eyebrow,
 .visual-evidence-summary-meta,
 .visual-evidence-kind,
 .visual-evidence-asset-meta {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-}
-.visual-evidence-eyebrow {
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 .visual-evidence-caption {
   overflow: hidden;
@@ -1195,7 +1173,7 @@
 .visual-evidence-kind {
   padding: 2px var(--spacing-sm);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--bg-muted);
   white-space: nowrap;
 }
@@ -1664,7 +1642,7 @@ span.acp-resource-title {
   color: var(--text-secondary);
   background: var(--bg-subtle);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   font: inherit;
   font-size: var(--font-size-2xs);
   cursor: pointer;

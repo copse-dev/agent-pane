@@ -242,7 +242,7 @@
   gap: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 4px 12px;
   font-size: var(--font-size-sm);
   color: var(--text-muted);

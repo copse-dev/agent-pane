@@ -63,9 +63,9 @@ function harness(
     },
     projectRoot: () => '/repo',
     isLive: () => false,
-    disposeSession: (threadId) => {
+    withIdleSession: async (threadId, operation) => {
       disposed.push(threadId)
-      return Promise.resolve()
+      return { status: 'released', value: await operation() }
     },
     canAdopt: () => Promise.resolve(true),
     adopt: (input) => {
