@@ -28,7 +28,7 @@ describe('Activity home final response', () => {
           '#activity-home .activity-group-title, #activity-home .activity-detail-label',
         ),
       ].map((label) => ({
-        text: label.textContent?.trim() ?? '',
+        text: label.textContent.trim(),
         transform: getComputedStyle(label).textTransform,
         spacing: getComputedStyle(label).letterSpacing,
       })),
