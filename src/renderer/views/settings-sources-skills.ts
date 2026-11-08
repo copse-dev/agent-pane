@@ -17,7 +17,7 @@ export type SourceRowFactory = (
 export const skillsSourcesMarkup = `
   <fieldset id="sources-skills-fieldset">
     <legend>Skills</legend>
-    <p class="settings-fieldset-desc">Skills the agent can use. Changes apply from the next turn.</p>
+    <p class="settings-fieldset-desc">Skills the agent can use. They refresh when Sources opens or you reload, and apply from the next turn.</p>
     <div id="sources-skills-list" class="sources-group"></div>
     <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
     <details class="sources-skill-folders">

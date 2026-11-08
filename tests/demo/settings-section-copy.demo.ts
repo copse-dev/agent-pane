@@ -45,7 +45,7 @@ describe('Settings section copy', () => {
       'Subagents from agents/ folders in .copse, .cursor and .claude. Project agents load once you trust the project.',
     )
     await expect($('#sources-skills-fieldset > .settings-fieldset-desc')).toHaveText(
-      'Skills the agent can use. Changes apply from the next turn.',
+      'Skills the agent can use. They refresh when Sources opens or you reload, and apply from the next turn.',
     )
     await saveAppScreenshot('settings-customise-copy.png')
   })
