@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -8,7 +8,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { INTERRUPTED_TURN_CONTINUATION } from '../../src/shared/turn-recovery.ts'
@@ -180,6 +180,7 @@ describe('quit during an owned foreground command', function () {
       'quit must interrupt the owning turn before a queued edit can run',
     )
     await expect($('[data-turn-recovery-card]')).toBeDisplayed()
+    await parkPointer()
     await saveAppScreenshot('foreground-shell-recovery-after-quit.png')
     const recovered = await installMockScenario({
       title: 'Recovered check',
@@ -195,6 +196,52 @@ describe('quit during an owned foreground command', function () {
     await recovered.assertComplete()
     await waitForAgentIdle(15_000)
     assert.equal(readFileSync(join(root, 'checkpoint.txt'), 'utf8'), 'completed once\n')
+    const retained = ['checkpoint.txt', 'pids.json', 'parent.txt', 'child.txt'].map((name) => ({
+      name,
+      contents: readFileSync(join(root, name), 'utf8'),
+    }))
+    const composerState = (): Promise<{ changes: string | null; placeholder: string | null }> =>
+      browser.execute(() => ({
+        changes: document.querySelector('.follow-up-bubble-changes')?.textContent ?? null,
+        placeholder:
+          document.querySelector('.prompt-input')?.getAttribute('data-placeholder') ?? null,
+      }))
+    const beforeReady = await composerState()
+    // Follow-up generation and its subsequent changes refresh finish after
+    // agent idle. Wait for the preserved four-file checkpoint's visible state.
+    await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+4')
+    await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
+    for (const file of retained) {
+      assert.equal(readFileSync(join(root, file.name), 'utf8'), file.contents)
+    }
+    const afterReady = await composerState()
+    const artifactDirectory = join(process.cwd(), '.tmp')
+    mkdirSync(artifactDirectory, { recursive: true })
+    writeFileSync(
+      join(artifactDirectory, 'foreground-shell-quit-composer-control.json'),
+      JSON.stringify(
+        {
+          before: beforeReady,
+          after: afterReady,
+          files: retained.map((file) => ({
+            name: file.name,
+            before: file.contents,
+            after: readFileSync(join(root, file.name), 'utf8'),
+          })),
+        },
+        null,
+        2,
+      ),
+    )
+    console.info(
+      '[foreground-shell-quit] preserved-file composer readiness',
+      JSON.stringify({
+        before: beforeReady,
+        after: afterReady,
+        preservedFiles: retained.map((file) => file.name),
+      }),
+    )
+    await parkPointer()
     await saveAppScreenshot('foreground-shell-explicitly-recovered.png')
   })
 })

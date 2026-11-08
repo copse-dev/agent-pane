@@ -165,7 +165,7 @@ await esbuild.build({
 // scheme the shell serves it under. Only a stock-engine shell needs
 // COPSE_TAURI_STRIP_CSP=1, and you would have had to build one deliberately.
 const TAURI_CSP =
-  "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; connect-src 'self' ws://127.0.0.1:*;"
+  "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; connect-src 'self' ws://127.0.0.1:*;"
 const indexHtml = readFileSync('dist/renderer/index.html', 'utf8')
 const cspMetaPattern = /[ \t]*<meta\s+http-equiv="Content-Security-Policy"[^>]*\/>\n?/
 const withCsp = indexHtml.replace(
