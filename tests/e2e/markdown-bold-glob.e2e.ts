@@ -3,13 +3,23 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMarkdownBoldGlobFixture } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { waitForSettledLayout, withCaptureFrame } from './helpers/screenshot.ts'
+import {
+  prepareE2eScreenshot,
+  waitForSettledLayout,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 // Keep the existing full-window views: latest content at the natural bottom,
 // then Architecture at its native scrollIntoView target (clamped when needed).
 async function prepareMarkdownCapture(position: 'bottom' | 'architecture'): Promise<void> {
+  // Prepare at the real native window size before waiting on its layout sync.
+  const nativeViewport = await browser.execute(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
+  await prepareE2eScreenshot(nativeViewport)
   await waitForSettledLayout('#input-bar')
   // A stable composer box alone does not establish that its reserved height matches.
   await browser.waitUntil(
