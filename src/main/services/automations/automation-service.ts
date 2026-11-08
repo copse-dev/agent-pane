@@ -18,7 +18,10 @@ import type {
 } from '@shared/types'
 import { AUTOMATION_RETAINED_REASONS, automationPermissionKey } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import {
+  classifyAutomationCheckoutFailure,
+  classifyAutomationFailureMessage,
+} from '@shared/automation-failure.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
@@ -712,7 +715,7 @@ export function createAutomationService(
           automation: { ...automation, startFailedAt: dependencies.now() },
         })
         await service.reportStartFailure(projectId, threadId, {
-          code: 'worktree-failed',
+          code: classifyAutomationCheckoutFailure(message),
           message,
         })
         console.error(`[automations] Headless checkout failed for thread ${threadId}:`, error)

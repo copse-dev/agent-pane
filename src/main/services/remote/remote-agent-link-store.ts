@@ -7,7 +7,7 @@ import {
   attachThreadPrUrl,
   listAgentPrLinks,
   lookupThreadByPrUrl,
-  recordThreadAgentLink,
+  recordThreadAgentLaunchLink,
 } from '../thread-store.ts'
 import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
@@ -65,7 +65,7 @@ export async function recordRemoteAgentLaunch(input: {
       ...(repo ? { repo } : {}),
       createdAt: input.createdAt,
     }
-    await recordThreadAgentLink(input.projectId, input.threadId, link)
+    await recordThreadAgentLaunchLink(input.projectId, input.threadId, link)
   } catch (err) {
     console.warn('[remote-agent-link] launch record failed:', err)
   }

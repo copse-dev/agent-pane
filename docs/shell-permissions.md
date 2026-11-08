@@ -1318,6 +1318,15 @@ main process ([design and validation record](plans/sandboxed-artifact-image-down
   with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
   retry re-authorizes and fetches a fresh signed URL.
 
+An explicit click on a Cursor artifact link uses a separate, user-initiated Save flow. Main checks
+the chat's durable current link and its bounded, main-recorded recent Cursor agent IDs before
+asking the provider for a signed URL. It accepts only the exact configured HTTPS download origin,
+rechecks up to three redirects, and reads at most 32 MiB within 30 seconds. Any file type can be
+saved through the main-owned file dialog; the bearer URL stays out of the renderer and browser
+history. Unlike automatic image hydration, this explicit download fetch runs in main after the
+click and does not claim the per-job ASRT containment described above. Cached OpenAI artifacts
+use the same Save dialog after checking the owning project and chat.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
