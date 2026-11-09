@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -27100,7 +27100,14 @@ function shellCommandsFromToolCalls(toolCalls) {
   }
   return commands;
 }
+function deferredCallLabel(tc) {
+  const patchFiles = copseToolCallName(tc) === "apply_patch" ? getApplyPatchFiles(tc) : [];
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`;
+  const path = getToolEditPath(tc);
+  return path ? `Deferred ${path}` : "Deferred edit";
+}
 function getToolCallLabel(tc) {
+  if (tc.deferred === true) return deferredCallLabel(tc);
   const tense = tenseFromStatus(tc.status);
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
@@ -27196,11 +27203,14 @@ function aggregateToolStatus(toolCalls) {
 function bucketKey(groupKey, isError) {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
 }
+function displayGroupKey(tc) {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+}
 function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -27210,7 +27220,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc, label: getToolCallLabel(tc) });
       continue;
@@ -27681,6 +27691,19 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/thread-prompt.ts
+function isSubthreadPromptHeldError(reason) {
+  if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${SUBTHREAD_PROMPT_HELD_ERROR_NAME}:`);
+}
+var SUBTHREAD_PROMPT_HELD_ERROR_NAME;
+var init_thread_prompt = __esm({
+  "src/shared/thread-prompt.ts"() {
+    init_errors4();
+    SUBTHREAD_PROMPT_HELD_ERROR_NAME = "SubthreadPromptHeldError";
+  }
+});
+
 // src/renderer/controller/send-now-aborts.ts
 function markSendNowAbort(threadId) {
   sendNowThreads.add(threadId);
@@ -27796,11 +27819,23 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store, threadId);
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model));
-  const run = afterThreadWrites(
-    projectId,
-    threadId,
-    () => api.agent.run(projectId, threadId, runPayload)
-  );
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
+    if (!queued || parentThreadId === void 0) {
+      await api.agent.run(projectId, threadId, runPayload);
+      return;
+    }
+    const authorized = await api.threadPrompts?.canDispatch(projectId, parentThreadId, threadId).catch(() => false);
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId });
+        return;
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err;
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued);
+  });
   if (!queued) {
     void run;
     return;
@@ -27814,6 +27849,22 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
       drainMessageQueue(store, api, threadId);
     }
   });
+}
+function subthreadParentOf(item) {
+  const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
+}
+function holdRevokedSubthreadPrompt(store, threadId, item) {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: "idle",
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
+    updatedAt: Date.now()
+  }));
+  syncAgentActivity(store, threadId, false);
+  store.emit("message_queued", threadId, item.messageId);
+  store.emit("threads_changed");
 }
 function requeueBusyMessage(store, api, threadId, item) {
   patchThreadAnywhere(store, threadId, (t2) => {
@@ -27860,9 +27911,14 @@ function drainMessageQueue(store, api, threadId) {
   let used = thread.continuationUsed ?? 0;
   let next;
   const heldByBudget = [];
+  const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
     if (isMachineContinuation(item)) {
+      if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId);
+        continue;
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId);
         continue;
@@ -27874,14 +27930,15 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+      (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
@@ -28009,6 +28066,14 @@ function removeQueuedMessage(store, threadId, messageId) {
   store.emit("threads_changed");
 }
 function sendQueuedMessageNow(store, api, threadId, messageId) {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId
+  );
+  if (!item) return;
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId);
+  else prioritizeQueuedMessage(store, api, threadId, messageId);
+}
+function prioritizeQueuedMessage(store, api, threadId, messageId) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
   const pending = thread?.pendingMessages ?? [];
   const target = pending.find((p2) => p2.messageId === messageId);
@@ -28046,7 +28111,7 @@ function enqueueHookMessage(store, api, threadId, input2) {
   };
   enqueueUserMessage(store, threadId, item);
   if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store, api, threadId, messageId);
+  if (input2.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId);
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
@@ -28064,16 +28129,16 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
-        return rest;
+        return { ...rest, epoch };
       }),
       updatedAt: Date.now()
     };
   });
   store.setState({ threads });
   store.emit("threads_changed");
-  sendQueuedMessageNow(store, api, threadId, messageId);
+  prioritizeQueuedMessage(store, api, threadId, messageId);
 }
-var pendingDispatches;
+var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -28084,9 +28149,11 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
+    SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
 });
 
@@ -29188,7 +29255,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -29471,6 +29538,11 @@ var init_thread_hydration = __esm({
 function describeAutomationFailure(code) {
   return DESCRIPTIONS[code];
 }
+function classifyAutomationCheckoutFailure(message) {
+  if (message.includes("The selected coding agent is not enabled.") || message.includes("cannot start because its configured command is missing or not executable."))
+    return "no-model";
+  return "worktree-failed";
+}
 function classifyAutomationFailureMessage(message) {
   if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
     message
@@ -29500,7 +29572,7 @@ var init_automation_failure = __esm({
       },
       "no-model": {
         title: "Model unavailable",
-        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        remedy: "Check the model or coding agent in Settings \u2192 General \u2192 Models & agents, or pick another model in the automation.",
         action: "open-automations",
         actionLabel: "Edit automation"
       },
@@ -29671,7 +29743,7 @@ function attachAutomationController(store, api) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         const message = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message);
+        const code = checkoutStarted ? classifyAutomationCheckoutFailure(message) : classifyAutomationFailureMessage(message);
         markAutomationStartFailed(store, threadId, { code, message });
         api.automations.reportStartFailure(projectId, threadId, { code, message }).catch((reportError) => {
           console.error("[automations] Could not report a start failure:", reportError);

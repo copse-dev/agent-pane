@@ -3253,6 +3253,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
   display: none;
 }
 .browser-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
@@ -10497,7 +10498,8 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-sm) 0;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 .sources-row-header {
   display: flex;
@@ -10536,7 +10538,10 @@ dialog.settings-overlay::backdrop {
   border-color: var(--warning, #d29922);
 }
 .sources-row-warning {
-  border-color: var(--warning, #d29922);
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .sources-badge-unsupported {
   color: var(--text-muted);
@@ -11790,7 +11795,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-xs);
 }
 .about-license-body {
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-xs) 0 var(--spacing-md);
 }
 .about-license-meta,
 .about-license-note {
@@ -18751,6 +18756,121 @@ dialog.activity-panel-overlay {
 .vnc-empty {
   position: absolute;
   inset: 0;
+}
+
+/* src/renderer/styles/global/recording.css */
+.recording-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+.recording-dot.is-idle {
+  animation: none;
+}
+@keyframes recording-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot {
+    animation: none;
+  }
+}
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-elevated));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.recording-indicator[hidden] {
+  display: none;
+}
+.recording-indicator-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recording-indicator-clock {
+  flex: none;
+  color: var(--text-secondary);
+}
+.recording-indicator-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 0;
+  flex: none;
+  border-radius: 11px;
+  background: var(--danger);
+  color: var(--text-on-danger);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.recording-indicator-stop-glyph {
+  width: 8px;
+  height: 8px;
+  border-radius: 1.5px;
+  background: currentColor;
+}
+.vnc-record-btn {
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+.vnc-controls-body > .recording-indicator {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.vnc-screen.is-recording canvas,
+.browser-webview-host.is-recording {
+  box-shadow: 0 0 0 1px var(--danger), 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.browser-toolbar > .recording-indicator {
+  flex: none;
+}
+@container browser-toolbar (max-width: 520px) {
+  .browser-toolbar > .recording-indicator {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: var(--spacing-sm);
+    z-index: 10;
+    max-width: calc(100% - 2 * var(--spacing-sm));
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--danger) 18%, var(--bg-elevated));
+    box-shadow: var(--shadow-md);
+  }
+}
+.browser-record-btn[aria-pressed=true] {
+  color: var(--danger);
+}
+@container browser-toolbar (max-width: 287px) {
+  .browser-record-btn {
+    display: none;
+  }
+}
+.recording-chip {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-elevated));
+}
+.recording-chip-clock {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* src/renderer/styles/global/roadmap.css */
