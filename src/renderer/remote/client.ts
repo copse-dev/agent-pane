@@ -108,12 +108,18 @@ export class RemoteChatClient {
     return thread?.messagesLoaded === false ? null : thread
   }
 
-  /** A metadata-only desktop snapshot must never replace the browser's loaded history. */
+  /**
+   * A metadata-only desktop snapshot must never replace the browser's loaded
+   * history. The result always carries its full transcript, so it says
+   * `messagesLoaded: true`: the shared composer's next-step hint waits for the
+   * active thread's transcript to land, as it does on the desktop.
+   */
   async hydrate(projectId: string, thread: RemoteThread): Promise<RemoteThread> {
     const key = JSON.stringify([projectId, thread.id])
     if (thread.messagesLoaded !== false) {
-      this.transcripts.set(key, thread)
-      return thread
+      const loaded = { ...thread, messagesLoaded: true }
+      this.transcripts.set(key, loaded)
+      return loaded
     }
     const cached = this.transcripts.get(key)
     const saved =

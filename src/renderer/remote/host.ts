@@ -38,6 +38,8 @@ export async function startRemoteChat(): Promise<void> {
   let connected = false
   const client = new RemoteChatClient(request)
   let appliedSnapshot: string | null = null
+  /** The status of the last applied snapshot, to replay the desktop's status events. */
+  let appliedStatus: string | null = null
   let metadata: z.infer<typeof metadataSchema> | null = null
   mountConfirmDialog()
   const actions = new RemoteActions(request, () =>
@@ -105,6 +107,15 @@ export async function startRemoteChat(): Promise<void> {
         })
         appliedSnapshot = snapshotKey
         store.emit('threads_changed')
+        // The desktop store announces each run starting and ending, and the
+        // shared surface reacts to that, e.g. the next-step hint is asked for
+        // when a turn ends. Replay the changes the snapshots show. The first
+        // snapshot is not a change: the transcript landing covers it.
+        const previousStatus = appliedStatus
+        appliedStatus = hydrated.status
+        if (previousStatus !== null && previousStatus !== hydrated.status) {
+          store.emit('thread_status_changed', hydrated.id, hydrated.status)
+        }
       } else if (wasConnected !== connected) {
         store.emit('threads_changed')
       }

@@ -27,6 +27,8 @@ interface Harness {
   threadId: string
   editor: HTMLElement
   submit: HTMLButtonElement
+  /** How many next-step hints the composer has asked for. */
+  hintsAsked(): number
   setText(text: string): void
   setConnected(value: boolean): void
   dispose(): void
@@ -38,8 +40,11 @@ function harness(send: ChatTransport['send']): Harness {
   addMessage(store, threadId, 'user', 'Prepare the mobile release.')
   addMessage(store, threadId, 'assistant', 'The shared chat is ready.')
   const api = createFakeApi()
-  api.agent.suggestNextStep = (): Promise<string | null> =>
-    Promise.resolve('Test reconnect on my phone.')
+  let hintsAsked = 0
+  api.agent.suggestNextStep = (): Promise<string | null> => {
+    hintsAsked++
+    return Promise.resolve('Test reconnect on my phone.')
+  }
   let connected = true
   const root = document.createElement('div')
   document.body.append(root)
@@ -56,6 +61,7 @@ function harness(send: ChatTransport['send']): Harness {
     threadId,
     editor,
     submit,
+    hintsAsked: () => hintsAsked,
     setText(text: string): void {
       editor.textContent = text
       editor.dispatchEvent(new Event('input', { bubbles: true }))
@@ -79,7 +85,8 @@ describe('shared remote composer', () => {
       return Promise.resolve()
     })
     try {
-      h.store.emit('threads_changed')
+      // The paired browser replays the desktop's status change when a turn ends.
+      h.store.emit('thread_status_changed', h.threadId, 'idle')
       await flush()
       qsRequired<HTMLButtonElement>(h.root, '.remote-next-step').click()
       assert.equal(h.editor.textContent, 'Test reconnect on my phone.')
@@ -90,6 +97,35 @@ describe('shared remote composer', () => {
       await flush()
       assert.deepEqual(sent, ['Test reconnect on my phone, including a saved draft.'])
       assert.equal(h.editor.textContent, '')
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('asks for one hint when the hydrated transcript lands, not on every poll', async () => {
+    const h = harness(() => Promise.resolve())
+    try {
+      // A poll that changes nothing about the thread does not ask.
+      h.store.emit('threads_changed')
+      await flush()
+      assert.equal(h.hintsAsked(), 0)
+      // The paired browser applies its first snapshot as a loaded transcript.
+      h.store.setState({
+        threads: h.store
+          .getState()
+          .threads.map((thread) =>
+            thread.id === h.threadId ? { ...thread, messagesLoaded: true } : thread,
+          ),
+      })
+      await flush()
+      assert.equal(h.hintsAsked(), 1)
+      assert.equal(
+        qsRequired(h.root, '.remote-next-step').textContent,
+        'Use suggested next prompt: Test reconnect on my phone.',
+      )
+      h.store.emit('threads_changed')
+      await flush()
+      assert.equal(h.hintsAsked(), 1)
     } finally {
       h.dispose()
     }

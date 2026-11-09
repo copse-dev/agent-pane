@@ -108,6 +108,13 @@ describe('remote browser chat replica', () => {
     assert.equal(reads, 2)
   })
 
+  it('marks a live transcript loaded when hydrating it', async () => {
+    const client = new RemoteChatClient(() => Promise.reject(new Error('No read expected')))
+    const hydrated = await client.hydrate('p', thread())
+    assert.equal(hydrated.messagesLoaded, true)
+    assert.deepEqual(hydrated.messages, thread().messages)
+  })
+
   it('leaves metadata-only live views on the saved-transcript fallback', async () => {
     const client = new RemoteChatClient(async () => ({
       version: 1,
