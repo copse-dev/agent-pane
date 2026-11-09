@@ -171,6 +171,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'propose_thread',
   'list_threads',
   'send_thread_prompt',
+  'subthreads',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -383,6 +384,24 @@ export interface AcpNativeBridge {
    * to answer "was the tool even offered?" after the fact.
    */
   toolNames: readonly string[]
+  /**
+   * Whether this session's agent has listed the bridge's tools (`tools/list`)
+   * yet. Offering the bridge in `session/new` does not mean the agent mounted
+   * it: until it lists the tools, none of them are in its tool list (#4144).
+   */
+  toolsListed: () => boolean
+  /**
+   * The tools the agent's latest `tools/list` returned, or null before it has
+   * listed them. This, not {@link toolNames}, is what the agent was given: the
+   * registry can change between the offer and the listing. Listing still does
+   * not prove the agent kept them (#4142, `acp-bridge-mount.ts`).
+   */
+  listedToolNames: () => readonly string[] | null
+  /**
+   * Resolve true as soon as the agent lists the bridge's tools, or false once
+   * `timeoutMs` passes or `signal` aborts without it.
+   */
+  whenToolsListed: (timeoutMs: number, signal?: AbortSignal) => Promise<boolean>
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
@@ -424,22 +443,6 @@ export interface AcpNativeBridge {
   close: () => Promise<void>
 }
 
-/**
- * Whether an agent can list a tool with this input schema. The Anthropic API
- * requires `type: "object"` at the top level, and Claude Code drops every tool
- * of an MCP server that offers one without it: a single union-shaped schema
- * hid all of Copse's tools from Claude (#4142). The bridge leaves such a tool
- * out, with a warning, rather than lose the rest.
- */
-export function isAgentInputSchema(schema: Record<string, unknown>): boolean {
-  return (
-    schema['type'] === 'object' &&
-    !Object.hasOwn(schema, 'anyOf') &&
-    !Object.hasOwn(schema, 'oneOf') &&
-    !Object.hasOwn(schema, 'allOf')
-  )
-}
-
 function bridgedTools(
   registry: ToolRegistry,
   projectId?: string,
@@ -448,17 +451,12 @@ function bridgedTools(
   const offered = new Set(activeBridgeToolNames(projectId, registry, offerWriteAccess))
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
-  // 400s the whole request on the openapi-3.0 flavor.
+  // 400s the whole request on the openapi-3.0 flavor. The export already
+  // leaves out, with a warning, any tool whose schema no agent could list:
+  // Claude Code would drop every tool of this server over one of them (#4142).
   return registry
     .toMcpTools()
-    .filter((tool) => {
-      if (!offered.has(tool.name)) return false
-      if (isAgentInputSchema(tool.inputSchema)) return true
-      console.warn(
-        `[acp-bridge] not offering "${tool.name}": its input schema is not a top-level object`,
-      )
-      return false
-    })
+    .filter((tool) => offered.has(tool.name))
     .map((tool) =>
       tool.name === ASK_CLASSIFIER_TOOL_NAME
         ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }
@@ -502,6 +500,8 @@ interface BridgeExecuteContext {
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
+  /** The agent listed the bridge's tools; `names` are the ones this listing returned. */
+  recordToolsListed: (names: readonly string[]) => void
 }
 
 /** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
@@ -641,9 +641,11 @@ function buildMcpServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {}, logging: {} } },
   )
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess),
-  }))
+  server.setRequestHandler(ListToolsRequestSchema, () => {
+    const tools = bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess)
+    ctx.recordToolsListed(tools.map((tool) => tool.name))
+    return { tools }
+  })
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
   // call a `notifications/cancelled` names. Route it through the bridge-wide
@@ -936,6 +938,16 @@ export async function startAcpNativeBridge(
   let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
+  // Only a request carrying this bridge's bearer token reaches the MCP server,
+  // so a listing here is this session's agent mounting the bridge.
+  // The latest listing wins: the agent's MCP client lists again on reconnect.
+  let listedToolNames: readonly string[] | null = null
+  const toolsListedWaiters = new Set<() => void>()
+  const recordToolsListed = (names: readonly string[]): void => {
+    listedToolNames = names
+    for (const wake of toolsListedWaiters) wake()
+    toolsListedWaiters.clear()
+  }
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -979,6 +991,7 @@ export async function startAcpNativeBridge(
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
+        recordToolsListed,
       })
       res.on('close', () => {
         onHttpClose()
@@ -1017,6 +1030,29 @@ export async function startAcpNativeBridge(
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
     toolNames: offeredToolNames,
+    toolsListed: () => listedToolNames !== null,
+    listedToolNames: () => listedToolNames,
+    whenToolsListed: (timeoutMs, waitSignal): Promise<boolean> => {
+      if (listedToolNames !== null) return Promise.resolve(true)
+      if (closed || waitSignal?.aborted || timeoutMs <= 0) return Promise.resolve(false)
+      return new Promise<boolean>((resolve) => {
+        const finish = (listed: boolean): void => {
+          clearTimeout(timer)
+          toolsListedWaiters.delete(onListed)
+          waitSignal?.removeEventListener('abort', onAbort)
+          resolve(listed)
+        }
+        const onListed = (): void => {
+          finish(true)
+        }
+        const onAbort = (): void => {
+          finish(false)
+        }
+        const timer = setTimeout(onAbort, timeoutMs)
+        toolsListedWaiters.add(onListed)
+        waitSignal?.addEventListener('abort', onAbort, { once: true })
+      })
+    },
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },

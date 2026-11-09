@@ -13,7 +13,12 @@ import {
   zThreadId,
 } from './ipc-guards.ts'
 import { zGuardedYoloThreadId } from './security-handler-args.ts'
-import { getSetting } from '../services/storage/settings.ts'
+import {
+  projectAllowsPortBinding,
+  revokeProjectPortBinding,
+} from '../services/security/project-port-grants.ts'
+import { getProjectRoot } from '../services/workspace.ts'
+import { getThreadMeta } from '../services/thread-store.ts'
 import { requestApproval } from '../services/approval.ts'
 import {
   armGuardedYolo,
@@ -40,8 +45,20 @@ export function registerGuardedYoloHandlers(win: BrowserWindow): void {
         browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
         portBindingAllowed:
           getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
-          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+          projectAllowsPortBinding(root),
       }
+    },
+  )
+  ipcMain.handle(
+    'security:revoke-project-port-binding',
+    async (event, projectId: unknown, threadId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+      const root = getProjectRoot(pid)
+      const thread = await getThreadMeta(pid, tid)
+      if (!root || thread?.id !== tid)
+        throw new Error('The project or thread is no longer available.')
+      await revokeProjectPortBinding(root)
     },
   )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {

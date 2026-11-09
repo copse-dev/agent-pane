@@ -588,9 +588,25 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onInvoke: () => () => {},
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {},
       reply: async () => {},
-      revokeAccess: async () => {},
+      revokeAccess: (threadId, access) => {
+        const key =
+          access === 'read'
+            ? 'threadReadAccess'
+            : access === 'send'
+              ? 'threadSendAccess'
+              : 'threadSubthreadAccess'
+        const grants = settings.get(key)
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id: unknown) => id !== threadId) : [],
+        )
+        return resolvedVoid()
+      },
     },
     mobile: {
       getState: () =>
@@ -693,6 +709,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             portBindingAllowed: false,
           },
         ),
+      revokeProjectPortBinding: () => resolved(undefined),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
       onGuardedYoloChanged: (listener) => {
@@ -1644,6 +1661,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () =>
         resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,

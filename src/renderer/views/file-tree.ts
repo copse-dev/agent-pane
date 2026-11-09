@@ -7,7 +7,7 @@ import {
   materialFolderIconUrl,
   mountMaterialIcon,
 } from '../icons/material-file-icons.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
 import {
@@ -20,7 +20,8 @@ import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { showErrorToast } from './toast.ts'
-import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { awaitPendingThreadPersistence } from '../controller/persistence.ts'
+import { unwrapIpcErrorText } from '../ipc-error-message.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -185,6 +186,11 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     try {
       const owner = getActiveThreadOwner(store)
       if (!owner) throw new Error('No active task')
+      // Main lists a thread's checkout only once its create is on disk; until
+      // then `fs:list-dir` rejects with "not persisted yet". Autosave starts
+      // that create on the `threads_changed` a new thread's writer emits.
+      await awaitPendingThreadPersistence()
+      if (generation !== loadGeneration) return
       const entries = await api.fs.listDir(owner.projectId, owner.threadId, dirPath)
       if (generation !== loadGeneration) return
       clear(target)
@@ -200,7 +206,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
       clear(target)
       const message =
         err instanceof Error ? err.message : typeof err === 'string' ? err : 'Could not read folder'
-      target.append(el('div', { class: 'sidebar-empty' }, message))
+      target.append(el('div', { class: 'sidebar-empty' }, unwrapIpcErrorText(message)))
     }
   }
 
@@ -222,17 +228,19 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   refreshBtn.addEventListener('click', refresh)
-  let lastOwnerKey = ''
-  function refreshForActiveTask(): void {
-    const owner = getActiveThreadOwner(store)
-    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : ''
-    if (nextKey === lastOwnerKey) return
-    lastOwnerKey = nextKey
-    refresh()
-  }
   const unsubs = [
-    selectActiveWorkspace(store, refresh),
-    store.on('threads_changed', refreshForActiveTask),
+    // The tree lists the active project's root, scoped to the active thread's
+    // checkout: reload only when one of those changes, not on renames,
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
+    store.select(
+      (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId] as const,
+      () => {
+        queueMicrotask(refresh)
+      },
+      sameItems,
+    ),
     store.select(
       (s) => s.openFile,
       (openFile) => {
@@ -244,7 +252,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
-  refreshForActiveTask()
+  if (getActiveThreadOwner(store)) refresh()
   const unregisterPopoutSeed = registerPopoutSeedHandlers('explorer', {
     capture: () => ({
       openFilePath: store.getState().openFile?.path ?? null,

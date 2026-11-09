@@ -25,6 +25,11 @@ body .topbar {
   margin: 6px 0 0;
   overflow-wrap: anywhere;
 }
+/* The heading's title has no bottom margin, so the project line takes its own
+   gap instead of app.css's pull-up under a full-size title. */
+#thread .remote-heading .thread-project-meta {
+  margin: 4px 0 0;
+}
 .remote-connection {
   flex: none;
   border: 1px solid var(--border-subtle);

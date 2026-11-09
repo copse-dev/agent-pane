@@ -11,6 +11,7 @@ const FILENAME_ARGUMENT = new Map([
   ['saveChatPaneScreenshot', 0],
   ['saveClassifierScreenshot', 1],
   ['saveElementScreenshot', 1],
+  ['saveFramedElementScreenshot', 1],
   ['saveHoveredElementScreenshot', 1],
   ['savePortraitElementScreenshot', 1],
   ['savePreparedAppScreenshot', 0],

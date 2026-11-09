@@ -160,6 +160,7 @@ export class ToolingPluginToolRuntimeController implements PluginToolRuntimeCont
             description: tool.description,
             parameters: z.record(z.string(), z.unknown()),
             rawParameters: tool.inputSchema,
+            untrustedSchema: true,
             execute: async (args, signal) => {
               const result = zPluginToolResult.parse(
                 await this.runtime.invokeTool(pluginId, tool.name, args, signal),

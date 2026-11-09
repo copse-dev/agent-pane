@@ -1,0 +1,57 @@
+name: E2E flake report
+
+# Per-spec flake history over recent CI runs (docs/testing-strategy.md#flake-visibility).
+# Read-only: downloads e2e-evidence-shard-* artifacts and writes the job
+# summary. It opens no issues, posts no comments and calls no external service.
+on:
+  # After the 06:17 UTC nightly full run has had time to finish.
+  schedule:
+    - cron: '43 8 * * *'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Completed CI runs to read per event (newest first, 1-100)
+        default: '30'
+  # Exercise the report against real runs whenever its own code changes.
+  pull_request:
+    paths:
+      - .github/workflows/flake-report.yml
+      - scripts/flake-report.mts
+      - scripts/lib/flake-report.mts
+      - scripts/lib/gate-evidence.mts
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: flake-report-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    # Fork PRs get a token that cannot read this repository's artifacts.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Collect e2e evidence from recent CI runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNS: ${{ inputs.runs || '30' }}
+        run: node scripts/flake-report.mts collect flake-data --runs "$RUNS" --events schedule,merge_group,pull_request
+      - name: Per-spec flake report
+        if: always()
+        run: node scripts/flake-report.mts aggregate flake-data --title 'E2E flake report (recent CI runs)'
+      - name: Retain collected outcomes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flake-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: flake-data/
+          if-no-files-found: ignore
+          retention-days: 5

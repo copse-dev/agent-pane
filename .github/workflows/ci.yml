@@ -251,16 +251,7 @@ jobs:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          path="${RUNNER_TEMP}/${archive}"
-          curl --fail --location --retry 3 \
-            --output "${path}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
-          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
-          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
-          "${RUNNER_TEMP}/gitleaks" version
+        run: bash scripts/install-gitleaks.sh
       - name: Scan repository history for secrets
         if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         run: |
@@ -532,6 +523,7 @@ jobs:
           # The drift refresh PR's diff is empty, so the oracle would skip it.
           SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: |
+          echo "screenshot_scope=render" >> "$GITHUB_OUTPUT"
           BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
@@ -560,9 +552,10 @@ jobs:
           # does not turn the reviewed follow-up into another expensive full run.
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
+            if printf '%s\n' "$changed" | grep -qxF 'tests/e2e/screenshots/manifest.json' &&
+              ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
-              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+              { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; echo "screenshot_scope=reference-followup"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
@@ -608,6 +601,9 @@ jobs:
           plan_file=$(mktemp "$RUNNER_TEMP/oracle-plan.XXXXXX")
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee "$plan_file"
           grep -E '^(mode|specs|unit_mode|unit_specs)=' "$plan_file" >> "$GITHUB_OUTPUT"
+          if grep -qxF 'mode=skip' "$plan_file"; then
+            echo "screenshot_scope=no-eligible" >> "$GITHUB_OUTPUT"
+          fi
           { echo '### e2e oracle plan'; echo '```'; cat "$plan_file"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Advisory only: capture the effective plan after every early-return path.
       - name: Record plan and small gate shadow
@@ -715,6 +711,20 @@ jobs:
             exit 0
           fi
           { echo "total=9"; echo "list=[1,2,3,4,5,6,7,8,9]"; } >> "$GITHUB_OUTPUT"
+
+      # This successful step is an explicit publisher input in GitHub's job
+      # metadata, not the advisory selected-plan/shard measurement artifacts.
+      # Drafts keep their real plan; suppressing their jobs cannot attest coverage.
+      - name: 'Screenshot evidence plan: ${{ steps.plan.outputs.screenshot_scope }} / ${{ steps.plan.outputs.mode }} / ${{ steps.shards.outputs.total }} shards'
+        env:
+          SCOPE: ${{ steps.plan.outputs.screenshot_scope }}
+          MODE: ${{ steps.plan.outputs.mode }}
+          SHARDS: ${{ steps.shards.outputs.total }}
+        run: |
+          case "$SCOPE:$MODE:$SHARDS" in
+            render:full:9|render:subset:[1-9]|no-eligible:skip:0|reference-followup:skip:0) ;;
+            *) echo '::error::Invalid screenshot evidence plan'; exit 1 ;;
+          esac
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
   # Prettier `--write` — and commit the result back onto the head branch. This
@@ -1423,14 +1433,17 @@ jobs:
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
       # main/preload IPC. Skip screenshot-only heads: their parent already ran
       # this tier and attached its immutable render evidence.
-      - run: npm run build:demo
+      - name: Build browser reference app
+        run: npm run build:demo
         if: needs.precheck.outputs.mode != 'skip'
       # Keep the frame-by-frame motion eval off the other Chrome workers: CPU
       # contention delays RAF callbacks and creates catch-up scroll steps that
       # do not measure the renderer's idle motion. Keep its strict limits.
-      - run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
+      - name: Render browser reference screenshots
+        run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
         if: needs.precheck.outputs.mode != 'skip'
-      - run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
+      - name: Render isolated browser motion screenshots
+        run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
         if: needs.precheck.outputs.mode != 'skip'
       - name: Collect changed browser reference screenshots
         if: >-
@@ -1445,7 +1458,8 @@ jobs:
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} browser screenshot(s)"
-      - uses: actions/upload-artifact@v7
+      - name: Upload rendered browser screenshots
+        uses: actions/upload-artifact@v7
         if: >-
           success() && github.event_name == 'pull_request' &&
           needs.precheck.outputs.mode != 'skip'
@@ -2190,6 +2204,16 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # The retry above turns a spec that failed attempt 1 and passed attempt 2
+      # into a green job with no signal. Name each one in a ::warning:: and the
+      # job summary (docs/testing-strategy.md#flake-visibility). Advisory: the
+      # report always exits 0 and cannot change the shard's result.
+      - name: Report specs whose shard attempts disagreed
+        if: always()
+        continue-on-error: true
+        run: >-
+          node scripts/flake-report.mts shard e2e-evidence/outcomes
+          --log e2e-failure-artifacts/attempt-1.log --shard "${{ matrix.shard }}"
       - name: Preserve per-spec attempts (including partial failures)
         if: always()
         continue-on-error: true
@@ -2230,7 +2254,8 @@ jobs:
           SUITE_STARTED_FILE="$RUNNER_TEMP/shard-suite-started" \
             node scripts/screenshot-metrics.mts shard-record > "changed/.shard-${{ matrix.shard }}" \
             || : > "changed/.shard-${{ matrix.shard }}"
-      - uses: actions/upload-artifact@v7
+      - name: Upload rendered screenshot shard
+        uses: actions/upload-artifact@v7
         if: success() && github.event_name == 'pull_request'
         with:
           name: screenshots-shard-${{ matrix.shard }}
@@ -2321,8 +2346,11 @@ jobs:
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
-    # cold runner, not the steady state.
-    timeout-minutes: 20
+    # cold runner, not the steady state. Raised again from 20 because the
+    # filter itself scales with the candidate count: a PR restyling shared
+    # surfaces rendered ~870 changed screenshots and the filter step took
+    # over 17 minutes, so 20 cancelled the job in most runs.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -2357,6 +2385,28 @@ jobs:
           pattern: screenshots-*
           merge-multiple: true
           path: candidates
+      # A rerun can download only the longer-lived demo artifact after raw
+      # shards expire. A successful download alone cannot prove zero changes.
+      # Only sentinel existence is evidence; their contents remain advisory.
+      - name: Verify complete screenshot producer inputs
+        env:
+          SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
+        run: |
+          set -euo pipefail
+          case "$SHARD_TOTAL" in
+            [1-9]) ;;
+            *) echo '::error::Missing or invalid expected screenshot shard count'; exit 1 ;;
+          esac
+          if [ ! -f candidates/.demo ]; then
+            echo '::error::Missing downloaded browser screenshot input'
+            exit 1
+          fi
+          for (( shard=1; shard<=SHARD_TOTAL; shard++ )); do
+            if [ ! -f "candidates/.shard-$shard" ]; then
+              echo "::error::Missing downloaded screenshot shard $shard/$SHARD_TOTAL"
+              exit 1
+            fi
+          done
       # Reference PNGs are pixel-rendered on the runner, so a re-render of an
       # UNCHANGED screen still differs by a handful of anti-aliased pixels. Left
       # unfiltered every PR ships a candidate set of near-wholesale re-renders —

@@ -10,6 +10,7 @@ import {
   appendReasoning,
   appendToken,
   addToolCall,
+  findToolCall,
   findToolCallOwner,
   getThreadById,
   setMessageTurnOutcome,
@@ -231,6 +232,8 @@ export function createHeadlessAutomationRun(
         case 'tool_result': {
           const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId) ?? msgId
           if (!ownerId) return
+          const call = findToolCall(store, ownerId, chunk.toolCallId)
+          if (call && chunk.deferred !== true) delete call.deferred
           updateToolCall(store, ownerId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
@@ -239,6 +242,7 @@ export function createHeadlessAutomationRun(
             ...(chunk.appendedReminderLengths
               ? { appendedReminderLengths: chunk.appendedReminderLengths }
               : {}),
+            ...(chunk.deferred ? { deferred: chunk.deferred } : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
           return

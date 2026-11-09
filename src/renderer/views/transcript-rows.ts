@@ -24,12 +24,17 @@
  * the view's own build path ({@link TranscriptRowHost.insert}), so a row
  * built here is identical to one the view appends live.
  */
-import type { Message, Thread } from '@shared/types'
+import type { Message, Thread, ToolCall } from '@shared/types'
+import type { AppStore } from '@shared/store/store.ts'
+import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
+import { isReviewerInputCall, reviewerInputAnswer } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun } from '@shared/tools/tool-runs.ts'
+import { artefactPreviewVersion, artefactUriFromToolResult } from '../canvas/artefact-previews.ts'
 import { disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { turnRecoveryForMessage } from '../controller/turn-recovery.ts'
 import { backgroundTaskCommandCall } from './command-task-links.ts'
 import { renderSignature } from './render-signature.ts'
+import { isThreadProposalCall, threadProposalCardSignature } from './thread-proposal-tool-card.ts'
 import {
   isReasoningDisclosureLive,
   liveStepMessageId,
@@ -69,7 +74,7 @@ export interface WantedTranscriptRow extends TranscriptRow {
   readonly patchedBy: readonly string[]
 }
 
-function sameSignature(a: TranscriptRowSignature, b: TranscriptRowSignature): boolean {
+export function sameSignature(a: TranscriptRowSignature, b: TranscriptRowSignature): boolean {
   return a.patched === b.patched && a.settled === b.settled
 }
 
@@ -225,10 +230,39 @@ export function applyTranscriptRowPlan(
 }
 
 /**
+ * What a call's card shows that lives on the thread rather than on the call:
+ * the user's answer to a proposed thread (and whether the thread it started
+ * still exists), or to a reviewer question.
+ */
+function callAnswer(store: AppStore, thread: Thread, call: ToolCall): unknown {
+  if (isThreadProposalCall(call)) return threadProposalCardSignature(call, store, thread.id) ?? null
+  if (isReviewerInputCall(call)) {
+    return reviewerInputAnswer(thread.reviewerInputAnswers, call.id) ?? null
+  }
+  return undefined
+}
+
+/**
+ * The canvas thumbnails a row draws: the message's own artefact cards and the
+ * preview section of each finished canvas tool call (a run's anchor draws its
+ * members' calls). Thumbnails live outside the thread (artefact-previews.ts).
+ */
+function previewTitles(message: Message, calls: readonly ToolCall[]): string[] {
+  const titles = (message.canvasArtefacts ?? []).map((artefact) => artefact.title)
+  for (const call of calls) {
+    if (call.status !== 'done') continue
+    const uri = artefactUriFromToolResult(call.result)
+    if (uri) titles.push(artefactTitleFromUri(uri))
+  }
+  return titles
+}
+
+/**
  * The signature of `message`'s row: everything its build reads that
  * can change while the row stays in the list. Anything else a row shows
  * (model labels, user actions, side-chat chips, hook-card visibility) has its
- * own sync pass that patches the row in place.
+ * own sync pass that patches the row in place, and the thread's own model is
+ * drawn only by the queued panel and the activity row, which are chrome.
  *
  * `patched` holds what the streaming handlers redraw in place as they patch
  * the row (tokens, reasoning, ACP content, tool calls, segment and turn end,
@@ -257,17 +291,26 @@ export function applyTranscriptRowPlan(
  *   handlers append each section to the bubble as it arrives, ahead of the
  *   reply actions the segment's end adds; a build draws the actions first.
  * - Whether the turn failed here, which the concise classes read.
- * - The failed-turn recovery the last message offers.
+ * - The thread-wide facts a call's card draws: the answer to a proposed
+ *   thread or a reviewer question, and whether a started thread still exists.
+ * - The version of each canvas thumbnail the row draws.
+ * - The failed-turn recovery the last message offers (which also reads the
+ *   thread's interrupted-turn marker).
  * - For a machine-origin prompt, the command whose wake it reports.
  *
  * A build that starts reading another field of the message or thread must be
  * signed here too, or a row drawn from it will be kept when it changes.
  */
-export function transcriptRowSignature(thread: Thread, message: Message): TranscriptRowSignature {
-  return signRow(thread, message, multiStepRunFor(thread, message.id))
+export function transcriptRowSignature(
+  store: AppStore,
+  thread: Thread,
+  message: Message,
+): TranscriptRowSignature {
+  return signRow(store, thread, message, multiStepRunFor(thread, message.id))
 }
 
 function signRow(
+  store: AppStore,
   thread: Thread,
   message: Message,
   run: ToolRun | undefined,
@@ -275,6 +318,8 @@ function signRow(
   const liveStep = liveStepMessageId(thread)
   const origin = message.role === 'user' ? message.origin : undefined
   markUserInterruptedCalls(thread)
+  // A run's anchor draws every member's calls.
+  const calls = [...message.toolCalls, ...(run?.toolCalls ?? [])]
   return {
     patched: renderSignature({
       message: { ...message, turnOutcome: undefined },
@@ -284,8 +329,7 @@ function signRow(
     }),
     settled: renderSignature({
       memberOf: run && run.anchorId !== message.id ? run.anchorId : null,
-      // A run's anchor draws every member's calls.
-      interrupted: [...message.toolCalls, ...(run?.toolCalls ?? [])].flatMap((call) => {
+      interrupted: calls.flatMap((call) => {
         const cause = userInterruption(call)
         return cause === undefined ? [] : [[call.id, cause]]
       }),
@@ -293,6 +337,13 @@ function signRow(
         (message.canvasArtefacts ?? []).map((artefact) => artefact.title),
         (message.visualEvidence ?? []).map((evidence) => evidence.id),
       ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store, thread, call)
+        return answer === undefined ? [] : [[call.id, answer]]
+      }),
+      previews: previewTitles(message, calls).map((title) =>
+        artefactPreviewVersion(thread.id, title),
+      ),
       failed: message.turnOutcome?.status === 'failed',
       recovery: turnRecoveryForMessage(thread, message.id),
       wake:
@@ -305,6 +356,7 @@ function signRow(
 
 /** The rows the thread's transcript should show, in order, skipping `hidden` messages. */
 export function wantedTranscriptRows(
+  store: AppStore,
   thread: Thread,
   hidden: ReadonlySet<string>,
 ): WantedTranscriptRow[] {
@@ -314,7 +366,7 @@ export function wantedTranscriptRows(
       const run = multiStepRunFor(thread, message.id)
       return {
         key: message.id,
-        signature: signRow(thread, message, run),
+        signature: signRow(store, thread, message, run),
         patchedBy: run ? run.memberIds : [message.id],
       }
     })

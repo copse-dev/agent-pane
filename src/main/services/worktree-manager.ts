@@ -26,7 +26,12 @@ import {
   getDefaultBranch,
   invalidateGitWorkTreeProbe,
 } from './github/git-service.ts'
-import { registerInternalWorkspaceRoot, unregisterInternalWorkspaceRoot } from './workspace.ts'
+import {
+  canonicalWorkspaceRoot,
+  registerInternalWorkspaceRoot,
+  unregisterInternalWorkspaceRoot,
+} from './workspace.ts'
+import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import { stopExecutionRootIndexing } from './search/workspace-indexing.ts'
 import {
   worktreeManagerSandboxOverlay,
@@ -688,6 +693,23 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
     repositoryRoot: canonicalTopLevel,
     projectRelativePath,
   }
+}
+
+/** Read the existing project directory inside a linked checkout; never create it. */
+export async function existingWorktreeProjectRoot(
+  checkoutRoot: string,
+  projectRelativePath: string,
+): Promise<string> {
+  const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
+  const root = await canonicalWorkspaceRoot(
+    resolve(canonicalCheckoutRoot, projectRelativePath),
+    localWorkspaceFs,
+  )
+  const rel = relative(canonicalCheckoutRoot, root)
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error('Internal execution root is outside its linked Git worktree')
+  }
+  return root
 }
 
 async function commonGitDir(root: string): Promise<string> {
@@ -1507,7 +1529,7 @@ async function validateThreadWorktreeState(
   const [recordsCheck, liveBranchCheck, executionRootCheck] = await Promise.allSettled([
     listRecords(projectRoot),
     symbolicHeadBranch(canonicalPath),
-    realpath(resolve(canonicalPath, location.projectRelativePath)),
+    existingWorktreeProjectRoot(canonicalPath, location.projectRelativePath),
   ])
   if (recordsCheck.status === 'rejected') throw recordsCheck.reason
   const records = recordsCheck.value

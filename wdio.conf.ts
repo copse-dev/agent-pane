@@ -9,14 +9,18 @@ import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
-  isIgnorableAfterTestError,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/settings-action-bar-click.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { createErrorToastGuard } from './tests/e2e/helpers/error-toast-guard.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort } from './tests/e2e/helpers/debug-port.ts'
+import {
+  installCaptureSettle,
+  withoutCaptureSettle,
+} from './tests/e2e/helpers/context-estimate-settled.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
@@ -40,6 +44,10 @@ async function parkSessionPointer(): Promise<void> {
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
+const errorToastGuard = createErrorToastGuard(assertNoErrorToasts, {
+  budgetMs: AFTER_TEST_SESSION_BUDGET_MS,
+  killWedgedSession: forceKillWedgedE2eSession,
+})
 
 const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
@@ -148,6 +156,9 @@ export const config: WebdriverIO.Config = {
   mochaOpts: {
     ui: 'bdd',
     timeout: 30_000,
+    rootHooks: {
+      afterEach: errorToastGuard.afterEach,
+    },
   },
   async before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
@@ -160,13 +171,16 @@ export const config: WebdriverIO.Config = {
     // not scroll to rescue it (it only scrolls what is out of view). Nudge such
     // a control clear at click time; see helpers/settings-action-bar-click.ts.
     installSettingsActionBarClickSafety(browser)
+    // Every capture waits for the composer's context estimate, so the footer's
+    // context wheel never races main's reply; see helpers/context-estimate-settled.ts.
+    installCaptureSettle(browser)
     await assertE2eDeviceScaleFactor()
     await parkSessionPointer()
   },
   async onReload() {
     await parkSessionPointer()
   },
-  afterTest: async (test, _context, result) => {
+  afterTest: async (test, context: { test?: object }, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
     // entirely and force-kill orphans so deleteSession cannot burn another full
     // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
@@ -175,6 +189,11 @@ export const config: WebdriverIO.Config = {
       forceKillWedgedE2eSession()
       return
     }
+    await errorToastGuard.recordAfterTest(
+      context.test,
+      typeof test.title === 'string' ? test.title : 'e2e test',
+      result.passed,
+    )
 
     // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
     // CI can upload them for debugging the constrained-runner render/OOM flakes.
@@ -186,7 +205,8 @@ export const config: WebdriverIO.Config = {
         const base = `${test.title.replace(/[^a-z0-9]+/gi, '-').slice(0, 80)}-${String(Date.now())}`
         await withTimeout(
           (async (): Promise<void> => {
-            await browser.saveScreenshot(join(dir, `${base}.png`))
+            // A failure dump records the app as it is, pending estimate or not.
+            await withoutCaptureSettle(() => browser.saveScreenshot(join(dir, `${base}.png`)))
             writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
             // The page source shows *that* an element is missing or unpopulated;
             // the renderer console says why (e.g. the settings-dialog refresh
@@ -203,23 +223,6 @@ export const config: WebdriverIO.Config = {
       } catch {
         // session/runner likely already dead — nothing to capture
       }
-    }
-
-    try {
-      await withTimeout(
-        assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test'),
-        AFTER_TEST_SESSION_BUDGET_MS,
-        'afterTest toast assertion',
-      )
-    } catch (error) {
-      // Dead-session / budget timeouts must not fail a passing test — that was
-      // the residual gap in #987 (markdown-nbsp-metadata afterTest on a green
-      // spec). Real toast failures return quickly with "Unexpected error toast".
-      if (isIgnorableAfterTestError(error)) {
-        forceKillWedgedE2eSession()
-        return
-      }
-      if (result.passed) throw error
     }
   },
   async beforeSession(_config, capabilities, specs) {

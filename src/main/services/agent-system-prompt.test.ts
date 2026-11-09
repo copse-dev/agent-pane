@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { buildSystemPrompt } from './agent-system-prompt.ts'
+import { buildSystemPrompt, buildSystemPromptWithMetadata } from './agent-system-prompt.ts'
 import {
   INVESTIGATE_CI_TOOL_LINE,
   OPUS_5_RESPONSE_LENGTH_BLOCK,
@@ -49,6 +49,31 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
       invokedSkills: [],
       ...(model === undefined ? {} : { model }),
     })
+
+  it('retains silent catalog metadata for dispatch without changing the prompt', async (t) => {
+    const previous = process.env['COPSE_DEBUG_PROMPT_CACHE']
+    t.after(() => {
+      if (previous === undefined) delete process.env['COPSE_DEBUG_PROMPT_CACHE']
+      else process.env['COPSE_DEBUG_PROMPT_CACHE'] = previous
+    })
+    const logs: unknown[][] = []
+    t.mock.method(console, 'error', (...args: unknown[]) => logs.push(args))
+    delete process.env['COPSE_DEBUG_PROMPT_CACHE']
+    const plain = await buildSystemPromptWithMetadata({
+      subagentsEnabled: false,
+      invokedSkills: [],
+    })
+    process.env['COPSE_DEBUG_PROMPT_CACHE'] = '1'
+    const measured = await buildSystemPromptWithMetadata({
+      subagentsEnabled: false,
+      invokedSkills: [],
+    })
+    assert.equal(measured.prompt, plain.prompt)
+    assert.equal(plain.promptCatalog, undefined)
+    assert.equal(measured.promptCatalog?.advertisedSkills, 0)
+    assert.equal(measured.promptCatalog.utf8Bytes, 0)
+    assert.equal(logs.length, 0)
+  })
 
   it('adds the length instruction and the paired tail reminder on Opus 5', async () => {
     const prompt = await build('claude-opus-5')

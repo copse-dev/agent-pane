@@ -1,5 +1,6 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
+import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -8,7 +9,7 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { initThreadPrompts } from './services/thread-prompts.ts'
+import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -104,7 +105,7 @@ import {
   getMcpServerStatuses,
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
-import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
+import { disposeAllAcpSessions, hasActiveAcpTurn } from './services/acp/acp-session-pool.ts'
 import { initApproval, requestApproval } from './services/approval.ts'
 import {
   setSimulatorDesktopPanelPresenter,
@@ -142,6 +143,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  stopAllAgentRuns,
   listRunningThreadIds,
   retryPostTurnReview,
   runReviewForThread,
@@ -167,7 +169,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestThreadFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -208,6 +210,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
   zThreadId,
@@ -226,7 +229,11 @@ import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
-import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import {
+  hasBackgroundProcessRecord,
+  hasBackgroundProcessesForThread,
+  stopAllBackgroundProcesses,
+} from './services/exec/background-process.ts'
 import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
 import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
@@ -714,6 +721,7 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+    interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -835,6 +843,24 @@ app
         },
       },
     )
+    const isAutomationRunActive = (projectId: string, threadId: string): boolean | null => {
+      if (
+        agentDispatcher.isActive(projectId, threadId) ||
+        listRunningThreadIds().includes(threadId) ||
+        hasActiveAcpTurn(threadId) ||
+        getContainerRunService().isActive(threadId) ||
+        hasBackgroundProcessesForThread({ projectId, threadId })
+      )
+        return true
+      // A retained completion/dedupe record is ambiguous, not evidence that
+      // its asynchronous wake has finished. Cold startup has neither record.
+      if (
+        agentDispatcher.hasMachineOperationRecord(projectId, threadId) ||
+        hasBackgroundProcessRecord({ projectId, threadId })
+      )
+        return null
+      return false
+    }
     getAutomationService().start(
       (event) => {
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
@@ -843,13 +869,14 @@ app
       // The project the receiving window shows; once it is gone nothing would
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
+      isAutomationRunActive,
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
     getBranchCiAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    })
+    }, isAutomationRunActive)
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
@@ -1017,16 +1044,26 @@ app
 
     ipcMain.handle(
       'agent:run',
-      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        rawPrompt: string,
+        delegationArg?: unknown,
+      ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await agentDispatcher.dispatch({
-          projectId,
-          threadId,
-          payload: parseAgentRunPayload(rawPrompt),
-        })
+        const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
+        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // A delegated prompt's authority is decided here, not by the renderer's
+        // pre-check: a revoke can land between that check and this invoke.
+        await (delegation
+          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+              agentDispatcher.dispatch(request),
+            )
+          : agentDispatcher.dispatch(request))
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
@@ -1297,10 +1334,7 @@ app
         if (!parsed.success) {
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
-        const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        const thread = await getProjectThread(projectId, threadId)
-        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
-        return suggestFollowUps(parsed.data, root, executor)
+        return suggestThreadFollowUps(projectId, threadId, parsed.data)
       },
     )
 
@@ -1432,8 +1466,13 @@ let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
+let interruptTurnTranscripts: (() => Promise<void>) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  const transcriptDrain = interruptTurnTranscripts?.()
+  setAgentInitiatedTurnAuthority(null)
+  stopAllAgentRuns()
+  await stopAllForegroundShellProcesses()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1477,6 +1516,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await transcriptDrain
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

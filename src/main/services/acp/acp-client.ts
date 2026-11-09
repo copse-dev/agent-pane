@@ -45,6 +45,7 @@ import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@sh
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
@@ -145,6 +146,18 @@ export interface AcpClientHandlers {
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
   writeTextFile?: (req: WriteTextFileRequest) => Promise<WriteTextFileResponse>
+  /**
+   * The agent wrote into its transcript that Copse's own MCP server failed to
+   * start for it ({@link isAcpBridgeStartupFailure}). Return true when the
+   * thread already says so in Copse's words, to drop the agent's line.
+   */
+  onBridgeStartupFailure?: () => boolean
+  /**
+   * The agent's own runtime refused a call of the bridged tool `tool` as not in
+   * its tool list ({@link acpBridgeToolMissing}): it may have dropped Copse's
+   * tools after listing them (#4142). Called after the failed call is shown.
+   */
+  onBridgeToolMissing?: (tool: string) => void
 }
 
 export interface AcpAgentSpawnConfig {
@@ -823,6 +836,11 @@ class AcpUpdateQueue {
   } | null = null
   private failure: Error | null = null
 
+  /** Includes an update already handed to the pump's not-yet-resumed waiter. */
+  hasPendingUpdates(): boolean {
+    return this.pending.length > 0 || (this.failure === null && this.waiter === null)
+  }
+
   enqueue(update: SessionUpdate): void {
     if (this.failure !== null) return
     const waiter = this.waiter
@@ -883,6 +901,8 @@ export interface OpenAcpSession {
   promptImage: boolean
   /** The agent's current slash-command registry, refreshed by session updates. */
   availableCommands: AvailableCommand[]
+  /** What the agent has said about a tool call's identity so far (`AcpToolCallObservations`). */
+  toolCallIdentities: (toolCallId: string) => readonly AcpToolIdentity[]
   /** Mutable ACP-owned metadata for the live session. */
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
@@ -947,6 +967,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
+  /** Close the connection and stop the agent. A failed stop can be retried. */
   dispose: () => Promise<void>
 }
 
@@ -1252,9 +1273,22 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
+        if (
+          isAcpBridgeStartupFailure(update) &&
+          open.handlers.current?.onBridgeStartupFailure?.() === true
+        ) {
+          continue
+        }
         for (const chunk of sessionUpdateToStreamChunks(update)) {
           open.handlers.current?.onChunk(chunk)
         }
+        const missingTool = acpBridgeToolMissing(
+          update,
+          update.sessionUpdate === 'tool_call_update'
+            ? open.toolCallIdentities(update.toolCallId)
+            : [],
+        )
+        if (missingTool !== null) open.handlers.current?.onBridgeToolMissing?.(missingTool)
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
         // future turn on this session) depends on the loop staying alive.
@@ -1409,11 +1443,19 @@ export async function openAcpSession(
   let disposal: Promise<void> | null = null
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
-    disposed = true
-    pendingUpdates.clear()
-    terminals?.dispose()
-    connection.close()
-    disposal = Promise.resolve(transport.dispose())
+    if (!disposed) {
+      disposed = true
+      pendingUpdates.clear()
+      terminals?.dispose()
+      connection.close()
+    }
+    // Share a finished or in-flight transport shutdown, but not a failed one:
+    // the agent may still be alive, so the next dispose asks the transport
+    // again instead of replaying the first failure for the session's lifetime.
+    disposal = Promise.resolve(transport.dispose()).catch((error: unknown) => {
+      disposal = null
+      throw error
+    })
     return disposal
   }
 
@@ -1583,6 +1625,7 @@ export async function openAcpSession(
       ),
     )
 
+    const openedSessionId = session.sessionId
     const open: OpenAcpSession = {
       session,
       connection,
@@ -1593,6 +1636,7 @@ export async function openAcpSession(
       canLoad,
       promptImage,
       availableCommands: [],
+      toolCallIdentities: (toolCallId) => observedToolCalls.get(openedSessionId, toolCallId),
       sessionInfo: {},
       resumed: restoredBy !== null,
       restoredBy,

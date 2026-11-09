@@ -93,9 +93,11 @@ function wrapForSandbox(
   overlay: Partial<SandboxRuntimeConfig>,
   tmpDir: string,
   signal?: AbortSignal,
+  cwd?: string,
+  options?: Parameters<typeof SandboxManager.wrapWithSandboxArgv>[5],
 ): ReturnType<typeof SandboxManager.wrapWithSandboxArgv> {
   return withSandboxWrapTmpDir(tmpDir, () =>
-    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal),
+    SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal, cwd, options),
   )
 }
 
@@ -261,6 +263,7 @@ export async function spawnShellInProjectSandbox(
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
+  opts.signal?.throwIfAborted()
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (opts.readonlyCheckout && (isSshExecutionTarget(target) || opts.unsandboxed)) {
     throw new Error('A read-only checkout cannot run commands outside the project sandbox')
@@ -275,6 +278,8 @@ export async function spawnShellInProjectSandbox(
     })
   }
   await requireLocalWorkingDirectory(opts.cwd)
+
+  opts.signal?.throwIfAborted()
 
   if (opts.readonlyCheckout && !isProjectSandboxEnabled()) {
     throw new Error('A read-only checkout needs the project sandbox, which is unavailable')
@@ -311,6 +316,7 @@ export async function spawnShellInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
+  opts.signal?.throwIfAborted()
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
     env: withSandboxShellPath(
@@ -344,6 +350,10 @@ export async function spawnBackgroundProcess(
     allowPortBinding?: boolean
     /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
     unsandboxed?: boolean
+    /** Named read targets derived from the command approved by the tool gate. */
+    readGrantTargets?: readonly string[]
+    /** Unique host-owned attempt id for runner-side violation attribution. */
+    violationId?: string
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -370,9 +380,15 @@ export async function spawnBackgroundProcess(
     })
   }
 
-  const overlay = opts.allowPortBinding
-    ? portBindingSandboxOverlay(opts.cwd)
-    : workspaceSandboxOverlay(opts.cwd)
+  const readGrantTargets = opts.readGrantTargets ?? []
+  const base =
+    readGrantTargets.length > 0
+      ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
+      : workspaceSandboxOverlay(opts.cwd)
+  const bindingNetwork = opts.allowPortBinding
+    ? portBindingSandboxOverlay(opts.cwd).network
+    : undefined
+  const overlay = bindingNetwork ? { ...base, network: bindingNetwork } : base
   // Only a port-binding task needs the global network scope widened; a contained
   // task keeps the deny-all base, so acquiring a no-op scope would be misleading.
   const release = opts.allowPortBinding
@@ -382,6 +398,12 @@ export async function spawnBackgroundProcess(
         label: `background task: ${shellCommandLine}`,
       })
     : (): void => {}
+  let hasSandboxLease = false
+  const releaseSandbox = (): void => {
+    if (!hasSandboxLease) return
+    hasSandboxLease = false
+    afterSandboxedCommand()
+  }
   try {
     const tmpDir = sandboxTmpDir(overlay)
     const { argv, env } = await wrapForSandbox(
@@ -389,7 +411,11 @@ export async function spawnBackgroundProcess(
       shellForSandboxWrap(),
       overlay,
       tmpDir,
+      undefined,
+      opts.cwd,
+      opts.violationId ? { commandId: opts.violationId } : undefined,
     )
+    hasSandboxLease = true
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')
     const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
@@ -400,10 +426,19 @@ export async function spawnBackgroundProcess(
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
-    child.once('close', release)
-    child.once('error', release)
+    child.once('close', () => {
+      releaseSandbox()
+      release()
+    })
+    child.once('error', () => {
+      // A failed kill can emit an error while the wrapped process is still
+      // alive. Keep its deny-path mounts until close; a failed spawn has no PID.
+      if (child.pid === undefined) releaseSandbox()
+      release()
+    })
     return child
   } catch (err) {
+    releaseSandbox()
     release()
     throw err
   }
