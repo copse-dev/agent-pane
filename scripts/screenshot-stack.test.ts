@@ -903,6 +903,65 @@ describe('incremental screenshot stack selection', () => {
   })
 })
 describe('stack workflow integration', () => {
+  it('isolates only skipped source completions from the reconciliation queue and job', () => {
+    const routing = z
+      .object({
+        concurrency: z.object({ group: z.string() }),
+        jobs: z.object({ reconcile: z.object({ if: z.string() }) }),
+      })
+      .parse(load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')))
+    const route = (
+      eventName: string,
+      conclusion: string | null | undefined,
+      headRepo = 'copse-dev/agent-pane',
+    ): { group: unknown; reconcile: unknown } => {
+      const context = {
+        github: {
+          repository: 'copse-dev/agent-pane',
+          event_name: eventName,
+          event: {
+            workflow_run: { conclusion },
+            pull_request: { head: { repo: { full_name: headRepo } } },
+          },
+        },
+      }
+      return {
+        group: new Script(routing.concurrency.group.slice(3, -2)).runInNewContext(context),
+        reconcile: new Script(routing.jobs.reconcile.if).runInNewContext(context),
+      }
+    }
+    const skipped = route('workflow_run', 'skipped')
+    assert.notEqual(skipped.group, 'screenshot-stack-policy')
+    assert.equal(skipped.reconcile, false)
+    for (const conclusion of [
+      undefined,
+      null,
+      '',
+      'unknown',
+      'success',
+      'failure',
+      'cancelled',
+      'timed_out',
+      'neutral',
+      'action_required',
+      'stale',
+    ]) {
+      assert.deepEqual(
+        route('workflow_run', conclusion),
+        { group: 'screenshot-stack-policy', reconcile: true },
+        `completion ${String(conclusion)} must retain full reconciliation`,
+      )
+    }
+    for (const event of ['pull_request_target', 'schedule', 'workflow_dispatch']) {
+      assert.deepEqual(route(event, 'skipped'), {
+        group: 'screenshot-stack-policy',
+        reconcile: true,
+      })
+    }
+    const fork = route('pull_request_target', undefined, 'someone/fork')
+    assert.notEqual(fork.group, 'screenshot-stack-policy')
+    assert.equal(fork.reconcile, false)
+  })
   it('coalesces pending triggers and repairs all live PRs without event history', async () => {
     const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
     const routing = z
@@ -922,7 +981,10 @@ describe('stack workflow integration', () => {
         github: {
           repository: 'copse-dev/agent-pane',
           event_name: eventName,
-          event: { pull_request: { head: { repo: { full_name: headRepo } } } },
+          event: {
+            workflow_run: {},
+            pull_request: { head: { repo: { full_name: headRepo } } },
+          },
         },
       })
     assert.equal(group('pull_request_target', 'copse-dev/agent-pane'), 'screenshot-stack-policy')
