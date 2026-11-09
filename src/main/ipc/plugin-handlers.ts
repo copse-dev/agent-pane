@@ -51,6 +51,7 @@ import {
 } from '../services/apple-development/apple-development-service.ts'
 import { reloadMcpServers, reloadMcpServersForPluginToggle } from '../services/mcp/mcp-registry.ts'
 import { syncDevtoolsShortcut } from '../windows/create-main-window.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 
 /**
  * Stop Apple work once the Apple Development plugin is turned off. The plugin
@@ -91,7 +92,24 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
   ipcMain.handle('plugins:commit-install', async (event, rawToken: unknown) => {
     assertMainFrameSender(event, win)
     const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
-    const result = await getPluginInstallService().commit(token)
+    const installService = getPluginInstallService()
+    const review = installService.preparedReview(token)
+    if (!review) throw new Error('Install review expired; review the package again.')
+    const detail = [
+      `${review.operation === 'install' ? 'Install' : 'Update'} ${JSON.stringify(review.name)} from ${JSON.stringify(review.publisher)}?`,
+      `Plugin ID: ${review.pluginId}`,
+      `Revision: ${review.revision}`,
+      `Content hash: ${review.contentHash}`,
+      `Skills (${String(review.skillCount)}): ${review.skills.join(', ') || 'none'}`,
+      `MCP servers (${String(review.mcpServerCount)}): ${review.mcpServers.map((server) => `${server.name} (${server.transport}: ${server.target})`).join(', ') || 'none'}`,
+      ...review.warnings.map((warning) => `Warning: ${warning}`),
+    ].join('\n')
+    if (!(await confirmNativeAction(event.sender, {
+      title: `${review.operation === 'install' ? 'Install' : 'Update'} plugin?`,
+      detail,
+      approveLabel: review.operation === 'install' ? 'Install plugin' : 'Update plugin',
+    }))) throw new Error('Plugin install was not confirmed')
+    const result = await installService.commit(token)
     const service = getPluginService()
     const { pluginId } = result.record
     // The review the user just confirmed is the consent, so a first install
@@ -128,6 +146,10 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
   ipcMain.handle('plugins:rollback', async (event, rawPluginId: unknown) => {
     assertMainFrameSender(event, win)
     const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
+    if (!(await confirmNativeAction(event.sender, {
+      title: 'Roll back plugin?',
+      detail: `Restore the previous revision of ${pluginId}? If enabled, its skills and MCP servers will become active.`,
+    }))) throw new Error('Plugin rollback was not confirmed')
     const service = getPluginService()
     // Rolling back returns to a revision the user already reviewed, so the
     // plugin is only paused for the switch and keeps the user's toggle after it.
@@ -158,6 +180,11 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    if (enabled && !(await confirmNativeAction(event.sender, {
+      title: 'Enable plugin?',
+      detail: `Enable ${id}? Its tools, skills, MCP servers, and other features may become available.`,
+      approveLabel: 'Enable plugin',
+    }))) throw new Error('Plugin enablement was not confirmed')
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
     if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
@@ -260,6 +287,10 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
         z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
         [rawValue],
       )
+      if (!(await confirmNativeAction(event.sender, {
+        title: 'Change plugin setting?',
+        detail: `Change ${id}.${key} to ${JSON.stringify(value)}? Plugin settings may change what this plugin can do.`,
+      }))) throw new Error('Plugin setting change was not confirmed')
       await getPluginService().setSetting(id, key, value)
       if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
         const statuses = await reloadMcpServersForPluginToggle(registry, id)

@@ -2,7 +2,7 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { defineHandler, defineSenderHandler } from './define-handler.ts'
-import { defineSenderRootHandler, senderProjectId } from './sender-project-root.ts'
+import { defineSenderRootHandler, senderProjectId, senderProjectRoot } from './sender-project-root.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
@@ -26,6 +26,8 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
+import { getCurrentBranchName, getDefaultBranch, getGithubRepoSlug } from '../services/github/git-service.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { listProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
@@ -148,52 +150,85 @@ export function registerGhHandlers(win: BrowserWindow): void {
     z.tuple([z.string().min(1)]),
     prReaders.threadPrRelationships,
   )
-  // PR lifecycle write actions. They mutate GitHub state, so each asserts a
-  // main-frame sender (the `defineHandler` default) before acting.
+  // A renderer proposal needs an OS-owned decision before a GitHub mutation.
   //
   // The "Create PR" chip's second half. Runs the same `createPrForThread` the
   // `gh_pr_create` tool does — trailer, target resolution and thread linking
   // included — so a PR opened from the dialog is indistinguishable from one the
-  // agent opened. No model call: by this point the user has settled every
-  // argument, and the dialog they just confirmed is the decision to publish.
+  // agent opened. Main resolves the target and asks for an OS-owned decision.
   // The decoder admits only title/body/draft; head, base, owner and repo come
   // from the thread's checkout inside `createPrForThread`, never the renderer.
-  defineHandler(
+  defineSenderHandler(
     win,
     'gh:create-pr-for-thread',
     ghCreatePrForThreadArgs,
-    async (projectId, threadId, request) => {
+    async (sender, projectId, threadId, request) => {
       const context = await resolveThreadExecutionContext(projectId, threadId)
+      const workspaceRepo = await getGithubRepoSlug(context.root)
+      const target = workspaceRepo ?? '(unknown)'
+      const head = await getCurrentBranchName(context.root)
+      const base = await getDefaultBranch(context.root)
+      if (!(await confirmNativeAction(sender, {
+        title: 'Create GitHub pull request?',
+        detail: `Publish a pull request from ${JSON.stringify(context.root)}?\n\nRepository: ${target}\nHead: ${head ?? '(unknown)'}\nBase: ${base ?? '(unknown)'}\nDraft: ${request.draft === true ? 'yes' : 'no'}\nTitle: ${request.title}\n\nBody:\n${request.body ?? ''}`,
+        approveLabel: 'Create pull request',
+      }))) throw new Error('Pull request creation was not confirmed')
       return createPrForThread(request, context)
     },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:rerun-failed-runs',
     ghPrRefArgs,
-    (root, owner, repo, number) => rerunFailedPrRuns(root, { owner, repo, number }),
+    async (sender, owner, repo, number) => {
+      if (!(await confirmNativeAction(sender, {
+        title: 'Rerun GitHub checks?',
+        detail: `Rerun failed checks for ${owner}/${repo}#${String(number)}?`,
+      }))) throw new Error('GitHub check rerun was not confirmed')
+      return rerunFailedPrRuns(senderProjectRoot(sender), { owner, repo, number })
+    },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:approve-pr',
     ghPrRefArgs,
-    (root, owner, repo, number) => approvePr(root, { owner, repo, number }),
+    async (sender, owner, repo, number) => {
+      if (!(await confirmNativeAction(sender, {
+        title: 'Approve GitHub pull request?',
+        detail: `Submit your approval on ${owner}/${repo}#${String(number)}?`,
+        approveLabel: 'Approve pull request',
+      }))) throw new Error('Pull request approval was not confirmed')
+      return approvePr(senderProjectRoot(sender), { owner, repo, number })
+    },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:mark-pr-ready',
     ghPrRefArgs,
-    (root, owner, repo, number) => markPrReady(root, { owner, repo, number }),
+    async (sender, owner, repo, number) => {
+      if (!(await confirmNativeAction(sender, {
+        title: 'Mark GitHub pull request ready?',
+        detail: `Mark ${owner}/${repo}#${String(number)} ready for review?`,
+      }))) throw new Error('Marking pull request ready was not confirmed')
+      return markPrReady(senderProjectRoot(sender), { owner, repo, number })
+    },
     { errors: 'per-argument' },
   )
-  defineSenderRootHandler(
+  defineSenderHandler(
     win,
     'gh:enable-auto-merge',
     ghPrRefArgs,
-    (root, owner, repo, number) => enablePrAutoMerge(root, { owner, repo, number }),
+    async (sender, owner, repo, number) => {
+      if (!(await confirmNativeAction(sender, {
+        title: 'Enable GitHub auto-merge?',
+        detail: `Automatically merge ${owner}/${repo}#${String(number)} when checks pass?`,
+        approveLabel: 'Enable auto-merge',
+      }))) throw new Error('Auto-merge was not confirmed')
+      return enablePrAutoMerge(senderProjectRoot(sender), { owner, repo, number })
+    },
     { errors: 'per-argument' },
   )
 }

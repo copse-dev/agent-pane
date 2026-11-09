@@ -27,6 +27,7 @@ import {
 import { getPluginService } from '../services/plugins/plugin-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 
 export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('mcp:list', (event) => {
@@ -35,6 +36,15 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Reload MCP servers?',
+        detail:
+          'Reloading can start commands from enabled user and trusted project MCP configuration.',
+      }))
+    ) {
+      throw new Error('MCP reload was not confirmed')
+    }
     const statuses = await reloadMcpServers(registry)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
@@ -45,6 +55,15 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
       name,
       enabled,
     ])
+    if (
+      parsedEnabled &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Enable MCP server?',
+        detail: `Enable ${parsedName} and reload MCP servers? Enabled servers may run commands or access external services.`,
+      }))
+    ) {
+      throw new Error('MCP server enablement was not confirmed')
+    }
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     broadcastToAppWindows('mcp:status-changed', statuses)
@@ -68,6 +87,14 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const parsedName = parseIpcArgs(zMcpServerName, [name])
     const serverUrl = mcpSignInTargetUrl(parsedName)
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Sign in to MCP server?',
+        detail: `Open authentication for ${parsedName} at ${serverUrl}?`,
+      }))
+    ) {
+      throw new Error('MCP sign-in was not confirmed')
+    }
     mcpSignIns.get(parsedName)?.abort()
     const controller = new AbortController()
     mcpSignIns.set(parsedName, controller)
@@ -130,6 +157,15 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([mcpUserServerInputSchema, zMcpServerName.optional()]),
       [input, previousName],
     )
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Save MCP server?',
+        detail: `Save and load this user MCP server configuration?\n\n${JSON.stringify(parsedInput, null, 2)}`,
+        approveLabel: 'Save server',
+      }))
+    ) {
+      throw new Error('MCP server configuration was not confirmed')
+    }
     const result = await saveUserMcpServer(parsedInput, {
       takenNames: mcpNamesTakenOutsideUserConfig(),
       ...(parsedPrevious === undefined ? {} : { previousName: parsedPrevious }),
@@ -155,6 +191,15 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
       name,
       enabled,
     ])
+    if (
+      parsedEnabled &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Enable reviewed MCP server?',
+        detail: `Enable ${parsedName} and reload MCP servers? The server may run commands or access external services.`,
+      }))
+    ) {
+      throw new Error('MCP server enablement was not confirmed')
+    }
     await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
     broadcastToAppWindows('mcp:status-changed', statuses)

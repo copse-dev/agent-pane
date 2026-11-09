@@ -10,12 +10,14 @@ import {
   applyEnvironmentSetup,
   dismissEnvironmentSetup,
   environmentSetupStatus,
+  previewEnvironmentSetupApply,
   reviewEnvironmentSetup,
   undoEnvironmentSetup,
   type EnvironmentSetupProject,
 } from '../services/security/environment-setup.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { getMainWindowNavigation } from '../windows/create-main-window.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 
 /** The project open in the asking window, not whichever window opened last. */
 function senderProject(sender: WebContents): EnvironmentSetupProject {
@@ -39,8 +41,19 @@ export function registerEnvironmentSetupHandlers(win: BrowserWindow): void {
     win,
     'environment-setup:apply',
     environmentSetupApplyArgs,
-    (sender, reviewId, ids) =>
-      applyEnvironmentSetup(senderProject(sender).projectId, reviewId, ids),
+    async (sender, reviewId, ids) => {
+      const project = senderProject(sender)
+      const changes = previewEnvironmentSetupApply(project.projectId, reviewId, ids)
+      if (changes.length > 0) {
+        const confirmed = await confirmNativeAction(sender, {
+          title: 'Apply environment permissions?',
+          detail: `Project: ${JSON.stringify(project.root)}\n\nApply these permission changes?\n\n${changes.map((change) => `${change.kind}: ${JSON.stringify(change.value)} (${change.label})`).join('\n')}`,
+          approveLabel: 'Apply permissions',
+        })
+        if (!confirmed) throw new Error('Environment permission changes were not confirmed')
+      }
+      return applyEnvironmentSetup(project.projectId, reviewId, ids)
+    },
   )
   defineHandler(win, 'environment-setup:undo', environmentSetupUndoArgs, (applyId) =>
     undoEnvironmentSetup(applyId),

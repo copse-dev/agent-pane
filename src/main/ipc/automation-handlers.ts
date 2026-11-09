@@ -4,6 +4,8 @@ import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
 import { assertMainFrameSender, parseIpcArgs, zNonEmptyString, zProjectId } from './ipc-guards.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
+import { getProjectRoot } from '../services/workspace.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 
 const zAutomationPermission = z.union([
   z.object({
@@ -104,6 +106,14 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Save automation?',
+        detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended. Confirm its schedule, prompt, model and permissions:\n\n${JSON.stringify(input, null, 2)}`,
+        approveLabel: 'Save automation',
+      }))
+    )
+      throw new Error('Automation was not confirmed')
     return getAutomationService().upsert(projectId, {
       ...(input.id !== undefined ? { id: input.id } : {}),
       name: input.name,
@@ -134,6 +144,18 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
         z.tuple([zProjectId, zNonEmptyString.max(256)]),
         [rawProjectId, rawScheduleId],
       )
+      const schedule = getAutomationService()
+        .list(projectId)
+        .find((item) => item.id === scheduleId)
+      if (!schedule) throw new Error('Automation no longer exists')
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Run automation now?',
+          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nRun this automation now?\n\n${JSON.stringify(schedule, null, 2)}`,
+          approveLabel: 'Run automation',
+        }))
+      )
+        throw new Error('Automation run was not confirmed')
       return getAutomationService().runNow(projectId, scheduleId)
     },
   )
@@ -161,6 +183,14 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [rawProjectId])
       const input = parseIpcArgs(zBranchCiAutomationInput, [rawInput])
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Save event automation?',
+          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended when its trigger matches. Confirm its trigger, prompt and model:\n\n${JSON.stringify(input, null, 2)}`,
+          approveLabel: 'Save automation',
+        }))
+      )
+        throw new Error('Event automation was not confirmed')
       return getBranchCiAutomationService().upsert(projectId, {
         ...(input.id ? { id: input.id } : {}),
         name: input.name,

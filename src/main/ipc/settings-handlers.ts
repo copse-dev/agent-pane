@@ -1,6 +1,12 @@
 import { syncMachineService } from '../services/machines/machine-service.ts'
 import { REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
-import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
+import {
+  getSettingsSnapshot,
+  settingsUpdateSchema,
+  updateSettings,
+} from '../services/storage/settings-transaction.ts'
+import { settingsConsentDetail } from '../services/storage/settings-consent.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
 import { BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
@@ -149,7 +155,13 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
   })
   ipcMain.handle('settings:update', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    const changes = await updateSettings(raw)
+    const parsed = settingsUpdateSchema.parse(raw)
+    const consent = settingsConsentDetail(parsed)
+    if (consent && !(await confirmNativeAction(event.sender, {
+      title: 'Change Copse settings?',
+      detail: consent,
+    }))) throw new IpcValidationError('Setting change was not confirmed')
+    const changes = await updateSettings(parsed)
     await syncChangedSettings(new Set(Object.keys(changes)))
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
@@ -158,12 +170,23 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     if (!isRendererWritableSettingKey(k)) {
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
-    await setSetting(k, parseRendererWritableSetting(k, value))
+    const parsed = parseRendererWritableSetting(k, value)
+    const consent = settingsConsentDetail({ [k]: parsed })
+    if (consent && !(await confirmNativeAction(event.sender, {
+      title: 'Change Copse setting?',
+      detail: consent,
+    }))) throw new IpcValidationError('Setting change was not confirmed')
+    await setSetting(k, parsed)
     await syncChangedSettings(new Set([k]))
   })
   ipcMain.handle('settings:set-security', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
+    const consent = settingsConsentDetail(prefs)
+    if (consent && !(await confirmNativeAction(event.sender, {
+      title: 'Change security settings?',
+      detail: consent,
+    }))) throw new IpcValidationError('Security setting change was not confirmed')
     await Promise.all(
       Object.entries(prefs)
         .filter(([, v]) => v !== undefined)
@@ -336,6 +359,11 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
   ipcMain.handle('settings:save-extra-provider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
+    if (!(await confirmNativeAction(event.sender, {
+      title: 'Save model provider?',
+      detail: `Save this provider configuration? Requests to its endpoint may include prompts and its stored API key.\n\n${JSON.stringify(parsed, null, 2)}`,
+      approveLabel: 'Save provider',
+    }))) throw new IpcValidationError('Provider configuration was not confirmed')
     const provider: Parameters<typeof saveExtraProvider>[0] = {}
     if (parsed.slug !== undefined) provider.slug = parsed.slug
     if (parsed.label !== undefined) provider.label = parsed.label

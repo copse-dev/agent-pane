@@ -30,6 +30,7 @@ import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { senderProjectRoot } from './sender-project-root.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 
 export function registerCustomizationHandlers(win: BrowserWindow): void {
   ipcMain.handle('skills:list', async () => {
@@ -40,12 +41,18 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     await initSkillsRegistry()
     return listSkillSources()
   })
-  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
+  ipcMain.handle('skills:set-roots', async (event, value: unknown) => {
+    assertMainFrameSender(event, win)
     const roots = skillRootsSchema.safeParse(value)
     if (!roots.success)
       throw new IpcValidationError(
         'Extra skill folders must be at most 64 absolute paths, one per line',
       )
+    if (!(await confirmNativeAction(event.sender, {
+      title: 'Change skill folders?',
+      detail: `Load skills from these folders? Their instructions will be available to future agent runs.\n\n${roots.data.join('\n') || '(none)'}`,
+      approveLabel: 'Save folders',
+    }))) throw new IpcValidationError('Skill folders were not confirmed')
     await setSetting('skillPluginPaths', roots.data)
     await initSkillsRegistry()
     return listSkillSources()

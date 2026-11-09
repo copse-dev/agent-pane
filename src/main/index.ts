@@ -107,6 +107,8 @@ import {
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions, hasActiveAcpTurn } from './services/acp/acp-session-pool.ts'
 import { initApproval, requestApproval } from './services/approval.ts'
+import { confirmNativeApproval } from './services/native-approval-confirmation.ts'
+import { confirmNativeAction } from './services/native-human-confirmation.ts'
 import {
   setSimulatorDesktopPanelPresenter,
   SIMULATOR_DESKTOP_SHOW_CHANNEL,
@@ -115,6 +117,7 @@ import { initAskUser } from './services/ask-user.ts'
 import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
+import { canStoreSshCredentials } from './services/ssh-workspace/ssh-credential-store.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
@@ -740,7 +743,7 @@ app
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     setExplainerPreviewCapture(captureExplainerFrames)
-    const replayApprovals = initApproval(win, ipcMain, alertUser)
+    const replayApprovals = initApproval(win, ipcMain, alertUser, confirmNativeApproval)
     const replayQuestions = initAskUser(win, ipcMain, alertUser)
     ipcMain.handle('agent:replay-pending-decisions', (event) => {
       assertMainFrameSender(event, win)
@@ -759,7 +762,16 @@ app
       if (!win.isDestroyed()) win.webContents.send('terminal:run-command', command)
     })
     initSshAskpassServer(app.getPath('userData'))
-    initSshPrompt(win, ipcMain)
+    initSshPrompt(win, ipcMain, (sender, request) =>
+      confirmNativeAction(sender, {
+        title: request.kind === 'confirm' ? 'Trust SSH host key?' : 'Remember SSH secret?',
+        detail:
+          request.kind === 'confirm'
+            ? request.prompt
+            : `${request.prompt}\n\nRemember this secret ${request.canRememberOnDevice && canStoreSshCredentials() ? 'securely on this device' : 'for this session'}?`,
+        approveLabel: request.kind === 'confirm' ? 'Trust host key' : 'Remember secret',
+      }),
+    )
     initSshWorkspaceIpc(win)
     initDiffQueue(win, ipcMain, senderProjectId)
     initFsWatcher(win)
