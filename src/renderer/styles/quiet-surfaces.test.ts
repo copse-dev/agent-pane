@@ -83,6 +83,16 @@ describe('Settings rows sit on the page', () => {
     }
   })
 
+  it('keeps the remote folder picker visible as a well inside its dialog', () => {
+    const fill = (selector: string): string | undefined =>
+      rulesFor(selector)
+        .map((rule) => /background:\s*([^;]+);/.exec(rule.body)?.[1]?.trim())
+        .find((value) => value !== undefined)
+    const well = fill('.remote-folder-list')
+    assert.ok(well, '.remote-folder-list has no fill')
+    assert.notEqual(well, fill('.remote-folder-dialog'), 'the well matches the dialog it sits in')
+  })
+
   it('keeps the Apple Development card above a conversation, where it is not a Settings row', () => {
     // The conversation mounts the same panel (conversation.ts), so only the
     // Settings copy may drop the frame.

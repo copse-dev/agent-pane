@@ -152,10 +152,11 @@
   max-height: 240px;
   overflow: auto;
   margin-bottom: var(--spacing-sm);
-  /* A scrolling picker keeps a visible region, as a plate rather than a frame. */
+  /* A scrolling picker keeps a visible region, as a well rather than a frame.
+     The dialog is --bg-elevated, so the well takes the field colour. */
   border-radius: var(--radius);
   padding: var(--spacing-xs);
-  background: var(--bg-elevated);
+  background: var(--bg-input);
 }
 .remote-folder-entry {
   text-align: left;

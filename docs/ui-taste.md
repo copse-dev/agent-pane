@@ -787,7 +787,7 @@ It fills the window and its sections run several screens, so it is typed and spa
   rules between rows; vertical padding and the list's gap separate them, and rows start flush with
   the section's text. A row that needs a state takes the plate rather than a tinted frame (a
   blocked automation and a hooks.json warning sit on the warning plate). A scrolling picker such as the remote folder list
-  keeps a visible region, as a raised fill rather than an outline. Scope the rule to Settings when a
+  keeps a visible region, as a field-coloured well rather than an outline. Scope the rule to Settings when a
   component also renders elsewhere: the Apple Development panel drops its card only under
   `.plugin-settings-fold`, and keeps it above a conversation.
 
