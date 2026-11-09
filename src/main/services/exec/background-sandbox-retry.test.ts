@@ -5,11 +5,16 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
-import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
+import { runWithApprovalHandler, setApprovalHandler, type ApprovalRequest } from '../approval.ts'
+import { setActiveRunTurnTreeId } from '../thread-models.ts'
+import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
+import { promptExpectedSandboxBlock } from '../security/permission-gate.ts'
+import { shellReplayLeaseStore } from '../security/capability-lease.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { TRUSTED_COMMANDS_SETTING } from '../security/command-routing-config.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
@@ -48,8 +53,9 @@ describe('explicit background sandbox escalation', () => {
   const attempts: string[] = []
 
   function inOwner<T>(fn: () => T, threadId = OWNER.threadId): T {
-    return runWithActiveRunIdentity(threadId, () =>
-      runWithThreadExecutionContext(
+    return runWithActiveRunIdentity(threadId, () => {
+      setActiveRunTurnTreeId(asTurnTreeId('background-retry-tree'))
+      return runWithThreadExecutionContext(
         {
           ...OWNER,
           threadId,
@@ -59,8 +65,8 @@ describe('explicit background sandbox escalation', () => {
           branch: null,
         },
         fn,
-      ),
-    )
+      )
+    })
   }
   async function call(args: unknown, signal = new AbortController().signal): Promise<string> {
     return inOwner(
@@ -77,6 +83,7 @@ describe('explicit background sandbox escalation', () => {
   }
 
   beforeEach(async () => {
+    shellReplayLeaseStore.clear()
     base = await realpath(await mkdtemp(join(tmpdir(), 'copse-background-retry-')))
     root = join(base, 'project')
     await mkdir(root)
@@ -138,6 +145,7 @@ describe('explicit background sandbox escalation', () => {
   })
 
   afterEach(async () => {
+    shellReplayLeaseStore.clear()
     stopAllBackgroundProcesses()
     await supervisor.shutdown()
     dispose()
@@ -289,6 +297,91 @@ describe('explicit background sandbox escalation', () => {
     assert.equal(prompt.allowTurnTreeLease, undefined)
     assert.deepEqual(getSetting<string[]>(TRUSTED_COMMANDS_SETTING, []), [])
   })
+
+  for (const path of ['expected start', 'retry_of'] as const) {
+    it(`does not spend a foreground script-argument lease on a background ${path}`, async () => {
+      const seedDecisions: RecordedDecision[] = []
+      await inOwner(() =>
+        runWithDecisionRecorder(
+          (decision) => seedDecisions.push(decision),
+          () =>
+            runWithApprovalHandler(
+              async (request) => {
+                assert.equal(request.allowTurnTreeLease, true)
+                assert.match(
+                  request.turnTreeLeaseLabel ?? '',
+                  /this script with different arguments/,
+                )
+                return { approved: true, remember: false, grantScope: 'turn-tree' }
+              },
+              () =>
+                promptExpectedSandboxBlock(`${COMMAND} first`, ['runs a local script'], undefined, {
+                  executionRoot: root,
+                }),
+            ),
+        ),
+      )
+      const issued = seedDecisions.find((decision) =>
+        decision.line.reasons?.includes('bounded script argument lease issued'),
+      )
+      assert.ok(issued, 'seed a script-argument lease through the real foreground gate')
+      const command = `${COMMAND} second`
+      const id = path === 'retry_of' ? await failed(command) : undefined
+      assert.equal(prompts.length, 0)
+      approve = false
+      const declinedDecisions: RecordedDecision[] = []
+      await runWithDecisionRecorder(
+        (decision) => declinedDecisions.push(decision),
+        () =>
+          call({
+            action: 'start',
+            command,
+            ...(id ? { retry_of: id } : { expects_sandbox_block: true }),
+          }),
+      )
+      assert.equal(prompts.length, 1, 'an existing foreground argument lease cannot answer it')
+      const prompt = prompts[0]
+      assert.ok(prompt)
+      assert.equal(prompt.title, id ? 'Run outside sandbox?' : 'Agent requests sandbox escape')
+      assert.equal(prompt.allowTurnTreeLease, undefined)
+      assert.notEqual(prompt.allowRemember, true)
+      assert.equal(prompt.rememberLabel, undefined)
+      assert.deepEqual(
+        declinedDecisions.filter((decision) =>
+          decision.line.source?.startsWith('turn-tree-capability-lease:'),
+        ),
+        [],
+        'decline neither issues nor consumes a foreground lease',
+      )
+      assert.deepEqual(getSetting<string[]>(TRUSTED_COMMANDS_SETTING, []), [])
+      assert.equal(attempts.length, 1)
+      const tasks = inOwner(() => listBackgroundProcesses())
+      assert.equal(tasks.length, 1)
+      assert.equal(tasks[0]?.unsandboxed, false)
+
+      const reusedDecisions: RecordedDecision[] = []
+      const reused = await inOwner(() =>
+        runWithDecisionRecorder(
+          (decision) => reusedDecisions.push(decision),
+          () =>
+            runWithApprovalHandler(
+              async () => assert.fail('the foreground argument lease must remain valid'),
+              () =>
+                promptExpectedSandboxBlock(`${COMMAND} third`, ['runs a local script'], undefined, {
+                  executionRoot: root,
+                }),
+            ),
+        ),
+      )
+      assert.equal(reused, true)
+      const consumed = reusedDecisions.filter((decision) =>
+        decision.line.source?.startsWith('turn-tree-capability-lease:'),
+      )
+      assert.equal(consumed.length, 1)
+      assert.equal(consumed[0]?.line.source, issued.line.source)
+      assert.deepEqual(consumed[0]?.line.reasons, ['bounded exact replay lease used'])
+    })
+  }
 
   it('rejects changed commands, roots, owners, successful, running and cancelled attempts', async () => {
     const id = await failed()

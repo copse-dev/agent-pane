@@ -446,8 +446,8 @@
       "bytes": 327622
     },
     "agent-escape-retry-lease-approval.png": {
-      "sha256": "eba10c85472af0588116a0b638329fbf5572ea30336d86898a86d6256d77b8a5",
-      "bytes": 96479
+      "sha256": "1710c7a0c0ccfaa05ebfb9facc30c941df2b9518f3852d2e772a3e1a636a400c",
+      "bytes": 100975
     },
     "agent-execution-mode-active.png": {
       "sha256": "672020f2e44a133e2ce84e44e7bf25048426c7639b59a382776d38c21798ff95",
@@ -5488,6 +5488,10 @@
     "terminal-unsafe-paste-confirm.png": {
       "sha256": "a8c06e56373e57706e0f2284a6d47948b3fc289f19632afb4b9974c31c3b5dd6",
       "bytes": 250150
+    },
+    "text-shim-exact-retry-approval.png": {
+      "sha256": "b246635fb8f5e5ab92752a33375a80d4be24fb6a905b6629b02484ad8b51773d",
+      "bytes": 99193
     },
     "theme-boot-light.png": {
       "sha256": "c7dae4834757b0fb4bfa19e2e7b62315535ae356c42e88d30f319eb15942390f",

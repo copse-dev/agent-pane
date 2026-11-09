@@ -667,11 +667,28 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 When the command is bounded opaque local execution — its only reasons are a project script or
 executable, with no network, outside-path, destructive or install signal — the advanced prompt
-also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
-exact command line, byte for byte, to the current human turn tree in this thread and execution
-root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
-Any other command, a changed command, another turn tree or another thread asks again. The same
-outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
+also offers an optional retry grant, limited to 10 retries over 2 hours in the current human
+turn tree, thread and execution root. For a plain interpreter invocation of an existing local
+script, the checkbox explicitly offers “Allow this script with different arguments outside the
+sandbox for this task”. It permits changing literal script arguments, including single-quoted
+browser inspection code. The resolved interpreter and script are bound to their regular-file
+identity and SHA-256 contents, read asynchronously with size limits. The inherited PATH is fixed
+for a bare interpreter name. Editing or replacing either file, retargeting either symlink, or
+changing interpreter lookup requires approval again. The files are checked again after an
+argument-grant approval and before a lease is consumed; revocation, expiry and replay limits
+are rechecked after asynchronous reads. Argument grants require a supported native ELF interpreter on Linux
+or Mach-O interpreter on macOS, with conservative executable-header and bounds checks; text shims,
+malformed or unsupported headers, and wrappers retain exact-command grants because their
+unchanged code can select a different interpreter through mutable configuration. An optional
+literal `cd … &&` prefix must stay fixed too; relative prefixes that can consult a nonempty
+inherited `CDPATH` retain exact-command grants. Environment assignments, interpreter options,
+shell substitutions, redirections, pipelines and additional commands do not qualify for this
+broader grant. This is check-time identity validation, not an atomic check-and-execute boundary:
+later filesystem races, imported code and interpreter configuration are not frozen by a lease.
+Supported POSIX interpreters are Node, Python/Python3, Ruby and sh/bash/zsh; unsupported shapes keep
+“Allow retries outside the sandbox”, which leases an exact command or independently authorized
+composition as before. Neither checkbox is selected by default. Another turn tree or thread
+asks again. The same outside-sandbox grants are offered when a verified sandbox block escalates.
 A block recognised only from command output, or a forced ask, never offers or spends it.
 
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
@@ -1387,6 +1404,39 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+Shim roots and install subtrees are checked through their canonical destinations. An install
+subtree must stay strictly inside the canonical manager root; redirecting it to home, a parent,
+the manager root itself or a credential store grants nothing through that alias. A `node` file or
+npm implementation-directory alias into a sensitive path is omitted too: leaving only its lexical
+name in the read list would still let ASRT grant the canonical target. The shell looks `node` up
+through the `PATH` entry's own spelling, so a grant reached through a symlink in home (fnm's
+per-shell `~/.local/state/fnm_multishells/<id>` link to its install, a relocated `~/.asdf`, a
+dotfile-managed `~/.tool-versions`) also lists that spelling, once the canonical target and every
+directory link crossed on the way pass these checks. On macOS each crossed link is listed as
+well, because Seatbelt checks the link itself during lookup; on Linux bubblewrap creates the
+intermediate directories, and listing the link would mount its whole target. A spelling is dropped
+when a link it crosses lives where the sandbox can read or write (a checkout, scratch, an ACP
+agent's home directories), since a contained command could retarget it before ASRT mounts it. The
+`node` file's own alias is never listed. So fnm, nvm and a safely relocated version manager keep
+their bounded read grants and run contained.
+A Node target must be a regular executable file. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores and their canonical aliases are excluded too. Grants use the
+checked canonical destinations (plus those spellings) and omit toolchain exceptions already
+covered by the workspace.
+Known-store targets, Node install placement and crossed-link holders are resolved afresh for each
+policy construction. A resolution may be reused within that construction, but is never carried
+from an earlier command: a newly created/relinked store or a newly writable link must be recognised
+by the next policy build without a cache-expiry window.
+Replacing a canonical path or its ancestors before ASRT constructs the profile still races; these
+checks do not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
