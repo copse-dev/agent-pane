@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -59,29 +58,33 @@ async function native(
   return reply
 }
 
-async function availableAddress(): Promise<string> {
-  for (const entry of Object.values(networkInterfaces()).flatMap((entries) => entries ?? [])) {
-    if (
-      entry.family !== 'IPv4' ||
-      entry.internal ||
-      !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.address)
+function privateAddress(): string {
+  const entry = Object.values(networkInterfaces())
+    .flatMap((entries) => entries ?? [])
+    .find(
+      (candidate) =>
+        candidate.family === 'IPv4' &&
+        !candidate.internal &&
+        /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(candidate.address),
     )
-      continue
-    const available = await new Promise<boolean>((resolve) => {
-      const probe = createServer()
-      probe.once('error', () => {
-        resolve(false)
-      })
-      probe.listen(42773, entry.address, () => {
-        probe.close(() => {
-          resolve(true)
-        })
-      })
-    })
-    if (available) return entry.address
-  }
-  throw new Error(
-    'Paired-browser acceptance needs an unused private IPv4 address on port 42773; never stop the daily Copse server',
+  if (!entry) throw new Error('Paired-browser acceptance needs a private IPv4 address')
+  return entry.address
+}
+
+/**
+ * The Mobile Companion binds a fixed product port, so another Copse on this
+ * address (such as the daily app) can hold it. Before the phone connects, the
+ * desktop under test must report its own server at `origin`; otherwise the
+ * phone would reach that other Copse.
+ */
+async function expectDesktopServes(origin: string): Promise<void> {
+  const url = $('.mobile-companion-connection strong')
+  await browser.waitUntil(
+    async () => (await url.isExisting()) && (await url.getText()) === origin,
+    {
+      timeout: 20_000,
+      timeoutMsg: `The desktop under test is not serving ${origin}. Another process, such as the daily Copse, may hold the Mobile Companion port on this address; never stop the daily Copse server`,
+    },
   )
 }
 
@@ -150,7 +153,7 @@ function spine(): Array<{ id: string; role: string }> {
 describe('real paired browser chat with the desktop window closed', function () {
   this.timeout(240_000)
   before(async () => {
-    const address = await availableAddress()
+    const address = privateAddress()
     origin = `https://${address}:42773`
     fixtureDir = mkdtempSync(join(tmpdir(), 'copse-paired-browser-'))
     writeE2eEnv({ COPSE_E2E_NATIVE_ALERTS: fixtureDir })
@@ -203,8 +206,9 @@ describe('real paired browser chat with the desktop window closed', function () 
       deviceScaleFactor: 2,
       mobile: true,
     })
-    await mobile().url(origin)
     await openSettings()
+    await expectDesktopServes(origin)
+    await mobile().url(origin)
     const pairingSchema = z.object({ id: z.string(), code: z.string() })
     const pairing = pairingSchema.parse(
       (await phoneRequest('/api/pair/request', { label: deviceLabel })).body,
