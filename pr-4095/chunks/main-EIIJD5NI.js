@@ -2,6 +2,7 @@ import {
   APPEARANCE_DEFAULTS_MIGRATION_SETTING,
   APPEARANCE_DEFAULTS_MIGRATION_VERSION,
   APPLE_DEVELOPMENT_PLUGIN_ID,
+  ASK_USER_ANSWER_MAX_LENGTH,
   AUTOMATIONS_PLUGIN_ID,
   BALANCED_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
@@ -36,6 +37,8 @@ import {
   acpDelegatePrompt,
   activateMobileProject,
   activateWorkspaceReference,
+  activeProjectThreadOf,
+  activeThreadOf,
   addHookCard,
   addMessage,
   addMessageCanvasArtefact,
@@ -45,6 +48,7 @@ import {
   addRemoteProject,
   addToolCall,
   addUsageDelta,
+  afterPendingThreadPersistence,
   agentActivityLabel,
   announcementCatalog,
   appendAcpContentBlock,
@@ -59,6 +63,7 @@ import {
   archiveCachedSidebarThread,
   archiveThread,
   artefactPreviewRevision,
+  artefactPreviewVersion,
   artefactUriFromToolResult,
   at,
   attachAnnotation,
@@ -104,6 +109,7 @@ import {
   createPasteKeyForm,
   createStore,
   createThread,
+  decodeWithSchema,
   definePlugin,
   deleteThread,
   describeAutomationFailure,
@@ -123,6 +129,7 @@ import {
   errorMessage,
   excerptText,
   external_exports,
+  extractGithubPrUrls,
   fetchModelOptions,
   fileExtension,
   findAcpCatalogEntry,
@@ -177,6 +184,7 @@ import {
   init_apple_development_plugin,
   init_array_utils,
   init_artefact_previews,
+  init_ask_user_format,
   init_attach_annotation,
   init_attachment_preview,
   init_automation_failure,
@@ -239,6 +247,7 @@ import {
   init_reserved_prefixes,
   init_reviewer_input,
   init_runtime_transcript,
+  init_safe_json,
   init_send_now_aborts,
   init_settings_dialog,
   init_side_chat,
@@ -260,6 +269,7 @@ import {
   init_todo_steering,
   init_tool_display,
   init_tool_interruption,
+  init_tool_result_reminders,
   init_transcript_state,
   init_types,
   init_ui,
@@ -354,7 +364,6 @@ import {
   parseGithubPrUrl,
   parseRemoteAgentModel,
   parseRemoteAgentModelSelection,
-  parseReviewerInputCall,
   parseThreadProposal,
   patchThreadAnywhere,
   prProductionSchema,
@@ -371,6 +380,7 @@ import {
   recordThreadVideos,
   recoverOrphanProject,
   refreshAgentRunPayload,
+  refreshProjectThreadWorktrees,
   registerPromptAttachments,
   registerUiKit,
   releaseHeldMessage,
@@ -390,7 +400,12 @@ import {
   restoreUiScale,
   reviewerInputAnswer,
   reviewerInputRequests,
+  reviewerInputRequestsForCall,
+  safeJsonParse,
+  safeJsonStringify,
   sameItems,
+  sameProjectThreadBesidesDraft,
+  sameThreadBesidesDraft,
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
@@ -434,6 +449,7 @@ import {
   sidebarLastPromptAt,
   sidebarPrRefs,
   sortThreadsNewestFirst,
+  splitAppendedReminders,
   startHumanTurnTree,
   stripShellCdPrefix,
   stripUrlTrailingPunctuation,
@@ -450,6 +466,7 @@ import {
   threadPrRelationships,
   threadProposalFileSummary,
   threadProposalStatus,
+  threadRelationsKey,
   toggleFilesPane,
   toggleFilesPaneWithWorkspace,
   toggleProjectsPane,
@@ -467,7 +484,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-V5KRWEHA.js";
+} from "./chunk-UYFOPWTI.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -529,6 +546,7 @@ import {
   penLineIcon,
   playIcon,
   plusIcon,
+  recordIcon,
   refreshIcon,
   renderMarkdown,
   runningStatusIcon,
@@ -549,7 +567,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -647,6 +665,46 @@ var init_mobile_chat = __esm({
   }
 });
 
+// packages/thread-store/src/remote-agent-link.ts
+function isImportedCursorAgentNotice(thread, messageIndex, link) {
+  const message2 = thread.messages[messageIndex];
+  if (!message2 || message2.role !== "assistant" || message2.toolCalls.length !== 0) return false;
+  const match = LEGACY_IMPORTED_CURSOR_AGENT_NOTICE.exec(message2.content);
+  return match !== null && thread.model === "remote-agent:cursor" && thread.title === match[1] && thread.createdAt === link.createdAt && message2.createdAt === link.createdAt;
+}
+function isImportedCursorAgentThread(thread, expectedResultId) {
+  const link = thread.remoteAgentLink;
+  if (link?.provider !== "cursor") return false;
+  if (link.imported === true) {
+    const isResult2 = (messageIndex) => {
+      const message2 = thread.messages[messageIndex];
+      if (!message2) return false;
+      return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+    };
+    return thread.messages.length === 0 || thread.messages.length === 1 && (isImportedCursorAgentNotice(thread, 0, link) || isResult2(0)) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult2(1);
+  }
+  const isResult = (messageIndex) => {
+    const message2 = thread.messages[messageIndex];
+    if (!message2) return false;
+    return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
+  };
+  return thread.messages.length === 1 && isImportedCursorAgentNotice(thread, 0, link) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult(1);
+}
+function remoteAgentPrIndexKey(prUrl) {
+  const ref = parseGithubPrUrl(prUrl);
+  return ref ? githubPrKey(ref) : null;
+}
+var MAX_CURSOR_AGENT_IDS, MAX_CURSOR_AGENT_ID_LENGTH, LEGACY_IMPORTED_CURSOR_AGENT_NOTICE, IMPORTED_CURSOR_AGENT_RESULT_ID;
+var init_remote_agent_link = __esm({
+  "packages/thread-store/src/remote-agent-link.ts"() {
+    init_github_pr_url();
+    MAX_CURSOR_AGENT_IDS = 128;
+    MAX_CURSOR_AGENT_ID_LENGTH = 128;
+    LEGACY_IMPORTED_CURSOR_AGENT_NOTICE = /^_Imported Cursor cloud agent — \[([^\]\n]+)]\(([^()\n]+)\)\. Send a message here to continue that run from Copse\._$/;
+    IMPORTED_CURSOR_AGENT_RESULT_ID = /^remote-cursor-run-[a-f0-9]{64}$/;
+  }
+});
+
 // packages/thread-store/src/thread-boundary.ts
 function repairLegacyAcpThreadUsage(usage) {
   if (!isRecord(usage.byModel)) return usage;
@@ -707,10 +765,12 @@ function parseThreadMetaValue(value) {
   if (usage === null) return null;
   const prProductions = prProductionSchema.array().safeParse(value["prProductions"] ?? []);
   const commitProductions = commitProductionSchema.array().safeParse(value["commitProductions"] ?? []);
-  const { executionMode: _rawExecutionMode, ...rest } = value;
+  const { executionMode: _rawExecutionMode, cursorAgentIds: _rawCursorAgentIds, ...rest } = value;
+  const cursorAgentIds = cursorAgentIdsSchema.safeParse(value["cursorAgentIds"]);
   return {
     ...rest,
     ...value["executionMode"] === "agent" ? { executionMode: "agent" } : {},
+    ...cursorAgentIds.success ? { cursorAgentIds: cursorAgentIds.data } : {},
     id: value["id"],
     title: value["title"],
     status: value["status"],
@@ -732,12 +792,16 @@ function parseThreadValue(value) {
     messages: messages.filter(isNonNull)
   };
 }
+var cursorAgentIdsSchema;
 var init_thread_boundary = __esm({
   "packages/thread-store/src/thread-boundary.ts"() {
+    init_zod();
     init_unknown_value();
     init_nullish();
     init_model_usage();
     init_thread_pr_relations();
+    init_remote_agent_link();
+    cursorAgentIdsSchema = external_exports.array(external_exports.string().min(1).max(MAX_CURSOR_AGENT_ID_LENGTH)).max(MAX_CURSOR_AGENT_IDS);
   }
 });
 
@@ -1523,9 +1587,12 @@ function openAppRunDialog(store2, api2, projectId = store2.getState().activeProj
     panel.element
   );
   const unsubscribe = selectActiveWorkspace(store2, close2);
-  const unsubscribeThread = store2.on("threads_changed", () => {
-    if (store2.getState().activeThreadId !== (owner.threadId ?? null)) close2();
-  });
+  const unsubscribeThread = store2.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close2();
+    }
+  );
   dialog.addEventListener(
     "close",
     () => {
@@ -2383,8 +2450,8 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   function syncSideChatBadge() {
     if (!sideChatBadge) return;
     const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store2.getState();
-    const active = threads.find((thread) => thread.id === activeThreadId);
-    const mainId = active?.sideChat?.parentThreadId ?? active?.id;
+    const active2 = threads.find((thread) => thread.id === activeThreadId);
+    const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
     const rows = mainId === void 0 ? [] : sideChatsOf(threads, mainId);
     const unread = rows.filter((row2) => row2.unread).length;
     const btn = buttons.get("side-chat");
@@ -2410,7 +2477,17 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncSideChatBadge();
     }),
     store2.select((s) => s.stagedDiffs.length, syncChangesBadge),
-    store2.on("threads_changed", syncSideChatBadge),
+    // The badge's count and unread state for the open thread's side chats.
+    store2.select(
+      (s) => {
+        const active2 = activeThreadOf(s);
+        const mainId = active2?.sideChat?.parentThreadId ?? active2?.id;
+        const rows = mainId === void 0 ? [] : sideChatsOf(s.threads, mainId);
+        return [rows.length, rows.filter((row2) => row2.unread).length];
+      },
+      syncSideChatBadge,
+      sameItems
+    ),
     store2.on("settings_changed", syncExperimentalBtns)
   ];
   return {
@@ -2433,11 +2510,13 @@ var init_panel_mode_controls = __esm({
     init_icons();
     init_outline_icon();
     init_tooltip();
+    init_store();
     init_panels();
     init_side_chat();
     init_portrait_panel_bar_overflow();
     init_roadmap_plans_plugin();
     init_okf_memories_plugin();
+    init_active_thread_owner();
     PANEL_CONTROL_DEFS = [
       {
         id: "explorer",
@@ -2869,25 +2948,44 @@ function mountTitlebar(root, store2, api2) {
   syncBranch();
   const unsubs = [
     store2.select((s) => s.projectsPaneOpen, syncSidebar),
+    // Branch and Run App read the active thread's checkout from main, which
+    // rejects a new thread until autosave has created it.
     selectActiveWorkspace(store2, () => {
       syncName();
-      syncBranchNow();
-      syncRunApp();
+      afterPendingThreadPersistence(() => {
+        syncBranchNow();
+        syncRunApp();
+      });
     }),
     store2.on("projects_changed", syncName),
     store2.on("message_added", syncProjectPicker),
     store2.on("thread_status_changed", syncProjectPicker),
-    store2.on("threads_changed", () => {
-      syncProjectPicker();
-      if (store2.getState().activeThreadId !== syncedThreadId) {
-        syncBranchNow();
-        return;
+    // The picker locks once the active thread stops being blank.
+    store2.select((s) => {
+      const thread = activeThreadOf(s);
+      return s.projects.length === 0 || thread !== void 0 && !isBlankThread(thread);
+    }, syncProjectPicker),
+    // The branch label follows the active thread and its own branch binding.
+    store2.select(
+      (s) => {
+        const thread = activeThreadOf(s);
+        return [s.activeThreadId, thread?.gitBranch, thread?.worktree?.path];
+      },
+      () => {
+        if (store2.getState().activeThreadId !== syncedThreadId) {
+          afterPendingThreadPersistence(syncBranchNow);
+          return;
+        }
+        scheduleBranchSync();
+      },
+      sameItems
+    ),
+    store2.select(
+      (s) => s.activeThreadId,
+      (threadId) => {
+        if (threadId !== detectedThread) afterPendingThreadPersistence(syncRunApp);
       }
-      scheduleBranchSync();
-    }),
-    store2.on("threads_changed", () => {
-      if (store2.getState().activeThreadId !== detectedThread) syncRunApp();
-    }),
+    ),
     store2.on("thread_checkout_changed", syncRunApp),
     store2.on("message_done", syncRunApp),
     store2.on("git_branch_changed", scheduleBranchSync),
@@ -2916,6 +3014,7 @@ var init_titlebar = __esm({
     init_helpers();
     init_outline_icon();
     init_tooltip();
+    init_store();
     init_open_in_editor();
     init_panel_mode_controls();
     init_active_thread_owner();
@@ -2923,6 +3022,7 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     init_active_workspace();
+    init_persistence();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
@@ -4238,15 +4338,27 @@ function approvalCopyElement(className, text) {
   flushLines();
   return root;
 }
+function approvalMarkdownBody(markdown) {
+  const host = el("div", { class: "approval-body-markdown streaming-markdown" });
+  host.innerHTML = renderMarkdown(markdown);
+  return host;
+}
+function approvalBodyChildren(req) {
+  const children = [];
+  if (req.body.trim()) children.push(req.body);
+  if (req.bodyMarkdown?.trim()) children.push(approvalMarkdownBody(req.bodyMarkdown));
+  return children;
+}
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  if (req.body.trim())
+  const children = approvalBodyChildren(req);
+  if (children.length > 0)
     parts.push(
       el(
         "div",
         { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-        req.body
+        ...children
       )
     );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
@@ -4351,7 +4463,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   let arrivals = 0;
   const queue = [];
   let batch = [];
-  let active = false;
+  let active2 = false;
   let coalesceScheduled = false;
   let cancelCoalesce = null;
   let cancelSettle = null;
@@ -4415,7 +4527,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     if (batch.length === 0) return null;
     if (!batch.every((req) => req.allowRemember)) return null;
     const label = batch[0]?.rememberLabel;
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
+    const subject = batch[0]?.rememberSubject;
+    if (!label || !batch.every((req) => req.rememberLabel === label && req.rememberSubject === subject))
+      return null;
     return label;
   }
   function soloRequest() {
@@ -4469,8 +4583,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
     dialog.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
+      const children = approvalBodyChildren(req);
+      const body = el("div", { class: bodyClass }, ...children);
+      if (children.length === 0 || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -4549,7 +4664,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, settleMs);
   }
   function show2() {
-    if (active) return;
+    if (active2) return;
     if (cancelCoalesce) {
       cancelCoalesce();
       cancelCoalesce = null;
@@ -4560,7 +4675,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       return;
     }
     clearSettle();
-    rememberInput.checked = false;
+    rememberInput.checked = rememberGrant() !== null && batch.every((req) => req.rememberDefault === true);
     detailsExpanded = false;
     renderBatch();
     const asker = sideChatPromptOrigin(
@@ -4576,11 +4691,11 @@ function mountApprovalDialog(api2, store2, options = {}) {
       dialog.show();
     }
     rejectButton.focus({ preventScroll: true });
-    active = true;
+    active2 = true;
     syncAttention();
   }
   function scheduleShow2() {
-    if (active || coalesceScheduled) return;
+    if (active2 || coalesceScheduled) return;
     if (!queue.some(isShowable)) {
       syncAttention();
       return;
@@ -4593,14 +4708,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
     }, coalesceMs);
   }
   function withdrawUnshowable() {
-    if (!active) return;
+    if (!active2) return;
     const withdrawn = batch.filter((req) => !isShowable(req));
     if (withdrawn.length === 0) return;
     batch = batch.filter((req) => isShowable(req));
     queue.unshift(...withdrawn);
     if (batch.length === 0) {
       closeDialog();
-      active = false;
+      active2 = false;
       clearSettle();
       return;
     }
@@ -4609,7 +4724,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     startSettle();
   }
   function appendToOpen() {
-    if (!active) return;
+    if (!active2) return;
     if (drainShowableIntoBatch() > 0) {
       renderBatch();
       startSettle();
@@ -4622,10 +4737,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const wasStandalone = batch.some((req) => req.id === id && req.standalone);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
-    if (wasInBatch && active) {
+    if (wasInBatch && active2) {
       if (batch.length === 0) {
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
         if (dialog.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle();
@@ -4637,12 +4752,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     syncAttention();
   }
   function resolve(approved, remember) {
-    if (!active || batch.length === 0) return;
+    if (!active2 || batch.length === 0) return;
     const answered = batch;
     const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
     closeDialog();
     batch = [];
-    active = false;
+    active2 = false;
     turnTreeLeaseInput.checked = false;
     clearSettle();
     for (const req of answered) {
@@ -4658,11 +4773,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId,
       title,
       body,
+      bodyMarkdown,
       bodyAdvice,
       bodyFooter,
       type,
       allowRemember,
       rememberLabel: rememberLabel2,
+      rememberDefault,
+      rememberSubject,
       approveLabel,
       collapseDetails,
       approveOnceLabel,
@@ -4680,11 +4798,14 @@ function mountApprovalDialog(api2, store2, options = {}) {
         threadId,
         title,
         body,
+        bodyMarkdown,
         bodyAdvice,
         bodyFooter,
         type,
         allowRemember,
         rememberLabel: rememberLabel2,
+        rememberDefault,
+        rememberSubject,
         approveLabel,
         collapseDetails,
         approveOnceLabel,
@@ -4698,22 +4819,22 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
+      if (active2 && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
         if (dialog.open) startSettle();
-      } else if (active && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      } else if (active2 && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
-        active = false;
+        active2 = false;
         clearSettle();
         show2();
-      } else if (active) appendToOpen();
+      } else if (active2) appendToOpen();
       else scheduleShow2();
       syncAttention();
     }
@@ -4721,11 +4842,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
   api2.agent.onApprovalCancelled(({ id }) => {
     removeCancelled(id);
   });
-  store2.on("threads_changed", () => {
-    withdrawUnshowable();
-    if (active) appendToOpen();
-    else show2();
-  });
+  store2.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)],
+    () => {
+      withdrawUnshowable();
+      if (active2) appendToOpen();
+      else show2();
+    },
+    sameItems
+  );
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       withdrawUnshowable();
@@ -4752,6 +4877,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       threadId: req.threadId,
       title: req.title,
       body: req.body,
+      bodyMarkdown: req.bodyMarkdown,
       bodyAdvice: req.bodyAdvice,
       bodyFooter: req.bodyFooter,
       type: req.type,
@@ -4774,7 +4900,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
 var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
+    init_dist();
     init_helpers();
+    init_store();
     init_settings_dialog();
     init_attention();
     init_projects();
@@ -4790,37 +4918,6 @@ var init_approval_dialog = __esm({
         clearTimeout(handle);
       };
     };
-  }
-});
-
-// packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
-var init_ask_user_format = __esm({
-  "packages/agent/src/ask-user-format.ts"() {
-    init_zod();
-    askUserQuestionSchema = external_exports.object({
-      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
-      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
-      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
-      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
-    }).refine(
-      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
-      {
-        message: "recommendedOption must be one of options",
-        path: ["recommendedOption"]
-      }
-    ).refine(
-      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
-      {
-        message: "A recommendation needs both an option and a reason",
-        path: ["recommendationReason"]
-      }
-    );
-    askUserParamsSchema = external_exports.object({
-      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
-    });
-    ASK_USER_ANSWER_MAX_LENGTH = 8192;
-    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
   }
 });
 
@@ -4908,6 +5005,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
+  let shownQuestionSignature = null;
   function canOpen(row2) {
     if (!row2.threadId || !row2.projectId) return false;
     const { projectId } = row2;
@@ -4966,7 +5064,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       chosen === void 0 ? asked.questions.map((_2, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
-    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    const title = row2.threadId ? getThreadById(store2, row2.threadId)?.title : void 0;
+    status.textContent = sent ? `Answered ${title ?? row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
   function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
@@ -5003,9 +5102,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const field = el("div", { class: "activity-answer-field" }, asked);
     if (options.length > 0) {
       const choices = el("div", { class: "activity-options" });
-      for (const option of options) {
+      for (const [optionIndex, option] of options.entries()) {
         const choice = el("button", {
           type: "button",
+          "data-control": `answer-${String(index)}-option-${String(optionIndex)}`,
           class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
         if (actionsOnly) choice.disabled = settling;
@@ -5199,35 +5299,52 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
+  function detailHeader(row2, at2) {
+    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
+    return el(
+      "header",
+      { class: "activity-detail-header" },
+      el(
+        "p",
+        { class: "activity-detail-meta" },
+        el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+        meta
+      ),
+      el(
+        "h3",
+        { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+        row2.threadTitle
+      )
+    );
+  }
   function renderDetail(row2, at2) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      shownQuestionSignature = null;
       return;
     }
-    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
+    const questionSignature = row2.state === "needs-answer" ? JSON.stringify([
+      row2.key,
+      row2.threadId,
+      row2.projectId,
+      row2.want,
+      canOpen(row2),
+      sources3.questions.pending().find((request) => request.id === row2.requestId)
+    ]) : null;
+    if (questionSignature !== null && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && (questionSignature === shownQuestionSignature || document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) && !detail.querySelector("[data-answered]")) {
+      const header = detail.querySelector(".activity-detail-header");
+      const nextHeader = detailHeader(row2, at2);
+      if (header?.textContent !== nextHeader.textContent) header?.replaceWith(nextHeader);
+      detail.querySelector(".activity-answer")?.setAttribute("aria-label", `Send answer: ${row2.want} (${row2.threadTitle})`);
       return;
     }
+    shownQuestionSignature = questionSignature;
     detail.hidden = false;
     detail.dataset["rowKey"] = row2.key;
     detail.dataset["state"] = row2.state;
-    const meta = [row2.projectName, ageText(row2, at2)].filter((part) => part !== null).join(" \xB7 ");
     detail.replaceChildren(
-      el(
-        "header",
-        { class: "activity-detail-header" },
-        el(
-          "p",
-          { class: "activity-detail-meta" },
-          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
-          meta
-        ),
-        el(
-          "h3",
-          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
-          row2.threadTitle
-        )
-      ),
+      detailHeader(row2, at2),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
     );
@@ -5569,20 +5686,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
   }
   function captureFocus() {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement)) return null;
-    const toggled = active.dataset["groupToggle"];
+    const active2 = document.activeElement;
+    if (!(active2 instanceof HTMLElement)) return null;
+    const toggled = active2.dataset["groupToggle"];
     if (toggled !== void 0) return { area: "toggle", group: toggled };
-    const projectKey = active.dataset["projectKey"];
-    if (projectKey !== void 0 && strip.contains(active)) return { area: "strip", projectKey };
-    const foldKey = list.contains(active) && active.matches(".activity-fold-toggle") ? active.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
     if (foldKey !== void 0) return { area: "fold", key: foldKey };
-    if (list.contains(active)) return { area: "list" };
-    if (detail.contains(active)) {
+    if (list.contains(active2)) return { area: "list" };
+    if (detail.contains(active2)) {
       return {
         area: "detail",
         key: detail.dataset["rowKey"] ?? "",
-        control: active.dataset["control"] ?? ""
+        control: active2.dataset["control"] ?? ""
       };
     }
     return null;
@@ -6740,32 +6857,6 @@ var init_project_groups = __esm({
   }
 });
 
-// packages/std/src/safe-json.ts
-function decodeWithSchema(schema) {
-  return (value) => {
-    const result = schema.safeParse(value);
-    return result.success ? result.data : null;
-  };
-}
-function safeJsonStringify(value, indent) {
-  if (value === void 0 || typeof value === "function" || typeof value === "symbol") {
-    return void 0;
-  }
-  return JSON.stringify(value, null, indent);
-}
-function safeJsonParse(text, decoder) {
-  try {
-    const value = JSON.parse(text);
-    return decoder ? decoder(value) : value;
-  } catch {
-    return null;
-  }
-}
-var init_safe_json = __esm({
-  "packages/std/src/safe-json.ts"() {
-  }
-});
-
 // src/shared/safe-json.ts
 var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
@@ -6919,6 +7010,17 @@ async function cleanUpScheduleRuns(store2, api2, target) {
     const result = await api2.automations.cleanupRuns(target.project.id, target.scheduleId);
     const freed = result.released.length;
     const freedText = `${String(freed)} worktree${freed === 1 ? "" : "s"}`;
+    try {
+      await refreshProjectThreadWorktrees(store2, api2, target.project.id);
+    } catch (error) {
+      showErrorToast(
+        "Cleanup finished, but the run list could not refresh",
+        `${freedText} freed. Reopen the project to refresh its runs.
+
+${ipcErrorMessage(error, "The run list could not be loaded")}`
+      );
+      if (result.retained.length === 0) return;
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0 ? `Nothing to clean up for \u201C${target.scheduleName}\u201D.` : `Freed ${freedText} for \u201C${target.scheduleName}\u201D.`
@@ -7341,6 +7443,7 @@ function mountProjectsPane(root, store2, api2) {
   const prLifecycleCache = /* @__PURE__ */ new Map();
   const prFetchInFlight = /* @__PURE__ */ new Set();
   let prStatusGeneration = 0;
+  let prWorkspaceGeneration = 0;
   function beginThreadRename(threadId, currentTitle) {
     renaming = { threadId, draft: currentTitle || "New Thread" };
     render2();
@@ -7463,6 +7566,7 @@ function mountProjectsPane(root, store2, api2) {
     });
     if (stale.length === 0) return;
     const generation = prStatusGeneration;
+    const workspaceGeneration = prWorkspaceGeneration;
     for (const ref of stale) {
       const key = githubPrKey(ref);
       let lifecycleChanged = false;
@@ -7490,10 +7594,21 @@ function mountProjectsPane(root, store2, api2) {
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached = prLifecycleCache.get(key);
+        if (workspaceGeneration !== prWorkspaceGeneration) {
+          if (cached) {
+            prLifecycleCache.set(key, {
+              ...cached,
+              fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1
+            });
+          }
+          lifecycleChanged = true;
+          return;
+        }
         prLifecycleCache.set(key, {
+          ...cached,
           state: cached?.state ?? "unknown",
-          ...cached?.conflicts !== void 0 ? { conflicts: cached.conflicts } : {},
-          fetchedAt: Date.now()
+          fetchedAt: Date.now(),
+          failed: true
         });
       }).finally(() => {
         if (generation !== prStatusGeneration) return;
@@ -9002,11 +9117,17 @@ function mountProjectsPane(root, store2, api2) {
       render2();
     }),
     selectActiveWorkspace(store2, () => {
+      prWorkspaceGeneration += 1;
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1
+          });
+        }
+      }
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
-      prStatusGeneration += 1;
-      prLifecycleCache.clear();
-      prFetchInFlight.clear();
       render2();
     }),
     store2.on("attention_changed", render2),
@@ -10069,7 +10190,7 @@ function trackGuestScroll(options) {
   let inFlight3 = false;
   let idleTimer = null;
   let interval = null;
-  const emit = (position2) => {
+  const emit2 = (position2) => {
     if (position2.x === lastX && position2.y === lastY) return;
     lastX = position2.x;
     lastY = position2.y;
@@ -10094,7 +10215,7 @@ function trackGuestScroll(options) {
     if (disposed || !enabled || inFlight3 || !polling && strokeDepth === 0 && !guestFocused) return;
     inFlight3 = true;
     void options.fetchPosition().then((position2) => {
-      if (!disposed && position2) emit(position2);
+      if (!disposed && position2) emit2(position2);
     }).catch(() => {
     }).finally(() => {
       inFlight3 = false;
@@ -10551,6 +10672,9 @@ function turnRecoveryForMessage(thread, failedMessageId) {
     return { interruptedByRestart: true };
   }
   if (failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") return null;
+  if (failed.turnOutcome.stopReason === "max_steps" || failed.turnOutcome.stopReason === "timeout") {
+    return { limitReason: failed.turnOutcome.stopReason };
+  }
   if (failed.turnOutcome.source !== "provider") return {};
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
     const candidate = thread.messages[index];
@@ -10656,7 +10780,7 @@ function createInputSmoother(options) {
   let settle = null;
   let requesting = false;
   let synchronousFrames = false;
-  function emit(text) {
+  function emit2(text) {
     if (text === emitted)
       return;
     emitted = text;
@@ -10697,7 +10821,7 @@ function createInputSmoother(options) {
       revealed = Math.min(target.length, revealed + rate(dtMs, backlog) * dtMs);
     const end = revealBoundary(target, Math.floor(revealed));
     revealed = Math.max(revealed, end);
-    emit(target.slice(0, end));
+    emit2(target.slice(0, end));
     if (end < target.length)
       schedule();
     else
@@ -10721,7 +10845,7 @@ function createInputSmoother(options) {
   function releaseAll() {
     cancel();
     revealed = target.length;
-    emit(target);
+    emit2(target);
     settleNow();
   }
   function push(text) {
@@ -12206,6 +12330,274 @@ var init_render_signature = __esm({
   }
 });
 
+// src/renderer/controller/thread-proposals.ts
+async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) throw new Error("Open a project before starting a proposed thread");
+  store2.emit("composer_draft_flush");
+  const threadId = createThread(store2, void 0, { activate: false });
+  setThreadTitle(store2, threadId, proposal.title);
+  patchThreadAnywhere(store2, threadId, (t) => ({
+    ...t,
+    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
+  }));
+  await awaitPendingThreadPersistence();
+  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
+  const prepared = await api2.agent.prepareCheckout(
+    projectId,
+    threadId,
+    proposal.prompt,
+    "worktree",
+    model
+  );
+  applyPreparedThreadCheckout(store2, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store2, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
+  addMessage(store2, threadId, "user", proposal.prompt);
+  setThreadProposalDecision(store2, sourceThreadId, {
+    id: proposal.id,
+    status: "started",
+    decidedAt: Date.now(),
+    threadId,
+    checkoutMode: prepared.checkoutMode
+  });
+  startHumanTurnTree(store2, threadId);
+  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
+}
+var init_thread_proposals = __esm({
+  "src/renderer/controller/thread-proposals.ts"() {
+    init_thread_helpers();
+    init_message_queue();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/thread-proposal-card.ts
+function chip(kind, ...children) {
+  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
+}
+function statePill(state) {
+  const { status } = state;
+  if (status === "started") {
+    const shared = state.checkoutMode === "shared";
+    return el(
+      "span",
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
+      checkIcon("ui-icon ui-icon-sm"),
+      shared ? "Started in the shared checkout" : "Thread started"
+    );
+  }
+  if (status === "dismissed") {
+    return el(
+      "span",
+      { class: "thread-proposal-state", "data-state": "dismissed" },
+      closeIcon("ui-icon ui-icon-sm"),
+      "Dismissed"
+    );
+  }
+  return null;
+}
+function buildOpenThreadButton(threadId, handlers3) {
+  const open = el(
+    "button",
+    { type: "button", class: "thread-proposal-open" },
+    "Open thread",
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  open.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handlers3.onOpenThread(threadId);
+  });
+  return open;
+}
+function buildPendingActions(proposal, handlers3, rerender) {
+  const start = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
+    "Start this thread"
+  );
+  const dismiss = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
+    "Not now"
+  );
+  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  start.addEventListener("click", () => {
+    start.disabled = true;
+    dismiss.disabled = true;
+    start.textContent = "Starting\u2026";
+    error.hidden = true;
+    void handlers3.onStart(proposal).catch((cause) => {
+      start.disabled = false;
+      dismiss.disabled = false;
+      start.textContent = "Start this thread";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
+      error.hidden = false;
+    });
+  });
+  dismiss.addEventListener("click", () => {
+    handlers3.onDismiss(proposal);
+    rerender({ status: "dismissed" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
+}
+function buildDismissedActions(proposal, handlers3, rerender) {
+  const restore = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
+    "Bring it back"
+  );
+  restore.addEventListener("click", () => {
+    handlers3.onRestore(proposal);
+    rerender({ status: "pending" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, restore);
+}
+function buildBody(proposal, state, handlers3, rerender) {
+  const body = el("div", { class: "thread-proposal-body" });
+  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
+  if (proposal.rationale) {
+    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
+  }
+  const chips = el("div", { class: "thread-proposal-chips" });
+  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
+  const files = threadProposalFileSummary(proposal.files);
+  if (files) chips.append(chip("files", files));
+  body.append(chips);
+  const prompt = el("details", { class: "thread-proposal-prompt" });
+  prompt.append(
+    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
+    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
+  );
+  body.append(prompt);
+  if (state.status === "pending") {
+    body.append(buildPendingActions(proposal, handlers3, rerender));
+  } else if (state.status === "dismissed") {
+    body.append(buildDismissedActions(proposal, handlers3, rerender));
+  }
+  return body;
+}
+function createThreadProposalCard(proposal, state, handlers3) {
+  const card = el("details", {
+    class: "tool-card thread-proposal",
+    "data-tool-id": proposal.id,
+    "data-status": "done"
+  });
+  const render2 = (next) => {
+    while (card.firstChild) card.firstChild.remove();
+    card.dataset["proposalStatus"] = next.status;
+    card.open = next.status === "pending";
+    const header = el(
+      "summary",
+      { class: "tool-card-header thread-proposal-header" },
+      el(
+        "span",
+        { class: "thread-proposal-icon", "aria-hidden": "true" },
+        gitBranchIcon("ui-icon ui-icon-sm")
+      ),
+      // The title names the offer, so it leads the card from the header: the
+      // same line reads on a collapsed (answered) card without expanding it.
+      el("h4", { class: "thread-proposal-title" }, proposal.title)
+    );
+    const pill = statePill(next);
+    if (pill) header.append(pill);
+    if (next.status === "started" && next.threadId) {
+      header.append(buildOpenThreadButton(next.threadId, handlers3));
+    }
+    card.append(header, buildBody(proposal, next, handlers3, render2));
+  };
+  render2(state);
+  return card;
+}
+var init_thread_proposal_card = __esm({
+  "src/renderer/views/thread-proposal-card.ts"() {
+    init_helpers();
+    init_ipc_error_message();
+    init_icons();
+    init_thread_proposal();
+  }
+});
+
+// src/renderer/views/thread-proposal-tool-card.ts
+function cardState(store2, sourceThreadId, proposalId) {
+  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
+  const status = threadProposalStatus(decisions, proposalId);
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
+  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
+}
+function threadProposalCardSignature(tc, store2, sourceThreadId) {
+  if (!isThreadProposalCall(tc)) return void 0;
+  const state = cardState(store2, sourceThreadId, tc.id);
+  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
+}
+function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
+  const args = tc.args;
+  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposal = parseThreadProposal(tc.id, proposalArgs);
+  if (!proposal) return null;
+  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
+    onStart: async (accepted) => {
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
+    },
+    onDismiss: (dismissed) => {
+      setThreadProposalDecision(store2, sourceThreadId, {
+        id: dismissed.id,
+        status: "dismissed",
+        decidedAt: Date.now()
+      });
+    },
+    onRestore: (restored) => {
+      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
+    },
+    onOpenThread: (threadId) => {
+      switchThread(store2, threadId);
+    }
+  });
+}
+var init_thread_proposal_tool_card = __esm({
+  "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_unknown_value2();
+    init_thread_proposal();
+    init_thread_helpers();
+    init_thread_proposals();
+    init_confirm_dialog();
+    init_toast();
+    init_thread_proposal_card();
+  }
+});
+
 // src/shared/tools/tool-runs.ts
 function regularToolCalls(msg) {
   return (msg.toolCalls ?? []).filter((tc) => !tc.subagent);
@@ -12438,7 +12830,10 @@ function hydrateAcpResourceImages(root, api2, store2) {
     card.dataset["imagePreviewRequested"] = "true";
     const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(card), path);
     whenImageRead(read, (src) => {
-      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) {
+        delete card.dataset["imagePreviewRequested"];
+        return;
+      }
       showCardImage(card, src, read);
     });
   }
@@ -12943,274 +13338,6 @@ var init_disclosure_model = __esm({
   }
 });
 
-// src/renderer/controller/thread-proposals.ts
-async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Open a project before starting a proposed thread");
-  store2.emit("composer_draft_flush");
-  const threadId = createThread(store2, void 0, { activate: false });
-  setThreadTitle(store2, threadId, proposal.title);
-  patchThreadAnywhere(store2, threadId, (t) => ({
-    ...t,
-    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
-  }));
-  await awaitPendingThreadPersistence();
-  const model = getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
-  const prepared = await api2.agent.prepareCheckout(
-    projectId,
-    threadId,
-    proposal.prompt,
-    "worktree",
-    model
-  );
-  applyPreparedThreadCheckout(store2, threadId, prepared);
-  if (prepared.checkoutMode !== "worktree" && !await options.confirmSharedCheckout(proposal)) {
-    setThreadDraftPrompt(store2, threadId, proposal.prompt);
-    return { started: false, threadId, reason: "shared-checkout-declined" };
-  }
-  addMessage(store2, threadId, "user", proposal.prompt);
-  setThreadProposalDecision(store2, sourceThreadId, {
-    id: proposal.id,
-    status: "started",
-    decidedAt: Date.now(),
-    threadId,
-    checkoutMode: prepared.checkoutMode
-  });
-  startHumanTurnTree(store2, threadId);
-  dispatchAgentRun(store2, api2, threadId, { content: proposal.prompt });
-  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
-}
-var init_thread_proposals = __esm({
-  "src/renderer/controller/thread-proposals.ts"() {
-    init_thread_helpers();
-    init_message_queue();
-    init_persistence();
-  }
-});
-
-// src/renderer/views/thread-proposal-card.ts
-function chip(kind, ...children) {
-  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children);
-}
-function statePill(state) {
-  const { status } = state;
-  if (status === "started") {
-    const shared = state.checkoutMode === "shared";
-    return el(
-      "span",
-      {
-        class: "thread-proposal-state",
-        "data-state": "started",
-        ...shared ? { "data-checkout": "shared" } : {}
-      },
-      checkIcon("ui-icon ui-icon-sm"),
-      shared ? "Started in the shared checkout" : "Thread started"
-    );
-  }
-  if (status === "dismissed") {
-    return el(
-      "span",
-      { class: "thread-proposal-state", "data-state": "dismissed" },
-      closeIcon("ui-icon ui-icon-sm"),
-      "Dismissed"
-    );
-  }
-  return null;
-}
-function buildOpenThreadButton(threadId, handlers3) {
-  const open = el(
-    "button",
-    { type: "button", class: "thread-proposal-open" },
-    "Open thread",
-    arrowRightIcon("ui-icon ui-icon-sm")
-  );
-  open.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    handlers3.onOpenThread(threadId);
-  });
-  return open;
-}
-function buildPendingActions(proposal, handlers3, rerender) {
-  const start = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
-    "Start this thread"
-  );
-  const dismiss = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
-    "Not now"
-  );
-  const error = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
-  start.addEventListener("click", () => {
-    start.disabled = true;
-    dismiss.disabled = true;
-    start.textContent = "Starting\u2026";
-    error.hidden = true;
-    void handlers3.onStart(proposal).catch((cause) => {
-      start.disabled = false;
-      dismiss.disabled = false;
-      start.textContent = "Start this thread";
-      const message2 = ipcErrorMessage(cause, "");
-      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
-      error.hidden = false;
-    });
-  });
-  dismiss.addEventListener("click", () => {
-    handlers3.onDismiss(proposal);
-    rerender({ status: "dismissed" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, start, dismiss, error);
-}
-function buildDismissedActions(proposal, handlers3, rerender) {
-  const restore = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
-    "Bring it back"
-  );
-  restore.addEventListener("click", () => {
-    handlers3.onRestore(proposal);
-    rerender({ status: "pending" });
-  });
-  return el("div", { class: "thread-proposal-actions" }, restore);
-}
-function buildBody(proposal, state, handlers3, rerender) {
-  const body = el("div", { class: "thread-proposal-body" });
-  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
-  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
-  if (proposal.rationale) {
-    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
-  }
-  const chips = el("div", { class: "thread-proposal-chips" });
-  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
-  const files = threadProposalFileSummary(proposal.files);
-  if (files) chips.append(chip("files", files));
-  body.append(chips);
-  const prompt = el("details", { class: "thread-proposal-prompt" });
-  prompt.append(
-    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
-    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
-  );
-  body.append(prompt);
-  if (state.status === "pending") {
-    body.append(buildPendingActions(proposal, handlers3, rerender));
-  } else if (state.status === "dismissed") {
-    body.append(buildDismissedActions(proposal, handlers3, rerender));
-  }
-  return body;
-}
-function createThreadProposalCard(proposal, state, handlers3) {
-  const card = el("details", {
-    class: "tool-card thread-proposal",
-    "data-tool-id": proposal.id,
-    "data-status": "done"
-  });
-  const render2 = (next) => {
-    while (card.firstChild) card.firstChild.remove();
-    card.dataset["proposalStatus"] = next.status;
-    card.open = next.status === "pending";
-    const header = el(
-      "summary",
-      { class: "tool-card-header thread-proposal-header" },
-      el(
-        "span",
-        { class: "thread-proposal-icon", "aria-hidden": "true" },
-        gitBranchIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
-      el("span", { class: "thread-proposal-header-title" }, proposal.title)
-    );
-    const pill = statePill(next);
-    if (pill) header.append(pill);
-    if (next.status === "started" && next.threadId) {
-      header.append(buildOpenThreadButton(next.threadId, handlers3));
-    }
-    card.append(header, buildBody(proposal, next, handlers3, render2));
-  };
-  render2(state);
-  return card;
-}
-var init_thread_proposal_card = __esm({
-  "src/renderer/views/thread-proposal-card.ts"() {
-    init_helpers();
-    init_ipc_error_message();
-    init_icons();
-    init_thread_proposal();
-  }
-});
-
-// src/renderer/views/thread-proposal-tool-card.ts
-function cardState(store2, sourceThreadId, proposalId) {
-  const decisions = getThreadById(store2, sourceThreadId)?.threadProposals;
-  const status = threadProposalStatus(decisions, proposalId);
-  const decision = findThreadProposalDecision(decisions, proposalId);
-  const startedId = decision?.threadId;
-  const threadId = startedId && getThreadById(store2, startedId) ? startedId : void 0;
-  return {
-    status,
-    ...threadId ? { threadId } : {},
-    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
-  };
-}
-function confirmSharedCheckout(proposal) {
-  return showConfirmDialog({
-    message: "Run this in your current checkout?",
-    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
-    confirmLabel: "Run it here",
-    cancelLabel: "Leave it"
-  });
-}
-function noteDeclined() {
-  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
-    variant: "info",
-    durationMs: 8e3
-  });
-}
-function threadProposalCardSignature(tc, store2, sourceThreadId) {
-  if (!isThreadProposalCall(tc)) return void 0;
-  const state = cardState(store2, sourceThreadId, tc.id);
-  return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
-}
-function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
-  const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
-  const proposal = parseThreadProposal(tc.id, proposalArgs);
-  if (!proposal) return null;
-  return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
-    onStart: async (accepted) => {
-      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-        confirmSharedCheckout
-      });
-      if (!result.started) noteDeclined();
-    },
-    onDismiss: (dismissed) => {
-      setThreadProposalDecision(store2, sourceThreadId, {
-        id: dismissed.id,
-        status: "dismissed",
-        decidedAt: Date.now()
-      });
-    },
-    onRestore: (restored) => {
-      clearThreadProposalDecisionFor(store2, sourceThreadId, restored.id);
-    },
-    onOpenThread: (threadId) => {
-      switchThread(store2, threadId);
-    }
-  });
-}
-var init_thread_proposal_tool_card = __esm({
-  "src/renderer/views/thread-proposal-tool-card.ts"() {
-    init_unknown_value2();
-    init_thread_proposal();
-    init_thread_helpers();
-    init_thread_proposals();
-    init_confirm_dialog();
-    init_toast();
-    init_thread_proposal_card();
-  }
-});
-
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13239,7 +13366,7 @@ function cardStatus(toolCalls) {
     return "error";
   }
   if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started")) {
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.commandPhase?.state === "not_started" || call.deferred === true)) {
     return "interrupted";
   }
   return "done";
@@ -13631,6 +13758,12 @@ function createToolCardRefresher(host) {
       for (const [key, details] of disclosureElements) {
         if (!details.isConnected) disclosureElements.delete(key);
       }
+    },
+    adoptDisclosureElements(root) {
+      root.querySelectorAll("details[data-disclosure-key]").forEach((details) => {
+        const key = details.dataset["disclosureKey"];
+        if (key) disclosureElements.set(key, details);
+      });
     }
   };
 }
@@ -13735,13 +13868,30 @@ function applyTranscriptRowPlan(plan, host) {
     }
   }
 }
-function transcriptRowSignature(thread, message2) {
-  return signRow(thread, message2, multiStepRunFor(thread, message2.id));
+function callAnswer(store2, thread, call) {
+  if (isThreadProposalCall(call)) return threadProposalCardSignature(call, store2, thread.id) ?? null;
+  if (isReviewerInputCall(call)) {
+    return reviewerInputAnswer(thread.reviewerInputAnswers, call.id) ?? null;
+  }
+  return void 0;
 }
-function signRow(thread, message2, run4) {
+function previewTitles(message2, calls) {
+  const titles2 = (message2.canvasArtefacts ?? []).map((artefact) => artefact.title);
+  for (const call of calls) {
+    if (call.status !== "done") continue;
+    const uri = artefactUriFromToolResult(call.result);
+    if (uri) titles2.push(artefactTitleFromUri(uri));
+  }
+  return titles2;
+}
+function transcriptRowSignature(store2, thread, message2) {
+  return signRow(store2, thread, message2, multiStepRunFor(thread, message2.id));
+}
+function signRow(store2, thread, message2, run4) {
   const liveStep = liveStepMessageId(thread);
   const origin = message2.role === "user" ? message2.origin : void 0;
   markUserInterruptedCalls(thread);
+  const calls = [...message2.toolCalls, ...run4?.toolCalls ?? []];
   return {
     patched: renderSignature({
       message: { ...message2, turnOutcome: void 0 },
@@ -13751,8 +13901,7 @@ function signRow(thread, message2, run4) {
     }),
     settled: renderSignature({
       memberOf: run4 && run4.anchorId !== message2.id ? run4.anchorId : null,
-      // A run's anchor draws every member's calls.
-      interrupted: [...message2.toolCalls, ...run4?.toolCalls ?? []].flatMap((call) => {
+      interrupted: calls.flatMap((call) => {
         const cause = userInterruption(call);
         return cause === void 0 ? [] : [[call.id, cause]];
       }),
@@ -13760,18 +13909,25 @@ function signRow(thread, message2, run4) {
         (message2.canvasArtefacts ?? []).map((artefact) => artefact.title),
         (message2.visualEvidence ?? []).map((evidence) => evidence.id)
       ],
+      answers: calls.flatMap((call) => {
+        const answer = callAnswer(store2, thread, call);
+        return answer === void 0 ? [] : [[call.id, answer]];
+      }),
+      previews: previewTitles(message2, calls).map(
+        (title) => artefactPreviewVersion(thread.id, title)
+      ),
       failed: message2.turnOutcome?.status === "failed",
       recovery: turnRecoveryForMessage(thread, message2.id),
       wake: origin?.kind === "machine" ? backgroundTaskCommandCall(thread, origin.operationId)?.id ?? null : null
     })
   };
 }
-function wantedTranscriptRows(thread, hidden) {
+function wantedTranscriptRows(store2, thread, hidden) {
   return thread.messages.filter((message2) => !hidden.has(message2.id)).map((message2) => {
     const run4 = multiStepRunFor(thread, message2.id);
     return {
       key: message2.id,
-      signature: signRow(thread, message2, run4),
+      signature: signRow(store2, thread, message2, run4),
       patchedBy: run4 ? run4.memberIds : [message2.id]
     };
   });
@@ -13813,10 +13969,14 @@ function relinkReadingAnchor(list, anchor) {
 var ROW_CARD_ATTRIBUTES;
 var init_transcript_rows = __esm({
   "src/renderer/views/transcript-rows.ts"() {
+    init_artefact();
+    init_reviewer_input();
+    init_artefact_previews();
     init_inline_artefact();
     init_turn_recovery2();
     init_command_task_links();
     init_render_signature();
+    init_thread_proposal_tool_card();
     init_tool_card_refresh();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
@@ -13928,7 +14088,9 @@ function createThreadArchiveReview(store2, api2) {
     void refresh();
   };
   const unsubs = [
-    store2.on("threads_changed", sync),
+    // Readiness is keyed on the active project (selected below) and the active
+    // thread itself (its `updatedAt` and draft).
+    store2.select(activeThreadOf, sync),
     store2.on("thread_status_changed", sync),
     selectActiveWorkspace(store2, sync),
     store2.on("settings_changed", () => {
@@ -13960,6 +14122,7 @@ var init_thread_archive_review = __esm({
     init_helpers();
     init_toast();
     init_thread_archive_toast();
+    init_active_thread_owner();
     init_active_workspace();
   }
 });
@@ -14195,29 +14358,29 @@ function setMoving(img, moving) {
 }
 function createAgentAvatarMotion() {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let active = null;
+  let active2 = null;
   let visible = false;
   const sync = () => {
-    if (active) setMoving(active, visible && !document.hidden && !reducedMotion.matches);
+    if (active2) setMoving(active2, visible && !document.hidden && !reducedMotion.matches);
   };
   const observer = new window.IntersectionObserver((entries) => {
     for (const entry of entries) {
-      if (entry.target === active) visible = entry.isIntersecting;
+      if (entry.target === active2) visible = entry.isIntersecting;
     }
     sync();
   });
   const setActive = (img) => {
-    if (active === img) return;
-    if (active) {
-      observer.unobserve(active);
-      setMoving(active, false);
-      active.removeAttribute("data-avatar-active");
+    if (active2 === img) return;
+    if (active2) {
+      observer.unobserve(active2);
+      setMoving(active2, false);
+      active2.removeAttribute("data-avatar-active");
     }
-    active = img;
+    active2 = img;
     visible = false;
-    if (active) {
-      active.setAttribute("data-avatar-active", "");
-      observer.observe(active);
+    if (active2) {
+      active2.setAttribute("data-avatar-active", "");
+      observer.observe(active2);
     }
   };
   reducedMotion.addEventListener("change", sync);
@@ -15276,16 +15439,25 @@ function bindBrowserLinkClicks(root, store2, api2) {
     event.stopPropagation();
     const artifact = remoteArtifactFromHref(href);
     if (artifact && api2) {
+      const owner = getActiveThreadOwner(store2);
       void artifactServerOrigin(artifact.agentId, api2.settings).then(async (origin) => {
         if (origin !== artifact.origin) {
           openLink(href);
           return;
         }
-        const url = await api2.remoteAgent.downloadArtifact(artifact.agentId, artifact.path);
-        if (url) openBrowserUrl(store2, url);
+        if (!owner) throw new Error("No active chat");
+        const currentOwner = getActiveThreadOwner(store2);
+        if (currentOwner?.projectId !== owner.projectId || currentOwner.threadId !== owner.threadId)
+          return;
+        await api2.remoteAgent.downloadArtifact({
+          ...owner,
+          agentId: artifact.agentId,
+          path: artifact.path
+        });
       }).catch((err) => {
         console.warn("[remote-agent] artifact download failed:", err);
-        showErrorToast("Failed to download agent artifact", err);
+        const reason = err instanceof Error && err.message.includes("This artifact is not linked to the chat.") ? "This artifact is not linked to this chat." : "The download could not be opened.";
+        showErrorToast("Failed to download agent artifact", reason);
       });
       return;
     }
@@ -15309,6 +15481,7 @@ var init_browser_links = __esm({
     init_pr_link_preview();
     init_toast();
     init_remote_agent();
+    init_active_thread_owner();
     OPENAI_AGENTS_ORIGIN = "https://api.openai.com";
   }
 });
@@ -15357,7 +15530,12 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
     if (artifact?.[1] && artifact[2]) {
       event.preventDefault();
       event.stopPropagation();
-      void api2.remoteAgent.downloadArtifact(`openai:${artifact[1]}`, artifact[2]).catch((error) => {
+      const owner2 = getActiveThreadOwner(store2);
+      if (!owner2) {
+        showErrorToast("Failed to save agent artifact", "No active chat");
+        return;
+      }
+      void api2.remoteAgent.downloadArtifact({ ...owner2, agentId: `openai:${artifact[1]}`, path: artifact[2] }).catch((error) => {
         showErrorToast("Failed to save agent artifact", error);
       });
       return;
@@ -16583,9 +16761,6 @@ function mountThreadRoadmapOrigin(store2, api2) {
   let itemId = null;
   let generation = 0;
   let syncedThreadId;
-  function syncIfThreadChanged() {
-    if (store2.getState().activeThreadId !== syncedThreadId) sync();
-  }
   function sync() {
     const gen = ++generation;
     const threadId = store2.getState().activeThreadId;
@@ -16623,7 +16798,7 @@ function mountThreadRoadmapOrigin(store2, api2) {
     if (itemId) navigateToRoadmapItem(store2, itemId);
   });
   sync();
-  const unsubscribeThreads = store2.on("threads_changed", syncIfThreadChanged);
+  const unsubscribeThreads = store2.select((s) => s.activeThreadId, sync);
   const unsubscribeRoadmap = api2.roadmap.onChanged(sync);
   return {
     element: link,
@@ -17007,19 +17182,15 @@ var init_todos_plugin = __esm({
 function pluginCard() {
   const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
   const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
-  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
   const nameLine = el(
     "div",
     { class: "plugin-row-name-line" },
     el("span", { class: "plugin-name" }, PLUGIN_NAME),
-    stability
-  );
-  const title = el(
-    "div",
-    { class: "plugin-row-title" },
+    el("span", { class: "plugin-name-separator", "aria-hidden": "true" }, "\xB7"),
     el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
-    nameLine
+    el("span", { class: "ui-badge plugin-badge-experimental" }, "experimental")
   );
+  const title = el("div", { class: "plugin-row-title" }, nameLine);
   return el(
     "div",
     { class: "plugin-row apple-suggestion-card" },
@@ -17131,8 +17302,8 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     return project ? projectDisplayName(project) : "This project";
   };
   const renderReminder = () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (!reminder) {
       host.hidden = true;
       return;
@@ -17212,13 +17383,13 @@ function mountAppleProjectSuggestions(store2, api2, onAllowed) {
     await offer(activeProjectId, suggestion);
   };
   acceptLink.addEventListener("click", () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
   });
   dismissLink.addEventListener("click", () => {
-    const active = store2.getState().activeProjectId;
-    const reminder = active ? reminders.get(active) : void 0;
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
     if (!reminder) return;
     answer(reminder.projectId, "dismissed");
     reminders.delete(reminder.projectId);
@@ -17529,6 +17700,7 @@ function createVisualEvidenceSection(evidence) {
   if (evidence.length === 0) return null;
   const section2 = el("div", {
     class: "message-visual-evidence",
+    role: "group",
     "aria-label": "Visual evidence"
   });
   for (const item of evidence) {
@@ -17539,7 +17711,8 @@ function createVisualEvidenceSection(evidence) {
       el(
         "span",
         { class: "visual-evidence-heading" },
-        el("span", { class: "visual-evidence-eyebrow" }, "Visual evidence"),
+        // The caption names the evidence; the section's aria-label says what
+        // kind of block this is, so no visible eyebrow sits above it.
         el("span", { class: "visual-evidence-caption" }, item.caption),
         el(
           "span",
@@ -18271,48 +18444,6 @@ var init_tool_error_format = __esm({
   }
 });
 
-// packages/agent/src/hooks/inject-context.ts
-var SYSTEM_REMINDER_TAG;
-var init_inject_context = __esm({
-  "packages/agent/src/hooks/inject-context.ts"() {
-    init_nullish();
-    SYSTEM_REMINDER_TAG = "system-reminder";
-  }
-});
-
-// src/renderer/views/tool-result-reminders.ts
-function splitAppendedReminders(result, lengths) {
-  const raw = { output: result, reminders: [] };
-  if (lengths === void 0 || lengths.length === 0) return raw;
-  let end = result.length;
-  const reminders = [];
-  for (let index = lengths.length - 1; index >= 0; index -= 1) {
-    const length = lengths[index];
-    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
-    const start = end - length;
-    if (start < SEPARATOR.length) return raw;
-    const block = result.slice(start, end);
-    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
-      return raw;
-    }
-    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
-    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
-    end = start - SEPARATOR.length;
-  }
-  return { output: result.slice(0, end), reminders };
-}
-var OPEN, CLOSE, SEPARATOR;
-var init_tool_result_reminders = __esm({
-  "src/renderer/views/tool-result-reminders.ts"() {
-    init_inject_context();
-    OPEN = `<${SYSTEM_REMINDER_TAG}>
-`;
-    CLOSE = `
-</${SYSTEM_REMINDER_TAG}>`;
-    SEPARATOR = "\n\n";
-  }
-});
-
 // src/renderer/controller/reviewer-input.ts
 function answerReviewerInput(store2, api2, threadId, requestId, answer) {
   const text = answer.trim();
@@ -18470,7 +18601,7 @@ function mountReviewerInput(store2, api2) {
       "Show in conversation"
     );
     origin.addEventListener("click", () => {
-      store2.emit("reviewer_input_jump", request.messageId, request.id);
+      store2.emit("reviewer_input_jump", request.messageId, request.toolCallId ?? request.id);
     });
     row2.append(origin);
     return row2;
@@ -18522,32 +18653,42 @@ function mountReviewerInput(store2, api2) {
   return { toggle, panel, sync, open };
 }
 function createReviewerInputToolCard(call, store2) {
-  const request = parseReviewerInputCall(call, "");
-  if (!request) return null;
+  const requests = reviewerInputRequestsForCall(call, "");
+  const first2 = requests[0];
+  if (!first2) return null;
   const card = el("details", {
     class: "tool-card reviewer-input-card",
     "data-tool-id": call.id,
     "data-status": "done"
   });
-  const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, call.id);
+  const answers = getActiveThread(store2)?.reviewerInputAnswers;
+  const answered = requests.every((request) => reviewerInputAnswer(answers, request.id));
   card.append(
     el(
       "summary",
       { class: "tool-card-header" },
-      answer ? "Answered" : "Needs your input",
+      answered ? "Answered" : "Needs your input",
       " \xB7 ",
-      request.question
-    ),
-    el("p", { class: "reviewer-input-card-context" }, request.context)
+      requests.length === 1 ? first2.question : `${String(requests.length)} questions`
+    )
   );
-  if (answer)
-    card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
-  else {
-    const open = el("button", { type: "button", class: "reviewer-input-origin" }, "Answer question");
-    open.addEventListener("click", () => {
-      store2.emit("reviewer_input_open", request.id);
-    });
-    card.append(open);
+  for (const request of requests) {
+    if (requests.length > 1) card.append(el("p", {}, request.question));
+    card.append(el("p", { class: "reviewer-input-card-context" }, request.context));
+    const answer = reviewerInputAnswer(answers, request.id);
+    if (answer)
+      card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
+    else {
+      const open = el(
+        "button",
+        { type: "button", class: "reviewer-input-origin" },
+        "Answer question"
+      );
+      open.addEventListener("click", () => {
+        store2.emit("reviewer_input_open", request.id);
+      });
+      card.append(open);
+    }
   }
   return card;
 }
@@ -18642,18 +18783,22 @@ function createTurnRecoveryCard(options) {
     actions.append(button);
     return button;
   };
-  action("Retry this turn", options.onRetry);
+  action(options.limitReason === void 0 ? "Retry this turn" : "Continue task", options.onRetry);
   if (options.lastKnownGoodLabel !== void 0 && options.onRetryWithLastKnownGood !== void 0) {
     action(`Use ${options.lastKnownGoodLabel} and retry`, options.onRetryWithLastKnownGood);
   }
   const body = el(
     "div",
     { class: "turn-recovery-body" },
-    el("div", { class: "turn-recovery-title" }, "Turn interrupted"),
+    el(
+      "div",
+      { class: "turn-recovery-title" },
+      options.limitReason === "max_steps" ? "Run limit reached" : options.limitReason === "timeout" ? "Time limit reached" : "Turn interrupted"
+    ),
     el(
       "div",
       { class: "turn-recovery-detail" },
-      options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+      options.limitReason !== void 0 ? "Your completed work is saved. Continue with a fresh run allowance; inspect the current state before repeating any action." : options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
     )
   );
   if (options.lastKnownGoodLabel !== void 0) {
@@ -18670,7 +18815,7 @@ function createTurnRecoveryCard(options) {
     {
       class: "turn-recovery-card",
       "data-turn-recovery-card": "",
-      "aria-label": "Interrupted turn recovery"
+      "aria-label": options.limitReason === void 0 ? "Interrupted turn recovery" : "Run limit recovery"
     },
     el(
       "span",
@@ -19698,7 +19843,7 @@ function sameTranscriptInputs(a, b2) {
   return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function sameRowEnvironment(a, b2) {
-  return a.threadId === b2.threadId && a.model === b2.model && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+  return a.threadId === b2.threadId && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed;
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -21361,6 +21506,7 @@ function mountConversation(root, store2, api2, options = {}) {
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   let backfillPending = false;
+  let backfillPrefix = [];
   const rowSignatures = /* @__PURE__ */ new WeakMap();
   const rowDrawnFrom = /* @__PURE__ */ new WeakMap();
   const patchedRows = /* @__PURE__ */ new Set();
@@ -21563,7 +21709,7 @@ function mountConversation(root, store2, api2, options = {}) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(thread, msg));
+    if (thread) rowSignatures.set(msgEl, transcriptRowSignature(store2, thread, msg));
     rowDrawnFrom.set(msgEl, msg);
     syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
@@ -21653,6 +21799,7 @@ function mountConversation(root, store2, api2, options = {}) {
     rowDrawnFrom.set(element, message2);
   }
   function prependMessageEl(threadId, msgId, before) {
+    if (reattachReturningRow(threadId, msgId, before)) return;
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
@@ -22094,6 +22241,7 @@ function mountConversation(root, store2, api2, options = {}) {
     const fallback = recovery.lastKnownGoodModel;
     const card = createTurnRecoveryCard({
       ...recovery.interruptedByRestart ? { interruptedByRestart: true } : {},
+      ...recovery.limitReason !== void 0 ? { limitReason: recovery.limitReason } : {},
       ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
       onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
       ...fallback !== void 0 ? {
@@ -22108,41 +22256,75 @@ function mountConversation(root, store2, api2, options = {}) {
       "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
     );
   }
+  let comparisonCard = null;
+  let reviewReportCard = null;
   function syncComparisonPanel() {
-    list.querySelector("[data-comparison-card]")?.remove();
     const thread = getActiveThread(store2);
-    if (thread?.comparison) {
+    const comparison = thread?.comparison;
+    const signature = comparison ? renderSignature(comparison) : "";
+    if (!thread || !comparison || comparisonCard?.threadId !== thread.id || comparisonCard.signature !== signature) {
+      list.querySelector("[data-comparison-card]")?.remove();
+      comparisonCard = null;
+    }
+    if (!thread || !comparison) return;
+    if (!comparisonCard) {
       const threadId = thread.id;
-      const card = createComparisonCardEl(thread.comparison, api2, void 0, () => {
+      const element2 = createComparisonCardEl(comparison, api2, void 0, () => {
         dismissComparison(store2, threadId);
       });
-      card.setAttribute("data-comparison-card", "");
-      list.append(card);
+      element2.setAttribute("data-comparison-card", "");
+      comparisonCard = { threadId, signature, element: element2 };
     }
+    const { element } = comparisonCard;
+    if (element.parentNode !== list || element !== list.lastElementChild) list.append(element);
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
-    if (!thread?.reviewReport) return;
-    const threadId = thread.id;
-    const card = createReviewFindingsCardEl(thread.reviewReport, {
-      onRetry: () => {
-        startReview(store2, api2, threadId);
-      },
-      onDismissCard: () => {
-        dismissReviewReport(store2, threadId);
-      },
-      onDismissFinding: (finding) => {
-        dismissReviewFinding(store2, api2, threadId, finding);
-      },
-      onRestoreFinding: (finding) => {
-        restoreReviewFinding(store2, api2, threadId, finding.id);
-      }
-    });
-    card.setAttribute("data-review-report-card", "");
+    const report = thread?.reviewReport;
+    const signature = report ? renderSignature(report) : "";
+    if (!thread || !report || reviewReportCard?.threadId !== thread.id || reviewReportCard.signature !== signature) {
+      list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
+      reviewReportCard = null;
+    }
+    if (!thread || !report) return;
+    if (!reviewReportCard) {
+      const threadId = thread.id;
+      const act = (action) => () => {
+        const before = getThreadById(store2, threadId)?.reviewReport;
+        action();
+        if (getThreadById(store2, threadId)?.reviewReport !== before) return;
+        if (reviewReportCard?.threadId !== threadId) return;
+        reviewReportCard.element.remove();
+        reviewReportCard = null;
+        syncReviewReportCard();
+      };
+      const element2 = createReviewFindingsCardEl(report, {
+        onRetry: act(() => {
+          startReview(store2, api2, threadId);
+        }),
+        onDismissCard: act(() => {
+          dismissReviewReport(store2, threadId);
+        }),
+        onDismissFinding: (finding) => {
+          act(() => {
+            dismissReviewFinding(store2, api2, threadId, finding);
+          })();
+        },
+        onRestoreFinding: (finding) => {
+          act(() => {
+            restoreReviewFinding(store2, api2, threadId, finding.id);
+          })();
+        }
+      });
+      element2.setAttribute("data-review-report-card", "");
+      reviewReportCard = { threadId, signature, element: element2 };
+    }
+    const { element } = reviewReportCard;
     const comparison = list.querySelector("[data-comparison-card]");
-    if (comparison) list.insertBefore(card, comparison);
-    else list.append(card);
+    const inPlace = element.parentNode === list && (comparison ? element.nextElementSibling === comparison : element === list.lastElementChild);
+    if (inPlace) return;
+    if (comparison) list.insertBefore(element, comparison);
+    else list.append(element);
   }
   function finishThreadChrome(thread) {
     syncTodoPanel();
@@ -22179,17 +22361,25 @@ function mountConversation(root, store2, api2, options = {}) {
     const delta = list.scrollHeight - heightBefore;
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     updateScrollButton();
+    backfillPrefix = backfillPrefix.slice(0, chunkStart);
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
         backfillOlderMessages(thread, chunkStart, generation);
       });
-    } else backfillPending = false;
+    } else {
+      backfillPending = false;
+      returningRows = /* @__PURE__ */ new Map();
+    }
   }
   function reconcileTranscriptRows(thread, inputs, previous) {
-    if (backfillPending || !sameRowEnvironment(inputs, previous)) return false;
+    if (!sameRowEnvironment(inputs, previous)) return false;
     if (inputs.needsHydration || inputs.hydrationFailed) return false;
+    const pending = backfillPending ? backfillPrefix : [];
+    if (pending.some((id, i2) => thread.messages[i2]?.id !== id)) return false;
+    const hidden = queuedMessageIds(thread);
+    for (const id of pending) hidden.add(id);
     const elements = Array.from(list.querySelectorAll(":scope > [data-message-id]"));
-    const wanted = wantedTranscriptRows(thread, queuedMessageIds(thread));
+    const wanted = wantedTranscriptRows(store2, thread, hidden);
     const messages = new Map(thread.messages.map((message2) => [message2.id, message2]));
     const signed = elements.map((element) => ({
       key: element.dataset["messageId"] ?? "",
@@ -22242,6 +22432,88 @@ function mountConversation(root, store2, api2, options = {}) {
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     return true;
   }
+  const RECENT_TRANSCRIPTS = 2;
+  const recentTranscripts = /* @__PURE__ */ new Map();
+  let returningRows = /* @__PURE__ */ new Map();
+  function stashTranscript(threadId, inputs) {
+    recentTranscripts.delete(threadId);
+    const thread = getThreadById(store2, threadId);
+    if (!thread || thread.status === "running" || inputs.needsHydration || backfillPending) return;
+    if (disclosures.hasAutoOpen(threadId)) return;
+    const hostsGuest = new Set(
+      Array.from(
+        list.querySelectorAll(".canvas-inline-artefact"),
+        (guest) => guest.closest(".messages-list > [data-message-id]")
+      )
+    );
+    const rows = /* @__PURE__ */ new Map();
+    let current = null;
+    for (const node of Array.from(list.children)) {
+      const key = node instanceof HTMLElement ? node.dataset["messageId"] : void 0;
+      if (key !== void 0) {
+        current = hostsGuest.has(node) ? null : [node];
+        if (current) rows.set(key, current);
+      } else if (current && ROW_CARD_ATTRIBUTES.some((attribute) => node.hasAttribute(attribute))) {
+        current.push(node);
+      } else current = null;
+    }
+    if (rows.size === 0) return;
+    for (const parts of rows.values()) for (const part of parts) part.remove();
+    recentTranscripts.set(threadId, { inputs, rows });
+    while (recentTranscripts.size > RECENT_TRANSCRIPTS) {
+      const oldest = recentTranscripts.keys().next().value;
+      if (oldest === void 0) break;
+      recentTranscripts.delete(oldest);
+    }
+  }
+  function restoreTranscript(thread, inputs) {
+    const stashed = recentTranscripts.get(thread.id);
+    recentTranscripts.delete(thread.id);
+    if (!stashed || needsHydration(thread)) return null;
+    const start = Math.max(0, thread.messages.length - INITIAL_RENDER_WINDOW);
+    for (const message2 of thread.messages.slice(start)) {
+      for (const part of stashed.rows.get(message2.id) ?? []) list.append(part);
+      stashed.rows.delete(message2.id);
+    }
+    backfillPending = start > 0;
+    backfillPrefix = thread.messages.slice(0, start).map((message2) => message2.id);
+    toolCards.adoptDisclosureElements(list);
+    if (!reconcileTranscriptRows(thread, inputs, stashed.inputs)) {
+      toolCards.forgetDisclosureElements();
+      disposeInlineArtefacts(list);
+      clear(list);
+      backfillPending = false;
+      backfillPrefix = [];
+      return null;
+    }
+    returningRows = stashed.rows;
+    syncModelLabels();
+    syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
+    syncHookCardVisibility();
+    finishThreadChrome(thread);
+    syncConciseTurnFooters();
+    refreshStickyImagePrompt();
+    syncAvatarMotion();
+    scrollToBottom(true);
+    return start;
+  }
+  function reattachReturningRow(threadId, msgId, before) {
+    const parts = returningRows.get(msgId);
+    returningRows.delete(msgId);
+    const [element] = parts ?? [];
+    const thread = getThreadById(store2, threadId);
+    const message2 = thread?.messages.find((candidate) => candidate.id === msgId);
+    const signed = element instanceof HTMLElement ? rowSignatures.get(element) : void 0;
+    if (!parts || !thread || !message2 || !signed) return false;
+    if (!sameSignature(signed, transcriptRowSignature(store2, thread, message2))) return false;
+    if (element instanceof HTMLElement && rowDrawnFrom.get(element) !== message2) return false;
+    for (const part of parts) {
+      list.insertBefore(part, before);
+      toolCards.adoptDisclosureElements(part);
+    }
+    return true;
+  }
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
@@ -22260,6 +22532,9 @@ function mountConversation(root, store2, api2, options = {}) {
     }
     const preservedScrollTop = rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null;
     if (!rebuildingSameThread) transcriptScroll.resetForThread();
+    if (!rebuildingSameThread && renderedThreadId !== null && renderedInputs) {
+      stashTranscript(renderedThreadId, renderedInputs);
+    }
     toolCards.forgetDisclosureElements();
     if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
@@ -22270,8 +22545,21 @@ function mountConversation(root, store2, api2, options = {}) {
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     renderedInputs = inputs;
+    backfillPending = false;
+    backfillPrefix = [];
     if (!thread) {
       finishThreadChrome(null);
+      return;
+    }
+    returningRows = /* @__PURE__ */ new Map();
+    const restoredFrom = inputs && !rebuildingSameThread ? restoreTranscript(thread, inputs) : null;
+    if (restoredFrom !== null) {
+      if (restoredFrom > 0) {
+        const generation = backfillGeneration;
+        requestAnimationFrame(() => {
+          backfillOlderMessages(thread, restoredFrom, generation);
+        });
+      }
       return;
     }
     if (needsHydration(thread)) {
@@ -22302,6 +22590,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (thread.status === "running") disclosures.cancelCompaction(thread.id);
     else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     backfillPending = initialStart > 0;
+    backfillPrefix = thread.messages.slice(0, initialStart).map((message2) => message2.id);
     if (initialStart > 0) {
       const generation = backfillGeneration;
       requestAnimationFrame(() => {
@@ -22344,6 +22633,7 @@ function mountConversation(root, store2, api2, options = {}) {
       });
     }),
     store2.on("settings_changed", () => {
+      recentTranscripts.clear();
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
@@ -22499,15 +22789,26 @@ function mountConversation(root, store2, api2, options = {}) {
       if (tid === store2.getState().activeThreadId) markRowPatched(mid);
       scrollToBottom();
     }),
-    store2.on("comparison_changed", () => {
-      syncComparisonPanel();
-      scrollToBottom();
-    }),
+    // The trailing cards draw the active thread's report and comparison, so
+    // follow those values rather than the events their writers emit. A switch
+    // to another thread is the rebuild's to draw.
+    store2.select(
+      (state) => {
+        const thread = state.threads.find((candidate) => candidate.id === state.activeThreadId) ?? state.backgroundThreads.find((carried) => carried.thread.id === state.activeThreadId)?.thread;
+        return [state.activeThreadId, thread?.reviewReport, thread?.comparison];
+      },
+      ([threadId]) => {
+        if (threadId === null || threadId !== renderedThreadId) return;
+        syncReviewReportCard();
+        syncComparisonPanel();
+        scrollToBottom();
+      },
+      sameItems
+    ),
     store2.on("review_report_changed", (tid, mid) => {
-      if (mid) {
-        renderMessageReviewReport(tid, mid);
-        if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
-      } else syncReviewReportCard();
+      if (!mid) return;
+      renderMessageReviewReport(tid, mid);
+      if (tid === store2.getState().activeThreadId) markRowPatched(mid, ["reviewReport"]);
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -22566,6 +22867,7 @@ function mountConversation(root, store2, api2, options = {}) {
   syncFromStore();
   return () => {
     disposed = true;
+    recentTranscripts.clear();
     setBackgroundTaskLogLoader(null);
     archiveReview?.dispose();
     selectionQuote.destroy();
@@ -22632,6 +22934,7 @@ var init_conversation = __esm({
     init_user_prompt_fold();
     init_hook_card2();
     init_hook_run_detail2();
+    init_store();
     init_artefact_previews();
     init_inline_artefact();
     init_artefact();
@@ -22873,7 +23176,7 @@ function listCriteria(tokens) {
 function parsePlanDocument(body) {
   const tokens = T.lex(body, { gfm: true });
   const sections = /* @__PURE__ */ new Map();
-  let active = null;
+  let active2 = null;
   for (const token of tokens) {
     if (token.type === "heading" && token.depth !== void 0) {
       const text = tokenText(token).trim().toLowerCase();
@@ -22881,12 +23184,12 @@ function parsePlanDocument(body) {
       if (label) {
         const content = [];
         if (!sections.has(label)) sections.set(label, content);
-        active = { depth: token.depth, tokens: content };
+        active2 = { depth: token.depth, tokens: content };
         continue;
       }
-      if (active && token.depth <= active.depth) active = null;
+      if (active2 && token.depth <= active2.depth) active2 = null;
     }
-    active?.tokens.push(token);
+    active2?.tokens.push(token);
   }
   return {
     sections: new Map([...sections].map(([label, content]) => [label, blockText(content)])),
@@ -25178,9 +25481,9 @@ var init_dist3 = __esm({
       @internal
       */
       computeWrapping(target) {
-        let seen = /* @__PURE__ */ Object.create(null), active = [{ match: this, type: null, via: null }];
-        while (active.length) {
-          let current = active.shift(), match = current.match;
+        let seen = /* @__PURE__ */ Object.create(null), active2 = [{ match: this, type: null, via: null }];
+        while (active2.length) {
+          let current = active2.shift(), match = current.match;
           if (match.matchType(target)) {
             let result = [];
             for (let obj = current; obj.type; obj = obj.via)
@@ -25190,7 +25493,7 @@ var init_dist3 = __esm({
           for (let i2 = 0; i2 < match.next.length; i2++) {
             let { type, next } = match.next[i2];
             if (!type.isLeaf && !type.hasRequiredAttrs() && !(type.name in seen) && (!current.type || next.validEnd)) {
-              active.push({ match: type.contentMatch, type, via: current });
+              active2.push({ match: type.contentMatch, type, via: current });
               seen[type.name] = true;
             }
           }
@@ -26251,28 +26554,28 @@ var init_dist3 = __esm({
       serializeFragment(fragment, options = {}, target) {
         if (!target)
           target = doc(options).createDocumentFragment();
-        let top = target, active = [];
+        let top = target, active2 = [];
         fragment.forEach((node) => {
-          if (active.length || node.marks.length) {
+          if (active2.length || node.marks.length) {
             let keep = 0, rendered = 0;
-            while (keep < active.length && rendered < node.marks.length) {
+            while (keep < active2.length && rendered < node.marks.length) {
               let next = node.marks[rendered];
               if (!this.marks[next.type.name]) {
                 rendered++;
                 continue;
               }
-              if (!next.eq(active[keep][0]) || next.type.spec.spanning === false)
+              if (!next.eq(active2[keep][0]) || next.type.spec.spanning === false)
                 break;
               keep++;
               rendered++;
             }
-            while (keep < active.length)
-              top = active.pop()[1];
+            while (keep < active2.length)
+              top = active2.pop()[1];
             while (rendered < node.marks.length) {
               let add = node.marks[rendered++];
               let markDOM = this.serializeMark(add, node.isInline, options);
               if (markDOM) {
-                active.push([add, top]);
+                active2.push([add, top]);
                 top.appendChild(markDOM.dom);
                 top = markDOM.contentDOM || markDOM.dom;
               }
@@ -30370,18 +30673,18 @@ function flattenH(rect, top) {
   return { top: y2, bottom: y2, left: rect.left, right: rect.right };
 }
 function withFlushedState(view, state, f2) {
-  let viewState = view.state, active = view.root.activeElement;
+  let viewState = view.state, active2 = view.root.activeElement;
   if (viewState != state)
     view.updateState(state);
-  if (active != view.dom)
+  if (active2 != view.dom)
     view.focus();
   try {
     return f2();
   } finally {
     if (viewState != state)
       view.updateState(viewState);
-    if (active != view.dom && active)
-      active.focus();
+    if (active2 != view.dom && active2)
+      active2.focus();
   }
 }
 function endOfTextblockVertical(view, state, dir) {
@@ -30626,7 +30929,7 @@ function iterDeco(parent, deco, onWidget, onNode) {
     }
     return;
   }
-  let decoIndex = 0, active = [], restNode = null;
+  let decoIndex = 0, active2 = [], restNode = null;
   for (let parentIndex = 0; ; ) {
     let widget, widgets;
     while (decoIndex < locals.length && locals[decoIndex].to == offset) {
@@ -30658,19 +30961,19 @@ function iterDeco(parent, deco, onWidget, onNode) {
     } else {
       break;
     }
-    for (let i2 = 0; i2 < active.length; i2++)
-      if (active[i2].to <= offset)
-        active.splice(i2--, 1);
+    for (let i2 = 0; i2 < active2.length; i2++)
+      if (active2[i2].to <= offset)
+        active2.splice(i2--, 1);
     while (decoIndex < locals.length && locals[decoIndex].from <= offset && locals[decoIndex].to > offset)
-      active.push(locals[decoIndex++]);
+      active2.push(locals[decoIndex++]);
     let end = offset + child.nodeSize;
     if (child.isText) {
       let cutAt = end;
       if (decoIndex < locals.length && locals[decoIndex].from < cutAt)
         cutAt = locals[decoIndex].from;
-      for (let i2 = 0; i2 < active.length; i2++)
-        if (active[i2].to < cutAt)
-          cutAt = active[i2].to;
+      for (let i2 = 0; i2 < active2.length; i2++)
+        if (active2[i2].to < cutAt)
+          cutAt = active2[i2].to;
       if (cutAt < end) {
         restNode = child.cut(cutAt - offset);
         child = child.cut(0, cutAt - offset);
@@ -30681,7 +30984,7 @@ function iterDeco(parent, deco, onWidget, onNode) {
       while (decoIndex < locals.length && locals[decoIndex].to < end)
         decoIndex++;
     }
-    let outerDeco = child.isInline && !child.isLeaf ? active.filter((d) => !d.inline) : active.slice();
+    let outerDeco = child.isInline && !child.isLeaf ? active2.filter((d) => !d.inline) : active2.slice();
     onNode(child, outerDeco, deco.forChild(offset, child), index);
     offset = end;
   }
@@ -42716,20 +43019,20 @@ function init$1({
     // ＜＞
   ];
   for (let i2 = 0; i2 < bracketPairs.length; i2++) {
-    const [OPEN2, CLOSE2] = bracketPairs[i2];
-    const UrlOpen = tt(Url$1, OPEN2);
-    tt(UrlNonaccept, OPEN2, UrlOpen);
+    const [OPEN, CLOSE] = bracketPairs[i2];
+    const UrlOpen = tt(Url$1, OPEN);
+    tt(UrlNonaccept, OPEN, UrlOpen);
     const UrlOpenQ = makeState(Url);
     ta(UrlOpen, qsAccepting, UrlOpenQ);
     const UrlOpenSyms = makeState();
     ta(UrlOpen, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpen, CLOSE2, Url$1);
+    tt(UrlOpen, CLOSE, Url$1);
     ta(UrlOpenQ, qsAccepting, UrlOpenQ);
     ta(UrlOpenQ, qsNonAccepting, UrlOpenSyms);
     ta(UrlOpenSyms, qsAccepting, UrlOpenQ);
     ta(UrlOpenSyms, qsNonAccepting, UrlOpenSyms);
-    tt(UrlOpenQ, CLOSE2, Url$1);
-    tt(UrlOpenSyms, CLOSE2, Url$1);
+    tt(UrlOpenQ, CLOSE, Url$1);
+    tt(UrlOpenSyms, CLOSE, Url$1);
   }
   tt(Start, LOCALHOST, DomainDotTld);
   tt(Start, NL, Nl);
@@ -51949,7 +52252,7 @@ function mountPlanDocumentEditor(onChange, onSelection, identity = { id: "plan",
     documentButton.setAttribute("aria-pressed", String(!sourceMode));
     sourceButton.setAttribute("aria-pressed", String(sourceMode));
   }
-  function addFormat(label, text, run4, active = () => false) {
+  function addFormat(label, text, run4, active2 = () => false) {
     const button = el(
       "button",
       {
@@ -51966,7 +52269,7 @@ function mountPlanDocumentEditor(onChange, onSelection, identity = { id: "plan",
     button.addEventListener("click", () => {
       if (!locked) run4();
     });
-    formatButtons.push({ button, active });
+    formatButtons.push({ button, active: active2 });
     formatting.append(button);
   }
   addFormat(
@@ -52466,14 +52769,18 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
       renderComments();
     });
   });
-  const unsub = store2.on("threads_changed", () => {
-    refreshIndicator();
-    if (owner && (owner.projectId !== store2.getState().activeProjectId || owner.threadId !== store2.getState().activeThreadId)) {
-      generation++;
-      owner = null;
-      dialog.close();
-    }
-  });
+  const unsub = store2.select(
+    (s) => [s.activeProjectId, s.activeThreadId],
+    ([projectId, threadId]) => {
+      refreshIndicator();
+      if (owner && (owner.projectId !== projectId || owner.threadId !== threadId)) {
+        generation++;
+        owner = null;
+        dialog.close();
+      }
+    },
+    sameItems
+  );
   const unsubStatus = store2.on("thread_status_changed", (threadId) => {
     if (store2.getState().activeThreadId === threadId && getThreadById(store2, threadId)?.status !== "running")
       refreshIndicator(true);
@@ -52508,6 +52815,7 @@ function mountThreadPlanControl(api2, store2, submitTurn) {
 var TEMPLATE, DEFAULT_TITLE;
 var init_thread_plan_dialog = __esm({
   "src/renderer/views/thread-plan-dialog.ts"() {
+    init_store();
     init_thread_helpers();
     init_plan_schema();
     init_helpers();
@@ -52567,10 +52875,10 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     api2.git.currentBranch(projectId, threadId),
     api2.git.promptState(projectId, threadId)
   ]);
-  if (branchResult.status === "rejected") return false;
+  if (branchResult.status === "rejected" || promptResult.status === "rejected") return false;
   if (!targetIsCurrent()) return false;
   const currentBranch = branchResult.value;
-  const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
+  const promptState = promptResult.value;
   const current = getThreadById(store2, threadId);
   if (!current) return false;
   if (threadGitBranchMismatch(current.gitBranch, currentBranch, {
@@ -52593,10 +52901,8 @@ async function sendCodeBlockRunResult(store2, api2, result) {
   };
   const shellAttachment = { kind: "shell", label: shell2.label, content: shell2.content };
   const messageMeta = {
-    ...promptState ? {
-      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
-      dirty: promptState.dirty
-    } : {}
+    ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+    dirty: promptState.dirty
   };
   if (completion) {
     const machineResult = await api2.agent.runMachine({
@@ -52734,6 +53040,17 @@ function mountNextStepHint(store2, api2, onChanged) {
     }
     refreshDisplayed();
   }
+  function syncActiveThread() {
+    const activeId = store2.getState().activeThreadId;
+    if (activeId && getThreadById(store2, activeId)?.status === "idle") {
+      const exchange = lastExchange(store2, activeId);
+      if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
+        void maybeFetchHint(activeId);
+        return;
+      }
+    }
+    refreshDisplayed();
+  }
   const unsubs = [
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
@@ -52744,17 +53061,17 @@ function mountNextStepHint(store2, api2, onChanged) {
       }
       if (status === "idle") void maybeFetchHint(tid);
     }),
-    store2.on("threads_changed", () => {
-      const activeId = store2.getState().activeThreadId;
-      if (activeId && getThreadById(store2, activeId)?.status === "idle") {
-        const exchange = lastExchange(store2, activeId);
-        if (exchange && hintsByThread.get(activeId)?.turnKey !== exchange.turnKey) {
-          void maybeFetchHint(activeId);
-          return;
-        }
-      }
-      refreshDisplayed();
-    })
+    // Only a switch, or the transcript landing after one, can start a fetch.
+    // Sending a message changes the thread while it is still idle; asking then
+    // would bill a hint for the message just sent.
+    store2.select(
+      (s) => [s.activeThreadId, activeThreadOf(s)?.messagesLoaded],
+      syncActiveThread,
+      sameItems
+    ),
+    // Any other change to the active thread only re-checks what is shown: a
+    // new or edited message retires a hint for the previous exchange.
+    store2.select(activeThreadOf, refreshDisplayed, sameThreadBesidesDraft)
   ];
   return {
     current: () => displayed,
@@ -52779,8 +53096,10 @@ function mountNextStepHint(store2, api2, onChanged) {
 }
 var init_next_step_hint = __esm({
   "src/renderer/views/next-step-hint.ts"() {
+    init_store();
     init_thread_helpers();
     init_last_exchange();
+    init_active_thread_owner();
   }
 });
 
@@ -54243,9 +54562,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
   }
   function scrollActiveRowIntoView() {
-    const active = list.querySelector(".branch-picker-option.is-active");
-    if (!active) return;
-    const activeBounds = active.getBoundingClientRect();
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
     const listBounds = list.getBoundingClientRect();
     if (activeBounds.top < listBounds.top) {
       list.scrollTop += activeBounds.top - listBounds.top;
@@ -54345,8 +54664,8 @@ function mountFooterBranchStatus(host, store2, api2) {
         list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
       }
     }
-    const active = list.querySelector(".branch-picker-option.is-active");
-    if (open && active) filterInput.setAttribute("aria-activedescendant", active.id);
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
     schedulePopupBoundary();
   }
@@ -54539,10 +54858,16 @@ function mountFooterBranchStatus(host, store2, api2) {
         });
       }
     ),
-    store2.on("threads_changed", () => {
-      if (switchedThisTask) renderStoreState();
-      else scheduleStoreRefresh();
-    }),
+    // The active thread's own updates (branch, worktree, PR links, blank or
+    // not). Other threads' renames and turns no longer repaint the footer.
+    store2.select(
+      activeThreadOf,
+      () => {
+        if (switchedThisTask) renderStoreState();
+        else scheduleStoreRefresh();
+      },
+      sameThreadBesidesDraft
+    ),
     store2.on("thread_status_changed", scheduleStoreRefresh),
     store2.on("message_added", () => {
       scheduleStoreRefresh();
@@ -54994,7 +55319,11 @@ function createContextWheel() {
     root.classList.toggle("is-interactive", popoverActive && !root.hidden);
     restoreEngagedPopover();
   }
-  return { root, update };
+  function setEstimating(estimating) {
+    if (estimating) root.setAttribute("aria-busy", "true");
+    else root.removeAttribute("aria-busy");
+  }
+  return { root, update, setEstimating };
 }
 var RADIUS, CIRCUMFERENCE, SVG_NS3, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
@@ -55985,6 +56314,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
     }),
+    // Deliberately still `threads_changed`, not a selection. The bubbles on
+    // screen during and after a turn come back through the metadata writes
+    // that emit it mid-turn (the reference screenshots show them). A selection
+    // of the active thread also fires on the send itself and bills a fetch for
+    // the message just sent; one keyed on the switch alone drops the bubbles.
     store2.on("threads_changed", () => {
       showForActiveThread();
     }),
@@ -57180,6 +57514,39 @@ var init_container_run_control = __esm({
   }
 });
 
+// src/renderer/recording/active-recordings.ts
+function emit() {
+  const snapshot = [...active.values()];
+  for (const listener of listeners) listener(snapshot);
+}
+function addActiveRecording(recording) {
+  active.set(recording.id, recording);
+  emit();
+  return () => {
+    if (active.get(recording.id) !== recording) return;
+    active.delete(recording.id);
+    emit();
+  };
+}
+function subscribeActiveRecordings(listener) {
+  listeners.add(listener);
+  listener([...active.values()]);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function formatRecordingClock(ms) {
+  const total2 = Math.max(0, Math.floor(ms / 1e3));
+  return `${String(Math.floor(total2 / 60))}:${String(total2 % 60).padStart(2, "0")}`;
+}
+var active, listeners;
+var init_active_recordings = __esm({
+  "src/renderer/recording/active-recordings.ts"() {
+    active = /* @__PURE__ */ new Map();
+    listeners = /* @__PURE__ */ new Set();
+  }
+});
+
 // src/renderer/keyboard-shortcuts.ts
 function isTypingTarget(target) {
   if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
@@ -57271,6 +57638,7 @@ function pasteBelongsElsewhere(target) {
 function mountInputBar(root, store2, api2, opts = {}) {
   if (opts.transport) return mountRemoteComposer(root, store2, api2, opts.transport);
   const chips = el("div", { class: "attachment-chips" });
+  const recordingChips = el("div", { class: "attachment-chips recording-chips" });
   const { composer, submitBtn, stopBtn } = createChatComposer();
   const fileInput = el("input", {
     class: "attach-file-input",
@@ -57746,6 +58114,7 @@ ${context}` : text;
   );
   root.insertBefore(followUps.root, inputRow);
   root.insertBefore(chips, inputRow);
+  root.insertBefore(recordingChips, chips);
   const defaultPlaceholder = "Message\u2026";
   const followUpPlaceholder = "Send follow-up";
   const nextStepHint = mountNextStepHint(store2, api2, () => {
@@ -58452,7 +58821,11 @@ ${description}
   }
   let estimateTimer = null;
   let estimateSeq = 0;
+  let estimateInFlight = null;
   let estimateEnabled = true;
+  function syncEstimateBusy() {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq);
+  }
   function stopContextEstimates() {
     estimateEnabled = false;
     estimateSeq++;
@@ -58460,6 +58833,7 @@ ${description}
       clearTimeout(estimateTimer);
       estimateTimer = null;
     }
+    syncEstimateBusy();
   }
   function currentInvocables() {
     return mergeInvocables(
@@ -58485,6 +58859,13 @@ ${description}
     });
   }
   async function runContextEstimate() {
+    try {
+      await requestContextEstimate();
+    } finally {
+      syncEstimateBusy();
+    }
+  }
+  async function requestContextEstimate() {
     if (!estimateEnabled) return;
     if (isAcpModel(footerChatModel())) {
       estimateSeq++;
@@ -58511,10 +58892,13 @@ ${description}
     const estimatedModel = footerChatModel();
     const payload = composeEstimatePayload();
     let breakdown;
+    estimateInFlight = seq;
     try {
       breakdown = await api2.agent.estimateContext(projectId, id, payload);
     } catch {
       return;
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null;
     }
     if (seq !== estimateSeq || getActiveThreadId() !== id) return;
     lastBreakdown = breakdown;
@@ -58528,6 +58912,7 @@ ${description}
       estimateTimer = null;
       void runContextEstimate();
     }, delay);
+    syncEstimateBusy();
   }
   submitBtn.addEventListener("click", () => {
     void submit();
@@ -58661,7 +59046,7 @@ ${description}
   refreshClientActions = clientActionOffers.refresh;
   composer.el.addEventListener("input", refreshClientActions);
   const stopClientActions = [
-    store2.on("threads_changed", refreshClientActions),
+    store2.select(activeProjectThreadOf, refreshClientActions, sameProjectThreadBesidesDraft),
     store2.on("thread_status_changed", refreshClientActions)
   ];
   let sendNowChordAt = 0;
@@ -59230,6 +59615,51 @@ ${reply}`);
     }
   };
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers);
+  let recordingClockTimer = null;
+  let recordingClocks = [];
+  function renderRecordingChips(recordings) {
+    recordingClocks = [];
+    recordingChips.replaceChildren(
+      ...recordings.map((recording) => {
+        const clock = el("span", { class: "recording-chip-clock" });
+        recordingClocks.push({ clock, startedAt: recording.startedAt });
+        const stop = el(
+          "button",
+          { type: "button", "aria-label": `Stop recording ${recording.label}` },
+          closeIcon("ui-icon ui-icon-sm")
+        );
+        stop.addEventListener("click", () => {
+          recording.stop();
+        });
+        const chip2 = el(
+          "span",
+          {
+            class: "attachment-chip recording-chip",
+            title: `${recording.label} \u2014 becomes a video attachment when you stop`
+          },
+          el("span", { class: "recording-dot", "aria-hidden": "true" }),
+          el("span", { class: "attachment-chip-label" }, `Recording ${recording.label}`),
+          clock,
+          stop
+        );
+        return chip2;
+      })
+    );
+    tickRecordingClocks();
+    if (recordings.length > 0 && recordingClockTimer === null) {
+      recordingClockTimer = window.setInterval(tickRecordingClocks, 500);
+    } else if (recordings.length === 0 && recordingClockTimer !== null) {
+      window.clearInterval(recordingClockTimer);
+      recordingClockTimer = null;
+    }
+  }
+  function tickRecordingClocks() {
+    const now = performance.now();
+    for (const { clock, startedAt } of recordingClocks) {
+      clock.textContent = formatRecordingClock(now - startedAt);
+    }
+  }
+  const unsubscribeRecordings = subscribeActiveRecordings(renderRecordingChips);
   attachBtn.addEventListener("click", () => {
     fileInput.click();
   });
@@ -59408,18 +59838,34 @@ ${reply}`);
     store2.on("message_added", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
-    store2.on("threads_changed", () => {
-      syncComposerThread();
-      executionMode.refresh();
-      footerOverflow.update();
-      guardedYolo.refresh();
-      containerRun.refresh();
-      hideBranchMismatch();
-      hideDirtyWarning();
-      updateState();
-      updateFooter();
-      updateQueueIndicator();
-    }),
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store2.select(
+      (s) => [s.activeProjectId, s.activeThreadId],
+      () => {
+        syncComposerThread();
+        containerRun.refresh();
+      },
+      sameItems
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
+    store2.select(
+      activeProjectThreadOf,
+      () => {
+        executionMode.refresh();
+        footerOverflow.update();
+        guardedYolo.refresh();
+        hideBranchMismatch();
+        hideDirtyWarning();
+        updateState();
+        updateFooter();
+        updateQueueIndicator();
+      },
+      sameProjectThreadBesidesDraft
+    ),
     store2.on("usage_updated", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
@@ -59508,6 +59954,8 @@ ${reply}`);
       });
       unbindDrop();
       unregisterAttachments();
+      unsubscribeRecordings();
+      if (recordingClockTimer !== null) window.clearInterval(recordingClockTimer);
       imageDescriptionSeq++;
       descriptionPicker?.destroy();
       modelPicker.destroy();
@@ -59542,6 +59990,7 @@ var init_input_bar = __esm({
     init_text_expand();
     init_video_expand();
     init_wire_types();
+    init_store();
     init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
@@ -59592,6 +60041,7 @@ var init_input_bar = __esm({
     init_estimate_cost();
     init_model_selection();
     init_perf();
+    init_active_recordings();
     init_keyboard_shortcuts();
     init_dialog_shell();
     init_active_workspace();
@@ -70295,6 +70745,8 @@ function mountFileTree(root, store2, api2) {
     try {
       const owner = getActiveThreadOwner(store2);
       if (!owner) throw new Error("No active task");
+      await awaitPendingThreadPersistence();
+      if (generation !== loadGeneration) return;
       const entries = await api2.fs.listDir(owner.projectId, owner.threadId, dirPath);
       if (generation !== loadGeneration) return;
       clear(target);
@@ -70309,7 +70761,7 @@ function mountFileTree(root, store2, api2) {
       if (generation !== loadGeneration) return;
       clear(target);
       const message2 = err instanceof Error ? err.message : typeof err === "string" ? err : "Could not read folder";
-      target.append(el("div", { class: "sidebar-empty" }, message2));
+      target.append(el("div", { class: "sidebar-empty" }, unwrapIpcErrorText(message2)));
     }
   }
   function refresh() {
@@ -70329,17 +70781,19 @@ function mountFileTree(root, store2, api2) {
     });
   }
   refreshBtn.addEventListener("click", refresh);
-  let lastOwnerKey = "";
-  function refreshForActiveTask() {
-    const owner = getActiveThreadOwner(store2);
-    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : "";
-    if (nextKey === lastOwnerKey) return;
-    lastOwnerKey = nextKey;
-    refresh();
-  }
   const unsubs = [
-    selectActiveWorkspace(store2, refresh),
-    store2.on("threads_changed", refreshForActiveTask),
+    // The tree lists the active project's root, scoped to the active thread's
+    // checkout: reload only when one of those changes, not on renames,
+    // hydration or other threads' updates. The selection fires inside the
+    // writer's setState, before its `threads_changed` starts persisting a new
+    // thread, so reload a microtask later, once that create is in flight.
+    store2.select(
+      (s) => [s.activeProjectId, s.workspaceRoot, s.activeThreadId],
+      () => {
+        queueMicrotask(refresh);
+      },
+      sameItems
+    ),
     store2.select(
       (s) => s.openFile,
       (openFile2) => {
@@ -70350,7 +70804,7 @@ function mountFileTree(root, store2, api2) {
       void revealPath(path, true);
     })
   ];
-  refreshForActiveTask();
+  if (getActiveThreadOwner(store2)) refresh();
   const unregisterPopoutSeed = registerPopoutSeedHandlers("explorer", {
     capture: () => ({
       openFilePath: store2.getState().openFile?.path ?? null,
@@ -70377,13 +70831,15 @@ var init_file_tree = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_material_file_icons();
+    init_store();
     init_handle_file_drop();
     init_files();
     init_context_menu();
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
-    init_active_workspace();
+    init_persistence();
+    init_ipc_error_message();
   }
 });
 
@@ -71274,9 +71730,9 @@ function mountRightPanelLayout(store2) {
       syncPaneMaximizeButton(btn, maximized);
     }
     if (!maximized) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active)) {
-      active.blur();
+    const active2 = document.activeElement;
+    if (active2 instanceof HTMLElement && document.getElementById("pane-chat")?.contains(active2)) {
+      active2.blur();
     }
   }
   syncLayout();
@@ -72351,11 +72807,10 @@ ${output}` : "Terminal output: (none)"
     selectRightPanelMode(store2, "terminal", onTerminalModeChange),
     store2.on("agent_task_selected", onAgentTaskSelected),
     store2.on("settings_changed", onFontSizeChange),
-    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("thread_checkout_changed", (threadId) => {
       void onThreadCheckoutChanged(threadId);
     }),
-    store2.select((s) => s.activeThreadId, onThreadMaybeChanged),
     store2.on("request_terminal_command", (command2, options) => {
       void runCommandInNewShell(command2, options);
     }),
@@ -72509,9 +72964,9 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     if (!task) return;
     selectedId = id;
     for (const t of tasks.values()) {
-      const active = t.id === id;
-      t.tab.classList.toggle("is-active", active);
-      t.panel.hidden = !active;
+      const active2 = t.id === id;
+      t.tab.classList.toggle("is-active", active2);
+      t.panel.hidden = !active2;
     }
     showTaskView(true);
     scrollPanelToBottom(task);
@@ -72633,14 +73088,14 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     return null;
   }
   function onScopeSwitch() {
-    const active = currentThreadId();
+    const active2 = currentThreadId();
     for (const task of tasks.values()) {
-      const visible = isTabVisibleForScope(task, active);
+      const visible = isTabVisibleForScope(task, active2);
       task.tab.hidden = !visible;
       if (!visible) task.panel.hidden = true;
     }
     const selected = selectedId ? tasks.get(selectedId) : null;
-    if (selected && !isTabVisibleForScope(selected, active)) clearSelection();
+    if (selected && !isTabVisibleForScope(selected, active2)) clearSelection();
     syncSectionVisibility();
   }
   function onThreadMaybeChanged() {
@@ -72667,14 +73122,12 @@ function mountAgentTasks(listRoot, viewerHost, store2, api2) {
     appendOutput(toolCallId, data);
   });
   const unsubShell = store2.on("shell_tab_activated", clearSelection);
-  const unsubThreads = store2.on("threads_changed", onThreadMaybeChanged);
-  const unsubWorkspace = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
+  const unsubThread = store2.select((s) => s.activeThreadId, onThreadMaybeChanged);
   return () => {
     unsubChunk();
     unsubOutput();
     unsubShell();
-    unsubThreads();
-    unsubWorkspace();
+    unsubThread();
     showTaskView(false);
     section2.remove();
   };
@@ -72986,8 +73439,8 @@ function renderImageDiff(container, diff) {
   if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
     return;
   }
-  const active = document.activeElement;
-  const focusedAlt = active && container.contains(active) ? active.getAttribute("alt") : null;
+  const active2 = document.activeElement;
+  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
@@ -73250,6 +73703,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   let seededProposedPath = null;
   const snapshotsByOwner = /* @__PURE__ */ new Map();
+  let lastOwnerParts = [];
+  let lastOwnerKey = "";
   let displayedOwnerKey = activeOwnerKey();
   let ownerNeedsRefresh = false;
   function activeOwner() {
@@ -73265,7 +73720,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const currentProject = projectId === activeProjectId;
     const thread = currentProject ? threads.find((candidate) => candidate.id === threadId) : void 0;
     const worktree = thread?.worktree;
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -73275,7 +73730,11 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt
-    ]);
+    ];
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey;
+    lastOwnerParts = parts;
+    lastOwnerKey = JSON.stringify(parts);
+    return lastOwnerKey;
   }
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
@@ -74013,8 +74472,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   });
   const unsubs = [
-    selectRightPanelMode(store2, "changes", (active) => {
-      if (active) void refresh();
+    selectRightPanelMode(store2, "changes", (active2) => {
+      if (active2) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
       adoptActiveOwner();
@@ -74025,10 +74484,29 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       adoptActiveOwner();
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("threads_changed", () => {
-      syncOwnerLabel();
+    // The pop-out header names the active thread and its branch.
+    store2.select(
+      (s) => {
+        const thread = s.threads.find((candidate) => candidate.id === s.activeThreadId);
+        return [
+          s.activeProjectId,
+          thread?.id,
+          thread?.title,
+          thread?.worktree?.branch,
+          thread?.gitBranch
+        ];
+      },
+      syncOwnerLabel,
+      sameItems
+    ),
+    // The checkout this pane shows (owner, root, branch, worktree). Titles,
+    // hydration, and updates to other threads do not change it, so they keep
+    // its DOM/selection and skip Git IPC.
+    store2.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
-      if (changesModeActive(store2)) void refresh();
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store2)) void refresh();
+      });
     }),
     // The queue alone. While Changes is open the diff-state selection below
     // repaints it; otherwise keep the list (and its count) current here.
@@ -74041,7 +74519,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       },
       sameQueue
     ),
-    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    // Only the diff state: an ordinary thread switch is the owner selection's job.
     store2.select(
       (s) => [s.activeDiff, s.stagedDiffs],
       () => {
@@ -74051,7 +74529,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     ),
     store2.on("settings_changed", syncReviewGate),
     store2.on("thread_status_changed", syncReviewButton),
-    store2.on("threads_changed", syncReviewButton),
+    store2.select((s) => {
+      const thread = s.threads.find((t) => t.id === s.activeThreadId);
+      return thread === void 0 || thread.status === "running";
+    }, syncReviewButton),
     api2.fs.onChanged(() => {
       scheduleRefresh();
     }),
@@ -74101,6 +74582,7 @@ var init_git_changes_pane = __esm({
     init_pane_popout_button();
     init_pane_popout_seed();
     init_array_utils();
+    init_store();
     init_toast();
     init_confirm_dialog();
     init_actions();
@@ -74115,6 +74597,7 @@ var init_git_changes_pane = __esm({
     init_image_path();
     init_panels();
     init_active_workspace();
+    init_persistence();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -74122,44 +74605,6 @@ var init_git_changes_pane = __esm({
       renamed: "R",
       untracked: "?"
     };
-  }
-});
-
-// packages/thread-store/src/remote-agent-link.ts
-function isImportedCursorAgentNotice(thread, messageIndex, link) {
-  const message2 = thread.messages[messageIndex];
-  if (!message2 || message2.role !== "assistant" || message2.toolCalls.length !== 0) return false;
-  const match = LEGACY_IMPORTED_CURSOR_AGENT_NOTICE.exec(message2.content);
-  return match !== null && thread.model === "remote-agent:cursor" && thread.title === match[1] && thread.createdAt === link.createdAt && message2.createdAt === link.createdAt;
-}
-function isImportedCursorAgentThread(thread, expectedResultId) {
-  const link = thread.remoteAgentLink;
-  if (link?.provider !== "cursor") return false;
-  if (link.imported === true) {
-    const isResult2 = (messageIndex) => {
-      const message2 = thread.messages[messageIndex];
-      if (!message2) return false;
-      return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
-    };
-    return thread.messages.length === 0 || thread.messages.length === 1 && (isImportedCursorAgentNotice(thread, 0, link) || isResult2(0)) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult2(1);
-  }
-  const isResult = (messageIndex) => {
-    const message2 = thread.messages[messageIndex];
-    if (!message2) return false;
-    return (expectedResultId ? message2.id === expectedResultId : IMPORTED_CURSOR_AGENT_RESULT_ID.test(message2.id)) && message2.role === "assistant" && message2.toolCalls.length === 0;
-  };
-  return thread.messages.length === 1 && isImportedCursorAgentNotice(thread, 0, link) || thread.messages.length === 2 && isImportedCursorAgentNotice(thread, 0, link) && isResult(1);
-}
-function remoteAgentPrIndexKey(prUrl) {
-  const ref = parseGithubPrUrl(prUrl);
-  return ref ? githubPrKey(ref) : null;
-}
-var LEGACY_IMPORTED_CURSOR_AGENT_NOTICE, IMPORTED_CURSOR_AGENT_RESULT_ID;
-var init_remote_agent_link = __esm({
-  "packages/thread-store/src/remote-agent-link.ts"() {
-    init_github_pr_url();
-    LEGACY_IMPORTED_CURSOR_AGENT_NOTICE = /^_Imported Cursor cloud agent — \[([^\]\n]+)]\(([^()\n]+)\)\. Send a message here to continue that run from Copse\._$/;
-    IMPORTED_CURSOR_AGENT_RESULT_ID = /^remote-cursor-run-[a-f0-9]{64}$/;
   }
 });
 
@@ -74570,6 +75015,38 @@ function collectLinkedPrs(store2) {
     repo: pr.repo,
     number: pr.number
   }));
+}
+function transcriptPrKey(messages) {
+  const cached = transcriptPrKeys.get(messages);
+  if (cached !== void 0) return cached;
+  const key = messages.flatMap((message2) => extractGithubPrUrls(message2.content).map((pr) => pr.url)).join(" ");
+  transcriptPrKeys.set(messages, key);
+  return key;
+}
+function threadPrKey(thread) {
+  const cached = threadPrKeys.get(thread);
+  if (cached !== void 0) return cached;
+  const links = [
+    transcriptPrKey(thread.messages),
+    (thread.prRefs ?? []).map((pr) => pr.url).join(" "),
+    thread.remoteAgentLink?.prUrl ?? "",
+    (thread.prProductions ?? []).map((item) => prRelationKey(item.pr)).join(" ")
+  ];
+  const key = links.every((part) => part === "") ? `${thread.id}\0${String(thread.lastSettledAt ?? "")}` : [
+    thread.id,
+    thread.title,
+    String(thread.archivedAt ?? ""),
+    String(thread.lastSettledAt ?? ""),
+    ...links
+  ].join("\0");
+  threadPrKeys.set(thread, key);
+  return key;
+}
+function prPaneThreadsKey(state) {
+  if (!state.filesPaneOpen || state.rightPanelMode !== "prs") return PR_PANE_INACTIVE;
+  return `prs
+${state.activeThreadId ?? ""}
+${state.threads.map(threadPrKey).join("\n")}`;
 }
 function indexThreadLinks(store2) {
   const links = /* @__PURE__ */ new Map();
@@ -75737,9 +76214,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store2, api2);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
-    selectRightPanelMode(store2, "prs", (active) => {
+    selectRightPanelMode(store2, "prs", (active2) => {
       syncWatch();
-      if (active) void refresh();
+      if (active2) void refresh();
     }),
     selectActiveWorkspace(store2, () => {
       threadRelationshipRequest++;
@@ -75768,8 +76245,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (prsModeActive(store2)) void refresh();
       else renderList();
     }),
-    store2.on("threads_changed", () => {
-      if (!prsModeActive(store2)) return;
+    // The threads' PR links, titles and finished turns; not streaming,
+    // hydration or other metadata that leaves every key unchanged.
+    store2.select(prPaneThreadsKey, (_next, prev) => {
+      if (prev === PR_PANE_INACTIVE || !prsModeActive(store2)) return;
       threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
@@ -75833,7 +76312,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffEditor = null;
   };
 }
-var STATUS_LABEL2, AGENT_PROVIDER_LABEL;
+var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys, transcriptPrKeys, PR_PANE_INACTIVE;
 var init_pr_pane = __esm({
   "src/renderer/views/pr-pane.ts"() {
     init_helpers();
@@ -75878,6 +76357,9 @@ var init_pr_pane = __esm({
       cursor: "Cursor",
       anthropic: "Claude"
     };
+    threadPrKeys = /* @__PURE__ */ new WeakMap();
+    transcriptPrKeys = /* @__PURE__ */ new WeakMap();
+    PR_PANE_INACTIVE = "";
   }
 });
 
@@ -76167,8 +76649,8 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    selectRightPanelMode(store2, "memories", (active) => {
-      if (active) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "memories", (active2) => {
+      if (active2) void refresh({ preserveDirty: true });
     }),
     selectActiveWorkspace(store2, () => {
       selectedId = null;
@@ -76606,6 +77088,33 @@ function renderThreadContext(model, handlers3) {
   );
   return host;
 }
+function threadTitlesKey(threads) {
+  const cached = titlesKeys.get(threads);
+  if (cached !== void 0) return cached;
+  const key = threads.map((t) => `${t.id}\0${t.title}`).join("\n");
+  titlesKeys.set(threads, key);
+  return key;
+}
+function contextPanelInputs(state) {
+  if (!state.filesPaneOpen || state.rightPanelMode !== "context") return CONTEXT_PANEL_HIDDEN;
+  const thread = activeThreadOf(state);
+  if (!thread) return { thread, related: [state.activeProjectId] };
+  const parentId = thread.sideChat?.parentThreadId;
+  return {
+    thread,
+    related: [
+      state.activeProjectId,
+      threadTitlesKey(state.threads),
+      parentId === void 0 ? void 0 : state.threads.find((t) => t.id === parentId),
+      ...state.threads.filter((t) => t.sideChat?.parentThreadId === thread.id)
+    ]
+  };
+}
+function sameContextPanelInputs(a, b2) {
+  if (a === b2) return true;
+  if (a === CONTEXT_PANEL_HIDDEN || b2 === CONTEXT_PANEL_HIDDEN) return false;
+  return sameThreadBesidesDraft(a.thread, b2.thread) && sameItems(a.related, b2.related);
+}
 function contextModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "context";
@@ -76681,7 +77190,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     result.append(el("p", { class: "thread-context-permission-label" }, "This thread"));
     const grants = [
       { access: "read", label: "Read other threads" },
-      { access: "send", label: "Send prompts to other threads" }
+      { access: "send", label: "Send prompts to other threads" },
+      { access: "orchestrate", label: "Orchestrate own subthreads" }
     ].filter(({ access }) => currentGrants[access]);
     if (grants.length === 0) {
       result.append(emptyNote("No saved conversation access."));
@@ -76772,7 +77282,38 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
     );
     if (currentGrants.context.portBindingAllowed) {
-      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "revoke-port-binding",
+          "aria-label": "Revoke local port binding for this project",
+          title: "Ask again before future tasks can bind a local port. Stop running tasks separately."
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        const state = store2.getState();
+        if (!state.activeProjectId || state.activeThreadId !== threadId) return;
+        revoke.disabled = true;
+        void api2.security.revokeProjectPortBinding(state.activeProjectId, threadId).then(() => refreshAccess()).catch((error) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke local port permission", error);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Local port binding",
+            "Granted",
+            "Saved for this project. Revoke to ask for future tasks; stop running tasks separately."
+          ),
+          revoke
+        )
+      );
     }
     result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
     result.append(
@@ -76837,9 +77378,20 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       const project = store2.getState().projects.find((candidate) => candidate.id === projectId);
       const projectRoot = project?.path;
       if (!projectRoot) return;
-      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] = await Promise.all([
+      const [
+        read,
+        send,
+        orchestrate,
+        context,
+        guardedYolo,
+        trusted,
+        savedOrigins,
+        overrides,
+        decisions
+      ] = await Promise.all([
         api2.settings.get("threadReadAccess"),
         api2.settings.get("threadSendAccess"),
+        api2.settings.get("threadSubthreadAccess"),
         api2.security.getContextPermissions(projectId, threadId, projectRoot),
         api2.security.getGuardedYolo(threadId),
         api2.workspace.isTrusted(),
@@ -76851,6 +77403,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       accessGrants = {
         read: Array.isArray(read) && read.includes(threadId),
         send: Array.isArray(send) && send.includes(threadId),
+        orchestrate: Array.isArray(orchestrate) && orchestrate.includes(threadId),
         context,
         guardedYolo: guardedYolo.phase,
         workspaceTrusted: trusted,
@@ -76992,7 +77545,9 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       restoreThread(store2, threadId);
     },
     jumpToReviewerInput: (messageId, requestId) => {
-      store2.emit("reviewer_input_jump", messageId, requestId);
+      const thread = getActiveThread(store2);
+      const request = thread ? reviewerInputRequests(thread).find((item) => item.id === requestId) : void 0;
+      store2.emit("reviewer_input_jump", messageId, request?.toolCallId ?? requestId);
     }
   };
   function render2() {
@@ -77194,18 +77749,28 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
         void refreshAccess();
       }
     }),
-    selectRightPanelMode(store2, "context", (active) => {
-      if (!active) return;
+    selectRightPanelMode(store2, "context", (active2) => {
+      if (!active2) return;
       render2();
       void refreshMentions();
     }),
-    store2.on("threads_changed", () => {
-      if (!contextModeActive(store2)) return;
-      const active = getActiveThread(store2)?.id ?? null;
-      render2();
-      if (active !== mentionedFor) void refreshMentions();
-      else if (storageKey !== activeStorageKey()) void refreshStorage();
-    }),
+    // What `deriveThreadContext` reads: the active thread, every thread's title
+    // (link labels), its side chats and, for a side chat, its parent. Another
+    // thread's turn or metadata does not re-render the panel.
+    store2.select(
+      contextPanelInputs,
+      (_next, prev) => {
+        if (prev === CONTEXT_PANEL_HIDDEN || !contextModeActive(store2)) return;
+        render2();
+        afterPendingThreadPersistence(() => {
+          if (disposed || !contextModeActive(store2)) return;
+          const active2 = getActiveThread(store2)?.id ?? null;
+          if (active2 !== mentionedFor) void refreshMentions();
+          else if (storageKey !== activeStorageKey()) void refreshStorage();
+        });
+      },
+      sameContextPanelInputs
+    ),
     store2.on("message_done", () => {
       if (!contextModeActive(store2)) return;
       render2();
@@ -77243,12 +77808,13 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     for (const off of offs) off();
   };
 }
-var SECTION_TITLES;
+var SECTION_TITLES, titlesKeys, CONTEXT_PANEL_HIDDEN;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
     init_file_bytes();
     init_helpers();
     init_icons();
+    init_store();
     init_reviewer_input();
     init_thread_helpers();
     init_panels();
@@ -77260,7 +77826,9 @@ var init_thread_context_panel = __esm({
     init_reviewer_input3();
     init_toast();
     init_settings_dialog();
+    init_active_thread_owner();
     init_active_workspace();
+    init_persistence();
     SECTION_TITLES = {
       requests: "Needs your input",
       repos: "Access",
@@ -77270,13 +77838,15 @@ var init_thread_context_panel = __esm({
       sources: "Sources",
       "resolved-questions": "Resolved questions"
     };
+    titlesKeys = /* @__PURE__ */ new WeakMap();
+    CONTEXT_PANEL_HIDDEN = { thread: void 0, related: [] };
   }
 });
 
 // src/renderer/views/side-chat-panel.ts
 function resolveSideChatSelection(threads, activeThreadId, remembered) {
-  const active = threads.find((thread) => thread.id === activeThreadId);
-  const mainId = active ? active.sideChat?.parentThreadId ?? active.id : null;
+  const active2 = threads.find((thread) => thread.id === activeThreadId);
+  const mainId = active2 ? active2.sideChat?.parentThreadId ?? active2.id : null;
   if (mainId === null) return { mainId, rows: [], selectedId: null };
   const rows = sideChatsOf(threads, mainId, true).sort(
     (a, b2) => Number(a.archived) - Number(b2.archived)
@@ -77284,7 +77854,7 @@ function resolveSideChatSelection(threads, activeThreadId, remembered) {
   const choice = remembered.get(mainId);
   const chosen = rows.find((row2) => row2.id === choice && !row2.archived);
   const selected = chosen ?? rows.find((row2) => !row2.archived) ?? rows.find((row2) => row2.id === choice);
-  const own = active?.sideChat ? rows.find((row2) => row2.id === active.id) : void 0;
+  const own = active2?.sideChat ? rows.find((row2) => row2.id === active2.id) : void 0;
   return { mainId, rows, selectedId: (own ?? selected ?? rows[0])?.id ?? null };
 }
 function messageEl(message2, streaming, host, nodes) {
@@ -78338,6 +78908,9 @@ var init_review = __esm({
 });
 
 // src/renderer/views/roadmap-pane.ts
+function knownThreadsKey(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map((b2) => b2.thread)].map((t) => `${t.id}\0${t.title}`).join("\n");
+}
 function roadmapModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "roadmap";
@@ -80346,8 +80919,8 @@ Notes: ${notes}` : prompt;
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    selectRightPanelMode(store2, "roadmap", (active) => {
-      if (active) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "roadmap", (active2) => {
+      if (active2) void refresh({ preserveDirty: true });
     }),
     // Saves return before their complexity stamp lands (roadmap-complexity.ts);
     // pick the badge up when main says the stamp arrived.
@@ -80364,12 +80937,17 @@ Notes: ${notes}` : prompt;
       void refresh();
     }),
     // Thread create/delete changes whether a tracked thread can be reopened;
-    // re-render from the already-loaded items (no IPC round-trip needed).
-    store2.on("threads_changed", () => {
-      if (!roadmapModeActive(store2)) return;
-      renderList();
-      renderEditor({ preserveDirty: true });
-    }),
+    // re-render from the already-loaded items (no IPC round-trip needed). Only
+    // the known threads and their titles matter: turns and other metadata do
+    // not repaint.
+    store2.select(
+      (s) => knownThreadsKey(s.threads, s.backgroundThreads),
+      () => {
+        if (!roadmapModeActive(store2)) return;
+        renderList();
+        renderEditor({ preserveDirty: true });
+      }
+    ),
     selectActiveWorkspace(store2, () => {
       loadToken++;
       loading = false;
@@ -80595,6 +81173,353 @@ var init_browser_pane_session = __esm({
     init_persistence();
     MAX_STORED_URL_LENGTH = 4096;
     BROWSER_SESSION_SAVE_DEBOUNCE_MS = 500;
+  }
+});
+
+// src/renderer/recording/canvas-fit.ts
+function evenFrameSize(width, height) {
+  return {
+    width: Math.max(2, width - width % 2),
+    height: Math.max(2, height - height % 2)
+  };
+}
+function fitRect(sourceWidth, sourceHeight, width, height) {
+  if (sourceWidth <= 0 || sourceHeight <= 0) return { x: 0, y: 0, width, height };
+  const scale2 = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale2;
+  const drawHeight = sourceHeight * scale2;
+  return {
+    x: (width - drawWidth) / 2,
+    y: (height - drawHeight) / 2,
+    width: drawWidth,
+    height: drawHeight
+  };
+}
+function drawFitted(context, source, width, height) {
+  if (source.width === width && source.height === height) {
+    context.drawImage(source, 0, 0);
+    return;
+  }
+  const rect = fitRect(source.width, source.height, width, height);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(source, rect.x, rect.y, rect.width, rect.height);
+}
+var init_canvas_fit = __esm({
+  "src/renderer/recording/canvas-fit.ts"() {
+  }
+});
+
+// src/renderer/recording/canvas-recorder.ts
+function pickRecordingMimeType(isTypeSupported) {
+  return RECORDING_MIME_CANDIDATES.find((type) => isTypeSupported(type)) ?? null;
+}
+function recordingLimitReached(elapsedMs, bytes2) {
+  if (bytes2 >= RECORDING_MAX_BYTES) return "size-limit";
+  if (elapsedMs >= RECORDING_MAX_DURATION_MS) return "duration-limit";
+  return null;
+}
+function startCanvasRecording(source) {
+  const mimeType = pickRecordingMimeType((type) => MediaRecorder.isTypeSupported(type));
+  if (!mimeType) throw new Error("This build cannot encode WebM video.");
+  const frame = evenFrameSize(source.width, source.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create a canvas to record into.");
+  const paint = () => {
+    if (source.width > 0 && source.height > 0) {
+      drawFitted(context, source, frame.width, frame.height);
+    }
+  };
+  paint();
+  const stream = canvas.captureStream();
+  const recorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: RECORDING_BITS_PER_SECOND
+  });
+  const chunks = [];
+  const startedAt = performance.now();
+  let bytes2 = 0;
+  let endedAt = null;
+  let stopReason = null;
+  const finished = new Promise((resolve, reject) => {
+    recorder.addEventListener("stop", () => {
+      for (const t of stream.getTracks()) t.stop();
+      resolve({
+        blob: new Blob(chunks, { type: "video/webm" }),
+        durationMs: (endedAt ?? performance.now()) - startedAt,
+        reason: stopReason ?? "source-ended"
+      });
+    });
+    recorder.addEventListener("error", (event) => {
+      for (const t of stream.getTracks()) t.stop();
+      window.clearInterval(ticker);
+      const cause = event instanceof ErrorEvent ? event.error : null;
+      reject(cause instanceof Error ? cause : new Error("The recorder failed."));
+    });
+  });
+  const elapsedMs = () => (endedAt ?? performance.now()) - startedAt;
+  function stop(reason = "user") {
+    if (stopReason !== null) return finished;
+    stopReason = reason;
+    endedAt = performance.now();
+    window.clearInterval(ticker);
+    if (recorder.state !== "inactive") recorder.stop();
+    return finished;
+  }
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size === 0) return;
+    chunks.push(event.data);
+    bytes2 += event.data.size;
+    const limit = recordingLimitReached(elapsedMs(), bytes2);
+    if (limit) void stop(limit);
+  });
+  const ticker = window.setInterval(() => {
+    const limit = recordingLimitReached(elapsedMs(), bytes2);
+    if (limit) {
+      void stop(limit);
+      return;
+    }
+    paint();
+  }, RECORDING_FRAME_MS);
+  recorder.start(RECORDING_CHUNK_MS);
+  return { elapsedMs, recordedBytes: () => bytes2, stop, finished };
+}
+var RECORDING_MAX_DURATION_MS, RECORDING_MAX_BYTES, RECORDING_BITS_PER_SECOND, RECORDING_CHUNK_MS, RECORDING_FRAME_MS, RECORDING_MIME_CANDIDATES;
+var init_canvas_recorder = __esm({
+  "src/renderer/recording/canvas-recorder.ts"() {
+    init_video_media();
+    init_canvas_fit();
+    RECORDING_MAX_DURATION_MS = 5 * 6e4;
+    RECORDING_MAX_BYTES = MAX_VIDEO_BYTES - 16 * 1024 * 1024;
+    RECORDING_BITS_PER_SECOND = 25e5;
+    RECORDING_CHUNK_MS = 1e3;
+    RECORDING_FRAME_MS = 100;
+    RECORDING_MIME_CANDIDATES = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm"
+    ];
+  }
+});
+
+// src/renderer/recording/surface-recorder.ts
+function fileStamp(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+function createSurfaceRecorder(options) {
+  const clock = el("span", { class: "recording-indicator-clock" });
+  const stopButton = el(
+    "button",
+    { type: "button", class: "recording-indicator-stop", "aria-label": "Stop recording" },
+    el("span", { class: "recording-indicator-stop-glyph", "aria-hidden": "true" }),
+    "Stop"
+  );
+  const indicator = el(
+    "div",
+    { class: "recording-indicator", role: "status", hidden: true },
+    el("span", { class: "recording-dot", "aria-hidden": "true" }),
+    el("span", { class: "recording-indicator-label" }, "Recording"),
+    clock,
+    stopButton
+  );
+  let session = null;
+  let starting = false;
+  let disposed = false;
+  const isDisposed = () => disposed;
+  function renderClock() {
+    if (!session) return;
+    clock.textContent = `${formatRecordingClock(session.recording.elapsedMs())} / ${formatRecordingClock(RECORDING_MAX_DURATION_MS)}`;
+  }
+  function setRecordingUi(recording) {
+    indicator.hidden = !recording;
+    options.onChange?.(recording);
+  }
+  async function start() {
+    if (session || starting || disposed) return;
+    if (!getPromptAttachmentHandlers()) {
+      showToast("Open a thread before recording.", { variant: "error" });
+      return;
+    }
+    starting = true;
+    let capture = null;
+    try {
+      capture = await options.openCapture();
+      if (isDisposed()) {
+        capture.dispose();
+        return;
+      }
+      const recording = startCanvasRecording(capture.canvas);
+      const label = `${options.sourceKind()} \u2014 ${options.sourceLabel()}`;
+      const id = `recording-${String(++nextRecordingId)}`;
+      const current = {
+        recording,
+        capture,
+        label,
+        startedAt: /* @__PURE__ */ new Date(),
+        tick: window.setInterval(renderClock, 250),
+        unregister: addActiveRecording({
+          id,
+          label,
+          startedAt: performance.now() - recording.elapsedMs(),
+          stop: () => {
+            stop("user");
+          }
+        })
+      };
+      session = current;
+      renderClock();
+      setRecordingUi(true);
+      void recording.finished.then(
+        (result) => finish(current, result),
+        (error) => {
+          teardown(current);
+          showErrorToast("Recording failed", error);
+        }
+      );
+    } catch (error) {
+      capture?.dispose();
+      showErrorToast("Could not start recording", error);
+    } finally {
+      starting = false;
+    }
+  }
+  function teardown(current) {
+    if (session !== current) return;
+    session = null;
+    window.clearInterval(current.tick);
+    current.unregister();
+    current.capture.dispose();
+    setRecordingUi(false);
+  }
+  async function finish(current, result) {
+    teardown(current);
+    if (result.blob.size === 0 || result.durationMs < MIN_KEPT_RECORDING_MS) {
+      showToast("The recording was too short to keep.");
+      return;
+    }
+    const handlers3 = getPromptAttachmentHandlers();
+    if (!handlers3) {
+      showToast("Open a thread to keep the recording.", { variant: "error" });
+      return;
+    }
+    await handlers3.attachVideo({
+      name: `Recording \u2014 ${current.label} \u2014 ${fileStamp(current.startedAt)}.webm`,
+      mimeType: "video/webm",
+      bytes: await result.blob.arrayBuffer()
+    });
+    const notice = STOP_NOTICES[result.reason];
+    if (notice) showToast(notice);
+  }
+  function stop(reason = "user") {
+    if (session) void session.recording.stop(reason);
+  }
+  stopButton.addEventListener("click", () => {
+    stop("user");
+  });
+  return {
+    indicator,
+    isRecording: () => session !== null,
+    toggle: () => {
+      if (session) stop("user");
+      else void start();
+    },
+    stop,
+    dispose: () => {
+      disposed = true;
+      stop("source-ended");
+    }
+  };
+}
+var MIN_KEPT_RECORDING_MS, STOP_NOTICES, nextRecordingId;
+var init_surface_recorder = __esm({
+  "src/renderer/recording/surface-recorder.ts"() {
+    init_prompt_attachments();
+    init_helpers();
+    init_toast();
+    init_active_recordings();
+    init_canvas_recorder();
+    MIN_KEPT_RECORDING_MS = 500;
+    STOP_NOTICES = {
+      "duration-limit": `Recording stopped at the ${formatRecordingClock(RECORDING_MAX_DURATION_MS)} limit and was added to the thread.`,
+      "size-limit": "Recording stopped at the size limit and was added to the thread.",
+      "source-ended": "The connection ended. The recording up to that point was added to the thread."
+    };
+    nextRecordingId = 0;
+  }
+});
+
+// src/renderer/recording/screencast-capture.ts
+async function openScreencastCapture(api2, webContentsId, onEnded) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create a canvas to record into.");
+  let requested = 0;
+  let drawn = 0;
+  let disposed = false;
+  let resolveFirstFrame = null;
+  const firstFrame = new Promise((resolve) => {
+    resolveFirstFrame = resolve;
+  });
+  const stopFrames = api2.onRecordingFrame((id, jpeg) => {
+    if (id !== webContentsId || disposed) return;
+    const sequence = ++requested;
+    void createImageBitmap(new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" })).then(
+      (bitmap) => {
+        if (disposed || sequence < drawn) {
+          bitmap.close();
+          return;
+        }
+        drawn = sequence;
+        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+        }
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        resolveFirstFrame?.();
+      },
+      () => {
+      }
+    );
+  });
+  const stopEnded = api2.onRecordingEnded((id) => {
+    if (id === webContentsId && !disposed) onEnded();
+  });
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    stopFrames();
+    stopEnded();
+    void api2.stopRecording(webContentsId).catch(() => {
+    });
+  };
+  try {
+    await api2.startRecording(webContentsId);
+    let timer = 0;
+    const timedOut = new Promise((resolve) => {
+      timer = window.setTimeout(() => {
+        resolve("timeout");
+      }, FIRST_FRAME_TIMEOUT_MS);
+    });
+    const outcome = await Promise.race([firstFrame, timedOut]);
+    window.clearTimeout(timer);
+    if (outcome === "timeout") {
+      throw new Error("The tab is not painting. Show the Browser pane and try again.");
+    }
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+  return { canvas, dispose };
+}
+var FIRST_FRAME_TIMEOUT_MS;
+var init_screencast_capture = __esm({
+  "src/renderer/recording/screencast-capture.ts"() {
+    FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
 
@@ -81416,11 +82341,19 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       searchIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Open inspector")
     );
+    const recordItemLabel = el("span", {}, "Record this tab");
+    const recordItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      recordIcon("ui-icon ui-icon-sm"),
+      recordItemLabel
+    );
     const menu = el(
       "div",
       { class: "browser-menu", role: "menu", hidden: "" },
       shareTextItem,
       shareScreenshotItem,
+      recordItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
       downloadCanvasItem,
       exportPdfItem,
@@ -81439,6 +82372,56 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       },
       penLineIcon("ui-icon ui-icon-sm")
     );
+    const recordBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "browser-nav-btn browser-record-btn",
+        "aria-label": "Record this tab",
+        "data-tooltip": "Record this tab",
+        "aria-pressed": "false"
+      },
+      recordIcon("ui-icon ui-icon-sm")
+    );
+    let tabRef = null;
+    const recorder = createSurfaceRecorder({
+      sourceKind: () => "Tab",
+      sourceLabel: () => {
+        if (!tabRef) return "browser";
+        try {
+          return new URL(webviewUrl(tabRef)).host || (webviewTitle(tabRef) ?? tabRef.label);
+        } catch {
+          return webviewTitle(tabRef) ?? tabRef.label;
+        }
+      },
+      openCapture: async () => {
+        const id2 = tabRef ? shareableWebContentsId(tabRef) : null;
+        const browserApi = api2?.browser;
+        if (id2 === null || !browserApi?.startRecording || !browserApi.stopRecording || !browserApi.onRecordingFrame || !browserApi.onRecordingEnded) {
+          throw new Error("Load a page before recording it.");
+        }
+        return await openScreencastCapture(
+          {
+            startRecording: browserApi.startRecording,
+            stopRecording: browserApi.stopRecording,
+            onRecordingFrame: browserApi.onRecordingFrame,
+            onRecordingEnded: browserApi.onRecordingEnded
+          },
+          id2,
+          () => {
+            recorder.stop("source-ended");
+          }
+        );
+      },
+      onChange: (recording) => {
+        recordBtn.setAttribute("aria-pressed", String(recording));
+        const label2 = recording ? "Stop recording" : "Record this tab";
+        recordBtn.setAttribute("aria-label", label2);
+        recordBtn.setAttribute("data-tooltip", label2);
+        recordItemLabel.textContent = label2;
+        webviewHost.classList.toggle("is-recording", recording);
+      }
+    });
     const toolbar = el(
       "div",
       { class: "browser-toolbar" },
@@ -81447,6 +82430,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       reloadBtn,
       urlInput,
       goBtn,
+      recorder.indicator,
+      recordBtn,
       annotateBtn,
       menuWrap
     );
@@ -81485,6 +82470,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      recorder,
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -81501,6 +82487,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         }
       })
     };
+    tabRef = tab;
     const annotationLayer = () => {
       if (!tab.annotation) {
         tab.annotation = mountAnnotationLayer(webviewHost, {
@@ -81567,6 +82554,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        recordItem.disabled = !recorder.isRecording() && (shareableId === null || !api2?.browser.startRecording);
         const artefact = downloadableArtefact(tab);
         downloadCanvasLabel.textContent = artefact ? "Download canvas" : "Download page";
         downloadCanvasItem.disabled = artefact ? !api2?.browser.exportArtefact : shareableId === null || !api2?.browser.exportPage;
@@ -81602,6 +82590,14 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       void api2.browser.shareScreenshot(id2).catch((error) => {
         showErrorToast("Could not share browser screenshot", error);
       });
+    });
+    recordItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      recorder.toggle();
+    });
+    recordBtn.addEventListener("click", () => {
+      setMenuOpen(false);
+      recorder.toggle();
     });
     exportPdfItem.addEventListener("click", () => {
       setMenuOpen(false);
@@ -81670,6 +82666,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.webview?.remove();
     tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
+    tab.recorder.dispose();
     tab.tabSwitch.remove();
     tabs.delete(tabId);
     scheduleSessionSave();
@@ -81684,10 +82681,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function onBrowserModeChange() {
-    const active = browserModeActive(store2);
+    const active2 = browserModeActive(store2);
     scheduleSessionSave();
     for (const tab of tabs.values()) syncAnnotationScroll(tab);
-    if (active) {
+    if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
@@ -81725,6 +82722,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webview?.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
+      tab.recorder.dispose();
       tab.tabSwitch.remove();
     }
     tabs.clear();
@@ -81828,18 +82826,18 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function whenProjectActive() {
     if (store2.getState().activeProjectId) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const settle = (active) => {
+      const settle = (active2) => {
         stop();
         pendingProjectWaits.delete(cancel);
-        resolve(active);
+        resolve(active2);
       };
       const cancel = () => {
         settle(false);
       };
       const stop = store2.select(
         (s) => s.activeProjectId !== null,
-        (active) => {
-          if (active) settle(true);
+        (active2) => {
+          if (active2) settle(true);
         }
       );
       pendingProjectWaits.add(cancel);
@@ -81925,7 +82923,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
-    store2.on("threads_changed", onThreadMaybeChanged),
     store2.select(
       (s) => [s.activeProjectId, s.activeThreadId],
       onThreadMaybeChanged,
@@ -81977,6 +82974,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webview?.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
+      tab.recorder.dispose();
       tab.tabSwitch.remove();
     }
     tabs.clear();
@@ -82006,6 +83004,8 @@ var init_browser_pane = __esm({
     init_scroll_tracker();
     init_toast();
     init_tooltip();
+    init_surface_recorder();
+    init_screencast_capture();
     NET_ERROR_ABORTED = -3;
     NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
@@ -82643,6 +83643,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     },
     "Control desktop"
   );
+  const recordButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-record-btn", hidden: true },
+    el("span", { class: "recording-dot is-idle", "aria-hidden": "true" }),
+    "Record screen"
+  );
   const shareButton = el(
     "button",
     { type: "button", class: "ui-btn vnc-share-btn", hidden: true },
@@ -82875,11 +83881,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     forgetLoginButton,
     controlButton,
     captureActions,
+    recordButton,
     deviceNavigation,
     disconnectButton
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
+  const recorder = createSurfaceRecorder({
+    sourceKind: () => simulatorSessionId ? selectedSimulator()?.platform === "android" ? "Emulator" : "Simulator" : "Desktop",
+    sourceLabel: () => connectedMachineName ?? selectedMachineName(),
+    openCapture: () => {
+      const canvas = screen.querySelector("canvas");
+      if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) {
+        return Promise.reject(new Error("Connect to a desktop before recording it."));
+      }
+      return Promise.resolve({ canvas, dispose: () => {
+      } });
+    },
+    onChange: (recording) => {
+      recordButton.hidden = recording || !connectedAtLeastOnce;
+      screen.classList.toggle("is-recording", recording);
+    }
+  });
+  recordButton.after(recorder.indicator);
   const empty2 = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty2);
   let rfb = null;
@@ -83007,13 +84031,14 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       deviceList.append(item);
     }
   }
-  function setSessionUi(active, connected = false) {
+  function setSessionUi(active2, connected = false) {
     controlsRoot.scrollTop = 0;
-    if (active) controlsBody.scrollTop = 0;
-    setupFields.hidden = active;
-    connectButton.hidden = active;
-    disconnectButton.hidden = !active;
+    if (active2) controlsBody.scrollTop = 0;
+    setupFields.hidden = active2;
+    connectButton.hidden = active2;
+    disconnectButton.hidden = !active2;
     controlButton.hidden = !connected;
+    recordButton.hidden = !connected || recorder.isRecording();
     shareButton.hidden = !connected;
     annotateButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
@@ -83021,18 +84046,18 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     backButton.hidden = !connected || !android2;
     overviewButton.hidden = !connected || !android2;
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
-    portInput.disabled = active;
-    addressInput.disabled = active;
-    setupUsernameInput.disabled = active;
-    setupPasswordInput.disabled = active;
-    machineSelect.disabled = active;
-    discoverButton.disabled = active;
-    nearbyButton.disabled = active;
+    portInput.disabled = active2;
+    addressInput.disabled = active2;
+    setupUsernameInput.disabled = active2;
+    setupPasswordInput.disabled = active2;
+    machineSelect.disabled = active2;
+    discoverButton.disabled = active2;
+    nearbyButton.disabled = active2;
     for (const button of deviceList.querySelectorAll(".vnc-device-header")) {
-      button.disabled = active;
+      button.disabled = active2;
     }
     for (const button of discoveredPorts.querySelectorAll("button")) {
-      button.disabled = active;
+      button.disabled = active2;
     }
     empty2.hidden = connected;
     screen.hidden = !connected;
@@ -83107,6 +84132,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     targetInput.value = "";
   }
   function clearViewer(title, kind = "idle", detail = "") {
+    recorder.stop("source-ended");
     annotation?.dispose();
     annotation = null;
     annotateButton.setAttribute("aria-pressed", "false");
@@ -83919,13 +84945,22 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     event.preventDefault();
     event.stopPropagation();
     showContextMenu(event.clientX, event.clientY, [
-      { label: "Share screen with model", onSelect: shareCurrentScreen }
+      { label: "Share screen with model", onSelect: shareCurrentScreen },
+      {
+        label: recorder.isRecording() ? "Stop recording" : "Record screen",
+        onSelect: () => {
+          recorder.toggle();
+        }
+      }
     ]);
   };
   connectButton.addEventListener("click", () => {
     void connect();
   });
   disconnectButton.addEventListener("click", disconnect);
+  recordButton.addEventListener("click", () => {
+    recorder.toggle();
+  });
   controlButton.addEventListener("click", () => {
     setControlEnabled(!controlEnabled);
   });
@@ -84055,8 +85090,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value
     );
   });
-  const stopMode = selectRightPanelMode(store2, "vnc", (active) => {
-    if (!active) return;
+  const stopMode = selectRightPanelMode(store2, "vnc", (active2) => {
+    if (!active2) return;
     void loadMachines();
     if (options.isActive()) {
       if (rfb) rfb.focus();
@@ -84089,6 +85124,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       discoveryGeneration++;
       nearbyGeneration++;
       sshHostsGeneration++;
+      recorder.dispose();
       rfb?.disconnect();
       channel?.close();
       simulatorView?.cleanup();
@@ -84176,12 +85212,12 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     if (!selected) return;
     activeTabId = tabId;
     for (const tab of tabs.values()) {
-      const active = tab.id === tabId;
-      tab.tabButton.classList.toggle("is-active", active);
-      tab.tabButton.setAttribute("aria-selected", String(active));
-      tab.tabButton.tabIndex = active ? 0 : -1;
-      tab.controlsPanel.hidden = !active;
-      tab.viewerPanel.hidden = !active;
+      const active2 = tab.id === tabId;
+      tab.tabButton.classList.toggle("is-active", active2);
+      tab.tabButton.setAttribute("aria-selected", String(active2));
+      tab.tabButton.tabIndex = active2 ? 0 : -1;
+      tab.controlsPanel.hidden = !active2;
+      tab.viewerPanel.hidden = !active2;
     }
     if (vncModeActive(store2)) selected.session.focus();
   }
@@ -84319,6 +85355,7 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
+    init_surface_recorder();
     init_vnc_ssh_host_form();
     init_active_workspace();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
@@ -85317,7 +86354,7 @@ function mountAskUserDialog(api2, store2) {
   const dialog = el("dialog", { id: "ask-user-dialog" }, form);
   document.body.append(dialog);
   const queue = [];
-  let active = null;
+  let active2 = null;
   const changeListeners = /* @__PURE__ */ new Set();
   let arrivals = 0;
   let escapeHeld = false;
@@ -85333,30 +86370,30 @@ function mountAskUserDialog(api2, store2) {
     for (const listener of [...changeListeners]) listener();
   }
   function renderActive() {
-    if (!active) return;
+    if (!active2) return;
     clear(form);
     inputs = [];
-    const asker = sideChatPromptOrigin(store2, [active.threadId]);
+    const asker = sideChatPromptOrigin(store2, [active2.threadId]);
     form.append(
       el(
         "h3",
         { class: "ask-user-title" },
-        active.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
+        active2.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
       )
     );
     if (asker) {
       form.append(el("p", { class: "ask-user-origin" }, asker.label));
       store2.emit("side_chat_open_requested", asker.firstSideChatId);
     }
-    const actionsOnly = active.presentation?.kind === "actions";
-    const choiceMode = !actionsOnly && active.questions.length === 1 && (active.questions[0]?.options?.length ?? 0) > 0;
+    const actionsOnly = active2.presentation?.kind === "actions";
+    const choiceMode = !actionsOnly && active2.questions.length === 1 && (active2.questions[0]?.options?.length ?? 0) > 0;
     const submitBtn = el(
       "button",
       { type: "submit", class: "ask-user-submit", title: "Send answer (\u2318Enter or Ctrl+Enter)" },
       "Send answer"
     );
     submitBtn.hidden = choiceMode;
-    active.questions.forEach((q2, i2) => {
+    active2.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
       const input = el("textarea", {
         class: "ask-user-input",
@@ -85421,7 +86458,7 @@ function mountAskUserDialog(api2, store2) {
       if (!actionsOnly) field.append(input);
       form.append(field);
     });
-    if (active.presentation?.kind === "actions") {
+    if (active2.presentation?.kind === "actions") {
       dialog.showModal();
       const actions = form.querySelectorAll(".ask-user-action");
       actions[actions.length - 1]?.focus();
@@ -85437,25 +86474,25 @@ function mountAskUserDialog(api2, store2) {
     (form.querySelector(".ask-user-other") ?? inputs[0])?.focus();
   }
   function withdrawIfUnshowable() {
-    if (!active || isShowable(active)) return;
+    if (!active2 || isShowable(active2)) return;
     dialog.close();
-    queue.unshift(active);
-    active = null;
+    queue.unshift(active2);
+    active2 = null;
   }
   function showNext() {
-    if (active || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return;
+    if (active2 || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return;
     const idx = queue.findIndex(isShowable);
     if (idx === -1) {
       syncAttention();
       return;
     }
-    active = queue.splice(idx, 1)[0] ?? null;
-    if (!active) return;
+    active2 = queue.splice(idx, 1)[0] ?? null;
+    if (!active2) return;
     renderActive();
     syncAttention();
   }
   function scheduleNext() {
-    if (presentationTimer !== void 0 || active || queue.length === 0) return;
+    if (presentationTimer !== void 0 || active2 || queue.length === 0) return;
     presentationTimer = window.setTimeout(() => {
       presentationTimer = void 0;
       showNext();
@@ -85492,9 +86529,9 @@ function mountAskUserDialog(api2, store2) {
     subtree: true
   });
   function settle(request, answers) {
-    if (active === request) {
+    if (active2 === request) {
       dialog.close();
-      active = null;
+      active2 = null;
     } else {
       const idx = queue.indexOf(request);
       if (idx === -1) return;
@@ -85508,22 +86545,22 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   }
   function respond(answers) {
-    if (active) settle(active, answers);
+    if (active2) settle(active2, answers);
   }
   function answerFrom(id, answers) {
-    const request = active?.id === id ? active : queue.find((req) => req.id === id);
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
     if (request === void 0 || answers.length !== request.questions.length) return false;
     settle(request, [...answers]);
     return true;
   }
   function submit() {
-    if (active?.presentation?.kind === "actions") return;
+    if (active2?.presentation?.kind === "actions") return;
     if (inputs.some((input) => input.hidden)) return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
-    if (!active) return;
-    respond(active.questions.map(() => ""));
+    if (!active2) return;
+    respond(active2.questions.map(() => ""));
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -85545,7 +86582,7 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
-    if (active?.id === req.id || queue.some((request) => request.id === req.id)) return;
+    if (active2?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
       ...req.presentation === void 0 ? {} : { presentation: req.presentation },
@@ -85558,9 +86595,9 @@ function mountAskUserDialog(api2, store2) {
     syncAttention();
   });
   api2.agent.onAskUserCancelled(({ id }) => {
-    if (active?.id === id) {
+    if (active2?.id === id) {
       dialog.close();
-      active = null;
+      active2 = null;
       showNext();
       syncAttention();
       return;
@@ -85569,13 +86606,17 @@ function mountAskUserDialog(api2, store2) {
     if (idx !== -1) queue.splice(idx, 1);
     syncAttention();
   });
-  store2.on("threads_changed", () => {
-    withdrawIfUnshowable();
-    showNext();
-    syncAttention();
-  });
+  store2.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)],
+    () => {
+      withdrawIfUnshowable();
+      showNext();
+      syncAttention();
+    },
+    sameItems
+  );
   return {
-    pending: () => [...active ? [active] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
+    pending: () => [...active2 ? [active2] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
       id: req.id,
       ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
@@ -85599,6 +86640,7 @@ var init_ask_user_dialog = __esm({
     init_helpers();
     init_dist();
     init_inline_markdown();
+    init_store();
     init_attention();
     init_projects();
     init_side_chat2();
@@ -85689,7 +86731,7 @@ function mountSshPromptDialog(api2) {
     secretButtons
   );
   const queue = [];
-  let active = null;
+  let active2 = null;
   function showKind(kind) {
     const confirm = kind === "confirm";
     secretField.hidden = confirm;
@@ -85698,33 +86740,33 @@ function mountSshPromptDialog(api2) {
     confirmButtons.hidden = !confirm;
   }
   function renderActive() {
-    if (!active) return;
-    promptEl.textContent = active.prompt;
+    if (!active2) return;
+    promptEl.textContent = active2.prompt;
     secretInput.value = "";
     rememberInput.checked = true;
     const rememberLabel = rememberField.querySelector(".ssh-prompt-remember-label");
     if (rememberLabel) {
-      rememberLabel.textContent = active.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
+      rememberLabel.textContent = active2.canRememberOnDevice ? "Remember securely on this device" : "Remember for this session";
     }
-    showKind(active.kind);
+    showKind(active2.kind);
     dialog.showModal();
-    if (active.kind === "secret") secretInput.focus();
+    if (active2.kind === "secret") secretInput.focus();
     else confirmApprove.focus();
   }
   function finish(value, remember = false) {
-    if (!active) return;
-    const id = active.id;
-    active = null;
+    if (!active2) return;
+    const id = active2.id;
+    active2 = null;
     dialog.close();
     void api2.sshPrompt.respond(id, value, remember);
     if (queue.length > 0) {
-      active = queue.shift() ?? null;
+      active2 = queue.shift() ?? null;
       renderActive();
     }
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!active || active.kind !== "secret") return;
+    if (!active2 || active2.kind !== "secret") return;
     finish(secretInput.value, rememberInput.checked);
   });
   dialog.addEventListener("cancel", (event) => {
@@ -85735,16 +86777,16 @@ function mountSshPromptDialog(api2) {
     finish("");
   });
   confirmApprove.addEventListener("click", () => {
-    if (!active || active.kind !== "confirm") return;
+    if (!active2 || active2.kind !== "confirm") return;
     finish("yes");
   });
   confirmReject.addEventListener("click", () => {
     finish("");
   });
   api2.sshPrompt.onRequest((req) => {
-    if (active) queue.push(req);
+    if (active2) queue.push(req);
     else {
-      active = req;
+      active2 = req;
       renderActive();
     }
   });
@@ -85771,33 +86813,33 @@ function mountUpdatePromptDialog(api2) {
   );
   document.body.append(dialog);
   const queue = [];
-  let active = null;
+  let active2 = null;
   function finish(buttonIndex) {
-    if (!active) return;
-    const id = active.id;
-    active = null;
+    if (!active2) return;
+    const id = active2.id;
+    active2 = null;
     dialog.close();
     void api2.updatePrompt.respond(id, buttonIndex);
     if (queue.length > 0) {
-      active = queue.shift() ?? null;
+      active2 = queue.shift() ?? null;
       renderActive();
     }
   }
   function renderActive() {
-    if (!active) return;
-    messageEl2.textContent = active.message;
-    if (active.detail) {
-      detailEl.textContent = active.detail;
+    if (!active2) return;
+    messageEl2.textContent = active2.message;
+    if (active2.detail) {
+      detailEl.textContent = active2.detail;
       detailEl.hidden = false;
     } else {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
-    renderChangelog(changelogEl, active);
+    renderChangelog(changelogEl, active2);
     dialog.classList.toggle("has-changelog", !changelogEl.hidden);
-    const defaultIndex = active.defaultIndex ?? 0;
+    const defaultIndex = active2.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
-      ...active.buttons.map((label, index) => {
+      ...active2.buttons.map((label, index) => {
         const isPrimary = index === defaultIndex;
         const button = el(
           "button",
@@ -85818,12 +86860,12 @@ function mountUpdatePromptDialog(api2) {
   }
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
-    finish(active?.cancelIndex ?? (active ? active.buttons.length - 1 : -1));
+    finish(active2?.cancelIndex ?? (active2 ? active2.buttons.length - 1 : -1));
   });
   api2.updatePrompt.onRequest((req) => {
-    if (active) queue.push(req);
+    if (active2) queue.push(req);
     else {
-      active = req;
+      active2 = req;
       renderActive();
     }
   });
@@ -86336,12 +87378,12 @@ function mountCommandPalette(store2, api2) {
   }
   function storeThreadHits() {
     const { projects, threads, activeProjectId } = store2.getState();
-    const active = projects.find((p) => p.id === activeProjectId);
-    if (!active) return [];
+    const active2 = projects.find((p) => p.id === activeProjectId);
+    if (!active2) return [];
     return threads.map((t) => ({
       threadId: t.id,
-      projectId: active.id,
-      projectName: projectDisplayName(active),
+      projectId: active2.id,
+      projectName: projectDisplayName(active2),
       title: t.title,
       updatedAt: 0,
       prRefs: t.prRefs ?? []
@@ -86526,8 +87568,8 @@ function createNetworkActivityView(threadLabel2) {
     table.hidden = rows.length === 0;
     empty2.hidden = rows.length > 0;
     empty2.textContent = snapshot === void 0 ? "Network activity is unavailable in this runtime." : snapshot.rows.length === 0 ? "No network activity yet. Captured commands and connections will appear here." : "No activity matches these filters.";
-    const active = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
-    summary.textContent = `${String(active)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
+    const active2 = snapshot?.rows.filter((row2) => row2.endedAt === null).length ?? 0;
+    summary.textContent = `${String(active2)} active \xB7 ${String(rows.length)} shown \xB7 Recent session activity${snapshot?.dropped ? ` \xB7 ${String(snapshot.dropped)} older entries discarded` : ""}`;
   }
   search.addEventListener("input", () => {
     render2(current, now);
@@ -87094,24 +88136,34 @@ async function acceptThreadPrompt(store2, api2, command2) {
     let current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || current.messagesLoaded === false || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
-    if (!current.worktreeChoice && current.messages.length === 0) {
+    if (!current.worktreeChoice && current.messages.length === 0 || command2.requireWorktree && (!current.worktree || current.worktree.retiredAt !== void 0)) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
         command2.text,
-        "automatic",
+        command2.requireWorktree ? "worktree" : "automatic",
         current.model
       );
       if (Date.now() >= command2.expiresAt)
         return { ok: false, error: "This prompt expired while preparing the checkout." };
+      if (command2.requireWorktree && prepared.checkoutMode !== "worktree")
+        return { ok: false, error: "Subthreads require an isolated checkout." };
       applyPreparedThreadCheckout(store2, threadId, prepared);
       current = getThreadById(store2, threadId);
       if (!current || current.archivedAt !== void 0)
         return { ok: false, error: "The destination conversation is unavailable." };
     }
+    if (!await api2.threadPrompts.canSubmit(command2.id))
+      return {
+        ok: false,
+        error: "The prompt was cancelled, expired, or its permission was revoked."
+      };
+    current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
+      return { ok: false, error: "The destination conversation is unavailable." };
     const origin = {
       kind: "machine",
-      operationId: `thread:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
     };
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
@@ -87666,12 +88718,15 @@ function createTranscriptReducer(store2, hooks = {}) {
       case "tool_result": {
         const ownerId = findToolCallOwner(store2, threadId, chunk.toolCallId) ?? st.msgId;
         if (ownerId) {
+          const call = findToolCall(store2, ownerId, chunk.toolCallId);
+          if (call && chunk.deferred !== true) delete call.deferred;
           updateToolCall(store2, ownerId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
+            ...chunk.deferred ? { deferred: chunk.deferred } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           hooks.toolResult?.(threadId, ownerId, chunk);
@@ -88017,18 +89072,16 @@ function attachDiffState(store2, api2, options) {
     publishActiveQueue(entries);
     hydrate();
   };
-  const unsubWorkspace = store2.select(
+  const unsubOwner = store2.select(
     (s) => [s.activeProjectId, s.activeThreadId],
     syncDiffOwner,
     sameItems
   );
-  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
   hydrate();
   return () => {
     unsubShowDiff();
     unsubQueued();
-    unsubWorkspace();
-    unsubThreads();
+    unsubOwner();
   };
 }
 var init_diff_state = __esm({
@@ -88554,8 +89607,24 @@ function attachProviderInvalidationWarning(store2, api2, ui) {
     });
   };
   const unsubscribe = [
-    selectActiveWorkspace(store2, check),
-    store2.on("threads_changed", check),
+    // The check reads the active workspace and the active thread's route:
+    // which thread, whether it is idle, and its model. One selection, so a
+    // project switch checks once. Other threads' updates, and this one's
+    // rename, do not re-check.
+    store2.select(
+      (state) => {
+        const thread = getActiveThread(store2);
+        return [
+          state.activeProjectId,
+          state.workspaceRoot,
+          thread?.id,
+          thread?.status,
+          thread?.model
+        ];
+      },
+      check,
+      sameItems
+    ),
     store2.on("settings_changed", check),
     store2.on("thread_status_changed", check)
   ];
@@ -88571,7 +89640,7 @@ var init_provider_invalidation = __esm({
   "src/renderer/controller/provider-invalidation.ts"() {
     init_zod();
     init_safe_json2();
-    init_active_workspace();
+    init_store();
     init_thread_helpers();
     init_model_selection();
   }
@@ -89046,10 +90115,10 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (!message2) return;
       const current = store2.getState();
       if (current.activeProjectId !== projectId || current.activeThreadId !== threadId) return;
-      const active = current.threads.find((candidate) => candidate.id === threadId);
-      if (!active || refreshKey(projectId, active) !== key) return;
-      const merged = mergeImportedCursorResult(active, message2);
-      if (merged === active) return;
+      const active2 = current.threads.find((candidate) => candidate.id === threadId);
+      if (!active2 || refreshKey(projectId, active2) !== key) return;
+      const merged = mergeImportedCursorResult(active2, message2);
+      if (merged === active2) return;
       store2.setState({
         threads: current.threads.map(
           (candidate) => candidate.id === threadId ? merged : candidate
@@ -89061,22 +90130,19 @@ function attachImportedCursorAgentRefresh(store2, api2) {
       if (lastAttemptKey === key) lastAttemptKey = null;
     });
   };
-  const offThreads = store2.on("threads_changed", refreshActive);
-  const offWorkspace = store2.select(
-    (s) => [s.activeProjectId, s.activeThreadId],
-    refreshActive,
-    sameItems
-  );
+  const offThreads = store2.select((state) => {
+    const { activeProjectId, activeThreadId, threads } = state;
+    const thread = activeThreadId ? threads.find((t) => t.id === activeThreadId) : void 0;
+    return activeProjectId && thread ? refreshKey(activeProjectId, thread) : null;
+  }, refreshActive);
   refreshActive();
   return () => {
     offThreads();
-    offWorkspace();
   };
 }
 var init_imported_cursor_agent_refresh = __esm({
   "src/renderer/controller/imported-cursor-agent-refresh.ts"() {
     init_remote_agent_link2();
-    init_store();
   }
 });
 
@@ -89761,7 +90827,11 @@ function bindChatComposerLayout(store2, onActivityHome) {
   const observer = new ResizeObserver(sync);
   observer.observe(input);
   window.addEventListener("resize", sync, { passive: true });
-  const unsubs = [store2.on("threads_changed", sync), store2.on("message_added", sync)];
+  const unsubs = [
+    // Which thread, and whether it is the empty Activity home.
+    store2.select((s) => [s.activeThreadId, isActiveThreadEmpty(store2)], sync, sameItems),
+    store2.on("message_added", sync)
+  ];
   return () => {
     unsubs.forEach((u3) => {
       u3();
@@ -89772,6 +90842,7 @@ function bindChatComposerLayout(store2, onActivityHome) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+    init_store();
     init_thread_hydration();
   }
 });
@@ -90106,14 +91177,14 @@ async function boot() {
   const { projects, projectGroups, activeProjectId, activeThreadId } = await loadProjects(api);
   endLoadProjects({ projects: projects.length });
   const [firstProject] = projects;
-  const active = firstProject ? projects.find((p) => p.id === activeProjectId) ?? firstProject : void 0;
-  store.setState({ projects, projectGroups, activeProjectId: active?.id ?? null });
+  const active2 = firstProject ? projects.find((p) => p.id === activeProjectId) ?? firstProject : void 0;
+  store.setState({ projects, projectGroups, activeProjectId: active2?.id ?? null });
   markNavigationRestored({ activeProjectId, activeThreadId });
-  if (active) {
+  if (active2) {
     ensureLayout();
     mark("renderer:layout-mounted");
     const endRestore = begin("renderer:restore-project");
-    await restoreProject(store, api, active.id, activeThreadId);
+    await restoreProject(store, api, active2.id, activeThreadId);
     endRestore();
     endBoot({ projects: projects.length });
     void preloadSidebarThreads(store, api);
