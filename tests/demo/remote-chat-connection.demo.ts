@@ -1,6 +1,53 @@
 import { $, browser, expect } from '@wdio/globals'
+import { PNG } from 'pngjs'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 import { expectCaptureFitsWidth } from './helpers/capture-fit.ts'
+
+/**
+ * Mobile emulation paints a transient overlay scrollbar after the viewport
+ * resizes or scrolls. Wait for its idle paint in the shell's empty right
+ * margin, as mobile-companion.demo.ts does, so a capture never catches it
+ * mid-fade.
+ */
+async function waitForIdleScrollbar(): Promise<void> {
+  const viewport = await browser.execute(() => {
+    const context = new OffscreenCanvas(1, 1).getContext('2d')
+    if (!context) throw new Error('Missing canvas context for mobile background')
+    context.fillStyle = getComputedStyle(document.body).backgroundColor
+    context.fillRect(0, 0, 1, 1)
+    const background = Array.from(context.getImageData(0, 0, 1, 1).data)
+    if (background[3] !== 255) throw new Error('Expected an opaque mobile background')
+    return {
+      width: window.innerWidth,
+      top: Math.ceil(document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0) + 1,
+      background,
+    }
+  })
+  const [red, green, blue] = viewport.background
+  await browser.waitUntil(
+    async () => {
+      const image = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+      const scale = image.width / viewport.width
+      for (let y = Math.ceil(viewport.top * scale); y < image.height; y++) {
+        for (let x = Math.floor((viewport.width - 4) * scale); x < image.width; x++) {
+          const offset = (y * image.width + x) * 4
+          if (
+            image.data[offset] !== red ||
+            image.data[offset + 1] !== green ||
+            image.data[offset + 2] !== blue
+          )
+            return false
+        }
+      }
+      return true
+    },
+    {
+      timeout: 6_000,
+      interval: 100,
+      timeoutMsg: 'Mobile overlay scrollbar did not reach idle paint',
+    },
+  )
+}
 
 /**
  * The /mobile/ CSP blocks the screenshot helper's injected steady-caret style,
@@ -142,7 +189,11 @@ describe('paired remote chat connection', () => {
     // Frame the page column, not #thread: the shell holds the phone's side gutters.
     await saveElementScreenshot('.shell', 'remote-chat-connected-phone.png', {
       frame: 'document',
-      beforeCapture: () => expectCaptureFitsWidth('.shell'),
+      beforeCapture: async () => {
+        // The width sweep above resizes the viewport, which flashes the scrollbar.
+        await waitForIdleScrollbar()
+        await expectCaptureFitsWidth('.shell')
+      },
     })
     await $('#next-prompt').click()
     await expect($('#message')).toHaveValue('Test the release build on my phone.')
@@ -169,6 +220,7 @@ describe('paired remote chat connection', () => {
       frame: 'document',
       beforeCapture: async () => {
         await steadyFocusedCaret()
+        await waitForIdleScrollbar()
         await expectCaptureFitsWidth('.shell')
       },
     })

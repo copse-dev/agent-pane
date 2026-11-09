@@ -321,6 +321,18 @@ describe('real paired browser chat with the desktop window closed', function () 
     await mobile().$('button=Approve').click()
     await waitText('The approved command completed.')
     await mobile().$('button=Deny').waitForExist()
+    // The decision card and the transcript arrive on separate polls. Capture
+    // once the transcript shows the pending command, not the step before it.
+    await mobile().waitUntil(
+      async () => {
+        const transcript = await mobile().$('#conversation').getText()
+        return transcript.includes('ls -la ~/.copse') && transcript.includes('Waiting for approval')
+      },
+      { timeout: 15_000, timeoutMsg: 'The phone transcript never showed the pending profile read' },
+    )
+    // The earlier Approve click leaves the pointer where this card's Approve
+    // button can land; move it off the controls so hover stays out of the shot.
+    await mobile().action('pointer').move({ x: 1, y: 1 }).perform()
     // Full phone viewport is the subject, not Electron's #app screenshot frame.
     const shots =
       process.platform === 'darwin'
