@@ -37,7 +37,7 @@ function rulesFor(selector: string): Rule[] {
 
 /** A border or outline side declared with something other than 0 / none. */
 const drawsBorder = (body: string): boolean =>
-  /(^|[;\s])border(-(top|right|bottom|left))?(-width)?\s*:\s*(?!0\b|0px\b|none\b)/.test(body)
+  /(^|[;\s])border(-(top|right|bottom|left))?(-width)?\s*:(?!\s*(0|0px|none)\b)/.test(body)
 
 const where = (rule: Rule): string => `${rule.file}: ${rule.selectors.join(', ')}`
 
@@ -54,7 +54,7 @@ describe('Settings rows sit on the page', () => {
     '.openai-connection-card',
     '.usage-worth-card',
     '.about-licenses-list',
-    '.apple-development-panel',
+    '.plugin-settings-fold .apple-development-panel',
     '.environment-setup-list',
     '.remote-folder-list',
     '.ssh-host-row',
@@ -74,9 +74,25 @@ describe('Settings rows sit on the page', () => {
     const PLATES = new Set(['.remote-folder-list', '.automation-permission-row:hover'])
     for (const selector of ROWS.filter((row) => !PLATES.has(row))) {
       for (const rule of rulesFor(selector)) {
-        assert.doesNotMatch(rule.body, /background\s*:/, `${where(rule)} paints a fill`)
+        assert.doesNotMatch(
+          rule.body,
+          /background(-color)?\s*:(?!\s*(none|transparent)\b)/,
+          `${where(rule)} paints a fill`,
+        )
       }
     }
+  })
+
+  it('keeps the Apple Development card above a conversation, where it is not a Settings row', () => {
+    // The conversation mounts the same panel (conversation.ts), so only the
+    // Settings copy may drop the frame.
+    const [card] = rulesFor('.apple-development-panel')
+    assert.ok(card)
+    assert.equal(drawsBorder(card.body), true, `${where(card)} lost its frame`)
+    assert.match(card.body, /background:\s*var\(--bg-elevated\)/, where(card))
+    const [host] = rulesFor('.plugin-settings-fold .apple-development-host')
+    assert.ok(host)
+    assert.match(host.body, /margin:\s*0\b/, `${where(host)} keeps the conversation inset`)
   })
 
   it('draws no rules between licences or environment setup rows', () => {

@@ -73,15 +73,31 @@ describe('Settings surfaces without frames', () => {
 
     await openSection('experimental')
     await $('details.plugin-settings-fold:has(.apple-development-panel) > summary').click()
-    const apple = $('.apple-development-panel')
+    const inSettings = '.plugin-settings-fold .apple-development-panel'
+    const apple = $(inSettings)
     await apple.waitForDisplayed()
     await apple.scrollIntoView({ block: 'center' })
-    assert.deepEqual(await frameOf('.apple-development-panel'), UNFRAMED)
+    assert.deepEqual(await frameOf(inSettings), UNFRAMED)
+    const flush = await browser.execute(() => {
+      const fold = document.querySelector('.plugin-settings-fold:has(.apple-development-panel)')
+      const panel = fold?.querySelector('.apple-development-panel')
+      if (!fold || !panel) return null
+      return panel.getBoundingClientRect().left - fold.getBoundingClientRect().left
+    })
+    assert.equal(flush, 0, "the Settings panel starts flush with the plugin's text")
     const chips = await browser.execute(() => {
       const empty = document.querySelector('.plugin-chips-empty')
       return empty ? getComputedStyle(empty).fontStyle : null
     })
     assert.equal(chips, 'normal', 'an empty state is upright')
+
+    // Above a conversation the same panel is not a Settings row, so it keeps its card.
+    await browser.url('/?scenario=apple-development')
+    await $('.conversation-scroll .apple-development-panel').waitForDisplayed()
+    const inChat = await frameOf('.conversation-scroll .apple-development-panel')
+    assert.ok(inChat)
+    assert.equal(inChat.border, '1px', 'the conversation panel keeps its frame')
+    assert.notEqual(inChat.fill, UNFRAMED.fill, 'the conversation panel keeps its fill')
   })
 
   it('keeps the long Permissions and Experimental hints short', async () => {
