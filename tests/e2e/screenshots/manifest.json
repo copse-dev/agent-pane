@@ -446,8 +446,8 @@
       "bytes": 327622
     },
     "agent-escape-retry-lease-approval.png": {
-      "sha256": "eba10c85472af0588116a0b638329fbf5572ea30336d86898a86d6256d77b8a5",
-      "bytes": 96479
+      "sha256": "dee864c6178c79cd77aea2ca820198e01fb4a0c908627d33606a2fae86f7db13",
+      "bytes": 108650
     },
     "agent-execution-mode-active.png": {
       "sha256": "672020f2e44a133e2ce84e44e7bf25048426c7639b59a382776d38c21798ff95",
@@ -470,8 +470,8 @@
       "bytes": 376975
     },
     "agent-tasks-shell-approval.png": {
-      "sha256": "f02c0e02ea8138deb6fdc052472d69e719b2cdeb999f6d0ce26078f874b8a469",
-      "bytes": 69167
+      "sha256": "07eb130c3f7bf2a841eb289c328933e8a5a03edd3e984eed8026bba36eb28928",
+      "bytes": 75173
     },
     "agent-tasks-terminal.png": {
       "sha256": "69d1e839bf1f3923e399aa084191c01c169f2c260ac49a4e4ae3ee2abfc7efff",
@@ -598,8 +598,8 @@
       "bytes": 19639
     },
     "approval-reasons-list.png": {
-      "sha256": "a1175c2ec87a0fbd244c84eff76348df3a7251d4421f668bd3f867fb4cd7f703",
-      "bytes": 67237
+      "sha256": "acc4ba546c86854fd1698bd1d90a633a6ab90b946f38f4c6bb0af5966c6fc1c0",
+      "bytes": 70674
     },
     "approval-thread-orchestrate.png": {
       "sha256": "3d758e1649c38177c59ea911dc1514290dd4ea24292f2c14babd913e7f784ce6",
@@ -1150,8 +1150,8 @@
       "bytes": 1081322
     },
     "capability-lease-approval.png": {
-      "sha256": "e386b63aaf6303aa7aca00790fc2546f5823e1c4107740ee7cf8c4c32b76d9e6",
-      "bytes": 292309
+      "sha256": "7e89b67dbb4e44797dbf522f4d200e0baeaaa43e94298375103462428be2eda0",
+      "bytes": 301942
     },
     "changes-chip-committed.png": {
       "sha256": "4427b85de27bf3c76a75b74a80b70c2f1ba4be16acbeaa956766021e4ce2052e",
@@ -1346,8 +1346,8 @@
       "bytes": 217406
     },
     "command-phase-awaiting-approval.png": {
-      "sha256": "6f77845a9db0e20fb14c31e23b62dc6cca37892c2fbad8799f7c8b7f6a31e253",
-      "bytes": 305188
+      "sha256": "c28e81546cd3c728a228c410399f58edfee75c2f12afcae67993fb0d29baefc0",
+      "bytes": 309236
     },
     "command-phase-background-exited.png": {
       "sha256": "71013acd41a9426cbf30fce3fc102a4e4a84f79d2e67549aefee6bc02be620f1",
@@ -3620,6 +3620,10 @@
     "queued-held.png": {
       "sha256": "3ecab75386f398e5aed8e88cf508525a7ccce09e58795d5290bcf9a533f07666",
       "bytes": 287947
+    },
+    "queued-hook-held-after-human-task.png": {
+      "sha256": "c80da3785606b65bce334164ee6d3dc85b32c4b454c46328d96c212d4f27e48f",
+      "bytes": 24359
     },
     "queued-message-delete-after.png": {
       "sha256": "207332ae4a36b1a61652562ff28660cafc257ffaab45d8bf2ece4bc3956d174b",
