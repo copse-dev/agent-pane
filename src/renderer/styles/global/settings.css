@@ -1737,7 +1737,13 @@ dialog.settings-overlay::backdrop {
      expand the Sources list past the settings column. */
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  /* The row sits flush with the section text, so a focus ring on a control at
+     its edge (the metadata disclosure) is drawn outside its box. Clip a ring's
+     width further out than the box rather than at it. The ring is the
+     browser's and does not follow --ui-scale, and Chromium drops calc() here,
+     so the margin is a plain length. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 .sources-row-header {
   display: flex;
@@ -1784,8 +1790,13 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+/* A hooks.json authoring problem sits on the warning plate, as a blocked
+   automation does, now that rows have no frame to tint. */
 .sources-row-warning {
-  border-color: var(--warning, #d29922);
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .sources-badge-unsupported {
   color: var(--text-muted);
@@ -3179,8 +3190,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
 }
+/* An open licence lines up with its name, which sits flush with the heading. */
 .about-license-body {
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-xs) 0 var(--spacing-md);
 }
 .about-license-meta,
 .about-license-note {

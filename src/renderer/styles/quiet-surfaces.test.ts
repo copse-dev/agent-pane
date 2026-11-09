@@ -95,6 +95,35 @@ describe('Settings rows sit on the page', () => {
     assert.match(host.body, /margin:\s*0\b/, `${where(host)} keeps the conversation inset`)
   })
 
+  it('leaves a focus ring room when a row clips its overflow', () => {
+    // A row without side padding puts the focus ring of a control at its edge
+    // outside its box, where `overflow: hidden` cuts it. `overflow: clip` with a
+    // margin keeps the ring; Chromium drops a calc() or var() margin as invalid.
+    for (const selector of ROWS) {
+      for (const rule of rulesFor(selector)) {
+        if (selector === '.remote-folder-list') continue
+        assert.doesNotMatch(
+          rule.body,
+          /overflow(-x|-y)?\s*:\s*hidden/,
+          `${where(rule)} clips rings`,
+        )
+        if (/overflow\s*:\s*clip/.test(rule.body)) {
+          const margin = /overflow-clip-margin:\s*(\d+(?:\.\d+)?)px\s*;/.exec(rule.body)
+          assert.ok(margin, `${where(rule)} needs a plain-length overflow-clip-margin`)
+          assert.ok(Number(margin[1]) >= 2, `${where(rule)} clip margin is narrower than a ring`)
+        }
+      }
+    }
+  })
+
+  it('lines an open licence up with its name', () => {
+    for (const selector of ['.about-license-summary', '.about-license-body']) {
+      const [rule] = rulesFor(selector)
+      assert.ok(rule)
+      assert.match(rule.body, /padding:\s*\S+ 0( \S+)?;/, `${where(rule)} keeps a side inset`)
+    }
+  })
+
   it('draws no rules between licences or environment setup rows', () => {
     for (const rule of allRules) {
       for (const selector of rule.selectors) {
@@ -105,11 +134,18 @@ describe('Settings rows sit on the page', () => {
     }
   })
 
-  it('marks a blocked automation with the warning plate, not a tinted frame', () => {
-    const [blocked] = rulesFor('.automation-row-blocked')
-    assert.ok(blocked)
-    assert.match(blocked.body, /--sev:\s*var\(--warning\)/)
-    assert.match(blocked.body, /var\(--callout-plate-fill\)/)
+  it('marks a blocked automation or a hooks warning with the warning plate, not a tinted frame', () => {
+    for (const selector of ['.automation-row-blocked', '.sources-row-warning']) {
+      const [rule] = rulesFor(selector)
+      assert.ok(rule)
+      assert.match(rule.body, /--sev:\s*var\(--warning\)/, where(rule))
+      assert.match(rule.body, /var\(--callout-plate-fill\)/, where(rule))
+      assert.doesNotMatch(
+        rule.body,
+        /border-color\s*:/,
+        `${where(rule)} tints a frame it no longer has`,
+      )
+    }
   })
 })
 
