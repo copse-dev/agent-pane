@@ -318,6 +318,26 @@ jobs:
             git fetch --no-tags --quiet origin "$BASE_SHA"
           fi
           node scripts/check-a11y-baseline.mts --base "$BASE_SHA"
+      # Static flake-risk ratchet (docs/testing-strategy.md#flake-risk-ratchet):
+      # per-file counts of fixed waits, checkout seeding and fixed ports may
+      # only shrink, and the committed baseline may not grow against the base.
+      - name: Flake-risk baseline only shrinks
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            BASE_SHA="$(git rev-parse HEAD^1)"
+          fi
+          if [ -z "${BASE_SHA:-}" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base sha for ${GITHUB_EVENT_NAME} -> checking counts only"
+            exec node scripts/check-flake-risks.mts
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          node scripts/check-flake-risks.mts --base "$BASE_SHA"
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
