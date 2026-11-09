@@ -190,7 +190,7 @@ export async function runCustomAgent(
       ...subagentHookCallbacks({ usageModel: model }),
     })
 
-    addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })
+    addSubagentUsage(model, session.usage ?? { inputTokens: 0, outputTokens: 0 })
     signal.throwIfAborted()
     if (session.status === 'error') throw new Error(summary)
     return summary
