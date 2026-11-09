@@ -17829,7 +17829,7 @@ dialog.activity-panel-overlay {
   margin-bottom: var(--spacing-sm);
   border-radius: var(--radius);
   padding: var(--spacing-xs);
-  background: var(--bg-elevated);
+  background: var(--bg-input);
 }
 .remote-folder-entry {
   text-align: left;
