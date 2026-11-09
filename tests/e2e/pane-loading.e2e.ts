@@ -12,16 +12,10 @@ interface LoadingPane {
 
 const LOADING_PANES: LoadingPane[] = [
   {
-    button: '[aria-label="Open changes"]',
+    button: '[aria-label="Open review"]',
     host: '#git-changes-host',
     label: 'Loading changes…',
     screenshot: 'pane-loading-changes.png',
-  },
-  {
-    button: '[aria-label="Open pull requests"]',
-    host: '#pr-list-host',
-    label: 'Loading pull requests…',
-    screenshot: 'pane-loading-pull-requests.png',
   },
   {
     button: '[aria-label="Open memories"]',
@@ -62,15 +56,9 @@ const HEADER_PANES: HeaderPane[] = [
   },
   {
     mode: 'changes',
-    button: 'Open changes',
-    header: '#git-changes-host .pane-header',
-    title: 'Changes',
-  },
-  {
-    mode: 'prs',
-    button: 'Open pull requests',
-    header: '#pr-list-host .pane-header',
-    title: 'Pull requests',
+    button: 'Open review',
+    header: '.review-header',
+    title: 'Local changes',
   },
   {
     mode: 'memories',
@@ -228,7 +216,11 @@ async function paneHeaderMetrics(selector: string): Promise<HeaderMetrics | null
     const header = pane?.querySelector<HTMLElement>(sel)
     if (!pane || !header || header.getClientRects().length === 0) return null
     const paneTop = pane.getBoundingClientRect().top
-    const column = pane.querySelector<HTMLElement>('#right-sidebar')?.getBoundingClientRect()
+    const column = (
+      header.classList.contains('review-header')
+        ? pane
+        : pane.querySelector<HTMLElement>('#right-sidebar')
+    )?.getBoundingClientRect()
     const rect = header.getBoundingClientRect()
     const title = header.querySelector<HTMLElement>('.pane-header-title')
     const style = title ? getComputedStyle(title) : null
@@ -333,7 +325,9 @@ describe('async pane loading states', () => {
         await loading.$('.ui-inline-status[data-status-kind="pending"]').getElement(),
       ).toBeDisplayed()
 
-      const header = await paneHeaderMetrics(`${pane.host} .pane-header`)
+      const header = await paneHeaderMetrics(
+        pane.host === '#git-changes-host' ? '.review-header' : `${pane.host} .pane-header`,
+      )
       assert.ok(header, `expected a displayed .pane-header in ${pane.host}`)
       headers.set(pane.host, header)
       if (pane.host === '#pr-list-host') {

@@ -23,8 +23,7 @@ import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
 import { mountAgentTasks } from './views/agent-tasks.ts'
 import { mountSupervisedTasks } from './views/supervised-tasks.ts'
-import { mountGitChangesPane } from './views/git-changes-pane.ts'
-import { mountPrPane } from './views/pr-pane.ts'
+import { mountReviewPane } from './views/review-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountThreadContextPane } from './views/thread-context-panel.ts'
 import { mountSideChatPane } from './views/side-chat-panel.ts'
@@ -725,20 +724,7 @@ function mountFullLayout(): void {
     api,
   )
   void monacoReady.then((monaco) => {
-    mountGitChangesPane(
-      requireElement('git-changes-host'),
-      requireElement('git-diff-viewer-host'),
-      store,
-      api,
-      monaco,
-    )
-    mountPrPane(
-      requireElement('pr-list-host'),
-      requireElement('pr-viewer-host'),
-      store,
-      api,
-      monaco,
-    )
+    mountReviewPane(requireElement('pane-files'), store, api, monaco)
     mountContextPanel(requireElement('file-viewer'), store, api, monaco)
   })
 

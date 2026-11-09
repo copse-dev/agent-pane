@@ -66,7 +66,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
 import { githubSamlAuthorizationUrl, isGithubSamlError } from './pr-auth-error.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanel } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -100,7 +100,7 @@ function indexAgentLinksByPrKey(
 
 function prsModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'prs'
+  return filesPaneOpen && (rightPanelMode === 'prs' || rightPanelMode === 'changes')
 }
 
 function collectLinkedPrs(store: AppStore): PrRef[] {
@@ -168,7 +168,11 @@ const PR_PANE_INACTIVE = ''
  * Constant while the pane is closed, so thread writes then cost nothing.
  */
 export function prPaneThreadsKey(state: AppState): string {
-  if (!state.filesPaneOpen || state.rightPanelMode !== 'prs') return PR_PANE_INACTIVE
+  if (
+    !state.filesPaneOpen ||
+    (state.rightPanelMode !== 'prs' && state.rightPanelMode !== 'changes')
+  )
+    return PR_PANE_INACTIVE
   return `prs\n${state.activeThreadId ?? ''}\n${state.threads.map(threadPrKey).join('\n')}`
 }
 
@@ -541,6 +545,7 @@ export function mountPrPane(
     section: 'linked' | 'workspace' | 'mine' | 'viewing',
   ): HTMLButtonElement {
     const isSelected =
+      store.getState().rightPanelMode === 'prs' &&
       selectedPr?.owner === pr.owner &&
       selectedPr.repo === pr.repo &&
       selectedPr.number === pr.number
@@ -615,7 +620,10 @@ export function mountPrPane(
         checksLabel,
       ),
     )
-    row.addEventListener('click', () => void selectPr(pr))
+    row.addEventListener('click', () => {
+      if (selectedPr && githubPrKey(selectedPr) === githubPrKey(pr)) return
+      void selectPr(pr)
+    })
     if (!state) ensureCheck(pr)
     return row
   }
@@ -1603,9 +1611,9 @@ export function mountPrPane(
   })
   filterInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return
+    if (!filterQuery && !filterInput.value) return
     e.preventDefault()
     e.stopPropagation()
-    if (!filterQuery && !filterInput.value) return
     filterQuery = ''
     filterInput.value = ''
     renderList()
@@ -1623,10 +1631,14 @@ export function mountPrPane(
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store, api)
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
+  let wasReviewActive = prsModeActive(store)
   const unsubs = [
-    selectRightPanelMode(store, 'prs', (active) => {
+    selectRightPanel(store, () => {
+      const active = prsModeActive(store)
       syncWatch()
-      if (active) void refresh()
+      if (active && !wasReviewActive) void refresh()
+      else if (active) renderList()
+      wasReviewActive = active
     }),
     selectActiveWorkspace(store, () => {
       threadRelationshipRequest++
@@ -1665,7 +1677,7 @@ export function mountPrPane(
     // The threads' PR links, titles and finished turns; not streaming,
     // hydration or other metadata that leaves every key unchanged.
     store.select(prPaneThreadsKey, (_next, prev) => {
-      // Opening the pane runs its own full refresh (selectRightPanelMode above).
+      // Opening the pane runs its own full refresh (selectRightPanel above).
       if (prev === PR_PANE_INACTIVE || !prsModeActive(store)) return
       threadLinks = indexThreadLinks(store)
       linkedRefs = collectLinkedPrs(store)

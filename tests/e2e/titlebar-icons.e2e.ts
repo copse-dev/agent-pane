@@ -35,8 +35,7 @@ describe('titlebar panel icons', () => {
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
       { label: 'Open thread context', icon: 'context', text: 'Context' },
       { label: 'Open terminal', icon: 'terminal', text: 'Terminal' },
-      { label: 'Open changes', icon: 'changes', text: 'Changes' },
-      { label: 'Open pull requests', icon: 'prs', text: 'PRs' },
+      { label: 'Open review', icon: 'changes', text: 'Review' },
       { label: 'Open browser', icon: 'browser', text: 'Browser' },
     ]
 

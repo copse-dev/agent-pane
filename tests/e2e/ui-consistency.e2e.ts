@@ -1,3 +1,4 @@
+import { openReviewPr, closeReviewPicker } from './helpers/review-pane.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
@@ -87,57 +88,6 @@ async function expectSelectionKeepsTabsInPlace(
   expect(new Set(after.map((tab) => tab.weight)).size).toBe(1)
 }
 
-const PR_HEADER = '#pr-list-host .pane-header'
-
-/** The PR list header's box, wrap and row alignment, rounded to whole pixels. */
-async function prHeaderLayout(): Promise<{
-  width: number
-  height: number
-  wrap: string
-  overflows: boolean
-  titleTruncated: boolean
-  titleCentre: number
-  controlCentres: number[]
-}> {
-  const layout = await browser.execute((target) => {
-    const node = document.querySelector<HTMLElement>(target)
-    const title = node?.querySelector<HTMLElement>(':scope > .pane-header-title')
-    if (!node || !title) return null
-    const centre = (child: Element): number => {
-      const box = child.getBoundingClientRect()
-      return Math.round(box.top + box.height / 2)
-    }
-    const box = node.getBoundingClientRect()
-    return {
-      width: Math.round(box.width),
-      height: Math.round(box.height),
-      wrap: getComputedStyle(node).flexWrap,
-      overflows: node.scrollWidth > node.clientWidth,
-      titleTruncated: title.scrollWidth > title.clientWidth,
-      titleCentre: centre(title),
-      controlCentres: [...node.children].filter((child) => child !== title).map(centre),
-    }
-  }, PR_HEADER)
-  if (!layout) throw new Error('Missing PR pane header')
-  return layout
-}
-
-/** Drag the list column's resizer, as a user would, until the PR header is `width` wide. */
-async function dragListColumnTo(width: number): Promise<void> {
-  const current = await $(PR_HEADER).getSize('width')
-  await browser
-    .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move({ origin: await $('#resizer-tree').getElement() })
-    .down({ button: 0 })
-    .move({ origin: 'pointer', x: width - current, y: 0, duration: 200 })
-    .up({ button: 0 })
-    .perform()
-  await browser.waitUntil(async () => (await $(PR_HEADER).getSize('width')) === width, {
-    timeout: 5_000,
-    timeoutMsg: `expected the PR list column to narrow to ${String(width)}px`,
-  })
-}
-
 describe('UI consistency: PR pane, model picker and flat tabs', () => {
   before(async function () {
     this.timeout(120_000)
@@ -177,7 +127,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
     if (!(await $('#pane-files').isDisplayed())) {
       await $('[aria-label="Toggle right panel"]').click()
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
     await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
     await expect($('.pr-viewer-title')).toHaveText('Add GitHub PR panel tab')
     await expect($('.pr-viewer-description h2')).toHaveText('Summary')
@@ -261,40 +211,24 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
     await browser.keys('Escape')
   })
 
-  it('keeps a narrow PR pane header to one band, truncating its title', async function () {
-    this.timeout(60_000)
-    const band = await prHeaderLayout()
-    expect(band.width).toBe(200)
-    expect(band.titleTruncated).toBe(false)
-
-    // 170px is just short of the ~174px the title and its three icons need side
-    // by side: when every `.pane-header` wrapped, the refresh icon dropped onto
-    // a second row here, and under nowrap alone the title wrapped instead.
-    await dragListColumnTo(170)
-    const narrow = await prHeaderLayout()
-    expect(narrow.height).toBe(band.height)
-    expect(narrow.wrap).toBe('nowrap')
-    expect(narrow.overflows).toBe(false)
-    expect(narrow.titleTruncated).toBe(true)
-    expect(narrow.controlCentres).toHaveLength(3)
-    for (const controlCentre of narrow.controlCentres) {
-      expect(controlCentre).toBe(narrow.titleCentre)
-    }
-    // Changes keeps its opt-in second row for the owner label and bulk actions.
-    const changesWrap = await browser.execute(() => {
-      const node = document.querySelector('.git-changes-header')
-      return node ? getComputedStyle(node).flexWrap : null
+  it('keeps the combined review header and subject picker inside a narrow pane', async function () {
+    await browser.execute(() => {
+      const pane = document.getElementById('pane-files')
+      if (pane) pane.style.width = '340px'
     })
-    expect(changesWrap).toBe('wrap')
+    await $('.review-subject-picker').click()
+    const fits = await browser.execute(() => {
+      const header = document.querySelector('.review-header')
+      const choices = document.querySelector('.review-subject-choices')?.getBoundingClientRect()
+      return (
+        !!header &&
+        header.scrollWidth <= header.clientWidth &&
+        !!choices &&
+        choices.right <= window.innerWidth
+      )
+    })
+    expect(fits).toBe(true)
     await saveElementScreenshot('#pane-files', 'ui-consistency-pr-header-narrow.png')
-
-    // The resizer stops at the list's 120px minimum.
-    await dragListColumnTo(120)
-    const narrowest = await prHeaderLayout()
-    expect(narrowest.height).toBe(band.height)
-    expect(narrowest.overflows).toBe(false)
-    for (const controlCentre of narrowest.controlCentres) {
-      expect(controlCentre).toBe(narrowest.titleCentre)
-    }
+    await closeReviewPicker()
   })
 })
