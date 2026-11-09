@@ -80,6 +80,10 @@ Read the `ttft:*` records between `autopilot:send` and the first renderer span:
   trusted execution-context/history setup.
 - `acp-turn-assembly`, `acp-mcp-config`, `acp-env-forward`,
   `acp-worktree-baseline`, and `acp-skills` identify host-side setup costs.
+  `acp-bridge-mount` is the wait for the agent to list Copse's bridged tools
+  after its session opens (up to 5 s, and only while it has not).
+  `acp-turn-assembly` follows it, because Copse's guidance names only the tools
+  the agent listed.
 - `acp-session-acquire` reports whether the session was fresh; compare fresh and
   reused turns before attributing startup time to the model.
 - `acp-prompt-start` to `acp-first-activity` is the external agent/provider wait.

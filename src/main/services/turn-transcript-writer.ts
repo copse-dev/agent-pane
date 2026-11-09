@@ -94,6 +94,7 @@ interface Session {
 }
 
 export class TurnTranscriptWriter {
+  private shuttingDown = false
   private readonly deps: TurnTranscriptWriterDependencies
   private readonly sessions = new Map<string, Session>()
   private revision = 0
@@ -132,6 +133,12 @@ export class TurnTranscriptWriter {
    */
   noteUserAbort(threadId: string, reason: 'send_now' | 'stop'): void {
     this.userAborts.set(threadId, reason)
+  }
+
+  /** Keep quit-interrupted turns recoverable while their accepted writes drain. */
+  interruptForShutdown(): Promise<void> {
+    this.shuttingDown = true
+    return Promise.all([...this.drains.values(), ...this.lateWrites.values()]).then(() => undefined)
   }
 
   /** Snapshot and subsequent chunks use the same ordered IPC sender. */
@@ -183,6 +190,7 @@ export class TurnTranscriptWriter {
   }
 
   begin(projectId: string, threadId: string): TurnTranscript {
+    if (this.shuttingDown) throw new Error('Copse is closing; the turn was not started.')
     this.revision += 1
     const store = createStore()
     const session: Session = {
@@ -258,6 +266,7 @@ export class TurnTranscriptWriter {
 
     return {
       emit: (chunk): void => {
+        if (this.shuttingDown) return
         if (session.pending) session.pending.push(chunk)
         else this.process(session, chunk)
       },
@@ -501,7 +510,7 @@ export class TurnTranscriptWriter {
     // A turn that failed before `done` still keeps what it produced.
     if (!session.done && !session.passthrough) {
       this.flushTouched(session)
-      setThreadStatus(session.store, session.threadId, 'idle')
+      if (!this.shuttingDown) setThreadStatus(session.store, session.threadId, 'idle')
       this.persistMeta(session)
     }
     session.unsubscribe()

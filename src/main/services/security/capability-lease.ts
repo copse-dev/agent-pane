@@ -101,6 +101,12 @@ export class ShellReplayLeaseStore {
     return this.leases.delete(id)
   }
 
+  revokeThread(threadId: string): void {
+    for (const [id, lease] of this.leases) {
+      if (lease.identity.threadId === threadId) this.leases.delete(id)
+    }
+  }
+
   clear(): void {
     this.leases.clear()
   }

@@ -10,7 +10,11 @@
  * rename or completion results cannot allocate or revive a checkout through
  * create/autosave. Explicit native restore/adopt/clear operations write directly.
  */
-const MAIN_OWNED_THREAD_FIELDS: readonly string[] = ['remoteAgentLink', 'worktree']
+const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
+  'remoteAgentLink',
+  'cursorAgentIds',
+  'worktree',
+]
 
 /** `payload` without the fields only main may write. */
 export function withoutMainOwnedThreadFields(

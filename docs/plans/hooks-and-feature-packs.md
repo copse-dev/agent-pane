@@ -74,9 +74,21 @@ revisiting this document, not silently diverging in an implementation PR.
    sets send-now — byte-for-byte the user's send-now semantics). Send-now interrupts
    the model turn but transfers an already-running native shell command to the owned
    background-task supervisor, preserving its process, containment, logs and original
-   deadline. Explicit Stop still cancels foreground work. No mid-turn injection
+   deadline. Explicit Stop still cancels foreground work. Stop and other cancellation
+   revoke task-scoped shell replay grants and pending/saved approval answers;
+   send-now and ordinary completion retain same-task retry authority. A new human
+   turn tree still cannot inherit that authority. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
-5. **One auto-continuation budget.** A single counter per **turn tree** (everything
+5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
+   exception: a parent may start at most four children over its lifetime and keep at
+   most two unarchived children. Owned children cannot orchestrate grandchildren.
+   Each child retains its own continuation budget; this explicitly permits bounded
+   additional model work instead of sharing the parent's counter. Replacing an
+   archived or deleted child still consumes the parent's lifetime start limit.
+   Queued delegated prompts recheck ownership and the parent's grant before dispatch,
+   including after restart; revoked prompts are held and never auto-drain.
+   This exception does not change hook or background-wake accounting.
+   Otherwise, a single counter per **turn tree** (everything
    descending from one human-originated submission). Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
    and originating epoch. The wake waits until the thread runs no turn and no machine
@@ -87,7 +99,8 @@ revisiting this document, not silently diverging in an implementation PR.
    write already waiting for its approval response receives no duplicate wake.
    The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
-   follow-ups, bounded background-task completion wakes, change-acceptance wakes, durable CI status-change wakes,
+   follow-ups, bounded background-task completion wakes (including explicit `run_shell`
+   foreground yields), change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
@@ -356,8 +369,12 @@ revisiting this document, not silently diverging in an implementation PR.
     and an explicitly invoked skill remains the last instruction block because it is
     a direct user action. `TurnStartPayload.executor` lets hooks abstain from
     executor-private mechanisms, while `toolNames` contains only tools the host can
-    prove it offers on that path (the filtered local list or Copse's active ACP bridge
-    list). A hook must not name a tool absent from that list. Disabling a pack removes
+    prove the executor has on that path: the filtered local list, or the Copse bridge
+    tools the ACP agent listed and has not since shown it dropped. That list is empty
+    when the agent was offered no bridge, never listed it (#4144), or dropped the tools
+    after listing them (#4142). An offer is not enough, so the ACP event fires once
+    the session's bridge mount is known, still before the prompt is sent. A hook must
+    not name a tool absent from that list. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17). `invokedSkills` carries explicit user-selected skill names from
     both host fire sites. `TurnStartPayload.firstTurn` (the same "no prior

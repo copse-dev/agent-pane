@@ -28,8 +28,10 @@ type CompletionRequest = z.infer<typeof requestSchema>
 
 export interface ConversationResponse {
   user: string
+  /** Assert the real provider request before emitting this fixture response. */
+  assertRequest?: (request: Readonly<CompletionRequest>) => void
   text?: string
-  toolCalls?: Array<{ name: string; args: Record<string, unknown> }>
+  toolCalls?: Array<{ id?: string; name: string; args: Record<string, unknown> }>
   toolResults?: Array<{ name: string; includes?: string }>
   hold?: string
   allowAbort?: boolean
@@ -159,7 +161,7 @@ export async function startConversationServer(options: {
     const id = `conversation-${String(++sequence)}`
     const toolCalls = step.toolCalls?.map((call, index) => ({
       index,
-      id: `${id}-tool-${String(index)}`,
+      id: call.id ?? `${id}-tool-${String(index)}`,
       type: 'function',
       function: { name: call.name, arguments: JSON.stringify(call.args) },
     }))
@@ -268,6 +270,7 @@ export async function startConversationServer(options: {
       const next = pending[cursor++]
       assert.ok(next, 'No conversation response was registered for this request')
       checkRequest(completion, next.response)
+      next.response.assertRequest?.(completion)
       await send(response, completion, next.response, true)
       next.complete = true
     })().catch((error: unknown) => {

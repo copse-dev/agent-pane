@@ -164,10 +164,11 @@ import {
 import { getAutomationService } from '../automations/automation-service.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 
-const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
+const SANDBOX_REPLAY_LABEL =
+  'Retry this exact command for this task (up to 10, for 15 minutes). Stop revokes retries.'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
   SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
-)}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours)`
+)}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.`
 
 /**
  * @param wholeCommandFallback lease the exact command line when no single
@@ -365,11 +366,12 @@ async function requestEscalationApproval(
     },
     signal,
   )
+  if (signal?.aborted) return false
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
-  if (approved && grantScope === 'turn-tree' && leaseIdentity) {
+  if (!signal?.aborted && approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, parts.command, true)
   }
-  return approved
+  return approved && !signal?.aborted
 }
 
 /** Whether every path sits under macOS's per-user temp directory (`/var/folders/…/T`). */
@@ -532,6 +534,7 @@ async function promptShell(
     },
     signal,
   )
+  if (signal?.aborted) return false
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, command)
   }
@@ -603,6 +606,7 @@ export async function promptUnsandboxedShell(
     oneShot?: boolean
   } = {},
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   const oneShot = opts.oneShot === true
@@ -648,6 +652,7 @@ export async function promptExpectedSandboxBlock(
     requireInteractiveApproval?: boolean
   } = {},
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   // An agent rerunning the same browser demo or test harness after each fix asks
   // to leave the sandbox with the same command every time. Bounded opaque local
   // execution may carry the same exact-command replay lease a verified-block
@@ -684,6 +689,7 @@ export async function promptExpectedSandboxBlock(
     },
     signal,
   )
+  if (signal?.aborted) return false
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, command, true)
   }

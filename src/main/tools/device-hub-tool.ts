@@ -4,6 +4,7 @@ import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from '../services/
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import { objectEnvelopeOf } from '../services/tool-input-schema.ts'
 import { deviceHubService } from '../services/apple-development/device-hub.ts'
 import { getThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
@@ -28,33 +29,38 @@ const input = z.discriminatedUnion('type', [
   z.object({ type: z.literal('button-tap'), name: z.enum(['home', 'lock', 'side', 'siri']) }),
 ])
 
+const deviceHubParameters = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('list') }),
+  z.object({ action: z.literal('open') }),
+  z.object({ action: z.literal('apps'), device_id: deviceId }),
+  z.object({
+    action: z.literal('launch'),
+    device_id: deviceId,
+    bundle_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/),
+  }),
+  z.object({
+    action: z.literal('screenshot'),
+    device_id: deviceId,
+    output_path: z
+      .string()
+      .regex(/\.png$/i)
+      .optional()
+      .describe('New workspace-relative PNG file to save; existing files are never overwritten.'),
+  }),
+  z.object({ action: z.literal('delete_simulator'), device_id: z.uuid() }),
+  z.object({ action: z.literal('show'), device_id: deviceId }),
+  z.object({ action: z.literal('input'), device_id: deviceId, input }),
+])
+
 export const deviceHubTool = defineTool({
   name: 'device_hub',
   description:
     'Use Apple Device Hub on a local Mac. List physical devices and simulators, open Device Hub, list installed apps, launch an installed bundle ID, capture a screenshot, or delete an explicitly requested disposable simulator by UUID and verify absence. Deletion requires per-call approval. Optional screenshot output_path saves a new PNG file inside the executing workspace; existing files are never overwritten. An image attachment alone is not a saved workspace file. Show opens a booted simulator in Copse’s Desktop panel, initially view-only. Input sends a discrete simulator tap (normalized x/y), USB HID key, or hardware button. Physical-device input and live embedding are not supported; use Device Hub for those. Requires an enrolled Apple Development project and tool permission. Build/install apps with the bundled XcodeBuildMCP tools.',
   provenance: 'external',
-  parameters: z.discriminatedUnion('action', [
-    z.object({ action: z.literal('list') }),
-    z.object({ action: z.literal('open') }),
-    z.object({ action: z.literal('apps'), device_id: deviceId }),
-    z.object({
-      action: z.literal('launch'),
-      device_id: deviceId,
-      bundle_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/),
-    }),
-    z.object({
-      action: z.literal('screenshot'),
-      device_id: deviceId,
-      output_path: z
-        .string()
-        .regex(/\.png$/i)
-        .optional()
-        .describe('New workspace-relative PNG file to save; existing files are never overwritten.'),
-    }),
-    z.object({ action: z.literal('delete_simulator'), device_id: z.uuid() }),
-    z.object({ action: z.literal('show'), device_id: deviceId }),
-    z.object({ action: z.literal('input'), device_id: deviceId, input }),
-  ]),
+  parameters: deviceHubParameters,
+  // One object for agents: the union's top-level `oneOf` is a schema no agent can
+  // list (#4142). `parameters` still validates each action's exact fields.
+  rawParameters: objectEnvelopeOf(deviceHubParameters),
   async execute(args, signal) {
     const projectId = getThreadExecutionContext()?.projectId
     if (
