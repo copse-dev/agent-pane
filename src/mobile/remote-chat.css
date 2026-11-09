@@ -81,7 +81,6 @@ body .topbar {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  text-transform: capitalize;
   letter-spacing: 0;
   font-size: 12px;
 }
