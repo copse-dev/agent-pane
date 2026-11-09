@@ -5,9 +5,10 @@ import { createThread, getThreadById, setThreadStatus } from '@shared/store/thre
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { answerReviewerInput } from './reviewer-input.ts'
-import { drainMessageQueue } from './message-queue.ts'
+import { drainMessageQueue, foldBackContinuationUsed } from './message-queue.ts'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
-test('an answer is saved once and waits for the active run to finish', () => {
+test('an answer is saved once and starts its human task only after the active run finishes', () => {
   const runs: string[] = []
   const base = createFakeApi()
   const api = {
@@ -73,8 +74,15 @@ test('an answer is saved once and waits for the active run to finish', () => {
   drainMessageQueue(store, api, threadId)
   assert.equal(runs.length, 1)
   assert.match(runs[0] ?? '', /Wrap to two lines/)
-  assert.equal(getThreadById(store, threadId)?.currentEpoch, 'active-tree')
-  assert.equal(getThreadById(store, threadId)?.continuationUsed, 3)
+  const dispatched = getThreadById(store, threadId)
+  assert.ok(dispatched?.currentEpoch)
+  assert.notEqual(dispatched.currentEpoch, 'active-tree')
+  assert.equal(dispatched.continuationUsed, 0)
+  const payload = expectRecord(parseJsonUnknown(runs[0] ?? ''))
+  assert.equal(payload['turnTreeId'], dispatched.currentEpoch)
+  assert.equal(payload['continuationBudgetUsed'], 0)
+  foldBackContinuationUsed(store, threadId, 'active-tree', 4)
+  assert.equal(getThreadById(store, threadId)?.continuationUsed, 0)
 })
 
 test('an answer submitted at idle starts a fresh human turn tree', () => {

@@ -668,7 +668,8 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 When the command is bounded opaque local execution — its only reasons are a project script or
 executable, with no network, outside-path, destructive or install signal — the advanced prompt
-also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
+also offers a ten-retry, two-hour outside-sandbox grant. Its label explains exact-command
+scope, Stop revocation and the risk of changed scripts. Ticking it leases that
 exact command line, byte for byte, to the current human turn tree in this thread and execution
 root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
 Any other command, a changed command, another turn tree or another thread asks again. The same
@@ -901,6 +902,17 @@ pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
 processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
+
+Task retries authorize the exact displayed command in one project, chat, human task,
+execution root and containment mode. The contained option allows ten additional runs
+within 15 minutes; the separately selected outside-sandbox option allows ten within two
+hours. Stop revokes the chat's retries immediately, including saved answers to abandoned
+approval requests. Cancellation also revokes them, except send-now interruption, which
+can continue the same task. A new human task cannot reuse the
+previous task's answer. Restart forgets these memory-only grants; expiry or exhaustion
+requires approval again. Ordinary completion preserves retries for the same task.
+Outside-sandbox scripts still use normal account access, and changing a script's contents
+can change what the same command does. These are not all-command session grants.
 
 Prompt prose explains the effect, execution boundary, and duration of the grant outside the
 detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,
@@ -1318,6 +1330,15 @@ main process ([design and validation record](plans/sandboxed-artifact-image-down
 - **Fail closed.** Windows, a failed ASRT start or a policy denial leaves the image unavailable
   with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
   retry re-authorizes and fetches a fresh signed URL.
+
+An explicit click on a Cursor artifact link uses a separate, user-initiated Save flow. Main checks
+the chat's durable current link and its bounded, main-recorded recent Cursor agent IDs before
+asking the provider for a signed URL. It accepts only the exact configured HTTPS download origin,
+rechecks up to three redirects, and reads at most 32 MiB within 30 seconds. Any file type can be
+saved through the main-owned file dialog; the bearer URL stays out of the renderer and browser
+history. Unlike automatic image hydration, this explicit download fetch runs in main after the
+click and does not claim the per-job ASRT containment described above. Cached OpenAI artifacts
+use the same Save dialog after checking the owning project and chat.
 
 ## Implementation map
 
