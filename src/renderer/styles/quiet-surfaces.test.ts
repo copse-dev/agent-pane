@@ -13,26 +13,67 @@ import { resolve } from 'node:path'
 
 const GLOBAL = resolve(process.cwd(), 'src/renderer/styles/global')
 
-type Rule = { file: string; selectors: string[]; body: string }
+type Rule = { file: string; selectors: string[]; body: string; conditions: string[] }
 
-/** Innermost `selector { … }` rules of every global sheet, comments stripped. */
+/**
+ * Innermost `selector { … }` rules of a sheet, comments stripped. Each keeps the
+ * conditional at-rules it sits in (`@media`, `@supports`, `@container`), so a
+ * declaration that only applies at one viewport cannot stand in for the base rule.
+ */
+function parseRules(file: string, css: string): Rule[] {
+  const rules: Rule[] = []
+  const stack: { head: string; nested: boolean }[] = []
+  let start = 0
+  for (let i = 0; i < css.length; i++) {
+    const char = css[i]
+    if (char === '{') {
+      const parent = stack[stack.length - 1]
+      if (parent) parent.nested = true
+      // Declarations can precede a nested block; the head starts after the last one.
+      const head = css.slice(start, i).split(';').pop() ?? ''
+      stack.push({ head: head.trim(), nested: false })
+      start = i + 1
+    } else if (char === '}') {
+      const block = stack.pop()
+      if (block && !block.nested && block.head && !block.head.startsWith('@')) {
+        rules.push({
+          file,
+          selectors: block.head.split(',').map((part) => part.trim().replace(/\s+/g, ' ')),
+          body: css.slice(start, i),
+          conditions: stack
+            .map((ancestor) => ancestor.head)
+            .filter((head) => /^@(media|supports|container)\b/.test(head)),
+        })
+      }
+      start = i + 1
+    }
+  }
+  return rules
+}
+
 const allRules: Rule[] = readdirSync(GLOBAL)
   .filter((file) => file.endsWith('.css'))
-  .flatMap((file) => {
-    const css = readFileSync(resolve(GLOBAL, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-    return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((match) => {
-      const head = (match[1] ?? '').trim()
-      if (!head || head.startsWith('@')) return []
-      const selectors = head.split(',').map((part) => part.trim().replace(/\s+/g, ' '))
-      return [{ file, selectors, body: match[2] ?? '' }]
-    })
-  })
+  .flatMap((file) =>
+    parseRules(file, readFileSync(resolve(GLOBAL, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')),
+  )
 
-/** Every rule whose selector list names `selector` exactly; at least one must exist. */
+/**
+ * Every rule whose selector list names `selector` exactly, conditional ones
+ * included, for checks that a declaration never appears. At least one
+ * unconditional rule must exist.
+ */
 function rulesFor(selector: string): Rule[] {
   const found = allRules.filter((rule) => rule.selectors.includes(selector))
-  assert.ok(found.length > 0, `no rule for ${selector}`)
+  assert.ok(
+    found.some((rule) => rule.conditions.length === 0),
+    `no unconditional rule for ${selector}`,
+  )
   return found
+}
+
+/** The unconditional rules for `selector`, for checks that a declaration applies. */
+function baseRulesFor(selector: string): Rule[] {
+  return rulesFor(selector).filter((rule) => rule.conditions.length === 0)
 }
 
 /** A border or outline side declared with something other than 0 / none. */
@@ -85,7 +126,7 @@ describe('Settings rows sit on the page', () => {
 
   it('keeps the remote folder picker visible as a well inside its dialog', () => {
     const fill = (selector: string): string | undefined =>
-      rulesFor(selector)
+      baseRulesFor(selector)
         .map((rule) => /background:\s*([^;]+);/.exec(rule.body)?.[1]?.trim())
         .find((value) => value !== undefined)
     const well = fill('.remote-folder-list')
@@ -96,11 +137,11 @@ describe('Settings rows sit on the page', () => {
   it('keeps the Apple Development card above a conversation, where it is not a Settings row', () => {
     // The conversation mounts the same panel (conversation.ts), so only the
     // Settings copy may drop the frame.
-    const [card] = rulesFor('.apple-development-panel')
+    const [card] = baseRulesFor('.apple-development-panel')
     assert.ok(card)
     assert.equal(drawsBorder(card.body), true, `${where(card)} lost its frame`)
     assert.match(card.body, /background:\s*var\(--bg-elevated\)/, where(card))
-    const [host] = rulesFor('.plugin-settings-fold .apple-development-host')
+    const [host] = baseRulesFor('.plugin-settings-fold .apple-development-host')
     assert.ok(host)
     assert.match(host.body, /margin:\s*0\b/, `${where(host)} keeps the conversation inset`)
   })
@@ -128,7 +169,7 @@ describe('Settings rows sit on the page', () => {
 
   it('lines an open licence up with its name', () => {
     for (const selector of ['.about-license-summary', '.about-license-body']) {
-      const [rule] = rulesFor(selector)
+      const [rule] = baseRulesFor(selector)
       assert.ok(rule)
       assert.match(rule.body, /padding:\s*\S+ 0( \S+)?;/, `${where(rule)} keeps a side inset`)
     }
@@ -146,7 +187,7 @@ describe('Settings rows sit on the page', () => {
 
   it('marks a blocked automation or a hooks warning with the warning plate, not a tinted frame', () => {
     for (const selector of ['.automation-row-blocked', '.sources-row-warning']) {
-      const [rule] = rulesFor(selector)
+      const [rule] = baseRulesFor(selector)
       assert.ok(rule)
       assert.match(rule.body, /--sev:\s*var\(--warning\)/, where(rule))
       assert.match(rule.body, /var\(--callout-plate-fill\)/, where(rule))
@@ -173,7 +214,7 @@ describe('notices sit on the shared flat callout plate', () => {
 
   for (const [selector, sev] of NOTICES) {
     it(`${selector} picks --${sev} and mixes the plate, with no frame or fallback hex`, () => {
-      const owning = rulesFor(selector).filter((rule) => /background\s*:/.test(rule.body))
+      const owning = baseRulesFor(selector).filter((rule) => /background\s*:/.test(rule.body))
       assert.equal(owning.length, 1, `${selector} should have one rule that paints it`)
       const [rule] = owning
       assert.ok(rule)
@@ -205,12 +246,12 @@ describe('labels outside the kit follow the kit', () => {
         assert.doesNotMatch(rule.body, /text-transform:\s*uppercase/, where(rule))
         assert.doesNotMatch(rule.body, /letter-spacing\s*:/, where(rule))
       }
-      const [own] = rulesFor(selector).filter((rule) => /font-size\s*:/.test(rule.body))
+      const [own] = baseRulesFor(selector).filter((rule) => /font-size\s*:/.test(rule.body))
       assert.ok(own, `${selector} sets no font size`)
       assert.match(own.body, /font-size:\s*var\(--badge-font-size\)/, where(own))
       // ::first-letter only applies to a block container.
       assert.match(own.body, /display:\s*inline-block/, where(own))
-      const [first] = rulesFor(`${selector}::first-letter`)
+      const [first] = baseRulesFor(`${selector}::first-letter`)
       assert.ok(first)
       assert.match(first.body, /text-transform:\s*uppercase/, where(first))
     })
