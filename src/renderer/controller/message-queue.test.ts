@@ -134,6 +134,9 @@ test('a subthread prompt main holds at dispatch is restored like a failed pre-ch
 test('only delegated subthread prompts mark their run for main to recheck', async () => {
   const store = createProjectStore()
   const threadId = createThread(store)
+  // Peer prompts currently carry no epoch; their supported authorization path
+  // still dispatches into a destination with an existing human task.
+  setCurrentEpoch(store, threadId, 'destination-task')
   const api = fakeApi()
   const delegations: unknown[] = []
   api.agent.run = (_projectId, _threadId, _payload, ...rest): Promise<void> => {
@@ -991,12 +994,13 @@ test('stale-epoch-never-aborts (decision 16): a stale hook send-now downgrades t
   assert.equal(api.runs.length, 0, 'the downgraded item never auto-submits')
 })
 
-test('stale-epoch-never-aborts (decision 16): a current-epoch hook send-now takes the abort path', () => {
+test('stale-epoch-never-aborts (decision 16): a current-epoch hook send-now retains its task', () => {
   const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
   setCurrentEpoch(store, threadId, 'epoch-current')
+  setContinuationUsed(store, threadId, 2)
 
   enqueueHookMessage(store, api, threadId, {
     text: 'current hook output',
@@ -1012,6 +1016,104 @@ test('stale-epoch-never-aborts (decision 16): a current-epoch hook send-now take
     false,
     'current item is not held',
   )
+  assert.equal(thread.currentEpoch, 'epoch-current')
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['turnTreeId'], 'epoch-current')
+  assert.equal(payload['continuationBudgetUsed'], 3)
+})
+
+test('human send-now starts a new task and holds machine messages queued under the old task', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'old-task')
+  setContinuationUsed(store, threadId, 2)
+  enqueueHookMessage(store, api, threadId, {
+    text: 'Old task follow-up',
+    origin: HOOK_ORIGIN,
+    epoch: 'old-task',
+    sendNow: false,
+  })
+  const messageId = addMessage(store, threadId, 'user', 'A different task')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'A different task' },
+    createdAt: 1,
+  })
+  assert.equal(
+    getThread(store, threadId).currentEpoch,
+    'old-task',
+    'queuing leaves active work alone',
+  )
+  assert.equal(getThread(store, threadId).continuationUsed, 2)
+
+  sendQueuedMessageNow(store, api, threadId, messageId)
+  assert.deepEqual(api.aborts, [threadId])
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.notEqual(payload['turnTreeId'], 'old-task')
+  assert.equal(payload['turnTreeId'], getThread(store, threadId).currentEpoch)
+  assert.equal(payload['continuationBudgetUsed'], 0)
+
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  assert.equal(api.runs.length, 1, 'the previous task cannot follow the new human task')
+  const oldHook = at(getThread(store, threadId).pendingMessages ?? [], 0)
+  assert.equal(oldHook.epoch, 'old-task')
+  assert.equal(isHeldMessage(oldHook), true)
+})
+
+test('human send-now of a machine message authorizes only that item in a fresh task', () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'old-task')
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
+  enqueueHookMessage(store, api, threadId, {
+    text: 'Chosen follow-up',
+    origin: HOOK_ORIGIN,
+    epoch: 'old-task',
+    sendNow: false,
+  })
+  const item = at(getThread(store, threadId).pendingMessages ?? [], 0)
+  sendQueuedMessageNow(store, api, threadId, item.messageId)
+  assert.deepEqual(api.aborts, [threadId])
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.notEqual(payload['turnTreeId'], 'old-task')
+  assert.equal(payload['turnTreeId'], getThread(store, threadId).currentEpoch)
+  assert.equal(payload['continuationBudgetUsed'], 1)
+  assert.deepEqual(
+    getThread(store, threadId).messages.find((message) => message.id === item.messageId)?.origin,
+    HOOK_ORIGIN,
+  )
+})
+
+test('a previously queued hook is held when another human entry point changes the epoch', () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'old-task')
+  enqueueHookMessage(store, api, threadId, {
+    text: 'Old follow-up',
+    origin: HOOK_ORIGIN,
+    epoch: 'old-task',
+    sendNow: false,
+  })
+  startHumanTurnTree(store, threadId)
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  assert.equal(api.runs.length, 0)
+  assert.equal(isHeldMessage(at(getThread(store, threadId).pendingMessages ?? [], 0)), true)
+  assert.equal(getThread(store, threadId).continuationUsed, 0)
 })
 
 test('isStaleEpoch: no current epoch (no newer turn tree) is never stale; a differing epoch is', () => {
@@ -1231,10 +1333,12 @@ test('held-on-exhaustion (decision 5): a human item behind an over-budget machin
   assert.equal(isHeldMessage(at(thread.pendingMessages ?? [], 0)), true)
 })
 
-test('budget (decision 5): a human-authored queued message never consumes budget', () => {
+test('a waiting human message starts a fresh task and budget only when dispatched', () => {
   const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'old-task')
   setContinuationUsed(store, threadId, 3)
   const messageId = addMessage(store, threadId, 'user', 'human follow-up')
   enqueueUserMessage(store, threadId, {
@@ -1244,13 +1348,23 @@ test('budget (decision 5): a human-authored queued message never consumes budget
   })
 
   drainMessageQueue(store, api, threadId)
+  assert.equal(api.runs.length, 0)
+  assert.equal(getThread(store, threadId).currentEpoch, 'old-task')
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+  setThreadStatus(store, threadId, 'idle')
+
+  drainMessageQueue(store, api, threadId)
 
   assert.equal(api.runs.length, 1)
   assert.equal(
     getThread(store, threadId).continuationUsed,
-    3,
-    'a human message does not spend the machine-turn budget',
+    0,
+    'a human message starts its own machine-turn budget',
   )
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.notEqual(payload['turnTreeId'], 'old-task')
+  assert.equal(payload['turnTreeId'], getThread(store, threadId).currentEpoch)
+  assert.equal(payload['continuationBudgetUsed'], 0)
 })
 
 test('budget reset (decision 5): startHumanTurnTree resets continuationUsed to 0', () => {
