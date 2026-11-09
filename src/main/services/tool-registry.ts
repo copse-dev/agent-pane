@@ -1,5 +1,12 @@
 import { planToolBlockReason } from './thread-plan-context.ts'
 import { z } from 'zod'
+import {
+  modelFacingInputSchema,
+  TOOL_SCHEMA_DIALECTS,
+  type ToolSchemaDialect,
+  type ToolSchemaSource,
+} from './tool-input-schema.ts'
+import { isElectronAppPackaged } from './electron-app-runtime.ts'
 import type {
   ToolDefinition,
   LLMTool,
@@ -50,6 +57,31 @@ interface RegisteredTool {
   execute: (args: unknown, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
   provenance: ToolProvenance
   clampNumericRangeArgs: boolean
+}
+
+/** A registered tool as one model-facing export carries it. */
+interface ModelFacingTool {
+  name: string
+  description: string
+  schema: Record<string, unknown>
+}
+
+/**
+ * Refuse a first-party tool no agent could list (#4142). Its schema is Copse's
+ * own code, so a bad one is a bug to fix where it is written: throwing here
+ * makes the tool's first test fail rather than letting every agent quietly lose
+ * it, or, in Claude's case, every other Copse tool with it.
+ */
+function assertAgentInputSchemas(tool: ToolSchemaSource & { name: string }): void {
+  for (const dialect of TOOL_SCHEMA_DIALECTS) {
+    const facing = modelFacingInputSchema(tool, dialect)
+    if (!('problem' in facing)) continue
+    throw new Error(
+      `Tool "${tool.name}" can't be offered to agents: ${facing.problem} (${dialect}). ` +
+        'Give it z.object() parameters, or advertise a flat object schema as its ' +
+        'rawParameters (objectEnvelopeOf in tool-input-schema.ts derives one from a union).',
+    )
+  }
 }
 
 export interface ToolCatalogDescriptor {
@@ -117,8 +149,18 @@ function wrapProvenance(name: string, result: ToolExecuteResult): ToolExecuteRes
 
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>()
+  /** Schema problems already logged, so a per-turn export warns once per tool. */
+  private readonly reportedSchemaProblems = new Set<string>()
 
+  /**
+   * Add a tool, replacing one of the same name. A first-party tool whose input
+   * schema no agent could list throws, except in a packaged build: there the
+   * exports leave it out with a warning instead, so one mistake cannot stop the
+   * app starting. Tools marked `untrustedSchema` are never checked here; their
+   * schemas are input, filtered the same way at export.
+   */
   register<TArgs>(tool: ToolDefinition<TArgs>): void {
+    if (tool.untrustedSchema !== true && !isElectronAppPackaged()) assertAgentInputSchemas(tool)
     this.tools.set(tool.name, {
       name: tool.name,
       description: tool.description,
@@ -136,22 +178,46 @@ export class ToolRegistry {
   }
 
   /**
-   * Tools in a fixed order, sorted by name. `tools` sits ahead of the whole
-   * conversation in the request, so anything that reorders it re-prefills the
-   * thread. Insertion order is not stable: settings toggles unregister and
-   * re-register tools, and MCP servers connect late, so the same set of tools
-   * would otherwise serialize differently from one turn to the next.
+   * The tools as models see them in `dialect`. One that no agent could list
+   * (see `modelFacingInputSchema`) is left out with a warning rather than
+   * poisoning the whole toolset: a provider rejects the entire request, and
+   * Claude Code drops every tool of the server, over one such schema.
+   */
+  private modelFacing(
+    tools: readonly RegisteredTool[],
+    dialect: ToolSchemaDialect,
+  ): ModelFacingTool[] {
+    const facingTools: ModelFacingTool[] = []
+    for (const tool of tools) {
+      const facing = modelFacingInputSchema(tool, dialect)
+      if ('schema' in facing) {
+        facingTools.push({ name: tool.name, description: tool.description, schema: facing.schema })
+        continue
+      }
+      const key = `${tool.name}\u0000${dialect}\u0000${facing.problem}`
+      if (this.reportedSchemaProblems.has(key)) continue
+      this.reportedSchemaProblems.add(key)
+      console.warn(`[tools] Not offering "${tool.name}" to models (${dialect}): ${facing.problem}`)
+    }
+    return facingTools
+  }
+
+  /**
+   * Tools in a fixed order, sorted by name, with **OpenAPI 3.0** input schemas
+   * for Copse's own providers. `tools` sits ahead of the whole conversation in
+   * the request, so anything that reorders it re-prefills the thread. Insertion
+   * order is not stable: settings toggles unregister and re-register tools, and
+   * MCP servers connect late, so the same set of tools would otherwise
+   * serialize differently from one turn to the next.
    */
   toLLMTools(): LLMTool[] {
     const ordered = Array.from(this.tools.values()).sort((a, b) =>
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     )
-    return ordered.map((t) => ({
-      name: t.name,
-      description: t.description,
-      parameters:
-        t.rawParameters ??
-        (z.toJSONSchema(t.parameters, { target: 'openapi-3.0' }) as Record<string, unknown>),
+    return this.modelFacing(ordered, 'openapi-3.0').map(({ name, description, schema }) => ({
+      name,
+      description,
+      parameters: schema,
     }))
   }
 
@@ -165,26 +231,12 @@ export class ToolRegistry {
    * validates MCP tool schemas against 2020-12 and rejects the openapi-3.0
    * flavor {@link toLLMTools} emits (`nullable`, boolean `exclusiveMinimum`) —
    * an external agent that mounts such a tool dies with a 400 on its next
-   * model call. Tools whose zod schema can't convert are omitted (with a
-   * warning) rather than poisoning the whole toolset.
+   * model call.
    */
   toMcpTools(): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-    const tools: { name: string; description: string; inputSchema: Record<string, unknown> }[] = []
-    for (const t of this.tools.values()) {
-      try {
-        tools.push({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.rawParameters ?? z.toJSONSchema(t.parameters),
-        })
-      } catch (err) {
-        console.warn(
-          `[tools] Skipping "${t.name}" from MCP export — schema conversion failed:`,
-          err,
-        )
-      }
-    }
-    return tools
+    return this.modelFacing(Array.from(this.tools.values()), 'draft-2020-12').map(
+      ({ name, description, schema }) => ({ name, description, inputSchema: schema }),
+    )
   }
 
   /** Validate a queued call with the same schema used for execution. */

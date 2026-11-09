@@ -12,6 +12,7 @@ import type {
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
+import { runShellTool } from '../../tools/shell-tool.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
@@ -444,6 +445,26 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
+  it('keeps the read-only restriction without naming an unavailable write-access tool', () => {
+    const prompt = buildAcpPrompt('Inspect the project', [], {
+      readonlyCheckout: true,
+      copseTools: false,
+    })
+    assert.match(prompt, /Read-only workspace:/)
+    assert.match(prompt, /cannot write there/)
+    assert.doesNotMatch(prompt, /request_write_access/)
+    assert.match(prompt, /Tell the user/)
+  })
+
+  it('keeps the write-access instructions when a read-only session has Copse tools', () => {
+    const prompt = buildAcpPrompt('Change the project', [], {
+      readonlyCheckout: true,
+      copseTools: true,
+    })
+    assert.match(prompt, /request_write_access/)
+    assert.match(prompt, /end your turn/)
+  })
+
   it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
     const user = 'Please implement the complete feature, then show it working.'
     const fresh = buildAcpPrompt(user, [])
@@ -475,6 +496,17 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /logs and exit status before reporting validation as complete/)
     assert.match(prompt, /run_background does not accept expects_sandbox_block/)
     assert.match(prompt, /use copse run_shell with an explicit timeout_ms/)
+    const shellExample = /run_shell yield example: (\{[^\n]+\})/.exec(prompt)?.[1]
+    assert.ok(shellExample, 'the same-process shell yield example must be present')
+    assert.deepEqual(safeJsonParse(shellExample, decodeWithSchema(runShellTool.parameters)), {
+      command: 'pnpm test',
+      timeout_ms: 1_800_000,
+      yield_after_ms: 1_000,
+    })
+    assert.match(prompt, /timeout_ms remains its total deadline/)
+    assert.match(prompt, /still-running receipt is not success/)
+    assert.match(prompt, /yielding call as the only tool in its response/)
+    assert.match(prompt, /cannot bypass its explicit Always ask or Blocked setting/)
     assert.match(prompt, /tool deadlines instead of assuming a shell timeout executable/)
     assert.equal(buildAcpPrompt(user, [], { includeNotes: false }), user)
   })
@@ -515,6 +547,15 @@ describe('buildAcpPrompt', () => {
     assert.match(sandboxed, /GitHub and CI tools/i)
     assert.match(sandboxed, /sandbox\.allowedDomains/)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
+  })
+
+  it('keeps the GitHub steer, but not the run_shell steer, for an agent without Copse tools', () => {
+    const prompt = buildAcpPrompt('hello', [], { sandboxed: true, copseTools: false })
+    assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
+    assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
+    assert.doesNotMatch(prompt, /Prefer the "copse" MCP tools/)
+    assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
+    assert.match(prompt, /hello$/)
   })
 
   it('places the notes ahead of the replayed transcript', () => {

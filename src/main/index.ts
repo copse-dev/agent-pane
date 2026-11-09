@@ -1,5 +1,6 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
+import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
@@ -7,7 +8,7 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { initThreadPrompts } from './services/thread-prompts.ts'
+import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -140,6 +141,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  stopAllAgentRuns,
   listRunningThreadIds,
   retryPostTurnReview,
   runReviewForThread,
@@ -206,6 +208,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
   zThreadId,
@@ -714,6 +717,7 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+    interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -1035,16 +1039,26 @@ app
 
     ipcMain.handle(
       'agent:run',
-      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        rawPrompt: string,
+        delegationArg?: unknown,
+      ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await agentDispatcher.dispatch({
-          projectId,
-          threadId,
-          payload: parseAgentRunPayload(rawPrompt),
-        })
+        const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
+        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // A delegated prompt's authority is decided here, not by the renderer's
+        // pre-check: a revoke can land between that check and this invoke.
+        await (delegation
+          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+              agentDispatcher.dispatch(request),
+            )
+          : agentDispatcher.dispatch(request))
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
@@ -1447,8 +1461,13 @@ let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
+let interruptTurnTranscripts: (() => Promise<void>) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  const transcriptDrain = interruptTurnTranscripts?.()
+  setAgentInitiatedTurnAuthority(null)
+  stopAllAgentRuns()
+  await stopAllForegroundShellProcesses()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1492,6 +1511,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await transcriptDrain
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

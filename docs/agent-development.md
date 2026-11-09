@@ -318,6 +318,19 @@ run it through `run_background` with `wake_on_completion`, not a foreground call
 result against [`host-environment-test-noise.md`](host-environment-test-noise.md) before treating
 every non-zero exit as a regression.
 
+When a command needs `run_shell`'s outside-sandbox approval path, use an explicit
+total deadline with a short foreground wait, for example
+`{"command":"pnpm run check","timeout_ms":1800000,"yield_after_ms":1000}`.
+The same approved process keeps running under the background supervisor; the
+original deadline is not extended. Send the yielding call alone: the runner does
+not infer dependencies or defer later tools batched alongside it. A still-running
+receipt means end the turn and
+wait for the completion wake before dependent edits or a validation claim. Inspect
+the task's retained logs and exit status when woken; do not launch the command again.
+This requires Background tasks to be enabled and honors its explicit Always ask or
+Blocked policy by refusing the yield before startup. An ordinary finite foreground
+call remains available. See [the permission contract](shell-permissions.md#bounded-foreground-yielding).
+
 ### Remote validation
 
 Prefer the ordinary remote e2e loop when a cloud host is configured:

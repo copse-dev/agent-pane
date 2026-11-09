@@ -53,8 +53,11 @@ export type ArtifactImageRequest = z.infer<typeof zArtifactImageRequest>
 export type ArtifactImageResult = RemoteArtifactImageResult
 
 export interface ArtifactImageServiceDependencies {
-  /** The thread's durable remote-agent link; throws for an unknown or invalid thread. */
-  readThreadLink(projectId: string, threadId: string): Promise<RemoteAgentLink | null>
+  /** Main-owned thread provenance; throws for an unknown or invalid thread. */
+  readThreadProvenance(
+    projectId: string,
+    threadId: string,
+  ): Promise<{ link: RemoteAgentLink | null; cursorAgentIds: readonly string[] }>
   /** Configured provider API base and key; throws when not configured. */
   credentials(): { baseUrl: string; apiKey: string }
   resolveDownloadUrl(input: {
@@ -130,19 +133,31 @@ export class ArtifactImageService {
 
   private async authorizeAndLoad(request: ArtifactImageRequest): Promise<string> {
     const path = validateArtifactPath(request.path)
-    let link: RemoteAgentLink | null
+    let provenance: { link: RemoteAgentLink | null; cursorAgentIds: readonly string[] }
     try {
-      link = await this.dependencies.readThreadLink(request.projectId, request.threadId)
+      provenance = await this.dependencies.readThreadProvenance(request.projectId, request.threadId)
     } catch {
       throw new ArtifactImageError('invalid-request')
     }
-    // Exact durable provenance only. An agent ID in transcript text or the
-    // request selects among the thread's links; it never creates one.
+    // Exact durable provenance only. An agent ID in transcript text selects
+    // among the chat's main-recorded Cursor launches; it never creates one.
+    const { link, cursorAgentIds } = provenance
     if (!link) throw new ArtifactImageError('unlinked-agent')
-    if (request.agentId !== undefined && request.agentId !== link.agentId) {
-      throw new ArtifactImageError('unlinked-agent')
+    let agentId: string
+    if (request.agentId !== undefined) {
+      if (
+        !cursorAgentIds.includes(request.agentId) &&
+        !(link.provider === 'cursor' && request.agentId === link.agentId)
+      ) {
+        throw new ArtifactImageError('unlinked-agent')
+      }
+      agentId = request.agentId
+    } else {
+      // A relative image path has no past-agent identity to select. It follows
+      // the current link, just as it did before launch history was recorded.
+      if (link.provider !== 'cursor') throw new ArtifactImageError('unsupported-provider')
+      agentId = link.agentId
     }
-    if (link.provider !== 'cursor') throw new ArtifactImageError('unsupported-provider')
     if (!this.dependencies.sandboxPlatform()) throw new ArtifactImageError('sandbox-unavailable')
     let credentials: { baseUrl: string; apiKey: string }
     try {
@@ -151,11 +166,10 @@ export class ArtifactImageService {
       throw new ArtifactImageError('not-configured')
     }
 
-    const agentId = link.agentId
     const key = [
       request.projectId,
       request.threadId,
-      link.provider,
+      'cursor',
       originOf(credentials.baseUrl),
       credentialGeneration(credentials.apiKey),
       agentId,

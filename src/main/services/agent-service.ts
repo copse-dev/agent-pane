@@ -69,6 +69,7 @@ import {
   invalidateNestedInstructionDiscoveryForWrite,
 } from './project-instructions.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
+import { createParentInstructionDelivery } from './parent-instruction-delivery.ts'
 import {
   clearActiveRunThread,
   recordThreadModel,
@@ -270,7 +271,10 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
-import { cancelAgentInitiatedAcpTurn } from './acp/acp-session-pool.ts'
+import {
+  cancelAgentInitiatedAcpTurn,
+  cancelAllAgentInitiatedAcpTurns,
+} from './acp/acp-session-pool.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -313,6 +317,11 @@ export {
 import { isNonEmptyString } from '@shared/nullish.ts'
 
 const abortMap = new Map<string, AbortController>()
+let shuttingDown = false
+
+function assertAgentAdmissionOpen(): void {
+  if (shuttingDown) throw new Error('Copse is closing; the turn was not started.')
+}
 
 function pluginModelResult(raw: unknown): {
   text: string
@@ -839,6 +848,7 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: RunAgentOptions,
 ): Promise<RunAgentResult> {
+  assertAgentAdmissionOpen()
   // Register before admission so Stop, mobile Stop and renderer reconnection
   // continue to own a queued turn even though no provider process has started.
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
@@ -1388,23 +1398,26 @@ async function runAgentWithInlineCanvas(
     try {
       // Copse-managed ACP turns use the canonical turnStart assembly (decision
       // 20). Agent-managed turns leave the agent's own prompt behavior intact.
-      const operatorInstructions =
+      // The ACP run calls this once it knows which Copse tools the agent has.
+      const turnGuidance =
         options?.executionMode === 'agent'
-          ? ''
-          : await perfSpan('ttft:acp-turn-assembly', () =>
-              assembleAcpTurnStart({
-                userText: promptTextForSubmit(userPrompt),
-                invokedSkills: options?.invokedSkills ?? [],
-                priorTodos: options?.priorTodos ?? [],
-                firstTurn: priorMessages.length === 0,
-                model: executorModel,
-                registry,
-                signal: controller.signal,
-                resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
-                resolvePluginSetting,
-                recordHookRun: recordFunctionHookRun,
-              }),
-            )
+          ? undefined
+          : (bridgeToolNames: readonly string[]): Promise<string | undefined> =>
+              perfSpan('ttft:acp-turn-assembly', () =>
+                assembleAcpTurnStart({
+                  userText: promptTextForSubmit(userPrompt),
+                  invokedSkills: options?.invokedSkills ?? [],
+                  priorTodos: options?.priorTodos ?? [],
+                  firstTurn: priorMessages.length === 0,
+                  model: executorModel,
+                  registry,
+                  bridgeToolNames,
+                  signal: controller.signal,
+                  resolveGithubRepoSlug: () => getGithubRepoSlug(getAgentExecutionRoot()),
+                  resolvePluginSetting,
+                  recordHookRun: recordFunctionHookRun,
+                }),
+              )
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
@@ -1415,7 +1428,7 @@ async function runAgentWithInlineCanvas(
         bridgeTurnSignal: bridgeTurn.signal,
         onChunk: acpChunkSink,
         registry,
-        ...(operatorInstructions ? { operatorInstructions } : {}),
+        ...(turnGuidance ? { turnGuidance } : {}),
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpRunModel ? { model: acpRunModel } : {}),
@@ -1985,6 +1998,7 @@ async function runAgentWithInlineCanvas(
       systemPromptBuild.instructionMetadata.activeInstructionContents,
     )
     let activeNestedInstructionBytes = systemPromptBuild.instructionMetadata.activeNestedBytes
+    const parentInstructionDelivery = createParentInstructionDelivery(parentProvider)
     // Names of nested files activated by a tool call, held until the next step
     // boundary so the notice lands after that call's tool_result.
     const pendingNestedInstructionNotices: string[] = []
@@ -2346,19 +2360,24 @@ async function runAgentWithInlineCanvas(
             }
             pendingNestedInstructionNotices.push(...activation.injectedNames)
             if (activation.block) {
+              parentInstructionDelivery.requireDelivery(activation.block)
               const leadingSystem = trimmed.find((message) => message.role === 'system')
               if (leadingSystem?.role === 'system') {
                 leadingSystem.content += `\n\n---\n\n${activation.block}`
               }
-              // An edit must not land before the newly applicable rules have
-              // reached the model. Reads can proceed: their result and the new
-              // leading-system block arrive together before the next step.
-              if (isEditTool(name)) {
-                return (
-                  'Edit deferred because this path activated nested AGENTS.md instructions. ' +
-                  'Review the newly loaded workspace instructions, then retry the same edit.'
-                )
-              }
+            }
+          }
+          // All edits from this response wait, including one whose path was
+          // already marked active by an earlier tool call, or that no nested
+          // scope covers at all. Reads can proceed. `deferred` keeps the card
+          // from reading as a completed edit.
+          if (isEditTool(name) && parentInstructionDelivery.hasPendingInstructions) {
+            return {
+              result:
+                'Edit deferred because newly activated nested AGENTS.md instructions had not ' +
+                'reached you yet. Review the newly loaded workspace instructions, then retry ' +
+                'the same edit.',
+              deferred: true,
             }
           }
           if (isEditTool(name)) turnChangedFiles = true
@@ -2671,7 +2690,7 @@ async function runAgentWithInlineCanvas(
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
               await runWithAgentRunExploreMode(subagentsEnabled, async () => {
                 await runAgentLoop({
-                  provider: parentProvider,
+                  provider: parentInstructionDelivery.provider,
                   messages: trimmed,
                   tools: parentLoopTools,
                   usageModel: model,
@@ -2774,7 +2793,7 @@ async function runAgentWithInlineCanvas(
         )
 
         const parentContinuationBase: RunParentContinuationOptions = {
-          provider: parentProvider,
+          provider: parentInstructionDelivery.provider,
           messages: trimmed,
           tools: parentLoopTools,
           contextWindow,
@@ -3144,6 +3163,13 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
   cancelAgentInitiatedAcpTurn(threadId)
 }
 
+/** Fence new turns and interrupt existing work before command cleanup can settle tools. */
+export function stopAllAgentRuns(): void {
+  shuttingDown = true
+  for (const controller of abortMap.values()) controller.abort()
+  cancelAllAgentInitiatedAcpTurns()
+}
+
 const mobileRunIds = new WeakMap<AbortController, string>()
 
 /** A stop from a delayed phone page must never abort a newer run. */
@@ -3185,6 +3211,7 @@ function beginRetryRun(threadId: string): {
   controller: AbortController
   runAbort: ReturnType<typeof createAgentRunAbortScheduler>
 } | null {
+  assertAgentAdmissionOpen()
   if (abortMap.has(threadId)) return null
   const controller = new AbortController()
   abortMap.set(threadId, controller)
