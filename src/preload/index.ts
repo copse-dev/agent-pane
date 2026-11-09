@@ -2,6 +2,7 @@ import type { SimulatorDesktopPresentation } from '@shared/types/simulator-deskt
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.ts'
+import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
@@ -37,6 +38,9 @@ const api: ApiClient = {
     },
   },
   threadPrompts: {
+    canDispatch: (projectId, parentId, childId) =>
+      ipcRenderer.invoke('thread-prompts:can-dispatch', projectId, parentId, childId),
+    canSubmit: (id) => ipcRenderer.invoke('thread-prompts:can-submit', id),
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
     onPrompt: (handler) => {
@@ -140,6 +144,36 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
+    startRecording: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:start-recording', webContentsId),
+    stopRecording: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:stop-recording', webContentsId),
+    onRecordingFrame: (handler: (webContentsId: number, jpeg: Uint8Array) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        jpeg: Uint8Array,
+      ): void => {
+        handler(webContentsId, jpeg)
+      }
+      ipcRenderer.on('browser:recording-frame', listener)
+      return (): void => {
+        ipcRenderer.off('browser:recording-frame', listener)
+      }
+    },
+    onRecordingEnded: (handler: (webContentsId: number, reason: string) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        reason: string,
+      ): void => {
+        handler(webContentsId, reason)
+      }
+      ipcRenderer.on('browser:recording-ended', listener)
+      return (): void => {
+        ipcRenderer.off('browser:recording-ended', listener)
+      }
+    },
     scrollPosition: (webContentsId: number) =>
       ipcRenderer.invoke('browser:scroll-position', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
@@ -335,8 +369,8 @@ const api: ApiClient = {
     },
   },
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) =>
-      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    run: (projectId, threadId, prompt, delegation) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation),
     runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
@@ -441,6 +475,8 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
@@ -465,6 +501,8 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          rememberDefault?: boolean
+          rememberSubject?: string
           approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
@@ -1211,8 +1249,8 @@ const api: ApiClient = {
     },
   },
   remoteAgent: {
-    downloadArtifact: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remote-agent:download-artifact', agentId, path),
+    downloadArtifact: (request: RemoteArtifactDownloadRequest) =>
+      ipcRenderer.invoke('remote-agent:download-artifact', request),
     artifactImageDataUrl: (request: RemoteArtifactImageRequest) =>
       ipcRenderer.invoke('remote-agent:artifact-image-data-url', request),
     models: () => ipcRenderer.invoke('remote-agent:models'),
@@ -1624,6 +1662,8 @@ const api: ApiClient = {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
     permissionOptions: (projectId: string) =>
       ipcRenderer.invoke('automations:permission-options', projectId),
+    reviewPreparation: (projectId, input) =>
+      ipcRenderer.invoke('automations:review-preparation', projectId, input),
     upsert: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert', projectId, input),
     remove: (projectId: string, scheduleId: string) =>

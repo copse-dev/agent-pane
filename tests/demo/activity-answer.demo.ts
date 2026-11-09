@@ -8,6 +8,13 @@ import { pinDemoClock } from './helpers/fixed-clock.ts'
 // has been sent.
 
 describe('answering a question from the Activity home', () => {
+  let virtualTimeEnabled = false
+
+  after(async () => {
+    // A fresh browser context restores the ordinary clock for later scenarios.
+    if (virtualTimeEnabled) await browser.reloadSession()
+  })
+
   before(async () => {
     await pinDemoClock()
     await browser.url('about:blank')
@@ -47,5 +54,60 @@ describe('answering a question from the Activity home', () => {
       { timeout: 10_000, timeoutMsg: 'an answered question must leave the list' },
     )
     await saveAppScreenshot('activity-answer-sent.png')
+  })
+
+  it('keeps a quick-answer click intact across the age refresh', async () => {
+    await browser.url('about:blank')
+    await browser.url('/?scenario=activity-home-question')
+    const choice = $('#activity-home .activity-option')
+    await choice.waitForClickable()
+    const position = await choice.getLocation()
+    const size = await choice.getSize()
+    const pointer = {
+      type: 'pointer',
+      id: 'activity-answer-click',
+      parameters: { pointerType: 'mouse' },
+    } as const
+    await browser.performActions([
+      {
+        ...pointer,
+        actions: [
+          {
+            type: 'pointerMove',
+            duration: 0,
+            x: Math.round(position.x + size.width / 2),
+            y: Math.round(position.y + size.height / 2),
+          },
+          { type: 'pointerDown', button: 0 },
+        ],
+      },
+    ])
+    try {
+      // Advance the browser clock through the real age timers while a native
+      // pointer gesture is in flight. No product timer or test-only API changes.
+      virtualTimeEnabled = true
+      await browser.sendCommand('Emulation.setVirtualTimePolicy', {
+        policy: 'advance',
+        budget: 90_001,
+        maxVirtualTimeTaskStarvationCount: 100,
+      })
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              document
+                .querySelector('#activity-home .activity-detail-meta')
+                ?.textContent.includes('1 minute') ?? false,
+          ),
+        { timeout: 10_000, timeoutMsg: 'the Activity age must refresh while the click is held' },
+      )
+      await expect(choice).toBeFocused()
+      await browser.performActions([{ ...pointer, actions: [{ type: 'pointerUp', button: 0 }] }])
+      await expect($('#activity-home .activity-answer-input')).toHaveValue('Columns first')
+      await expect($('#activity-home .activity-answer')).toBeEnabled()
+      await saveAppScreenshot('activity-answer-after-refresh.png')
+    } finally {
+      await browser.releaseActions()
+    }
   })
 })

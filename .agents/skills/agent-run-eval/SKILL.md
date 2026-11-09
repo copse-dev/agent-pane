@@ -74,10 +74,10 @@ On macOS in an agent shell, unset `ELECTRON_RUN_AS_NODE` when launching Electron
 ## Analyze artifact (deterministic)
 
 ```bash
-pnpm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl
+pnpm run analyze:thread tests/e2e/artifacts/<file>.jsonl
 
 # With expectations (exit 1 on violation)
-pnpm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/my-issue.json
+pnpm run analyze:thread tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/my-issue.json
 ```
 
 Optional `expect` block in scenario JSON:
@@ -107,7 +107,7 @@ After the analyzer JSON, write a short report:
 4. **Answer quality** — Factual vs repo, actionable, hallucinations.
 5. **Verdict** — Pass / fail / partial; one concrete next change (prompt, heuristic, or product).
 
-Use the user’s exported JSONL from Downloads the same way: `pnpm run analyze:thread -- ~/Downloads/foo.jsonl` then judge in prose.
+Use the user’s exported JSONL from Downloads the same way: `pnpm run analyze:thread ~/Downloads/foo.jsonl` then judge in prose.
 
 ## Scenario authoring tips
 

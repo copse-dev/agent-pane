@@ -79,6 +79,7 @@
   position: static;
   transform: none;
   order: 1;
+  flex-shrink: 0;
   width: var(--font-size-sm);
   height: var(--font-size-sm);
 }

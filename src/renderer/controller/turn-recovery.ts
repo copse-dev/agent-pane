@@ -15,6 +15,7 @@ export interface FailedTurnRecovery {
   /** A route that completed an earlier turn. It may no longer be available now. */
   lastKnownGoodModel?: string
   interruptedByRestart?: true
+  limitReason?: 'max_steps' | 'timeout'
 }
 
 /**
@@ -46,6 +47,13 @@ export function turnRecoveryForMessage(
     return { interruptedByRestart: true }
   }
   if (failed.role !== 'assistant' || failed.turnOutcome?.status !== 'failed') return null
+
+  if (
+    failed.turnOutcome.stopReason === 'max_steps' ||
+    failed.turnOutcome.stopReason === 'timeout'
+  ) {
+    return { limitReason: failed.turnOutcome.stopReason }
+  }
 
   if (failed.turnOutcome.source !== 'provider') return {}
   for (let index = failedIndex - 1; index >= 0; index -= 1) {

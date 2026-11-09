@@ -313,8 +313,13 @@ const FINALIZE_NUDGE_ID = 'finalize-nudge'
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
-const RUN_LIMIT_MESSAGE =
-  'The agent run reached its time or LLM call limit before finishing. Try a shorter question or start a new turn.'
+function runLimitMessage(reason: RunLimitStopReason, stoppedAtStepLimit: boolean): string {
+  const limit = reason === 'timeout' ? 'time' : stoppedAtStepLimit ? 'step' : 'model-request'
+  return (
+    `This run reached its ${limit} limit before finishing. Completed work is saved. ` +
+    'Continue from the current state without repeating completed actions.'
+  )
+}
 
 type LlmCallBudget = {
   llmCalls: number
@@ -1075,8 +1080,15 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats, resultFormat, images, visualEvidence, appendedReminderLengths } =
-          normalizeToolExecuteResult(raw)
+        const {
+          result,
+          editStats,
+          resultFormat,
+          images,
+          visualEvidence,
+          appendedReminderLengths,
+          deferred,
+        } = normalizeToolExecuteResult(raw)
         // Any other tool (an edit, a shell command, an MCP call) may have changed
         // what an earlier read returned, so re-reading after it is fresh work,
         // not a repeat: without this, `read_file` of a range just edited with
@@ -1111,6 +1123,8 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           ...(editStats ? { editStats } : {}),
           ...(resultFormat ? { resultFormat } : {}),
           ...(appendedReminderLengths ? { appendedReminderLengths } : {}),
+          // Display metadata only: the model reads why from `result`.
+          ...(deferred ? { deferred } : {}),
           ...(images && images.length > 0 ? { images } : {}),
         })
       } catch (err) {
@@ -1227,6 +1241,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let steps = 0
   let finishedWithAnswer = false
   let runLimitStopReason: RunLimitStopReason | null = null
+  let stoppedAtStepLimit = false
   let toolOnlySteps = 0
   let loopNudgeSent = false
   let forceTextAttempted = false
@@ -1423,6 +1438,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // falls through to the bounded finalize path, while a call-only cap has
         // no reservation left and emits the run-limit result.
         runLimitStopReason = callBudgetExhausted && !stepBudgetExhausted ? 'max_steps' : null
+        stoppedAtStepLimit = stepBudgetExhausted
         break
       }
     }
@@ -2308,10 +2324,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           resolveTruncationNudge,
         )
       }
-      if (!finalResult.answerText.trim()) {
+      if (!finalResult.answerText.trim() && !stoppedAtStepLimit) {
         onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
         messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
-      } else {
+      } else if (finalResult.answerText.trim()) {
         finishedWithAnswer = true
       }
     } else if (getOpenTodos && hasOpenTodos(getOpenTodos())) {
@@ -2321,14 +2337,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
   }
 
+  // A step-boundary finalizer may still finish successfully. If it cannot,
+  // retain the limit instead of normalizing an absent reason to completed.
+  const unfinishedAtStepLimit =
+    stoppedAtStepLimit &&
+    !signal?.aborted &&
+    (!finishedWithAnswer || hasOpenTodos(getOpenTodos?.() ?? []))
   const terminalRunLimitStopReason =
-    runLimitStopReason ?? (isAgentRunTimeoutAbort(signal) ? 'timeout' : null)
+    isAgentRunTimeoutAbort(signal) || (unfinishedAtStepLimit && budget.deadline.isExpired())
+      ? 'timeout'
+      : (runLimitStopReason ?? (unfinishedAtStepLimit ? 'max_steps' : null))
   const terminalStopReason: string | null = reasoningRunawayExhausted
     ? REASONING_RUNAWAY_EXHAUSTED_STOP_REASON
     : terminalRunLimitStopReason
   if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
-    onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
-    messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
+    const message = runLimitMessage(terminalRunLimitStopReason, stoppedAtStepLimit)
+    onChunk({ type: 'text', text: message })
+    messages.push({ role: 'assistant', content: message })
   }
 
   // Final guarantee: never leave an assistant tool_use without a matching

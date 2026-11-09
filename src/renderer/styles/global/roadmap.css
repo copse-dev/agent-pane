@@ -43,10 +43,8 @@
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .roadmap-filter-heading:first-child {
   margin-top: 0;
@@ -91,7 +89,6 @@
   font-weight: var(--group-header-font-weight);
   letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
-  text-transform: uppercase;
   cursor: pointer;
 }
 .roadmap-category-header:hover {

@@ -1,17 +1,17 @@
 /* Model-proposed threads (`propose_thread`).
 
    This is the one tool card that is a *question about the future* rather than a
-   record of work done, so it is the one that earns a bordered surface in a
-   transcript of quiet muted rows. It still stays workbench-quiet: a thin border,
-   one accent hairline down the left edge to mark it as the agent's offer, and no
-   colour fills — the emphasis comes from being the only bordered thing on the
-   turn, not from paint. Deliberately unlike `.approval-*`, which is a modal
-   decision surface: nothing here is blocked on an answer. */
+   record of work done, so it is the one that earns a surface of its own in a
+   transcript of quiet muted rows. Two signals set it apart and nothing more: one
+   accent hairline down the left edge to mark it as the agent's offer, and the
+   raised fill behind it. No outline on top of those, no eyebrow over the title —
+   the title says what the card is. Deliberately unlike `.approval-*`, which is a
+   modal decision surface: nothing here is blocked on an answer. */
 .thread-proposal {
   margin-top: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
   border-left: 2px solid var(--accent);
   /* Square the edge the accent rail sits on — a radius there would clip the
      rail into a curve (see styles/accent-rails.test.ts) — and stay rounded on
@@ -55,26 +55,26 @@
 .thread-proposal[data-proposal-status='started'] .thread-proposal-icon {
   color: var(--text-muted);
 }
-.thread-proposal-eyebrow {
-  font-size: var(--font-size-xs);
+/* The title lives in the header, so a collapsed (answered) card still says which
+   offer it was without expanding it. h4 on purpose: h1–h3 are the display/serif
+   tier (docs/ui-taste.md), and a card title inside a transcript is not that tier. */
+.thread-proposal-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-  white-space: nowrap;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
-/* The title repeats in the header so a collapsed (answered) card still says
-   which offer it was, without expanding it. */
-.thread-proposal-header-title {
-  color: var(--text-secondary);
+/* A collapsed card is history: one quiet line that ellipsizes rather than wraps. */
+.thread-proposal:not([open]) .thread-proposal-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-}
-.thread-proposal[open] .thread-proposal-header-title {
-  /* The body's own heading takes over once open; the header keeps the label. */
-  display: none;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 .thread-proposal-state {
   display: inline-flex;
@@ -112,15 +112,6 @@
 .thread-proposal-body {
   padding: 0 var(--spacing-md) var(--spacing-md);
 }
-.thread-proposal-title {
-  margin: 0 0 var(--spacing-xs);
-  /* h4 on purpose: h1–h3 are the display/serif tier (docs/ui-taste.md), and a
-     card title inside a transcript is not that tier. */
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--text-primary);
-}
 /* The description the offer is judged on — the most readable thing on the card. */
 .thread-proposal-summary {
   margin: 0;
@@ -133,10 +124,12 @@
   line-height: var(--line-height-base);
 }
 
+/* Facts about the thread (its own checkout, the files it touches), not controls,
+   so they read as quiet text without a frame. */
 .thread-proposal-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-xs) var(--spacing-md);
   margin-top: var(--spacing-sm);
 }
 .thread-proposal-chip {
@@ -144,11 +137,8 @@
   align-items: center;
   gap: var(--spacing-xs);
   max-width: 100%;
-  padding: 2px var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -205,9 +195,9 @@
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
 }
-.thread-proposal-actions .ui-btn {
-  padding: var(--spacing-xs) var(--spacing-md);
-}
+/* Start / Not now take the kit's default .ui-btn box. A private tighter padding
+   here made them 18px tall next to the 13px title, too small to read as the
+   card's decision (docs/ui-taste.md: no per-surface button sizes). */
 .thread-proposal-error {
   color: var(--error);
   font-size: var(--font-size-xs);

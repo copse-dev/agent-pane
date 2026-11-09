@@ -194,7 +194,7 @@ import {
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import { mcpErrorMessage } from './tool-error-format.ts'
-import { splitAppendedReminders } from './tool-result-reminders.ts'
+import { splitAppendedReminders } from '@shared/tools/tool-result-reminders.ts'
 import { createThreadProposalToolCard, isThreadProposalCall } from './thread-proposal-tool-card.ts'
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
@@ -4235,6 +4235,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
       ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
+      ...(recovery.limitReason !== undefined ? { limitReason: recovery.limitReason } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
