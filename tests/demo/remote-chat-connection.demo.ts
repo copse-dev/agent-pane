@@ -2,6 +2,32 @@ import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 import { expectCaptureFitsWidth } from './helpers/capture-fit.ts'
 
+/**
+ * The /mobile/ CSP blocks the screenshot helper's injected steady-caret style,
+ * so a focused composer's caret blinks into some captures and not others. Set
+ * the same rule through CSSOM, as mobile-companion.demo.ts does, and restart
+ * the caret's paint so every capture shows it.
+ */
+async function steadyFocusedCaret(): Promise<void> {
+  await browser.execute(async () => {
+    const field = document.activeElement
+    if (!(field instanceof HTMLTextAreaElement)) return
+    field.style.setProperty('caret-animation', 'manual', 'important')
+    if (getComputedStyle(field).getPropertyValue('caret-animation') !== 'manual') {
+      throw new Error('Mobile capture requires a steady focused caret')
+    }
+    field.blur()
+    field.focus({ preventScroll: true })
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve()
+        })
+      })
+    })
+  })
+}
+
 describe('paired remote chat connection', () => {
   it('shows live output, edits a next prompt, and preserves a draft across disconnection', async () => {
     await browser.setWindowSize(390, 844)
@@ -141,7 +167,10 @@ describe('paired remote chat connection', () => {
     )
     await saveElementScreenshot('.shell', 'remote-chat-reconnected-phone-dark.png', {
       frame: 'document',
-      beforeCapture: () => expectCaptureFitsWidth('.shell'),
+      beforeCapture: async () => {
+        await steadyFocusedCaret()
+        await expectCaptureFitsWidth('.shell')
+      },
     })
     await $('#send').click()
     await expect($('#message')).toHaveValue('')
