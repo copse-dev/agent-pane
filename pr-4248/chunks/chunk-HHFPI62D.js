@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-WYJRFZZW.js";
 import {
   clear,
   el,
@@ -21748,7 +21748,11 @@ var init_guarded_yolo = __esm({
 
 // src/shared/types/automations.ts
 function automationPermissionKey(permission) {
-  return JSON.stringify([permission.kind, permission.toolName]);
+  return JSON.stringify([
+    permission.kind,
+    permission.toolName,
+    ...permission.kind === "worktree-preparation" ? [permission.directory, permission.planFingerprint, permission.offline] : []
+  ]);
 }
 var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
 var init_automations = __esm({
@@ -22387,13 +22391,137 @@ var init_thread_proposal2 = __esm({
   }
 });
 
+// packages/agent/src/hooks/inject-context.ts
+var SYSTEM_REMINDER_TAG;
+var init_inject_context = __esm({
+  "packages/agent/src/hooks/inject-context.ts"() {
+    init_nullish();
+    SYSTEM_REMINDER_TAG = "system-reminder";
+  }
+});
+
+// src/shared/tools/tool-result-reminders.ts
+function splitAppendedReminders(result, lengths) {
+  const raw = { output: result, reminders: [] };
+  if (lengths === void 0 || lengths.length === 0) return raw;
+  let end = result.length;
+  const reminders = [];
+  for (let index = lengths.length - 1; index >= 0; index -= 1) {
+    const length = lengths[index];
+    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
+    const start = end - length;
+    if (start < SEPARATOR.length) return raw;
+    const block = result.slice(start, end);
+    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
+      return raw;
+    }
+    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
+    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
+    end = start - SEPARATOR.length;
+  }
+  return { output: result.slice(0, end), reminders };
+}
+var OPEN, CLOSE, SEPARATOR;
+var init_tool_result_reminders = __esm({
+  "src/shared/tools/tool-result-reminders.ts"() {
+    init_inject_context();
+    OPEN = `<${SYSTEM_REMINDER_TAG}>
+`;
+    CLOSE = `
+</${SYSTEM_REMINDER_TAG}>`;
+    SEPARATOR = "\n\n";
+  }
+});
+
+// packages/std/src/safe-json.ts
+function decodeWithSchema(schema) {
+  return (value) => {
+    const result = schema.safeParse(value);
+    return result.success ? result.data : null;
+  };
+}
+function safeJsonStringify(value, indent) {
+  if (value === void 0 || typeof value === "function" || typeof value === "symbol") {
+    return void 0;
+  }
+  return JSON.stringify(value, null, indent);
+}
+function safeJsonParse(text, decoder) {
+  try {
+    const value = JSON.parse(text);
+    return decoder ? decoder(value) : value;
+  } catch {
+    return null;
+  }
+}
+var init_safe_json = __esm({
+  "packages/std/src/safe-json.ts"() {
+  }
+});
+
+// packages/agent/src/ask-user-format.ts
+function parseDeferredAskUserResult(result) {
+  if (!result.startsWith(DEFERRED_QUESTIONS_PREFIX)) return null;
+  return safeJsonParse(
+    result.slice(DEFERRED_QUESTIONS_PREFIX.length),
+    decodeWithSchema(askUserParamsSchema)
+  );
+}
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS, DEFERRED_ASK_USER_RESULT, DEFERRED_QUESTIONS_PREFIX;
+var init_ask_user_format = __esm({
+  "packages/agent/src/ask-user-format.ts"() {
+    init_zod();
+    init_safe_json();
+    askUserQuestionSchema = external_exports.object({
+      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
+      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
+      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
+      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
+    }).refine(
+      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
+      {
+        message: "recommendedOption must be one of options",
+        path: ["recommendedOption"]
+      }
+    ).refine(
+      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+      {
+        message: "A recommendation needs both an option and a reason",
+        path: ["recommendationReason"]
+      }
+    );
+    askUserParamsSchema = external_exports.object({
+      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
+    });
+    ASK_USER_ANSWER_MAX_LENGTH = 8192;
+    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
+    DEFERRED_ASK_USER_RESULT = "Saved for human review because this run is unattended. The user has not answered. Continue independent work; leave work that depends on this answer pending. Do not ask this question again or treat the missing answer as permission.";
+    DEFERRED_QUESTIONS_PREFIX = `${DEFERRED_ASK_USER_RESULT}
+
+Saved questions:
+`;
+  }
+});
+
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL) || isDeferredAskUserCall(call);
+}
+function isDeferredAskUserCall(call) {
+  return deferredAskUserParams(call) !== null;
+}
+function deferredAskUserParams(call) {
+  if (!isCopseToolCall(call, "ask_user") || call.status !== "done" || !askUserParamsSchema.safeParse(reviewerInputArguments(call)).success)
+    return null;
+  return parseDeferredAskUserResult(
+    splitAppendedReminders(call.result ?? "", call.appendedReminderLengths).output
+  );
 }
 function parseReviewerInputCall(call, messageId) {
-  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
-  const { question, context, recommendation, options } = call.args;
+  const args = reviewerInputArguments(call);
+  if (!isCopseToolCall(call, REVIEWER_INPUT_TOOL) || call.status !== "done" || !isRecord(args))
+    return null;
+  const { question, context, recommendation, options } = args;
   if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
     return null;
   }
@@ -22409,10 +22537,33 @@ function parseReviewerInputCall(call, messageId) {
     options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
   };
 }
+function reviewerInputArguments(call) {
+  const args = call.args;
+  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+    return args["arguments"];
+  return args;
+}
 function reviewerInputRequests(thread) {
   return thread.messages.flatMap(
-    (message) => message.toolCalls.map((call) => parseReviewerInputCall(call, message.id)).filter((request) => request !== null)
+    (message) => message.toolCalls.flatMap((call) => reviewerInputRequestsForCall(call, message.id))
   );
+}
+function reviewerInputRequestsForCall(call, messageId) {
+  const review = parseReviewerInputCall(call, messageId);
+  return review ? [review] : deferredAskUserRequests(call, messageId);
+}
+function deferredAskUserRequests(call, messageId) {
+  const parsed2 = deferredAskUserParams(call);
+  if (!parsed2) return [];
+  return parsed2.questions.map((question, index) => ({
+    id: `${call.id}:question:${String(index)}`,
+    toolCallId: call.id,
+    messageId,
+    question: question.question,
+    context: "Saved during an unattended run. Your answer will be sent as a follow-up message.",
+    options: question.options ?? [],
+    ...question.recommendedOption && question.recommendationReason ? { recommendation: `${question.recommendedOption} \u2014 ${question.recommendationReason}` } : {}
+  }));
 }
 function reviewerInputAnswer(answers, id) {
   return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
@@ -22438,6 +22589,8 @@ var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
     init_copse_tool_call();
+    init_tool_result_reminders();
+    init_ask_user_format();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -26947,7 +27100,14 @@ function shellCommandsFromToolCalls(toolCalls) {
   }
   return commands;
 }
+function deferredCallLabel(tc) {
+  const patchFiles = copseToolCallName(tc) === "apply_patch" ? getApplyPatchFiles(tc) : [];
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`;
+  const path = getToolEditPath(tc);
+  return path ? `Deferred ${path}` : "Deferred edit";
+}
 function getToolCallLabel(tc) {
+  if (tc.deferred === true) return deferredCallLabel(tc);
   const tense = tenseFromStatus(tc.status);
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
@@ -27043,11 +27203,14 @@ function aggregateToolStatus(toolCalls) {
 function bucketKey(groupKey, isError) {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
 }
+function displayGroupKey(tc) {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+}
 function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -27057,7 +27220,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc, label: getToolCallLabel(tc) });
       continue;
@@ -27528,6 +27691,19 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/thread-prompt.ts
+function isSubthreadPromptHeldError(reason) {
+  if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${SUBTHREAD_PROMPT_HELD_ERROR_NAME}:`);
+}
+var SUBTHREAD_PROMPT_HELD_ERROR_NAME;
+var init_thread_prompt = __esm({
+  "src/shared/thread-prompt.ts"() {
+    init_errors4();
+    SUBTHREAD_PROMPT_HELD_ERROR_NAME = "SubthreadPromptHeldError";
+  }
+});
+
 // src/renderer/controller/send-now-aborts.ts
 function markSendNowAbort(threadId) {
   sendNowThreads.add(threadId);
@@ -27643,11 +27819,23 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store, threadId);
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model));
-  const run = afterThreadWrites(
-    projectId,
-    threadId,
-    () => api.agent.run(projectId, threadId, runPayload)
-  );
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
+    if (!queued || parentThreadId === void 0) {
+      await api.agent.run(projectId, threadId, runPayload);
+      return;
+    }
+    const authorized = await api.threadPrompts?.canDispatch(projectId, parentThreadId, threadId).catch(() => false);
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId });
+        return;
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err;
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued);
+  });
   if (!queued) {
     void run;
     return;
@@ -27661,6 +27849,22 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
       drainMessageQueue(store, api, threadId);
     }
   });
+}
+function subthreadParentOf(item) {
+  const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
+}
+function holdRevokedSubthreadPrompt(store, threadId, item) {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: "idle",
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
+    updatedAt: Date.now()
+  }));
+  syncAgentActivity(store, threadId, false);
+  store.emit("message_queued", threadId, item.messageId);
+  store.emit("threads_changed");
 }
 function requeueBusyMessage(store, api, threadId, item) {
   patchThreadAnywhere(store, threadId, (t2) => {
@@ -27707,9 +27911,14 @@ function drainMessageQueue(store, api, threadId) {
   let used = thread.continuationUsed ?? 0;
   let next;
   const heldByBudget = [];
+  const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
     if (isMachineContinuation(item)) {
+      if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId);
+        continue;
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId);
         continue;
@@ -27721,14 +27930,15 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+      (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
@@ -27856,6 +28066,14 @@ function removeQueuedMessage(store, threadId, messageId) {
   store.emit("threads_changed");
 }
 function sendQueuedMessageNow(store, api, threadId, messageId) {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId
+  );
+  if (!item) return;
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId);
+  else prioritizeQueuedMessage(store, api, threadId, messageId);
+}
+function prioritizeQueuedMessage(store, api, threadId, messageId) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
   const pending = thread?.pendingMessages ?? [];
   const target = pending.find((p2) => p2.messageId === messageId);
@@ -27893,7 +28111,7 @@ function enqueueHookMessage(store, api, threadId, input2) {
   };
   enqueueUserMessage(store, threadId, item);
   if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store, api, threadId, messageId);
+  if (input2.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId);
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
@@ -27911,16 +28129,16 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
-        return rest;
+        return { ...rest, epoch };
       }),
       updatedAt: Date.now()
     };
   });
   store.setState({ threads });
   store.emit("threads_changed");
-  sendQueuedMessageNow(store, api, threadId, messageId);
+  prioritizeQueuedMessage(store, api, threadId, messageId);
 }
-var pendingDispatches;
+var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -27931,9 +28149,11 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
+    SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
 });
 
@@ -28433,6 +28653,43 @@ function attachProjectThreadCache(store) {
     }
   });
 }
+async function refreshProjectThreadWorktrees(store, api, projectId) {
+  invalidateProjectThreadLoads(api, projectId);
+  let revision;
+  let loaded;
+  do {
+    revision = projectThreadLoadRevision(api, projectId);
+    loaded = await api.threads.loadProject(projectId);
+  } while (isListedProject(store, projectId) && revision !== projectThreadLoadRevision(api, projectId));
+  if (!isListedProject(store, projectId)) return;
+  const byId = new Map(loaded.map((thread) => [thread.id, thread]));
+  function refreshed(thread) {
+    const latest = byId.get(thread.id);
+    if (!latest || JSON.stringify(latest.worktree) === JSON.stringify(thread.worktree))
+      return thread;
+    const next = { ...thread };
+    if (latest.worktree) next.worktree = latest.worktree;
+    else delete next.worktree;
+    return next;
+  }
+  const runtime = (thread) => {
+    const next = refreshed(thread);
+    if (next !== thread) acceptRuntimeThreadMeta(projectId, next, transcriptMeta(thread));
+    return next;
+  };
+  const state = store.getState();
+  const threads = state.activeProjectId === projectId ? state.threads.map(runtime) : state.threads;
+  const backgroundThreads = state.backgroundThreads.map((entry) => {
+    if (entry.projectId !== projectId) return entry;
+    const thread = runtime(entry.thread);
+    return thread === entry.thread ? entry : { ...entry, thread };
+  });
+  store.setState({ threads, backgroundThreads });
+  const cached2 = threadCache.get(projectId);
+  if (state.activeProjectId === projectId) cacheThreads(projectId, threads);
+  else if (cached2) threadCache.set(projectId, cached2.map(refreshed));
+  store.emit("sidebar_threads_loaded");
+}
 async function setWorkspaceForSelection(api, path, sshHost) {
   try {
     await api.workspace.set(path, sshHost);
@@ -28547,6 +28804,7 @@ function expandProject(store, id) {
 function applyProjectSelection(store, api, id, path, loaded, revision, pendingThreadId, outgoingId, outgoingThreads) {
   const endApply = begin("switch:apply-state");
   if (outgoingId && outgoingId !== id) {
+    if (store.getState().activeProjectId === outgoingId) store.emit("composer_draft_flush");
     const state = store.getState();
     const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
     if (liveOutgoingThreads !== outgoingThreads && isListedProject(store, outgoingId)) {
@@ -28692,6 +28950,7 @@ function dispatchCallers() {
   return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store, api, id, path, sshHost, pendingThreadId) {
+  if (store.getState().activeProjectId !== id) store.emit("composer_draft_flush");
   const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState();
   if (activeProjectId === id) {
     if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store, id);
@@ -28996,7 +29255,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -29070,6 +29329,7 @@ async function recoverOrphanProject(store, api, storeId, confirm) {
 var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, threadRelationsKey, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
+    init_transcript_state();
     init_side_chat2();
     init_thread_helpers();
     init_persistence();
@@ -29278,6 +29538,11 @@ var init_thread_hydration = __esm({
 function describeAutomationFailure(code) {
   return DESCRIPTIONS[code];
 }
+function classifyAutomationCheckoutFailure(message) {
+  if (message.includes("The selected coding agent is not enabled.") || message.includes("cannot start because its configured command is missing or not executable."))
+    return "no-model";
+  return "worktree-failed";
+}
 function classifyAutomationFailureMessage(message) {
   if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
     message
@@ -29307,7 +29572,7 @@ var init_automation_failure = __esm({
       },
       "no-model": {
         title: "Model unavailable",
-        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        remedy: "Check the model or coding agent in Settings \u2192 General \u2192 Models & agents, or pick another model in the automation.",
         action: "open-automations",
         actionLabel: "Edit automation"
       },
@@ -29478,7 +29743,7 @@ function attachAutomationController(store, api) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         const message = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message);
+        const code = checkoutStarted ? classifyAutomationCheckoutFailure(message) : classifyAutomationFailureMessage(message);
         markAutomationStartFailed(store, threadId, { code, message });
         api.automations.reportStartFailure(projectId, threadId, { code, message }).catch((reportError) => {
           console.error("[automations] Could not report a start failure:", reportError);
@@ -29504,47 +29769,52 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   async function receiveTrigger(event) {
     if (store.getState().activeProjectId !== event.projectId) return;
     const observedEpoch = getThreadById(store, event.threadId)?.currentEpoch;
-    const loaded = await api.threads.loadProject(event.projectId);
-    if (store.getState().activeProjectId !== event.projectId) return;
-    const created = loaded.find((thread) => thread.id === event.threadId);
-    if (!created) return;
-    if (event.headlessSettled) {
-      if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
-      if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return;
-      const messages = await api.threads.loadMessages(event.projectId, event.threadId);
+    for (; ; ) {
+      const revision = projectThreadLoadRevision(api, event.projectId);
+      const loaded = await api.threads.loadProject(event.projectId);
       if (store.getState().activeProjectId !== event.projectId) return;
-      if (created.automation?.triggeredAt !== event.triggeredAt) return;
-      const current = getThreadById(store, event.threadId);
-      if (current?.currentEpoch !== observedEpoch) return;
-      if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
-      const persistedIds = new Set(messages.map((message) => message.id));
-      if (current?.messages.some(
-        (message) => message.role === "user" && !persistedIds.has(message.id)
-      )) {
+      const created = loaded.find((thread) => thread.id === event.threadId);
+      if (!created) return;
+      if (event.headlessSettled) {
+        if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
+        if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return;
+        const messages = await api.threads.loadMessages(event.projectId, event.threadId);
+        if (store.getState().activeProjectId !== event.projectId) return;
+        if (created.automation?.triggeredAt !== event.triggeredAt) return;
+        const current = getThreadById(store, event.threadId);
+        if (current?.currentEpoch !== observedEpoch) return;
+        if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
+        const persistedIds = new Set(messages.map((message) => message.id));
+        if (current?.messages.some(
+          (message) => message.role === "user" && !persistedIds.has(message.id)
+        )) {
+          return;
+        }
+        if (projectThreadLoadRevision(api, event.projectId) !== revision) continue;
+        store.setState({
+          threads: sortThreadsNewestFirst([
+            {
+              ...created,
+              draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
+              messages,
+              messagesLoaded: true
+            },
+            ...store.getState().threads.filter((thread) => thread.id !== created.id)
+          ])
+        });
+        store.emit("thread_status_changed", created.id, created.status);
+        store.emit("threads_changed");
         return;
       }
-      store.setState({
-        threads: sortThreadsNewestFirst([
-          {
-            ...created,
-            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
-            messages,
-            messagesLoaded: true
-          },
-          ...store.getState().threads.filter((thread) => thread.id !== created.id)
-        ])
-      });
-      store.emit("thread_status_changed", created.id, created.status);
-      store.emit("threads_changed");
+      if (!store.getState().threads.some((thread) => thread.id === created.id)) {
+        store.setState({
+          threads: sortThreadsNewestFirst([created, ...store.getState().threads])
+        });
+        store.emit("threads_changed");
+      }
+      await startThread(created.id);
       return;
     }
-    if (!store.getState().threads.some((thread) => thread.id === created.id)) {
-      store.setState({
-        threads: sortThreadsNewestFirst([created, ...store.getState().threads])
-      });
-      store.emit("threads_changed");
-    }
-    await startThread(created.id);
   }
   function refreshSchedulesForActiveProject() {
     const projectId = store.getState().activeProjectId;
@@ -29579,6 +29849,7 @@ var init_automations2 = __esm({
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    init_persistence();
     scheduleCache = /* @__PURE__ */ new Map();
     eventAutomationCache = /* @__PURE__ */ new Map();
     AUTOMATION_START_RETRY_MS = 15e3;
@@ -53892,7 +54163,9 @@ function createModelsAgentsList(api, opts = {}) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Everything Copse can run a turn on. A ChatGPT plan, a coding agent and an API key are separate connections, so use any of them, or all. Agents and model servers on this machine show up on their own. Re-scan also reads API keys from your environment and shell startup files and imports new ones; existing keys are never overwritten."
+      // The Re-scan sentence is the disclosure for the key import that clicking
+      // Re-scan opts into (see rescanAll), so it stays when the rest is cut.
+      "Plans, agents and API keys Copse can use. Agents and model servers on this machine appear on their own. Re-scan also imports new API keys from your environment and shell startup files, without overwriting saved ones."
     ),
     el("div", { class: "acp-list-bar" }, scanStatus, rescan),
     list,
@@ -56361,7 +56634,7 @@ var init_settings_sources_skills = __esm({
     skillsSourcesMarkup = `
   <fieldset id="sources-skills-fieldset">
     <legend>Skills</legend>
-    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <p class="settings-fieldset-desc">Skills the agent can use. They refresh when Sources opens or you reload, and apply from the next turn.</p>
     <div id="sources-skills-list" class="sources-group"></div>
     <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
     <details class="sources-skill-folders">
@@ -56676,7 +56949,7 @@ function createSourcesSection({
       fillSourceList(
         "#sources-instructions-list",
         instructions.map((f3) => makeInstructionRow(f3)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+        "No instruction files yet. Add AGENTS.md to the project root."
       );
       if (instructions.some((f3) => f3.discoveryTruncated)) {
         const note = document.createElement("span");
@@ -66710,7 +66983,7 @@ var init_automation_retained_worktrees = __esm({
       "uncommitted-changes": "has uncommitted changes",
       "unmerged-commits": "has commits that are not merged",
       "unpushed-pull-request": "has a pull request branch that is not pushed",
-      "in-use": "still has a terminal or background process open"
+      "in-use": "still has an agent, terminal or background process using the checkout"
     };
   }
 });
@@ -66964,12 +67237,50 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     "aria-live": "polite"
   });
   const permissionsList = el("div", { class: "automation-permission-list" });
+  const preparationDirectory = el("input", {
+    type: "text",
+    class: "automation-input automation-preparation-directory",
+    value: ".",
+    maxlength: "4096"
+  });
+  const preparationNetwork = el(
+    "select",
+    { class: "automation-input automation-preparation-network" },
+    el("option", { value: "allowed" }, "Allowed during setup"),
+    el("option", { value: "offline" }, "Blocked (offline setup)")
+  );
+  const reviewPreparationButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-preparation-review-btn"
+    },
+    "Review worktree setup"
+  );
+  const preparationProposalHint = el(
+    "p",
+    { class: "automation-hint automation-preparation-proposal-hint", hidden: true },
+    "These fields are for another setup review. Saved setup permissions below keep their listed folder and network scope."
+  );
   permissionsFieldset.append(
     el("legend", {}, "Allowed without asking"),
     el(
       "p",
       { class: "automation-hint automation-permissions-hint" },
-      "Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask."
+      "Only selected actions and reviewed setup plans run without asking. Other shell commands, file approvals, websites, sensitive data and model spend keep their normal permissions."
+    ),
+    el(
+      "div",
+      { class: "automation-preparation-setup" },
+      preparationProposalHint,
+      el(
+        "label",
+        { class: "automation-label" },
+        "Setup folder (relative to this project)",
+        preparationDirectory
+      ),
+      el("label", { class: "automation-label" }, "Network during setup", preparationNetwork),
+      reviewPreparationButton
     ),
     el("div", { class: "automation-permission-toolbar" }, permissionFilterInput, permissionCount),
     permissionsList
@@ -67033,6 +67344,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   let permissionValuesByKey = /* @__PURE__ */ new Map();
   let selectedPermissionKeys = /* @__PURE__ */ new Set();
   let editingId = null;
+  let preparationReviewEpoch = 0;
   let customCron = null;
   let pendingReveal = revealScheduleId;
   let pendingCreate = createNew;
@@ -67047,6 +67359,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     status.classList.remove("automation-status-error");
   }
   function closeForm() {
+    preparationReviewEpoch++;
     editingId = null;
     ciEditor.showList();
     form.hidden = true;
@@ -67129,6 +67442,13 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     updateScheduleControls();
   }
   function unavailablePermissionOption(permission) {
+    if (permission.kind === "worktree-preparation") {
+      return {
+        permission,
+        label: `Prepare worktree (${permission.directory})`,
+        detail: `Reviewed plan ${permission.planFingerprint.slice(0, 12)} \xB7 ${permission.offline ? "Offline" : "Network allowed"}. Changed preparation inputs require approval again.`
+      };
+    }
     const parts = permission.toolName.split("__");
     const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${humanizeIdentifier(parts[1] ?? "MCP")} / ${humanizeIdentifier(parts.slice(2).join("__"))}` : humanizeIdentifier(permission.toolName);
     return {
@@ -67174,7 +67494,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
             {
               class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`
             },
-            unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+            unavailable ? "Unavailable" : option.permission.kind !== "mcp-tool" ? "Copse action" : "MCP tool"
           )
         ),
         el("span", { class: "automation-permission-detail" }, option.detail)
@@ -67190,7 +67510,10 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     const unavailable = [...permissionValuesByKey.values()].filter((permission) => !availableKeys.has(automationPermissionKey(permission))).map(unavailablePermissionOption);
     const allOptions = [
       ...availablePermissions.map((option) => ({ option, unavailable: false })),
-      ...unavailable.map((option) => ({ option, unavailable: true }))
+      ...unavailable.map((option) => ({
+        option,
+        unavailable: option.permission.kind !== "worktree-preparation"
+      }))
     ];
     const query = permissionFilterInput.value.trim().toLowerCase();
     const terms = query ? query.split(/\s+/) : [];
@@ -67199,7 +67522,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
         option.label,
         option.detail,
         option.permission.toolName,
-        option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+        option.permission.kind !== "mcp-tool" ? "Copse action" : "MCP tool"
       ].join(" ").toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
@@ -67240,7 +67563,68 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
+  reviewPreparationButton.addEventListener("click", () => {
+    if (!projectId || form.hidden) return;
+    const reviewProjectId = projectId;
+    const epoch = preparationReviewEpoch;
+    const ownerDialog = root.closest("dialog");
+    const isCurrent = () => root.isConnected && !form.hidden && preparationReviewEpoch === epoch && !root.closest("[hidden]") && (!ownerDialog || ownerDialog.open);
+    const cancelReview = () => {
+      if (preparationReviewEpoch !== epoch) return;
+      preparationReviewEpoch++;
+      reviewPreparationButton.disabled = false;
+    };
+    ownerDialog?.addEventListener("close", cancelReview, { once: true });
+    reviewPreparationButton.disabled = true;
+    hideStatus();
+    void (async () => {
+      try {
+        const review = await api.automations.reviewPreparation(reviewProjectId, {
+          directory: preparationDirectory.value.trim() || ".",
+          offline: preparationNetwork.value === "offline"
+        });
+        if (!isCurrent()) return;
+        if (review.projectId !== reviewProjectId)
+          throw new Error("The setup review belongs to another project. Review it again.");
+        const confirmed = await showConfirmDialog({
+          message: `Allow this setup for \u201C${nameInput.value.trim() || "this automation"}\u201D?`,
+          detail: el(
+            "div",
+            { class: "automation-preparation-review" },
+            el("p", {}, `Project: ${review.projectName} \xB7 Folder: ${review.permission.directory}`),
+            el("p", {}, review.bodyAdvice),
+            el("code", { class: "automation-preparation-review-commands" }, review.body),
+            el("p", {}, review.bodyFooter),
+            el(
+              "p",
+              {},
+              "This selects the exact setup for future runs. Save the automation to keep it. Changed setup files need another review."
+            )
+          ),
+          confirmLabel: "Use this setup"
+        });
+        if (!confirmed || !isCurrent()) return;
+        for (const [oldKey, permission] of permissionValuesByKey) {
+          if (permission.kind === "worktree-preparation" && permission.directory === review.permission.directory && permission.offline === review.permission.offline) {
+            permissionValuesByKey.delete(oldKey);
+            selectedPermissionKeys.delete(oldKey);
+          }
+        }
+        const key = automationPermissionKey(review.permission);
+        permissionValuesByKey.set(key, review.permission);
+        selectedPermissionKeys.add(key);
+        renderPermissionChoices();
+        showStatus("Reviewed setup selected. Save the automation to keep it.");
+      } catch (error62) {
+        if (isCurrent()) showStatus(cleanIpcError(error62), true);
+      } finally {
+        ownerDialog?.removeEventListener("close", cancelReview);
+        if (preparationReviewEpoch === epoch) reviewPreparationButton.disabled = false;
+      }
+    })();
+  });
   async function openForm(schedule, draft) {
+    preparationReviewEpoch++;
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
@@ -67260,6 +67644,12 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     worktreeLimitSelect.value = savedLimit;
     permissionFilterInput.value = "";
+    preparationDirectory.value = ".";
+    preparationNetwork.value = "allowed";
+    const hasSavedPreparation = schedule?.permissions?.some((permission) => permission.kind === "worktree-preparation") ?? false;
+    preparationProposalHint.hidden = !hasSavedPreparation;
+    reviewPreparationButton.textContent = hasSavedPreparation ? "Review another setup" : "Review worktree setup";
+    reviewPreparationButton.disabled = false;
     setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
@@ -67568,6 +67958,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       },
       (error62) => {
         showStatus(cleanIpcError(error62), true);
+        status.scrollIntoView({ block: "nearest" });
       }
     ).finally(() => {
       saveButton.removeAttribute("disabled");
@@ -69379,20 +69770,15 @@ var init_general_markup = __esm({
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
-                Choose the main chat model and the models used for background tasks. The defaults
-                prefer a model running on this machine, but anything from a provider you have set
-                up can be selected.
+                The chat model, and the models used for background tasks.
               </p>
               <label>
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks
-                  the model that gives the most for what it costs on your plan, and sends the turn
-                  to that provider. You can pin a specific model here instead, or from the picker
-                  beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under its API key\u2019s Options in
-                  Models &amp; agents.
+                  Best value picks the model that gives the most for what it costs on your plans,
+                  and sends each turn to that model's provider. Pin one here or from the chat
+                  picker.
                 </span>
               </label>
               <label>
@@ -70108,8 +70494,7 @@ var init_customise_markup = __esm({
           <section class="settings-section" data-section="customise">
             <h3>Customise</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project, and every plugin extending it. The loaded
-              lists are read-only: edit the files themselves to change what is loaded.
+              What Copse loads for this project. Edit the files to change it.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -70121,16 +70506,7 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files available to the system prompt, in precedence order. Global steering
-                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
-                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
-                <code>AGENTS.md</code>, and always-applied Cursor rules
-                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
-                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them. Nested
-                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
-                formats.
+                Added to the system prompt, in the order they load.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -70153,10 +70529,9 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Agents</legend>
               <p class="settings-fieldset-desc">
-                Subagent definitions found in <code>agents/</code> folders under
-                <code>.copse</code>, <code>.cursor</code>, and <code>.claude</code>, in this
-                project and in your home directory. Hover a row to see its path. Project agents
-                are only read once you trust the project.
+                Subagents from <code>agents/</code> folders in <code>.copse</code>,
+                <code>.cursor</code> and <code>.claude</code>. Project agents load once you trust
+                the project.
               </p>
               <div id="sources-agents-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -74143,6 +74518,8 @@ export {
   init_attachment_preview,
   emptyContainerStorage,
   init_storage_cleanup,
+  transcriptMeta,
+  init_transcript_state,
   T,
   init_marked_esm,
   excerptText,
@@ -74166,9 +74543,17 @@ export {
   init_copse_tool_call,
   isThreadProposalCall,
   init_thread_proposal2 as init_thread_proposal,
+  splitAppendedReminders,
+  init_tool_result_reminders,
+  decodeWithSchema,
+  safeJsonStringify,
+  safeJsonParse,
+  init_safe_json,
+  ASK_USER_ANSWER_MAX_LENGTH,
+  init_ask_user_format,
   isReviewerInputCall,
-  parseReviewerInputCall,
   reviewerInputRequests,
+  reviewerInputRequestsForCall,
   reviewerInputAnswer,
   init_reviewer_input,
   isHumanUserPrompt,
@@ -74247,8 +74632,6 @@ export {
   bindThreadGitBranchIfUnset,
   applyPreparedThreadCheckout,
   init_thread_helpers,
-  transcriptMeta,
-  init_transcript_state,
   backgroundProjectOf,
   dropBackgroundThread,
   init_background_threads,
@@ -74364,6 +74747,7 @@ export {
   isProjectSwitchInFlight,
   preloadSidebarThreads,
   attachProjectThreadCache,
+  refreshProjectThreadWorktrees,
   removeProject,
   openNewProjectThread,
   setSidebarProjectFilter,
