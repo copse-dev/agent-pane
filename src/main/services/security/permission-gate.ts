@@ -52,7 +52,12 @@ import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
-import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
+import {
+  observeApprovalResolutions,
+  requestApproval,
+  type ApprovalRequest,
+  type ApprovalResponse,
+} from '../approval.ts'
 import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
@@ -179,13 +184,15 @@ const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String
 function issueShellReplayLease(
   identity: ShellReplayLeaseIdentity,
   command: string,
+  approval: ApprovalResponse,
   wholeCommandFallback = false,
 ): void {
   const core =
     replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, identity.executionRoot)) ??
     (wholeCommandFallback ? command : null)
   if (!core) return
-  const lease = shellReplayLeaseStore.issue(identity, core)
+  const lease = shellReplayLeaseStore.issue(identity, core, approval)
+  if (!lease) return
   recordDecision({
     kind: 'shell',
     actor: 'user',
@@ -342,7 +349,7 @@ async function requestEscalationApproval(
     opts.offerTrustedCommand === false
       ? null
       : offerableTrustedCommand(parts.command, getAgentProjectRoot())
-  const { approved, remember, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title,
       approveLabel: 'Run command',
@@ -367,9 +374,10 @@ async function requestEscalationApproval(
     signal,
   )
   if (signal?.aborted) return false
+  const { approved, remember, grantScope } = response
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (!signal?.aborted && approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command, true)
+    issueShellReplayLease(leaseIdentity, parts.command, response, true)
   }
   return approved && !signal?.aborted
 }
@@ -509,7 +517,7 @@ async function promptShell(
     containedCause !== 'shell-no-containment' &&
     (containedCause !== 'shell-network-scope-overlap' ||
       commandRunsSandboxed(getAgentExecutionRoot()))
-  const { approved, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
       approveLabel: 'Run command',
@@ -535,8 +543,9 @@ async function promptShell(
     signal,
   )
   if (signal?.aborted) return false
+  const { approved, grantScope } = response
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command)
+    issueShellReplayLease(leaseIdentity, command, response)
   }
   return approved
 }
@@ -665,7 +674,7 @@ export async function promptExpectedSandboxBlock(
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
-  const { approved, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title:
         opts.source === 'prior-denial' ? 'Run outside sandbox?' : 'Agent requests sandbox escape',
@@ -690,8 +699,9 @@ export async function promptExpectedSandboxBlock(
     signal,
   )
   if (signal?.aborted) return false
+  const { approved, grantScope } = response
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command, true)
+    issueShellReplayLease(leaseIdentity, command, response, true)
   }
   return approved
 }
