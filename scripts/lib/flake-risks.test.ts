@@ -175,6 +175,33 @@ describe('unit-wall-clock-sleep', () => {
   })
 })
 
+describe('exported sleep helpers', () => {
+  it('keep counting their own sleep, since importers are not followed', () => {
+    const helper = 'tests/e2e/helpers/zz-sleep.ts'
+    assert.deepEqual(
+      lines(
+        helper,
+        'export async function settleBriefly(ms = 500) {\n  await new Promise((r) => setTimeout(r, ms))\n}',
+      ),
+      [2],
+    )
+    assert.deepEqual(
+      lines(
+        unit,
+        [
+          'export const pause = async (ms = 20) => { await new Promise((r) => setTimeout(r, ms)) }',
+          'async function wait(ms: number) {',
+          '  await new Promise((r) => setTimeout(r, ms))',
+          '}',
+          'export { wait as settle }',
+          'await wait(40)',
+        ].join('\n'),
+      ),
+      [1, 3, 6],
+    )
+  })
+})
+
 describe('e2e wall-clock sleeps', () => {
   it('counts them as fixed pauses outside a deadline loop', () => {
     const text = [

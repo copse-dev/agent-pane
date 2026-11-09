@@ -105,6 +105,8 @@ interface Bindings {
   sleepHelpers: Map<string, ts.SignatureDeclaration>
   /** The terminal `await` inside an async sleep helper: counted at its call sites instead. */
   helperSites: Set<ts.Node>
+  /** Local names the module exports; their helper sleeps stay counted at the definition. */
+  exported: Set<string>
 }
 
 const TIMER_MODULES = new Set(['node:timers/promises', 'timers/promises'])
@@ -145,6 +147,7 @@ function collectBindings(file: ts.SourceFile): Bindings {
     checkoutAliases: new Set(),
     sleepHelpers: new Map(),
     helperSites: new Set(),
+    exported: exportedNames(file),
   }
   let importsBrowserName = false
   for (const statement of file.statements) {
@@ -533,7 +536,42 @@ function registerHelper(name: string, fn: HelperFunction, bindings: Bindings): v
   const sleep = returnedSleep(fn, bindings)
   if (!sleep) return
   bindings.sleepHelpers.set(name, fn)
-  if (sleep.site) bindings.helperSites.add(sleep.site)
+  // Callers in other modules are not followed, so an exported helper keeps
+  // counting its own sleep; otherwise the wait would be counted nowhere.
+  if (sleep.site && !bindings.exported.has(name)) bindings.helperSites.add(sleep.site)
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  return (
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+  )
+}
+
+/** Local names this module exports: `export function`, `export const` and `export { a as b }`. */
+function exportedNames(file: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+  for (const statement of file.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name && hasExportModifier(statement))
+      names.add(statement.name.text)
+    if (ts.isVariableStatement(statement) && hasExportModifier(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text)
+      }
+    }
+    if (
+      ts.isExportDeclaration(statement) &&
+      !statement.moduleSpecifier &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause)
+    ) {
+      for (const element of statement.exportClause.elements)
+        names.add((element.propertyName ?? element.name).text)
+    }
+    if (ts.isExportAssignment(statement) && ts.isIdentifier(statement.expression))
+      names.add(statement.expression.text)
+  }
+  return names
 }
 
 /** Map a helper's delay parameter to the call's argument (or the parameter default). */

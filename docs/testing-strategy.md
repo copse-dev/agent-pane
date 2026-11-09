@@ -329,7 +329,7 @@ count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint r
 | `e2e-checkout-seed`     | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                         | `seedStableWorkspace()` or a temp repo                                     |
 | `e2e-fixed-port`        | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                               | `listen(0)` and read `server.address().port`                               |
 
-An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites. A port the product
+An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
 itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
 baseline until the probe can be pointed elsewhere.
 
