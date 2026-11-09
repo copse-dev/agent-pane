@@ -1,3 +1,4 @@
+import { openReviewPr, openReviewPicker } from './helpers/review-pane.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -46,7 +47,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
 
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
     await browser.pause(800)
   }
 
@@ -179,6 +180,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await expect(await $('.pr-list-ci').getElement()).not.toBeExisting()
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
+    await openReviewPicker()
     await $('.pr-list-title*=Tidy up workspace status polling').click()
     await waitForViewer('Tidy up workspace status polling')
     await clickPrAction('Rerun CI')

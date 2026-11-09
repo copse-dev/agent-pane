@@ -57,13 +57,13 @@ describe('git changes diff colouring after a worker restart', function () {
   })
 
   it('recolours the diff after Monaco stopped and restarted its editor worker', async () => {
-    const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
+    const changesBtn = await $('.titlebar-btn[aria-label="Open review"]').getElement()
     await changesBtn.waitForExist({ timeout: 30_000 })
     await changesBtn.click()
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await (
       await $(
-        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+        '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
       ).getElement()
     ).click()
     await browser.waitUntil(async () => (await $$('.git-change-row').getElements()).length >= 3, {

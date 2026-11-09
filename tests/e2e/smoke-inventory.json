@@ -297,7 +297,7 @@
       "prefix": "src/renderer/views/pr-pane.ts",
       "smoke": ["tests/e2e/pr-panel-activity.e2e.ts"],
       "evidence": {
-        "tests/e2e/pr-panel-activity.e2e.ts": "selector txt:Open pull requests, cls:pr-detail-section, txt:comments, cls:pr-viewer-title, cls:pr-open-external-btn, cls:pr-activity, cls:code-block-copy, cls:pr-section-count, cls:pr-viewer-description, cls:pr-viewer-files, txt:checks, cls:pr-list-title, cls:pr-pane-refresh-btn in src/renderer/views/pr-pane.ts"
+        "tests/e2e/pr-panel-activity.e2e.ts": "selector cls:pr-detail-section, txt:comments, cls:pr-viewer-title, cls:pr-open-external-btn, cls:pr-activity, cls:code-block-copy, cls:pr-section-count, cls:pr-viewer-description, cls:pr-viewer-files, txt:checks, cls:pr-list-title, cls:pr-pane-refresh-btn in src/renderer/views/pr-pane.ts"
       }
     },
     {

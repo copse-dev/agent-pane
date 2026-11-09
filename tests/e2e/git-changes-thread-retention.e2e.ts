@@ -55,7 +55,7 @@ describe('Changes pane thread retention', function () {
   })
 
   it('restores each thread selection and continues receiving real working-tree changes', async () => {
-    await $('.titlebar-btn[aria-label="Open changes"]').click()
+    await $('.titlebar-btn[aria-label="Open review"]').click()
     await $('.git-change-row*=unstaged.ts').waitForDisplayed({ timeout: 30_000 })
     await $('.git-change-row*=unstaged.ts').click()
     await expect($('.git-change-row.is-selected .git-change-path')).toHaveText('unstaged.ts')

@@ -1,3 +1,4 @@
+import { openReviewPicker, closeReviewPicker } from './helpers/review-pane.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
@@ -150,7 +151,7 @@ describe('native PR and commit provenance', function () {
     const pane = $('#pane-files')
     if (!(await pane.isDisplayed()))
       await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPicker()
     await $('.pr-list-row*=#1001').waitForExist({ timeout: 15_000 })
     await $('.pr-list-row*=#1001').click()
     await expect($(`.pr-thread-link[data-thread-id="${producer}"]`)).toHaveAttribute(
@@ -161,10 +162,12 @@ describe('native PR and commit provenance', function () {
       'data-relationship',
       'related',
     )
+    await openReviewPicker()
     await expect($('.pr-list-meta .pr-list-relationship[data-relationship="produced"]')).toHaveText(
       'Produced',
     )
     await expect($('.pr-list-row*=#1001').$$('.pr-list-status')).toBeElementsArrayOfSize(1)
+    await closeReviewPicker()
     await saveElementScreenshot('#pane-files', screenshot)
   }
 

@@ -220,7 +220,7 @@ describe('right panel toggle and shortcuts', () => {
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, shift: true, key: 'G' })
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
-    await expect($('.titlebar-btn[aria-label="Open changes"]')).toHaveElementClass('active')
+    await expect($('.titlebar-btn[aria-label="Open review"]')).toHaveElementClass('active')
     await $('#git-changes-host').waitForDisplayed({ timeout: 5_000 })
   })
 

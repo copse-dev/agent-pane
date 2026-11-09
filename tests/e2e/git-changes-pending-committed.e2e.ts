@@ -37,7 +37,7 @@ describe('Changes while the committed lookup is pending', function () {
   })
 
   it('shows working-tree rows and their diff before committed work answers', async () => {
-    await $('.titlebar-btn[aria-label="Open changes"]').click()
+    await $('.titlebar-btn[aria-label="Open review"]').click()
     await browser.waitUntil(() => existsSync(join(barrier, 'started')), {
       timeout: 30_000,
       timeoutMsg: 'expected the real committed IPC handler to reach the barrier',

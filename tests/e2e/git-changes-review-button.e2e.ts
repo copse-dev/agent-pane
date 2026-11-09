@@ -15,13 +15,14 @@ import {
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function openChanges(): Promise<void> {
+  await $('.workspace-name').waitForExist({ timeout: 60_000 })
   await browser.waitUntil(
     async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
     { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
   )
   await $('.prompt-input').waitForExist({ timeout: 60_000 })
-  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
-  await $('.titlebar-btn[aria-label="Open changes"]').click()
+  await $('.titlebar-btn[aria-label="Open review"]').waitForExist({ timeout: 30_000 })
+  await $('.titlebar-btn[aria-label="Open review"]').click()
   await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
   await $('.git-changes-header').waitForExist({ timeout: 30_000 })
 }
@@ -95,7 +96,7 @@ describe('Changes view "Review" gesture', function () {
     // The gate resolves asynchronously through `plugins:list`; wait for the
     // header to settle before reading the button's state.
     await $(
-      '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+      '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
     ).waitForDisplayed({ timeout: 30_000 })
     await browser.pause(500)
     const hidden = await browser.execute(

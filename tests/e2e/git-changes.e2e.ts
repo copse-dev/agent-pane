@@ -97,8 +97,8 @@ describe('git changes viewer', function () {
   it('lists staged and unstaged changes and shows a diff', async () => {
     // The titlebar "Changes" shortcut opens the right panel and switches to the
     // Changes tab in one click.
-    await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
-    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
+    await $('.titlebar-btn[aria-label="Open review"]').waitForExist({ timeout: 30_000 })
+    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open review"]').getElement()
     await titlebarChangesBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
@@ -110,7 +110,7 @@ describe('git changes viewer', function () {
 
     await (
       await $(
-        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+        '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
       ).getElement()
     ).click()
 
@@ -128,7 +128,7 @@ describe('git changes viewer', function () {
     // sections; the pane header sits on the shared header band.
     const chrome = await browser.execute(() => {
       const title = document.querySelector<HTMLElement>('.git-changes-section-title')
-      const header = document.querySelector<HTMLElement>('#git-changes-host .pane-header')
+      const header = document.querySelector<HTMLElement>('.review-header')
       if (!title || !header) return null
       const probe = document.createElement('div')
       probe.style.cssText =
@@ -341,7 +341,7 @@ describe('git changes viewer', function () {
     rmSync(join(repoRoot, 'committed.ts'))
     await (
       await $(
-        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+        '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
       ).getElement()
     ).click()
     await browser.waitUntil(

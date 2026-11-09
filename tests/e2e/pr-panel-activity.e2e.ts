@@ -1,3 +1,4 @@
+import { openReviewPr, openReviewPicker } from './helpers/review-pane.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
@@ -30,7 +31,7 @@ describe('PR comments and checks', () => {
     this.timeout(120_000)
     if (!(await $('#pane-files').isDisplayed()))
       await $('[aria-label="Toggle right panel"]').click()
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
     await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
     await expect(await $('.pr-viewer-title').getElement()).toHaveText('Add GitHub PR panel tab')
     await saveElementScreenshot('#pane-files', 'pr-activity-overview.png')
@@ -58,7 +59,7 @@ describe('PR comments and checks', () => {
       )
     })
     expect(commentLayout).toBe(true)
-    await expect(await $('.pr-section-count').getElement()).not.toBeDisplayed()
+    await expect(await $('.pr-section-count').getElement()).toBeDisplayed()
     await $('[aria-label="Expand pull requests over chat"]').click()
     await $('.pr-section-count').waitForDisplayed({ timeout: 5_000 })
     const countsAreRound = await browser.execute(() => {
@@ -89,7 +90,7 @@ describe('PR comments and checks', () => {
     })
     expect(multiDigitCountIsRound).toBe(true)
     await $('[aria-label="Restore pull requests"]').click()
-    await browser.waitUntil(async () => !(await $('.pr-section-count').isDisplayed()))
+    await expect($('.pr-section-count')).toBeDisplayed()
     await expect(await $('.pr-viewer-description').getElement()).not.toBeDisplayed()
     await expect(await $('.pr-viewer-files').getElement()).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-activity-comments.png')
@@ -110,6 +111,7 @@ describe('PR comments and checks', () => {
     await $('.pr-detail-section[data-section="checks"]').click()
     await expect(await $$('.pr-check-state-success').getElements()).toBeElementsArrayOfSize(3)
 
+    await openReviewPicker()
     await $('.pr-list-title*=Tidy up workspace status polling').click()
     await expect(await $('.pr-viewer-title').getElement()).toHaveText(
       'Tidy up workspace status polling',

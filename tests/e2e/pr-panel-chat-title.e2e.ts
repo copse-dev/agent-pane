@@ -1,3 +1,4 @@
+import { openReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -95,7 +96,7 @@ describe('PR panel chat-only title enrichment', () => {
       '.pr-list-row[data-pr-section="linked"] .pr-list-title',
     ).getElement()
     if (!(await linkedTitle.isDisplayed())) {
-      await $('[aria-label="Open pull requests"]').click()
+      await openReviewPicker()
     }
     await expect(linkedTitle).toHaveText('Ship sidebar thread PR status')
     await expect(linkedTitle).not.toHaveText('copse-dev/copse-panel')
