@@ -27911,9 +27911,14 @@ function drainMessageQueue(store, api, threadId) {
   let used = thread.continuationUsed ?? 0;
   let next;
   const heldByBudget = [];
+  const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
     if (isMachineContinuation(item)) {
+      if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId);
+        continue;
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId);
         continue;
@@ -27925,14 +27930,15 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+      (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
@@ -28060,6 +28066,14 @@ function removeQueuedMessage(store, threadId, messageId) {
   store.emit("threads_changed");
 }
 function sendQueuedMessageNow(store, api, threadId, messageId) {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId
+  );
+  if (!item) return;
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId);
+  else prioritizeQueuedMessage(store, api, threadId, messageId);
+}
+function prioritizeQueuedMessage(store, api, threadId, messageId) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
   const pending = thread?.pendingMessages ?? [];
   const target = pending.find((p2) => p2.messageId === messageId);
@@ -28097,7 +28111,7 @@ function enqueueHookMessage(store, api, threadId, input2) {
   };
   enqueueUserMessage(store, threadId, item);
   if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store, api, threadId, messageId);
+  if (input2.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId);
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
@@ -28115,14 +28129,14 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
-        return rest;
+        return { ...rest, epoch };
       }),
       updatedAt: Date.now()
     };
   });
   store.setState({ threads });
   store.emit("threads_changed");
-  sendQueuedMessageNow(store, api, threadId, messageId);
+  prioritizeQueuedMessage(store, api, threadId, messageId);
 }
 var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
