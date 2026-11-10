@@ -281,7 +281,8 @@ all.
 The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
 about 12.5 GB text-only, Strands Decider about 5 GB). Every later run reuses the cache and downloads nothing. The checkout,
 virtual environment or native build, uv package cache (`UV_CACHE_DIR`), Hugging Face cache
-(`HF_HOME`) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
+(`HF_HOME` and `HF_HUB_CACHE`, so a value of your own does not move the weights out of reach of
+**Uninstall**) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
 `~/.copse/cache/classifiers` (or `$COPSE_DIR/cache/classifiers`). Point it at a large volume when
 the internal disk is short. `--setup-only` prepares the cache without starting the server.
 
@@ -305,7 +306,10 @@ the offered options.
 [Strands Decider](https://github.com/strands-labs/strands-decider) (Apache-2.0) serves the
 `/v1/systemone` format from a 1.9-billion-parameter model: a LoRA adapter and readout head on
 `Qwen/Qwen3.5-2B-Base`. **Strands Decider 2B (local)** is a preset, and **Download and run** sets
-up release `v0.3.0` (commit `87d0fd57`). The adapter checkpoint loads from the Hub repository's
+up release `v0.3.0` (commit `87d0fd57`). That release commits no lockfile, so setup resolves its
+Python dependencies with `uv sync --exclude-newer 2026-11-06T00:00:00Z`, as PyPI stood the day after
+the release, and the server runs from that lock with `uv run --frozen`. Unlike Kev's committed lock,
+this is a date bound rather than a hash list chosen in advance. The adapter checkpoint loads from the Hub repository's
 `main`, which a later release in the same month replaces; the base loads at the revision the
 checkpoint records. On a Mac the server uses MPS. The project's MLX device is faster but needs its
 `mlx` extra and `--device mlx`, which the catalog does not set up.

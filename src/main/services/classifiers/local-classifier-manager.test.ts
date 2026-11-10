@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
@@ -9,7 +10,11 @@ import {
   describeInstallFailure,
   type LocalClassifierDeps,
 } from './local-classifier-manager.ts'
-import { LOCAL_CLASSIFIER_SERVERS, localClassifierEntry } from './local-server.mts'
+import {
+  LOCAL_CLASSIFIER_SERVERS,
+  cacheEnvironment,
+  localClassifierEntry,
+} from './local-server.mts'
 
 const WINNOW_PORT = 8091
 
@@ -357,6 +362,23 @@ describe('LocalClassifierManager', () => {
     )
     assert.equal((await strands())?.saved, true)
     assert.deepEqual(f.prepared, [])
+  })
+
+  it('installs Strands Decider’s dependencies as published by its release, and keeps its weights in the cache', () => {
+    const entry = localClassifierEntry('strands-decider')
+    assert.ok(entry)
+    const paths = {
+      root: '/cache',
+      checkout: `/cache/strands-decider/${entry.revision}`,
+      models: '/m',
+    }
+    // Upstream commits no lockfile: without the date bound, setup would take whatever PyPI
+    // serves on the day, and the server would re-resolve on every start without --frozen.
+    assert.deepEqual(entry.setup(paths), [
+      ['uv', 'sync', '--exclude-newer', '2026-11-06T00:00:00Z'],
+    ])
+    assert.deepEqual(entry.serve(paths).slice(0, 4), ['uv', 'run', '--frozen', 'strands-decider'])
+    assert.equal(cacheEnvironment('/cache')['HF_HUB_CACHE'], join('/cache', 'huggingface', 'hub'))
   })
 
   it('rejects ids outside the catalog', async () => {
