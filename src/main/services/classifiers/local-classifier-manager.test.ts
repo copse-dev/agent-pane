@@ -9,7 +9,7 @@ import {
   describeInstallFailure,
   type LocalClassifierDeps,
 } from './local-classifier-manager.ts'
-import { localClassifierEntry } from './local-server.mts'
+import { LOCAL_CLASSIFIER_SERVERS, localClassifierEntry } from './local-server.mts'
 
 const WINNOW_PORT = 8091
 
@@ -320,6 +320,43 @@ describe('LocalClassifierManager', () => {
     // A second call does not save a duplicate.
     await f.manager.connect('winnow')
     assert.equal(f.saved.length, 1)
+  })
+
+  it('gives every catalog server its own port, and the preset that saves its connection points there', () => {
+    const ports = new Set<number>()
+    for (const [id, entry] of Object.entries(LOCAL_CLASSIFIER_SERVERS)) {
+      assert.equal(ports.has(entry.port), false, `${id} shares port ${String(entry.port)}`)
+      ports.add(entry.port)
+      const preset = CLASSIFIER_PRESETS.find((candidate) => candidate.id === entry.presetId)
+      assert.ok(preset, `${id} names a missing preset`)
+      assert.deepEqual(
+        preset.connection,
+        {
+          type: 'http',
+          protocol: 'systemone',
+          baseUrl: `http://127.0.0.1:${String(entry.port)}/v1`,
+          auth: 'none',
+        },
+        id,
+      )
+    }
+  })
+
+  it('connects a Strands Decider server already running on its port', async () => {
+    const f = fixture()
+    const strands = async (): Promise<LocalClassifierStatus | undefined> =>
+      (await f.manager.overview()).servers.find((server) => server.id === 'strands-decider')
+    assert.equal((await strands())?.phase, 'not-installed')
+    assert.deepEqual((await strands())?.needs, ['git', 'uv'])
+    f.listening.add(8011)
+    assert.equal((await strands())?.phase, 'external')
+    await f.manager.connect('strands-decider')
+    assert.deepEqual(
+      f.saved.map((profile) => [profile.id, profile.model]),
+      [['strands-decider', 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610']],
+    )
+    assert.equal((await strands())?.saved, true)
+    assert.deepEqual(f.prepared, [])
   })
 
   it('rejects ids outside the catalog', async () => {

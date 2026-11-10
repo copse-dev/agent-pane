@@ -80,6 +80,32 @@ export const LOCAL_CLASSIFIER_SERVERS: Readonly<Record<string, CatalogEntry>> = 
     serve: ({ models }) => ['python3', 'scripts/serve.py', '--text-only', '--model-dir', models],
     port: 8091,
   },
+  'strands-decider': {
+    presetId: 'strands-decider',
+    label: 'Strands Decider 2B',
+    // The checkpoint is a LoRA adapter and readout head; the Qwen3.5-2B base it loads is about 4.5 GB.
+    downloadGb: 5,
+    prerequisites: ['git', 'uv'],
+    weights: ['StrandsAgents/strands-decider-2B-qwen3.5-v1-2610', 'Qwen/Qwen3.5-2B-Base'],
+    repository: 'https://github.com/strands-labs/strands-decider.git',
+    // Release v0.3.0. Its .gitignore covers the `uv.lock` and `.venv` that `uv sync` writes,
+    // so the setup leaves no tracked change for the pinned-checkout check to refuse.
+    revision: '87d0fd5774587ae786ccfea7470e58f6a5b4ddef',
+    setup: () => [['uv', 'sync']],
+    // The device is CUDA, then MPS, then CPU, whichever is present.
+    serve: () => [
+      'uv',
+      'run',
+      'strands-decider',
+      'serve',
+      'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '8011',
+    ],
+    port: 8011,
+  },
 }
 
 export function localClassifierEntry(name: string): CatalogEntry | undefined {

@@ -174,5 +174,5 @@ it('loads the native classifier CLI and reports usage before any installation or
   assert.equal(result.error, undefined)
   assert.equal(result.status, 2)
   assert.equal(result.stdout, '')
-  assert.match(result.stderr, /^Usage: pnpm run classifier:serve -- <kev\|winnow>/)
+  assert.match(result.stderr, /^Usage: pnpm run classifier:serve -- <kev\|winnow\|strands-decider>/)
 })
