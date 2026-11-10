@@ -43,7 +43,12 @@ import {
 import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler, supportsInteractiveClientApproval } from '../approval.ts'
+import {
+  pendingApprovalCountForThread,
+  setApprovalHandler,
+  supportsInteractiveClientApproval,
+  type ApprovalResponse,
+} from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -59,12 +64,12 @@ import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
-import { drainWriteQueue } from '../storage/write-queue.ts'
+import { drainWriteQueue, runSerialized, SETTINGS_WRITE_QUEUE } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/auto-approval.ts'
-import { setWorkspaceTrusted } from './workspace-trust.ts'
+import { runWithWorkspaceTrust, setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
@@ -73,7 +78,10 @@ import {
 } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
-import { shellReplayLeaseStore } from './capability-lease.ts'
+import {
+  SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS,
+  shellReplayLeaseStore,
+} from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { AutomationPermission } from '@shared/types'
 import { getAutomationService } from '../automations/automation-service.ts'
@@ -81,6 +89,7 @@ import { isMcpToolRemembered } from '../mcp/mcp-registry.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
 import { execFileSync } from 'node:child_process'
 import { runWithToolAvailability } from '../tool-availability.ts'
+import { clearRunDeadline, registerRunDeadline } from '../hooks/run-deadline.ts'
 
 installInMemorySecretCipher()
 
@@ -2271,6 +2280,181 @@ describe('turn-tree shell replay leases', () => {
     )
   }
 
+  for (const path of ['contained', 'expected-escape', 'sandbox-retry'] as const) {
+    it(`rejects ${path} when cancellation follows approval settlement`, async () => {
+      shellReplayLeaseStore.clear()
+      const controller = new AbortController()
+      const epoch = `tree-late-approval-${path}`
+      const command = path === 'contained' ? 'npm test' : './local-runner'
+      const previousTrusted = getSetting<string[]>('trustedShellCommands', [])
+      await setSetting('trustedShellCommands', [])
+      let prompts = 0
+      let resumed = 0
+      const deadline = {
+        pauseForHostWait: (): void => {},
+        resumeForHostWait: (): void => {
+          // The real broker has already settled approved and removed its abort
+          // listener. Cancelling here cannot turn that answer into DENIED;
+          // the gate's own post-await guard must reject it.
+          resumed++
+          assert.equal(controller.signal.aborted, false)
+          controller.abort()
+        },
+      }
+      registerRunDeadline(context.threadId, deadline)
+      setApprovalHandler(async (request) => {
+        prompts++
+        assert.equal(request.allowTurnTreeLease, true)
+        if (path === 'sandbox-retry') assert.equal(request.allowRemember, true)
+        return {
+          approved: true,
+          remember: path === 'sandbox-retry',
+          grantScope: 'turn-tree',
+        }
+      })
+      try {
+        const permitted = await runWithWorkspaceTrust(root, true, () =>
+          runInTree(epoch, () => {
+            switch (path) {
+              case 'contained':
+                return ensureShellCommandPermitted(command, {
+                  sandboxEnabled: true,
+                  autoRun: false,
+                  executionRoot: root,
+                  signal: controller.signal,
+                })
+              case 'expected-escape':
+                return promptExpectedSandboxBlock(command, [], controller.signal, {
+                  executionRoot: root,
+                })
+              case 'sandbox-retry':
+                return promptUnsandboxedShell(command, [], controller.signal)
+            }
+          }),
+        )
+        assert.equal(prompts, 1)
+        assert.equal(resumed, 1, 'cancellation occurs after the approval wait settles')
+        assert.equal(permitted, false)
+        assert.equal(
+          shellReplayLeaseStore.consume(
+            {
+              projectId: context.projectId,
+              threadId: context.threadId,
+              turnTreeId: asTurnTreeId(epoch),
+              executionRoot: root,
+              containment: path === 'contained' ? 'project-sandbox' : 'external',
+            },
+            command,
+            () => false,
+          ).matched,
+          false,
+          'the settled approval cannot create retry authority after cancellation',
+        )
+        assert.deepEqual(getSetting<string[]>('trustedShellCommands', []), [])
+      } finally {
+        clearRunDeadline(context.threadId, deadline)
+        shellReplayLeaseStore.clear()
+        setApprovalHandler(null)
+        await setSetting('trustedShellCommands', previousTrusted)
+      }
+    })
+  }
+
+  it('rechecks cancellation after awaited trusted-command persistence', async () => {
+    shellReplayLeaseStore.clear()
+    const previousTrusted = getSetting<string[]>('trustedShellCommands', [])
+    await setSetting('trustedShellCommands', [])
+    const controller = new AbortController()
+    const epoch = 'tree-cancel-during-remember'
+    const command = './local-runner'
+    const writeBarrier = Promise.withResolvers<undefined>()
+    const blocker = runSerialized(SETTINGS_WRITE_QUEUE, () => writeBarrier.promise)
+    let prompts = 0
+    let settled = false
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowRemember, true)
+      assert.equal(request.allowTurnTreeLease, true)
+      return { approved: true, remember: true, grantScope: 'turn-tree' }
+    })
+    const pending = runWithWorkspaceTrust(root, true, () =>
+      runInTree(epoch, () => promptUnsandboxedShell(command, [], controller.signal)),
+    ).then((permitted) => {
+      settled = true
+      return permitted
+    })
+    try {
+      // Drain the ready promise continuations while the real settings queue
+      // holds the approved grant's persistence. No timer or mock gate is used.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(prompts, 1)
+      assert.equal(settled, false)
+      assert.deepEqual(getSetting<string[]>('trustedShellCommands', []), [])
+      controller.abort()
+      writeBarrier.resolve(undefined)
+      const permitted = await pending
+      assert.deepEqual(getSetting<string[]>('trustedShellCommands', []), ['local-runner'])
+      assert.equal(
+        permitted,
+        false,
+        'persisting the already-approved setting cannot resume the call',
+      )
+      assert.equal(
+        shellReplayLeaseStore.consume(
+          {
+            projectId: context.projectId,
+            threadId: context.threadId,
+            turnTreeId: asTurnTreeId(epoch),
+            executionRoot: root,
+            containment: 'external',
+          },
+          command,
+          () => false,
+        ).matched,
+        false,
+        'cancellation while persisting cannot issue a replay lease',
+      )
+    } finally {
+      writeBarrier.resolve(undefined)
+      await Promise.allSettled([blocker, pending])
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+      await setSetting('trustedShellCommands', previousTrusted)
+    }
+  })
+
+  it('refuses aborted outside retries without spending the task grant', async () => {
+    shellReplayLeaseStore.clear()
+    const controller = new AbortController()
+    controller.abort()
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-aborted', async () => {
+        const options = { executionRoot: root }
+        const command = 'node check.mjs'
+        assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+        assert.equal(
+          await promptExpectedSandboxBlock(command, [], controller.signal, options),
+          false,
+        )
+        assert.equal(await promptUnsandboxedShell(command, [], controller.signal), false)
+        for (let count = 0; count < 10; count++) {
+          assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+        }
+        assert.equal(prompts, 1, 'aborted calls preserve all ten live retries')
+        assert.equal(await promptExpectedSandboxBlock(command, [], undefined, options), true)
+      })
+      assert.equal(prompts, 2, 'exhaustion asks again')
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
   it('fails closed when a run has no explicit human turn-tree epoch', async () => {
     shellReplayLeaseStore.clear()
     setApprovalHandler(async (request) => {
@@ -2311,6 +2495,71 @@ describe('turn-tree shell replay leases', () => {
         assert.equal(await ensureShellCommandPermitted('npm test | rg failed', options), true)
       })
       assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('shares one retry budget across callers answered by one approval', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    const opened = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<ApprovalResponse>()
+    setApprovalHandler(async () => {
+      prompts++
+      if (prompts === 1) {
+        opened.resolve(undefined)
+        return answer.promise
+      }
+      return { approved: false, remember: false }
+    })
+    try {
+      await runInTree('tree-coalesced-budget', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        const first = ensureShellCommandPermitted('npm test', options)
+        const second = ensureShellCommandPermitted('npm test', options)
+        await opened.promise
+        assert.equal(pendingApprovalCountForThread(context.threadId), 2)
+        answer.resolve({ approved: true, remember: false, grantScope: 'turn-tree' })
+        assert.deepEqual(await Promise.all([first, second]), [true, true])
+        assert.equal(prompts, 1)
+
+        for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
+          assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+        }
+        assert.equal(await ensureShellCommandPermitted('npm test', options), false)
+        assert.equal(prompts, 2, 'the shared budget is exhausted after ten retries')
+      })
+    } finally {
+      answer.resolve({ approved: false, remember: false })
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('issues a fresh budget for a new approval even when the handler reuses its response', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    const approved: ApprovalResponse = { approved: true, remember: false, grantScope: 'turn-tree' }
+    setApprovalHandler(async () => {
+      prompts++
+      return prompts <= 2 ? approved : { approved: false, remember: false }
+    })
+    try {
+      await runInTree('tree-renewed-budget', async () => {
+        const options = { sandboxEnabled: true, autoRun: false, executionRoot: root }
+        for (let decision = 1; decision <= 2; decision++) {
+          assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+          assert.equal(prompts, decision)
+          for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
+            assert.equal(await ensureShellCommandPermitted('npm test', options), true)
+          }
+          assert.equal(prompts, decision, 'fresh approval covers its full replay budget')
+        }
+        assert.equal(await ensureShellCommandPermitted('npm test', options), false)
+        assert.equal(prompts, 3)
+      })
     } finally {
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)
@@ -2500,7 +2749,8 @@ describe('turn-tree shell replay leases', () => {
       assert.deepEqual(requests, [
         {
           lease: true,
-          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          label:
+            'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
           subject: demo,
         },
       ])
@@ -2563,7 +2813,8 @@ describe('turn-tree shell replay leases', () => {
       assert.deepEqual(requests, [
         {
           lease: true,
-          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          label:
+            'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
           subject: command,
         },
       ])
