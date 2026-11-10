@@ -6246,7 +6246,6 @@ span.acp-resource-title {
 .acp-diff-eof {
   padding-left: 2ch;
   color: var(--text-muted);
-  font-style: italic;
 }
 .transcript-attachment-chip {
   display: inline-flex;
@@ -6916,7 +6915,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .code-block-output-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 .message-text .table-copy-shell {
   position: relative;
@@ -7046,7 +7044,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-result-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 .tool-name {
   font-weight: 500;
@@ -8537,16 +8534,18 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   white-space: nowrap;
 }
 .branch-picker-default-badge {
+  display: inline-block;
   flex-shrink: 0;
-  font-size: var(--font-size-3xs);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: var(--badge-font-size);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 6px;
+}
+.branch-picker-default-badge::first-letter {
+  text-transform: uppercase;
 }
 .branch-picker-empty {
   padding: 8px 12px;
@@ -9755,10 +9754,7 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-base);
+  padding: var(--spacing-sm) 0;
 }
 .classifier-local-info {
   display: flex;
@@ -10004,10 +10000,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  padding: var(--spacing-md) 0;
 }
 .usage-worth-verdict {
   margin: 0;
@@ -10260,7 +10253,6 @@ dialog.settings-overlay::backdrop {
 .frontier-tooltip .tt-status {
   margin-top: 6px;
   color: var(--text-secondary);
-  font-style: italic;
 }
 .frontier-tooltip .tt-card-link {
   color: var(--link);
@@ -10433,7 +10425,6 @@ dialog.settings-overlay::backdrop {
 }
 .usage-estimated {
   color: var(--text-muted);
-  font-style: italic;
 }
 .usage-table td code {
   font-size: var(--font-size-sm);
@@ -10493,9 +10484,7 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-md);
 }
 .acp-agent-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
 }
 .acp-agent-card-head {
   display: flex;
@@ -10557,12 +10546,11 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .sources-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 .sources-row-header {
   display: flex;
@@ -10601,7 +10589,10 @@ dialog.settings-overlay::backdrop {
   border-color: var(--warning, #d29922);
 }
 .sources-row-warning {
-  border-color: var(--warning, #d29922);
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .sources-badge-unsupported {
   color: var(--text-muted);
@@ -10796,7 +10787,6 @@ dialog.settings-overlay::backdrop {
 }
 .hook-test-stream pre.hook-test-stream-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 .plugin-view-tabs {
   display: inline-flex;
@@ -10857,10 +10847,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  padding: var(--spacing-md) 0;
 }
 .plugin-catalog-card-header {
   display: flex;
@@ -10882,9 +10869,7 @@ dialog.settings-overlay::backdrop {
 .plugin-catalog-publisher {
   color: var(--text-muted);
   font-size: var(--badge-font-size);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: var(--badge-font-weight);
 }
 .plugin-catalog-status {
   display: flex;
@@ -11221,7 +11206,6 @@ dialog.settings-overlay::backdrop {
 .plugin-chips-empty {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  font-style: italic;
 }
 .plugin-settings-summary,
 .settings-disclosure-summary {
@@ -11361,17 +11345,17 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--error);
 }
 .automation-attention {
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
 }
 .automation-scheduler-notice {
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  --sev: var(--danger);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
@@ -11455,13 +11439,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-row {
   gap: var(--spacing-md);
   justify-content: space-between;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
-  background: var(--bg-base);
+  padding: var(--spacing-sm) 0;
 }
 .automation-row-blocked {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .automation-row-blocked-message {
   color: var(--text-primary);
@@ -11637,7 +11621,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-direction: row;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: var(--spacing-sm);
   cursor: pointer;
@@ -11647,7 +11630,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .automation-permission-row:hover {
   background: var(--bg-hover);
-  border-color: var(--border);
 }
 .automation-permission-switch {
   flex: none;
@@ -11833,23 +11815,19 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.about-licenses-list > li + li {
-  border-top: 1px solid var(--border-subtle);
 }
 .about-license-summary {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-xs) 0;
   cursor: pointer;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
 }
 .about-license-summary:hover {
   background: var(--bg-hover);
+  box-shadow: calc(-1 * var(--spacing-sm)) 0 0 var(--bg-hover), var(--spacing-sm) 0 0 var(--bg-hover);
 }
 .about-license-name {
   min-width: 0;
@@ -11868,7 +11846,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-xs);
 }
 .about-license-body {
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-xs) 0 var(--spacing-md);
 }
 .about-license-meta,
 .about-license-note {
@@ -11897,9 +11875,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   overflow-wrap: anywhere;
 }
 .openai-connection-card {
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -12363,9 +12339,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin-top: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-md);
-  border: 1px solid var(--warning, #c9a227);
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning, #c9a227) 10%, transparent);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .setup-context-advisory[hidden] {
   display: none;
@@ -13625,9 +13601,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   gap: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  border: 1px solid var(--warning, #d29922);
-  border-radius: 6px;
-  background: rgba(210, 153, 34, 0.08);
+  --sev: var(--warning);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   font-size: var(--font-size-sm);
 }
 .mcp-trust-banner button {
@@ -13650,9 +13626,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
 }
 .mcp-curated-row .mcp-server-toggle {
   margin: 2px 0 0;
@@ -14133,7 +14107,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-muted);
   font-size: var(--font-size-3xs);
   line-height: 1.3;
-  text-transform: uppercase;
   pointer-events: none;
 }
 .attachment-chip-meta {
@@ -14258,12 +14231,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-weight: 500;
 }
 .diff-conflict-banner {
+  --sev: var(--warning);
   padding: var(--spacing-sm);
   margin: var(--spacing-sm);
-  border: 1px solid var(--warning, #c2410c);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning, #c2410c) 12%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
+  color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
 .diff-file-list {
@@ -15928,11 +15901,11 @@ dialog.activity-panel-overlay {
   }
 }
 .activity-automation-notice {
+  --sev: var(--danger);
   margin: 0;
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-primary);
   font-size: var(--font-size-xs);
 }
@@ -15951,9 +15924,9 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning) 8%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .activity-issue-detail p {
   margin: 0;
@@ -16144,12 +16117,15 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-sm);
 }
 .plugin-panel-badge {
+  display: inline-block;
   flex-shrink: 0;
-  font-size: var(--font-size-2xs);
+  font-size: var(--badge-font-size);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg-hover);
   color: var(--text-muted);
+}
+.plugin-panel-badge::first-letter {
   text-transform: uppercase;
 }
 .plugin-panel-badge[data-badge-kind=assigned-model] {
@@ -16350,17 +16326,21 @@ dialog.activity-panel-overlay {
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 .review-finding-severity {
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--finding-sev);
 }
 .review-finding-class {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: inline-block;
+  font-size: var(--badge-font-size);
   color: var(--text-muted);
+}
+.review-finding-severity::first-letter {
+  text-transform: uppercase;
+}
+.review-finding-class::first-letter {
+  text-transform: uppercase;
 }
 .review-finding-location {
   font-size: var(--font-size-xs);
@@ -16725,8 +16705,14 @@ dialog.activity-panel-overlay {
     opacity: 0.35;
   }
 }
-.plugin-settings .apple-development-host {
+.plugin-settings-fold .apple-development-host {
   margin: 0;
+}
+.plugin-settings-fold .apple-development-panel {
+  padding: var(--spacing-sm) 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 @media (max-width: 760px) {
   .apple-development-selection {
@@ -16860,14 +16846,9 @@ dialog.activity-panel-overlay {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
 }
 .environment-setup-row {
-  padding: var(--spacing-md);
-}
-.environment-setup-row + .environment-setup-row {
-  border-top: 1px solid var(--border-subtle);
+  padding: var(--spacing-md) 0;
 }
 .environment-setup-label {
   display: flex;
@@ -17810,9 +17791,9 @@ dialog.activity-panel-overlay {
   max-height: 240px;
   overflow: auto;
   margin-bottom: var(--spacing-sm);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs);
+  background: var(--bg-input);
 }
 .remote-folder-entry {
   text-align: left;
@@ -17843,9 +17824,7 @@ dialog.activity-panel-overlay {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: var(--spacing-sm) 0;
 }
 .ssh-host-summary {
   flex: 1 1 auto;
@@ -17927,9 +17906,7 @@ dialog.activity-panel-overlay {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: var(--spacing-sm) 0;
 }
 .mobile-companion-device-summary {
   flex: 1 1 auto;
@@ -18048,14 +18025,16 @@ dialog.activity-panel-overlay {
 .memories-row-taint {
   flex: none;
   align-self: flex-start;
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--warning, #d29922);
   border: 1px dashed var(--warning, #d29922);
   border-radius: var(--radius);
   padding: 0 5px;
+}
+.memories-row-taint::first-letter {
+  text-transform: uppercase;
 }
 .memories-tag {
   font-size: var(--font-size-2xs);
@@ -18676,13 +18655,13 @@ dialog.activity-panel-overlay {
   color: var(--error);
 }
 .vnc-network-warning {
+  --sev: var(--warning);
   padding: var(--spacing-sm);
-  color: var(--warning);
+  color: var(--text-primary);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .vnc-discovered-ports {
   display: flex;
@@ -19344,14 +19323,16 @@ dialog.activity-panel-overlay {
   align-items: center;
 }
 .roadmap-review-applied-badge {
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
   color: var(--success, #3fb950);
+}
+.roadmap-review-applied-badge::first-letter {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;

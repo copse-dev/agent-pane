@@ -68531,13 +68531,13 @@ function assessCloudAdvisorPair(executorIntellect, advisorIntellect) {
     return {
       ok: true,
       level: "info",
-      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). expect a second opinion rather than stronger guidance.`
+      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). Expect a second opinion rather than stronger guidance.`
     };
   }
   return {
     ok: true,
     level: "warn",
-    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
+    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). Its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
   };
 }
 function validateAdvisorPair(executorModel, advisorModel) {
@@ -68547,7 +68547,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: false,
       native,
       level: "warn",
-      reason: "Advisor and executor are the same model. pick a stronger advisor to get any lift. The advisor tool stays hidden while they match."
+      reason: "Advisor and executor are the same model. Pick a stronger advisor to get any lift; the advisor tool stays hidden while they match."
     };
   }
   if (native) {
@@ -68563,7 +68563,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs. the strength comparison happens then."
+      reason: "One side of this pairing is chosen when the advisor runs, so the strength comparison happens then."
     };
   }
   if (isAcpModel(advisorModel)) {
@@ -68583,14 +68583,14 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "good",
-        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor. the setup this strategy is designed for."
+        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor, the setup this strategy is designed for."
       };
     }
     return {
       ok: true,
       native,
       level: band === "low" ? "warn" : "info",
-      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. a stronger advisor gives more lift.`
+      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. A stronger advisor gives more lift.`
     };
   }
   if (advisor.kind === "cloud" && executor.kind === "cloud") {
@@ -68611,7 +68611,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
           ok: true,
           native,
           level: "info",
-          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). modest lift; a frontier cloud advisor gives more.`
+          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). Modest lift; a frontier cloud advisor gives more.`
         };
       }
       const hidden = advisor.paramsB < executor.paramsB;
@@ -68619,21 +68619,21 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "warn",
-        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). Pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
       };
     }
     return {
       ok: true,
       native,
       level: "warn",
-      reason: "A local advisor is unlikely to out-think the executor. this strategy expects a larger (ideally frontier cloud) advisor."
+      reason: "A local advisor is unlikely to out-think the executor. This strategy expects a larger (ideally frontier cloud) advisor."
     };
   }
   return {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing. any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
+    reason: "Client-side pairing: any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -70137,18 +70137,16 @@ var init_permissions_markup = __esm({
     ).join("")}
                 </select>
                 <span class="field-hint">
-                  Matches a fixed list of command shapes exactly, never a model's judgement, and
-                  never anything it doesn't recognise. Reads cover local queries plus
-                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
-                  already has configured; a URL never qualifies. Higher levels add local commits,
-                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
-                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
-                  and anything containing <code>$(\u2026)</code> always ask. Only applies in a trusted
-                  project with the setting above turned on, and only while the project sandbox is
-                  running. Without a sandbox, Windows, or if the sandbox failed to start, every
-                  recognised shape still asks. At the two write levels
-                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks; the project sandbox contains those.
+                  Only exact command shapes, never a model's judgement. Reads include
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote the project
+                  already has; a URL never counts. Higher levels add local commits, then
+                  <code>git push</code> and <code>gh pr create</code>. Force pushes, branch
+                  deletes, installs, <code>npx</code>, project scripts and anything with
+                  <code>$(\u2026)</code> always ask. It applies only in a trusted project with the
+                  setting above on, and only while the project sandbox is running. Without a
+                  sandbox, on Windows, or if it failed to start, every shape asks. At the write levels,
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run the
+                  project's git hooks inside the project sandbox.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -70264,11 +70262,10 @@ var init_permissions_markup = __esm({
                 Skip approval for deletes, renames, and new folders in an isolated worktree
               </label>
               <p class="field-hint">
-                A thread on an isolated worktree edits its own checkout on its own branch, your
-                files and branch are never touched, so it applies these straight away instead of
-                asking. Threads on the shared checkout keep asking. Copse still asks if the file
-                changed underneath it or its work could not be backed up. Turn off to review every
-                one.
+                A thread on an isolated worktree edits its own checkout and branch, never yours,
+                so it applies these without asking. Threads on the shared checkout still ask, and
+                so does any thread when the file changed underneath it or its work could not be
+                backed up. Turn off to review every one.
               </p>
             </fieldset>
 
@@ -70351,15 +70348,13 @@ var init_permissions_markup = __esm({
                 Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                On by default. Copse's system SSH signer uses your configured key through
-                ssh-agent to sign commits without asking each time. A changed key, signer or
-                socket is re-verified before it's used again. Git hooks keep their project
-                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
-                in Tool Permissions to confirm every signing helper use. Turning this off
-                prevents further ssh-agent signing. With this off, a configured private key file
-                can be read and used only after a separate approval for each commit. Key contents
-                are never sent to the agent. Custom signing programs run with ordinary project
-                access. Scoped signing is macOS only.
+                On by default: Copse's system SSH signer signs commits with your key through
+                ssh-agent without asking, and re-checks a changed key, signer or socket before
+                using it again. Git hooks keep their sandbox, with no ssh-agent access. To confirm
+                each signature, set git_commit to Always ask in Tool Permissions. Off: no further
+                ssh-agent signing, and a configured key file signs only after a separate approval
+                for each commit. Key contents are never sent to the agent, and custom signing
+                programs run with ordinary project access. Scoped signing is macOS only.
               </p>
             </fieldset>
 
@@ -70370,12 +70365,11 @@ var init_permissions_markup = __esm({
                 Fetch each project's default branch in the background
               </label>
               <p class="field-hint">
-                Copse fetches the latest default branch from origin hourly and when a thread
-                starts, so new threads begin from current upstream code. It updates only the
-                stored copy of origin's branch; your checkout and branches are never changed. The
-                fetch uses your own Git credentials but ignores the project's Git configuration.
-                Turn off to keep Copse from contacting origin; threads then start from whatever
-                you last fetched yourself.
+                Copse fetches origin's default branch hourly and when a thread starts, so new
+                threads begin from current code. It updates only its stored copy of origin's branch;
+                your checkout and branches are never changed. The fetch uses your Git credentials
+                but ignores the project's Git configuration. Turn off to stop contacting origin;
+                threads then start from your last fetch.
               </p>
             </fieldset>
           </section>
@@ -70989,10 +70983,10 @@ var init_experimental_markup = __esm({
                 Create a worktree only when the agent needs to write
               </label>
               <p class="field-hint">
-                Applies across Copse to new threads using automatic checkout. Eligible agents
-                start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and agents installed on this device still create one up front.
-                Projects with worktrees disabled and existing threads keep their checkout behavior.
+                Applies across Copse to new threads using automatic checkout: eligible agents read
+                your checkout first and get an isolated worktree before writing. Explicit worktree
+                choices and agents installed on this device still create one up front. Existing
+                threads, and projects with worktrees off, keep their checkout.
               </p>
             </fieldset>
 
@@ -71004,12 +70998,12 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
-                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
-                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
-                External coding agents run in the container with their selected API key, or, if you opt in
-                per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout without prompts and brings its commits back for
+                you to apply. Built-in models still infer on the desktop, so their keys and sign-in
+                tokens stay there. Installing dependencies (on by default, per run) lets it reach
+                the npm registry, GitHub and Electron's download hosts. Needs Apple container or
+                Docker; the first run builds the worker image. External coding agents use their
+                selected API key, or your Codex or Gemini sign-in copied in if you opt in per run.
               </p>
             </fieldset>
 
@@ -71021,8 +71015,8 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Breaks a task into a living plan with explicit steps and acceptance criteria before
-                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
-                run while a plan is active, and a step's "done" is the agent's own report, not a
+                the agent starts. While a plan is active, coding agents and container, remote or
+                plugin-hosted agents can't run, and a step's "done" is the agent's word, not a
                 verified check.
               </p>
             </fieldset>
@@ -71047,10 +71041,9 @@ var init_experimental_markup = __esm({
                 Let the agent hand implementation steps to a cheaper model
               </label>
               <p class="field-hint">
-                The opposite of the advisor: your chat model plans the work and passes each step,
-                with the context it needs, to a cheaper and faster model that does the editing.
-                Every step comes back with a report and a summary of what changed, so the chat
-                model can review it before moving on.
+                The opposite of the advisor: your chat model plans, then hands each step and its
+                context to a cheaper, faster model that edits. Each step returns a report and a
+                summary of changes for the chat model to review.
               </p>
               <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
               <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
