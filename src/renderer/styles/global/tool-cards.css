@@ -117,9 +117,9 @@
   margin-top: var(--spacing-xs);
   margin-left: var(--spacing-sm);
 }
+/* An empty state reads as plain muted text, not a slant (docs/ui-taste.md). */
 .tool-result-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 .tool-name {
   font-weight: 500;

@@ -1017,17 +1017,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Sentence case at the badge size (docs/ui-taste.md, "Badges are labels"). */
 .branch-picker-default-badge {
+  display: inline-block;
   flex-shrink: 0;
-  font-size: var(--font-size-3xs);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: var(--badge-font-size);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 6px;
+}
+.branch-picker-default-badge::first-letter {
+  text-transform: uppercase;
 }
 .branch-picker-empty {
   padding: 8px 12px;
