@@ -269,7 +269,7 @@
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/store-kit": "workspace:*",
-    "@copse/streaming-markdown": "^1.8.0",
+    "@copse/streaming-markdown": "^1.8.1",
     "@copse/thread-store": "workspace:*",
     "@electron/rebuild": "^4.2.1",
     "@eslint/js": "^10.0.1",
