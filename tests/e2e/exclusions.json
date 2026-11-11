@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "entries": [
     {
       "spec": "tests/e2e/acp-command-preflight.e2e.ts",
@@ -76,7 +76,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Isolate scenario and workspace lifecycle, wait for a fresh completed turn and actual Git-stat IPC results, and restore after a first-attempt Linux run."
+      }
     },
     {
       "spec": "tests/e2e/git-commit-approval.e2e.ts",
@@ -120,7 +125,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-12-15",
       "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall. Restore plan: increase the CI framebuffer height and restore this spec with the next full screenshot refresh (#3985); the capture-identity change requires reviewing all regenerated references. Owner accepted by Jonathan Kingston on 2026-11-06. This inventory entry does not waive the missing coverage.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": "jonathanKingston",
+        "disposition": "restore",
+        "nextStep": "Increase the CI framebuffer height and restore this spec with the next full screenshot refresh (#3985), reviewing every regenerated reference for the capture-identity change; verify Linux portrait sizing before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",

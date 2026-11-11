@@ -20,6 +20,8 @@ on:
 permissions:
   contents: write # create the tag ref
   actions: write # dispatch Release (macOS)
+  issues: read # verify the live quarantine owner's decision
+  pull-requests: read # verify approved waiver reviews
 
 concurrency:
   group: release-cut
@@ -79,6 +81,7 @@ jobs:
           existing="$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" --jq .object.sha 2>/dev/null || true)"
           if [ -z "$existing" ] || [ "$existing" = "$RELEASE_SHA" ]; then
             node scripts/release-notes.mts "$version" > /dev/null
+            node scripts/check-e2e-release-waivers.mts
           fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
