@@ -34,8 +34,8 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-76VKX4W5.js";
-import "./chunks/chunk-D55J6ZRP.js";
+} from "./chunks/chunk-RLIOUWKC.js";
+import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
   init_unknown_value,
@@ -44,7 +44,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-6YY6Y3HG.js";
+} from "./chunks/chunk-TYQO7O5R.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -1808,6 +1808,15 @@ var init_demo_bridged_tools = __esm({
 
 // src/shared/approval-copy.ts
 function threadAccessApproval(access) {
+  if (access === "orchestrate")
+    return {
+      title: "Allow subthread orchestration?",
+      body: "",
+      bodyAdvice: "Allow this thread to start subthreads in isolated checkouts, read their conversations, and send them further instructions. This allows additional model usage. Only subthreads created by this thread are included; their normal permissions and limits still apply.",
+      bodyFooter: "Applies only to this thread until revoked in the thread\u2019s Context panel \u2192 Permissions.",
+      approveLabel: "Allow orchestration",
+      allowRemember: false
+    };
   return {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
@@ -5150,6 +5159,7 @@ var init_demo_scenarios = __esm({
           rightPanelMode: "context",
           threadReadAccess: [SIDE_CHATS_MAIN_ID],
           threadSendAccess: [SIDE_CHATS_MAIN_ID],
+          threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
           webAllowedOrigins: ["https://example.org:443"],
           toolPermissionOverrides: { "copse:run_shell": "ask" },
           layout: {
@@ -5557,7 +5567,7 @@ var init_demo_scenarios = __esm({
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
-      ...["read", "send"].map(
+      ...["read", "send", "orchestrate"].map(
         (access) => approvalRiskScenario(`approval-thread-${access}`, {
           id: `thread-${access}`,
           type: "mcp",
@@ -5571,6 +5581,18 @@ var init_demo_scenarios = __esm({
           ...gitPushApproval("copse/friendly-action-names-213c32", sha)
         })
       ),
+      approvalRiskScenario("approval-automation-preparation", {
+        id: "automation-preparation",
+        title: "Prepare this worktree?",
+        type: "shell",
+        body: "Install dependencies:\n'corepack' 'pnpm@10.34.5' 'install' '--frozen-lockfile' '--ignore-scripts' '--prod=false'\nProject setup:\n'node' 'scripts/prepare-native-artifacts.mts'",
+        bodyAdvice: "Install locked dependencies with lifecycle scripts disabled. Project setup executes repository code.",
+        bodyFooter: "Network: allowed during preparation; checks stay offline. Writes are limited to this project and Copse-managed caches.\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.",
+        allowRemember: true,
+        rememberLabel: "Remember for this automation (\u201CMorning caretaker\u201D)",
+        rememberDefault: true,
+        rememberSubject: "project/schedule/preparation-plan"
+      }),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -5808,11 +5830,21 @@ function createDemoApi(scenario2, options = {}) {
       }
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {
       },
       reply: async () => {
       },
-      revokeAccess: async () => {
+      revokeAccess: (threadId, access) => {
+        const key = access === "read" ? "threadReadAccess" : access === "send" ? "threadSendAccess" : "threadSubthreadAccess";
+        const grants = settings.get(key);
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id) => id !== threadId) : []
+        );
+        return resolvedVoid();
       }
     },
     mobile: {
@@ -6777,6 +6809,7 @@ function createDemoApi(scenario2, options = {}) {
     automations: {
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -7466,7 +7499,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-WIDDJ6HI.js").then(async (main) => {
+    void import("./chunks/main-A22KDOJH.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
