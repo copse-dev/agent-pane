@@ -207,6 +207,8 @@ export type ProviderStreamChunk =
        * model; display metadata for the transcript (see `ToolCall`).
        */
       appendedReminderLengths?: number[]
+      /** The host held the call back without running it (see `ToolCall.deferred`). */
+      deferred?: true
       /** Images returned by the tool, rendered beside its transcript card. */
       images?: ToolResultImage[]
     }
@@ -266,7 +268,20 @@ export interface MalformedToolCallInfo {
 
 // ── The provider contract ────────────────────────────────────────────────────
 
+/** Aggregate assembly footprint; never contains skill names, paths, or instructions. */
+export interface PromptCatalogFootprint {
+  readonly catalogHash: string
+  readonly advertisedSkills: number
+  readonly userSkills: number
+  readonly utf8Bytes: number
+  /** User-sourced entries only, excluding the shared catalog guidance. */
+  readonly userEntryUtf8Bytes: number
+  readonly approximateTokens: number
+}
+
 export interface LLMStreamOptions {
+  /** Local diagnostics only; adapters must never serialize this into a request. */
+  readonly promptCatalog?: PromptCatalogFootprint | undefined
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
   /**

@@ -253,6 +253,86 @@ a JavaScript interpreter: new conditional wrappers or runner-side selection mech
 extending the scanner and tests. Review semantic changes to existing conditions even when their
 marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
 
+### Flake visibility
+
+CI reruns a failed e2e shard once (`wdio.ci.conf.ts` keeps `specFileRetries: 0`). A spec that
+fails attempt 1 and passes attempt 2 leaves the job green, so every such disagreement is reported
+instead of dropped ([#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
+
+- **In the shard job.** _Report specs whose shard attempts disagreed_ emits one `::warning::` per
+  spec (shard, failed test titles, first attempt-1 error lines) and a table in the job summary. It
+  also catches a spec cut off by the attempt watchdog that then passed, and a spec that passed
+  attempt 1 and failed on the retry.
+- **Across one run's shards.** The _Publish gate evidence_ workflow, which already downloads every
+  shard's `e2e-evidence-shard-<n>-<run_attempt>` artifact, aggregates them into its job summary.
+  It also flags a spec that failed in one workflow attempt and passed after "Re-run failed jobs"
+  on the same commit.
+- **Per-spec history.** The _E2E flake report_ workflow (`.github/workflows/flake-report.yml`)
+  runs daily after the nightly run, and when its own code changes. It reads the evidence
+  artifacts of recent `schedule`, `merge_group` and `pull_request` CI runs and summarises each
+  spec: runs observed, attempt-1 failures, retried passes, pass→fail on retry, same-commit
+  re-run flips, final failures and flake rate. Locally, where `gh` can download artifacts:
+  `pnpm run flake-report collect <dir> [--runs N]`, then `pnpm run flake-report aggregate <dir>`.
+
+All three are advisory: they read the outcome records as data and can never change a job result.
+The repository caps artifact retention at 5 days, so the history covers about that window. Base
+quarantine and release decisions on this data, not on one sampled red run.
+
+### Nightly quarantine run
+
+A quarantined spec is one whose `exclusions.json` entry has category `quarantine` and the
+`wdio.ci.conf.ts: exclude` marker. The CI gate never runs it, so
+[`e2e-quarantine.yml`](../.github/workflows/e2e-quarantine.yml) does, once a night at 07:47 UTC.
+`pnpm run test:e2e:quarantine` runs [`wdio.quarantine.conf.ts`](../wdio.quarantine.conf.ts), which
+takes the CI config's settings and reads its spec list from the registry when it loads. Adding or
+restoring a quarantine therefore needs no workflow or config edit, and an in-spec skip is never
+picked up: platform and environment gaps cannot pass on this Linux runner either.
+
+- **Advisory.** The workflow is separate from CI, no required check depends on it, and the spec step
+  is `continue-on-error`. A failing quarantined spec never changes any run's conclusion. With no
+  quarantined specs, the job reports that and exits successfully.
+- **No retry.** No shard retry and `specFileRetries: 0`. A pass means the first attempt passed. A
+  crash or timeout that leaves no final outcome counts as not passing.
+- **Reuses the nightly build.** The scheduled run downloads `dist-tar` from that day's scheduled CI
+  run and checks out its commit. When that artifact is missing, the job builds its own.
+- **Pass streaks.** `scripts/e2e-quarantine.mts report` adds the night's per-spec outcomes
+  (artifact `e2e-quarantine-outcomes-<attempt>`) to a rolling 60-night record. That record is the
+  `e2e-quarantine-history` artifact from the previous scheduled run on `main`. Only that scheduled
+  run counts as a night. Pull-request runs, which happen when the workflow, its scripts or the
+  registry change, and manual dispatches show a preview and are not recorded. If the previous
+  record has expired or cannot be read, streaks start again from zero. Only the latest completed
+  scheduled run's record is used, never an older one. A night that left no record, because of a
+  setup failure, a timeout or cancellation, or an expired artifact, therefore restarts every streak
+  instead of being skipped. Skipping it could carry a streak across a night that did not pass. The
+  repository caps artifact retention (5 days in November 2026, below the 90 days the workflow
+  requests), which is enough because the chain only reads the previous night.
+- **Restore candidates.** At 10 consecutive passing nights, the run emits a warning annotation and a
+  job-summary line. That is evidence for a restore, not the restore itself. Confirm the root cause,
+  then remove the CI exclusion and the registry entry in the same PR. Nothing is posted to the
+  tracker automatically.
+
+### Flake-risk ratchet
+
+`pnpm run check:flake-risks` (in `check:local` and the CI precheck) counts known flake risks per
+file and compares them with [`scripts/flake-risk-baseline.json`](../scripts/flake-risk-baseline.json).
+Like the accessibility baseline, it only shrinks: a file above its recorded count fails (a new file
+allows zero) with the file, line and preferred alternative, and a file below it fails until the
+baseline is lowered in the same PR (`pnpm run check:flake-risks -- --write` lowers it and refuses
+to raise it). The committed baseline may not grow against the base ref; a git rename carries its
+count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint rule, because
+`eslint-suppressions.json` stays empty. Rules (tracking [#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
+
+| Rule                    | Counts                                                                                                                                                                                                                                       | Prefer                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `e2e-fixed-pause`       | `browser.pause(...)` (import aliases, local aliases, destructured `pause`) and any wall-clock sleep counted by the rule below, when not inside a loop in the same function that compares `Date.now()`/`performance.now()` against a deadline | `browser.waitUntil`, element `waitFor*`, or a poll interval in such a loop |
+| `unit-wall-clock-sleep` | awaited `new Promise((r) => setTimeout(r, ms))`, `node:timers/promises` `setTimeout` (any alias), and each call of a local helper that returns or (as its last step) awaits one; a missing or literal `0` delay is a yield, not counted      | `node:test` `mock.timers`, or await the event itself                       |
+| `e2e-checkout-seed`     | a `seed*` helper from `helpers/seed-config.ts` called with `process.cwd()` (or a `const` holding it)                                                                                                                                         | `seedStableWorkspace()` or a temp repo                                     |
+| `e2e-fixed-port`        | `listen(<port>)`, `{ port: <n> }` passed to a `listen`/`serve`/`start*`/`create*` call, and `*_PORT`/`*Port` constants with a non-zero literal                                                                                               | `listen(0)` and read `server.address().port`                               |
+
+An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
+itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
+baseline until the probe can be pointed elsewhere.
+
 ### Cost and tier selection
 
 The e2e tier is the expensive, flake-prone one (runner OOM / disk / Electron
@@ -603,12 +683,16 @@ tip CI. To return to individual review, remove the declaration and rerun the
 individual PR's CI. The **Screenshot stack gates** workflow can be dispatched
 manually to refresh status/comments after an interrupted reconciliation. Normal
 events reconcile the affected PR and connected stacks, including old membership
-from body edits. The workflow retains queued events and runs a full repair sweep
-every 30 minutes. Publisher, decision and selection completions carry no usable
-PR association, so they read the latest statuses on every declared head and
-reconcile only the stacks whose screenshot evidence changed since that run
-started. Selection only reduces work: live heads, declarations and approval
-provenance are still verified before a stack status is written.
+from body edits. Pending events coalesce, so selection also recovers PR updates
+(including closed PRs and removed declarations) and declared-head screenshot
+evidence changes since the last successful reconciliation was created. The
+watermark overlaps by one second and includes changes while that run was queued
+or running; failures do not advance it. Publisher, decision and selection
+completions need no PR association for this recovery. Unchanged ordinary heads
+are not read individually. A full repair sweep runs every 30 minutes, on manual
+dispatch, and when no successful-run watermark exists. Selection only reduces
+work: live heads, declarations and approval provenance are still verified before
+a stack status is written.
 
 Intermediate screenshot drift is accepted through the stack gate; do not individually decline
 unreviewed lower candidates to simulate a deferral.

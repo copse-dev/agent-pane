@@ -42,11 +42,21 @@ export function acpWriteAccessContinuationPrompt(root: string): string {
  * Prompt note for a session that starts on a read-only checkout. It follows the
  * sandbox note, whose "writes are allowed inside the workspace" it overrides.
  */
-export const ACP_READONLY_CHECKOUT_PROMPT_NOTE =
+const ACP_READONLY_CHECKOUT_RESTRICTION =
   "Read-only workspace: for now the workspace is a read-only view of the user's checkout. " +
   'Read, search, and inspect freely, but your own file, git, and shell tools cannot write there, ' +
-  'despite the note above. When you are ready to change anything, first call the ' +
+  'despite the note above. '
+
+export const ACP_READONLY_CHECKOUT_PROMPT_NOTE =
+  ACP_READONLY_CHECKOUT_RESTRICTION +
+  'When you are ready to change anything, first call the ' +
   '"request_write_access" tool on the "copse" MCP server (pass a short branch_name describing ' +
   'the change). It gives this thread its own worktree and branch; then end your turn as its ' +
   'result says, and you will be restarted there with write access and the same conversation. ' +
   'Do not retry a blocked write.'
+
+/** The checkout stays read-only when the agent cannot reach the worktree tool. */
+export const ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE =
+  ACP_READONLY_CHECKOUT_RESTRICTION +
+  "Copse's tools are unavailable, so you cannot request a writable worktree in this session. " +
+  'Tell the user if that blocks the requested changes. Do not retry a blocked write.'

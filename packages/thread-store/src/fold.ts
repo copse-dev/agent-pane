@@ -390,6 +390,7 @@ function explodeToolCall(
     ...(tc.appendedReminderLengths !== undefined
       ? { appendedReminderLengths: tc.appendedReminderLengths }
       : {}),
+    ...(tc.deferred === true ? { deferred: true } : {}),
     ...(images !== undefined ? { images } : {}),
     ...(tc.commandPhase !== undefined ? { commandPhase: tc.commandPhase } : {}),
   }
@@ -744,6 +745,8 @@ function foldToolCall(
     ...(spine.locations !== undefined ? { locations: spine.locations } : {}),
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
     ...(appendedReminderLengths !== undefined ? { appendedReminderLengths } : {}),
+    // Not field-checked by the spine parser: only a literal `true` marks a deferral.
+    ...(spine.deferred === true ? { deferred: true } : {}),
     ...(images !== undefined && images.length > 0 ? { images } : {}),
     ...(commandPhase !== undefined ? { commandPhase } : {}),
   }

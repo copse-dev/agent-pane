@@ -11,6 +11,7 @@ import {
   inlineLeadingLiteralAssignments,
   isInertReadArgv,
   isReadOnlySimpleCommand,
+  isReadOnlySedCommand,
   isStructurallyReadOnlyShellCommand,
   parsedShellSegments,
   printfAssignsShellVariable,
@@ -376,6 +377,7 @@ describe('read-only classification and its escape hatches', () => {
       "sed -n '1,320p' SKILL.md",
       "sed -n '5p' notes.md",
       "sed -n '/^## /p' README.md",
+      "sed 's/hello/world/' a.md",
       "sed -n -e '1,5p' -e '20p' a.md",
       "sed -ne '1p' a.md",
       "sed --quiet --expression='1,3p' a.md",
@@ -404,7 +406,6 @@ describe('read-only classification and its escape hatches', () => {
       "sed '1r other.txt' a.md",
       "sed 'R other.txt' a.md",
       "sed '1e ls' a.md",
-      "sed 's/hello/world/' a.md",
       "sed -e '1p' -e 'w x' a.md",
       'sed -e',
       'sed',
@@ -479,6 +480,36 @@ describe('parsedShellSegments', () => {
 })
 
 describe('isInertReadArgv', () => {
+  it('recognizes local remote listings and addressed substitution filters', () => {
+    for (const argv of [
+      ['git', 'remote'],
+      ['git', 'remote', '-v'],
+      ['git', 'remote', '--verbose'],
+      ['sed', '-n', '/^gpgsig /{s/^gpgsig /Commit signature: /;p;}'],
+      ['sed', '-e', '/world/p', '-e', 's/hello/world/g'],
+      ['sed', '-n', String.raw`/https:\/\//{s/world/reader/;p;}`],
+    ])
+      assert.equal(isInertReadArgv(argv), true, argv.join(' '))
+    for (const argv of [
+      ['git', 'remote', 'show', 'origin'],
+      ['git', 'remote', 'update'],
+      ['git', 'remote', 'add', 'other', 'https://example.invalid/repo'],
+      ['git', 'remote', '-v', 'update'],
+      ['sed', '-n', '/^gpgsig /{s/^gpgsig /signature/e;p;}'],
+      ['sed', '-n', '/world/{r /etc/passwd;p;}'],
+      ['sed', '-n', '/world/{w /tmp/output;p;}'],
+      ['sed', '-n', 's/hello/world/w /tmp/output'],
+      ['sed', '-n', '/world/e'],
+      ['sed', '-n', '/[e/]/p'],
+      ['sed', '-n', '/world/{p;'],
+      ['sed', '-n', '/world/p;}'],
+      ['sed', '-e', 's/a/\\', '-e', 's/w .//'],
+      ['sed', '--expression=s/a/\\', '--expression=s/w .//'],
+    ])
+      assert.equal(isInertReadArgv(argv), false, argv.join(' '))
+    assert.equal(isReadOnlySedCommand(['sed', '-n', 's/a/world/\ne echo unsafe']), false)
+  })
+
   it('accepts read-only tools and plain echo/printf', () => {
     for (const argv of [
       ['grep', '-rn', 'ssh', 'src'],
