@@ -237,12 +237,12 @@ markers in `tests/e2e/**/*.e2e.ts`, without loading Electron or changing test se
 them with [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json). Unrecorded, changed, duplicate,
 or stale entries fail the check. Add/remove the relevant record in the same PR as an exclusion.
 
-Each entry records its category, reason, tracking issue, accountable role, review deadline, and
-compensating evidence or an explicit gap. Existing records are **an inventory, not release waivers**;
-their initial dates schedule triage and do not assert a maintainer accepted the missing coverage.
-Due reviews are warnings until the owner/expiry enforcement slice in
-[#2719](https://github.com/copse-dev/agent-pane/issues/2719) is decided. Critical runtime repairs
-remain owned by [#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+Each entry records its category, reason, tracking issue, accountable role, inventory date, and
+compensating evidence or an explicit gap, plus category-specific fields (see
+[Quarantine and admission](#quarantine-and-admission)). Existing records are **an inventory, not
+release waivers**; their dates schedule triage and do not assert a maintainer accepted the missing
+coverage. Critical runtime repairs remain owned by
+[#1680](https://github.com/copse-dev/agent-pane/issues/1680).
 
 The static check recognizes literal/local-array config exclusions (including the existing inherited
 base config), CI skip helpers and their import aliases, Mocha `.skip`/`['skip']`, `this.skip()`,
@@ -332,6 +332,81 @@ count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint r
 An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
 itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
 baseline until the probe can be pointed elsewhere.
+
+### Quarantine and admission
+
+A **quarantine** is a short loan for a test that fails intermittently. The other three categories
+describe a test that cannot run in CI for a stable reason, so they have different rules:
+
+| Category           | Means                                                      | Deadline                                      | Extra fields                    |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------------- | ------------------------------- |
+| `quarantine`       | Flaky: same code, different outcomes                       | `reviewBy` at most 14 days after `recordedOn` | `owner`, `reviewBy`, `renewal?` |
+| `platform`         | Needs an OS the CI shard does not run (macOS seatbelt, …)  | none                                          | `lastVerified`                  |
+| `external-service` | Needs a real model or service, deliberately kept out of CI | none                                          | `lastVerified`                  |
+| `environment`      | Cannot pass on the CI display/runner as configured         | none                                          | `lastVerified`                  |
+
+`pnpm run check:e2e-exclusions` (`scripts/check-e2e-exclusions.mts`, rules in
+`scripts/lib/e2e-exclusions.mts`) applies them:
+
+- **Quarantine.** `owner` is the accountable person's GitHub login. `null` records that nobody has
+  accepted it yet; a role name or "assignment pending" is not an owner. `reviewBy` is at most 14
+  days after `recordedOn`. One `renewal` (`renewedOn`, a new `reason` that differs from the
+  original, and its own `reviewBy` at most 14 days later) moves the deadline once; the schema has no
+  room for a second. The only allowed marker is the `wdio.ci.conf.ts` `exclude` list, never an
+  in-spec skip, so the [nightly quarantine run](#nightly-quarantine-run) still executes it and
+  records its pass streak.
+- **Platform, external service, environment.** These do not expire. `lastVerified` is the date and
+  a `github.com/copse-dev/agent-pane` link (CI run, artifact or PR comment) of the last real
+  on-device or real-service pass, or `null` when none is recorded. The check warns when it is
+  `null` or older than 90 days, the retention of CI evidence artifacts. A pass described in
+  `coverage` without a link stays `null`: record the link when the test next passes for real.
+- **Two modes.** By default (PR precheck and `check:local`) an expired or unowned quarantine is a
+  warning, so it does not block unrelated work. `--enforce` makes it fail. The nightly scheduled
+  CI run has a `quarantine-expiry` job that runs `npm run check:e2e-exclusions -- --enforce`; it
+  has no dependents, so it marks the run red without cancelling the nightly e2e. Release gating of
+  quarantines is the job of the owner-reviewed waiver gate proposed in draft
+  [#3512](https://github.com/copse-dev/agent-pane/pull/3512), not a second release check. Malformed
+  records, changed markers and broken date rules fail in both modes.
+
+**When a test may be quarantined.** Only with evidence that it is flaky rather than broken: it
+failed and then passed on the same head SHA (including a shard retry, which
+[flake visibility](#flake-visibility) reports), or it failed on two or more unrelated PRs whose
+diffs cannot reach it. Link that evidence in `reason` or `coverage`. A test
+that fails every time is a bug or an `environment` record, not a quarantine. Never quarantine to
+land a PR whose diff could be the cause.
+
+**Who decides.** An agent may propose a quarantine in a PR, with the evidence above and
+`owner: null`; a human accepts it by naming themselves as `owner`. Security and approval-path specs
+(`guarded-yolo`, shell approval, permission and sandbox journeys) need explicit maintainer sign-off
+to quarantine at all: [#1680](https://github.com/copse-dev/agent-pane/issues/1680) shows why. Those
+specs were quarantined as noise while they were the only runtime proof that the hard deny for
+catastrophic deletion still worked.
+
+**At expiry** the owner picks one outcome:
+
+- **Restore**: fix the cause and delete the record in the same PR as the `exclude` entry. Ten
+  consecutive passing nights in the nightly quarantine run are evidence for this, not the restore
+  itself.
+- **Replace**: move the behaviour to a lower tier (unit, component or browser geometry) that is
+  deterministic, then delete the spec and its record.
+- **Retire**: delete the spec and record, with the reason and any coverage given up stated in the
+  PR.
+
+Renewing is the exception, once, with a new reason (for example, a root cause found and a fix in
+review).
+
+**Becoming required.** A new, changed or restored spec joins the required e2e gate when it:
+
+1. passes burn-in: repeated first-attempt passes before it gates PRs (workstream G of #2719, in
+   progress);
+2. has no fixed sleeps standing in for a wait (`browser.pause`, `setTimeout` sleeps): wait for the
+   condition instead. The [flake-risk ratchet](#flake-risk-ratchet) allows a new file zero;
+3. uses isolated data: its own `COPSE_DIR` and seeded project, not the real checkout, and no fixed
+   ports shared with other workers. The flake-risk ratchet counts both;
+4. makes no external network requests: mock providers and services at the boundary (outbound
+   guard: workstream F, in progress).
+
+Until burn-in and the network guard land, reviewers check items 1 and 4 by hand.
 
 ### Cost and tier selection
 

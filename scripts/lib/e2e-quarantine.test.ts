@@ -17,22 +17,21 @@ const flaky = 'tests/e2e/flaky.e2e.ts'
 const other = 'tests/e2e/other.e2e.ts'
 const commit = 'a'.repeat(40)
 
-function entry(
-  spec: string,
-  category: ExclusionRegistry['entries'][number]['category'],
-  markers: string[],
-): ExclusionRegistry['entries'][number] {
-  return {
+type Entry = ExclusionRegistry['entries'][number]
+
+function entry(spec: string, category: Entry['category'], markers: string[]): Entry {
+  const common = {
     spec,
-    category,
     reason: 'reason',
     tracker: 'https://github.com/copse-dev/agent-pane/issues/2719',
     ownerRole: 'owner',
     recordedOn: '2026-11-01',
-    reviewBy: '2026-11-08',
     coverage: 'coverage',
     markers,
   }
+  return category === 'quarantine'
+    ? { ...common, category, owner: null, reviewBy: '2026-11-08' }
+    : { ...common, category, lastVerified: null }
 }
 
 function outcome(
@@ -62,7 +61,7 @@ function night(runId: string, results: QuarantineNight['results']): QuarantineNi
 describe('quarantinedSpecs', () => {
   it('selects only config-excluded quarantine entries', () => {
     const registry: ExclusionRegistry = {
-      version: 1,
+      version: 2,
       entries: [
         entry(flaky, 'quarantine', [QUARANTINE_MARKER]),
         entry(other, 'quarantine', ['this.skip']),
@@ -77,7 +76,7 @@ describe('quarantinedSpecs', () => {
   })
 
   it('returns nothing when no spec is quarantined', () => {
-    assert.deepEqual(quarantinedSpecs({ version: 1, entries: [] }), [])
+    assert.deepEqual(quarantinedSpecs({ version: 2, entries: [] }), [])
   })
 })
 

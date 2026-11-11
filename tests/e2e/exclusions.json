@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "entries": [
     {
       "spec": "tests/e2e/acp-command-preflight.e2e.ts",
@@ -8,9 +8,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Agent runtime maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-11-08",
-      "reviewBy": "2026-11-15",
       "coverage": "The macOS Electron spec verifies early failure, preserved draft and attachment, Settings command repair and successful Retry with the original contents. Unit tests cover filesystem lookup and checkout ordering. The spec remains enabled on Linux; Windows executable resolution remains outside this preflight.",
-      "markers": ["this.skip", "this.skip"]
+      "markers": ["this.skip", "this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",
@@ -19,9 +19,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-11-05",
-      "reviewBy": "2026-11-08",
       "coverage": "PR #4127 merged November 3 with passing check/build and all nine Linux e2e shards; those shards skip this macOS-only spec. On November 5 all three on-device cases passed: consent/rejection, native approval -> real VM -> screenshot -> Stop, and a registered scripted ACP process -> real bearer-authenticated bridge (including unauthenticated rejection) -> registered isolated_copse -> consent -> real VM -> 1280x800 PNG -> Stop/deletion -> refused screenshot. Consent, guest and completion captures were inspected. Fresh host/controller used the existing trusted November 2 Linux image. Separate producer evidence covers real-model GUI inference, child-approved synthetic host-file/service denial, cancellation and orphan recovery; no paid inference was used for the November 5 acceptance.",
-      "markers": ["describe.skip"]
+      "markers": ["describe.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/agent-eval-drive.e2e.ts",
@@ -30,9 +30,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/1371",
       "ownerRole": "Agent evaluation maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
       "coverage": "Mock agent tests exercise deterministic flows; accepted real-model quality evidence remains outstanding under #1371.",
-      "markers": ["wdio.ci.conf.ts: exclude", "wdio.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude", "wdio.conf.ts: exclude"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/apple-development-panel.e2e.ts",
@@ -41,9 +41,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Apple development maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
       "coverage": "macOS spec remains runnable. This inventory does not record a recent macOS run.",
-      "markers": ["describe.skip"]
+      "markers": ["describe.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/apple-project-suggestion.e2e.ts",
@@ -52,9 +52,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Apple development maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-26",
-      "reviewBy": "2026-10-03",
       "coverage": "Unit tests cover the suggestion decision (main) and the dialog/reminder flow (renderer); this macOS spec adds the visual evidence.",
-      "markers": ["describe.skip"]
+      "markers": ["describe.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/explorer-reload-spaced-path.e2e.ts",
@@ -63,9 +63,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Sandbox maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
       "coverage": "Non-macOS filesystem behavior does not exercise this sandbox regression. A macOS run remains required for relevant changes.",
-      "markers": ["describe.skip"]
+      "markers": ["describe.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/follow-up-suggestions.e2e.ts",
@@ -73,6 +73,7 @@
       "reason": "Excluded by CI config; streaming/timing and environment rationale must be confirmed for this spec.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "owner": null,
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "No equivalent full runtime evidence is established by this inventory.",
@@ -85,9 +86,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Git and security maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-24",
-      "reviewBy": "2026-10-01",
       "coverage": "The matcher has cross-platform unit coverage. The visual failed-commit path requires a macOS Electron run.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/git-signing-helper-approval.e2e.ts",
@@ -96,9 +97,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Git and security maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-21",
-      "reviewBy": "2026-09-27",
       "coverage": "The spec runs on the macOS e2e shard; Linux CI has no coverage of the signing helper approval UI.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/plugin-hook-loading.e2e.ts",
@@ -107,20 +108,20 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Plugin and sandbox maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
       "coverage": "A real macOS sandbox run is necessary for this journey; Linux CI does not supply equivalent evidence.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/portrait-right-panel.e2e.ts",
-      "category": "quarantine",
+      "category": "environment",
       "reason": "The auto-portrait layout cannot occur on the CI display. The main window has minWidth 800, so portrait needs a window at least 1.35 x 800 = 1080 logical pixels tall, but scripts/run-e2e.mts runs Xvfb at 3200x2048 with a pinned 2x DPR, a 1600x1024 logical desktop. The seeded 760x1180 window stays below the aspect threshold: CI run 41092504471 (#4022) failed both cases at setPortraitWindow's 'expected Electron window to resize to a tall portrait viewport' wait on both shard attempts, while the other 53 specs in that shard passed. Restoring it needs a taller framebuffer, which changes every reference screenshot's capture identity.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Jonathan Kingston (@jonathanKingston), renderer and CI maintainer",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-12-15",
       "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall. Restore plan: increase the CI framebuffer height and restore this spec with the next full screenshot refresh (#3985); the capture-identity change requires reviewing all regenerated references. Owner accepted by Jonathan Kingston on 2026-11-06. This inventory entry does not waive the missing coverage.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",
@@ -129,9 +130,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Settings and security maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
       "coverage": "The Linux Settings spec remains enabled there; this inventory is not evidence of a current successful run.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/thread-deep-links.e2e.ts",
@@ -140,9 +141,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Main runtime and protocol navigation maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-10-03",
-      "reviewBy": "2026-10-10",
       "coverage": "Routing and renderer unit contracts run on every platform; native cold launch, second-instance selection and settings screenshots passed on macOS. The POSIX native spec remains enabled on Linux.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     },
     {
       "spec": "tests/e2e/detached-turn-transcript.e2e.ts",
@@ -151,9 +152,9 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2312",
       "ownerRole": "Main runtime and client/server split maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-10-16",
-      "reviewBy": "2026-11-13",
       "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. The macOS close, completion and reopen flow passed locally.",
-      "markers": ["this.skip"]
+      "markers": ["this.skip"],
+      "lastVerified": null
     }
   ]
 }

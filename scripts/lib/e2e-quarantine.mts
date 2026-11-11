@@ -1,14 +1,15 @@
 import { z } from 'zod'
-import type { ExclusionRegistry } from './e2e-exclusions.mts'
+import { QUARANTINE_MARKER, type ExclusionRegistry } from './e2e-exclusions.mts'
 import { outcomeSchema } from './gate-evidence.mts'
 
 /**
  * The marker a quarantined spec carries when the CI config excludes it. In-spec
  * skips (`this.skip`, `describe.skip`) are for platform and environment gaps,
  * which a Linux nightly cannot run either, so only config-level exclusion makes
- * a spec eligible for the nightly quarantine run.
+ * a spec eligible for the nightly quarantine run. The registry check requires
+ * it on every quarantine.
  */
-export const QUARANTINE_MARKER = 'wdio.ci.conf.ts: exclude'
+export { QUARANTINE_MARKER }
 
 /** Consecutive passing nights after which a quarantined spec is a restore candidate. */
 export const RESTORE_STREAK = 10

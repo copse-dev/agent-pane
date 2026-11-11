@@ -1197,6 +1197,25 @@ jobs:
           # Small trend data; keep two weeks for regression triage, then expire.
           retention-days: 14
 
+  # Quarantine expiry (#2719, docs/testing-strategy.md "Quarantine and admission").
+  # PR prechecks only warn on an expired or unowned quarantine so it cannot block
+  # unrelated work; the nightly run enforces it. Its own job, with no dependents,
+  # so a failure marks the scheduled run red without cancelling the nightly e2e.
+  # Like every job, it is admitted through precheck.
+  quarantine-expiry:
+    needs: precheck
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: npm run check:e2e-exclusions -- --enforce
+
   # Real-model agent benchmark (#752): the SWE-bench Verified pinned subset
   # driven by a local model on a self-hosted runner with an LM Studio host.
   # Runs nightly (schedule) or on demand via the `bench-agent` PR label, and
