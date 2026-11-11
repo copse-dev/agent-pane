@@ -683,12 +683,16 @@ tip CI. To return to individual review, remove the declaration and rerun the
 individual PR's CI. The **Screenshot stack gates** workflow can be dispatched
 manually to refresh status/comments after an interrupted reconciliation. Normal
 events reconcile the affected PR and connected stacks, including old membership
-from body edits. The workflow retains queued events and runs a full repair sweep
-every 30 minutes. Publisher, decision and selection completions carry no usable
-PR association, so they read the latest statuses on every declared head and
-reconcile only the stacks whose screenshot evidence changed since that run
-started. Selection only reduces work: live heads, declarations and approval
-provenance are still verified before a stack status is written.
+from body edits. Pending events coalesce, so selection also recovers PR updates
+(including closed PRs and removed declarations) and declared-head screenshot
+evidence changes since the last successful reconciliation was created. The
+watermark overlaps by one second and includes changes while that run was queued
+or running; failures do not advance it. Publisher, decision and selection
+completions need no PR association for this recovery. Unchanged ordinary heads
+are not read individually. A full repair sweep runs every 30 minutes, on manual
+dispatch, and when no successful-run watermark exists. Selection only reduces
+work: live heads, declarations and approval provenance are still verified before
+a stack status is written.
 
 Intermediate screenshot drift is accepted through the stack gate; do not individually decline
 unreviewed lower candidates to simulate a deferral.

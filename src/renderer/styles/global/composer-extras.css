@@ -139,7 +139,6 @@
   color: var(--text-muted);
   font-size: var(--font-size-3xs);
   line-height: 1.3;
-  text-transform: uppercase;
   pointer-events: none;
 }
 /* An attached video costs no context — its size is the only cost signal worth
@@ -278,13 +277,14 @@
   color: var(--change-deleted);
   font-weight: 500;
 }
+/* The shared flat callout plate (docs/ui-taste.md, "Containment is a plate"). */
 .diff-conflict-banner {
+  --sev: var(--warning);
   padding: var(--spacing-sm);
   margin: var(--spacing-sm);
-  border: 1px solid var(--warning, #c2410c);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning, #c2410c) 12%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
+  color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
 .diff-file-list {

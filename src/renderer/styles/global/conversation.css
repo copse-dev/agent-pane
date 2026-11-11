@@ -1464,7 +1464,6 @@ span.acp-resource-title {
 .acp-diff-eof {
   padding-left: 2ch;
   color: var(--text-muted);
-  font-style: italic;
 }
 
 /* Transcript attachment chips (conversation.ts renderUserTranscript): a paste

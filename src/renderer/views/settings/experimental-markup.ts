@@ -61,10 +61,10 @@ export const experimentalMarkup = `
                 Create a worktree only when the agent needs to write
               </label>
               <p class="field-hint">
-                Applies across Copse to new threads using automatic checkout. Eligible agents
-                start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and agents installed on this device still create one up front.
-                Projects with worktrees disabled and existing threads keep their checkout behavior.
+                Applies across Copse to new threads using automatic checkout: eligible agents read
+                your checkout first and get an isolated worktree before writing. Explicit worktree
+                choices and agents installed on this device still create one up front. Existing
+                threads, and projects with worktrees off, keep their checkout.
               </p>
             </fieldset>
 
@@ -76,12 +76,12 @@ export const experimentalMarkup = `
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
-                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
-                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
-                External coding agents run in the container with their selected API key, or, if you opt in
-                per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout without prompts and brings its commits back for
+                you to apply. Built-in models still infer on the desktop, so their keys and sign-in
+                tokens stay there. Installing dependencies (on by default, per run) lets it reach
+                the npm registry, GitHub and Electron's download hosts. Needs Apple container or
+                Docker; the first run builds the worker image. External coding agents use their
+                selected API key, or your Codex or Gemini sign-in copied in if you opt in per run.
               </p>
             </fieldset>
 
@@ -93,8 +93,8 @@ export const experimentalMarkup = `
               </label>
               <p class="field-hint">
                 Breaks a task into a living plan with explicit steps and acceptance criteria before
-                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
-                run while a plan is active, and a step's "done" is the agent's own report, not a
+                the agent starts. While a plan is active, coding agents and container, remote or
+                plugin-hosted agents can't run, and a step's "done" is the agent's word, not a
                 verified check.
               </p>
             </fieldset>
@@ -119,10 +119,9 @@ export const experimentalMarkup = `
                 Let the agent hand implementation steps to a cheaper model
               </label>
               <p class="field-hint">
-                The opposite of the advisor: your chat model plans the work and passes each step,
-                with the context it needs, to a cheaper and faster model that does the editing.
-                Every step comes back with a report and a summary of what changed, so the chat
-                model can review it before moving on.
+                The opposite of the advisor: your chat model plans, then hands each step and its
+                context to a cheaper, faster model that edits. Each step returns a report and a
+                summary of changes for the chat model to review.
               </p>
               <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
               <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
