@@ -13,6 +13,7 @@ export function createRemoteChatFixture(): (
   let offline = false
   let shared = true
   let archived = false
+  let pendingApproval = false
   let submissions = 0
   // Every desktop publish bumps the revision; the browser reuses an unchanged one.
   let shareChanges = 0
@@ -25,6 +26,7 @@ export function createRemoteChatFixture(): (
       offline = false
       shared = true
       archived = false
+      pendingApproval = false
       submissions = 0
       shareChanges = 0
       reply(response, {})
@@ -35,6 +37,12 @@ export function createRemoteChatFixture(): (
     if (pathname === '/remote-fixture/unshare' || pathname === '/remote-fixture/share') {
       shared = pathname.endsWith('/share')
       shareChanges += 1
+      reply(response, {})
+      return true
+    }
+    // The desktop run asks the phone for an approval.
+    if (pathname === '/remote-fixture/approval') {
+      pendingApproval = true
       reply(response, {})
       return true
     }
@@ -107,7 +115,22 @@ export function createRemoteChatFixture(): (
     }
     if (pathname === '/api/thread/proj-1/thread-1') {
       if (archived) reply(response, { error: 'Thread unavailable' }, 404)
-      else reply(response, { access: 'control', sessionId, runId: null })
+      else
+        reply(response, {
+          access: 'control',
+          sessionId,
+          runId: null,
+          decisions: pendingApproval
+            ? [
+                {
+                  id: '22222222-2222-4222-8222-222222222222',
+                  kind: 'approval',
+                  title: 'Run outside sandbox?',
+                  body: 'pnpm run check',
+                },
+              ]
+            : [],
+        })
       return true
     }
     if (pathname === '/api/remote/read' || pathname === '/api/action') {

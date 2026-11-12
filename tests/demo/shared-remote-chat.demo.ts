@@ -116,12 +116,18 @@ describe('shared desktop chat in the paired browser', () => {
     })
     await expect($('#connection')).toHaveText('Connected to your Mac')
     await expect($('#conversation strong')).toHaveText('shared chat')
-    // Archiving or deleting the thread also makes its metadata request fail.
+    // Archiving or deleting the thread also makes its metadata request fail;
+    // its pending decision goes with the transcript.
+    await browser.execute(async () => {
+      await fetch('/remote-fixture/approval')
+    })
+    await expect($('#decisions .remote-decision')).toBeDisplayed()
     await browser.execute(async () => {
       await fetch('/remote-fixture/archive')
     })
     await expect($('#connection')).toHaveText('Thread unavailable')
     await expect($('#conversation')).not.toHaveText(expect.stringContaining('shared chat'))
+    await expect($('#decisions .remote-decision')).not.toExist()
     await browser.execute(async () => {
       await fetch('/remote-fixture/restore')
     })

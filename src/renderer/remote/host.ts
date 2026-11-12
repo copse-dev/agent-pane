@@ -40,17 +40,18 @@ export async function startRemoteChat(): Promise<void> {
   let appliedSnapshot: string | null = null
   /** The status of the last applied snapshot, to replay the desktop's status events. */
   let appliedStatus: string | null = null
+  let metadata: z.infer<typeof metadataSchema> | null = null
   /**
    * The Mac no longer shares this thread (archived, deleted, or a new session):
-   * stop showing the copy this page already has. If it is shared again, the
-   * next snapshot applies afresh.
+   * stop showing the copy this page already has, its pending decisions
+   * included. If it is shared again, the next refresh applies afresh.
    */
   function forgetThread(): void {
     store.setState({ threads: [] })
+    metadata = null
     appliedSnapshot = null
     appliedStatus = null
   }
-  let metadata: z.infer<typeof metadataSchema> | null = null
   mountConfirmDialog()
   const actions = new RemoteActions(request, () =>
     showConfirmDialog({
