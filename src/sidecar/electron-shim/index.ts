@@ -422,6 +422,12 @@ export class BrowserWindow extends EventEmitter {
   getSize(): [number, number] {
     return [this.options.width ?? 1200, this.options.height ?? 800]
   }
+  getContentSize(): [number, number] {
+    return this.getSize()
+  }
+  setContentSize(width: number, height: number): void {
+    this.setSize(width, height)
+  }
   setSize(width: number, height: number): void {
     this.options.width = width
     this.options.height = height
@@ -640,6 +646,7 @@ const nativeImageStub: NativeImageStub = {
 }
 
 export const nativeImage = {
+  createFromDataURL: (_dataUrl: string): NativeImageStub => nativeImageStub,
   createFromPath: (_path: string): NativeImageStub => nativeImageStub,
   createEmpty: (): NativeImageStub => nativeImageStub,
 }

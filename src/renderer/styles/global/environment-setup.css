@@ -69,14 +69,9 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
 }
 .environment-setup-row {
-  padding: var(--spacing-md);
-}
-.environment-setup-row + .environment-setup-row {
-  border-top: 1px solid var(--border-subtle);
+  padding: var(--spacing-md) 0;
 }
 /* forms.css stacks every label as a column; a checkbox row reads left to right. */
 .environment-setup-label {
