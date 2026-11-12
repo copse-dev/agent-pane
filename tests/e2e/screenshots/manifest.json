@@ -5085,6 +5085,10 @@
       "sha256": "89804776ae9d95b44e0de2f6f3bd3a4fd8f634f76bd055c6c796647a8b4742fd",
       "bytes": 25112
     },
+    "shared-remote-chat-unshared-dark.png": {
+      "sha256": "e0a9185ff6d0e8f3849509363b15ea2e000750ff824ac8e91d47b9480aec605d",
+      "bytes": 16086
+    },
     "shell-mention-chip.png": {
       "sha256": "649e11c323c40ef70a1d6497afb4ecdc1c83866b1c70a3f6b904ec1f2dc17214",
       "bytes": 261067
