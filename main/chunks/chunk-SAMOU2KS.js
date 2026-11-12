@@ -30143,6 +30143,20 @@ var init_presets = __esm({
         }
       },
       {
+        id: "strands-decider",
+        label: "Strands Decider 2B (local)",
+        // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+        model: "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          // Not the server's default 8000, which a stray dev server would be mistaken for.
+          baseUrl: "http://127.0.0.1:8011/v1",
+          auth: "none"
+        }
+      },
+      {
         id: "semif",
         label: "SemIf (local)",
         model: "Qwen/Qwen3.5-4B",
