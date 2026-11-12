@@ -35,6 +35,8 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  */
 export interface TranscriptSnapshot {
   projectId: string
+  /** A disk read is not a new authoritative runtime metadata write. */
+  source: 'disk' | 'runtime'
   thread: import('./thread.ts').Thread
   checkpoint: import('../store/transcript-reducer.ts').TranscriptCheckpoint
 }

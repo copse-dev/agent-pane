@@ -221,7 +221,7 @@ function finishPendingDispatch(store: AppStore, threadId: string): void {
   else byThread?.set(threadId, count - 1)
 }
 
-function hasPendingDispatch(store: AppStore, threadId: string): boolean {
+export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
