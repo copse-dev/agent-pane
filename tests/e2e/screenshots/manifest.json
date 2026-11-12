@@ -1058,8 +1058,8 @@
       "bytes": 806711
     },
     "browser-session-restore-after-relaunch.png": {
-      "sha256": "1d6e8c107f5f18636cd5a82f4d4b7dc8ca83d964c13e1ef4e017cc79212c05c2",
-      "bytes": 375954
+      "sha256": "a62724f42eb6ea781f658f6c35a0f1c5541627179cfacbc0664b19794ef053a5",
+      "bytes": 377983
     },
     "browser-session-restore-before-quit.png": {
       "sha256": "fca602829d3cb369d0bd4f17fef53fe50a3cb37a11b00d77a2f55134649395e3",
@@ -1122,8 +1122,8 @@
       "bytes": 306391
     },
     "canvas-artefact-preview.png": {
-      "sha256": "f18ac4c6b8c994d04dc1373227977d21fd16b49adda13e45b13c90e4e05f9138",
-      "bytes": 368585
+      "sha256": "3d70e20586a73d884c3957e1c448ec1aea27faa7aee4d70198fcd65ed91a37e1",
+      "bytes": 364817
     },
     "canvas-artefact-promoted.png": {
       "sha256": "e6688d9d6a54071bad45d41313c8af212417ab5eeb9416f0d19ac1b59187e599",
@@ -1142,12 +1142,12 @@
       "bytes": 303845
     },
     "canvas-transparent-background-dark.png": {
-      "sha256": "8c0f1f41822d8f5e0d41cce2d96650de0747779e7166856f92d34ab8885d7eab",
-      "bytes": 42029
+      "sha256": "4461a32b41bffa4794ad22eeb68df97599ee85468ee02b5ccf29e598fb860db4",
+      "bytes": 32314
     },
     "canvas-transparent-text-dark.png": {
-      "sha256": "dca9d3e30ac55ea07054ccc96f422f180b359f88b073856c96c5438417f9f8a6",
-      "bytes": 1081322
+      "sha256": "61ab39edb0f7239de2f5dee12cc43e883a0ab55581e90b885dd17a0da90e26ce",
+      "bytes": 1063715
     },
     "capability-lease-approval.png": {
       "sha256": "7e89b67dbb4e44797dbf522f4d200e0baeaaa43e94298375103462428be2eda0",
@@ -1926,12 +1926,12 @@
       "bytes": 434216
     },
     "follow-up-suggestions-demo.png": {
-      "sha256": "691e39c67022a437bd0655c2d31a3e058f544328967f4f920dbdb8423256a793",
-      "bytes": 287173
+      "sha256": "cc328c91e27a0078d4e9ef45ffab791333bfa4d7ffb863c2f36245335f05774f",
+      "bytes": 303208
     },
     "follow-up-suggestions-git-changes.png": {
-      "sha256": "6764ddc6e97329afbf1e9739f656413a8eb56868793f07f814e726aa392b1cbd",
-      "bytes": 285697
+      "sha256": "81aebad1af247408e5b68fcc73e7e3816dabb19a4874c5bb55d3ba78c95ac35b",
+      "bytes": 335584
     },
     "follow-up-suggestions-investigate-ci.png": {
       "sha256": "4a8eeb2298f89a14ac6b16ad73f2da02f9d8b6d3d2f89ee3978cd6e2736800a3",
