@@ -81,6 +81,10 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'new-thread-default-branch-worktree-sent.png',
     ],
   },
+  'tests/e2e/paired-browser-chat.e2e.ts': {
+    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
+    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+  },
   'tests/e2e/pane-loading.e2e.ts': {
     sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
     filenames: [
