@@ -12,6 +12,7 @@ export function createRemoteChatFixture(): (
   const sessionId = '11111111-1111-4111-8111-111111111111'
   let offline = false
   let shared = true
+  let archived = false
   let submissions = 0
   // Every desktop publish bumps the revision; the browser reuses an unchanged one.
   let shareChanges = 0
@@ -23,14 +24,24 @@ export function createRemoteChatFixture(): (
     if (pathname === '/remote-fixture/reset') {
       offline = false
       shared = true
+      archived = false
       submissions = 0
       shareChanges = 0
       reply(response, {})
       return true
     }
-    // The desktop stops publishing the thread, as after archiving or deleting it.
+    // The desktop stops publishing the thread, as after a new desktop session
+    // whose project is not open yet; its saved metadata is still readable.
     if (pathname === '/remote-fixture/unshare' || pathname === '/remote-fixture/share') {
       shared = pathname.endsWith('/share')
+      shareChanges += 1
+      reply(response, {})
+      return true
+    }
+    // Archiving or deleting the thread also makes its metadata route 404.
+    if (pathname === '/remote-fixture/archive' || pathname === '/remote-fixture/restore') {
+      archived = pathname.endsWith('/archive')
+      shared = !archived
       shareChanges += 1
       reply(response, {})
       return true
@@ -95,7 +106,8 @@ export function createRemoteChatFixture(): (
       return true
     }
     if (pathname === '/api/thread/proj-1/thread-1') {
-      reply(response, { access: 'control', sessionId, runId: null })
+      if (archived) reply(response, { error: 'Thread unavailable' }, 404)
+      else reply(response, { access: 'control', sessionId, runId: null })
       return true
     }
     if (pathname === '/api/remote/read' || pathname === '/api/action') {

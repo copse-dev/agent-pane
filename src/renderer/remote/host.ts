@@ -40,6 +40,16 @@ export async function startRemoteChat(): Promise<void> {
   let appliedSnapshot: string | null = null
   /** The status of the last applied snapshot, to replay the desktop's status events. */
   let appliedStatus: string | null = null
+  /**
+   * The Mac no longer shares this thread (archived, deleted, or a new session):
+   * stop showing the copy this page already has. If it is shared again, the
+   * next snapshot applies afresh.
+   */
+  function forgetThread(): void {
+    store.setState({ threads: [] })
+    appliedSnapshot = null
+    appliedStatus = null
+  }
   let metadata: z.infer<typeof metadataSchema> | null = null
   mountConfirmDialog()
   const actions = new RemoteActions(request, () =>
@@ -96,12 +106,7 @@ export async function startRemoteChat(): Promise<void> {
       const view = state.views.find((item) => item.projectId === projectId)
       const thread = view?.threads.find((item) => item.id === threadId)
       if (!thread) {
-        // The Mac no longer shares this thread (archived, deleted, or a new
-        // session): stop showing the copy this page already has. If it is shared
-        // again, the next snapshot applies afresh.
-        store.setState({ threads: [] })
-        appliedSnapshot = null
-        appliedStatus = null
+        forgetThread()
         throw new Error('Open this project on your Mac to share its live chat.')
       }
       const wasConnected = connected
@@ -132,6 +137,8 @@ export async function startRemoteChat(): Promise<void> {
       status.dataset['connected'] = String(connected)
     } catch (cause) {
       connected = false
+      // An archived or deleted thread's metadata route answers 404.
+      if (cause instanceof RemoteRequestError && cause.status === 404) forgetThread()
       const revoked = cause instanceof RemoteRequestError && [401, 403].includes(cause.status)
       decisions.update(revoked ? [] : (metadata?.decisions ?? []), false)
       store.emit('threads_changed')
