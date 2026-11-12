@@ -74881,6 +74881,7 @@ export {
   startHumanTurnTree,
   foldBackContinuationUsed,
   refreshAgentRunPayload,
+  hasPendingDispatch,
   dispatchAgentRun,
   enqueueUserMessage,
   updateQueuedMessageModel,

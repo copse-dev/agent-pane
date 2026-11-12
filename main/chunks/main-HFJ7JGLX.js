@@ -164,6 +164,7 @@ import {
   githubPrKey,
   githubPrKeyMatchesTerm,
   hasModelPricing,
+  hasPendingDispatch,
   hasUnsubmittedPrompt,
   hasZeroModelPricing,
   hydrationFailed,
@@ -479,7 +480,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-SAMOU2KS.js";
+} from "./chunk-GHC4GUNU.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -88816,31 +88817,37 @@ function startAgentController(store2, api2) {
   };
   const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
   const attached = /* @__PURE__ */ new Set();
-  const unsubSnapshot = api2.agent.onTranscriptSnapshot(({ projectId, thread, checkpoint }) => {
-    if (getThreadProjectId(store2, thread.id) !== projectId) return;
-    applyRuntimeOwnedChunk(
-      thread.messages.map((message2) => message2.id),
-      () => {
-        patchThreadAnywhere(store2, thread.id, (current2) => {
-          return {
-            ...current2,
-            ...transcriptMeta(thread),
-            // Queue recovery may already have proven the persisted run died.
-            // An idle attachment's disk snapshot must not resurrect that stale
-            // running flag after recovery has offered an explicit retry.
-            ...current2.interruptedTurnAt !== void 0 && checkpoint.stream === null && checkpoint.pendingTurn === null ? { status: current2.status } : {},
-            messages: mergeRuntimeMessages(current2.messages, thread.messages)
-          };
-        });
-        reducer.restore(thread.id, checkpoint);
-        attached.add(thread.id);
-        const current = getThreadById(store2, thread.id);
-        if (current) acceptRuntimeThreadMeta(projectId, current);
-        store2.emit("threads_changed");
-        syncAgentActivity(store2, thread.id, checkpoint.stream?.writing ?? false);
-      }
-    );
-  });
+  const unsubSnapshot = api2.agent.onTranscriptSnapshot(
+    ({ projectId, source, thread, checkpoint }) => {
+      if (getThreadProjectId(store2, thread.id) !== projectId) return;
+      const previous = getThreadById(store2, thread.id);
+      const beforeMeta = previous ? transcriptMeta(previous) : void 0;
+      applyRuntimeOwnedChunk(
+        thread.messages.map((message2) => message2.id),
+        () => {
+          patchThreadAnywhere(store2, thread.id, (current2) => {
+            return {
+              ...current2,
+              ...transcriptMeta(thread),
+              // A cold read can arrive while a queued dispatch awaits its grant,
+              // or after that dispatch has been denied and restored as held.
+              // Preserve that local status decision. A real runtime snapshot is
+              // authoritative even before its first chunk creates a checkpoint.
+              ...source === "disk" && (current2.interruptedTurnAt !== void 0 || hasPendingDispatch(store2, thread.id) || current2.status === "idle" && thread.status === "running" && (current2.pendingMessages?.length ?? 0) > 0) ? { status: current2.status } : {},
+              messages: mergeRuntimeMessages(current2.messages, thread.messages)
+            };
+          });
+          reducer.restore(thread.id, checkpoint);
+          attached.add(thread.id);
+          const current = getThreadById(store2, thread.id);
+          if (current)
+            acceptRuntimeThreadMeta(projectId, current, source === "disk" ? beforeMeta : void 0);
+          store2.emit("threads_changed");
+          syncAgentActivity(store2, thread.id, checkpoint.stream?.writing ?? false);
+        }
+      );
+    }
+  );
   const attach = () => {
     const { activeProjectId, threads } = store2.getState();
     if (!activeProjectId) return;
