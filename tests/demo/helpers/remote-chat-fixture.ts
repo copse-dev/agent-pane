@@ -11,7 +11,10 @@ export function createRemoteChatFixture(): (
 ) => boolean {
   const sessionId = '11111111-1111-4111-8111-111111111111'
   let offline = false
+  let shared = true
   let submissions = 0
+  // Every desktop publish bumps the revision; the browser reuses an unchanged one.
+  let shareChanges = 0
   function reply(response: ServerResponse, value: unknown, status = 200): void {
     response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     response.end(JSON.stringify(value))
@@ -19,7 +22,16 @@ export function createRemoteChatFixture(): (
   return (pathname, request, response): boolean => {
     if (pathname === '/remote-fixture/reset') {
       offline = false
+      shared = true
       submissions = 0
+      shareChanges = 0
+      reply(response, {})
+      return true
+    }
+    // The desktop stops publishing the thread, as after archiving or deleting it.
+    if (pathname === '/remote-fixture/unshare' || pathname === '/remote-fixture/share') {
+      shared = pathname.endsWith('/share')
+      shareChanges += 1
       reply(response, {})
       return true
     }
@@ -44,36 +56,38 @@ export function createRemoteChatFixture(): (
         remoteStateSchema.parse({
           version: 1,
           sessionId,
-          revision: 1 + submissions,
+          revision: 1 + submissions + shareChanges,
           views: [
             {
               projectId: 'proj-1',
-              threads: [
-                {
-                  id: 'thread-1',
-                  title: 'Test the shared chat',
-                  status: 'idle',
-                  createdAt: 1,
-                  updatedAt: 2,
-                  usage: { inputTokens: 0, outputTokens: 0 },
-                  messages: [
+              threads: !shared
+                ? []
+                : [
                     {
-                      id: 'user-1',
-                      role: 'user',
-                      content: 'Prepare the mobile release.',
+                      id: 'thread-1',
+                      title: 'Test the shared chat',
+                      status: 'idle',
                       createdAt: 1,
-                      toolCalls: [],
-                    },
-                    {
-                      id: 'assistant-1',
-                      role: 'assistant',
-                      content: 'The **shared chat** is ready for a focused test.',
-                      createdAt: 2,
-                      toolCalls: [],
+                      updatedAt: 2,
+                      usage: { inputTokens: 0, outputTokens: 0 },
+                      messages: [
+                        {
+                          id: 'user-1',
+                          role: 'user',
+                          content: 'Prepare the mobile release.',
+                          createdAt: 1,
+                          toolCalls: [],
+                        },
+                        {
+                          id: 'assistant-1',
+                          role: 'assistant',
+                          content: 'The **shared chat** is ready for a focused test.',
+                          createdAt: 2,
+                          toolCalls: [],
+                        },
+                      ],
                     },
                   ],
-                },
-              ],
             },
           ],
         }),

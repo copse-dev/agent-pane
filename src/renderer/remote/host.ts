@@ -95,7 +95,15 @@ export async function startRemoteChat(): Promise<void> {
       metadata = metadataSchema.parse(rawMetadata)
       const view = state.views.find((item) => item.projectId === projectId)
       const thread = view?.threads.find((item) => item.id === threadId)
-      if (!thread) throw new Error('Open this project on your Mac to share its live chat.')
+      if (!thread) {
+        // The Mac no longer shares this thread (archived, deleted, or a new
+        // session): stop showing the copy this page already has. If it is shared
+        // again, the next snapshot applies afresh.
+        store.setState({ threads: [] })
+        appliedSnapshot = null
+        appliedStatus = null
+        throw new Error('Open this project on your Mac to share its live chat.')
+      }
       const wasConnected = connected
       connected = metadata.access === 'control'
       decisions.update(metadata.decisions, connected)

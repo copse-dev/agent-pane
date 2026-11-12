@@ -94,5 +94,27 @@ describe('shared desktop chat in the paired browser', () => {
       return response.text()
     })
     expect(submissions).toBe('{"submissions":1}')
+    // A thread the Mac stops sharing (archived, deleted, a new session) must not
+    // stay readable here; sharing it again brings the live transcript back.
+    await browser.execute(async () => {
+      await fetch('/remote-fixture/unshare')
+    })
+    await expect($('#connection')).toHaveText(
+      'Open this project on your Mac to share its live chat.',
+    )
+    await expect($('#conversation')).not.toHaveText(expect.stringContaining('shared chat'))
+    await expect($('.submit-btn')).toBeDisabled()
+    // The Send click left the pointer on the composer; keep hover and a caret
+    // out of the shot.
+    await browser.action('pointer').move({ x: 1, y: 1 }).perform()
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'shared-remote-chat-unshared-dark.png'))
+    await browser.execute(async () => {
+      await fetch('/remote-fixture/share')
+    })
+    await expect($('#connection')).toHaveText('Connected to your Mac')
+    await expect($('#conversation strong')).toHaveText('shared chat')
   })
 })
