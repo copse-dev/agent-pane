@@ -17,7 +17,7 @@ permissions: {}
 concurrency:
   # No-op completions and fork runs must not replace a pending trusted reconciliation.
   group: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'skipped' && 'screenshot-stack-policy-skipped' || github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'screenshot-stack-policy-fork' || 'screenshot-stack-policy' }}
-  # Every run repairs all live PRs, so one pending run can replace earlier triggers.
+  # Successful-run watermarks preserve changes from replaced pending triggers.
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
+      issues: read
       pull-requests: write
       statuses: write
     steps:
@@ -46,7 +48,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry } = await import(
+            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry, selectScreenshotStackRepairs } = await import(
               `${process.env.GITHUB_WORKSPACE}/scripts/screenshot-stack.mts`);
             const { owner, repo } = context.repo;
             // Comparisons name immutable SHAs. Live PRs, declarations and
@@ -57,10 +59,32 @@ jobs:
             });
             const eligible = open.filter((pr) =>
               pr.head.repo?.full_name === `${owner}/${repo}`);
-            // Pending triggers coalesce. Read every live PR, including those
-            // whose declaration was removed in a superseded event, so stale
-            // deferrals are revoked without depending on event history.
-            const selected = eligible;
+            let since;
+            let changed = [];
+            if (context.eventName === 'pull_request_target' || context.eventName === 'workflow_run') {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner, repo, workflow_id: 'screenshot-stack.yml',
+                branch: context.payload.repository.default_branch,
+                status: 'success', per_page: 1,
+              });
+              // Use creation, not completion (or rerun start): changes made while
+              // the previous run was queued/running must remain in the next window.
+              since = data.workflow_runs[0]?.created_at;
+              if (typeof since === 'string' && Number.isFinite(Date.parse(since))) {
+                // The issues API uses an exclusive lower bound; overlap a second.
+                since = new Date(Date.parse(since) - 1000).toISOString();
+                // Includes closed PRs and removed declarations, even when their
+                // event was replaced in the global concurrency group. Paginate:
+                // ordinary issue activity must never hide a later changed PR.
+                changed = await github.paginate(github.rest.issues.listForRepo, {
+                  owner, repo, state: 'all', since, per_page: 100,
+                });
+              }
+            }
+            const numbers = new Set(await selectScreenshotStackRepairs(
+              policy, { owner, repo }, eligible, context.eventName, context.payload, since, changed,
+            ));
+            const selected = eligible.filter((pr) => numbers.has(pr.number));
             core.info(`Reconciling ${selected.length}/${eligible.length} open same-repository PRs`);
             for (const pr of selected) {
               const review = await reconcileScreenshotStack(policy, { owner, repo, number: pr.number });

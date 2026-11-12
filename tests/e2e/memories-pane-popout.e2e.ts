@@ -102,8 +102,8 @@ describe('Memories pane pop-out', () => {
     await expect(await $('.pane-popout-btn').getElement()).not.toBeDisplayed()
 
     const taintedRow = await $('.memories-row*=Where the API key lives').getElement()
-    // `.memories-row-taint` is `text-transform: uppercase`, and WebDriver's
-    // `getText()` returns rendered text, so the badge reads EXTERNAL CONTEXT.
+    // `.memories-row-taint` capitalises its first letter in CSS, and WebDriver's
+    // `getText()` returns rendered text, so the badge reads External context.
     // Assert the label case-insensitively: the wording is the contract here,
     // the casing is presentation and belongs to the stylesheet.
     await expect(await taintedRow.$('.memories-row-taint').getElement()).toHaveText(

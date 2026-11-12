@@ -1,4 +1,5 @@
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } from './agent-turn-scheduler.ts'
 import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
@@ -119,6 +120,7 @@ import {
 import {
   requestApproval,
   cancelApprovalsForThread,
+  discardApprovalsForThread,
   pendingApprovalParkedToolCallIds,
   releaseParkedApprovalsForThread,
 } from './approval.ts'
@@ -853,6 +855,12 @@ export async function runAgent(
   // continue to own a queued turn even though no provider process has started.
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
   const admission = new AbortController()
+  const revokeTaskApprovals = (): void => {
+    if (admission.signal.reason === 'send_now') return
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
+  admission.signal.addEventListener('abort', revokeTaskApprovals, { once: true })
   abortMap.set(threadId, admission)
   const phase = { preflightComplete: false }
   try {
@@ -887,6 +895,7 @@ export async function runAgent(
       messages: [...priorMessages, { role: 'user', content: userPrompt }],
     }
   } finally {
+    admission.signal.removeEventListener('abort', revokeTaskApprovals)
     if (abortMap.get(threadId) === admission) abortMap.delete(threadId)
   }
 }
@@ -3158,6 +3167,10 @@ async function runAgentWithInlineCanvas(
 }
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  if (reason !== 'send_now') {
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
   cancelAgentInitiatedAcpTurn(threadId)
@@ -3166,6 +3179,7 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
 /** Fence new turns and interrupt existing work before command cleanup can settle tools. */
 export function stopAllAgentRuns(): void {
   shuttingDown = true
+  shellReplayLeaseStore.clear()
   for (const controller of abortMap.values()) controller.abort()
   cancelAllAgentInitiatedAcpTurns()
 }
