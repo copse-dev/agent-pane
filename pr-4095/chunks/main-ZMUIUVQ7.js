@@ -484,8 +484,8 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-6GOABGMS.js";
-import "./chunk-D55J6ZRP.js";
+} from "./chunk-FAZ77NCX.js";
+import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -567,7 +567,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-WYJRFZZW.js";
+} from "./chunk-TYQO7O5R.js";
 import {
   clear,
   el,
@@ -952,9 +952,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -10719,7 +10719,7 @@ var init_turn_recovery2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -10903,7 +10903,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -11235,7 +11235,7 @@ var init_code_block_copy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
   if (typeof value !== "object" || value === null)
     return null;
@@ -11254,14 +11254,14 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION, MAX_FONT_BYTES;
 var init_mermaid_frame_protocol = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
     MAX_FONT_BYTES = 4 * 1024 * 1024;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
 function copyBytes(data) {
   if (data instanceof ArrayBuffer)
     return data.slice(0);
@@ -11346,7 +11346,7 @@ function createMermaidFrame(source, options) {
 }
 var ISOLATED_DIAGRAM_ATTRIBUTE, MOUNTABLE_SELECTOR;
 var init_mermaid_isolated = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
     init_mermaid_frame_protocol();
     ISOLATED_DIAGRAM_ATTRIBUTE = "data-isolated-diagram";
     MOUNTABLE_SELECTOR = `.mermaid-diagram.mermaid-diagram--pending:not(.stream-fence-forming):not([${ISOLATED_DIAGRAM_ATTRIBUTE}])`;
@@ -15486,9 +15486,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -90937,7 +90937,7 @@ var init_artifact_image_policy = __esm({
 
 // src/renderer/markdown/sanitizer-backend.ts
 function installSanitizerBackend() {
-  ready ??= isBrowserSanitizerSupported() ? Promise.resolve() : import("./sanitize-dompurify-ZGPAHHBP.js").then(({ dompurifyBackend }) => {
+  ready ??= isBrowserSanitizerSupported() ? Promise.resolve() : import("./sanitize-dompurify-NJDADAQX.js").then(({ dompurifyBackend }) => {
     setDefaultConfig({ sanitizerBackend: dompurifyBackend });
   });
   return ready;
@@ -90952,7 +90952,7 @@ var init_sanitizer_backend = __esm({
 
 // src/renderer/markdown/highlighter-backend.ts
 function installHighlighterBackend() {
-  ready2 ??= import("./highlight-hljs-LL5I7535.js").then(
+  ready2 ??= import("./highlight-hljs-DTYTWOTE.js").then(
     ({ loadHighlightjs }) => loadHighlightjs().then((codeHighlighter) => {
       setDefaultConfig({ codeHighlighter });
     })
