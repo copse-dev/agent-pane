@@ -179,6 +179,8 @@ export type ToolExecuteResult =
       visualEvidence?: VisualEvidenceDraft[]
       /** Set by the tool registry only; see {@link ToolCall.appendedReminderLengths}. */
       appendedReminderLengths?: number[]
+      /** The host held the call back without running it; see {@link ToolCall.deferred}. */
+      deferred?: true
     }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
@@ -188,6 +190,7 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   images?: ToolResultImage[]
   visualEvidence?: VisualEvidenceDraft[]
   appendedReminderLengths?: number[]
+  deferred?: true
 } {
   if (typeof value === 'string') return { result: value }
   return value
@@ -231,6 +234,13 @@ export interface ToolCall {
    * when nothing was appended, and on results recorded before this field.
    */
   appendedReminderLengths?: number[]
+  /**
+   * The host returned without running the call and asked the model to retry it:
+   * an edit held back until newly activated nested AGENTS.md instructions reach
+   * the model. `result` explains why. Nothing changed, so the card never reads
+   * as a completed edit. Absent for every call that ran.
+   */
+  deferred?: true
   /** Images returned by the tool, rendered beside its collapsed transcript card. */
   images?: ToolResultImage[]
   /**

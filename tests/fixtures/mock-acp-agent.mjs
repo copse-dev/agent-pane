@@ -26,6 +26,8 @@
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
  * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
  * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
+ * | `refuse-copse-tool:NAME TEXT` | call `mcp__copse__NAME` and fail it as Claude Code does |
+ * |                  | for a tool not in its list, then reply TEXT (rest of the line) |
  * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
  * | `stop-mid-command` | start an `execute` call, reply while it runs, end on cancel |
  * | `ask-execute`    | request an `execute` permission with no command or title       |
@@ -34,7 +36,8 @@
  * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
  * | anything else    | echo it back as an agent message chunk                         |
  *
- * `report-env:`, `say:`, `list-mcp-tools` and `echo-prompt` are checked first: a
+ * `report-env:`, `refuse-copse-tool:`, `say:`, `list-mcp-tools` and `echo-prompt`
+ * are checked first: a
  * turn driven through Copse's own prompt builder carries a preamble whose words
  * (`task`, …) would otherwise trip the substring branches below.
  *
@@ -174,6 +177,43 @@ agent({ name: 'mock-acp-agent' })
       const names = reportEnv[1].split(',').filter(Boolean)
       const received = Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))
       await say(`env:${JSON.stringify(received)}`)
+      return { stopReason: 'end_turn' }
+    }
+
+    // Claude Code after it dropped every tool of the copse server (#4142): the
+    // model still calls one, and the CLI answers "No such tool available". The
+    // Claude adapter names the call in `_meta.claudeCode.toolName` and reports
+    // the CLI's error as the call's failed result.
+    const refuse = /refuse-copse-tool:([A-Za-z0-9_-]+)[ \t]*([^\n]*)/.exec(text)
+    if (refuse) {
+      const toolName = `mcp__copse__${refuse[1]}`
+      const toolCallId = `refused-${String(Date.now())}`
+      const error = `<tool_use_error>Error: No such tool available: ${toolName}</tool_use_error>`
+      const meta = { claudeCode: { toolName } }
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId,
+          title: toolName,
+          kind: 'other',
+          status: 'pending',
+          rawInput: {},
+          _meta: meta,
+        },
+      })
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId,
+          status: 'failed',
+          content: [{ type: 'content', content: { type: 'text', text: error } }],
+          rawOutput: error,
+          _meta: meta,
+        },
+      })
+      await say(refuse[2].trim() || 'used my own tools')
       return { stopReason: 'end_turn' }
     }
 

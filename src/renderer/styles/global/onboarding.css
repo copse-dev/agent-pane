@@ -192,9 +192,10 @@
   margin-top: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-md);
-  border: 1px solid var(--warning, #c9a227);
+  /* The shared flat callout plate (docs/ui-taste.md, "Containment is a plate"). */
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning, #c9a227) 10%, transparent);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .setup-context-advisory[hidden] {
   display: none;

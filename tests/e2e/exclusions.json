@@ -2,6 +2,17 @@
   "version": 1,
   "entries": [
     {
+      "spec": "tests/e2e/acp-command-preflight.e2e.ts",
+      "category": "platform",
+      "reason": "The read-only executable preflight is POSIX-only; Windows retains normal agent startup. This recovery fixture uses a POSIX executable launcher.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Agent runtime maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-08",
+      "reviewBy": "2026-11-15",
+      "coverage": "The macOS Electron spec verifies early failure, preserved draft and attachment, Settings command repair and successful Retry with the original contents. Unit tests cover filesystem lookup and checkout ordering. The spec remains enabled on Linux; Windows executable resolution remains outside this preflight.",
+      "markers": ["this.skip", "this.skip"]
+    },
+    {
       "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",
       "category": "platform",
       "reason": "Isolated Copse desktop startup is available only on local Apple silicon macOS; unsupported platforms refuse before the consent dialog.",
@@ -55,17 +66,6 @@
       "reviewBy": "2026-09-27",
       "coverage": "Non-macOS filesystem behavior does not exercise this sandbox regression. A macOS run remains required for relevant changes.",
       "markers": ["describe.skip"]
-    },
-    {
-      "spec": "tests/e2e/follow-up-suggestions.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by CI config; streaming/timing and environment rationale must be confirmed for this spec.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
       "spec": "tests/e2e/git-commit-approval.e2e.ts",

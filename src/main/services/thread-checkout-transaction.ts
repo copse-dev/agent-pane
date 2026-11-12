@@ -14,6 +14,7 @@ import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { getSetting } from './storage/settings.ts'
 import { acpModelCanDeferCheckout } from './acp/acp-deferred-checkout.ts'
+import { preflightLocalAcpModel } from './acp/acp-command-preflight.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
@@ -119,6 +120,8 @@ export interface ThreadCheckoutTransactionDependencies {
   ) => Promise<void>
   /** Speculative model loading, started alongside first-message checkout setup. */
   warmupModel: (model?: string) => Promise<void>
+  /** Cheap local prerequisite check before consuming a first prompt or changing its checkout. */
+  preflightModel: (model: string | undefined, cwd: string) => Promise<void>
   inspect: (project: Project, isLocal: boolean) => Promise<CheckoutInspection>
   allocate: (input: {
     projectId: string
@@ -298,6 +301,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   getThread: getProjectThread,
   updateMeta: updateMetaOrThrow,
   warmupModel: warmupLmStudioModel,
+  preflightModel: preflightLocalAcpModel,
   inspect: inspectProject,
   allocate: allocateThreadWorktree,
   reuseAutomationWorktree: (input) => getAutomationWorktreeReuse().reuseFor(input),
@@ -381,6 +385,12 @@ export function createThreadCheckoutTransaction(
       // Old conversations predate checkout metadata and must keep their shared
       // behavior. Only a genuinely blank thread enters the first-message policy.
       if (thread.messages.length > 0) return persistedResult('shared', thread.gitBranch)
+
+      // SSH agents run on the other machine. Never diagnose their installation
+      // from this device, and never start an authentication/model probe here.
+      if (!project.sshHost) {
+        await dependencies.preflightModel(input.model ?? thread.model, project.path)
+      }
 
       // Loading a local model can overlap every Git probe and the allocation.
       // Do not await it: unavailable/older model servers must not delay checkout.

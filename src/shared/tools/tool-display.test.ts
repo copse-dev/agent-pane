@@ -239,6 +239,76 @@ describe('tool-display', () => {
     assert.equal(children[0].label, 'Edited files')
   })
 
+  it('labels a deferred edit by what it would have changed, never as edited', () => {
+    const deferred = (call: ToolCall, args: Record<string, unknown>): ToolCall => ({
+      ...call,
+      args,
+      result: 'Edit deferred because…',
+      deferred: true,
+    })
+    const patch = (...files: string[]): string =>
+      [
+        '*** Begin Patch',
+        ...files.map((f) => `*** Update File: ${f}\n-a\n+b`),
+        '*** End Patch',
+      ].join('\n')
+    assert.equal(
+      getToolCallLabel(deferred(tc('1', 'write_file'), { path: 'packages/api/first.ts' })),
+      'Deferred packages/api/first.ts',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('2', 'str_replace'), { path: 'README.md' })),
+      'Deferred README.md',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('3', 'apply_patch'), { input: patch('a.ts') })),
+      'Deferred a.ts',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('4', 'apply_patch'), { input: patch('a.ts', 'b.ts') })),
+      'Deferred 2 files',
+    )
+    assert.equal(getToolCallLabel(deferred(tc('5', 'write_file'), {})), 'Deferred edit')
+  })
+
+  it('keeps deferred edits out of the Edited files group and its count', () => {
+    const write = (id: string, path: string, isDeferred = false): ToolCall => ({
+      ...tc(id, 'write_file'),
+      args: { path },
+      ...(isDeferred ? { deferred: true } : {}),
+    })
+    const read = { ...tc('read', 'read_file'), args: { path: 'packages/api/first.ts' } }
+
+    // The same-response deferral: a read activates the scope, both writes wait.
+    const allDeferred = buildToolCallDisplayItems([
+      read,
+      write('1', 'packages/api/first.ts', true),
+      write('2', 'packages/api/second.ts', true),
+    ])
+    assert.equal(allDeferred[0]?.label, 'Used 3 tools')
+    assert.deepEqual(
+      rollupChildren(allDeferred).map((item) => [item.type, item.label]),
+      [
+        ['individual', 'Read file'],
+        ['individual', 'Deferred packages/api/first.ts'],
+        ['individual', 'Deferred packages/api/second.ts'],
+      ],
+    )
+
+    // Edits that ran still group, counting only themselves.
+    const mixed = rollupChildren(
+      buildToolCallDisplayItems([write('a', 'a.ts'), write('b', 'b.ts'), write('c', 'c.ts', true)]),
+    )
+    assert.equal(mixed[0]?.type, 'group')
+    assert.equal(mixed[0].label, 'Edited files')
+    assert.deepEqual(
+      mixed[0].toolCalls.map((call) => call.id),
+      ['a', 'b'],
+    )
+    assert.equal(mixed[1]?.type, 'individual')
+    assert.equal(mixed[1].label, 'Deferred c.ts')
+  })
+
   it('strips a leading `cd <path> &&` workspace prefix from commands', () => {
     assert.equal(stripShellCdPrefix('cd /Users/me/proj && npm test'), 'npm test')
     assert.equal(stripShellCdPrefix("cd '/path with spaces' && ls"), 'ls')
