@@ -22230,6 +22230,15 @@ function splitServiceTierUsage(usage) {
   }
   return { standard: remaining, tiers };
 }
+function legacyAcpCachedTokens(model, usage) {
+  if (parseModelSelection(model).namespace !== "acp") return null;
+  const cached2 = nonNegative(usage.cacheReadTokens) + nonNegative(usage.cacheCreationTokens);
+  return cached2 > usage.inputTokens ? cached2 : null;
+}
+function repairLegacyAcpTotalInputTokens(model, usage) {
+  const cached2 = legacyAcpCachedTokens(model, usage);
+  return cached2 === null ? usage : { ...usage, inputTokens: cached2 };
+}
 var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
@@ -30139,6 +30148,20 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "strands-decider",
+        label: "Strands Decider 2B (local)",
+        // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+        model: "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          // Not the server's default 8000, which a stray dev server would be mistaken for.
+          baseUrl: "http://127.0.0.1:8011/v1",
           auth: "none"
         }
       },
@@ -74691,6 +74714,8 @@ export {
   sideChatsOf,
   withoutSideChats,
   init_side_chat2 as init_side_chat,
+  repairLegacyAcpTotalInputTokens,
+  init_model_usage,
   beginThreadSubmission,
   endThreadSubmission,
   isThreadSubmitting,
@@ -74867,6 +74892,7 @@ export {
   startHumanTurnTree,
   foldBackContinuationUsed,
   refreshAgentRunPayload,
+  hasPendingDispatch,
   dispatchAgentRun,
   enqueueUserMessage,
   updateQueuedMessageModel,
@@ -74969,10 +74995,13 @@ export {
   announcementCatalog,
   useAnnouncementCatalog,
   init_announcement_catalog,
+  prProductionSchema,
+  commitProductionSchema,
   prRelationKey,
   threadPrRelationships,
   ThreadPrRelationshipIndex,
-  init_thread_pr_relations2 as init_thread_pr_relations,
+  init_thread_pr_relations,
+  init_thread_pr_relations2,
   mergeThreadLinks,
   collectThreadLinks,
   backlinksFor,

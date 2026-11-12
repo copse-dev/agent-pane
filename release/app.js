@@ -24,7 +24,7 @@ import {
   init_settings_dialog,
   init_storage_cleanup,
   init_thread_links2 as init_thread_links,
-  init_thread_pr_relations,
+  init_thread_pr_relations2 as init_thread_pr_relations,
   init_token_estimate,
   init_tool_interruption,
   init_working_brief,
@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-RLIOUWKC.js";
+} from "./chunks/chunk-XEWLDBRO.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -5820,6 +5820,8 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    remote: { publish: async () => {
+    } },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {
@@ -7499,7 +7501,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-A22KDOJH.js").then(async (main) => {
+    void import("./chunks/main-L4ODCHUE.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
