@@ -1058,8 +1058,8 @@
       "bytes": 806711
     },
     "browser-session-restore-after-relaunch.png": {
-      "sha256": "1d6e8c107f5f18636cd5a82f4d4b7dc8ca83d964c13e1ef4e017cc79212c05c2",
-      "bytes": 375954
+      "sha256": "a62724f42eb6ea781f658f6c35a0f1c5541627179cfacbc0664b19794ef053a5",
+      "bytes": 377983
     },
     "browser-session-restore-before-quit.png": {
       "sha256": "fca602829d3cb369d0bd4f17fef53fe50a3cb37a11b00d77a2f55134649395e3",
@@ -1122,8 +1122,8 @@
       "bytes": 306391
     },
     "canvas-artefact-preview.png": {
-      "sha256": "f18ac4c6b8c994d04dc1373227977d21fd16b49adda13e45b13c90e4e05f9138",
-      "bytes": 368585
+      "sha256": "3d70e20586a73d884c3957e1c448ec1aea27faa7aee4d70198fcd65ed91a37e1",
+      "bytes": 364817
     },
     "canvas-artefact-promoted.png": {
       "sha256": "e6688d9d6a54071bad45d41313c8af212417ab5eeb9416f0d19ac1b59187e599",
@@ -1142,12 +1142,12 @@
       "bytes": 303845
     },
     "canvas-transparent-background-dark.png": {
-      "sha256": "8c0f1f41822d8f5e0d41cce2d96650de0747779e7166856f92d34ab8885d7eab",
-      "bytes": 42029
+      "sha256": "4461a32b41bffa4794ad22eeb68df97599ee85468ee02b5ccf29e598fb860db4",
+      "bytes": 32314
     },
     "canvas-transparent-text-dark.png": {
-      "sha256": "dca9d3e30ac55ea07054ccc96f422f180b359f88b073856c96c5438417f9f8a6",
-      "bytes": 1081322
+      "sha256": "61ab39edb0f7239de2f5dee12cc43e883a0ab55581e90b885dd17a0da90e26ce",
+      "bytes": 1063715
     },
     "capability-lease-approval.png": {
       "sha256": "7e89b67dbb4e44797dbf522f4d200e0baeaaa43e94298375103462428be2eda0",
@@ -1926,12 +1926,12 @@
       "bytes": 434216
     },
     "follow-up-suggestions-demo.png": {
-      "sha256": "691e39c67022a437bd0655c2d31a3e058f544328967f4f920dbdb8423256a793",
-      "bytes": 287173
+      "sha256": "cc328c91e27a0078d4e9ef45ffab791333bfa4d7ffb863c2f36245335f05774f",
+      "bytes": 303208
     },
     "follow-up-suggestions-git-changes.png": {
-      "sha256": "6764ddc6e97329afbf1e9739f656413a8eb56868793f07f814e726aa392b1cbd",
-      "bytes": 285697
+      "sha256": "81aebad1af247408e5b68fcc73e7e3816dabb19a4874c5bb55d3ba78c95ac35b",
+      "bytes": 335584
     },
     "follow-up-suggestions-investigate-ci.png": {
       "sha256": "4a8eeb2298f89a14ac6b16ad73f2da02f9d8b6d3d2f89ee3978cd6e2736800a3",
@@ -3013,6 +3013,14 @@
       "sha256": "7fd7ebb63fcc9e1cbc98cb62c5ee887d268f9557bbd69b214c05078295925fe0",
       "bytes": 129073
     },
+    "paired-browser-approval-dark.png": {
+      "sha256": "84dd1259296b24fc21e7b0fee0a220910eab8d9cffffcb544d92199f9776eb33",
+      "bytes": 155212
+    },
+    "paired-browser-approval-light.png": {
+      "sha256": "758d2a08b3082248feeba4063f4f57c6ee0996dc2856632254e8b256d825bac1",
+      "bytes": 154137
+    },
     "pane-header-band.png": {
       "sha256": "d4d140ef13cb34476051fd00a7125491f8746df73779b4a75cd87318b648feac",
       "bytes": 33566
@@ -3709,6 +3717,30 @@
       "sha256": "235dc37f5d5fc18a7b198e008f378da6185d9d1cae950bf78a1b9a514bdec8d3",
       "bytes": 154038
     },
+    "remote-chat-connected-phone.png": {
+      "sha256": "13d6605e7f5947a531e3ad2973e8573fdd1fbc7c003121641e5cd5dbf52b3214",
+      "bytes": 43939
+    },
+    "remote-chat-prototype-desktop.png": {
+      "sha256": "6c163a4516789fdd98957d813944634dc471b2fb00314da376d8dc703db093cb",
+      "bytes": 107598
+    },
+    "remote-chat-prototype-phone-changes.png": {
+      "sha256": "be53b7a7c7ca630ad094289e6d1ae4a1d09b0c9f8fb964884a24d0702d8ddaf1",
+      "bytes": 31247
+    },
+    "remote-chat-prototype-phone-dark.png": {
+      "sha256": "23d8f4b6a27980e7445d7b0c8f115060fe5aa0ba2c391bd3727d42e8dbd5d1b4",
+      "bytes": 41605
+    },
+    "remote-chat-prototype-phone-light.png": {
+      "sha256": "cef674e6e141ccb1a003894979acad72f2ee635468dd75a37c07a7060ab489e3",
+      "bytes": 41164
+    },
+    "remote-chat-reconnected-phone-dark.png": {
+      "sha256": "d69b4c4c144eac24b7a98590da68e48ce22be7f03d6e4451456fdd96a23fe4f2",
+      "bytes": 40891
+    },
     "remote-folder-add-host-error.png": {
       "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
       "bytes": 95725
@@ -4182,8 +4214,8 @@
       "bytes": 109449
     },
     "settings-classifiers-agent-permission.png": {
-      "sha256": "3ccc70f28c84ab371384ae020efa0133029a090b3198656ea5ced105c9b25bd4",
-      "bytes": 271125
+      "sha256": "6836b8f4b711b9616dfbf4c114d6cf238b2c342b2cd20c3b01ff47ad84079ede",
+      "bytes": 283015
     },
     "settings-classifiers-background.png": {
       "sha256": "852693280f257aad43804f2e54cce3b1b2e52111c8139ee665982b2ce0419fba",
@@ -4194,12 +4226,12 @@
       "bytes": 208646
     },
     "settings-classifiers-error.png": {
-      "sha256": "b32f1d8ffd3e1d6fcd7c0e09d39ea86c9db9bded7fe42e108b41b95e3291b30c",
-      "bytes": 177586
+      "sha256": "c5199c18facaadd12ecc6bbf3a33d9538bc22812ba96eb02add9872cd864af99",
+      "bytes": 181594
     },
     "settings-classifiers-glide.png": {
-      "sha256": "81cadb5a2cb2be0345b8113ce61e0b91d3307f96a63f7b8e394c58f9828a88dd",
-      "bytes": 242222
+      "sha256": "4fc4a496aad98c133f13636ba638f8c72a3a9c2ac890ad7db1cb64747046074d",
+      "bytes": 249083
     },
     "settings-classifiers-install-bad-revision.png": {
       "sha256": "981c1c02e647d522847d98ef49e24464a874d89347bd188e974a0364733215e9",
@@ -4230,8 +4262,8 @@
       "bytes": 14253
     },
     "settings-classifiers-install-test.png": {
-      "sha256": "33834ad923ad446d662d54f61564e1dd929694bd35cec5cbb0e9cda70fe54bc4",
-      "bytes": 176815
+      "sha256": "4a96fe98779558c3810a11e0ab9eab302aa4f2a8e8b05fab01ca1a80c5b43926",
+      "bytes": 186999
     },
     "settings-classifiers-install-uninstall-confirm.png": {
       "sha256": "6614d34aa44219b1f6cff2e32ffc9fc80e1c86ead9f42e51f4cb753b5784a691",
@@ -4256,6 +4288,10 @@
     "settings-classifiers-local-offer.png": {
       "sha256": "169b4c1d064d2b09903145c1e5b13a376d0b3948cd9dc4c46371c9bacfbe2dae",
       "bytes": 14484
+    },
+    "settings-classifiers-local-strands-preset.png": {
+      "sha256": "908acd174be313ec95727e2da0b2f877b45dd6efe85e8b64f1bf6c94b067e423",
+      "bytes": 61254
     },
     "settings-classifiers-options.png": {
       "sha256": "74154fb313aa55bd7784db8def142a22b4f5b150d6f60a8310df6fdb397f68b2",
@@ -4450,8 +4486,8 @@
       "bytes": 270452
     },
     "settings-machines-classifier.png": {
-      "sha256": "4f5523791e00f999a0e4da7d5212744534c27d3891b8678ae8943a32c1bcea25",
-      "bytes": 229922
+      "sha256": "66ac7b7b3a3525f76d7c0c58543818aac9c3ad4b7b5376b2489ac8c78f92ed0b",
+      "bytes": 223192
     },
     "settings-machines-connected.png": {
       "sha256": "92cbb6ca187e225ba8be87e738fa7473ca325dc53b40bedbb4601192d58ae82c",
@@ -5036,6 +5072,26 @@
     "settings-zdr-provider-presets.png": {
       "sha256": "0f0292e8f7ada8d1b5b472b32babee45ed38522fb4e0480de3b8adf611c12992",
       "bytes": 232103
+    },
+    "shared-remote-chat-next-step-dark.png": {
+      "sha256": "daf72efea496472ccabad35b8ec30e23de4190e4bc2ede85ac7849be80228586",
+      "bytes": 29655
+    },
+    "shared-remote-chat-next-step-light.png": {
+      "sha256": "d4475e7bfcb828fe57abcfdea99aa8cbf23966316e7ec6e582731420827d64c9",
+      "bytes": 28907
+    },
+    "shared-remote-chat-phone-dark.png": {
+      "sha256": "cc7ed65f2ae3359e0543e9eca7d3b841cd429611f7ab5cb335a0df969c5b4c8f",
+      "bytes": 25965
+    },
+    "shared-remote-chat-phone-light.png": {
+      "sha256": "89804776ae9d95b44e0de2f6f3bd3a4fd8f634f76bd055c6c796647a8b4742fd",
+      "bytes": 25112
+    },
+    "shared-remote-chat-unshared-dark.png": {
+      "sha256": "e0a9185ff6d0e8f3849509363b15ea2e000750ff824ac8e91d47b9480aec605d",
+      "bytes": 16086
     },
     "shell-mention-chip.png": {
       "sha256": "649e11c323c40ef70a1d6497afb4ecdc1c83866b1c70a3f6b904ec1f2dc17214",

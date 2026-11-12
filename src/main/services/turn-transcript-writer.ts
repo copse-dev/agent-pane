@@ -169,6 +169,7 @@ export class TurnTranscriptWriter {
         if (thread)
           this.deps.snapshot?.({
             projectId,
+            source: 'disk',
             thread,
             checkpoint: { stream: null, pendingTurn: null },
           })
@@ -183,6 +184,7 @@ export class TurnTranscriptWriter {
       this.deps.snapshot?.(
         structuredClone({
           projectId: session.projectId,
+          source: 'runtime',
           thread,
           checkpoint: session.reducer.checkpoint(session.threadId),
         }),

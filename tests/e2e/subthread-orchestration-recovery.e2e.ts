@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { $, browser, expect } from '@wdio/globals'
@@ -124,6 +124,27 @@ describe('persistent subthread recovery and revocation', function () {
 
   after(() => {
     resetUserData()
+  })
+
+  afterEach(function () {
+    if (this.currentTest?.state !== 'failed') return
+    // Preserve the actual restored queue before profile cleanup. A timeout's
+    // screenshot cannot distinguish a lost message, stale pause or status race.
+    try {
+      const threads = threadDirectories().map((id) => ({
+        id,
+        metadata: readFileSync(metaPath(id), 'utf8'),
+        events: readFileSync(join(e2eWorkspaceDir(), PROJECT, id, 'events.jsonl'), 'utf8'),
+      }))
+      const dir = join(process.cwd(), 'e2e-failure-artifacts')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(
+        join(dir, `subthread-recovery-${String(Date.now())}.state.json`),
+        JSON.stringify({ settings: settings(), threads }, null, 2),
+      )
+    } catch (error) {
+      console.warn('Could not retain subthread recovery state', error)
+    }
   })
 
   it('restores real ownership and holds a revoked child queue after Electron restarts', async () => {
