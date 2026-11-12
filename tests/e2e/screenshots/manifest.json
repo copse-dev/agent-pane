@@ -4214,8 +4214,8 @@
       "bytes": 109449
     },
     "settings-classifiers-agent-permission.png": {
-      "sha256": "3ccc70f28c84ab371384ae020efa0133029a090b3198656ea5ced105c9b25bd4",
-      "bytes": 271125
+      "sha256": "6836b8f4b711b9616dfbf4c114d6cf238b2c342b2cd20c3b01ff47ad84079ede",
+      "bytes": 283015
     },
     "settings-classifiers-background.png": {
       "sha256": "852693280f257aad43804f2e54cce3b1b2e52111c8139ee665982b2ce0419fba",
@@ -4226,12 +4226,12 @@
       "bytes": 208646
     },
     "settings-classifiers-error.png": {
-      "sha256": "b32f1d8ffd3e1d6fcd7c0e09d39ea86c9db9bded7fe42e108b41b95e3291b30c",
-      "bytes": 177586
+      "sha256": "c5199c18facaadd12ecc6bbf3a33d9538bc22812ba96eb02add9872cd864af99",
+      "bytes": 181594
     },
     "settings-classifiers-glide.png": {
-      "sha256": "81cadb5a2cb2be0345b8113ce61e0b91d3307f96a63f7b8e394c58f9828a88dd",
-      "bytes": 242222
+      "sha256": "4fc4a496aad98c133f13636ba638f8c72a3a9c2ac890ad7db1cb64747046074d",
+      "bytes": 249083
     },
     "settings-classifiers-install-bad-revision.png": {
       "sha256": "981c1c02e647d522847d98ef49e24464a874d89347bd188e974a0364733215e9",
@@ -4262,8 +4262,8 @@
       "bytes": 14253
     },
     "settings-classifiers-install-test.png": {
-      "sha256": "33834ad923ad446d662d54f61564e1dd929694bd35cec5cbb0e9cda70fe54bc4",
-      "bytes": 176815
+      "sha256": "4a96fe98779558c3810a11e0ab9eab302aa4f2a8e8b05fab01ca1a80c5b43926",
+      "bytes": 186999
     },
     "settings-classifiers-install-uninstall-confirm.png": {
       "sha256": "6614d34aa44219b1f6cff2e32ffc9fc80e1c86ead9f42e51f4cb753b5784a691",
@@ -4288,6 +4288,10 @@
     "settings-classifiers-local-offer.png": {
       "sha256": "169b4c1d064d2b09903145c1e5b13a376d0b3948cd9dc4c46371c9bacfbe2dae",
       "bytes": 14484
+    },
+    "settings-classifiers-local-strands-preset.png": {
+      "sha256": "908acd174be313ec95727e2da0b2f877b45dd6efe85e8b64f1bf6c94b067e423",
+      "bytes": 61254
     },
     "settings-classifiers-options.png": {
       "sha256": "74154fb313aa55bd7784db8def142a22b4f5b150d6f60a8310df6fdb397f68b2",
@@ -4482,8 +4486,8 @@
       "bytes": 270452
     },
     "settings-machines-classifier.png": {
-      "sha256": "4f5523791e00f999a0e4da7d5212744534c27d3891b8678ae8943a32c1bcea25",
-      "bytes": 229922
+      "sha256": "66ac7b7b3a3525f76d7c0c58543818aac9c3ad4b7b5376b2489ac8c78f92ed0b",
+      "bytes": 223192
     },
     "settings-machines-connected.png": {
       "sha256": "92cbb6ca187e225ba8be87e738fa7473ca325dc53b40bedbb4601192d58ae82c",
