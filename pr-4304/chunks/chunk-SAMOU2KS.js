@@ -1,7 +1,7 @@
 import {
   dompurifyBackend,
   init_sanitize_dompurify
-} from "./chunk-D55J6ZRP.js";
+} from "./chunk-X6JZSFJR.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-WYJRFZZW.js";
+} from "./chunk-TYQO7O5R.js";
 import {
   clear,
   el,
@@ -29255,7 +29255,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-PRYAKWO4.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
