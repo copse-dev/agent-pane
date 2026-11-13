@@ -20,7 +20,7 @@ import {
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
@@ -157,7 +157,7 @@ describe('local provider default worktree isolation', () => {
     assert.equal(initialStatus, '')
 
     await setComposerValue('Create the requested fixture file in this task checkout.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () => {
         const stop = $('.stop-btn')

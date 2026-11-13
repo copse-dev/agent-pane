@@ -6,7 +6,7 @@ import {
   seedStableWorkspace,
   seedThreadReferenceFixture,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
@@ -153,7 +153,7 @@ describe('@-reference past threads (#644)', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread').getElement()
     await sentChip.waitForDisplayed({ timeout: 30_000 })

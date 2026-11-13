@@ -5,7 +5,7 @@ import {
   seedScrollToBottomFixture,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
@@ -308,7 +308,7 @@ describe('scroll to bottom', () => {
       ],
     })
     await setComposerValue(STREAMING_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await browser.waitUntil(
       async () => {
@@ -353,7 +353,7 @@ describe('scroll to bottom', () => {
       ],
     })
     await setComposerValue(STREAMING_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await browser.waitUntil(
       async () => {

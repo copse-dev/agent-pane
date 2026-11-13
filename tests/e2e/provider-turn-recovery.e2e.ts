@@ -3,6 +3,7 @@ import { INTERRUPTED_TURN_CONTINUATION } from '../../src/renderer/controller/tur
 import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 function seedInterruptedProviderTurn(workspaceRoot: string, externalTask = false): void {
   const projectId = 'e2e-provider-recovery-project'
@@ -161,6 +162,7 @@ describe('explicit provider turn recovery', () => {
     await savePreparedElementScreenshot('.messages-list', 'provider-turn-recovery.png')
 
     await card.$('button*=Retry this turn').click()
+    await acceptProtectedPrompt()
     await browser.waitUntil(
       async () => (await $$('.messages-list .msg-user').getElements()).length === 3,
       {

@@ -1,6 +1,7 @@
 import { at } from '@copse/std/array-utils.ts'
 import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -180,6 +181,7 @@ describe('fork a thread and resend the last message', function () {
       ],
     })
     await latestPrompt.$('.msg-resend').click()
+    await acceptProtectedPrompt()
 
     // The prompt is appended again — history is added to, never rewritten.
     await browser.waitUntil(

@@ -15,6 +15,7 @@ import { installMockScenario, expectAssistantReply } from './helpers/mock-scenar
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const projectId = 'e2e-mobile-control'
 const token = randomBytes(32).toString('hex')
@@ -209,6 +210,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       started,
       'duplicate delivery returns the same chat',
     )
+    await acceptProtectedPrompt()
     await $('#ask-user-dialog').waitForDisplayed({ timeout: 30_000 })
     const waiting = request(`/api/thread/${projectId}/${threadId}`)
     const question = waiting.decisions?.find((decision) => decision.kind === 'question')
@@ -249,6 +251,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).error ?? '',
       /already changed/,
     )
+    await acceptProtectedPrompt()
     await waitForAgentIdle(60_000)
     await expectAssistantReply('Your phone started this chat and queued this follow-up.')
     await scenario.assertComplete()
@@ -282,6 +285,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).ok,
       true,
     )
+    await acceptProtectedPrompt()
     await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     const approval = request(`/api/thread/${projectId}/${threadId}`).decisions?.find(
       (decision) => decision.kind === 'approval',
@@ -338,6 +342,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
         .ok,
       true,
     )
+    await acceptProtectedPrompt()
     await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     const once = request(`/api/thread/${projectId}/${threadId}`).decisions?.find(
       (decision) => decision.kind === 'approval',
@@ -392,6 +397,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).ok,
       true,
     )
+    await acceptProtectedPrompt()
     await stopScenario.waitForHold('phone-stop')
     const running = request(`/api/thread/${projectId}/${threadId}`)
     assert.ok(running.runId)

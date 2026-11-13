@@ -11,7 +11,7 @@ import {
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import {
@@ -38,7 +38,7 @@ function git(cwd: string, args: string[]): string {
  */
 async function sendAndAwaitReply(prompt: string, reply: string): Promise<void> {
   await setComposerValue(prompt)
-  await $('.submit-btn').click()
+  await submitComposer()
   await browser.waitUntil(
     async () =>
       (

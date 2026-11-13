@@ -10,6 +10,7 @@ import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 describe('Changes chip includes committed branch work', () => {
   let temporaryRoot = ''
@@ -66,7 +67,7 @@ describe('Changes chip includes committed branch work', () => {
     await prepareMockTurn('Review the committed change.', [
       { text: 'The committed change replaces one line with two in example.txt.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle(20_000)
 
     await $('.follow-up-bubble-changes').waitForDisplayed({ timeout: 30_000 })

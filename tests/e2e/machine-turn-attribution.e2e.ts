@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedMachineTurnAttributionFixture } from './helpers/seed-config.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -54,14 +54,14 @@ describe('machine turn attribution', function () {
       ],
     })
     await setComposerValue('Check the final diff.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await expect($('.submit-btn')).toHaveText('Queue')
     await expect($('.submit-btn')).toHaveAttribute('aria-label', 'Queue message')
     await expect($('.footer-running')).not.toBeExisting()
 
     await setComposerValue('Then prepare the handoff summary.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await $('.conversation-queued .msg-queued').waitForExist({ timeout: 5_000 })
     await expect($('.conversation-queued .message-text')).toHaveText(
       'Then prepare the handoff summary.',
@@ -70,6 +70,7 @@ describe('machine turn attribution', function () {
 
     await saveAppScreenshot('machine-turn-attribution.png')
     await scenario.release('inspection')
+    await acceptProtectedPrompt()
     await expectAssistantReply('The handoff summary is ready for review.')
     await waitForAgentIdle(15_000)
   })

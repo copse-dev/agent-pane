@@ -6,6 +6,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 /**
  * Quitting Copse used to throw the canvas away: the Browser pane holds each
@@ -72,7 +73,7 @@ describe('browser session restore', function () {
       { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
       'The sales dashboard is ready in the Browser pane.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply('The sales dashboard is ready in the Browser pane.')
     await waitForAgentIdle(25_000)
     await scenario.assertComplete()

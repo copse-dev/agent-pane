@@ -5,7 +5,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { setComposerValue, composerText } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -128,7 +128,7 @@ describe('Pasting text into the composer', () => {
     // Send it: the paste must render in the transcript as an inline SVG-icon
     // chip (composer block -> Message.attachments -> conversation.ts), not an
     // emoji or the raw pasted text.
-    await $('.submit-btn').click()
+    await submitComposer()
     // The sent row keeps re-rendering while the reply streams in, so an element
     // handle taken from it goes stale between finding the chip and reading it
     // (a WebDriver "stale element reference" in CI). Read the chip in-page,
@@ -216,7 +216,7 @@ describe('Pasting text into the composer', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(async () => (await $$(sentChips).getElements()).length > before, {
       timeout: 10_000,
       timeoutMsg: 'expected the sent paste to render a transcript chip',

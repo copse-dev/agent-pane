@@ -19,6 +19,7 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { shouldUseChromiumHeadless } from './helpers/display-mode.mts'
 import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const projectId = 'e2e-paired-browser'
 const deviceLabel = 'Paired browser acceptance'
@@ -313,10 +314,12 @@ describe('real paired browser chat with the desktop window closed', function () 
     assert.equal(await mobile().$('.prompt-input').getText(), first)
     await mobile().$('.submit-btn').click()
     await mobile().waitUntil(async () => (await mobile().$('.prompt-input').getText()) === '')
+    await acceptProtectedPrompt()
     await mobile().$('.remote-decision textarea').waitForExist()
     await mobile().$('button=Focused tests').click()
     await send(followup)
     await mobile().$('button=Send answers').click()
+    await acceptProtectedPrompt()
     await mobile().$('button=Approve').waitForExist()
     await mobile().$('button=Approve').click()
     await waitText('The approved command completed.')
@@ -419,6 +422,7 @@ describe('real paired browser chat with the desktop window closed', function () 
       ],
     })
     await send('Wait until I stop this run from my phone.')
+    await acceptProtectedPrompt()
     await scenario.waitForHold('phone-stop')
     await mobile().$('.stop-btn').waitForDisplayed()
     await mobile().$('.prompt-input').setValue('Keep this unsent draft.')
