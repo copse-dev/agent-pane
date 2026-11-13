@@ -101,6 +101,13 @@ export interface ModelOption {
   shortLabel?: string
   group?: string
   disabled?: boolean
+  /**
+   * The saved selection still runs, but this list offers its direct successor.
+   * Such a row is `disabled` only because reselecting it is a no-op, so the
+   * picker keeps it at full strength rather than fading it like a row that
+   * cannot run (blocked, plugin disabled, missing account, ...).
+   */
+  superseded?: boolean
   /** Billing coverage of this concrete route; automatic/placeholder rows omit it. */
   coverage?: ModelCoverage
   /** Image-input support when known; absent means the provider did not advertise it. */
@@ -809,6 +816,9 @@ export async function fetchModelOptions(
         ...option,
         label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
         disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...(option.disabled === true ? {} : { superseded: true }),
       },
     ]
   })

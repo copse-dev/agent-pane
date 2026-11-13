@@ -152,9 +152,11 @@
   max-height: 240px;
   overflow: auto;
   margin-bottom: var(--spacing-sm);
-  border: 1px solid var(--border);
+  /* A scrolling picker keeps a visible region, as a well rather than a frame.
+     The dialog is --bg-elevated, so the well takes the field colour. */
   border-radius: var(--radius);
   padding: var(--spacing-xs);
+  background: var(--bg-input);
 }
 .remote-folder-entry {
   text-align: left;
@@ -185,9 +187,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: var(--spacing-sm) 0;
 }
 .ssh-host-summary {
   flex: 1 1 auto;

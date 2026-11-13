@@ -3,7 +3,7 @@ import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
-import { expectBoolean } from '@shared/unknown-value.ts'
+import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
@@ -20,7 +20,7 @@ const PREVIEW_WIDTH = DEFAULT_WIDTH
 // shrank body text to under a third of its size (#3240). Zooming instead of
 // resizing keeps the full-width bitmap: at 2× the page reflows at 640 CSS px
 // and still rasters at 1280 device px, so text stays sharp in a wide card.
-export const PREVIEW_ZOOM_FACTOR = 2
+const PREVIEW_ZOOM_FACTOR = 2
 
 /** The parts of a captured `NativeImage` that a preview needs. */
 interface PreviewImage {
@@ -30,21 +30,48 @@ interface PreviewImage {
   toDataURL(): string
 }
 
-/** The parts of a tab's `webContents` that a preview capture touches. */
+interface PreviewDebugger {
+  isAttached: () => boolean
+  attach: (version: string) => void
+  detach: () => void
+  sendCommand: (method: string, params: Record<string, unknown>) => Promise<unknown>
+}
+
+/** The native boundaries needed to capture a preview. */
 interface PreviewContents {
+  debugger: PreviewDebugger
   getZoomFactor(): number
   setZoomFactor(factor: number): void
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
-  capturePage(): Promise<PreviewImage>
 }
 
-/**
- * Reads layout, so the page has applied the new zoom before `capturePage`.
- * Never wait on `requestAnimationFrame` here: a hidden agent tab schedules no
- * frames until `capturePage` makes it paint, so that wait never resolves and
- * the canvas tool call awaiting the preview hangs with it.
- */
-const LAYOUT_SCRIPT = 'document.documentElement.getBoundingClientRect().width'
+/** Wait for Chromium to acknowledge zoom, without relying on hidden-tab animation frames. */
+function previewLayoutScript(width: number): string {
+  return `(async () => {
+    const deadline = performance.now() + 5000;
+    while (Math.abs(window.innerWidth - ${String(width / PREVIEW_ZOOM_FACTOR)}) > 1) {
+      if (performance.now() >= deadline) throw new Error('Preview zoom did not reach the renderer');
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  })()`
+}
+
+/** Bound native IPC even when the renderer cannot run its own deadline. */
+async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('Preview capture timed out'))
+        }, 5000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /**
  * The latest preview capture queued on each tab. Two quick re-renders of one
@@ -61,29 +88,56 @@ const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
  */
 export function capturePreviewDataUrl(
   wc: PreviewContents,
+  decodeImage: (dataUrl: string) => PreviewImage,
   maxWidth = PREVIEW_WIDTH,
+  viewportWidth = DEFAULT_WIDTH,
 ): Promise<string | null> {
   const previous = previewCaptures.get(wc) ?? Promise.resolve(null)
   // `captureAtPreviewZoom` never rejects, so one failed capture cannot stall
   // the queue behind it.
-  const capture = previous.then(() => captureAtPreviewZoom(wc, maxWidth))
+  const capture = previous.then(() =>
+    captureAtPreviewZoom(wc, decodeImage, maxWidth, viewportWidth),
+  )
   previewCaptures.set(wc, capture)
   return capture
 }
 
-async function captureAtPreviewZoom(wc: PreviewContents, maxWidth: number): Promise<string | null> {
+async function captureAtPreviewZoom(
+  wc: PreviewContents,
+  decodeImage: (dataUrl: string) => PreviewImage,
+  maxWidth: number,
+  viewportWidth: number,
+): Promise<string | null> {
   const zoom = wc.getZoomFactor()
+  let attachedHere = false
   try {
+    if (!wc.debugger.isAttached()) {
+      wc.debugger.attach('1.3')
+      attachedHere = true
+    }
     wc.setZoomFactor(PREVIEW_ZOOM_FACTOR)
-    await wc.executeJavaScript(LAYOUT_SCRIPT, false)
-    // A hidden tab paints only while `capturePage` holds it visible, so the
-    // first capture can still copy the frame from before the zoom. Discard it;
-    // the second capture sees the zoomed layout that the first one painted.
-    await wc.capturePage()
-    const image = await wc.capturePage()
+    // setZoomFactor updates the main-process value before the renderer applies
+    // it. A single layout read can still return the desktop viewport, and two
+    // immediate captures can therefore both copy the unzoomed frame (#3240).
+    // Use the window's content size: a previous zoom restoration may itself
+    // still be pending in the renderer, so its current innerWidth is not a base.
+    await waitForPreviewOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
+    // Page.captureScreenshot requests a fresh compositor frame. capturePage()
+    // can return the same cached pre-zoom (or blank) surface twice, even after
+    // the DOM reports the new viewport. This works in native and headless mode.
+    const response: unknown = await waitForPreviewOperation(
+      wc.debugger.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        fromSurface: true,
+        captureBeyondViewport: false,
+      }),
+    )
+    const data = expectString(expectRecord(response, 'preview screenshot')['data'], 'preview PNG')
+    const image = decodeImage(`data:image/png;base64,${data}`)
     if (image.isEmpty()) return null
-    const { width } = image.getSize()
-    const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
+    const { width: imageWidth } = image.getSize()
+    const scaled =
+      imageWidth > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
     return scaled.toDataURL()
   } catch {
     return null
@@ -92,6 +146,13 @@ async function captureAtPreviewZoom(wc: PreviewContents, maxWidth: number): Prom
       wc.setZoomFactor(zoom)
     } catch {
       // The tab closed mid-capture; there is no zoom left to restore.
+    }
+    if (attachedHere) {
+      try {
+        wc.debugger.detach()
+      } catch {
+        /* The tab may have closed. */
+      }
     }
   }
 }
@@ -211,8 +272,16 @@ export class BrowserSessionManager {
         contextIsolation: true,
         nodeIntegration: false,
         backgroundThrottling: false,
+        // Hidden native windows do not present fresh compositor frames on Linux.
+        // Offscreen rendering keeps the agent tab paintable without showing a
+        // window, so Page.captureScreenshot can finish after zoom is applied.
+        offscreen: true,
       },
     })
+    // Chromium headless can ignore the constructor bounds and leave a hidden
+    // window at 400×268. Enforce the agent viewport before navigation; otherwise
+    // a preview at 2× zoom magnifies a 200px reading column and clips its text.
+    window.setContentSize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
     const tab: Tab = { id, window }
     window.on('closed', () => {
       this.tabs = this.tabs.filter((t) => t.id !== id)
@@ -302,7 +371,13 @@ export class BrowserSessionManager {
   async capturePreview(viewId: string, maxWidth = PREVIEW_WIDTH): Promise<string | null> {
     const tab = this.tabs.find((t) => t.id === viewId)
     if (!tab) return null
-    return capturePreviewDataUrl(tab.window.webContents, maxWidth)
+    const { nativeImage } = await import('electron')
+    return capturePreviewDataUrl(
+      tab.window.webContents,
+      (dataUrl) => nativeImage.createFromDataURL(dataUrl),
+      maxWidth,
+      tab.window.getContentSize()[0],
+    )
   }
 
   async click(ref: string, viewId?: string): Promise<string> {

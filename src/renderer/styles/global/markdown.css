@@ -581,9 +581,9 @@ html.mark-external-links
   font-family: var(--font-mono);
   white-space: pre;
 }
+/* An empty state reads as plain muted text, not a slant (docs/ui-taste.md). */
 .code-block-output-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 /* GFM table copy control (#615): mirror the code-block hover affordance. The
    shell carries the table's block margin so wrapping causes no layout shift, and

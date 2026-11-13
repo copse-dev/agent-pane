@@ -20,6 +20,7 @@ import {
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
+import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
 import {
   COMPUTER_USE_PLUGIN_ID,
   COMPUTER_USE_TOOL_NAMES,
@@ -34,7 +35,8 @@ import {
   setDefaultPluginRegistry,
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
-import { BRIDGE_TOOL_NAMES, isAgentInputSchema } from './acp/acp-native-bridge.ts'
+import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
+import { agentInputSchemaProblem } from './tool-input-schema.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -67,8 +69,10 @@ it('exports object parameter envelopes for native tools sent to compatible local
   assert.throws(() => {
     registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
   })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
   assert.throws(() => {
-    registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
   })
 })
 
@@ -649,17 +653,70 @@ describe('ACP bridge exposure decisions', () => {
     }
   })
 
-  it('gives every bridged core tool an input schema agents accept (#4142)', () => {
-    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
-    const rejected = createRegistry()
-      .toMcpTools()
-      .filter(
-        (tool) => BRIDGE_TOOL_NAMES.includes(tool.name) && !isAgentInputSchema(tool.inputSchema),
+  it('offers every core and first-party plugin tool to agents, natively and over MCP (#4142)', async () => {
+    // Everything first-party on at once: every plugin, every setting- and
+    // credential-gated tool, and the paths that register only on a Mac.
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    await setSetting('modelClassifierEnabled', true)
+    await setSetting('orchestrationStrategyEnabled', true)
+    await setSetting('browserToolsEnabled', true)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'tavily-fixture')
+    setApiKey('openai', 'test-key')
+    setGhAvailableForTest(true)
+    setSkillsForTest([
+      {
+        name: 'demo-skill',
+        description: 'A skill, so read_skill registers',
+        source: 'project',
+        skillRoot: '/skills/demo-skill',
+        skillPath: '/skills/demo-skill/SKILL.md',
+        userInvocable: true,
+        disableModelInvocation: false,
+        paths: [],
+        externalLinks: [],
+        missingReferences: [],
+      },
+    ])
+    try {
+      // Registering refuses a first-party schema no agent could list, so a
+      // union-shaped tool fails right here, wherever it would be registered.
+      const registry = createRegistry()
+      syncComputerUseTools(registry, 'darwin')
+      syncAppleDevelopmentTools(registry, 'darwin')
+      registerSkillTools(registry)
+      const registered = registry.names().sort()
+
+      const pluginToolNames = plugins.all().flatMap((plugin) => plugin.contributions.toolNames)
+      assert.deepEqual(
+        pluginToolNames.filter((name) => !registry.has(name)),
+        [],
+        'every first-party plugin tool is registered, so this test covers its schema',
       )
-      .map((tool) => tool.name)
-    assert.deepEqual(rejected, [], 'a bridged tool needs a top-level object input schema')
-    assert.equal(isAgentInputSchema({ anyOf: [{ type: 'object' }] }), false)
-    assert.equal(isAgentInputSchema({ type: 'object', anyOf: [] }), false)
+      for (const name of [...BRIDGE_TOOL_NAMES, 'device_hub', 'isolated_copse']) {
+        assert.ok(registry.has(name), `${name} is covered`)
+      }
+
+      const mcp = registry.toMcpTools()
+      assert.deepEqual(mcp.map((tool) => tool.name).sort(), registered, 'none left out over MCP')
+      const native = registry.toLLMTools()
+      assert.deepEqual(native.map((tool) => tool.name).sort(), registered, 'none left out natively')
+      const rejected = [
+        ...mcp
+          .filter((tool) => agentInputSchemaProblem(tool.inputSchema) !== null)
+          .map((t) => `mcp:${t.name}`),
+        ...native
+          .filter((tool) => agentInputSchemaProblem(tool.parameters) !== null)
+          .map((t) => t.name),
+      ]
+      assert.deepEqual(rejected, [], 'every tool needs a top-level object input schema')
+    } finally {
+      await setSetting('browserToolsEnabled', BROWSER_TOOLS_DEFAULT_ENABLED)
+      await setSetting('webSearchProvider', 'none')
+      deleteApiKey('tavily')
+      setSkillsForTest([])
+    }
   })
 
   it('classifies every first-party plugin tool for ACP exposure', () => {

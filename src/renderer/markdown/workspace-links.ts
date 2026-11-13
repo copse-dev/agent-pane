@@ -51,8 +51,13 @@ export function bindWorkspaceLinkClicks(
     if (artifact?.[1] && artifact[2]) {
       event.preventDefault()
       event.stopPropagation()
+      const owner = getActiveThreadOwner(store)
+      if (!owner) {
+        showErrorToast('Failed to save agent artifact', 'No active chat')
+        return
+      }
       void api.remoteAgent
-        .downloadArtifact(`openai:${artifact[1]}`, artifact[2])
+        .downloadArtifact({ ...owner, agentId: `openai:${artifact[1]}`, path: artifact[2] })
         .catch((error: unknown) => {
           showErrorToast('Failed to save agent artifact', error)
         })

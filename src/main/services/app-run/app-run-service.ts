@@ -17,7 +17,10 @@ import {
 } from '@shared/types/app-run.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { getProjectRoot } from '../workspace.ts'
-import { resolveThreadExecutionContext } from '../thread-execution-context.ts'
+import {
+  inspectThreadReadRoot,
+  resolveThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { isAppleDevelopmentProjectSupported } from '../apple-development/apple-development-service.ts'
 import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -68,10 +71,20 @@ async function resolveRoot(owner: AppRunOwner): Promise<string> {
   if (!root) throw new Error('The project is no longer available.')
   return realpath(root)
 }
+
+/** Automatic capability checks never restore a released thread checkout. */
+async function inspectRoot(owner: AppRunOwner): Promise<string | null> {
+  if (!owner.threadId) return resolveRoot(owner)
+  if (!isAppleDevelopmentProjectSupported(owner.projectId))
+    throw new Error('App running currently requires a local macOS project.')
+  const root = await inspectThreadReadRoot(owner.projectId, owner.threadId)
+  return root ? realpath(root) : null
+}
 export class AppRunService {
   private readonly holdStorage: () => Promise<() => Promise<void>>
   private readonly drivers: Record<AppRunPlatform, AppRunDriver>
   private readonly resolveRoot: (owner: AppRunOwner) => Promise<string>
+  private readonly inspectRoot: (owner: AppRunOwner) => Promise<string | null>
   private readonly present: (id: string, owner: AppRunOwner) => Promise<void>
   private readonly discoveries = new Map<string, { root: string; result: AppRunDiscovery }>()
   private readonly discoveryControllers = new Map<string, AbortController>()
@@ -85,6 +98,7 @@ export class AppRunService {
       android: new AndroidAppDriver(),
     }
     this.resolveRoot = dependencies.resolveRoot ?? resolveRoot
+    this.inspectRoot = dependencies.resolveRoot ?? inspectRoot
     this.present =
       dependencies.present ??
       (async (id, owner): Promise<void> => {
@@ -94,7 +108,8 @@ export class AppRunService {
   }
   async detect(owner: AppRunOwner): Promise<boolean> {
     try {
-      const root = await this.resolveRoot(owner)
+      const root = await this.inspectRoot(owner)
+      if (!root) return false
       return (await Promise.all(Object.values(this.drivers).map((d) => d.detect(root)))).some(
         Boolean,
       )
@@ -175,7 +190,7 @@ export class AppRunService {
     })
   }
   async operations(owner: AppRunOwner): Promise<AppRunOperation[]> {
-    await this.resolveRoot(owner)
+    if (!(await this.inspectRoot(owner))) return []
     const stored = read().operations.filter((op) => ownerKey(op.owner) === ownerKey(owner))
     const result = new Map(
       stored.map((op) => [

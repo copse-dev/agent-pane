@@ -26,6 +26,7 @@ interface Harness {
   logs: string[]
   state: {
     link: RemoteAgentLink | null
+    cursorAgentIds: string[]
     apiKey: string
     signedUrl: string
     sandbox: boolean
@@ -40,6 +41,7 @@ function harness(overrides: Partial<ArtifactImageServiceDependencies> = {}): Har
   const logs: string[] = []
   const state: Harness['state'] = {
     link: LINK,
+    cursorAgentIds: [],
     apiKey: 'key-1',
     signedUrl: SIGNED,
     sandbox: true,
@@ -48,11 +50,14 @@ function harness(overrides: Partial<ArtifactImageServiceDependencies> = {}): Har
   }
   let nextId = 0
   const service = new ArtifactImageService({
-    readThreadLink: (projectId, threadId): Promise<RemoteAgentLink | null> => {
+    readThreadProvenance: (
+      projectId,
+      threadId,
+    ): Promise<{ link: RemoteAgentLink | null; cursorAgentIds: string[] }> => {
       if (projectId !== 'p1' || threadId.startsWith('missing')) {
         return Promise.reject(new Error('unknown thread'))
       }
-      return Promise.resolve(state.link)
+      return Promise.resolve({ link: state.link, cursorAgentIds: state.cursorAgentIds })
     },
     credentials: (): { baseUrl: string; apiKey: string } => ({
       baseUrl: 'https://api.cursor.com',
@@ -114,6 +119,37 @@ describe('ArtifactImageService', () => {
   it('accepts an agent selector that matches the durable link', async () => {
     const h = harness()
     assert.equal((await h.service.load({ ...REQUEST, agentId: 'bc-linked' })).ok, true)
+  })
+
+  it('hydrates an older image named by a Cursor launch in the same chat', async () => {
+    const h = harness()
+    h.state.cursorAgentIds = ['bc-linked', 'bc-current']
+    h.state.link = { provider: 'cursor', agentId: 'bc-current', createdAt: 2 }
+    assert.equal((await h.service.load({ ...REQUEST, agentId: 'bc-linked' })).ok, true)
+    assert.deepEqual(h.metadataCalls, [
+      { agentId: 'bc-linked', path: 'artifacts/shot.png', apiKey: 'key-1' },
+    ])
+    h.state.link = { provider: 'openai', agentId: 'openai-current', createdAt: 3 }
+    assert.equal((await h.service.load({ ...REQUEST, agentId: 'bc-linked' })).ok, true)
+    assert.equal(h.hostJobs.length, 1)
+    h.state.cursorAgentIds = []
+    assert.deepEqual(await h.service.load({ ...REQUEST, agentId: 'bc-linked' }), {
+      ok: false,
+      code: 'unlinked-agent',
+      retryable: false,
+    })
+  })
+
+  it('does not use history without a current durable thread link', async () => {
+    const h = harness()
+    h.state.link = null
+    h.state.cursorAgentIds = ['bc-linked']
+    assert.deepEqual(await h.service.load({ ...REQUEST, agentId: 'bc-linked' }), {
+      ok: false,
+      code: 'unlinked-agent',
+      retryable: false,
+    })
+    assert.deepEqual(h.metadataCalls, [])
   })
 
   it('refuses a thread with no durable link before any network request', async () => {
@@ -289,7 +325,7 @@ describe('ArtifactImageService', () => {
     const perThread = new Map<string, number>()
     let threadPeak = 0
     const h = harness({
-      readThreadLink: () => Promise.resolve(LINK),
+      readThreadProvenance: () => Promise.resolve({ link: LINK, cursorAgentIds: [] }),
       runHost: async (job, onFrame) => {
         const thread = job.url.includes('t1') ? 't1' : 'other'
         active++
@@ -320,7 +356,9 @@ describe('ArtifactImageService', () => {
   })
 
   it('refuses work beyond the queue bound', async () => {
-    const h = harness({ readThreadLink: () => Promise.resolve(LINK) })
+    const h = harness({
+      readThreadProvenance: () => Promise.resolve({ link: LINK, cursorAgentIds: [] }),
+    })
     h.state.hostDelay = 30
     const requests = Array.from({ length: 20 }, (_, index) => ({
       ...REQUEST,

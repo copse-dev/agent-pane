@@ -875,10 +875,9 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-base);
+  /* A row on the page, not a card (docs/ui-taste.md, "Settings rows sit on the
+     page"): the gap between rows separates them. */
+  padding: var(--spacing-sm) 0;
 }
 .classifier-local-info {
   display: flex;
@@ -955,8 +954,6 @@ dialog.settings-overlay::backdrop {
 .provider-capability-title {
   margin: 0;
   font-size: var(--font-size-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .provider-panel-embedded {
@@ -1158,10 +1155,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  padding: var(--spacing-md) 0;
 }
 .usage-worth-verdict {
   margin: 0;
@@ -1415,9 +1409,7 @@ dialog.settings-overlay::backdrop {
   margin-top: 6px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.04em;
+  font-size: var(--font-size-xs);
 }
 .frontier-tooltip .tt-muted {
   color: var(--text-muted);
@@ -1426,7 +1418,6 @@ dialog.settings-overlay::backdrop {
 .frontier-tooltip .tt-status {
   margin-top: 6px;
   color: var(--text-secondary);
-  font-style: italic;
 }
 .frontier-tooltip .tt-card-link {
   color: var(--link);
@@ -1612,7 +1603,6 @@ dialog.settings-overlay::backdrop {
 }
 .usage-estimated {
   color: var(--text-muted);
-  font-style: italic;
 }
 .usage-table td code {
   font-size: var(--font-size-sm);
@@ -1675,9 +1665,7 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-md);
 }
 .acp-agent-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
 }
 .acp-agent-card-head {
   display: flex;
@@ -1744,14 +1732,18 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .sources-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
   /* Flex-column item default min-width:auto would let a long hover path
      expand the Sources list past the settings column. */
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  /* The row sits flush with the section text, so a focus ring on a control at
+     its edge (the metadata disclosure) is drawn outside its box. Clip a ring's
+     width further out than the box rather than at it. The ring is the
+     browser's and does not follow --ui-scale, and Chromium drops calc() here,
+     so the margin is a plain length. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 .sources-row-header {
   display: flex;
@@ -1798,8 +1790,13 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+/* A hooks.json authoring problem sits on the warning plate, as a blocked
+   automation does, now that rows have no frame to tint. */
 .sources-row-warning {
-  border-color: var(--warning, #d29922);
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .sources-badge-unsupported {
   color: var(--text-muted);
@@ -2007,8 +2004,6 @@ dialog.settings-overlay::backdrop {
 .hook-test-stream-label {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
 }
@@ -2024,9 +2019,9 @@ dialog.settings-overlay::backdrop {
   max-height: 160px;
   overflow: auto;
 }
+/* An empty state reads as plain muted text, not a slant (docs/ui-taste.md). */
 .hook-test-stream pre.hook-test-stream-empty {
   color: var(--text-muted);
-  font-style: italic;
 }
 
 /* P3 Settings → Plugins list ("about:addons" for feature plugins). One row per
@@ -2092,10 +2087,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  padding: var(--spacing-md) 0;
 }
 .plugin-catalog-card-header {
   display: flex;
@@ -2114,12 +2106,11 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: 2px;
 }
+/* The publisher's own name, as installed plugin rows show it: no capitals. */
 .plugin-catalog-publisher {
   color: var(--text-muted);
   font-size: var(--badge-font-size);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: var(--badge-font-weight);
 }
 .plugin-catalog-status {
   display: flex;
@@ -2268,7 +2259,16 @@ dialog.settings-overlay::backdrop {
 .plugins-group {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  /* Rows sit on the page rather than each in a card, so the space between
+     them is what separates one plugin from the next. */
+  gap: var(--spacing-xl);
+  /* Each row's "Plugin settings" summary is pulled back by --spacing-sm so its
+     label lines up with the row while its hover fill does not (see
+     .plugin-settings-summary). With no card padding to absorb that, the list
+     carries the gutter itself and gives it back outside, so nothing moves and
+     the summary stays inside the list instead of widening it. */
+  margin-inline: calc(-1 * var(--spacing-sm));
+  padding-inline: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
 /* "Active" / "Inactive" over each run of rows. Sans and small — the section's
@@ -2286,18 +2286,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
-/* One plugin reads as a card: it is a discrete object you act on, with a title,
-   a body, and its own settings folded inside. Elevated and roomier than the
-   flat groups around it, per the card convention at the top of this file. */
+/* One plugin is a mark, a name line, a description and its folded settings,
+   sitting on the page without a frame of its own: the gap in `.plugins-group`
+   separates the rows (docs/ui-taste.md, "A plugin row sits on the page"). */
 .plugin-row {
-  background: var(--bg-elevated);
-  /* `--border`, not `--border-subtle`: these cards are the primary object of the
-     section and each one is a decision (on or off), so the edge that says where
-     one plugin ends and the next begins should be legible rather than implied.
-     #333 on the #252526 card was close enough to vanish. */
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -2310,9 +2302,8 @@ dialog.settings-overlay::backdrop {
   align-items: flex-start;
   gap: var(--spacing-md);
 }
-/* The plugin's mark. Sized to span the eyebrow + name pair beside it, with the
-   app-icon tile's corner treatment so the two read as the same family of
-   object. */
+/* The plugin's mark, with the app-icon tile's corner treatment so the two read
+   as the same family of object. */
 .plugin-icon {
   flex: none;
   display: flex;
@@ -2371,17 +2362,17 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
-/* The publisher eyebrow is a caption over the name, not a badge: no frame and
-   wide-tracked caps. It is not a status either, so it stays in text colours —
-   Copse's own plugins are told apart by the mark beside them, not by a warning
-   hue on everyone else's. */
+/* The publisher is part of the name line, after the version ("1.2.3 · Copse"):
+   not a badge, not a caption over the name, and not a status, so it stays in
+   text colours. Copse's own plugins are told apart by the mark beside them, not
+   by a warning hue on everyone else's. */
 .plugin-badge {
   flex: none;
-  align-self: flex-start;
-  font-size: var(--badge-font-size);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.plugin-name-separator {
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .plugin-badge-first-party {
@@ -2389,7 +2380,7 @@ dialog.settings-overlay::backdrop {
 }
 /* User-installed and Cursor-installed name an owner Copse does not control. The
    row itself is styled identically to every other one: origin belongs in the
-   eyebrow, not in a different-shaped card. */
+   name line, not in a different-shaped row. */
 .plugin-badge-user,
 .plugin-badge-cursor {
   color: var(--text-muted);
@@ -2431,8 +2422,8 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
   font-weight: 600;
 }
-/* Inset within the plugin card, so it takes the base surface — matching
-   `--bg-elevated` to the card it sits in would leave it invisible. */
+/* A framed inset under the plugin's name: a review someone has to read before
+   switching the plugin on, so it keeps its own edge on the base surface. */
 .plugin-source-review {
   display: flex;
   flex-direction: column;
@@ -2469,13 +2460,11 @@ dialog.settings-overlay::backdrop {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
-/* Stability sits next to the plugin's name as a `.ui-badge` — a label on the
-   thing, not a shouted status. `plugin.stability` arrives lowercase; the badge
-   recipe supplies the capital. Stable is the default, so it keeps the quiet
-   neutral outline rather than a success hue. */
-/* Experimental is the one thing on the card you must read before flipping the
-   switch, so it takes the interaction accent rather than a status hue — the
-   documented exception in docs/ui-taste.md. */
+/* Only Experimental gets a stability badge — Stable is the default and goes
+   unlabelled. It is a `.ui-badge` beside the name (`plugin.stability` arrives
+   lowercase; the badge recipe supplies the capital) and the one thing on the row
+   you must read before flipping the switch, so it takes the interaction accent
+   rather than a status hue — the documented exception in docs/ui-taste.md. */
 .plugin-badge-experimental {
   color: var(--accent);
   border-color: var(--accent);
@@ -2499,18 +2488,26 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   padding: 2px var(--spacing-sm);
 }
+/* Inside a plugin row the capability counts ("Tools × 2") are facts about the
+   plugin, not things to press, so they read as muted text spaced apart. */
+.plugin-row .plugin-chips {
+  gap: var(--spacing-xs) var(--spacing-md);
+}
+.plugin-row .plugin-chip {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+}
+/* An empty state reads as plain muted text, not a slant (docs/ui-taste.md). */
 .plugin-chips-empty {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  font-style: italic;
 }
-/* "Plugin settings ⌄" — one fold per card holding the manifest fields and any
+/* "Plugin settings ⌄" — one fold per row holding the manifest fields and any
    first-party detail panel. Closed by default: a list of plugins is for deciding
-   which ones you want, and every plugin's form unrolled at once buries that. */
-.plugin-settings-fold {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--spacing-sm);
-}
+   which ones you want, and every plugin's form unrolled at once buries that. The
+   chevron row is its own boundary, so it takes no rule above it. */
 .plugin-settings-summary,
 .settings-disclosure-summary {
   display: flex;
@@ -2565,8 +2562,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .plugin-settings-heading {
   font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--text-muted);
 }
 .plugin-setting-field {
@@ -2670,18 +2665,19 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-status-error {
   color: var(--error);
 }
+/* Both notices sit on the shared flat callout plate; each picks --sev. */
 .automation-attention {
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
 }
 .automation-scheduler-notice {
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  --sev: var(--danger);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
@@ -2765,13 +2761,15 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-row {
   gap: var(--spacing-md);
   justify-content: space-between;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
-  background: var(--bg-base);
+  padding: var(--spacing-sm) 0;
 }
+/* A blocked automation used to tint its frame. With no frame, it sits on the
+   shared warning plate instead (docs/ui-taste.md, "Containment is a plate"). */
 .automation-row-blocked {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  --sev: var(--warning);
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .automation-row-blocked-message {
   color: var(--text-primary);
@@ -2826,6 +2824,30 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
+}
+.automation-preparation-setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+.automation-preparation-review-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.automation-preparation-proposal-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.automation-preparation-review {
+  overflow-wrap: anywhere;
+}
+.automation-preparation-review-commands {
+  display: block;
+  max-height: 16em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
 }
 .automation-label {
   display: flex;
@@ -2927,7 +2949,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-direction: row;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: var(--spacing-sm);
   cursor: pointer;
@@ -2937,7 +2958,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .automation-permission-row:hover {
   background: var(--bg-hover);
-  border-color: var(--border);
 }
 .automation-permission-switch {
   flex: none;
@@ -2964,7 +2984,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-permission-kind {
   flex: none;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 1px 5px;
   color: var(--text-secondary);
   font-size: var(--font-size-3xs);
@@ -3136,23 +3156,23 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.about-licenses-list > li + li {
-  border-top: 1px solid var(--border-subtle);
 }
 .about-license-summary {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-xs) 0;
   cursor: pointer;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
 }
+/* The rows sit flush with the heading; shadows carry the hover fill into a
+   gutter on each side, so the fill moves nothing and adds no overflow. */
 .about-license-summary:hover {
   background: var(--bg-hover);
+  box-shadow:
+    calc(-1 * var(--spacing-sm)) 0 0 var(--bg-hover),
+    var(--spacing-sm) 0 0 var(--bg-hover);
 }
 .about-license-name {
   min-width: 0;
@@ -3170,8 +3190,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
 }
+/* An open licence lines up with its name, which sits flush with the heading. */
 .about-license-body {
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-xs) 0 var(--spacing-md);
 }
 .about-license-meta,
 .about-license-note {
@@ -3201,9 +3222,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 
 .openai-connection-card {
-  padding: var(--spacing-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);

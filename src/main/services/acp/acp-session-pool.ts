@@ -1,3 +1,4 @@
+import type { AcpTranscriptCheckpoint } from './acp-transcript-checkpoint.ts'
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
   agentManagedSessionOptions,
@@ -65,6 +66,7 @@ export interface PooledAcpSession {
   /** When this agent process was spawned — how a fault gets read (see below). */
   openedAt: number
   lastUsedAt: number
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   dispose: () => Promise<void>
 }
 
@@ -135,6 +137,7 @@ function runThreadOperation<T>(threadId: string, operation: () => Promise<T>): P
  * or replaced), kept so the next acquire can reattach to it.
  */
 interface CarryOverCandidate extends AcpSessionCarryOver {
+  transcriptCheckpoint?: AcpTranscriptCheckpoint
   lineage: string
 }
 const carryOverCandidates = new Map<string, CarryOverCandidate>()
@@ -205,29 +208,42 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
     sessionId: entry.open.session.sessionId,
     cwd: entry.cwd,
     hasHistory: entry.open.hasHistory,
+    ...(entry.transcriptCheckpoint ? { transcriptCheckpoint: entry.transcriptCheckpoint } : {}),
   })
 }
+
+/**
+ * Processes whose shutdown failed at least once. Such a process may have kept
+ * writing its agent session after Copse lost track of it, so even once a retry
+ * confirms it stopped, the next process starts a fresh session.
+ */
+const uncertainShutdowns = new WeakSet<PooledAcpSession>()
 
 /**
  * Remove a process from the live pool and wait until it is no longer able to
  * write its agent session. A failed shutdown must also discard the resumable
  * session ID: otherwise a later acquire could attach a second process to the
- * same session while the first one is still alive.
+ * same session while the first one is still alive. `retainOnFailure` keeps that
+ * process pooled instead, so every later reap, acquire or automatic checkout
+ * change retries its shutdown rather than assume the writer is gone.
  */
 async function evictAcpSession(
   threadId: string,
   entry: PooledAcpSession,
-  preserveForResume: boolean,
+  options: { preserveForResume: boolean; retainOnFailure?: true },
 ): Promise<void> {
-  if (preserveForResume) rememberCarryOver(threadId, entry)
-  else carryOverCandidates.delete(threadId)
-  pool.delete(threadId)
+  if (options.preserveForResume && !uncertainShutdowns.has(entry)) {
+    rememberCarryOver(threadId, entry)
+  } else carryOverCandidates.delete(threadId)
+  if (!options.retainOnFailure) pool.delete(threadId)
   try {
     await entry.dispose()
   } catch (err) {
+    uncertainShutdowns.add(entry)
     carryOverCandidates.delete(threadId)
     throw err
   }
+  if (options.retainOnFailure) pool.delete(threadId)
 }
 
 function idleSince(entry: PooledAcpSession): number | null {
@@ -235,49 +251,61 @@ function idleSince(entry: PooledAcpSession): number | null {
   // It must not pin the bridge (or its last activity state) indefinitely.
   if (entry.open.isClosed()) return 0
   const activity = acpSessionActivity(entry.open)
-  if (entry.open.turnStop !== null || activity.hasPendingTools) return null
+  if (sessionHasActiveTurn(entry)) return null
   return Math.max(entry.lastUsedAt, activity.lastUpdateAt)
 }
 
 /** Reap expired sessions and bound the resumable warm cache, oldest first. */
 export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
+  let failure: Error | null = null
   const oldestFirst = [...pool.entries()].sort(
     ([, left], [, right]) => (idleSince(left) ?? Infinity) - (idleSince(right) ?? Infinity),
   )
   for (const [threadId] of oldestFirst) {
-    const didReap = await runThreadOperation(threadId, async () => {
-      const entry = pool.get(threadId)
-      if (!entry) return false
-      // An in-flight turn (including one blocked on session/request_permission)
-      // is not idle — reaping it closes the transport under the open approval
-      // dialog and surfaces as "ACP connection closed" after a long wait.
-      const since = idleSince(entry)
-      if (since === null) return false
-      const expired = entry.open.isClosed() || now - since >= idleMs
-      // Early eviction requires continuity support. Non-resumable agents keep
-      // their existing timeout and handover behavior instead of paying repeated
-      // full transcript replays as the user switches between threads.
-      const warmIdleCount = [...pool.values()].filter(
-        (candidate) =>
-          idleSince(candidate) !== null && (candidate.open.canResume || candidate.open.canLoad),
-      ).length
-      const overBudget =
-        warmIdleCount > MAX_WARM_IDLE_SESSIONS &&
-        now - since >= WARM_IDLE_GRACE_MS &&
-        (entry.open.canResume || entry.open.canLoad)
-      if (!expired && !overBudget) return false
-      // Tear down the live process, but keep the opaque session ID — the next
-      // acquire spawns a fresh transport and reattaches with `session/resume`
-      // or `session/load` instead of replaying the transcript (#830). Keep the
-      // thread operation until disposal settles so no replacement can become a
-      // second writer for that session in the meantime.
-      await evictAcpSession(threadId, entry, true)
-      notifyThreadResourceFinished(threadId)
-      return true
-    })
-    if (didReap) reaped.push(threadId)
+    try {
+      const didReap = await runThreadOperation(threadId, async () => {
+        const entry = pool.get(threadId)
+        if (!entry) return false
+        // An in-flight turn (including one blocked on session/request_permission)
+        // is not idle — reaping it closes the transport under the open approval
+        // dialog and surfaces as "ACP connection closed" after a long wait.
+        const since = idleSince(entry)
+        if (since === null) return false
+        const expired = entry.open.isClosed() || now - since >= idleMs
+        // Early eviction requires continuity support. Non-resumable agents keep
+        // their existing timeout and handover behavior instead of paying repeated
+        // full transcript replays as the user switches between threads.
+        const warmIdleCount = [...pool.values()].filter(
+          (candidate) =>
+            idleSince(candidate) !== null && (candidate.open.canResume || candidate.open.canLoad),
+        ).length
+        const overBudget =
+          warmIdleCount > MAX_WARM_IDLE_SESSIONS &&
+          now - since >= WARM_IDLE_GRACE_MS &&
+          (entry.open.canResume || entry.open.canLoad)
+        if (!expired && !overBudget) return false
+        // Tear down the live process, but keep the opaque session ID — the next
+        // acquire spawns a fresh transport and reattaches with `session/resume`
+        // or `session/load` instead of replaying the transcript (#830). Keep the
+        // thread operation until disposal settles so no replacement can become a
+        // second writer for that session in the meantime.
+        await evictAcpSession(threadId, entry, { preserveForResume: true, retainOnFailure: true })
+        notifyThreadResourceFinished(threadId)
+        return true
+      })
+      if (didReap) reaped.push(threadId)
+    } catch (error) {
+      // A retained uncertain close sorts first and is retried on later ticks.
+      // Report its current failure, while still releasing unrelated sessions
+      // that are safely idle.
+      failure ??=
+        error instanceof Error
+          ? error
+          : new Error('Coding agent session cleanup failed', { cause: error })
+    }
   }
+  if (failure) throw failure
   return reaped
 }
 
@@ -353,7 +381,10 @@ async function acquireAcpSessionUnlocked(
     // permission mode. The departing process's session is the one to carry
     // over. The old process is disposed first: two processes must never write
     // one agent session.
-    await evictAcpSession(opts.threadId, existing, true)
+    await evictAcpSession(opts.threadId, existing, {
+      preserveForResume: true,
+      retainOnFailure: true,
+    })
   }
   // A different agent (or host) never inherits the session: that is a
   // conversation handed to someone else, which the transcript preamble covers.
@@ -472,13 +503,25 @@ async function acquireAcpSessionUnlocked(
     lineage,
     openedAt: Date.now(),
     lastUsedAt: Date.now(),
+    ...(open.resumed && carryOver?.transcriptCheckpoint
+      ? { transcriptCheckpoint: carryOver.transcriptCheckpoint }
+      : {}),
     dispose: () => {
+      // Share a finished or in-flight shutdown, never a failed one: the next
+      // reap, acquire or checkout change asks again, and so either confirms
+      // the writer stopped or reports why it still cannot.
       if (disposal) return disposal
       open.agentInitiated?.end()
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
-        .then(() => {})
+        .then(
+          () => {},
+          (error: unknown) => {
+            disposal = null
+            throw error
+          },
+        )
         .finally(unregisterProcess)
       return disposal
     },
@@ -515,9 +558,49 @@ async function disposeAcpSessionUnlocked(
     if (!options.preserveForResume) carryOverCandidates.delete(threadId)
     return false
   }
-  await evictAcpSession(threadId, entry, options.preserveForResume === true)
+  await evictAcpSession(threadId, entry, { preserveForResume: options.preserveForResume === true })
   notifyThreadResourceFinished(threadId)
   return true
+}
+
+export type IdleAcpSessionResult<T> = { status: 'busy' } | { status: 'released'; value: T }
+
+/**
+ * Release an idle process before changing its checkout, keeping a new acquire
+ * behind the same operation until the checkout change has finished. A prompt
+ * response alone is not proof of idleness: an agent can still own background
+ * tools or start another turn without a Copse prompt.
+ */
+export function withIdleAcpSession<T>(
+  threadId: string,
+  operation: () => Promise<T>,
+): Promise<IdleAcpSessionResult<T>> {
+  // Startup can be waiting for a user. An automatic cleanup must neither wait
+  // for that approval nor queue an unconditional close behind it.
+  if (threadOperations.has(threadId)) return Promise.resolve({ status: 'busy' })
+  return runThreadOperation(threadId, async () => {
+    const entry = pool.get(threadId)
+    if (entry && sessionHasActiveTurn(entry)) return { status: 'busy' }
+    // The guard and connection close run synchronously, before the first
+    // disposal await. No update can start a turn between them.
+    if (entry) {
+      // Keep an uncertain shutdown in the pool: a later automatic mutation
+      // retries it, and runs only once the old writer is confirmed gone.
+      await evictAcpSession(threadId, entry, { preserveForResume: false, retainOnFailure: true })
+      notifyThreadResourceFinished(threadId)
+    }
+    return { status: 'released', value: await operation() }
+  })
+}
+
+function sessionHasActiveTurn(entry: PooledAcpSession): boolean {
+  return (
+    entry.open.updates.hasPendingUpdates() ||
+    entry.open.turnStop !== null ||
+    entry.open.agentInitiated?.isActive() === true ||
+    entry.open.agentInitiatedCancel !== undefined ||
+    acpSessionActivity(entry.open).hasPendingTools
+  )
 }
 
 /**
@@ -527,6 +610,18 @@ async function disposeAcpSessionUnlocked(
 export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
   const entry = pool.get(threadId)
   return entry ? cancelAgentInitiatedTurn(entry.open) : false
+}
+
+/** Runtime ownership includes self-started turns and tools reported between prompts. */
+export function hasActiveAcpTurn(threadId: string): boolean {
+  if (threadOperations.has(threadId)) return true
+  const entry = pool.get(threadId)
+  return entry !== undefined && sessionHasActiveTurn(entry)
+}
+
+/** Revoke every self-started turn's bridge authority before app teardown awaits IO. */
+export function cancelAllAgentInitiatedAcpTurns(): void {
+  for (const entry of pool.values()) cancelAgentInitiatedTurn(entry.open)
 }
 
 /** Tear down every pooled session (app shutdown). */
