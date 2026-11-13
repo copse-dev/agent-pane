@@ -202,6 +202,27 @@ test('an ordinary unsent draft is not a pending automation before or after compa
   }
 })
 
+test('a completed automation follow-up draft is not a new scheduled start, loaded or compacted', () => {
+  const submitted: Message = {
+    id: 'scheduled-prompt',
+    role: 'user',
+    content: 'Run the release check.',
+    toolCalls: [],
+    createdAt: 10,
+  }
+  const completed = thread({
+    status: 'idle',
+    messages: [submitted, message('answer', 'The release check finished.')],
+    draftPrompt: 'Ask about the next release when I return.',
+    automation: { scheduleId: 'release', scheduleName: 'Release check', triggeredAt: 10 },
+  })
+  assert.equal(isAutomationPendingStart(completed), false)
+  assert.equal(isAutomationPendingStart(compactSidebarThread(completed)), false)
+  const metadataOnly = { ...completed, messages: [], messagesLoaded: false, lastPromptAt: 10 }
+  assert.equal(isAutomationPendingStart(metadataOnly), false)
+  assert.equal(isAutomationPendingStart(compactSidebarThread(metadataOnly)), false)
+})
+
 test('a prompt found in the transcript at compaction counts as having run, even with zero usage', () => {
   const usage = { inputTokens: 0, outputTokens: 0 }
   const prompt: Message = {

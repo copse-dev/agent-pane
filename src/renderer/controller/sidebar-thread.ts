@@ -2,7 +2,7 @@ import type { Message, Thread } from '@shared/types'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
-import { automationRunBlock } from '@shared/automation-run-state.ts'
+import { automationRunBlock, hasThreadRun } from '@shared/automation-run-state.ts'
 
 /**
  * Everything the projects sidebar reads off a thread to draw one row: its title,
@@ -114,7 +114,15 @@ export function isAutomationPendingStart(
 ): boolean {
   // Ordinary editable drafts also have draftPrompt, but nothing is starting.
   if (thread.automation === undefined) return false
-  return thread.automationPendingStart === true || automationRunBlock(thread) === 'pending-start'
+  // After its first submitted prompt, a draft is human follow-up work. It is
+  // neither a new scheduled start nor permission to submit it on navigation.
+  if (sidebarHasRun(thread)) return false
+  const pending =
+    thread.automationPendingStart === true || automationRunBlock(thread) === 'pending-start'
+  if (!pending) return false
+  // Metadata-only consumers must not touch an unavailable transcript. A loaded
+  // legacy thread can prove it ran even before lastPromptAt was persisted.
+  return thread.messagesLoaded === false || sidebarLastPromptAt(thread) === undefined
 }
 
 /** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */
@@ -134,8 +142,7 @@ export type RunSignals = SidebarThread &
 export function sidebarHasRun(thread: RunSignals): boolean {
   if (thread.lastPromptAt !== undefined) return true
   if (thread.everRan !== undefined) return thread.everRan
-  if (thread.workingBrief !== undefined || thread.autoTitleCount !== undefined) return true
-  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0
+  return hasThreadRun(thread)
 }
 
 /**
@@ -160,9 +167,7 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.automation
       ? {
-          automationPendingStart:
-            thread.automationPendingStart === true ||
-            automationRunBlock(thread) === 'pending-start',
+          automationPendingStart: isAutomationPendingStart(thread),
         }
       : {}),
     ...(thread.worktree ? { worktree: thread.worktree } : {}),

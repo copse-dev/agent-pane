@@ -93,6 +93,15 @@ refreshes the authoritative transcript and status in any renderer that opened th
 mid-turn; the renderer never re-dispatches that completion. This does not provide
 a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
+Main admission, cleanup and checkout reuse share the renderer's prior-run metadata
+evidence and first-start classification.
+Submitted-prompt or prior-run evidence makes an unsent follow-up a human draft,
+not a scheduled first submission when its project is reopened, nor a pending start
+that blocks later scheduled or branch-CI runs. Running turns and independent live
+checkout owners still block overlapping work. Metadata-only
+views use persisted run evidence; an already loaded legacy transcript can also
+prove the earlier submission without loading history for the sidebar.
+
 On admission or user-requested cleanup, main reconciles an earlier run's persisted
 `running` status even when its project stays closed after a restart. Only a run
 proved absent by the live dispatcher, native/container owners and ACP session state
@@ -151,7 +160,7 @@ run behind it ("live worktree limit"). The next run now takes over that checkout
 of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
 
 - it is the schedule's most recent run that still holds a checkout, that run is settled (not
-  running, no unsent draft), and no terminal, background process or ACP session is live in it;
+  running, no unstarted scheduled draft), and no terminal, background process or ACP session is live in it;
 - the checkout is registered, on its branch, with no merge/rebase in flight, and has no modified,
   staged or untracked (non-ignored) file;
 - its branch holds no commit beyond the base it was cut from, so nothing can be lost;
