@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   BrowserSessionManager,
-  PREVIEW_ZOOM_FACTOR,
   capturePreviewDataUrl,
   setBrowserSessionPlatform,
 } from './session-manager.ts'

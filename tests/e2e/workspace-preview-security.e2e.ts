@@ -129,9 +129,17 @@ describe('workspace preview security', () => {
       )
       return result
     }, target)
-    // A page navigation is asynchronous; allow the attempted request to reach
-    // the fixture before checking that the guest navigation gate prevented it.
-    await browser.pause(300)
+    // A page navigation is asynchronous. Observe it for a bounded window so
+    // a delayed request or a changed guest address cannot slip past the check.
+    const deadline = Date.now() + 500
+    while (Date.now() < deadline && egress.requests.length === 0) {
+      const guestAddress = await browser.execute(() => {
+        const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+        return webview?.getURL()
+      })
+      expect(guestAddress).toBe(originalAddress)
+      await browser.pause(25)
+    }
     expect(egress.requests).toEqual([])
     const guestAddress = await browser.execute(() => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
