@@ -1,7 +1,13 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Message, QueuedUserMessage, Thread, UserContent } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  UserContent,
+} from '@shared/types'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import {
@@ -225,6 +231,27 @@ export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
+/** Snapshot an optimistic bubble for display-only reconciliation in main. */
+function protectedHumanTurnDisplay(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): ProtectedHumanTurnDisplay | undefined {
+  const message = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId && candidate.role === 'user',
+  )
+  if (!message) return undefined
+  return {
+    messageId,
+    snapshot: {
+      content: message.content,
+      ...(message.attachments !== undefined
+        ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+        : {}),
+    },
+  }
+}
+
 /**
  * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
  * message already in the transcript: if the main process turns the run away
@@ -258,14 +285,11 @@ export function dispatchAgentRun(
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
   const run = afterThreadWrites(projectId, threadId, async () => {
     const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    const display = queued
+      ? protectedHumanTurnDisplay(store, threadId, queued.messageId)
+      : undefined
     if (!queued || parentThreadId === undefined) {
-      const result = await api.agent.run(
-        projectId,
-        threadId,
-        runPayload,
-        undefined,
-        queued ? { messageId: queued.messageId } : undefined,
-      )
+      const result = await api.agent.run(projectId, threadId, runPayload, undefined, display)
       if (result === 'cancelled') {
         if (queued) holdCancelledProtectedPrompt(store, threadId, queued)
         else setThreadStatus(store, threadId, 'idle')
@@ -285,7 +309,7 @@ export function dispatchAgentRun(
           threadId,
           runPayload,
           { parentThreadId },
-          { messageId: queued.messageId },
+          display,
         )
         if (result === 'cancelled') holdCancelledProtectedPrompt(store, threadId, queued)
         return

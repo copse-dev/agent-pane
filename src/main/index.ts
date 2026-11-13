@@ -59,6 +59,7 @@ import {
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, ProtectedPromptContextEntry, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import {
   assertPrimaryMainWindow,
   beginMainWindowQuit,
@@ -193,10 +194,15 @@ import { recordContainerRunTurn } from './services/container-runtime/container-r
 import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher, type AgentDispatchPayload } from './services/agent-dispatcher.ts'
 import {
-  protectedPromptContentMatches,
+  protectedPromptMessageMatches,
+  protectedPromptStoredContext,
   ProtectedPromptReviewService,
   withProtectedPromptText,
 } from './windows/protected-prompt-review.ts'
+import {
+  consumeProtectedPromptMessageAppend,
+  hasProtectedPromptMessageAppend,
+} from './services/protected-prompt-receipts.ts'
 import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -338,7 +344,7 @@ function frozenScheduledFirstTurn(
 /** Renderer-supplied controls that affect what the model sees or how its turn runs. */
 function protectedPromptContext(
   payload: AgentDispatchPayload,
-  recoveredHistory: LLMMessage[],
+  inputs: { history: LLMMessage[]; plan: StoredThreadPlan | null },
 ): ProtectedPromptContextEntry[] {
   const context: ProtectedPromptContextEntry[] = []
   const add = (label: string, value: string | undefined): void => {
@@ -364,21 +370,24 @@ function protectedPromptContext(
       : undefined,
   )
   add('Review context', payload.reviewContext)
-  add(
-    'Recovered conversation context',
-    recoveredHistory.length > 0 ? JSON.stringify(recoveredHistory, null, 2) : undefined,
-  )
+  context.push(...protectedPromptStoredContext(inputs.history, inputs.plan))
   return context
 }
 
-/** Freeze renderer-writable transcript recovery before the protected window is shown. */
-async function freezeProtectedRecovery(
+/** Freeze every mutable stored inference input before the protected window is shown. */
+async function freezeProtectedInputs(
   projectId: string,
   threadId: string,
   messages: Parameters<typeof recoverAgentHistory>[0],
-): Promise<LLMMessage[]> {
-  const persisted = await loadAgentHistory(projectId, threadId)
-  return persisted.length > 0 ? [] : recoverAgentHistory(messages)
+): Promise<{ history: LLMMessage[]; plan: StoredThreadPlan | null }> {
+  const [persistedHistory, plan] = await Promise.all([
+    loadAgentHistory(projectId, threadId),
+    getLatestThreadPlan(projectId, threadId),
+  ])
+  return {
+    history: persistedHistory.length > 0 ? persistedHistory : recoverAgentHistory(messages),
+    plan,
+  }
 }
 
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
@@ -954,7 +963,7 @@ app
       (event) => {
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
       },
-      (request, host) => agentDispatcher.dispatch(request, host),
+      (request, host, claim) => agentDispatcher.dispatchScheduled(request, claim, host),
       // The project the receiving window shows; once it is gone nothing would
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
@@ -1146,22 +1155,31 @@ app
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
-        const display = parseIpcArgs(protectedHumanTurnDisplaySchema, [displayArg])
+        // This hint has no inference authority. A stale or malformed renderer
+        // snapshot may forfeit bubble reconciliation, but must not block a
+        // separately reviewed prompt from reaching the dispatcher.
+        const parsedDisplay = protectedHumanTurnDisplaySchema.safeParse(displayArg)
+        const display = parsedDisplay.success ? parsedDisplay.data : undefined
+        const displaySnapshot = display?.snapshot
         const payload = parseAgentRunPayload(rawPrompt)
         const request = { projectId, threadId, payload }
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
         if (delegation) {
           const thread = await getProjectThread(projectId, threadId)
-          const optimistic = display?.messageId
-            ? thread?.messages.find(
-                (message) =>
-                  message.id === display.messageId &&
-                  message.role === 'user' &&
-                  protectedPromptContentMatches(message.content, payload.userContent),
-              )
-            : undefined
-          const protectedRecovery = await freezeProtectedRecovery(
+          const optimistic =
+            thread &&
+            display?.messageId &&
+            displaySnapshot &&
+            hasProtectedPromptMessageAppend(event.sender.id, projectId, threadId, display.messageId)
+              ? thread.messages.find(
+                  (message) =>
+                    message.id === display.messageId &&
+                    message.role === 'user' &&
+                    protectedPromptMessageMatches(message, displaySnapshot, payload.userContent),
+                )
+              : undefined
+          const protectedInputs = await freezeProtectedInputs(
             projectId,
             threadId,
             thread?.messages ?? [],
@@ -1174,7 +1192,7 @@ app
             ...(optimistic?.attachments !== undefined
               ? { attachments: optimistic.attachments }
               : {}),
-            context: protectedPromptContext(payload, protectedRecovery),
+            context: protectedPromptContext(payload, protectedInputs),
             kind: 'human',
           })
           if (!submission) return 'cancelled'
@@ -1183,17 +1201,30 @@ app
             agentDispatcher.dispatch({
               ...request,
               payload: { ...payload, userContent: reviewedContent },
-              protectedRecovery,
+              protectedHistory: protectedInputs.history,
+              protectedPlan: protectedInputs.plan,
               protectedHumanStart: {
                 content: reviewedContent,
-                ...(optimistic !== undefined ? { messageId: optimistic.id } : {}),
+                ...(optimistic
+                  ? {
+                      claimMessageId: (): string | undefined =>
+                        consumeProtectedPromptMessageAppend(
+                          event.sender.id,
+                          projectId,
+                          threadId,
+                          optimistic.id,
+                        )
+                          ? optimistic.id
+                          : undefined,
+                    }
+                  : {}),
               },
             }),
           )
         } else {
           const scheduled =
             payload.automationRun === true &&
-            (await agentDispatcher.dispatchScheduledRenderer(request, async () => {
+            (await agentDispatcher.dispatchScheduled(request, async () => {
               const frozen = frozenScheduledFirstTurn(payload)
               if (!frozen) return false
               const [thread, plan, meta] = await Promise.all([
@@ -1221,15 +1252,24 @@ app
             }))
           if (!scheduled) {
             const thread = await getProjectThread(projectId, threadId)
-            const optimistic = display?.messageId
-              ? thread?.messages.find(
-                  (message) =>
-                    message.id === display.messageId &&
-                    message.role === 'user' &&
-                    protectedPromptContentMatches(message.content, payload.userContent),
-                )
-              : undefined
-            const protectedRecovery = await freezeProtectedRecovery(
+            const optimistic =
+              thread &&
+              display?.messageId &&
+              displaySnapshot &&
+              hasProtectedPromptMessageAppend(
+                event.sender.id,
+                projectId,
+                threadId,
+                display.messageId,
+              )
+                ? thread.messages.find(
+                    (message) =>
+                      message.id === display.messageId &&
+                      message.role === 'user' &&
+                      protectedPromptMessageMatches(message, displaySnapshot, payload.userContent),
+                  )
+                : undefined
+            const protectedInputs = await freezeProtectedInputs(
               projectId,
               threadId,
               thread?.messages ?? [],
@@ -1242,7 +1282,7 @@ app
               ...(optimistic?.attachments !== undefined
                 ? { attachments: optimistic.attachments }
                 : {}),
-              context: protectedPromptContext(payload, protectedRecovery),
+              context: protectedPromptContext(payload, protectedInputs),
               kind: 'human',
             })
             if (!submission) return 'cancelled'
@@ -1252,10 +1292,23 @@ app
               projectId,
               threadId,
               payload: { ...ordinaryPayload, userContent: reviewedContent },
-              protectedRecovery,
+              protectedHistory: protectedInputs.history,
+              protectedPlan: protectedInputs.plan,
               protectedHumanStart: {
                 content: reviewedContent,
-                ...(optimistic !== undefined ? { messageId: optimistic.id } : {}),
+                ...(optimistic
+                  ? {
+                      claimMessageId: (): string | undefined =>
+                        consumeProtectedPromptMessageAppend(
+                          event.sender.id,
+                          projectId,
+                          threadId,
+                          optimistic.id,
+                        )
+                          ? optimistic.id
+                          : undefined,
+                    }
+                  : {}),
               },
             })
           }
@@ -1273,7 +1326,7 @@ app
       const request = parseIpcArgs(machineAgentRunSchema, [requestArg])
       const payload = parseAgentRunPayload(request.payload)
       const thread = await getProjectThread(request.projectId, request.threadId)
-      const protectedRecovery = await freezeProtectedRecovery(
+      const protectedInputs = await freezeProtectedInputs(
         request.projectId,
         request.threadId,
         thread?.messages ?? [],
@@ -1286,7 +1339,7 @@ app
         ...(request.display.attachments !== undefined
           ? { attachments: request.display.attachments }
           : {}),
-        context: protectedPromptContext(payload, protectedRecovery),
+        context: protectedPromptContext(payload, protectedInputs),
         kind: 'machine',
       })
       if (!submission) return 'cancelled'
@@ -1299,7 +1352,8 @@ app
           ...payload,
           userContent: withProtectedPromptText(payload.userContent, submission.text),
         },
-        protectedRecovery,
+        protectedHistory: protectedInputs.history,
+        protectedPlan: protectedInputs.plan,
         display: { ...request.display, content: submission.text },
       })
       if (result === 'completed') {

@@ -27,4 +27,9 @@ export interface ProtectedPromptSubmission {
 /** Renderer hint used only to reconcile the already-visible optimistic bubble. */
 export interface ProtectedHumanTurnDisplay {
   messageId?: string
+  /** Exact renderer snapshot of the display-only message; never used as model input. */
+  snapshot?: {
+    content: string
+    attachments?: TranscriptAttachment[]
+  }
 }

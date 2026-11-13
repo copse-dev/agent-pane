@@ -7,7 +7,6 @@ import type {
   LLMMessage,
   MachineDispatchResult,
   MachineTurnDisplay,
-  ProtectedHumanTurnDisplay,
   StreamChunk,
   UserContent,
 } from '@shared/types'
@@ -83,12 +82,15 @@ export interface AgentDispatchRequest {
   threadId: string
   payload: AgentDispatchPayload
   /** Main-owned canonical prompt emitted before provider execution. */
-  protectedHumanStart?: ProtectedHumanTurnDisplay & { content: UserContent }
-  /**
-   * Main-owned transcript recovery frozen before protected review. Present,
-   * including when empty, so a renderer cannot race new transcript context in.
-   */
-  protectedRecovery?: LLMMessage[]
+  protectedHumanStart?: {
+    content: UserContent
+    /** Consume display reconciliation only after this dispatcher owns the thread. */
+    claimMessageId?: () => string | undefined
+  }
+  /** Exact main-owned provider history frozen before protected review. */
+  protectedHistory?: LLMMessage[]
+  /** Exact main-owned plan state frozen before protected review, including null. */
+  protectedPlan?: StoredThreadPlan | null
 }
 
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
@@ -298,12 +300,11 @@ export class AgentDispatcher {
     host: AgentHost<StreamChunk>,
   ): Promise<void> {
     if (request.protectedHumanStart) {
+      const messageId = request.protectedHumanStart.claimMessageId?.()
       host.emit(request.threadId, {
         type: 'protected_human_turn_start',
         content: request.protectedHumanStart.content,
-        ...(request.protectedHumanStart.messageId !== undefined
-          ? { messageId: request.protectedHumanStart.messageId }
-          : {}),
+        ...(messageId !== undefined ? { messageId } : {}),
       })
     }
     const epochWrite = this.observeRendererEpoch(key, request)
@@ -321,9 +322,10 @@ export class AgentDispatcher {
    * while this dispatcher owns the thread. A rejected claim emits no chunk and
    * opens no transcript, so the caller can fall back to protected human review.
    */
-  async dispatchScheduledRenderer(
+  async dispatchScheduled(
     request: AgentDispatchRequest,
     claim: () => Promise<boolean>,
+    host: AgentHost<StreamChunk> = this.host,
   ): Promise<boolean> {
     const key = dispatchKey(request.projectId, request.threadId)
     return this.dispatchExclusively(
@@ -341,7 +343,7 @@ export class AgentDispatcher {
         )
         return true
       },
-      this.host,
+      host,
       'on-first-chunk',
     )
   }
@@ -789,8 +791,8 @@ export class AgentDispatcher {
     // than treating that earlier empty projection as authoritative forever.
     if (this.histories.get(key)?.length === 0) this.histories.delete(key)
     const priorMessages =
-      request.protectedRecovery !== undefined
-        ? await this.protectedHistory(projectId, threadId, request.protectedRecovery)
+      request.protectedHistory !== undefined
+        ? this.useProtectedHistory(key, request.protectedHistory)
         : await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,
@@ -798,7 +800,10 @@ export class AgentDispatcher {
       host,
     )
     if (!executionContext) return undefined
-    const plan = await this.dependencies.loadPlan(projectId, threadId)
+    const plan =
+      request.protectedPlan !== undefined
+        ? request.protectedPlan
+        : await this.dependencies.loadPlan(projectId, threadId)
     perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
@@ -915,15 +920,8 @@ export class AgentDispatcher {
     }
   }
 
-  private async protectedHistory(
-    projectId: string,
-    threadId: string,
-    frozenRecovery: LLMMessage[],
-  ): Promise<LLMMessage[]> {
-    const key = dispatchKey(projectId, threadId)
-    const persisted = await this.dependencies.loadHistory(projectId, threadId)
-    const messages = persisted.length > 0 ? persisted : frozenRecovery
-    this.histories.set(key, messages)
-    return messages
+  private useProtectedHistory(key: string, frozenHistory: LLMMessage[]): LLMMessage[] {
+    this.histories.set(key, frozenHistory)
+    return frozenHistory
   }
 }

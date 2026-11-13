@@ -5,12 +5,16 @@ import type {
   ProtectedPromptSeed,
   ProtectedPromptSubmission,
   ProtectedPromptContextEntry,
+  LLMMessage,
+  Message,
+  ProtectedHumanTurnDisplay,
   TranscriptAttachment,
   UserContent,
 } from '@shared/types'
 import { getThreadMeta } from '../services/thread-store.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 
 const PROTECTED_PROMPT_PARTITION = 'protected-prompt'
 const submissionSchema = z.object({ text: z.string().max(1_000_000) }).strict()
@@ -57,19 +61,45 @@ export function withProtectedPromptText(content: UserContent, text: string): Use
   return text ? [{ type: 'text', text }, ...images] : images
 }
 
-/** Exact content match for accepting a renderer message id as a display-only hint. */
-export function protectedPromptContentMatches(left: UserContent, right: UserContent): boolean {
-  if (typeof left === 'string' || typeof right === 'string') return left === right
+/** Exact persisted prompt match for accepting a renderer message id as a display-only hint. */
+export function protectedPromptMessageMatches(
+  message: Pick<Message, 'content' | 'images' | 'attachments'>,
+  snapshot: NonNullable<ProtectedHumanTurnDisplay['snapshot']>,
+  modelContent: UserContent,
+): boolean {
+  const images = protectedPromptImageDataUrls(modelContent)
+  const persistedImages = message.images ?? []
+  const attachments = snapshot.attachments ?? []
+  const persistedAttachments = message.attachments ?? []
   return (
-    left.length === right.length &&
-    left.every((block, index) => {
-      const candidate = right[index]
-      if (!candidate || block.type !== candidate.type) return false
-      return block.type === 'text'
-        ? candidate.type === 'text' && block.text === candidate.text
-        : candidate.type === 'image' && block.dataUrl === candidate.dataUrl
+    message.content === snapshot.content &&
+    persistedImages.length === images.length &&
+    persistedImages.every((image, index) => image === images[index]) &&
+    persistedAttachments.length === attachments.length &&
+    persistedAttachments.every((attachment, index) => {
+      const candidate = attachments[index]
+      return (
+        candidate !== undefined &&
+        attachment.kind === candidate.kind &&
+        attachment.label === candidate.label &&
+        attachment.content === candidate.content &&
+        attachment.path === candidate.path
+      )
     })
   )
+}
+
+/** Stored inference inputs that must remain exact while the protected window is open. */
+export function protectedPromptStoredContext(
+  history: LLMMessage[],
+  plan: StoredThreadPlan | null,
+): ProtectedPromptContextEntry[] {
+  return [
+    ...(history.length > 0
+      ? [{ label: 'Existing model conversation', value: JSON.stringify(history, null, 2) }]
+      : []),
+    ...(plan ? [{ label: 'Existing thread plan', value: JSON.stringify(plan, null, 2) }] : []),
+  ]
 }
 
 function lockSessionNetwork(session: Session): void {

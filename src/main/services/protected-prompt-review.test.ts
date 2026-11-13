@@ -1,10 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  protectedPromptContentMatches,
   protectedPromptImageDataUrls,
+  protectedPromptMessageMatches,
+  protectedPromptStoredContext,
   withProtectedPromptText,
 } from '../windows/protected-prompt-review.ts'
+import type { LLMMessage } from '@shared/types'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 
 test('protected prompt edits preserve image bytes while replacing renderer text', () => {
   const image = { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' }
@@ -38,23 +41,62 @@ test('protected prompt exposes every model-facing image for isolated review', ()
 })
 
 test('protected prompt accepts a display hint only for exact user content', () => {
-  const image = { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' }
+  const image = 'data:image/png;base64,AA=='
+  const attachment = { kind: 'file' as const, label: 'report.txt', content: 'exact bytes' }
   assert.equal(
-    protectedPromptContentMatches(
-      [{ type: 'text', text: 'review me' }, image],
-      [{ type: 'text', text: 'review me' }, image],
+    protectedPromptMessageMatches(
+      { content: 'visible prompt', images: [image], attachments: [attachment] },
+      { content: 'visible prompt', attachments: [attachment] },
+      [{ type: 'image', dataUrl: image }],
     ),
     true,
   )
-  assert.equal(protectedPromptContentMatches('review me', 'different'), false)
   assert.equal(
-    protectedPromptContentMatches(
-      [{ type: 'text', text: 'review me' }, image],
-      [
-        { type: 'text', text: 'review me' },
-        { ...image, dataUrl: 'data:image/png;base64,forged' },
-      ],
+    protectedPromptMessageMatches(
+      { content: 'visible prompt', images: [image], attachments: [attachment] },
+      {
+        content: 'visible prompt',
+        attachments: [attachment],
+      },
+      [{ type: 'image', dataUrl: 'data:image/png;base64,forged' }],
     ),
     false,
   )
+  assert.equal(
+    protectedPromptMessageMatches(
+      { content: 'visible prompt', images: [image], attachments: [attachment] },
+      {
+        content: 'visible prompt',
+        attachments: [{ ...attachment, content: 'forged bytes' }],
+      },
+      [{ type: 'image', dataUrl: image }],
+    ),
+    false,
+  )
+})
+
+test('protected prompt exposes the exact frozen stored inference context', () => {
+  const history: LLMMessage[] = [{ role: 'user', content: 'persisted conversation' }]
+  const plan: StoredThreadPlan = {
+    meta: {
+      planId: 'plan-1',
+      threadId: 'thread-1',
+      title: 'Frozen plan',
+      status: 'approved',
+      currentRevision: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    body: 'Only this reviewed plan may reach inference.',
+    contentHash: 'reviewed-hash',
+    comments: [],
+    approval: null,
+    completion: null,
+  }
+
+  assert.deepEqual(protectedPromptStoredContext(history, plan), [
+    { label: 'Existing model conversation', value: JSON.stringify(history, null, 2) },
+    { label: 'Existing thread plan', value: JSON.stringify(plan, null, 2) },
+  ])
+  assert.deepEqual(protectedPromptStoredContext([], null), [])
 })

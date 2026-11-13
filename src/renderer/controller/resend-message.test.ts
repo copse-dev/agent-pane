@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Thread } from '@shared/types'
+import type { ProtectedHumanTurnDisplay, Thread } from '@shared/types'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from './message-queue.ts'
@@ -32,15 +32,18 @@ function parsePayload(json: string): AgentRunPayload {
 }
 
 /** Records every dispatched run; the rest of the surface is the demo double. */
-function fakeApi(): { api: ApiClient; runs: Array<[string, AgentRunPayload]> } {
-  const runs: Array<[string, AgentRunPayload]> = []
+function fakeApi(): {
+  api: ApiClient
+  runs: Array<[string, AgentRunPayload, ProtectedHumanTurnDisplay | undefined]>
+} {
+  const runs: Array<[string, AgentRunPayload, ProtectedHumanTurnDisplay | undefined]> = []
   const base = createFakeApi()
   const api: ApiClient = {
     ...base,
     agent: {
       ...base.agent,
-      run: (_projectId: string, threadId: string, payload: string) => {
-        runs.push([threadId, parsePayload(payload)])
+      run: (_projectId, threadId, payload, _delegation, display) => {
+        runs.push([threadId, parsePayload(payload), display])
         return Promise.resolve()
       },
     },
@@ -149,7 +152,14 @@ test('carries the prompt images and the thread working context', () => {
   assert.equal(payload.workingBrief, 'Ship the login fix')
   assert.deepEqual(payload.priorTodos, [{ id: 't1', content: 'Reproduce', status: 'pending' }])
   const resent = getThread(store, threadId).messages.at(-1)
-  assert.deepEqual(resent?.images, ['data:image/png;base64,abc'])
+  assert.ok(resent)
+  assert.deepEqual(resent.images, ['data:image/png;base64,abc'])
+  assert.deepEqual(runs[0]?.[2], {
+    messageId: resent.id,
+    snapshot: {
+      content: 'What is wrong here?',
+    },
+  })
 })
 
 test('can explicitly resend an image prompt as text only', () => {

@@ -2,7 +2,13 @@ import { takeSendNowAbort } from './send-now-aborts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, QueuedUserMessage, Thread, ThreadReviewReport } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  ThreadReviewReport,
+} from '@shared/types'
 import { at } from '@shared/array-utils.ts'
 import {
   addMessage,
@@ -553,6 +559,51 @@ test('dispatchAgentRun marks the thread running and sends payload', () => {
 
   assert.equal(store.getState().threads.find((t) => t.id === threadId)?.status, 'running')
   assert.equal(api.runs.length, 1)
+})
+
+test('composer dispatch identifies only its exact optimistic image prompt', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const image = 'data:image/png;base64,abc'
+  const attachment = { kind: 'file' as const, label: 'report.txt', content: 'exact bytes' }
+  const messageId = addMessage(store, threadId, 'user', 'visible review', [image], [attachment])
+  let display: ProtectedHumanTurnDisplay | undefined
+  api.agent.run = (_projectId, _threadId, _payload, _delegation, candidate): Promise<void> => {
+    display = candidate
+    return Promise.resolve()
+  }
+
+  dispatchAgentRun(
+    store,
+    api,
+    threadId,
+    {
+      content: [
+        { type: 'image', dataUrl: image },
+        { type: 'text', text: 'expanded model prompt\n\n```\nexact bytes\n```' },
+      ],
+    },
+    {
+      messageId,
+      payload: {
+        content: [
+          { type: 'image', dataUrl: image },
+          { type: 'text', text: 'expanded model prompt\n\n```\nexact bytes\n```' },
+        ],
+      },
+      createdAt: 1,
+    },
+  )
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(display, {
+    messageId,
+    snapshot: {
+      content: 'visible review',
+      attachments: [attachment],
+    },
+  })
 })
 
 test('cancelling protected entry returns the optimistic prompt as held', async () => {

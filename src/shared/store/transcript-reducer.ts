@@ -18,6 +18,7 @@ import {
   findToolCall,
   findToolCallOwner,
   setMessageContent,
+  setMessagePromptContent,
   setThreadStatus,
   markAutomationRunFailed,
   addUsageDelta,
@@ -270,18 +271,16 @@ export function createTranscriptReducer(
                 .filter((block) => block.type === 'text')
                 .map((block) => block.text)
                 .join('\n')
+        const images =
+          typeof chunk.content === 'string'
+            ? undefined
+            : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
         if (existing) {
-          setMessageContent(store, existing.id, content)
+          setMessagePromptContent(store, existing.id, content, images)
           // User prompts do not receive the assistant stream's later
           // `message_done`, so finalize this canonical replacement now.
           store.emit('message_done', existing.id)
         } else {
-          const images =
-            typeof chunk.content === 'string'
-              ? undefined
-              : chunk.content
-                  .filter((block) => block.type === 'image')
-                  .map((block) => block.dataUrl)
           addMessage(store, threadId, 'user', content, images)
         }
         break

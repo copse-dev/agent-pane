@@ -29,13 +29,17 @@ import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
   loadThreadMessages,
-  createThread,
+  createThreadWithResult,
   appendMessage,
   updateMeta,
   recordModelSelection,
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  recordProtectedPromptMessageAppend,
+  recordProtectedPromptThreadCreate,
+} from '../services/protected-prompt-receipts.ts'
 import { deleteThreadResourcesAndStore } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread } from '../services/thread-archiving.ts'
@@ -187,7 +191,7 @@ export function registerThreadHandlers(
       return true
     },
   )
-  ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
+  ipcMain.handle('threads:create', async (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
     const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [
       projectId,
@@ -195,11 +199,12 @@ export function registerThreadHandlers(
     ])
     const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
-    return createThread(id, parsed)
+    const created = await createThreadWithResult(id, parsed)
+    recordProtectedPromptThreadCreate(event.sender.id, id, parsed.id, created, parsed.messages)
   })
   ipcMain.handle(
     'threads:append-message',
-    (event, projectId: unknown, threadId: unknown, message: unknown) => {
+    async (event, projectId: unknown, threadId: unknown, message: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
@@ -207,7 +212,12 @@ export function registerThreadHandlers(
       )
       const parsed = parseMessageValue(payload)
       if (parsed === null) throw new IpcValidationError('Invalid message payload')
-      return appendMessage(pid, tid, parsed)
+      const existing =
+        parsed.role === 'user'
+          ? (await loadThreadMessages(pid, tid)).some((candidate) => candidate.id === parsed.id)
+          : true
+      await appendMessage(pid, tid, parsed)
+      if (!existing) recordProtectedPromptMessageAppend(event.sender.id, pid, tid, parsed.id)
     },
   )
   ipcMain.handle(
