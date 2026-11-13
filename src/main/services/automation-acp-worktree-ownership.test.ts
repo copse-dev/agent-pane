@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -130,9 +131,11 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
   })
 
   async function scenario(activity: Activity, operation: Operation): Promise<void> {
-    const projectId = 'project'
-    const previousId = 'previous'
-    const nextId = 'next'
+    // Parking rechecks can outlive a fixture. A delayed callback must not
+    // resolve a later fixture's freshly acquired session through a reused ID.
+    const projectId = randomUUID()
+    const previousId = randomUUID()
+    const nextId = randomUUID()
     const repo = join(scratch, 'repo')
     await mkdir(repo)
     git(repo, ['init', '-q', '-b', 'main'])
@@ -452,7 +455,8 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     disposed: () => number
     isClosed: () => boolean
   }> {
-    const threadId = 'created-pr'
+    // This helper shares the same delayed parking listener as scenario().
+    const threadId = randomUUID()
     const repo = join(scratch, `${projectId}-repo`)
     const remote = join(scratch, `${projectId}-remote.git`)
     await mkdir(repo)

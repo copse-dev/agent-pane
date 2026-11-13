@@ -1861,6 +1861,10 @@
       "sha256": "ce98b38803d727e1a5d0764865360a6ed3436f9d4d466db8067b616ad2c12f43",
       "bytes": 3822
     },
+    "external-agent-task-recovery.png": {
+      "sha256": "aa7901657da1eb1d5550b03987ab420c6b05fed88899c79042166604c1957278",
+      "bytes": 280172
+    },
     "file-open-css-worker-no-error.png": {
       "sha256": "10b97eaed7b766ff264742b8e9e9b8c56f7cbdb8d0f13fe5de6193b301df0a6d",
       "bytes": 284894
@@ -2878,20 +2882,24 @@
       "bytes": 297342
     },
     "native-readonly-workers-cancelled.png": {
-      "sha256": "b0f1e929b91ac0583f828e6f3c6371881aa63efa6233ac913114734d2d664c86",
-      "bytes": 308724
+      "sha256": "a6cdaee58c6f4891cbaa75b9bf43976e1e8e1ec9838a97cec6ed6f8690811860",
+      "bytes": 321634
     },
     "native-readonly-workers-running.png": {
-      "sha256": "f155985d23b1e4cd28c21ddbe0eb91c5b1083dc0d32ba48fc961bb56bd30cd93",
-      "bytes": 342923
+      "sha256": "dd3fccd35ba9e817b14d4861e92ee5466cb00d89d9d797ed4c54c935c2331968",
+      "bytes": 336730
     },
     "native-readonly-workers.png": {
       "sha256": "03b7f5874edd115e2b52b643db2e71218b7121fdbff6374a68cfefb5a83f5950",
       "bytes": 289534
     },
     "native-worker-isolation-unavailable.png": {
-      "sha256": "c25598c74285828cd5598e620b9512b832bc98c92862e99c6cbb7ac163a7afa3",
-      "bytes": 329568
+      "sha256": "05bf8788ba47b4724919759d8e5b7a427b6f1b1fd92cb6b751238942f5750a77",
+      "bytes": 352353
+    },
+    "native-worker-model-usage.png": {
+      "sha256": "47897a099ceba3611014a2bce24faa3696b95651db5d570f5a21eb44b983a244",
+      "bytes": 463158
     },
     "nested-tool-activity-colors.png": {
       "sha256": "3c44bc2ebdb87f1d17d4900a64c9048e854b4470d3e41c530a370c6bba60e082",
