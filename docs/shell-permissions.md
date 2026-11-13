@@ -12,6 +12,27 @@ model, or a classifier connection chosen for safety screening) is never an autho
 project sandbox is active. Explicit trusted-command grants and Guarded YOLO are separate policies;
 neither supplies OS containment when the sandbox is absent.
 
+## Renderer compromise boundary
+
+The renderer is not a trusted witness to a human click. For desktop approval prompts, its
+`approval:respond` message is a proposal; main retains the original request and requires a
+separate OS-owned confirmation before accepting an approval or remembered grant. Main also asks
+for OS confirmation before renderer-initiated changes to security settings, project roots,
+workspace trust, tool grants, plugins, MCP servers, automations, unsandboxed app/Xcode actions,
+and GitHub PR writes. Native denial, cancellation, missing windows, and dialog errors fail closed.
+Project MCP server definitions are pinned to the exact configuration the user reviewed;
+changes leave those servers inert until a new OS confirmation.
+
+This is partial containment, not a claim that arbitrary JavaScript in the main renderer is safe.
+An already-open integrated terminal still accepts `terminal:write` from its owning renderer;
+the owner check is the same `WebContents.id` that a renderer XSS controls. Also, renderer-authored
+chat messages can steer an agent into capabilities the user granted earlier without a new prompt.
+Closing those paths requires a trusted input surface isolated from untrusted chat/project content
+and main-owned authority for each sensitive action. See
+[`renderer-xss-containment.md`](plans/renderer-xss-containment.md) for the required boundary and
+validation criteria. Keep this patch in draft until those gaps are addressed or the deployment
+scope explicitly excludes them.
+
 ## Permission modes and grants
 
 Approval, containment, network authority and credential access are separate properties. The

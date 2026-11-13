@@ -157,10 +157,14 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     assertMainFrameSender(event, win)
     const parsed = settingsUpdateSchema.parse(raw)
     const consent = settingsConsentDetail(parsed)
-    if (consent && !(await confirmNativeAction(event.sender, {
-      title: 'Change Copse settings?',
-      detail: consent,
-    }))) throw new IpcValidationError('Setting change was not confirmed')
+    if (
+      consent &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Change Copse settings?',
+        detail: consent,
+      }))
+    )
+      throw new IpcValidationError('Setting change was not confirmed')
     const changes = await updateSettings(parsed)
     await syncChangedSettings(new Set(Object.keys(changes)))
   })
@@ -172,10 +176,14 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     }
     const parsed = parseRendererWritableSetting(k, value)
     const consent = settingsConsentDetail({ [k]: parsed })
-    if (consent && !(await confirmNativeAction(event.sender, {
-      title: 'Change Copse setting?',
-      detail: consent,
-    }))) throw new IpcValidationError('Setting change was not confirmed')
+    if (
+      consent &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Change Copse setting?',
+        detail: consent,
+      }))
+    )
+      throw new IpcValidationError('Setting change was not confirmed')
     await setSetting(k, parsed)
     await syncChangedSettings(new Set([k]))
   })
@@ -183,10 +191,14 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
     const consent = settingsConsentDetail(prefs)
-    if (consent && !(await confirmNativeAction(event.sender, {
-      title: 'Change security settings?',
-      detail: consent,
-    }))) throw new IpcValidationError('Security setting change was not confirmed')
+    if (
+      consent &&
+      !(await confirmNativeAction(event.sender, {
+        title: 'Change security settings?',
+        detail: consent,
+      }))
+    )
+      throw new IpcValidationError('Security setting change was not confirmed')
     await Promise.all(
       Object.entries(prefs)
         .filter(([, v]) => v !== undefined)
@@ -359,11 +371,14 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
   ipcMain.handle('settings:save-extra-provider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
-    if (!(await confirmNativeAction(event.sender, {
-      title: 'Save model provider?',
-      detail: `Save this provider configuration? Requests to its endpoint may include prompts and its stored API key.\n\n${JSON.stringify(parsed, null, 2)}`,
-      approveLabel: 'Save provider',
-    }))) throw new IpcValidationError('Provider configuration was not confirmed')
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Save model provider?',
+        detail: `Save this provider configuration? Requests to its endpoint may include prompts and its stored API key.\n\n${JSON.stringify(parsed, null, 2)}`,
+        approveLabel: 'Save provider',
+      }))
+    )
+      throw new IpcValidationError('Provider configuration was not confirmed')
     const provider: Parameters<typeof saveExtraProvider>[0] = {}
     if (parsed.slug !== undefined) provider.slug = parsed.slug
     if (parsed.label !== undefined) provider.label = parsed.label

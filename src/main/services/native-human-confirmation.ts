@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, type WebContents } from 'electron'
+import { nativeConfirmationPages } from './native-confirmation-pages.ts'
 
 const MAX_PENDING_CONFIRMATIONS = 32
 const confirmationQueues = new WeakMap<WebContents, { tail: Promise<void>; pending: number }>()
@@ -10,9 +11,10 @@ export async function confirmNativeAction(
   signal?: AbortSignal,
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  if (options.title.length > 512 || options.detail.length > 16_000) {
+  if (options.title.length > 512) {
     throw new Error('The requested action is too large to confirm safely')
   }
+  const pages = nativeConfirmationPages(options.detail)
   // Existing WDIO renderer-dialog specs supply decisions at this boundary. This
   // branch is compiled out of release builds and never exposed over IPC.
   if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') return true
@@ -33,18 +35,26 @@ export async function confirmNativeAction(
     if (signal?.aborted) return false
     const owner = BrowserWindow.fromWebContents(sender)
     if (!owner || owner.isDestroyed() || !owner.isVisible()) return false
-    const answer = await dialog.showMessageBox(owner, {
-      type: 'warning',
-      title: 'Copse permission',
-      message: options.title,
-      detail: options.detail,
-      buttons: ['Deny', options.approveLabel ?? 'Approve'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      ...(signal ? { signal } : {}),
-    })
-    return answer.response === 1 && !signal?.aborted && !owner.isDestroyed()
+    for (const [index, page] of pages.entries()) {
+      if (signal?.aborted || owner.isDestroyed()) return false
+      const finalPage = index === pages.length - 1
+      const answer = await dialog.showMessageBox(owner, {
+        type: 'warning',
+        title: 'Copse permission',
+        message:
+          pages.length === 1
+            ? options.title
+            : `${options.title} (${String(index + 1)}/${String(pages.length)})`,
+        detail: page,
+        buttons: ['Deny', finalPage ? (options.approveLabel ?? 'Approve') : 'Next page'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        ...(signal ? { signal } : {}),
+      })
+      if (answer.response !== 1) return false
+    }
+    return !signal?.aborted && !owner.isDestroyed()
   } finally {
     queue.pending -= 1
     release()

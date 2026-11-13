@@ -49,6 +49,11 @@ import {
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import {
+  isProjectMcpConfigApproved,
+  projectMcpConsent,
+  type ProjectMcpConsent,
+} from './project-mcp-consent.ts'
+import {
   appendFlatCapped,
   COMMAND_OUTPUT_MAX_BYTES,
   truncateToolOutput,
@@ -213,6 +218,12 @@ function projectMcpSourcePaths(workspace: string): string[] {
   return [join(workspace, '.cursor', 'mcp.json'), join(workspace, '.mcp.json')]
 }
 
+/** Snapshot the project definitions before asking the user to approve them. */
+export async function readProjectMcpConsent(workspace: string): Promise<ProjectMcpConsent> {
+  const perSource = await Promise.all(projectMcpSourcePaths(workspace).map(readConfigFile))
+  return projectMcpConsent(workspace, perSource.flat())
+}
+
 function userMcpSourcePaths(): string[] {
   return [join(homedir(), '.cursor', 'mcp.json'), copseUserMcpConfigPath()]
 }
@@ -260,6 +271,7 @@ function agentPluginIdForMcpSource(source: string | undefined): string | undefin
 async function collectConfigs(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
+  needsReview?: boolean
 }> {
   const workspace = getWorkspaceRoot()
   const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
@@ -287,13 +299,19 @@ async function collectConfigs(): Promise<{
     getEnabledCuratedConfigs(),
   ])
   const trusted = isWorkspaceTrusted(workspace)
+  const projectConfigs = mergeMcpConfigs(projectPerSource)
+  const needsReview =
+    trusted &&
+    workspace !== null &&
+    projectConfigs.length > 0 &&
+    !isProjectMcpConfigApproved(projectMcpConsent(workspace, projectPerSource.flat()))
 
-  if (!trusted) {
+  if (!trusted || needsReview) {
     // Project servers are not spawned; report only those whose name doesn't collide
     // with an existing app-level server (a colliding name simply uses the trusted one).
     const trustedNames = new Set(appActive.map((c) => c.name))
-    const untrusted = mergeMcpConfigs(projectPerSource).filter((c) => !trustedNames.has(c.name))
-    return { active: appActive, untrusted }
+    const untrusted = projectConfigs.filter((c) => !trustedNames.has(c.name))
+    return { active: appActive, untrusted, needsReview }
   }
 
   const active = mergeMcpConfigs([appActive, ...projectPerSource])
@@ -303,6 +321,7 @@ async function collectConfigs(): Promise<{
 async function collectE2eMcpFixtureConfig(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
+  needsReview?: boolean
 } | null> {
   const configPath = copseUserMcpConfigPath()
   try {
@@ -870,7 +889,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     }
     return
   }
-  const { active, untrusted } = e2eMcpFixtureConfig ?? (await collectConfigs())
+  const { active, untrusted, needsReview } = e2eMcpFixtureConfig ?? (await collectConfigs())
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && publishedBundled().length === 0) {
@@ -883,7 +902,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   )
   // Project servers in an untrusted workspace are never spawned — they're reported as
   // `untrusted` so the UI can offer "trust this workspace" (issue #100).
-  const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
+  const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled, needsReview))
   // Only publish statuses if a newer load hasn't started in the meantime.
   if (generation === loadGeneration) {
     serverStatuses = [...publishedBundled(), ...connected, ...untrustedStatuses]
@@ -927,7 +946,11 @@ export async function listForwardableMcpServers(projectId?: string): Promise<Mcp
     )
 }
 
-function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>): McpServerStatus {
+function untrustedStatus(
+  cfg: McpServerConfig,
+  userDisabled: ReadonlySet<string>,
+  needsReview = false,
+): McpServerStatus {
   return {
     name: cfg.name,
     transport: cfg.transport,
@@ -936,7 +959,9 @@ function untrustedStatus(cfg: McpServerConfig, userDisabled: ReadonlySet<string>
     tools: [],
     userEnabled: !userDisabled.has(cfg.name),
     configDisabled: cfg.disabled === true,
-    error: 'Workspace not trusted — this server is defined by the project and was not started.',
+    error: needsReview
+      ? 'Project MCP configuration needs review — this server was not started.'
+      : 'Workspace not trusted — this server is defined by the project and was not started.',
     ...(cfg.source !== undefined ? { source: cfg.source } : {}),
     ...originFields(cfg.source),
   }

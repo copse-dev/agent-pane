@@ -106,24 +106,34 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
-    if (
-      !(await confirmNativeAction(event.sender, {
-        title: 'Save automation?',
-        detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended. Confirm its schedule, prompt, model and permissions:\n\n${JSON.stringify(input, null, 2)}`,
-        approveLabel: 'Save automation',
-      }))
-    )
-      throw new Error('Automation was not confirmed')
-    return getAutomationService().upsert(projectId, {
+    const service = getAutomationService()
+    const existing = input.id
+      ? service.list(projectId).find((item) => item.id === input.id)
+      : undefined
+    if (input.id && !existing) throw new Error('Automation schedule not found in this project')
+    // The service retains omitted grants and worktree limits on edit. Freeze
+    // those main-owned values before the OS review, then pass the same explicit
+    // values to upsert so a concurrent edit cannot widen the reviewed scope.
+    const reviewed = {
       ...(input.id !== undefined ? { id: input.id } : {}),
       name: input.name,
       cron: input.cron,
       prompt: input.prompt,
       model: input.model,
       enabled: input.enabled,
-      ...(input.maxLiveWorktrees !== undefined ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
-      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
-    })
+      permissions: input.permissions ?? existing?.permissions ?? [],
+      maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
+    }
+    const { prompt, ...reviewSummary } = reviewed
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Save automation?',
+        detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended. Confirm its schedule, prompt, model and permissions:\n\n${JSON.stringify(reviewSummary, null, 2)}\n\nPrompt:\n${prompt}`,
+        approveLabel: 'Save automation',
+      }))
+    )
+      throw new Error('Automation was not confirmed')
+    return service.upsert(projectId, reviewed)
   })
   ipcMain.handle(
     'automations:remove',
@@ -148,15 +158,16 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
         .list(projectId)
         .find((item) => item.id === scheduleId)
       if (!schedule) throw new Error('Automation no longer exists')
+      const { prompt, ...reviewSummary } = schedule
       if (
         !(await confirmNativeAction(event.sender, {
           title: 'Run automation now?',
-          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nRun this automation now?\n\n${JSON.stringify(schedule, null, 2)}`,
+          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nRun this automation now?\n\n${JSON.stringify(reviewSummary, null, 2)}\n\nPrompt:\n${prompt}`,
           approveLabel: 'Run automation',
         }))
       )
         throw new Error('Automation run was not confirmed')
-      return getAutomationService().runNow(projectId, scheduleId)
+      return getAutomationService().runNow(projectId, scheduleId, schedule)
     },
   )
 
@@ -183,24 +194,30 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [rawProjectId])
       const input = parseIpcArgs(zBranchCiAutomationInput, [rawInput])
-      if (
-        !(await confirmNativeAction(event.sender, {
-          title: 'Save event automation?',
-          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended when its trigger matches. Confirm its trigger, prompt and model:\n\n${JSON.stringify(input, null, 2)}`,
-          approveLabel: 'Save automation',
-        }))
-      )
-        throw new Error('Event automation was not confirmed')
-      return getBranchCiAutomationService().upsert(projectId, {
-        ...(input.id ? { id: input.id } : {}),
+      const saveInput = {
+        ...(input.id !== undefined ? { id: input.id } : {}),
         name: input.name,
         ...(input.branch !== undefined ? { branch: input.branch } : {}),
         ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
         prompt: input.prompt,
         model: input.model,
         enabled: input.enabled,
-        ...(input.maxLiveWorktrees ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
-      })
+        ...(input.maxLiveWorktrees !== undefined
+          ? { maxLiveWorktrees: input.maxLiveWorktrees }
+          : {}),
+      }
+      const service = getBranchCiAutomationService()
+      const reviewed = await service.previewUpsert(projectId, saveInput)
+      const { prompt, ...reviewSummary } = saveInput
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Save event automation?',
+          detail: `Project: ${JSON.stringify(getProjectRoot(projectId))}\n\nThis automation may run unattended when its trigger matches. Confirm its trigger, prompt and model:\n\n${JSON.stringify({ ...reviewSummary, ...reviewed }, null, 2)}\n\nPrompt:\n${prompt}`,
+          approveLabel: 'Save automation',
+        }))
+      )
+        throw new Error('Event automation was not confirmed')
+      return service.upsert(projectId, saveInput, reviewed)
     },
   )
   ipcMain.handle(

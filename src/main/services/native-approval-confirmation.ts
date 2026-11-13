@@ -19,7 +19,17 @@ export async function confirmNativeApproval(
       ? [request.turnTreeLeaseLabel ?? 'Allow bounded retries in this task.']
       : []),
   ]
-  const detail = [request.bodyAdvice, request.body, request.bodyFooter, '', ...grants]
+  const detail = [
+    request.bodyAdvice,
+    request.body,
+    request.bodyMarkdown,
+    request.bodyFooter,
+    ...(proposed.remember && request.rememberSubject
+      ? [`Remember scope: ${request.rememberSubject}`]
+      : []),
+    '',
+    ...grants,
+  ]
     .filter((part) => part !== undefined)
     .join('\n\n')
 

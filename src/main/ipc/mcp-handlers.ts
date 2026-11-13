@@ -21,9 +21,13 @@ import {
   getMcpServerStatuses,
   getMcpSignInTarget,
   onMcpStatusesChanged,
+  readProjectMcpConsent,
   reloadMcpServers,
   setMcpServerUserEnabled,
 } from '../services/mcp/mcp-registry.ts'
+import { approveProjectMcpConfig } from '../services/mcp/project-mcp-consent.ts'
+import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
+import { getWorkspaceRoot } from '../services/workspace.ts'
 import { getPluginService } from '../services/plugins/plugin-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
@@ -36,15 +40,19 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
+    const root = getWorkspaceRoot()
+    const projectConsent =
+      root && isWorkspaceTrusted(root) ? await readProjectMcpConsent(root) : null
     if (
       !(await confirmNativeAction(event.sender, {
         title: 'Reload MCP servers?',
-        detail:
-          'Reloading can start commands from enabled user and trusted project MCP configuration.',
+        detail: `Reloading can start commands from enabled user and trusted project MCP configuration.${projectConsent ? `\n\nProject: ${projectConsent.root}\nProject MCP configuration:\n${JSON.stringify(projectConsent.configs, null, 2)}` : ''}`,
       }))
     ) {
       throw new Error('MCP reload was not confirmed')
     }
+    if (getWorkspaceRoot() !== root) throw new Error('Workspace changed during confirmation')
+    if (projectConsent) await approveProjectMcpConfig(projectConsent)
     const statuses = await reloadMcpServers(registry)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses

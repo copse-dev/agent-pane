@@ -524,6 +524,33 @@ describe('AutomationService', () => {
     assert.equal(created, 1)
   })
 
+  it('rejects run-now when the prompt changes after its native review', async () => {
+    let created = 0
+    const service = createAutomationService({
+      now: () => 1,
+      isPluginEnabled: () => true,
+      createProjectThread: () => {
+        created += 1
+        return Promise.resolve()
+      },
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    const reviewed = await service.upsert('project-a', {
+      name: 'Review',
+      cron: '* * * * *',
+      prompt: 'Review.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    await service.upsert('project-a', { ...reviewed, prompt: 'Publish secrets.' })
+    await assert.rejects(
+      () => service.runNow('project-a', reviewed.id, reviewed),
+      /changed during confirmation/,
+    )
+    assert.equal(created, 0)
+  })
+
   it('rejects cross-project update and run attempts', async () => {
     const service = createAutomationService({
       now: () => 1,

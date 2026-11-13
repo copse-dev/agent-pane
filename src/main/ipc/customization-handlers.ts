@@ -48,11 +48,14 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
       throw new IpcValidationError(
         'Extra skill folders must be at most 64 absolute paths, one per line',
       )
-    if (!(await confirmNativeAction(event.sender, {
-      title: 'Change skill folders?',
-      detail: `Load skills from these folders? Their instructions will be available to future agent runs.\n\n${roots.data.join('\n') || '(none)'}`,
-      approveLabel: 'Save folders',
-    }))) throw new IpcValidationError('Skill folders were not confirmed')
+    if (
+      !(await confirmNativeAction(event.sender, {
+        title: 'Change skill folders?',
+        detail: `Load skills from these folders? Their instructions will be available to future agent runs.\n\n${roots.data.join('\n') || '(none)'}`,
+        approveLabel: 'Save folders',
+      }))
+    )
+      throw new IpcValidationError('Skill folders were not confirmed')
     await setSetting('skillPluginPaths', roots.data)
     await initSkillsRegistry()
     return listSkillSources()

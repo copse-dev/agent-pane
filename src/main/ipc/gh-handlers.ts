@@ -2,7 +2,11 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { defineHandler, defineSenderHandler } from './define-handler.ts'
-import { defineSenderRootHandler, senderProjectId, senderProjectRoot } from './sender-project-root.ts'
+import {
+  defineSenderRootHandler,
+  senderProjectId,
+  senderProjectRoot,
+} from './sender-project-root.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
@@ -26,7 +30,11 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
-import { getCurrentBranchName, getDefaultBranch, getGithubRepoSlug } from '../services/github/git-service.ts'
+import {
+  getCurrentBranchName,
+  getDefaultBranch,
+  getGithubRepoSlug,
+} from '../services/github/git-service.ts'
 import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { listProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
@@ -168,11 +176,14 @@ export function registerGhHandlers(win: BrowserWindow): void {
       const target = workspaceRepo ?? '(unknown)'
       const head = await getCurrentBranchName(context.root)
       const base = await getDefaultBranch(context.root)
-      if (!(await confirmNativeAction(sender, {
-        title: 'Create GitHub pull request?',
-        detail: `Publish a pull request from ${JSON.stringify(context.root)}?\n\nRepository: ${target}\nHead: ${head ?? '(unknown)'}\nBase: ${base ?? '(unknown)'}\nDraft: ${request.draft === true ? 'yes' : 'no'}\nTitle: ${request.title}\n\nBody:\n${request.body ?? ''}`,
-        approveLabel: 'Create pull request',
-      }))) throw new Error('Pull request creation was not confirmed')
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Create GitHub pull request?',
+          detail: `Publish a pull request from ${JSON.stringify(context.root)}?\n\nRepository: ${target}\nHead: ${head ?? '(unknown)'}\nBase: ${base ?? '(unknown)'}\nDraft: ${request.draft === true ? 'yes' : 'no'}\nTitle: ${request.title}\n\nBody:\n${request.body ?? ''}`,
+          approveLabel: 'Create pull request',
+        }))
+      )
+        throw new Error('Pull request creation was not confirmed')
       return createPrForThread(request, context)
     },
     { errors: 'per-argument' },
@@ -182,11 +193,15 @@ export function registerGhHandlers(win: BrowserWindow): void {
     'gh:rerun-failed-runs',
     ghPrRefArgs,
     async (sender, owner, repo, number) => {
-      if (!(await confirmNativeAction(sender, {
-        title: 'Rerun GitHub checks?',
-        detail: `Rerun failed checks for ${owner}/${repo}#${String(number)}?`,
-      }))) throw new Error('GitHub check rerun was not confirmed')
-      return rerunFailedPrRuns(senderProjectRoot(sender), { owner, repo, number })
+      const root = senderProjectRoot(sender)
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Rerun GitHub checks?',
+          detail: `Rerun failed checks for ${owner}/${repo}#${String(number)}?`,
+        }))
+      )
+        throw new Error('GitHub check rerun was not confirmed')
+      return rerunFailedPrRuns(root, { owner, repo, number })
     },
     { errors: 'per-argument' },
   )
@@ -195,12 +210,16 @@ export function registerGhHandlers(win: BrowserWindow): void {
     'gh:approve-pr',
     ghPrRefArgs,
     async (sender, owner, repo, number) => {
-      if (!(await confirmNativeAction(sender, {
-        title: 'Approve GitHub pull request?',
-        detail: `Submit your approval on ${owner}/${repo}#${String(number)}?`,
-        approveLabel: 'Approve pull request',
-      }))) throw new Error('Pull request approval was not confirmed')
-      return approvePr(senderProjectRoot(sender), { owner, repo, number })
+      const root = senderProjectRoot(sender)
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Approve GitHub pull request?',
+          detail: `Submit your approval on ${owner}/${repo}#${String(number)}?`,
+          approveLabel: 'Approve pull request',
+        }))
+      )
+        throw new Error('Pull request approval was not confirmed')
+      return approvePr(root, { owner, repo, number })
     },
     { errors: 'per-argument' },
   )
@@ -209,11 +228,15 @@ export function registerGhHandlers(win: BrowserWindow): void {
     'gh:mark-pr-ready',
     ghPrRefArgs,
     async (sender, owner, repo, number) => {
-      if (!(await confirmNativeAction(sender, {
-        title: 'Mark GitHub pull request ready?',
-        detail: `Mark ${owner}/${repo}#${String(number)} ready for review?`,
-      }))) throw new Error('Marking pull request ready was not confirmed')
-      return markPrReady(senderProjectRoot(sender), { owner, repo, number })
+      const root = senderProjectRoot(sender)
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Mark GitHub pull request ready?',
+          detail: `Mark ${owner}/${repo}#${String(number)} ready for review?`,
+        }))
+      )
+        throw new Error('Marking pull request ready was not confirmed')
+      return markPrReady(root, { owner, repo, number })
     },
     { errors: 'per-argument' },
   )
@@ -222,12 +245,16 @@ export function registerGhHandlers(win: BrowserWindow): void {
     'gh:enable-auto-merge',
     ghPrRefArgs,
     async (sender, owner, repo, number) => {
-      if (!(await confirmNativeAction(sender, {
-        title: 'Enable GitHub auto-merge?',
-        detail: `Automatically merge ${owner}/${repo}#${String(number)} when checks pass?`,
-        approveLabel: 'Enable auto-merge',
-      }))) throw new Error('Auto-merge was not confirmed')
-      return enablePrAutoMerge(senderProjectRoot(sender), { owner, repo, number })
+      const root = senderProjectRoot(sender)
+      if (
+        !(await confirmNativeAction(sender, {
+          title: 'Enable GitHub auto-merge?',
+          detail: `Automatically merge ${owner}/${repo}#${String(number)} when checks pass?`,
+          approveLabel: 'Enable auto-merge',
+        }))
+      )
+        throw new Error('Auto-merge was not confirmed')
+      return enablePrAutoMerge(root, { owner, repo, number })
     },
     { errors: 'per-argument' },
   )
