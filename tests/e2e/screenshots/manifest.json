@@ -726,8 +726,8 @@
       "bytes": 238352
     },
     "automation-create-modal.png": {
-      "sha256": "97bb6097b3c6631c66746efb39d59cd5a5c850fe9048bce5957e1e7bccafa176",
-      "bytes": 290339
+      "sha256": "50fdb2385b5cd95596b192cd267d5a3fdfaa0e7cddb63a4e80e03f69cedab9bf",
+      "bytes": 297447
     },
     "automation-deferred-context.png": {
       "sha256": "74f8aa9191a8ea88564acf3bb161fc32ecdc012d35afc723d3339fa2646fdae5",
@@ -797,6 +797,18 @@
       "sha256": "70ddd7e02ed60f013eb544c1e8b5bf426c14e6d4a74fb28bb543ec946bedb1e3",
       "bytes": 232609
     },
+    "automation-model-allowance-delegation.png": {
+      "sha256": "cce75aad6dbcbfd402b5e6051ac122630cb9818f1dd01f9921ecd609b0dbd0dc",
+      "bytes": 83329
+    },
+    "automation-model-allowance-exhausted.png": {
+      "sha256": "da7ca300058f091d0dcdc794e7ef7c04ecb45329be1eacc21adb1a5d95351ff1",
+      "bytes": 31623
+    },
+    "automation-model-allowance.png": {
+      "sha256": "ec965dc1a6e59c461874ff453533d780b4407d487c808303df60a613cf0c56ee",
+      "bytes": 38281
+    },
     "automation-pending-start-activity.png": {
       "sha256": "9c0b7bf5708ff51a6b6032f279ff36a106f7dffe84b7c4e835200dc5fde9dc85",
       "bytes": 220357
@@ -822,8 +834,8 @@
       "bytes": 39455
     },
     "automation-preparation-setup-changed.png": {
-      "sha256": "4741bd39e2762af902b27e0bdfad883aa512f3b07f8c04e4c03da63d2fa0e083",
-      "bytes": 127830
+      "sha256": "70f89111805132728aee9564d1047ad08dab60c3f3938329c6e3d9a334fa7335",
+      "bytes": 112601
     },
     "automation-preparation-setup-review.png": {
       "sha256": "6e15a6a2e9f6d6aa634171caa0cafd0b7a19006ccae5ceb7e21fa49d7a642dd6",
@@ -850,8 +862,8 @@
       "bytes": 355889
     },
     "automation-setup-link-form.png": {
-      "sha256": "7f3052a4b829528070e12ff807d95fc87c3e865a16be7b3780462a2b80d3f23f",
-      "bytes": 126095
+      "sha256": "d95f9414ddb70d2e1b0bf106cfba659a1e8553b1e0e0c7e87077abbe3529f14d",
+      "bytes": 117346
     },
     "automation-setup-link.png": {
       "sha256": "e5101e6bcedb536e6747c7f4610a09a231012c5acd7e9ac0dbcfc954ab00e3b7",
@@ -1412,6 +1424,18 @@
     "composer-long-prompt-cap-typed.png": {
       "sha256": "1a6170275b3dbe9c7bb3d5824d5ea2bfb41a180e4f63ec47d60e2c12e78be7ca",
       "bytes": 121995
+    },
+    "composer-observer-bordered.png": {
+      "sha256": "84eaf2098862be335abc77b689a2f39c18c991a48fd257d76130d5e8082e9ba5",
+      "bytes": 326418
+    },
+    "composer-observer-borderless.png": {
+      "sha256": "1abd984edbea24533bd1bd585df612dbc12b99f1f0382e9a777790af5fb4c27e",
+      "bytes": 325624
+    },
+    "composer-observer-content-grown.png": {
+      "sha256": "7468721de6ae9dff53e21125e6b4722a3a31c4cbde74ba33284f2c4f639b3aa7",
+      "bytes": 331619
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
@@ -2426,8 +2450,8 @@
       "bytes": 286514
     },
     "local-model-worktree-isolation.png": {
-      "sha256": "83828a0af4689389e43352ab27e67cc27ebf2c661a3b27fd39a6f6fed49579a9",
-      "bytes": 292878
+      "sha256": "dee989fc698ecc915e3804cb68b5bdc5a9871e761453b9bec28eb7dc03d0c2bc",
+      "bytes": 304933
     },
     "long-prompt-scroll-submit.png": {
       "sha256": "cf818b2678260cf9b76f6f89e5c28aa3cd098b658553a2a5e55080a0399c8991",
@@ -4138,8 +4162,8 @@
       "bytes": 289921
     },
     "settings-automation-form-page-2.png": {
-      "sha256": "ec67e8ac0ccf8db9dd0925d80ee995af34cb1d9a4ccf17b3281416912e7201d7",
-      "bytes": 256038
+      "sha256": "d04a899519a3c5beb9e3e41d07a8cc91488a76a730ebfc34e821711ef8e369b9",
+      "bytes": 225908
     },
     "settings-automation-form.png": {
       "sha256": "1db431d6be2ae0313bb1b3b5901bd1470937e8a1e22be19fe0a1fcc3a0fddb79",
