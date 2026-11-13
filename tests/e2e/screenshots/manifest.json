@@ -357,9 +357,17 @@
       "sha256": "dc4e273530d2bc7cdeddd34ee4683c2574c8882943495adc0d45b2ca7121eb6f",
       "bytes": 134047
     },
+    "activity-human-retry-finished.png": {
+      "sha256": "1121bf47cb102d97ecbb1730456bc5d5f28d9083dff203a7e5b91aed66b9bbb1",
+      "bytes": 233861
+    },
     "activity-interrupted-run.png": {
       "sha256": "52ecb9953c9b8312ae4a8ebfbff52a987a3d7c1b7138933c9a38041e46c92f21",
       "bytes": 256977
+    },
+    "activity-machine-continuation-finished.png": {
+      "sha256": "8958334129213962a21adbeee66696b68a4118c5eece7583c33d6b5160e4ab26",
+      "bytes": 236137
     },
     "activity-panel-approved.png": {
       "sha256": "facf7120c45d6096d36189eb1555e2e1e5ed59f2f168833f8489453b25cf1bfa",
