@@ -485,7 +485,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-DPLOIM35.js";
+} from "./chunk-X4HQ7DGN.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -90859,7 +90859,7 @@ function bindChatComposerLayout(store2, onActivityHome) {
   sync();
   requestAnimationFrame(sync);
   const observer = new ResizeObserver(sync);
-  observer.observe(input);
+  observer.observe(input, { box: "border-box" });
   window.addEventListener("resize", sync, { passive: true });
   const unsubs = [
     // Which thread, and whether it is the empty Activity home.
