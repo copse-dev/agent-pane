@@ -26,6 +26,11 @@ changes leave those servers inert until a new OS confirmation.
 Project stdio servers start inside the enforcing project sandbox and fail closed if it is
 unavailable. Their configured environment is applied after the sandbox starts. External
 agents do not receive those stdio definitions for direct launch.
+User-level and plugin stdio definitions with no configured working directory start in the
+account's home directory; selecting a project does not silently make its mutable files the
+server's working directory. An explicit working directory or script path inside a project
+still needs a separate containment decision before it can be treated as safe from renderer
+compromise.
 
 This is partial containment, not a claim that arbitrary JavaScript in the main renderer is safe.
 An already-open integrated terminal still accepts `terminal:write` from its owning renderer;

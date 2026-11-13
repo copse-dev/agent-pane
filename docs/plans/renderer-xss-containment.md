@@ -76,3 +76,59 @@ shell startup variable cannot run code in the unsandboxed launcher.
 - Run the security-focused unit tests, a focused Electron screenshot spec, an on-device native
   dialog check, and the full `pnpm run check` gate. Record platform-specific failures and
   independent security review before marking the PR ready.
+
+## Follow-up acceptance cases
+
+The following cases assume script execution in the primary renderer, including access to
+the full primary preload API. A check that only dispatches a synthetic DOM event is too
+weak: the injected script must call the exposed API directly. Each case also verifies the
+ordinary human workflow after the attempted misuse.
+
+### Live terminal input
+
+- Open an unsandboxed terminal, then inject script into its owning app renderer. Direct
+  `terminal:write` calls, synthetic xterm key/paste events, and a pane pop-out cannot send
+  command bytes to that existing PTY. A real person can still type, paste, resize, close,
+  and reopen a terminal through a separate input surface. An app-renderer reload revokes
+  any stale input binding.
+- Main owns the PTY and binds input to the separately isolated terminal view's exact
+  `WebContents` and frame. The ordinary app preload has no terminal-write capability.
+  PTY output is treated as untrusted text in the terminal view, and that view cannot
+  navigate, open windows, attach webviews, or access the chat/project DOM.
+
+### Forged chat and standing grants
+
+- With an existing trusted-command, MCP, browser-origin, or GitHub-write grant, inject
+  script that calls `agent:run`, `agent:run-machine`, sends a queued prompt, or steers a
+  running chat. No grant-backed command or outward request runs solely because of that
+  script. Denial or closure of the main-owned decision leaves the action unexecuted.
+- A real person can submit the same message and exercise the already-granted action
+  through trusted message entry, or approve the exact privileged action in an OS dialog.
+  The decision is bound to the frozen message or concrete tool call, thread, and turn;
+  later text edits, queued delivery, or workspace switches cannot reuse it.
+- Main-owned automation and agent continuations keep their recorded provenance and
+  existing budgets. They cannot be relabelled as human messages through renderer IPC.
+
+### User-level MCP definitions that reach a workspace
+
+- A user/global stdio definition whose command, working directory, loader variables,
+  or resolved script target is inside a renderer-writable workspace does not execute
+  that code outside containment without a fresh main-owned decision for that launch.
+  Changing the script after an earlier launch, then invoking reload, repeats the check.
+- The implicit working directory for a user/global definition is a main-owned user
+  directory, not the currently selected workspace. A server configured entirely
+  outside the workspace continues to start as before. If no trusted decision surface
+  is available, a workspace-coupled launch fails closed and reports a useful status.
+- The same rule applies at app boot, Settings reload, plugin reload, external-agent
+  forwarding, and headless ACP startup. A direct external-agent stdio spawn cannot
+  bypass Copse's launch decision.
+
+### Visible browser network access
+
+- Inject script that appends a `<webview>` using the visible browser partition,
+  navigates an existing tab, or calls the guest's `executeJavaScript` method. None
+  of those paths can send a request to an attacker-controlled HTTP(S) origin.
+- A person can still use the address bar, tabs, login cookies, context menu, and
+  page navigation in a main-owned browser guest. Main binds each guest to a trusted
+  view, and its navigation authority cannot be minted by the app renderer. Agent
+  browser partitions remain separate and keep their origin allowlist.

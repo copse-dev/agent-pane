@@ -326,7 +326,7 @@ const ALLOWED: readonly Allowance[] = [
   {
     file: 'src/main/services/mcp/mcp-registry.ts',
     term: 'stdio',
-    count: 2,
+    count: 3,
     reason: REASON.mcpTransport,
   },
   {
