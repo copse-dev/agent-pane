@@ -487,7 +487,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-2QLUHKRF.js";
+} from "./chunk-B353GFDO.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -3718,8 +3718,7 @@ function questionWant(questions) {
   const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
   return `${truncateText(first2, WANT_MAX_CHARS - extra.length)}${extra}`;
 }
-function persistedEndedAt(thread, now) {
-  const at2 = thread.settledAt;
+function persistedEndedAt(at2, now) {
   if (at2 === void 0) return void 0;
   const age = now - at2;
   return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at2 : void 0;
@@ -3795,7 +3794,8 @@ function deriveActivity(input) {
       );
     } else {
       const recentStartFailure = thread.schedule && thread.failure?.startFailed && thread.failure.at > (input.now ?? 0) - 864e5 ? thread.failure.at : void 0;
-      const endedAt = run4?.endedAt ?? thread.unreadAt ?? recentStartFailure ?? persistedEndedAt(thread, now);
+      const interrupted = thread.status === "idle" && thread.interruptedTurnAt !== void 0 && thread.failure?.startFailed !== true;
+      const endedAt = interrupted ? persistedEndedAt(thread.interruptedTurnAt, now) : run4?.endedAt ?? thread.unreadAt ?? recentStartFailure ?? persistedEndedAt(thread.settledAt, now);
       if (endedAt === void 0) continue;
       if (thread.status === "error") {
         const row2 = threadRow(thread, "failed", "Ended with an error", endedAt);
@@ -3809,6 +3809,15 @@ function deriveActivity(input) {
         const row2 = threadRow(thread, "failed", "Could not start", endedAt);
         row2.issue = issueFor(thread.failure.code, thread.failure.message);
         row2.want = row2.issue.title;
+        recent.push(row2);
+      } else if (interrupted) {
+        const row2 = threadRow(thread, "failed", "Run interrupted", endedAt);
+        row2.issue = {
+          code: "unknown",
+          title: "Run interrupted",
+          remedy: "Open the conversation to review saved work and continue when ready.",
+          message: null
+        };
         recent.push(row2);
       } else {
         recent.push(threadRow(thread, "finished", "Finished", endedAt));
@@ -3897,6 +3906,7 @@ function collectActivityThreads(store2) {
         title: thread.title,
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        ...thread.interruptedTurnAt !== void 0 ? { interruptedTurnAt: thread.interruptedTurnAt } : {},
         ...settledAtOf(thread),
         projectId: project.id,
         projectName,
@@ -3920,6 +3930,7 @@ function collectActivityThreads(store2) {
       title: carried.thread.title,
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      ...carried.thread.interruptedTurnAt !== void 0 ? { interruptedTurnAt: carried.thread.interruptedTurnAt } : {},
       ...settledAtOf(carried.thread),
       projectId: project.id,
       projectName: projectDisplayName(project),
@@ -58475,7 +58486,9 @@ ${description}
     size: formatByteSize(a.sizeBytes)
   }));
   let mismatchBranch = null;
+  let branchWarningVersion = 0;
   let checkoutInProgress = false;
+  let checkoutWarningVersion = null;
   let dirtyWarningThreadId = null;
   let lastBreakdown = null;
   let breakdownModel = null;
@@ -58714,23 +58727,27 @@ ${description}
     clearStopPending();
   };
   document.addEventListener("keydown", disarmStopOnOtherKey, true);
-  function showBranchMismatch(branch) {
-    mismatchBranch = branch;
-    branchWarning.hidden = false;
-    branchWarningText.textContent = threadGitBranchMismatchMessage(branch);
-    branchWarningText.title = threadGitBranchMismatchMessage(branch);
+  function updateBranchMismatchActions() {
     checkoutBranchBtn.disabled = checkoutInProgress;
     checkoutBranchBtn.textContent = checkoutInProgress ? "Checking out..." : "Check out";
     continueBranchBtn.disabled = checkoutInProgress;
   }
+  function showBranchMismatch(branch) {
+    branchWarningVersion++;
+    mismatchBranch = branch;
+    branchWarning.hidden = false;
+    branchWarningText.textContent = threadGitBranchMismatchMessage(branch);
+    branchWarningText.title = threadGitBranchMismatchMessage(branch);
+    updateBranchMismatchActions();
+  }
   function hideBranchMismatch() {
+    branchWarningVersion++;
     mismatchBranch = null;
     checkoutInProgress = false;
+    checkoutWarningVersion = null;
     branchWarning.hidden = true;
     branchWarningText.title = "";
-    checkoutBranchBtn.disabled = false;
-    checkoutBranchBtn.textContent = "Check out";
-    continueBranchBtn.disabled = false;
+    updateBranchMismatchActions();
   }
   function showDirtyWarning(threadId) {
     dirtyWarningThreadId = threadId;
@@ -59003,12 +59020,24 @@ ${description}
     const branch = mismatchBranch;
     checkoutInProgress = true;
     showBranchMismatch(branch);
+    const warningVersion = branchWarningVersion;
+    checkoutWarningVersion = warningVersion;
+    const finishCheckout = () => {
+      if (checkoutWarningVersion !== warningVersion || store2.getState().activeProjectId !== activeProjectId || getActiveThreadId() !== activeThreadId || activeComposerThreadId !== activeThreadId)
+        return false;
+      checkoutWarningVersion = null;
+      checkoutInProgress = false;
+      updateBranchMismatchActions();
+      return branchWarningVersion === warningVersion;
+    };
     void api2.git.checkoutBranch(activeProjectId, activeThreadId, branch).then(() => {
-      hideBranchMismatch();
-      showToast(`Checked out ${branch}`);
+      if (finishCheckout()) {
+        hideBranchMismatch();
+        showToast(`Checked out ${branch}`);
+      }
       store2.emit("git_branch_changed");
     }).catch((error) => {
-      checkoutInProgress = false;
+      if (!finishCheckout()) return;
       showBranchMismatch(branch);
       showErrorToast(`Failed to check out ${branch}`, error);
     });
@@ -59019,13 +59048,18 @@ ${description}
     if (!id) return;
     const projectId = store2.getState().activeProjectId;
     if (!projectId) return;
+    const warningVersion = branchWarningVersion;
+    const draftKey = draftFingerprint(composer.expandedValue(), snapshotDraftAttachments());
+    const isCurrent = () => branchWarningVersion === warningVersion && store2.getState().activeProjectId === projectId && getActiveThreadId() === id && activeComposerThreadId === id && draftFingerprint(composer.expandedValue(), snapshotDraftAttachments()) === draftKey;
     void api2.git.branchStatus(projectId, id).then(({ currentBranch }) => {
+      if (!isCurrent()) return;
       if (syncThreadGitBranchIfChanged(store2, id, currentBranch)) {
         store2.emit("git_branch_changed");
       }
       hideBranchMismatch();
       void submit();
     }).catch((error) => {
+      if (!isCurrent()) return;
       showErrorToast("Failed to read the current branch", error);
     });
   });
@@ -59983,6 +60017,8 @@ ${reply}`);
       }, 0);
     },
     unmount() {
+      branchWarningVersion++;
+      checkoutWarningVersion = null;
       window.removeEventListener("beforeunload", stopContextEstimates);
       stopContextEstimates();
       draftAutosave.cancel();
@@ -88655,6 +88691,11 @@ function createTranscriptReducer(store2, hooks = {}) {
         break;
       }
       case "machine_turn_start": {
+        patchThreadAnywhere(store2, threadId, (thread) => {
+          if (thread.interruptedTurnAt === void 0) return thread;
+          const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
+          return rest;
+        });
         hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
         if (chunk.hidden) break;
@@ -89324,9 +89365,11 @@ function startAgentController(store2, api2) {
               ...transcriptMeta(thread),
               // A cold read can arrive while a queued dispatch awaits its grant,
               // or after that dispatch has been denied and restored as held.
-              // Preserve that local status decision. A real runtime snapshot is
+              // Preserve that local status/interruption decision against an
+              // old running read. A completed disk snapshot may carry a main
+              // turn's removal of the old interruption. A runtime snapshot is
               // authoritative even before its first chunk creates a checkpoint.
-              ...source === "disk" && (current2.interruptedTurnAt !== void 0 || hasPendingDispatch(store2, thread.id) || current2.status === "idle" && thread.status === "running" && (current2.pendingMessages?.length ?? 0) > 0) ? { status: current2.status } : {},
+              ...source === "disk" && (current2.interruptedTurnAt !== void 0 && thread.status === "running" || hasPendingDispatch(store2, thread.id) || current2.status === "idle" && thread.status === "running" && (current2.pendingMessages?.length ?? 0) > 0) ? { status: current2.status, interruptedTurnAt: current2.interruptedTurnAt } : {},
               messages: mergeRuntimeMessages(current2.messages, thread.messages)
             };
           });
