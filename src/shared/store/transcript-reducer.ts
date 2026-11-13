@@ -18,6 +18,7 @@ import {
   findToolCall,
   findToolCallOwner,
   setMessageContent,
+  setMessagePromptContent,
   setThreadStatus,
   markAutomationRunFailed,
   addUsageDelta,
@@ -260,6 +261,36 @@ export function createTranscriptReducer(
             ...(id !== undefined ? { id } : {}),
           },
         )
+        break
+      }
+      case 'protected_human_turn_start': {
+        hooks.turnStarted?.(threadId)
+        setThreadStatus(store, threadId, 'running')
+        const thread = getThreadById(store, threadId)
+        const existing = thread?.messages.find(
+          (message) => message.id === chunk.messageId && message.role === 'user',
+        )
+        const content =
+          typeof chunk.content === 'string'
+            ? chunk.content
+            : chunk.content
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n')
+        const images =
+          typeof chunk.content === 'string'
+            ? undefined
+            : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
+        if (existing) {
+          setMessagePromptContent(store, existing.id, content, images)
+          // User prompts do not receive the assistant stream's later
+          // `message_done`, so finalize this canonical replacement now.
+          store.emit('message_done', existing.id)
+        } else {
+          addMessage(store, threadId, 'user', content, images, undefined, {
+            id: chunk.messageId,
+          })
+        }
         break
       }
       case 'text': {

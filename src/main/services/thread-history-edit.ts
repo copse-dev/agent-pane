@@ -31,6 +31,14 @@ export interface ThreadHistoryEditRuntime {
   forgetAgentHistory: (projectId: string, threadId: string) => void
 }
 
+export interface ThreadHistoryNativeReview {
+  title: string
+  detail: string
+  approveLabel: string
+}
+
+export type ThreadHistoryNativeReviewer = (review: ThreadHistoryNativeReview) => Promise<boolean>
+
 export function threadHistoryRevision(messages: readonly Message[]): string {
   return createHash('sha256').update(JSON.stringify(messages), 'utf8').digest('hex')
 }
@@ -151,6 +159,100 @@ function editedThread(thread: Thread, request: ThreadHistoryEditRequest, now: nu
   delete next.currentEpoch
   delete next.continuationUsed
   return next
+}
+
+function providerHistoryForReview(history: readonly LLMMessage[]): string {
+  return JSON.stringify(history, null, 2)
+}
+
+function nativeHistoryReview(
+  title: string,
+  warning: string,
+  current: readonly LLMMessage[],
+  proposed: readonly LLMMessage[],
+  approveLabel: string,
+): ThreadHistoryNativeReview {
+  return {
+    title,
+    detail: [
+      warning,
+      'Current provider history:',
+      providerHistoryForReview(current),
+      'Proposed provider history:',
+      providerHistoryForReview(proposed),
+    ].join('\n\n'),
+    approveLabel,
+  }
+}
+
+/** Build the exact main-owned provider-history mutation an OS dialog must review. */
+export async function describeThreadHistoryEdit(
+  projectId: string,
+  threadId: string,
+  request: ThreadHistoryEditRequest,
+): Promise<ThreadHistoryNativeReview> {
+  const current = await requireThread(projectId, threadId)
+  if (current.status === 'running' || (current.pendingMessages?.length ?? 0) > 0) {
+    throw new Error('Wait for the current thread activity to finish before editing its history.')
+  }
+  const proposed = editedThread(current, request, current.updatedAt)
+  return nativeHistoryReview(
+    `Edit provider history for “${current.title}”?`,
+    'This changes the saved transcript and the context Copse sends to the model. Review every retained, removed, and edited entry before approving.',
+    await loadAgentHistory(projectId, threadId),
+    rebuildAgentHistory(proposed.messages),
+    'Apply history edit',
+  )
+}
+
+/** Build the exact persisted provider-history restoration an OS dialog must review. */
+export async function describeThreadHistoryUndo(
+  projectId: string,
+  threadId: string,
+  expectedRevision: string,
+): Promise<ThreadHistoryNativeReview> {
+  const undo = await loadThreadHistoryUndo(projectId, threadId)
+  if (!undo) throw new Error('There is no history edit to undo')
+  const current = await requireThread(projectId, threadId)
+  const currentRevision = threadHistoryRevision(current.messages)
+  if (currentRevision !== expectedRevision || currentRevision !== undo.resultingRevision) {
+    throw new Error('The thread changed after that edit, so it can no longer be undone.')
+  }
+  return nativeHistoryReview(
+    `Undo provider history edit for “${current.title}”?`,
+    'This restores the previous saved transcript and model context. Review the exact provider history before approving.',
+    await loadAgentHistory(projectId, threadId),
+    undo.agentHistory,
+    'Restore previous history',
+  )
+}
+
+export async function applyThreadHistoryEditAfterNativeReview(
+  projectId: string,
+  threadId: string,
+  request: ThreadHistoryEditRequest,
+  runtime: ThreadHistoryEditRuntime,
+  review: ThreadHistoryNativeReviewer,
+): Promise<ThreadHistoryEditResult> {
+  if (!(await review(await describeThreadHistoryEdit(projectId, threadId, request)))) {
+    throw new Error('History edit was cancelled')
+  }
+  // The mutation reloads and revalidates the revision after the independent
+  // dialog closes, so the approved before/after snapshot cannot go stale.
+  return applyThreadHistoryEdit(projectId, threadId, request, runtime)
+}
+
+export async function undoThreadHistoryEditAfterNativeReview(
+  projectId: string,
+  threadId: string,
+  expectedRevision: string,
+  runtime: ThreadHistoryEditRuntime,
+  review: ThreadHistoryNativeReviewer,
+): Promise<ThreadHistoryEditResult> {
+  if (!(await review(await describeThreadHistoryUndo(projectId, threadId, expectedRevision)))) {
+    throw new Error('History undo was cancelled')
+  }
+  return undoThreadHistoryEdit(projectId, threadId, expectedRevision, runtime)
 }
 
 async function restoreHistory(

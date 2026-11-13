@@ -221,7 +221,7 @@ import {
   queuedMessageIds,
   queuedPayloadText,
   releaseHeldMessage,
-  removeQueuedMessage,
+  deleteQueuedMessage,
   sendQueuedMessageNow,
   updateQueuedMessageModel,
   updateQueuedMessageText,
@@ -2865,6 +2865,9 @@ export function mountConversation(
 
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
+  const deletingQueuedMessages = new Set<string>()
+  const deletingKey = (messageId: string): string =>
+    `${store.getState().activeProjectId ?? ''}/${store.getState().activeThreadId ?? ''}/${messageId}`
   let editingMessageId: string | null = null
   let editingDraft = ''
 
@@ -2904,16 +2907,36 @@ export function mountConversation(
     else drainMessageQueue(store, api, threadId)
   }
 
-  function deleteQueued(messageId: string): void {
-    const threadId = store.getState().activeThreadId
-    if (!threadId) return
+  async function deleteQueued(messageId: string): Promise<void> {
+    const { activeThreadId: threadId, activeProjectId: projectId } = store.getState()
+    const key = deletingKey(messageId)
+    if (!threadId || deletingQueuedMessages.has(key)) return
     const wasEditing = editingMessageId === messageId
     if (wasEditing) stopEditing()
-    removeQueuedMessage(store, threadId, messageId)
-    if (wasEditing) {
-      setQueuePaused(store, threadId, false)
-      drainMessageQueue(store, api, threadId)
+    deletingQueuedMessages.add(key)
+    renderQueuedPanel(threadId)
+    try {
+      await deleteQueuedMessage(store, api, threadId, messageId)
+      if (wasEditing && store.getState().activeProjectId === projectId) {
+        setQueuePaused(store, threadId, false)
+        drainMessageQueue(store, api, threadId)
+      }
+    } catch (error) {
+      showToast(
+        `Could not delete queued message: ${ipcErrorMessage(error, 'Please retry. The message remains held.')}`,
+        { variant: 'error' },
+      )
+    } finally {
+      deletingQueuedMessages.delete(key)
+      const current = store.getState().activeThreadId
+      if (current) renderQueuedPanel(current)
     }
+  }
+
+  function deletionStatus(messageId: string): HTMLElement | null {
+    return deletingQueuedMessages.has(deletingKey(messageId))
+      ? el('div', { class: 'message-queued-ui', role: 'status' }, 'Deleting…')
+      : null
   }
 
   function releaseQueued(messageId: string): void {
@@ -2985,6 +3008,8 @@ export function mountConversation(
   // moves on an explicit human action. It gets a primary "Release" affordance
   // (submit + start a fresh turn tree) plus the usual edit / delete.
   function buildHeldActions(messageId: string): HTMLElement {
+    const deleting = deletionStatus(messageId)
+    if (deleting) return deleting
     const releaseBtn = el(
       'button',
       { class: 'queued-action queued-release', type: 'button' },
@@ -3003,7 +3028,7 @@ export function mountConversation(
       'Delete',
     )
     deleteBtn.addEventListener('click', () => {
-      deleteQueued(messageId)
+      void deleteQueued(messageId)
     })
     return el(
       'div',
@@ -3020,6 +3045,8 @@ export function mountConversation(
   }
 
   function buildQueuedActions(messageId: string): HTMLElement {
+    const deleting = deletionStatus(messageId)
+    if (deleting) return deleting
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
     editBtn.addEventListener('click', () => {
       startEditing(messageId)
@@ -3039,7 +3066,7 @@ export function mountConversation(
       'Delete',
     )
     deleteBtn.addEventListener('click', () => {
-      deleteQueued(messageId)
+      void deleteQueued(messageId)
     })
     return el(
       'div',
@@ -3056,6 +3083,8 @@ export function mountConversation(
   }
 
   function buildQueuedEditor(messageId: string): HTMLElement {
+    const deleting = deletionStatus(messageId)
+    if (deleting) return deleting
     const input = el('textarea', {
       class: 'message-edit-input',
       rows: '3',
@@ -3101,7 +3130,7 @@ export function mountConversation(
       'Delete',
     )
     deleteBtn.addEventListener('click', () => {
-      deleteQueued(messageId)
+      void deleteQueued(messageId)
     })
     const wrap = el(
       'div',

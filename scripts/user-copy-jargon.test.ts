@@ -49,6 +49,7 @@ const REASON = {
   technicalDetails: 'the exact protocol code, kept inside the “Technical details” disclosure',
   mcpTransport:
     'the MCP server transport name — MCP servers and plugin manifests are configured by it',
+  embeddedLauncher: 'Node child-process source embedded in a launcher, never displayed to a user',
   pluginAuthor: 'a validation message for plugin authors, shown in plugin development',
   advancedSettings:
     'the plugin contribution list in Settings → Customise → Plugins, beside Hooks and MCP chips',
@@ -325,8 +326,14 @@ const ALLOWED: readonly Allowance[] = [
   {
     file: 'src/main/services/mcp/mcp-registry.ts',
     term: 'stdio',
-    count: 2,
+    count: 3,
     reason: REASON.mcpTransport,
+  },
+  {
+    file: 'src/main/services/mcp/project-mcp-launcher.ts',
+    term: 'stdio',
+    count: 1,
+    reason: REASON.embeddedLauncher,
   },
   {
     file: 'src/main/services/mcp/mcp-user-config.ts',

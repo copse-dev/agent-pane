@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
   AutomationFailureCode,
@@ -27,9 +27,13 @@ import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import {
+  appendScheduledFirstUserMessage,
   createThread,
   deleteProjectThread,
+  getLatestThreadPlan,
+  getProjectThread,
   getThreadMeta,
+  loadAgentHistory,
   loadProjectThreadMetas,
   updateMetaOrThrow,
 } from '../thread-store.ts'
@@ -231,6 +235,8 @@ function isSchedule(value: unknown): value is AutomationSchedule {
   const permissions = value['permissions']
   const lastProblem = value['lastProblem']
   const blockedBy = value['lastWorktreeLimitBlockedBy']
+  const lastRunPromptDigest = value['lastRunPromptDigest']
+  const lastRunGrantClaimed = value['lastRunGrantClaimed']
   return (
     typeof value['id'] === 'string' &&
     typeof value['projectId'] === 'string' &&
@@ -239,6 +245,9 @@ function isSchedule(value: unknown): value is AutomationSchedule {
     typeof value['prompt'] === 'string' &&
     typeof value['model'] === 'string' &&
     typeof value['enabled'] === 'boolean' &&
+    (lastRunPromptDigest === undefined ||
+      (typeof lastRunPromptDigest === 'string' && /^[a-f0-9]{64}$/.test(lastRunPromptDigest))) &&
+    (lastRunGrantClaimed === undefined || typeof lastRunGrantClaimed === 'boolean') &&
     (maxLiveWorktrees === undefined ||
       maxLiveWorktrees === 'unlimited' ||
       (typeof maxLiveWorktrees === 'number' &&
@@ -287,6 +296,12 @@ function minuteStamp(timestamp: number): number {
   return Math.floor(timestamp / 60_000)
 }
 
+function runPromptDigest(prompt: string, model: string): string {
+  return createHash('sha256')
+    .update(JSON.stringify([prompt, model]))
+    .digest('hex')
+}
+
 export interface AutomationService {
   list(projectId: string): AutomationSchedule[]
   permissionOptions(): AutomationPermissionOption[]
@@ -300,6 +315,16 @@ export interface AutomationService {
     threadId: string,
     automation: NonNullable<Thread['automation']>,
   ): boolean
+  /** Atomically consume the one unattended grant scope for the frozen first turn. */
+  claimRunGrant(
+    projectId: string,
+    threadId: string,
+    automation: NonNullable<Thread['automation']>,
+    prompt: string,
+    model: string,
+  ): Promise<boolean>
+  /** Fail closed when the latest pending run thread is intentionally deleted. */
+  retireRunGrant(projectId: string, threadId: string): Promise<void>
   permissionPreferenceForThread(
     projectId: string,
     threadId: string,
@@ -313,7 +338,11 @@ export interface AutomationService {
   ): Promise<boolean>
   upsert(projectId: string, input: AutomationScheduleInput): Promise<AutomationSchedule>
   remove(projectId: string, scheduleId: string): Promise<void>
-  runNow(projectId: string, scheduleId: string): Promise<AutomationTriggerEvent>
+  runNow(
+    projectId: string,
+    scheduleId: string,
+    reviewed?: AutomationSchedule,
+  ): Promise<AutomationTriggerEvent>
   /**
    * Release every finished run's checkout that is safe to remove, through the
    * same path the scheduler uses, and report the runs that must stay.
@@ -405,7 +434,8 @@ export interface AutomationServiceDependencies {
 export type DispatchHeadlessTurn = (
   request: AgentDispatchRequest,
   host: AgentHost<StreamChunk>,
-) => Promise<void>
+  claim: () => Promise<boolean>,
+) => Promise<boolean> | Promise<void>
 
 export function createAutomationService(
   dependencies: AutomationServiceDependencies,
@@ -499,7 +529,32 @@ export function createAutomationService(
 
   async function replaceSchedule(next: AutomationSchedule): Promise<void> {
     await updateSchedules((schedules) => {
-      return [...schedules.filter((schedule) => schedule.id !== next.id), next]
+      const latest = schedules.find(
+        (schedule) => schedule.id === next.id && schedule.projectId === next.projectId,
+      )
+      // An edit may have read the row before the first turn consumed its grant.
+      // Carry the run record from the serialized write, not the edit's snapshot.
+      const merged: AutomationSchedule = latest
+        ? {
+            ...next,
+            ...(latest.lastRunAt !== undefined ? { lastRunAt: latest.lastRunAt } : {}),
+            ...(latest.lastCreatedThreadId !== undefined
+              ? { lastCreatedThreadId: latest.lastCreatedThreadId }
+              : {}),
+            ...(latest.lastRunPromptDigest !== undefined
+              ? { lastRunPromptDigest: latest.lastRunPromptDigest }
+              : {}),
+            ...(latest.lastRunGrantClaimed !== undefined
+              ? { lastRunGrantClaimed: latest.lastRunGrantClaimed }
+              : {}),
+          }
+        : next
+      return [
+        ...schedules.filter(
+          (schedule) => schedule.id !== next.id || schedule.projectId !== next.projectId,
+        ),
+        merged,
+      ]
     })
   }
 
@@ -557,8 +612,11 @@ export function createAutomationService(
     scheduleId: string,
     triggeredAt: number,
     threadId: string,
+    prompt: string,
+    model: string,
     signal?: AbortSignal,
   ): Promise<void> {
+    const digest = runPromptDigest(prompt, model)
     await updateSchedules((schedules) => {
       signal?.throwIfAborted()
       return schedules.map((schedule) => {
@@ -568,6 +626,8 @@ export function createAutomationService(
           updatedAt: Math.max(schedule.updatedAt, triggeredAt),
           lastRunAt: triggeredAt,
           lastCreatedThreadId: threadId,
+          lastRunPromptDigest: digest,
+          lastRunGrantClaimed: false,
         }
         delete updated.lastWorktreeLimitAt
         delete updated.lastWorktreeLimitBlockedBy
@@ -733,9 +793,9 @@ export function createAutomationService(
           pending.automation.triggeredAt !== automation.triggeredAt
         )
           return
-        await run.appendUserMessage(prompt)
+        await appendScheduledFirstUserMessage(projectId, threadId, prompt, automation)
         await updateMetaOrThrow(projectId, threadId, { status: 'running', draftPrompt: '' })
-        await dispatch(
+        const accepted = await dispatch(
           {
             projectId,
             threadId,
@@ -750,9 +810,34 @@ export function createAutomationService(
               priorTodos: [],
               model,
             },
+            // The pristine transcript was committed above by main. This is a
+            // first turn, so freeze empty prior provider context; the scheduled
+            // prompt remains the separately protected outgoing `userContent`.
+            protectedHistory: [],
+            protectedPlan: null,
           },
           run.host,
+          async () => {
+            const [thread, history, plan] = await Promise.all([
+              getProjectThread(projectId, threadId),
+              loadAgentHistory(projectId, threadId),
+              getLatestThreadPlan(projectId, threadId),
+            ])
+            if (
+              !thread ||
+              thread.messages.length !== 1 ||
+              thread.messages[0]?.role !== 'user' ||
+              thread.messages[0].content !== prompt ||
+              history.length !== 0 ||
+              plan !== null
+            ) {
+              return false
+            }
+            return service.claimRunGrant(projectId, threadId, automation, prompt, model)
+          },
         )
+        if (accepted === false)
+          throw new Error('The scheduled first-turn grant is no longer available')
         await run.flush()
         const current = await getThreadMeta(projectId, threadId)
         if (
@@ -1000,7 +1085,15 @@ export function createAutomationService(
       // The user may edit or delete the schedule while the filesystem work
       // above is pending. Merge only the run metadata into the current row;
       // never restore the stale snapshot that started this run.
-      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId, signal)
+      await recordScheduleRun(
+        schedule.projectId,
+        schedule.id,
+        triggeredAt,
+        threadId,
+        schedule.prompt,
+        schedule.model,
+        signal,
+      )
       signal.throwIfAborted()
       const event = {
         projectId: schedule.projectId,
@@ -1054,6 +1147,37 @@ export function createAutomationService(
             schedule.lastCreatedThreadId === threadId &&
             schedule.lastRunAt === automation.triggeredAt,
         )
+    },
+    async claimRunGrant(projectId, threadId, automation, prompt, model) {
+      let claimed = false
+      const digest = runPromptDigest(prompt, model)
+      await updateSchedules((schedules) =>
+        schedules.map((schedule) => {
+          if (
+            schedule.projectId !== projectId ||
+            schedule.id !== automation.scheduleId ||
+            schedule.lastCreatedThreadId !== threadId ||
+            schedule.lastRunAt !== automation.triggeredAt ||
+            schedule.lastRunPromptDigest !== digest ||
+            schedule.lastRunGrantClaimed !== false
+          )
+            return schedule
+          claimed = true
+          return { ...schedule, lastRunGrantClaimed: true }
+        }),
+      )
+      return claimed
+    },
+    async retireRunGrant(projectId, threadId) {
+      await updateSchedules((schedules) =>
+        schedules.map((schedule) =>
+          schedule.projectId === projectId &&
+          schedule.lastCreatedThreadId === threadId &&
+          schedule.lastRunGrantClaimed === false
+            ? { ...schedule, lastRunGrantClaimed: true }
+            : schedule,
+        ),
+      )
     },
     permissionPreferenceForThread(projectId, threadId, automation, permission) {
       const schedule = service
@@ -1141,6 +1265,12 @@ export function createAutomationService(
         ...(existing?.lastCreatedThreadId !== undefined
           ? { lastCreatedThreadId: existing.lastCreatedThreadId }
           : {}),
+        ...(existing?.lastRunPromptDigest !== undefined
+          ? { lastRunPromptDigest: existing.lastRunPromptDigest }
+          : {}),
+        ...(existing?.lastRunGrantClaimed !== undefined
+          ? { lastRunGrantClaimed: existing.lastRunGrantClaimed }
+          : {}),
         ...(existing?.lastWorktreeLimitAt !== undefined &&
         maxLiveWorktrees === (existing.maxLiveWorktrees ?? 1)
           ? {
@@ -1193,10 +1323,13 @@ export function createAutomationService(
         healthListeners.delete(listener)
       }
     },
-    async runNow(projectId, scheduleId) {
+    async runNow(projectId, scheduleId, reviewed) {
       if (!dependencies.isPluginEnabled()) throw new Error('Enable the automations plugin first')
       const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
       if (!schedule) throw new Error('Automation schedule not found in this project')
+      if (reviewed && JSON.stringify(schedule) !== JSON.stringify(reviewed)) {
+        throw new Error('Automation changed during confirmation; review it again')
+      }
       return trigger(schedule, dependencies.now(), 'manual')
     },
     async cleanupRuns(projectId, scheduleId) {

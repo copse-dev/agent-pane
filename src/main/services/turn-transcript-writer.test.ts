@@ -18,6 +18,7 @@ import {
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import {
+  acceptReviewedUserMessage,
   appendMessage,
   createThread,
   getProjectThread,
@@ -210,6 +211,30 @@ describe('TurnTranscriptWriter', () => {
       'usage from both calls',
     )
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
+  })
+
+  it('persists the accepted main identity when protected review cannot reuse a bubble', async () => {
+    const turn = harness(() => [{ type: 'done' }])
+    let acceptedId = ''
+    await turn.dispatcher.dispatch({
+      projectId: PROJECT,
+      threadId: THREAD,
+      payload: { userContent: 'Reviewed exact prompt', invokedSkills: [], priorTodos: [] },
+      protectedHumanStart: {
+        content: 'Reviewed exact prompt',
+        acceptMessageId: async () => {
+          acceptedId = await acceptReviewedUserMessage(PROJECT, THREAD)
+          return acceptedId
+        },
+      },
+    })
+    await turn.writer.settled(THREAD)
+
+    assert.match(acceptedId, /^[0-9a-f-]{36}$/)
+    const accepted = (await stored()).messages.find((message) => message.id === acceptedId)
+    assert.ok(accepted)
+    assert.equal(accepted.role, 'user')
+    assert.equal(accepted.content, 'Reviewed exact prompt')
   })
 
   for (const retryId of ['call_0', 'retry_1']) {

@@ -396,6 +396,54 @@ place without reordering history, and rewrites its referenced result blob before
 the spine commit. In-progress tools are not re-finalized because v1 deliberately
 persists only terminal `done` / `error` tool states.
 
+## Queued-message deletion (`type: "queued_message_deleted"`)
+
+Delete waits for the optimistic queued user message and queue metadata to reach
+main. The saved pending entry is a UX condition, not delete authority: main also
+requires its own durable `user_message_lifecycle` state to be `unaccepted`. Under
+the existing project write queue, it then atomically replaces only that user-message line with
+`{ "v": 1, "type": "queued_message_deleted", "id": "<messageId>", "recordedAt": 0 }`.
+The record retains the ID, with no prompt text. Other spine entries retain their
+bytes and order. Accepted provider history is not rewritten.
+
+`user_message_lifecycle` contains only version, message ID, recorded time and
+`unaccepted`/`accepted` state. Trusted renderer-source first append/create records
+unaccepted state; a renderer update never downgrades accepted state or mints new
+proof. `appendMessage` reports its actual serialized creation/update outcome.
+Fresh receipt callbacks run synchronously inside that same queued operation.
+A renderer-created thread earns unaccepted state and a creation callback only
+when it is actually new and its complete initial message list is exactly one
+user message. Every user ID in any other initial list is recorded as accepted
+fail-closed, with no callback. Duplicate create never overwrites or remints.
+Existing `createThreadWithResult` true/false semantics and its void wrapper remain.
+
+After protected review and exclusive dispatch admission, main reserves the canonical
+user ID by committing accepted state before provider execution. It reuses an
+existing unaccepted ID only with a synchronous one-use claim; otherwise it reserves
+a fresh main-generated ID. The returned ID must be carried through the canonical
+transcript chunk and missing-bubble creation. Busy/cancel before admission consume
+nothing. Legacy user IDs fail closed as accepted; full saves seal that conservative
+state before dropping old message lines, so a later append cannot become fresh.
+These calls and the prompt-review receipt/dispatch adapter ship in one composed
+stack; the store alone is not proof of the adapter's admission ordering.
+
+The spine replacement commits deletion before metadata cleanup. If the later
+metadata write fails or the app exits, readers filter that retired ID out of the
+pending queue; retrying Delete is idempotent. A synchronous trusted callback
+revokes pending receipts for that project/thread/message across all senders after
+the retirement commit and before metadata cleanup, including on a retry. Acceptance
+and retirement share the project queue and cannot both win for the same ID. Stale metadata and full-thread saves
+also filter retired IDs, and message appends reject reuse before writing referenced
+content. This preserves the main-owned append/acceptance boundary: deleting an ID
+does not make it eligible for a fresh append receipt. The renderer holds the note
+against automatic dispatch while awaiting acknowledgement and leaves it held with
+a visible error on failure. It removes the local bubble only after success.
+
+Full saves preserve these non-message records, including across history edits and
+recovery. This is transcript removal, not secure erasure: an unreferenced content
+file may remain until normal pruning. Old app versions do not enforce retirement;
+do not downgrade while relying on this recovery behavior.
+
 ## Machine-continuation line schema (`type: "machine_continuation"`)
 
 Machine-triggered agent turns append a compact `started` record before dispatch and a

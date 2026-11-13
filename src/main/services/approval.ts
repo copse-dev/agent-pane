@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMain } from 'electron'
+import type { BrowserWindow, IpcMain, WebContents } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import {
   abortAllAcpPermissions,
@@ -222,7 +222,58 @@ export interface ApprovalResponse {
   resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
 }
 
+export type ConfirmDesktopApproval = (
+  sender: WebContents,
+  request: ApprovalRequest,
+  proposed: ApprovalResponse,
+  signal: AbortSignal,
+) => Promise<boolean>
+
 const DENIED: ApprovalResponse = { approved: false, remember: false }
+const DESKTOP_DENIED: ApprovalResponse = { approved: false, remember: false, resolution: 'user' }
+
+export function proposedDesktopApproval(
+  request: ApprovalRequest,
+  approved: boolean,
+  remember: boolean | undefined,
+  grantScope: 'once' | 'turn-tree' | undefined,
+): ApprovalResponse {
+  if (!approved) return DESKTOP_DENIED
+  if (remember && request.allowRemember !== true && !request.approveOnceLabel) {
+    throw new IpcValidationError('This approval cannot be remembered')
+  }
+  if (grantScope === 'turn-tree' && request.allowTurnTreeLease !== true) {
+    throw new IpcValidationError('This approval cannot grant a turn-tree lease')
+  }
+  return {
+    approved: true,
+    remember: remember === true,
+    resolution: 'user',
+    ...(grantScope ? { grantScope } : {}),
+  }
+}
+
+export async function confirmDesktopProposal(
+  request: ApprovalRequest,
+  proposed: ApprovalResponse,
+  signal: AbortSignal,
+  confirm: (
+    request: ApprovalRequest,
+    proposed: ApprovalResponse,
+    signal: AbortSignal,
+  ) => Promise<boolean>,
+): Promise<ApprovalResponse> {
+  if (!proposed.approved || signal.aborted) return DESKTOP_DENIED
+  try {
+    if (await confirm(request, proposed, signal)) {
+      signal.throwIfAborted()
+      return proposed
+    }
+  } catch {
+    // A failed trusted confirmation is a denial, never renderer consent.
+  }
+  return DESKTOP_DENIED
+}
 
 /**
  * Fingerprint for coalescing identical in-flight approval prompts. Parallel tool
@@ -1030,29 +1081,57 @@ export function initApproval(
   win: BrowserWindow,
   ipcMain: IpcMain,
   alertUser: UserAlertSender,
+  confirmDesktopApproval: ConfirmDesktopApproval,
 ): (target: object) => void {
-  const pending = new Map<string, (response: ApprovalResponse) => void>()
+  const pending = new Map<
+    string,
+    {
+      request: ApprovalRequest
+      resolve: (response: ApprovalResponse) => void
+      abort: AbortController
+    }
+  >()
+  const confirming = new Set<string>()
   const replay = new Map<string, { target: object; send: () => void }>()
   const settle = (id: string, response: ApprovalResponse): void => {
-    const resolve = pending.get(id)
-    if (!resolve) return
+    const entry = pending.get(id)
+    if (!entry) return
     pending.delete(id)
     replay.delete(id)
-    resolve(response)
+    entry.abort.abort()
+    entry.resolve(response)
   }
 
-  ipcMain.handle('approval:respond', (event, ...rawArgs) => {
+  ipcMain.handle('approval:respond', async (event, ...rawArgs) => {
     try {
-      // assertMainFrameSender rejects any frame other than the window's main
-      // frame, so a compromised/embedded frame can't answer an approval.
+      // This only identifies an app-owned frame. It does not attest a user
+      // gesture: model or project content could compromise that same frame.
       assertMainFrameSender(event, win)
       const [id, approved, remember, grantScope] = parseIpcArgs(approvalRespondSchema, rawArgs)
-      settle(id, {
-        approved,
-        remember: remember === true,
-        resolution: 'user',
-        ...(grantScope ? { grantScope } : {}),
-      })
+      const entry = pending.get(id)
+      if (!entry) return
+      const proposed = proposedDesktopApproval(entry.request, approved, remember, grantScope)
+      if (!approved) {
+        settle(id, proposed)
+        return
+      }
+      if (confirming.has(id)) return
+      confirming.add(id)
+      let response: ApprovalResponse
+      try {
+        response = await confirmDesktopProposal(
+          entry.request,
+          proposed,
+          entry.abort.signal,
+          (request, answer, signal) =>
+            confirmDesktopApproval(event.sender, request, answer, signal),
+        )
+      } finally {
+        confirming.delete(id)
+      }
+      if (pending.get(id) === entry) {
+        settle(id, response)
+      }
     } catch (err) {
       if (err instanceof IpcValidationError) return
       throw err
@@ -1138,12 +1217,16 @@ export function initApproval(
                 },
               )
             : (): void => {}
-        pending.set(id, (response) => {
-          removeDecision()
-          if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
-          signal?.removeEventListener('abort', onAbort)
-          stopAlert()
-          resolve(response)
+        pending.set(id, {
+          request: req,
+          abort: new AbortController(),
+          resolve: (response) => {
+            removeDecision()
+            if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
+            signal?.removeEventListener('abort', onAbort)
+            stopAlert()
+            resolve(response)
+          },
         })
       }),
   )

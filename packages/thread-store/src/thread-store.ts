@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
 import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
   Message,
@@ -44,6 +45,8 @@ import {
   serializeSpineLine,
   type ContentRef,
   type SpineHookRunLine,
+  type SpineQueuedMessageDeletedLine,
+  type SpineUserMessageLifecycleLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
   type SpineContextCompactionLine,
@@ -448,29 +451,147 @@ function listFilesRecursive(dir: string, base: string = dir): string[] {
  * every call — see #1222. Anything that rewrites or removes the file outside
  * `appendMessage` must invalidate its entry so the next append reseeds.
  */
-const knownMessageIdsByDir = new Map<string, Set<string>>()
+interface KnownMessageIds {
+  ids: Set<string>
+  deleted: Set<string>
+  userStates: Map<string, 'unaccepted' | 'accepted'>
+}
+
+const knownMessageIdsByDir = new Map<string, KnownMessageIds>()
+
+function messageIdsFromSpine(raw: string): KnownMessageIds {
+  const ids = new Set<string>()
+  const deleted = new Set<string>()
+  const userStates = new Map<string, 'unaccepted' | 'accepted'>()
+  for (const { line } of parseSpineEntries(raw)) {
+    if (line?.type === 'message') ids.add(line.id)
+    if (line?.type === 'user_message_lifecycle') {
+      if (line.state === 'accepted' || !userStates.has(line.id)) userStates.set(line.id, line.state)
+    }
+    if (line?.type === 'queued_message_deleted') {
+      ids.add(line.id)
+      deleted.add(line.id)
+    }
+  }
+  return { ids, deleted, userStates }
+}
+
+/** Retirement must fail closed on unreadable storage, rather than treating it as empty. */
+function readSpineForDeletionGuard(dir: string): string {
+  const path = join(dir, EVENTS_FILE)
+  assertStorePath(path)
+  let fd: number
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isRecord(error) && error['code'] === 'ENOENT') return ''
+    throw error
+  }
+  try {
+    return readFileSync(fd, 'utf8')
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function deletedMessageIdsFor(dir: string): ReadonlySet<string> {
+  const cached = knownMessageIdsByDir.get(dir)
+  if (cached) return cached.deleted
+  const raw = readSpineForDeletionGuard(dir)
+  const known = messageIdsFromSpine(raw)
+  // Seed the existing cache on ordinary reads too. A legacy missing newline
+  // must still reach the append path's one-time normalization before caching.
+  if (raw === '' || raw.endsWith('\n')) knownMessageIdsByDir.set(dir, known)
+  return known.deleted
+}
+
+function withoutDeletedQueueFromDisk<T extends ThreadMeta>(meta: T, dir: string): T {
+  return meta.pendingMessages?.length ? withoutDeletedQueue(meta, deletedMessageIdsFor(dir)) : meta
+}
+
+function withoutDeletedQueue<T extends ThreadMeta>(meta: T, deleted: ReadonlySet<string>): T {
+  if (!meta.pendingMessages?.some((item) => deleted.has(item.messageId))) return meta
+  const pendingMessages = meta.pendingMessages.filter((item) => !deleted.has(item.messageId))
+  const next = { ...meta }
+  if (pendingMessages.length > 0) next.pendingMessages = pendingMessages
+  else delete next.pendingMessages
+  return next
+}
 
 function invalidateKnownMessageIds(dir: string): void {
   knownMessageIdsByDir.delete(dir)
 }
 
 /** Get (seeding from disk on first use) the known message ids for a thread. */
-async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
+async function knownMessageIdsFor(dir: string): Promise<KnownMessageIds> {
   const cached = knownMessageIdsByDir.get(dir)
   if (cached) return cached
   const eventsPath = join(dir, EVENTS_FILE)
-  const raw = (await readOrNull(eventsPath)) ?? ''
+  const raw = (await readOrNull(eventsPath, true)) ?? ''
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
     // true appends below, which assume one is already there.
     await atomicWriteFileAsync(eventsPath, `${raw}\n`)
   }
-  const ids = new Set<string>()
-  for (const entry of parseSpineEntries(raw)) {
-    if (entry.line?.type === 'message') ids.add(entry.line.id)
+  const known = messageIdsFromSpine(raw)
+  knownMessageIdsByDir.set(dir, known)
+  return known
+}
+
+/** Options supplied only by trusted main-process callers, never renderer payloads. */
+export interface UserMessageWriteOptions {
+  source?: 'renderer'
+  /** Runs inside the write queue, only for a genuinely new unaccepted user ID. */
+  onUnacceptedCreated?: (messageId: string) => void
+}
+
+export interface MessageAppendResult {
+  /** First committed introduction of this identity, rather than a retry or reserved ID. */
+  created: boolean
+  unacceptedUser: boolean
+}
+
+function freshRendererFirstPrompt(
+  thread: Thread,
+  options: UserMessageWriteOptions,
+  existingRaw: string,
+): Message | undefined {
+  const first = thread.messages.length === 1 ? thread.messages[0] : undefined
+  return options.source === 'renderer' && existingRaw === '' && first?.role === 'user'
+    ? first
+    : undefined
+}
+
+function userMessageLifecycleLine(
+  id: string,
+  state: 'unaccepted' | 'accepted',
+): SpineUserMessageLifecycleLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'user_message_lifecycle',
+    id,
+    state,
+    recordedAt: Date.now(),
   }
-  knownMessageIdsByDir.set(dir, ids)
-  return ids
+}
+
+/** Stored identity, not the incoming role, determines whether a write is allowed. */
+function assertUserMessageReplacement(
+  message: Message,
+  known: KnownMessageIds,
+  existingRole: Message['role'] | undefined,
+  source?: 'renderer',
+): void {
+  const state = known.userStates.get(message.id)
+  const storedUser = state !== undefined || existingRole === 'user'
+  if (storedUser && source === 'renderer' && state !== 'unaccepted')
+    throw new Error('An accepted user message cannot be replaced by the renderer')
+  if (
+    (storedUser && message.role !== 'user') ||
+    (existingRole !== undefined && existingRole !== 'user' && message.role === 'user')
+  ) {
+    throw new Error('An existing message cannot change its user role')
+  }
 }
 
 /**
@@ -488,33 +609,86 @@ async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
  * chosen over carrying them in memory). Blobs those preserved lines reference
  * are exempted from pruning.
  */
-function writeThread(projectId: string, thread: Thread): void {
+function writeThread(
+  projectId: string,
+  thread: Thread,
+  options: UserMessageWriteOptions = {},
+): Thread {
   const dir = threadDir(projectId, thread.id)
   for (const contentDir of REF_DIRS) assertStorePath(join(dir, contentDir))
   mkdirSync(dir, { recursive: true })
 
-  const { spine, files } = explodeThread(thread.messages, sha256)
+  const existingRaw = readSpineForDeletionGuard(dir)
+  const known = messageIdsFromSpine(existingRaw)
+  const { deleted } = known
+  const existingRoles = new Map<string, Message['role']>()
+  const lifecycle: SpineUserMessageLifecycleLine[] = []
+  // Before a full save can drop an old user ID, retain its conservative accepted
+  // status. Legacy or renderer-supplied queue metadata is never unsent proof.
+  for (const { line } of parseSpineEntries(existingRaw)) {
+    if (line?.type === 'message') existingRoles.set(line.id, line.role)
+    if (
+      line?.type === 'message' &&
+      line.role === 'user' &&
+      !known.userStates.has(line.id) &&
+      !deleted.has(line.id)
+    ) {
+      const accepted = userMessageLifecycleLine(line.id, 'accepted')
+      lifecycle.push(accepted)
+      known.userStates.set(line.id, 'accepted')
+    }
+  }
+  const firstPrompt = freshRendererFirstPrompt(thread, options, existingRaw)
+  for (const message of thread.messages) {
+    if (deleted.has(message.id)) continue
+    assertUserMessageReplacement(message, known, existingRoles.get(message.id), options.source)
+    existingRoles.set(message.id, message.role)
+    if (message.role !== 'user') continue
+    const previous = known.userStates.get(message.id)
+    if (previous === 'accepted' || (previous === 'unaccepted' && options.source !== 'renderer'))
+      continue
+    const state =
+      firstPrompt?.id === message.id && !known.ids.has(message.id) ? 'unaccepted' : 'accepted'
+    if (previous === state) continue
+    const line = userMessageLifecycleLine(message.id, state)
+    lifecycle.push(line)
+    known.userStates.set(message.id, state)
+  }
+  const durable = withoutDeletedQueue(
+    {
+      ...thread,
+      messages: thread.messages.filter((message) => !deleted.has(message.id)),
+    },
+    deleted,
+  )
+  const { spine, files } = explodeThread(durable.messages, sha256)
   // Resolve every path before writing any, so a bad ref leaves nothing behind.
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
     contents: file.contents,
   }))
   for (const target of targets) writeFileEnsuringDir(target.path, target.contents)
-  const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-  const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
+  const withLifecycle =
+    existingRaw +
+    (existingRaw && !existingRaw.endsWith('\n') ? '\n' : '') +
+    lifecycle
+      .map(serializeSpineLine)
+      .map((raw) => `${raw}\n`)
+      .join('')
+  const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(withLifecycle, spine)
   atomicWriteFile(join(dir, EVENTS_FILE), body)
+  invalidateKnownMessageIds(dir)
   const previous = readMeta(dir)
   atomicWriteFile(
     join(dir, META_FILE),
     `${JSON.stringify({
-      ...metaOf(thread),
+      ...metaOf(durable),
       ...(previous?.prProductions ? { prProductions: previous.prProductions } : {}),
       ...(previous?.commitProductions ? { commitProductions: previous.commitProductions } : {}),
     })}\n`,
   )
-  invalidateKnownMessageIds(dir)
-
   pruneStaleFiles(dir, files, preservedRefs)
+  return durable
 }
 
 function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: string[] = []): void {
@@ -536,7 +710,8 @@ function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: strin
 
 /** Parse a thread's `meta.json`, or null if missing/malformed. */
 function readMeta(dir: string): ThreadMeta | null {
-  return parseMeta(safeRead(join(dir, META_FILE)))
+  const meta = parseMeta(safeRead(join(dir, META_FILE)))
+  return meta?.pendingMessages?.length ? withoutDeletedQueue(meta, deletedMessageIdsFor(dir)) : meta
 }
 
 /** Validate `meta.json` contents, however they were read. Null if malformed. */
@@ -674,7 +849,11 @@ async function readThread(
     readOrNull(join(dir, META_FILE), strict),
     readOrNull(join(dir, EVENTS_FILE), strict),
   ])
-  const meta = parseMeta(metaRaw)
+  const parsedMeta = parseMeta(metaRaw)
+  const meta =
+    parsedMeta === null
+      ? null
+      : withoutDeletedQueue(parsedMeta, messageIdsFromSpine(eventsRaw ?? '').deleted)
   if (meta === null) return null
   // Bail before the prefetch: skipping an archived thread is only worth doing if
   // its message bodies are never read, and that is where the bytes are.
@@ -768,7 +947,8 @@ async function readThreadMetaOnly(
   strict = false,
 ): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
-  const meta = parseMeta(await readOrNull(join(dir, META_FILE), strict))
+  const parsedMeta = parseMeta(await readOrNull(join(dir, META_FILE), strict))
+  const meta = parsedMeta === null ? null : withoutDeletedQueueFromDisk(parsedMeta, dir)
   if (meta === null) return null
   if (options.includeArchived === false && meta.archivedAt != null) return null
   let spineBytes = 0
@@ -2095,8 +2275,8 @@ export function loadProjectThreadMetas(
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
   return runStoreWrite(projectId, () => {
-    writeThread(projectId, thread)
-    upsertCatalogEntry(projectId, thread)
+    const durable = writeThread(projectId, thread)
+    upsertCatalogEntry(projectId, durable)
   })
 }
 
@@ -2106,8 +2286,8 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     const entries = new Map<string, CatalogEntry>()
     for (const thread of threads) {
       keepIds.add(thread.id)
-      writeThread(projectId, thread)
-      const entry = catalogEntryOf(thread)
+      const durable = writeThread(projectId, thread)
+      const entry = catalogEntryOf(durable)
       if (entry) entries.set(thread.id, entry)
     }
     for (const threadId of listThreadIds(projectId)) {
@@ -2133,19 +2313,44 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
  * and metadata before its rebuildable catalog failed; retrying must not replace
  * messages or runtime metadata main appended since that partial success.
  */
-export function createThread(projectId: string, thread: Thread): Promise<void> {
+export function createThreadWithResult(
+  projectId: string,
+  thread: Thread,
+  options: UserMessageWriteOptions = {},
+): Promise<boolean> {
   return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, thread.id)
     if (readMeta(dir) !== null) {
       refreshCatalogLine(projectId, thread.id)
-      return
+      return false
     }
-    if (existsSync(join(dir, META_FILE))) {
+    if (options.source === 'renderer' && existsSync(dir)) {
+      throw new Error('Renderer cannot create a thread over existing store data')
+    }
+    if (existsSync(join(dir, META_FILE)))
       throw new Error('Cannot create a thread over unreadable existing metadata')
+    if (
+      options.source === 'renderer' &&
+      (thread.messages.length > 1 ||
+        (thread.messages.length === 1 && thread.messages[0]?.role !== 'user'))
+    ) {
+      throw new Error('Renderer thread creation may contain only one unaccepted user message')
     }
-    writeThread(projectId, thread)
-    upsertCatalogEntry(projectId, thread)
+    const existingRaw = readSpineForDeletionGuard(dir)
+    const firstPrompt = freshRendererFirstPrompt(thread, options, existingRaw)
+    const durable = writeThread(projectId, thread, options)
+    upsertCatalogEntry(projectId, durable)
+    if (firstPrompt) options.onUnacceptedCreated?.(firstPrompt.id)
+    return true
   })
+}
+
+export async function createThread(
+  projectId: string,
+  thread: Thread,
+  options: UserMessageWriteOptions = {},
+): Promise<void> {
+  await createThreadWithResult(projectId, thread, options)
 }
 
 /**
@@ -2166,8 +2371,28 @@ async function appendMessageUnqueued(
   threadId: string,
   message: Message,
   canCommit?: () => boolean,
+  source?: 'renderer',
 ): Promise<boolean> {
   const dir = threadDir(projectId, threadId)
+  const knownIds = await knownMessageIdsFor(dir)
+  if (canCommit && !canCommit()) return false
+  if (knownIds.deleted.has(message.id))
+    throw new Error('Cannot append a deleted queued message; send a new message instead')
+  // Read the authoritative replacement snapshot before touching referenced files.
+  // A denied/transient read must not erase lifecycle lines or change the old body.
+  const existingEntries = knownIds.ids.has(message.id)
+    ? parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE), true)) ?? '')
+    : undefined
+  if (canCommit && !canCommit()) return false
+  const existingMessage = existingEntries?.find(
+    (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
+  )?.line
+  assertUserMessageReplacement(
+    message,
+    knownIds,
+    existingMessage?.type === 'message' ? existingMessage.role : undefined,
+    source,
+  )
   await fsPromises.mkdir(dir, { recursive: true })
   const { line, files } = explodeMessage(message, sha256)
   const targets = files.map((file) => ({
@@ -2181,14 +2406,22 @@ async function appendMessageUnqueued(
   for (const target of targets) {
     await writeFileEnsuringDirAsync(target.path, target.contents)
   }
-  // File bodies are unreachable until a spine line refers to them. Check the
-  // in-memory run owner before beginning the visible commit.
-  if (canCommit && !canCommit()) return false
   const raw = serializeSpineLine(line)
-  const knownIds = await knownMessageIdsFor(dir)
-  // `knownMessageIdsFor` can await a disk read. Recheck immediately before the
-  // user-visible spine commit so a local dispatch accepted in that interval
-  // keeps sole ownership of the thread.
+  const previousState = knownIds.userStates.get(message.id)
+  const userState =
+    message.role !== 'user'
+      ? undefined
+      : source === 'renderer' &&
+          (previousState === 'unaccepted' ||
+            (!knownIds.ids.has(message.id) && previousState === undefined))
+        ? 'unaccepted'
+        : 'accepted'
+  const lifecycle =
+    userState !== undefined && userState !== previousState
+      ? userMessageLifecycleLine(message.id, userState)
+      : undefined
+  // File bodies are unreachable until a spine line refers to them. Recheck
+  // ownership after the referenced-file writes, just before the visible commit.
   if (canCommit && !canCommit()) return false
   // Let a dispatch accepted in a microtask queued by the final check take
   // ownership before starting the append. The recheck below is immediately
@@ -2198,19 +2431,23 @@ async function appendMessageUnqueued(
     await Promise.resolve()
     if (!canCommit()) return false
   }
-  if (!knownIds.has(message.id)) {
+  if (existingEntries === undefined) {
     assertStorePath(join(dir, EVENTS_FILE))
     markIndexSourceWrite(join(dir, EVENTS_FILE))
-    await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`, {
-      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
-    })
+    await fsPromises.appendFile(
+      join(dir, EVENTS_FILE),
+      `${raw}\n${lifecycle ? `${serializeSpineLine(lifecycle)}\n` : ''}`,
+      {
+        flag: constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
+      },
+    )
     // Do not teach the cache about an id until the append is durable enough
     // for Node to resolve it. A rejected append must take this path again.
-    knownIds.add(message.id)
+    knownIds.ids.add(message.id)
   } else {
-    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
-    // Replacing an existing spine line has one more await before its write.
-    // Preserve a dispatch that became active while that file was read.
+    const entries = existingEntries
+    // Preserve a dispatch that became active while the replacement snapshot
+    // or its referenced files were being written.
     if (canCommit && !canCommit()) return false
     if (canCommit) {
       await Promise.resolve()
@@ -2221,8 +2458,10 @@ async function appendMessageUnqueued(
     )
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
+    if (lifecycle) entries.push({ raw: serializeSpineLine(lifecycle), line: lifecycle })
     await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
   }
+  if (userState !== undefined) knownIds.userStates.set(message.id, userState)
   // The sidebar's PR chip is derived from links in message text, which a
   // metadata-only load never reads. Derive it only after the spine commit, so
   // a rejected imported result cannot leave stale cloud PR refs in metadata.
@@ -2234,9 +2473,149 @@ export function appendMessage(
   projectId: string,
   threadId: string,
   message: Message,
+  options: UserMessageWriteOptions = {},
+): Promise<MessageAppendResult> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    if (options.source === 'renderer' && readMeta(dir) === null) {
+      throw new Error('Thread is not persisted yet; retry sending the message')
+    }
+    const known = await knownMessageIdsFor(dir)
+    const created = !known.ids.has(message.id) && !known.userStates.has(message.id)
+    await appendMessageUnqueued(projectId, threadId, message, undefined, options.source)
+    const unacceptedUser =
+      message.role === 'user' && known.userStates.get(message.id) === 'unaccepted'
+    if (created && unacceptedUser) options.onUnacceptedCreated?.(message.id)
+    return { created, unacceptedUser }
+  })
+}
+
+/** Reserve the canonical ID only after protected review and dispatcher ownership. */
+export function acceptReviewedUserMessage(
+  projectId: string,
+  threadId: string,
+  optimistic?: { messageId: string; claim: () => boolean },
+): Promise<string> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) throw new Error('Cannot accept a prompt for a missing thread')
+    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE), true)) ?? '')
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    const canReuse =
+      optimistic !== undefined &&
+      !known.deleted.has(optimistic.messageId) &&
+      known.userStates.get(optimistic.messageId) === 'unaccepted' &&
+      entries.some(
+        (entry) =>
+          entry.line?.type === 'message' &&
+          entry.line.id === optimistic.messageId &&
+          entry.line.role === 'user',
+      ) &&
+      optimistic.claim()
+    let messageId = canReuse ? optimistic.messageId : randomUUID()
+    while (!canReuse && (known.ids.has(messageId) || known.userStates.has(messageId)))
+      messageId = randomUUID()
+    const line = userMessageLifecycleLine(messageId, 'accepted')
+    entries.push({ raw: serializeSpineLine(line), line })
+    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    invalidateKnownMessageIds(dir)
+    return messageId
+  })
+}
+
+/**
+ * Commit a schedule-owned first prompt only while its main-created run thread
+ * is still pristine. A renderer append that wins the project queue makes this
+ * fail closed; it can never become prior context for an unattended turn.
+ */
+export function appendScheduledFirstUserMessage(
+  projectId: string,
+  threadId: string,
+  prompt: string,
+  automation: NonNullable<Thread['automation']>,
+): Promise<Message> {
+  return runStoreWrite(projectId, async () => {
+    const current = await readThread(projectId, threadId)
+    const dir = threadDir(projectId, threadId)
+    const historyRaw = safeRead(agentHistoryPath(projectId, threadId))
+    if (
+      !current ||
+      current.messages.length !== 0 ||
+      (current.pendingMessages?.length ?? 0) > 0 ||
+      current.automation?.scheduleId !== automation.scheduleId ||
+      current.automation.triggeredAt !== automation.triggeredAt ||
+      historyRaw !== null ||
+      latestStoredPlan(dir, threadId) !== null
+    ) {
+      throw new Error('Scheduled run thread is no longer pristine')
+    }
+    const now = Date.now()
+    const message: Message = {
+      id: randomUUID(),
+      role: 'user',
+      content: prompt,
+      toolCalls: [],
+      createdAt: now,
+    }
+    const next: Thread = {
+      ...current,
+      messages: [message],
+      lastPromptAt: now,
+      updatedAt: Math.max(current.updatedAt, now),
+    }
+    const durable = writeThread(projectId, next)
+    upsertCatalogEntry(projectId, durable)
+    return message
+  })
+}
+
+/** Retire one still-queued user message without editing accepted provider history. */
+export function deleteQueuedMessage(
+  projectId: string,
+  threadId: string,
+  messageId: string,
+  onRetired?: () => void,
 ): Promise<void> {
   return runStoreWrite(projectId, async () => {
-    await appendMessageUnqueued(projectId, threadId, message)
+    const dir = threadDir(projectId, threadId)
+    const meta = readMeta(dir)
+    if (meta === null)
+      throw new Error('Thread is not persisted yet; retry deleting the queued message')
+    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE), true)) ?? '')
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    if (known.userStates.get(messageId) === 'accepted')
+      throw new Error('An accepted user message cannot be deleted from the queue')
+    const retired = known.deleted.has(messageId)
+    if (!retired) {
+      const index = entries.findIndex(
+        (entry) =>
+          entry.line?.type === 'message' &&
+          entry.line.id === messageId &&
+          entry.line.role === 'user',
+      )
+      if (
+        index < 0 ||
+        known.userStates.get(messageId) !== 'unaccepted' ||
+        !meta.pendingMessages?.some((item) => item.messageId === messageId)
+      ) {
+        throw new Error('Only a saved queued user message can be deleted')
+      }
+      const line: SpineQueuedMessageDeletedLine = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'queued_message_deleted',
+        id: messageId,
+        recordedAt: Date.now(),
+      }
+      entries[index] = { raw: serializeSpineLine(line), line }
+      // This atomic replacement is the deletion commit. Every later append,
+      // metadata load and full save observes the retired ID, even if meta fails.
+      await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+      invalidateKnownMessageIds(dir)
+    }
+    onRetired?.()
+    const next = withoutDeletedQueue(meta, deletedMessageIdsFor(dir))
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    refreshCatalogLine(projectId, threadId)
   })
 }
 
@@ -2391,7 +2770,10 @@ export function recordModelSelection(
     }
     const modelSelections = [...(current.modelSelections ?? []), selection]
     const next: ThreadMeta = { ...current, model: line.to, modelSelections, id: threadId }
-    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    atomicWriteFile(
+      join(dir, META_FILE),
+      `${JSON.stringify(withoutDeletedQueueFromDisk(next, dir))}\n`,
+    )
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2444,7 +2826,10 @@ export function updateMeta(
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
       ...mergedLinksField(current, patch),
     }
-    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(
+      join(dir, META_FILE),
+      `${JSON.stringify(withoutDeletedQueueFromDisk(merged, dir))}\n`,
+    )
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2479,7 +2864,10 @@ export function updateMetaIfUnchanged(
       if (archivedAt === undefined) delete next.archivedAt
       else next.archivedAt = archivedAt
     }
-    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    atomicWriteFile(
+      join(dir, META_FILE),
+      `${JSON.stringify(withoutDeletedQueueFromDisk(next, dir))}\n`,
+    )
     refreshCatalogLine(projectId, threadId)
     return true
   })
@@ -2505,7 +2893,10 @@ export function updateMetaOrThrow(
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
       ...mergedLinksField(current, patch),
     }
-    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(
+      join(dir, META_FILE),
+      `${JSON.stringify(withoutDeletedQueueFromDisk(merged, dir))}\n`,
+    )
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2663,8 +3054,8 @@ function recoverPendingHistoryEdit(projectId: string, threadId: string, force = 
   if (rollback === null || rollback.thread.id !== threadId) {
     throw new Error(`Thread history recovery data for "${threadId}" is invalid`)
   }
-  writeThread(projectId, rollback.thread)
-  upsertCatalogEntry(projectId, rollback.thread)
+  const durable = writeThread(projectId, rollback.thread)
+  upsertCatalogEntry(projectId, durable)
   if (rollback.hadAgentHistory) {
     writeAgentHistorySnapshot(projectId, threadId, rollback.agentHistory)
   } else {
@@ -3287,6 +3678,47 @@ export function saveAgentHistory(
   })
 }
 
+/**
+ * Create a main-owned fork and its provider history as one fresh-target write.
+ *
+ * Unlike {@link saveAgentHistory}, this never targets an existing thread. The
+ * invariant is what lets the renderer request a fork without gaining a general
+ * provider-history replacement capability: even a compromised renderer can
+ * only create a new conversation, never rewrite the context of one that
+ * already owns approvals, automation state, or an accepted prompt.
+ */
+export function createThreadWithAgentHistory(
+  projectId: string,
+  thread: Thread,
+  messages: LLMMessage[],
+  sourceSnapshots: readonly Thread[] = [],
+  providerSource?: { threadId: string; history: readonly LLMMessage[] },
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    for (const snapshot of sourceSnapshots) {
+      if (activeHistoryMutations.has(historyMutationKey(projectId, snapshot.id))) {
+        throw new Error('Fork source history is currently being edited')
+      }
+      const current = await readThread(projectId, snapshot.id)
+      if (!current || !isDeepStrictEqual(current, snapshot)) {
+        throw new Error('Fork source changed while its history was being copied')
+      }
+    }
+    if (providerSource !== undefined) {
+      const raw = safeRead(agentHistoryPath(projectId, providerSource.threadId))
+      const current = raw === null ? [] : (parseAgentHistoryFile(raw) ?? [])
+      if (!isDeepStrictEqual(current, providerSource.history)) {
+        throw new Error('Fork source provider history changed while it was being copied')
+      }
+    }
+    const dir = threadDir(projectId, thread.id)
+    if (existsSync(dir)) throw new Error('Fork target storage already exists')
+    const durable = writeThread(projectId, thread)
+    writeAgentHistorySnapshot(projectId, thread.id, messages)
+    upsertCatalogEntry(projectId, durable)
+  })
+}
+
 /** Load the latest durable machine-continuation epoch for a thread. */
 export function loadAgentTurnEpoch(
   projectId: string,
@@ -3362,6 +3794,35 @@ export function clearAgentTurnEpoch(projectId: string, threadId: string): Promis
 /** True when an `agent-history.json` sidecar already exists for the thread. */
 export function agentHistoryExists(projectId: string, threadId: string): Promise<boolean> {
   return runSerialized(queueKey(projectId), () => existsSync(agentHistoryPath(projectId, threadId)))
+}
+
+/**
+ * Require every selected stored user identity to have reached accepted state.
+ * Legacy user messages without a lifecycle line are conservatively accepted;
+ * an explicit `unaccepted` line is never eligible for main-owned fork copying.
+ */
+export function assertAcceptedUserMessageIds(
+  projectId: string,
+  threadId: string,
+  messageIds: readonly string[],
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) throw new Error('Fork source thread does not exist')
+    const entries = parseSpineEntries(readSpineForDeletionGuard(dir))
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    const storedUsers = new Set(
+      entries
+        .filter((entry) => entry.line?.type === 'message' && entry.line.role === 'user')
+        .map((entry) => entry.line?.id)
+        .filter((id): id is string => typeof id === 'string'),
+    )
+    for (const messageId of messageIds) {
+      if (!storedUsers.has(messageId) || known.userStates.get(messageId) === 'unaccepted') {
+        throw new Error('A fork can copy only accepted user messages')
+      }
+    }
+  })
 }
 
 // --- External ACP session sidecar -------------------------------------------

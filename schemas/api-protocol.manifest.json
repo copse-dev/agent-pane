@@ -66,13 +66,6 @@
           2
         ]
       },
-      "agent:clear-history": {
-        "api": "agent.clearHistory",
-        "args": [
-          2,
-          2
-        ]
-      },
       "agent:describe-images": {
         "api": "agent.describeImages",
         "args": [
@@ -140,7 +133,7 @@
         "api": "agent.run",
         "args": [
           3,
-          4
+          5
         ]
       },
       "agent:run-machine": {
@@ -2528,6 +2521,13 @@
         "args": [
           2,
           2
+        ]
+      },
+      "threads:delete-queued-message": {
+        "api": "threads.deleteQueuedMessage",
+        "args": [
+          3,
+          3
         ]
       },
       "threads:edit-history": {

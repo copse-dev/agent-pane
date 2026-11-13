@@ -88,6 +88,13 @@ export type StreamChunk =
       startingCommit?: string
       dirty?: boolean
     }
+  /** Exact human prompt accepted in the isolated main-owned entry window. */
+  | {
+      type: 'protected_human_turn_start'
+      content: UserContent
+      /** Main-owned accepted identity; may reconcile an optimistic renderer bubble. */
+      messageId: string
+    }
   /**
    * Patch an existing external ACP tool call. ACP agents may send the title and
    * raw input on the initial `tool_call`, then replace input/output/status in

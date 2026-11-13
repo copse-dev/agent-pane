@@ -97,10 +97,12 @@ describe('catalogue plugin installation lifecycle', () => {
     assert.match(review.contentHash, /^sha256:[a-f0-9]{64}$/)
     // Adapting a Claude/Cursor manifest is routine plumbing, not something to warn about.
     assert.deepEqual(review.warnings, [])
+    assert.deepEqual(service.preparedReview(review.token), review)
     assert.equal(existsSync(join(root, 'pstack')), false)
     assert.deepEqual(await service.records(), [])
 
     const { record } = await service.commit(review.token)
+    assert.equal(service.preparedReview(review.token), null)
     assert.equal(record.source.revision.length, 40)
     assert.equal((await fsp.lstat(join(root, 'pstack'))).isSymbolicLink(), true)
     const discovery = await discoverUserPlugins(root)
@@ -156,9 +158,46 @@ describe('catalogue plugin installation lifecycle', () => {
     const service = serviceWith([await cursorArchive('# review')])
     const review = await service.prepare(CATALOG_ID)
     await service.cancel(review.token)
+    assert.equal(service.preparedReview(review.token), null)
     await assert.rejects(service.commit(review.token), /expired/)
     assert.deepEqual(await service.records(), [])
     assert.equal(existsSync(join(root, 'pstack')), false)
+  })
+
+  it('refuses a staged package changed after the review', async () => {
+    const service = serviceWith([await cursorArchive('# reviewed')])
+    const review = await service.prepare(CATALOG_ID)
+    await fsp.writeFile(
+      join(root, '.managed', 'staging', review.token, 'package', 'skills', 'review', 'SKILL.md'),
+      '# changed after review',
+    )
+    await assert.rejects(service.commit(review.token), /changed before installation/)
+    assert.equal(existsSync(join(root, 'pstack')), false)
+    assert.deepEqual(await service.records(), [])
+  })
+
+  it('refuses reuse of an installed payload changed on disk', async () => {
+    const archive = await cursorArchive('# reviewed')
+    const service = serviceWith([archive, archive])
+    const first = await service.prepare(CATALOG_ID)
+    await service.commit(first.token)
+    await fsp.writeFile(
+      join(
+        root,
+        '.managed',
+        'payloads',
+        first.contentHash.slice('sha256:'.length),
+        'skills',
+        'review',
+        'SKILL.md',
+      ),
+      '# changed on disk',
+    )
+    const second = await service.prepare(CATALOG_ID)
+    await assert.rejects(
+      service.commit(second.token),
+      /previously installed plugin payload changed/,
+    )
   })
 
   it('rejects archive traversal and leaves no package behind', async () => {

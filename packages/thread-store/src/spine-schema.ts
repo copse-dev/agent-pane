@@ -18,6 +18,8 @@ import type { TurnOutcome } from './turn-outcome.ts'
 import { type DecisionEvent } from './decision-log.ts'
 import { isPromptCause } from './prompt-cause.ts'
 import { planArtifactRefs } from './plan-schema.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { z } from 'zod'
 
 /**
  * On-disk format for the filesystem-native thread store (issue #644).
@@ -405,6 +407,27 @@ export interface SpineContextCompactionLine {
   itemId: string
 }
 
+const queuedMessageDeletedSchema = z.object({
+  v: z.number().int().positive(),
+  type: z.literal('queued_message_deleted'),
+  id: z.string().min(1),
+  recordedAt: z.number().nonnegative(),
+})
+
+const userMessageLifecycleSchema = z.object({
+  v: z.number().int().positive(),
+  type: z.literal('user_message_lifecycle'),
+  id: z.string().min(1),
+  state: z.enum(['unaccepted', 'accepted']),
+  recordedAt: z.number().nonnegative(),
+})
+
+/** Main-owned admission state; renderer snapshots never author these records. */
+export type SpineUserMessageLifecycleLine = z.infer<typeof userMessageLifecycleSchema>
+
+/** Retires an unsent queued message ID without retaining its prompt as history. */
+export type SpineQueuedMessageDeletedLine = z.infer<typeof queuedMessageDeletedSchema>
+
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
   | SpineMessageLine
@@ -415,6 +438,8 @@ export type SpineLine =
   | SpineMachineContinuationLine
   | SpineModelSelectedLine
   | SpineContextCompactionLine
+  | SpineQueuedMessageDeletedLine
+  | SpineUserMessageLifecycleLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -844,6 +869,12 @@ export function parseSpineLine(raw: string): SpineLine | null {
   }
   if (!isRecord(parsed) || typeof parsed['id'] !== 'string') return null
   const type = parsed['type']
+  if (type === 'user_message_lifecycle') {
+    return safeJsonParse(raw, decodeWithSchema(userMessageLifecycleSchema))
+  }
+  if (type === 'queued_message_deleted') {
+    return safeJsonParse(raw, decodeWithSchema(queuedMessageDeletedSchema))
+  }
   if (type === 'message' && isSpineMessageLine(parsed)) {
     // Tolerate an absent toolCalls array (forward/backward compatibility).
     if (!Array.isArray(parsed.toolCalls)) parsed.toolCalls = []

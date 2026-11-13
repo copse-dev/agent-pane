@@ -15,6 +15,7 @@ import { listRemoteDirectory, registerRemoteWorkspaceRoot } from './remote-direc
 import { z } from 'zod'
 import { forgetSshCredentials } from './ssh-credential-cache.ts'
 import { listStoredSshCredentialHostIds } from './ssh-credential-store.ts'
+import { confirmNativeAction } from '../native-human-confirmation.ts'
 
 const sshBrowseSchema = z.tuple([zSshHostId, zPathString])
 
@@ -114,7 +115,13 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     try {
       assertMainFrameSender(event, win)
       const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)
-      return await registerRemoteWorkspaceRoot(hostId, dirPath)
+      return await registerRemoteWorkspaceRoot(hostId, dirPath, (canonical) =>
+        confirmNativeAction(event.sender, {
+          title: 'Add remote project folder?',
+          detail: `Grant Copse access to ${JSON.stringify(canonical)} on SSH host ${JSON.stringify(hostId)}?`,
+          approveLabel: 'Add folder',
+        }),
+      )
     } catch (err) {
       if (err instanceof IpcValidationError) throw err
       throw err

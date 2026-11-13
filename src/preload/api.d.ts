@@ -381,7 +381,8 @@ export interface ApiClient {
       threadId: string,
       prompt: string,
       delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
-    ) => Promise<void>
+      display?: import('@shared/types').ProtectedHumanTurnDisplay,
+    ) => Promise<unknown>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
@@ -419,7 +420,6 @@ export interface ApiClient {
     abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
-    clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
@@ -772,6 +772,8 @@ export interface ApiClient {
       threadId: string,
       message: import('@shared/types').Message,
     ) => Promise<void>
+    /** Delete a persisted queued message before removing it from the local queue. */
+    deleteQueuedMessage: (projectId: string, threadId: string, messageId: string) => Promise<void>
     /** Merge a window-derived label into a message main owns, and persist it. */
     annotateMessage: (
       projectId: string,
@@ -820,7 +822,7 @@ export interface ApiClient {
     fork: (
       projectId: string,
       sourceThreadId: string,
-      targetThreadId: string,
+      targetThread: import('@shared/types').Thread,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
     /** Active threads that link to a URL or another thread (recorded links only). */

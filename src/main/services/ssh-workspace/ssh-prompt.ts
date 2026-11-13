@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMain } from 'electron'
+import type { BrowserWindow, IpcMain, WebContents } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import {
@@ -57,19 +57,46 @@ export function classifySshPrompt(prompt: string): SshPromptKind {
     : 'secret'
 }
 
-export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
-  const pending = new Map<string, (result: SshPromptResponse) => void>()
+export function initSshPrompt(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  confirmSshPrompt: (
+    sender: WebContents,
+    request: SshPromptRequest,
+    response: SshPromptResponse,
+  ) => Promise<boolean>,
+): void {
+  const pending = new Map<
+    string,
+    { request: SshPromptRequest; resolve: (result: SshPromptResponse) => void }
+  >()
   const settle = (id: string, result: SshPromptResponse): void => {
-    const resolve = pending.get(id)
-    if (!resolve) return
+    const entry = pending.get(id)
+    if (!entry) return
     pending.delete(id)
-    resolve(result)
+    entry.resolve(result)
   }
 
-  ipcMain.handle('ssh-prompt:respond', (event, ...rawArgs) => {
+  ipcMain.handle('ssh-prompt:respond', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, value, remember] = parseIpcArgs(sshPromptRespondSchema, rawArgs)
+      const entry = pending.get(id)
+      if (!entry) return
+      if (entry.request.kind === 'confirm' && value !== '' && value !== 'yes') {
+        throw new IpcValidationError('Invalid SSH confirmation response')
+      }
+      if (remember && entry.request.kind !== 'secret') {
+        throw new IpcValidationError('This SSH secret cannot be remembered')
+      }
+      if (value && (entry.request.kind === 'confirm' || remember)) {
+        const confirmed = await confirmSshPrompt(event.sender, entry.request, { value, remember })
+        if (!confirmed) {
+          settle(id, { value: '' })
+          return
+        }
+      }
+      if (pending.get(id) !== entry) return
       settle(id, { value, remember })
     } catch (err) {
       if (err instanceof IpcValidationError) return
@@ -107,9 +134,12 @@ export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
           settle(id, { value: '' })
         }, SSH_PROMPT_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
-        pending.set(id, (result) => {
-          clearTimeout(timer)
-          resolve(result)
+        pending.set(id, {
+          request: req,
+          resolve: (result) => {
+            clearTimeout(timer)
+            resolve(result)
+          },
         })
       }),
   )

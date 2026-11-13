@@ -26,7 +26,7 @@ interface ExplicitWorkspaceTrust {
 const explicitWorkspaceTrust = new AsyncLocalStorage<ExplicitWorkspaceTrust>()
 
 /** Canonicalize a path for stable comparison; falls back to lexical resolve. */
-function canonical(root: string): string {
+export function canonicalWorkspaceTrustRoot(root: string): string {
   const abs = resolve(root)
   try {
     return realpathSync.native(abs)
@@ -37,7 +37,7 @@ function canonical(root: string): string {
 
 /** Scope workspace trust to one explicit host run without consulting or mutating persisted trust. */
 export function runWithWorkspaceTrust<T>(root: string, trusted: boolean, fn: () => T): T {
-  return explicitWorkspaceTrust.run({ root: canonical(root), trusted }, fn)
+  return explicitWorkspaceTrust.run({ root: canonicalWorkspaceTrustRoot(root), trusted }, fn)
 }
 
 function loadTrusted(): Set<string> {
@@ -53,15 +53,15 @@ function persistTrusted(roots: Set<string>): void {
 export function isWorkspaceTrusted(root: string | null | undefined): boolean {
   if (!root) return false
   const explicit = explicitWorkspaceTrust.getStore()
-  if (explicit) return explicit.trusted && explicit.root === canonical(root)
-  return loadTrusted().has(canonical(root))
+  if (explicit) return explicit.trusted && explicit.root === canonicalWorkspaceTrustRoot(root)
+  return loadTrusted().has(canonicalWorkspaceTrustRoot(root))
 }
 
 export function setWorkspaceTrusted(root: string, trusted: boolean): void {
   if (explicitWorkspaceTrust.getStore()) {
     throw new Error('Cannot mutate workspace trust inside an explicit host profile.')
   }
-  const key = canonical(root)
+  const key = canonicalWorkspaceTrustRoot(root)
   const roots = loadTrusted()
   if (trusted) roots.add(key)
   else roots.delete(key)

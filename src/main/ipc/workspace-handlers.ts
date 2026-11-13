@@ -1,12 +1,16 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
-import { mkdir, readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
-import { setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
+import { readProjectMcpConsent, setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
+import {
+  approveProjectMcpConfig,
+  revokeProjectMcpConfig,
+} from '../services/mcp/project-mcp-consent.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
@@ -29,6 +33,7 @@ import {
 } from '../services/workspace.ts'
 import { storageGet } from '../services/storage/storage.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import {
   assertMainFrameSender,
@@ -100,11 +105,20 @@ export function registerWorkspaceHandlers(
       assertMainFrameSender(event, win)
       const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
       const parentDir = parseIpcArgs(zPathString, [rawParent])
-      const projectPath = join(parentDir, name)
+      const requestedPath = join(parentDir, name)
       // Never escape the chosen parent (a crafted name like `..` must not climb).
-      if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
+      if (resolve(parentDir, name) !== requestedPath || basename(requestedPath) !== name) {
         throw new IpcValidationError('Invalid project name')
       }
+      const projectPath = join(await realpath(parentDir), name)
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Create project folder?',
+          detail: `Create and open ${JSON.stringify(projectPath)}? Copse will write starter files there and grant this project access to that folder.`,
+          approveLabel: 'Create project',
+        }))
+      )
+        throw new IpcValidationError('Project creation was not confirmed')
       let projectMissing = false
       try {
         const existing = await stat(projectPath)
@@ -216,8 +230,22 @@ export function registerWorkspaceHandlers(
     const root = getWorkspaceRoot()
     if (!root) throw new IpcValidationError('No workspace open')
     if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
-    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
-    // is a privileged action — only the main frame may request it (issue #100).
+    if (trusted) {
+      const consent = await readProjectMcpConsent(root)
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Trust this workspace?',
+          detail: `Trust ${root} and allow its project MCP servers to start? Project configuration can run commands with your account's access.\n\nProject MCP configuration:\n${JSON.stringify(consent.configs, null, 2)}`,
+          approveLabel: 'Trust workspace',
+        }))
+      )
+        throw new IpcValidationError('Workspace trust was not confirmed')
+      if (getWorkspaceRoot() !== root)
+        throw new IpcValidationError('Workspace changed during confirmation')
+      await approveProjectMcpConfig(consent)
+    } else {
+      await revokeProjectMcpConfig(root)
+    }
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
