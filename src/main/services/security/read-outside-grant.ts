@@ -135,7 +135,8 @@ export function safeCanonicalReadTarget(target: string): string | null {
   if (hasParentTraversalSegment(target)) return null
   const canonical = canonicalReadTarget(resolve(target))
   if (canonical === null || sensitiveTargetReason(target, canonical) !== null) return null
-  const profile = process.env['COPSE_DIR']?.trim() || join(homedir(), '.copse')
+  const configuredProfile = process.env['COPSE_DIR']?.trim() ?? ''
+  const profile = configuredProfile.length > 0 ? configuredProfile : join(homedir(), '.copse')
   const lanRoot = canonicalReadTarget(resolve(profile, 'lan'))
   if (
     lanRoot !== null &&
