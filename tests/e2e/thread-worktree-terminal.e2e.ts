@@ -28,6 +28,15 @@ async function activeXtermText(): Promise<string> {
   )
 }
 
+async function activeXtermRows(): Promise<string[]> {
+  return browser.execute(() =>
+    Array.from(
+      document.querySelectorAll('.terminals-tab-panel.is-active .xterm-rows > div'),
+      (row) => row.textContent.trimEnd(),
+    ).filter((row) => row.length > 0),
+  )
+}
+
 async function gitChangePaths(): Promise<string[]> {
   const elements = await $$('.git-change-path').getElements()
   const paths: string[] = []
@@ -146,22 +155,45 @@ describe('isolated thread terminal cwd', () => {
       timeout: 30_000,
       timeoutMsg: 'expected the terminal cwd to be the active thread worktree',
     })
+    assert.ok((await activeXtermText()).includes(worktreeRoot))
 
     // Clear host-shell startup noise before the visual reference, then show the
     // isolated branch as a stable, human-readable confirmation of the checkout.
     await browser.keys(['clear', '\uE007'])
+    // Input sent while clear is running can receive cooked PTY echo and then
+    // readline echo. The prior pwd output prevents a stale prompt matching here.
+    await browser.waitUntil(
+      async () => {
+        const rows = await activeXtermRows()
+        return rows.length === 1 && rows[0] === '$'
+      },
+      { timeout: 30_000, timeoutMsg: 'expected a fresh prompt after clear completed' },
+    )
     await browser.keys(['git', ' ', 'branch', ' ', '--show-current', '\uE007'])
-    await browser.waitUntil(async () => (await xtermText()).includes(WORKTREE_BRANCH), {
-      timeout: 30_000,
-      timeoutMsg: 'expected the terminal to report the isolated worktree branch',
-    })
+    const expectedRows = ['$ git branch --show-current', WORKTREE_BRANCH, '$']
+    await browser.waitUntil(
+      async () => {
+        const rows = await activeXtermRows()
+        return (
+          rows.length === expectedRows.length && rows.every((row, i) => row === expectedRows[i])
+        )
+      },
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected one clean branch command, its result, and a prompt',
+      },
+    )
+    assert.deepEqual(await activeXtermRows(), expectedRows)
     await expect(terminalBtn).toHaveElementClass('active')
     // Leave the canvas cursor unfocused at its steady outline for capture.
     await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
       button.focus()
     })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
-    await saveAppScreenshot('thread-worktree-terminal-cwd.png')
+    await saveAppScreenshot('thread-worktree-terminal-cwd.png', undefined, async () => {
+      assert.deepEqual(await activeXtermRows(), expectedRows)
+    })
+    assert.deepEqual(await activeXtermRows(), expectedRows)
   })
 
   it('lists and previews files from the active thread worktree', async function () {
