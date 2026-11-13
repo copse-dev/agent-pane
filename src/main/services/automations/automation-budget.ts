@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
 import { getModelInfo, inferCloudModelProvider } from '@copse/llm/model-catalog.ts'
 import type { LLMProvider, ProviderStreamChunk } from '@shared/types'
+import type { LLMRequestEstimate, LLMRequestUsage } from '@copse/llm/wire-types.ts'
 import type { ProviderDescription } from '../providers/provider-description.ts'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { storageReadFile, storageWriteFile } from '../storage/user-data-files.ts'
@@ -10,7 +11,9 @@ import { runSerialized } from '../storage/write-queue.ts'
 const budgetSchema = z.strictObject({
   version: z.literal(1),
   limitMicroUsd: z.number().int().positive(),
+  // Settled catalogue costs plus the maximum reservations still outstanding.
   reservedMicroUsd: z.number().int().nonnegative(),
+  closed: z.literal(true).optional(),
 })
 type AutomationBudget = z.infer<typeof budgetSchema>
 const scope = new AsyncLocalStorage<string>()
@@ -86,24 +89,31 @@ export function assertAutomationBudgetModel(model: string): void {
 }
 
 /**
- * Pessimistic catalogue cost: a full input window at the highest input/cache
- * rate, plus the capped output. No token heuristic or missing-price=free fallback.
+ * Pessimistic catalogue cost: the transport's byte bound (full input window for
+ * opaque content) at the highest input/cache rate, plus the actual capped output.
  * This is an estimated model allowance, not an invoice or a tool-spending limit.
  */
-function reservationMicroUsd(model: string, maxOutputTokens?: number): number {
+function reservationMicroUsd(model: string, request: LLMRequestEstimate): number {
   const info = getModelInfo(model)
   if (!info) throw new Error('No catalogue price for this automation model')
+  const inputTokens = Math.min(
+    info.contextWindow,
+    request.inputTokensUpperBound ?? info.contextWindow,
+  )
+  const outputTokens = Math.min(
+    info.maxOutputTokens,
+    request.maxOutputTokens ?? info.maxOutputTokens,
+  )
+  if (![inputTokens, outputTokens].every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw new Error('No bounded request size for this automation model')
+  }
   const inputRate = Math.max(
     // Cover cache creation even when the catalogue omitted its separate rate.
     info.inputPricePerMTok * 2,
     info.cacheReadPricePerMTok ?? info.inputPricePerMTok,
     info.cacheCreationPricePerMTok ?? info.inputPricePerMTok,
   )
-  const amount = Math.ceil(
-    info.contextWindow * inputRate +
-      Math.min(info.maxOutputTokens, maxOutputTokens ?? info.maxOutputTokens) *
-        info.outputPricePerMTok,
-  )
+  const amount = Math.ceil(inputTokens * inputRate + outputTokens * info.outputPricePerMTok)
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     throw new Error('No bounded catalogue cost for this automation model')
   }
@@ -114,18 +124,69 @@ async function reserve(path: string, amount: number): Promise<void> {
   await runSerialized(path, async () => {
     const budget = await readBudget(path)
     if (!budget) throw new Error('Automation model allowance is missing. No request was sent.')
-    if (amount > budget.limitMicroUsd - budget.reservedMicroUsd) {
+    if (budget.closed || amount > budget.limitMicroUsd - budget.reservedMicroUsd) {
       const remaining = (budget.limitMicroUsd - budget.reservedMicroUsd) / 1_000_000
       throw new Error(
         `Automation model allowance exhausted: $${remaining.toFixed(2)} remains; ` +
           `the next request needs a $${(amount / 1_000_000).toFixed(2)} maximum-cost reservation. No request was sent.`,
       )
     }
-    // Never refund: errors, cancellation, missing usage and crashes may have
-    // incurred cost. Await the atomic write before permitting network activity.
+    // Errors, cancellation, missing usage and crashes retain this reservation.
+    // Await the atomic write before permitting network activity.
     await storageWriteFile(
       path,
       JSON.stringify({ ...budget, reservedMicroUsd: budget.reservedMicroUsd + amount }),
+    )
+  })
+}
+
+const usageSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheCreationTokens: z.number().int().nonnegative().optional(),
+})
+
+async function settleReservation(
+  path: string,
+  model: string,
+  reservation: number,
+  usage: LLMRequestUsage,
+  signal?: AbortSignal,
+): Promise<void> {
+  const parsed = usageSchema.safeParse(usage)
+  if (!parsed.success) return // Malformed provider usage cannot release credit.
+  const { inputTokens, outputTokens, cacheReadTokens = 0, cacheCreationTokens = 0 } = parsed.data
+  const freshTokens = inputTokens - cacheReadTokens - cacheCreationTokens
+  if (freshTokens < 0) return
+  const info = getModelInfo(model)
+  if (!info) throw new Error('No catalogue price for this automation model')
+  const cost = Math.ceil(
+    freshTokens * info.inputPricePerMTok +
+      cacheReadTokens * (info.cacheReadPricePerMTok ?? info.inputPricePerMTok) +
+      cacheCreationTokens * (info.cacheCreationPricePerMTok ?? info.inputPricePerMTok * 2) +
+      outputTokens * info.outputPricePerMTok,
+  )
+  if (!Number.isSafeInteger(cost) || cost < 0) return
+  await runSerialized(path, async () => {
+    if (signal?.aborted) return
+    const budget = await readBudget(path)
+    if (budget?.closed) return // Other in-flight receipts cannot reopen a closed allowance.
+    if (!budget || budget.reservedMicroUsd < reservation)
+      throw new Error('Automation model allowance changed before usage could be recorded')
+    if (cost > reservation) {
+      // A stale catalogue/bound must not release credit or admit further work.
+      await storageWriteFile(
+        path,
+        JSON.stringify({ ...budget, reservedMicroUsd: budget.limitMicroUsd, closed: true }),
+      )
+      throw new Error(
+        'Automation model usage exceeded its reservation. The remaining allowance is closed.',
+      )
+    }
+    await storageWriteFile(
+      path,
+      JSON.stringify({ ...budget, reservedMicroUsd: budget.reservedMicroUsd - reservation + cost }),
     )
   })
 }
@@ -136,6 +197,8 @@ export function guardAutomationProvider(
   description: Pick<ProviderDescription, 'kind' | 'model' | 'params'>,
 ): LLMProvider {
   const boundPath = scope.getStore()
+  // Providers are newly built per caller today. Do not introduce a shared
+  // provider cache without separating this run ownership from the instance.
   // Preserve the concrete provider and its live diagnostics/capabilities. Only
   // replace the stream entry point on this newly constructed instance.
   const stream = provider.stream.bind(provider)
@@ -157,12 +220,18 @@ export function guardAutomationProvider(
     if (description.kind !== 'anthropic') {
       throw new Error('This provider cannot enforce an automation model allowance')
     }
-    const amount = reservationMicroUsd(description.model, description.params.maxOutputTokens)
     yield* stream(messages, tools, signal, {
       ...options,
-      beforeRequest: async () => {
+      beforeRequest: async (request) => {
         signal?.throwIfAborted()
+        const amount = reservationMicroUsd(description.model, request)
         await reserve(path, amount)
+        let settled = false
+        return async (usage): Promise<void> => {
+          if (settled || signal?.aborted) return
+          settled = true // One receipt per admitted HTTP attempt, even if writing fails.
+          await settleReservation(path, description.model, amount, usage, signal)
+        }
       },
     })
   }

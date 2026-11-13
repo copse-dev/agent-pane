@@ -22,20 +22,24 @@ This does not grant any shell, file, MCP, review or other tool permission.
 
 The initial supported route is a catalogue Anthropic model through the native API adapter.
 Before **each HTTP attempt**, including retries, the host atomically persists a conservative
-reservation: the full catalogue input window at the highest input/cache rate (at least twice
-the input rate), plus the adapter's capped maximum output at the catalogue output rate.
+reservation: the final serialized text request's UTF-8 byte count plus a 4,096-token framing
+margin, capped at the catalogue input window, at the highest input/cache rate (at least twice
+the input rate), plus the adapter's actual capped maximum output at the catalogue output rate.
+Opaque content such as user or tool-result images reserves the full input window instead.
 SDK retries are disabled for these requests. Parallel native helpers and in-loop subagents
-share the serialized allowance. No reservation is refunded after failure, cancellation,
-missing usage or restart. A request that cannot fit, or whose allowance cannot be read or
-written, does not start. Usage accounting remains separate and reports observed usage.
+share the serialized allowance. A successful complete response with valid final usage settles
+its own reservation to catalogue-priced input, output and cache usage, releasing unused credit
+atomically. No reservation is refunded after failure, cancellation, missing/invalid usage or
+restart. Usage exceeding its reservation closes the remaining allowance. A request that cannot
+fit, or whose allowance cannot be read or written, does not start. Usage accounting remains separate.
 Thread-owned title and terminal labels, tool summaries, follow-up and next-step suggestions,
 PR descriptions, image handoffs and manually requested reviews re-enter the same persisted
 allowance outside the dispatcher. A project-only terminal has no automation run owner.
 
 This is a ceiling on **catalogue-priced reservations**, not a guarantee about a provider invoice:
 catalogue prices or context limits may be stale, and tool-initiated spending is outside its scope.
-Full-context reservations intentionally stop earlier than an actual-usage budget would. There
-is no daily/schedule aggregate or allowance top-up. ACP, remote/plugin agents, other providers,
+Reservations can stop a run before its actual usage reaches the limit. There is no
+daily/schedule aggregate or allowance top-up. ACP, remote/plugin agents, other providers,
 container/isolated-desktop runs and detached worker threads are refused for a budgeted run.
 Native helper providers constructed before the run are checked when called. Event automations
 do not yet expose this control. Legacy schedules remain unchanged.

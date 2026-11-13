@@ -124,7 +124,9 @@ export class MockLLMProvider implements LLMProvider {
     options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     signal?.throwIfAborted()
-    await options?.beforeRequest?.()
+    // Mock responses have no billable transport usage. Exercise conservative
+    // admission, without manufacturing a successful settlement receipt.
+    await options?.beforeRequest?.({})
     const messages = withoutProviderState(allMessages)
     if (__COPSE_TEST_SCENARIOS__) {
       const scenario = streamScenarioResponse(this.scope, messages, tools, signal)

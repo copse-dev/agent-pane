@@ -443,7 +443,7 @@ export function createAutomationPluginSettings(
       el(
         'span',
         { class: 'automation-hint' },
-        'Optional. Native Anthropic API models only. Each request reserves its full-context maximum cost, including retries and helpers. Reservations are not refunded; actual charges are usually lower. Tool spending is excluded.',
+        'Optional. Native Anthropic API models only. Requests, retries and helpers share this limit. Completed requests use reported usage; failed or interrupted requests keep their maximum-cost reservation. Tool spending is excluded.',
       ),
     ),
     permissionsFieldset,

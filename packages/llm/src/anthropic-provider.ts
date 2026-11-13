@@ -120,9 +120,21 @@ export class AnthropicProvider implements LLMProvider {
         let cacheReadTokens: number | undefined
         let cacheCreationTokens: number | undefined
         let receivedUsage = false
+        let receivedFinalUsage = false
+        let receivedStop = false
         try {
           signal?.throwIfAborted()
-          await options?.beforeRequest?.()
+          const settle = await options?.beforeRequest?.({
+            // UTF-8 bytes bound text tokens conservatively; allow for provider
+            // framing and the hidden tool prompt as well. Image tokenization
+            // is unrelated to encoded byte length, so use the full window.
+            ...(hasOpaqueContent(request.messages)
+              ? {}
+              : {
+                  inputTokensUpperBound: Buffer.byteLength(JSON.stringify(request), 'utf8') + 4096,
+                }),
+            maxOutputTokens: request.max_tokens,
+          })
           signal?.throwIfAborted()
           const stream = client.messages.stream(request, {
             signal,
@@ -173,6 +185,7 @@ export class AnthropicProvider implements LLMProvider {
               toolJson = ''
             }
             if (event.type === 'message_delta') {
+              receivedFinalUsage = true
               if (event.delta.stop_reason) stopReason = event.delta.stop_reason
               // message_delta carries the final output_tokens; input_tokens is
               // usually null/0 here, so keep the message_start value if larger.
@@ -181,6 +194,16 @@ export class AnthropicProvider implements LLMProvider {
                 inputTokens = Math.max(inputTokens, event.usage.input_tokens)
               }
             }
+            if (event.type === 'message_stop') receivedStop = true
+          }
+          signal?.throwIfAborted()
+          if (receivedUsage && receivedFinalUsage && receivedStop) {
+            await settle?.({
+              inputTokens,
+              outputTokens,
+              ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+              ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+            })
           }
           const usage = { inputTokens, outputTokens }
           self.lastUsage = usage
@@ -224,6 +247,18 @@ export class AnthropicProvider implements LLMProvider {
       { ...(signal ? { signal } : {}) },
     )
   }
+}
+
+function hasOpaqueContent(messages: Anthropic.MessageParam[]): boolean {
+  return messages.some((message) =>
+    typeof message.content === 'string'
+      ? false
+      : message.content.some((block) => {
+          if (block.type === 'text' || block.type === 'tool_use') return false
+          if (block.type !== 'tool_result') return true
+          return Array.isArray(block.content) && block.content.some((part) => part.type !== 'text')
+        }),
+  )
 }
 
 /**

@@ -78,7 +78,8 @@ describe('automation model allowance editor', function () {
     await label.scrollIntoView({ block: 'center' })
     assert.match(await label.getText(), /USD estimate/)
     assert.match(await label.getText(), /Anthropic API models only/)
-    assert.match(await label.getText(), /not refunded/)
+    assert.match(await label.getText(), /Completed requests use reported usage/)
+    assert.match(await label.getText(), /interrupted requests keep their maximum-cost reservation/)
     await saveElementScreenshot(
       '.automation-model-allowance-label',
       'automation-model-allowance.png',
