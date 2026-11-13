@@ -4,6 +4,7 @@ import type { ModelUsage } from '@shared/types'
 import {
   addSubagentUsage,
   getAccumulatedSubagentUsage,
+  getSubagentUsageByModel,
   runWithSubagentUsageScope,
 } from './subagent-usage.ts'
 
@@ -15,7 +16,9 @@ interface UsageApi {
 
 const scoped: UsageApi = {
   enter: runWithSubagentUsageScope,
-  add: addSubagentUsage,
+  add: (usage) => {
+    addSubagentUsage('worker-a', usage)
+  },
   read: getAccumulatedSubagentUsage,
 }
 
@@ -86,7 +89,7 @@ describe('subagent usage accumulator', () => {
   })
 
   it('drops usage added outside any run instead of crediting a later run', async () => {
-    addSubagentUsage({ inputTokens: 999, outputTokens: 99 })
+    addSubagentUsage('worker-a', { inputTokens: 999, outputTokens: 99 })
     assert.deepEqual(getAccumulatedSubagentUsage(), { inputTokens: 0, outputTokens: 0 })
     const total = await runWithSubagentUsageScope(async () => getAccumulatedSubagentUsage())
     assert.deepEqual(total, { inputTokens: 0, outputTokens: 0 })
@@ -94,9 +97,9 @@ describe('subagent usage accumulator', () => {
 
   it('sums cache token fields only when a subagent reports them', async () => {
     const total = await runWithSubagentUsageScope(async () => {
-      addSubagentUsage({ inputTokens: 1, outputTokens: 1 })
-      addSubagentUsage({ inputTokens: 1, outputTokens: 1, cacheReadTokens: 7 })
-      addSubagentUsage({
+      addSubagentUsage('worker-a', { inputTokens: 1, outputTokens: 1 })
+      addSubagentUsage('worker-a', { inputTokens: 1, outputTokens: 1, cacheReadTokens: 7 })
+      addSubagentUsage('worker-a', {
         inputTokens: 1,
         outputTokens: 1,
         cacheReadTokens: 3,
@@ -110,5 +113,32 @@ describe('subagent usage accumulator', () => {
       cacheReadTokens: 10,
       cacheCreationTokens: 4,
     })
+  })
+
+  it('keeps mixed model totals separate and returns independent snapshots', () => {
+    runWithSubagentUsageScope(() => {
+      addSubagentUsage('small-local', { inputTokens: 30, outputTokens: 4, cacheReadTokens: 7 })
+      addSubagentUsage('other-worker', { inputTokens: 20, outputTokens: 3, cacheCreationTokens: 5 })
+      addSubagentUsage('small-local', { inputTokens: 10, outputTokens: 2 })
+      const byModel = getSubagentUsageByModel()
+      assert.deepEqual(
+        [...byModel],
+        [
+          ['small-local', { inputTokens: 40, outputTokens: 6, cacheReadTokens: 7 }],
+          ['other-worker', { inputTokens: 20, outputTokens: 3, cacheCreationTokens: 5 }],
+        ],
+      )
+      const first = byModel.get('small-local')
+      assert.ok(first)
+      first.inputTokens = 900
+      byModel.clear()
+      assert.deepEqual(getAccumulatedSubagentUsage(), {
+        inputTokens: 60,
+        outputTokens: 9,
+        cacheReadTokens: 7,
+        cacheCreationTokens: 5,
+      })
+    })
+    assert.equal(getSubagentUsageByModel().size, 0)
   })
 })
