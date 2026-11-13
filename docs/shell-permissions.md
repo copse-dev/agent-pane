@@ -798,13 +798,23 @@ a token the shell would expand (braces, `*`/`?`/`[` globs, `$`, backticks, quote
 `~` past the start, extglob parentheses) asks again, because `dir/{..,sub}/x` sits under `dir` as
 text but reads `dir/../x`. Repeating the exact approved token is still covered.
 
-Coverage and the credential checks are decided on the path text and do not resolve symlinks, so a
-symlink inside an approved directory reaches whatever it points to. The approved root itself is
-identity-pinned while it exists: replacing a granted file or directory, or retargeting a granted
-symlink, revokes that grant and asks again. The sandbox does not close the nested-symlink case:
-`readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
-so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An
-expanded “Approve this command” action approves one invocation without a grant.
+A path token containing a `..` segment is ineligible for this narrower read question, even if
+lexically resolving it appears to stay within an approved directory. The kernel follows a symlink
+before applying `..`, while a text-only `path.resolve` would erase the link. Such commands use the
+ordinary shell approval route; the read overlay also rejects a raw target with a parent segment.
+
+The approved root is identity-pinned while it exists: replacing a granted file or directory, or
+retargeting a granted symlink, revokes that grant and asks again. Before reusing a directory grant,
+Copse resolves the requested path (including existing ancestors of a missing leaf) and checks that
+its destination stays within the approved root and does not name a credential target. A symlink
+inside the directory that leads outside it therefore cannot reuse the grant. A new narrow approval
+also checks the resolved destination and shows it in the prompt when it differs from the named path;
+a link to a credential store, home root or filesystem root cannot receive a narrow grant. For a
+standing grant, the per-spawn overlay allows only the pinned canonical destination. If the link
+changes after the gate checks it, the new destination remains outside that overlay. A one-command
+approval has no pinned standing identity, so a linked target fails closed inside the sandbox; the
+agent can retry with its canonical path and seek approval there. A failure under either kind of
+read-only approval cannot trigger an outside-sandbox retry, including in Guarded YOLO mode.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
 skip the question: the seatbelt already lets every command read there, so the gate records a
@@ -836,7 +846,9 @@ command, reads the directory itself. `cd` alone, `cd -`, and relative targets st
 `cd` forward, so `cd ~/.ssh && cat id_rsa` is refused like `cat ~/.ssh/id_rsa`.
 
 This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
-access is still outside the project and requires the same narrowly reasoned permission.
+access is still outside the project and requires the same narrowly reasoned permission. After
+approval, the command reads the path on the host because no OS sandbox exists to confine that read
+or prevent it from following links beyond an approved directory.
 
 The in-memory grant disappears on restart. The decision record does not: an answer appends a
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was

@@ -11,6 +11,7 @@ import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
+import { clearReadOutsideProjectGrants } from '../security/read-outside-grant.ts'
 import { TRUSTED_COMMANDS_SETTING } from '../security/command-routing-config.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
@@ -143,6 +144,7 @@ describe('explicit background sandbox escalation', () => {
     dispose()
     setApprovalHandler(null)
     setProjectSandboxEnabled(false)
+    clearReadOutsideProjectGrants()
     mock.restoreAll()
     await setSetting('toolPermissionOverrides', {})
     restoreWorkspace()
@@ -176,6 +178,25 @@ describe('explicit background sandbox escalation', () => {
       inOwner(() => backgroundSandboxRetryReasons(task.id, COMMAND, root)),
       null,
     )
+  })
+
+  it('does not offer an outside retry for a failed task with a read-only grant', async () => {
+    const note = join(base, 'notes.txt')
+    await writeFile(note, 'outside read')
+    remember = true
+    const command = `cat ${note}`
+    await call({ action: 'start', command })
+    const task = inOwner(() => listBackgroundProcesses().at(-1))
+    assert.ok(task)
+    assert.equal(task.exitCode, 1)
+    assert.equal(task.unsandboxed, false)
+    assert.equal(prompts[0]?.title, 'Allow read access outside of the project?')
+    assert.equal(
+      inOwner(() => backgroundSandboxRetryReasons(task.id, command, root)),
+      null,
+    )
+    assert.match(await call({ action: 'start', command, retry_of: task.id }), /No eligible/)
+    assert.equal(prompts.length, 1)
   })
 
   it('ignores the hint for a fully local command', async () => {

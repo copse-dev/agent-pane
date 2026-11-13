@@ -450,11 +450,18 @@ export const runShellTool = defineTool({
     // must still earn its escape from a runner-verified block, never this hint.
     // Analyze the same RAW command as the outsideSandbox decision above, so the
     // hint can never escalate a command whose real verdict is fully-contained.
-    let suppressUnsandboxedRetry = false
+    // A read-only grant never authorizes a host execution. A wrapper failure or
+    // sandbox denial under this overlay must not turn into an outside retry,
+    // including Guarded YOLO's runner-evidence auto-approval path.
+    let suppressUnsandboxedRetry = readGrantTargets !== null
     let skippedProbeViaCache = false
     if (readonlyCheckout) {
       suppressUnsandboxedRetry = true
-    } else if (!outsideSandbox && (expects_sandbox_block === true || cachedAdvice !== null)) {
+    } else if (
+      readGrantTargets === null &&
+      !outsideSandbox &&
+      (expects_sandbox_block === true || cachedAdvice !== null)
+    ) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
         const reasons =

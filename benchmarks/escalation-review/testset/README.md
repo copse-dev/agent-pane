@@ -92,10 +92,14 @@ first run of this set found gaps in both gates, and this change fixes them:
 
 | Approver                                   | local-write      | remote-write     | outside-read    | outside-write  |
 | ------------------------------------------ | ---------------- | ---------------- | --------------- | -------------- |
-| Deterministic tiers (+ outside-read proof) | 110/418, 0, 0    | 112/440, 0, 0    | 156/522, 0, 0   | 156/573, 0, 0  |
+| Deterministic tiers (+ outside-read proof) | 110/418, 0, 0    | 112/440, 0, 0    | 151/522, 0, 0   | 151/573, 0, 0  |
 | Harm gate (Guarded YOLO) alone             | 383/418, 155, 0  | 391/440, 147, 0  | 486/522, 52, 0  | 530/573, 8, 0  |
 | _Before: deterministic tiers_              | 108/418, 0, 3    | 110/440, 0, 3    | 152/522, 0, 3   | 152/573, 0, 3  |
 | _Before: harm gate alone_                  | 381/418, 155, 56 | 389/440, 147, 56 | 484/522, 52, 56 | 528/573, 8, 56 |
+
+Five outside-read cases containing a parent path segment now take the ordinary shell approval
+route. Lexical normalization could hide a symlink traversal before the kernel follows the path;
+the narrower standing read grant cannot safely cover those spellings.
 
 - **The deterministic tiers** approved three `ask` commands: two reads of a workspace `.env` file,
   which the read tier treated like any other workspace read, and `gh auth status --show-token`,

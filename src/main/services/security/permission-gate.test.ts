@@ -65,7 +65,7 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { setSetting, getSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue, runSerialized, SETTINGS_WRITE_QUEUE } from '../storage/write-queue.ts'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/auto-approval.ts'
@@ -3816,6 +3816,77 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         )
         assert.equal(expanded.permitted, false, command)
         assert.equal(expanded.prompt?.title, 'Allow read access outside of the project?', command)
+      }
+    })
+  })
+
+  it('asks again when a descendant symlink steps out of the approved directory', async () => {
+    await withRoot(async (root, readDir) => {
+      const outside = mkdtempSync(`${readDir}-outside-`)
+      try {
+        const secret = join(outside, 'note.txt')
+        writeFileSync(secret, 'outside the approved directory')
+        const link = join(readDir, 'linked-note.txt')
+        symlinkSync(secret, link)
+        await runWithActiveRunIdentity('thread-read-link', () =>
+          runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        )
+        const linked = await runWithActiveRunIdentity('thread-read-link', () =>
+          runGate(`cat ${link}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(linked.permitted, false)
+        assert.equal(linked.prompt?.title, 'Allow read access outside of the project?')
+      } finally {
+        rmSync(outside, { recursive: true, force: true })
+      }
+    })
+  })
+
+  it('shows a linked read destination and refuses a narrow grant for a disguised credential', async () => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
+      const noteLink = join(readDir, 'current.txt')
+      symlinkSync(note, noteLink)
+      const normal = await runGate(`cat ${noteLink}`, { approved: false, remember: false }, root)
+      assert.equal(normal.prompt?.title, 'Allow read access outside of the project?')
+      assert.match(normal.prompt.bodyAdvice, /→/)
+      assert.ok(normal.prompt.bodyAdvice.includes('note.txt'))
+
+      const secret = join(readDir, '.env')
+      const secretLink = join(readDir, 'innocent.txt')
+      writeFileSync(secret, 'private')
+      symlinkSync(secret, secretLink)
+      const disguised = await runGate(
+        `cat ${secretLink}`,
+        { approved: false, remember: false },
+        root,
+      )
+      assert.equal(disguised.permitted, false)
+      assert.ok(disguised.prompt)
+      assert.notEqual(disguised.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
+  it('does not reuse a directory grant through a symlink followed by dot-dot', async () => {
+    await withRoot(async (root, readDir) => {
+      const outside = mkdtempSync(`${readDir}-outside-`)
+      try {
+        const sub = join(outside, 'sub')
+        mkdirSync(sub)
+        const note = join(outside, 'note.txt')
+        writeFileSync(note, 'outside the approved directory')
+        symlinkSync(sub, join(readDir, 'link'))
+        const rawPath = `${readDir}/link/../note.txt`
+        await runWithActiveRunIdentity('thread-read-parent-link', () =>
+          runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        )
+        const linked = await runWithActiveRunIdentity('thread-read-parent-link', () =>
+          runGate(`cat ${rawPath}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(linked.permitted, false)
+        assert.ok(linked.prompt, 'the raw traversal must require its own approval')
+      } finally {
+        rmSync(outside, { recursive: true, force: true })
       }
     })
   })

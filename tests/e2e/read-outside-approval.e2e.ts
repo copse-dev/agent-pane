@@ -1,8 +1,11 @@
 import { submitComposer } from './helpers/composer.ts'
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { prepareMockToolTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // A command that only reads outside the project asks the read-access question
 // instead of the generic "Run outside sandbox?" escape hatch: the decision leads,
@@ -61,5 +64,102 @@ describe('read access outside the project approval', () => {
     await saveAppScreenshot('read-outside-approval-expanded.png')
 
     await dialog.$('.approval-reject').click()
+  })
+
+  it('asks again when a linked directory precedes a parent segment', async function () {
+    this.timeout(90_000)
+    const root = mkdtempSync(
+      join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'copse-e2e-read-link-'),
+    )
+    try {
+      const granted = join(root, 'granted')
+      mkdirSync(granted)
+      const outside = join(root, 'outside')
+      const sub = join(outside, 'sub')
+      mkdirSync(sub, { recursive: true })
+      writeFileSync(join(outside, 'note.txt'), 'outside the granted directory')
+      symlinkSync(sub, join(granted, 'link'))
+      const rawPath = `${granted}/link/../note.txt`
+
+      await prepareMockToolTurn(
+        'List this notes directory.',
+        { name: 'run_shell', args: { command: `ls -la ${granted}` } },
+        'The notes directory was listed.',
+      )
+      await submitComposer()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText(
+        'Allow read access outside of the project?',
+      )
+      await dialog.$('.approval-approve').click()
+      await expectAssistantReply('The notes directory was listed.')
+
+      await prepareMockToolTurn(
+        'Read the linked note.',
+        { name: 'run_shell', args: { command: `cat ${rawPath}` } },
+        'The traversal read was declined.',
+      )
+      await submitComposer()
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).not.toHaveText(
+        'Allow read access outside of the project?',
+      )
+      await expect(dialog).toHaveText(expect.stringContaining(rawPath))
+      await saveElementScreenshot(
+        '#approval-dialog .approval-heading',
+        'read-outside-parent-traversal-reprompt.png',
+      )
+      await dialog.$('.approval-reject').click()
+      await expectAssistantReply('The traversal read was declined.')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('names the destination of a symlink before granting read access', async function () {
+    this.timeout(90_000)
+    const root = mkdtempSync(
+      join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'copse-e2e-read-dest-'),
+    )
+    try {
+      const destination = join(root, 'notes.txt')
+      const link = join(root, 'current.txt')
+      writeFileSync(destination, 'ordinary notes')
+      symlinkSync(destination, link)
+      await prepareMockToolTurn(
+        'Read the linked notes.',
+        { name: 'run_shell', args: { command: `cat ${link}` } },
+        'The linked notes were declined.',
+      )
+      await submitComposer()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText(
+        'Allow read access outside of the project?',
+      )
+      const advice = await dialog.$('.approval-advice').getText()
+      expect(advice).toContain(`→ ${destination}`)
+      // Keep the temporary directory's random suffix out of the reference
+      // image after asserting the real destination shown to the user.
+      await browser.execute((temporaryRoot) => {
+        for (const item of document.querySelectorAll(
+          '#approval-dialog .approval-advice, #approval-dialog .approval-reasons li',
+        )) {
+          const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT)
+          while (walker.nextNode()) {
+            const node = walker.currentNode
+            if (node.textContent) {
+              node.textContent = node.textContent.replaceAll(temporaryRoot, '/outside/read-dest')
+            }
+          }
+        }
+      }, root)
+      await saveElementScreenshot('#approval-dialog', 'read-outside-symlink-destination.png')
+      await dialog.$('.approval-reject').click()
+      await expectAssistantReply('The linked notes were declined.')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

@@ -1532,15 +1532,51 @@ describe('readAllowedSandboxOverlay', () => {
     }
   })
 
-  it('spells a symlinked target the way the kernel sees it', () => {
+  it('refuses a linked target rather than granting its unapproved destination', () => {
     const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
     try {
       const real = join(dir, 'real')
       mkdirSync(real)
       const link = join(dir, 'link')
       symlinkSync(real, link)
-      const allowRead = readAllowedSandboxOverlay(workspace, [link]).filesystem?.allowRead ?? []
-      assert.ok(allowRead.includes(real))
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [link]), /symlink/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a linked ancestor even when the read target does not exist yet', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const real = join(dir, 'real')
+      mkdirSync(real)
+      const link = join(dir, 'link')
+      symlinkSync(real, link)
+      assert.throws(
+        () => readAllowedSandboxOverlay(workspace, [join(link, 'missing', 'secret.txt')]),
+        /symlink/,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a dangling link as a read target', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const link = join(dir, 'link')
+      symlinkSync(join(dir, 'absent'), link)
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [link]), /symlink/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses parent segments before lexical normalization hides a linked directory', () => {
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
+    try {
+      const target = `${dir}/link/../note.txt`
+      assert.throws(() => readAllowedSandboxOverlay(workspace, [target]), /parent path segment/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -1681,6 +1717,13 @@ describe('chat-store sandbox reads', () => {
       const aliased = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [viaAlias] }).filesystem
       assert.ok(aliased?.allowWrite.includes(stateDir))
       assert.equal(aliased?.allowWrite.includes(viaAlias), false)
+
+      // A malformed agent state path loses only its carve-out. It must not
+      // abort construction of the agent's otherwise valid sandbox.
+      const dangling = join(profile, 'dangling-state')
+      symlinkSync(join(profile, 'missing-state'), dangling)
+      const malformed = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [dangling] }).filesystem
+      assert.equal(malformed?.allowWrite.includes(dangling), false)
     } finally {
       if (previous === undefined) delete process.env['COPSE_DIR']
       else process.env['COPSE_DIR'] = previous

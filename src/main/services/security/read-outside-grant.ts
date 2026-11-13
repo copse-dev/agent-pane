@@ -1,5 +1,10 @@
 import { lstatSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import {
+  hasParentTraversalSegment,
+  sensitiveTargetReason,
+} from '@copse/shell-guard/read-outside-project.ts'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
 /**
@@ -96,6 +101,59 @@ function coversPath(granted: string, directory: boolean, target: string): boolea
   return child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
 }
 
+/** Resolve existing ancestors too, so a missing leaf cannot hide a parent link. */
+function canonicalReadTarget(target: string): string | null {
+  let existing = target
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return resolve(realpathSync.native(existing), ...missing)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !Object.hasOwn(error, 'code') ||
+        Reflect.get(error, 'code') !== 'ENOENT'
+      )
+        return null
+      // ENOENT also covers a dangling link. Treat it as unresolved authority,
+      // rather than reconstructing it as a supposedly missing literal leaf.
+      try {
+        if (lstatSync(existing).isSymbolicLink()) return null
+      } catch {
+        // The component itself is missing; try its parent.
+      }
+      const parent = dirname(existing)
+      if (parent === existing) return null
+      missing.unshift(basename(existing))
+      existing = parent
+    }
+  }
+}
+
+/** The destination a narrow read grant may name, including existing link targets. */
+export function safeCanonicalReadTarget(target: string): string | null {
+  if (hasParentTraversalSegment(target)) return null
+  const canonical = canonicalReadTarget(resolve(target))
+  if (canonical === null || sensitiveTargetReason(target, canonical) !== null) return null
+  const configuredProfile = process.env['COPSE_DIR']?.trim() ?? ''
+  const profile = configuredProfile.length > 0 ? configuredProfile : join(homedir(), '.copse')
+  const lanRoot = canonicalReadTarget(resolve(profile, 'lan'))
+  if (
+    lanRoot !== null &&
+    (canonical === lanRoot ||
+      canonical.startsWith(`${lanRoot}${sep}`) ||
+      lanRoot.startsWith(`${canonical}${sep}`))
+  )
+    return null
+  const home = canonicalReadTarget(resolve(homedir()))
+  if (
+    canonical === sep ||
+    (home !== null && (canonical === home || home.startsWith(`${canonical}${sep}`)))
+  )
+    return null
+  return canonical
+}
+
 export function grantReadOutsideProject(threadId: string, targets: readonly string[]): void {
   const paths = grantedPaths.get(threadId) ?? new Map<string, GrantedPath>()
   for (const target of targets) {
@@ -114,22 +172,40 @@ export function listReadOutsideProjectGrants(threadId: string): string[] {
     .map(([path]) => path)
 }
 
+/** Resolve only paths covered by an identity-pinned, explicit standing grant. */
+export function standingCanonicalReadTargets(
+  threadId: string | null,
+  targets: readonly string[],
+): string[] | null {
+  if (threadId === null || targets.length === 0) return null
+  const paths = grantedPaths.get(threadId)
+  if (!paths) return null
+  const canonicalTargets: string[] = []
+  for (const target of targets) {
+    const resolved = resolve(target)
+    const canonical = safeCanonicalReadTarget(target)
+    if (canonical === null) return null
+    const covered = [...paths].some(
+      ([granted, grant]) =>
+        stillNamesApprovedPath(granted, grant.identity) &&
+        coversPath(granted, grant.directory, resolved) &&
+        (granted === resolved ||
+          (grant.identity !== null &&
+            coversPath(grant.identity.realpath, grant.directory, canonical))),
+    )
+    if (!covered) return null
+    canonicalTargets.push(canonical)
+  }
+  return canonicalTargets
+}
+
 export function hasReadOutsideProjectGrant(
   threadId: string | null,
   targets: readonly string[],
 ): boolean {
   if (threadId === null || targets.length === 0) return false
   if (isGuardedYoloActive(threadId)) return true
-  const paths = grantedPaths.get(threadId)
-  if (!paths) return false
-  return targets.every((target) => {
-    const resolved = resolve(target)
-    return [...paths].some(
-      ([granted, grant]) =>
-        stillNamesApprovedPath(granted, grant.identity) &&
-        coversPath(granted, grant.directory, resolved),
-    )
-  })
+  return standingCanonicalReadTargets(threadId, targets) !== null
 }
 
 /** Drop every grant. For tests and teardown; not wired to any user action. */
