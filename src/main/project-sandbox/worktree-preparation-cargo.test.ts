@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -63,7 +63,17 @@ it(
       t.skip('real Cargo fixture requires an installed direct Cargo toolchain')
       return
     }
-    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'cargo-preparation-test-')))
+    // This path is embedded in the fixture's file:// Git dependency URI. The
+    // conservative Cargo planner rejects local-looking dependency strings that
+    // contain "path" or "workspace", so mkdtemp's alphabetic suffix can make
+    // this otherwise valid fixture fail by chance. UUID hex digits cannot.
+    const fixtureParent = join(
+      tmpdir(),
+      `cargo-preparation-test-${randomUUID().replaceAll('-', '')}`,
+    )
+    assert.match(fixtureParent, /cargo-preparation-test-[a-f0-9]{32}$/)
+    mkdirSync(fixtureParent)
+    const parent = realpathSync(fixtureParent)
     const root = join(parent, 'project')
     const dependency = join(root, 'fixture-dependency')
     const marker = join(parent, 'build-script-ran')
@@ -206,7 +216,7 @@ it(
       )
       assert.equal(existsSync(marker), false)
       const before = await inspectWorktreePreparation(root, { env })
-      assert.equal(before.state, 'absent')
+      assert.equal(before.state, 'absent', `Cargo fixture ${parent}: ${before.remediation}`)
       const options = {
         env,
         planFingerprint: before.planFingerprint,

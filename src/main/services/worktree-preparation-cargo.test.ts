@@ -128,6 +128,7 @@ it('rejects executable Cargo config and local paths outside the worktree', () =>
   )
   for (const manifest of [
     '[package]\nname="app"\nversion="0.1.0"\n[dependencies]\nx={"path"="../outside"}\n',
+    '[package]\nname="app"\nversion="0.1.0"\n[dependencies]\nx={git="file:///tmp/path-fixture/dependency",rev="deadbeef"}\n',
     String.raw`[package]
 name="app"
 version="0.1.0"
