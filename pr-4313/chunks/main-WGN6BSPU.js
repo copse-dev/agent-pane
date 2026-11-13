@@ -10614,6 +10614,30 @@ var init_inline_artefact = __esm({
   }
 });
 
+// src/shared/threads/explicit-agent.ts
+function explicitAgentForMessage(messages, messageIndex) {
+  if (messages[messageIndex]?.role !== "assistant") return void 0;
+  let agent2;
+  for (let index = messageIndex; index >= 0; index--) {
+    const message2 = messages[index];
+    if (!message2 || message2.role === "user") break;
+    for (const call of message2.toolCalls) {
+      if (agent2 !== void 0 || call.name !== "task" || // ACP can use the same name; its title/kind/identity metadata belongs
+      // to the external parent, not a host-synthesized explicit invocation.
+      call.title !== void 0 || call.kind !== void 0 || call.programmaticName !== void 0 || !isRecord(call.args) || typeof call.args["subagent_type"] !== "string" || call.args["subagent_type"].length === 0) {
+        return void 0;
+      }
+      agent2 = call.args["subagent_type"];
+    }
+  }
+  return agent2;
+}
+var init_explicit_agent = __esm({
+  "src/shared/threads/explicit-agent.ts"() {
+    init_unknown_value();
+  }
+});
+
 // src/renderer/controller/model-selection.ts
 function commitThreadModelSelection(store2, api2, threadId, by, from2, to) {
   if (from2 === to) return;
@@ -10669,6 +10693,9 @@ function turnRecoveryForMessage(thread, failedMessageId) {
   const failedIndex = thread.messages.length - 1;
   const failed = thread.messages[failedIndex];
   if (!failed || failed.id !== failedMessageId) return null;
+  if (explicitAgentForMessage(thread.messages, failedIndex) !== void 0) {
+    return null;
+  }
   if (thread.interruptedTurnAt !== void 0 && failed.createdAt <= thread.interruptedTurnAt && (failed.role === "user" || failed.role === "assistant") && failed.turnOutcome === void 0) {
     return { interruptedByRestart: true };
   }
@@ -10712,6 +10739,7 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
 }
 var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
+    init_explicit_agent();
     init_thread_helpers();
     init_model_selection();
     init_message_queue();
@@ -90831,7 +90859,7 @@ function bindChatComposerLayout(store2, onActivityHome) {
   sync();
   requestAnimationFrame(sync);
   const observer = new ResizeObserver(sync);
-  observer.observe(input);
+  observer.observe(input, { box: "border-box" });
   window.addEventListener("resize", sync, { passive: true });
   const unsubs = [
     // Which thread, and whether it is the empty Activity home.
