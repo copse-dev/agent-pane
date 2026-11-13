@@ -24431,6 +24431,7 @@ var init_transcript_state = __esm({
   "src/shared/store/transcript-state.ts"() {
     TRANSCRIPT_META_KEYS = [
       "status",
+      "interruptedTurnAt",
       "usage",
       "updatedAt",
       "todos",
@@ -28424,6 +28425,7 @@ function compactSidebarThread(thread) {
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
     ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...thread.lastSettledAt !== void 0 ? { lastSettledAt: thread.lastSettledAt } : {},
+    ...thread.interruptedTurnAt !== void 0 ? { interruptedTurnAt: thread.interruptedTurnAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
