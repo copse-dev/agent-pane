@@ -386,8 +386,9 @@ initialize ASRT, that sandboxed operation fails rather than acquiring a scope in
 an uncontained agent. A resolved `SandboxManager.initialize()` is insufficient: main and each
 isolated host check `isSandboxingEnabled()` before claiming protection. If it remains false, main
 records an init failure so commands prompt, and isolated hosts stop before spawning. The overlap
-gate remains for any other main-process scope: while one is active, Copse pauses auto-run and names the holder
-in an approval prompt before starting a new network-capable command. Structurally read-only
+gate remains for any scope held directly by main (none of the ACP or loopback task paths above):
+while one is active, Copse pauses auto-run and names the holder in an approval prompt before
+starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
 ### Linked worktree recovery

@@ -395,11 +395,13 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 - **OS sandbox (macOS and Linux).** Sandbox-contained commands auto-run inside
   the ASRT profile (seatbelt on macOS, bubblewrap on Linux); external commands
   prompt and run outside only when approved.
-- **Global network-scope guard.** When a sandboxed ACP agent or a loopback
-  background task temporarily widens ASRT's process-global network allowlist,
-  all shell commands, background starts, and newly opened integrated terminals
-  require explicit approval until the final scope releases. This prevents
-  unrelated auto-run work inheriting temporary network egress.
+- **Isolated network scopes.** Sandboxed ACP sessions and probes, and approved
+  loopback-binding background tasks, each use a dedicated ASRT host process.
+  Their temporary allowlists cannot reach already-running contained commands
+  in main. A host that cannot initialize protection fails before spawning its
+  agent or command. The overlap gate still pauses auto-run for any scope held
+  directly by main, so a future main-process holder cannot silently lend its
+  network permission to another command.
 - **Integrated terminal is user-directed.** Shells tabs the user opens run outside
   the project seatbelt (full host access by design). Agent shell confinement stays
   on `run_shell` / `run_background`. Where no OS sandbox is available, or when an
@@ -446,9 +448,12 @@ enforced, ordered by how much they widen the blast radius:
   network and out-of-workspace access, but an approved external command or retry runs
   fully outside that profile. The intended fix is scoped egress/operation grants,
   retaining unrelated filesystem and process controls.
-- **Network mediation is not per execution.** ASRT's allow-list is process-global.
-  Copse forces overlapping commands to prompt while a scope is widened, preventing
-  silent inheritance, but cannot attribute the allow-list itself to one child.
+- **Network mediation is per ASRT host, not per connection owner.** ASRT's
+  allowlist remains process-global inside each host. Current ACP sessions,
+  probes and loopback background tasks get separate hosts; the main-process
+  overlap gate covers any direct scope there. A future path that launches two
+  unrelated workloads in one host would again need isolation or a stricter
+  per-connection broker.
 - **Tool credentials can reach child processes.** Model-provider keys are scrubbed,
   while credentials such as GitHub, package-registry, and cloud tokens may remain for
   tools that need them. The target is brokered use without exposing the raw value to

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -21,7 +21,7 @@ import {
   isAcpBridgeStartupFailure,
 } from './acp-bridge-mount.ts'
 import { ACP_SANDBOX_GITHUB_STEER } from './acp-network-denial-steer.ts'
-import { acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
+import { acquireAcpSession, acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { acpSessionHostWorkerPath } from './acp-session-host.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -233,6 +233,36 @@ async function sandboxedRun<T>(threadId: string, fn: () => Promise<T>): Promise<
 }
 
 describe('ACP native bridge mount (#4144)', () => {
+  it(
+    'does not start an agent in main when its isolated sandbox host fails',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const marker = join(root, 'agent-started')
+      const script = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started'); setInterval(() => {}, 1000)`
+      const worker = acpSessionHostWorkerPath()
+      mkdirSync(dirname(worker), { recursive: true })
+      writeFileSync(
+        worker,
+        "process.send?.({ type: 'error', error: 'forced isolated host failure' })\n",
+      )
+      t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+      setProjectSandboxEnabled(true)
+      await assert.rejects(
+        acquireAcpSession({
+          threadId: 'isolated-host-failure',
+          config: {
+            command: process.execPath,
+            args: ['-e', script],
+            cwd: root,
+            sandbox: { allowedDomains: [] },
+          },
+        }),
+        /forced isolated host failure/,
+      )
+      assert.equal(existsSync(marker), false)
+    },
+  )
+
   it(
     'withholds write-access instructions until a read-only session lists the bridge',
     {

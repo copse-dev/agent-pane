@@ -210,7 +210,7 @@ describe('port-binding background host', () => {
       try {
         await outputContaining(contained, 'contained-ready')
         const binderScript =
-          "process.stdout.write('binding-ready env:' + String(!process.env.COPSE_PORT_BINDING_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.TEST_SETTING === 'kept') + '\\n'); setInterval(() => {}, 1000)"
+          "process.stdin.resume(); setTimeout(() => process.stdout.write('binding-ready env:' + String(!process.env.COPSE_PORT_BINDING_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.TEST_SETTING === 'kept') + ' stdin:' + String(!process.stdin.readableEnded) + '\\n'), 100); setInterval(() => {}, 1000)"
         binder = await spawnBackgroundProcess(
           formatArgvForShell(process.execPath, ['-e', binderScript]),
           {
@@ -222,8 +222,8 @@ describe('port-binding background host', () => {
           },
         )
         assert.match(
-          await outputContaining(binder, 'binding-ready env:true\n'),
-          /binding-ready env:true/,
+          await outputContaining(binder, 'binding-ready env:true stdin:true\n'),
+          /binding-ready env:true stdin:true/,
         )
         const workerNetwork: unknown = JSON.parse(readFileSync(marker, 'utf8'))
         assert.deepEqual(workerNetwork, {

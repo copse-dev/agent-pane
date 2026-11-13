@@ -411,7 +411,9 @@ export async function spawnBackgroundProcess(
           ...(opts.violationId ? { violationId: opts.violationId } : {}),
         }),
       },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      // Keep the hosted task's stdin open. A closed fd makes `--watch` and
+      // `--serve` tools stop immediately even though the task is long-lived.
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       detached: detachForGroupKill,
     })
     child.on('message', (value: unknown) => {

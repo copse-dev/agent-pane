@@ -65,11 +65,14 @@ async function main(): Promise<void> {
 
   const overlay = request.overlay
   const network = overlay.network
-  const release = acquireSandboxNetworkScope({
-    domains: network.allowedDomains,
-    allowLocalBinding: network.allowLocalBinding,
-    label: `background task: ${request.command}`,
-  })
+  const release = acquireSandboxNetworkScope(
+    {
+      domains: network.allowedDomains,
+      allowLocalBinding: network.allowLocalBinding,
+      label: `background task: ${request.command}`,
+    },
+    { logChanges: false },
+  )
   try {
     const tmpDir = sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
     const { argv, env } = await withSandboxWrapTmpDir(tmpDir, () =>
@@ -96,7 +99,9 @@ async function main(): Promise<void> {
       env: withSandboxShellPath(
         withSandboxTmpEnv({ ...envForRendererChildProcess(baseEnv), ...request.env }, tmpDir),
       ),
-      stdio: ['ignore', 'inherit', 'inherit'],
+      // Keep stdin open for watchers such as esbuild that exit on EOF. The
+      // worker never forwards user input; this pipe carries no data.
+      stdio: ['pipe', 'inherit', 'inherit'],
       detached: false,
     })
     let exiting = false
