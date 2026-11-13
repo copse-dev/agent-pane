@@ -1,6 +1,7 @@
 import { describe, it, afterEach, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
+import { EventEmitter, once } from 'node:events'
 import type {
   LLMMessage,
   LLMProvider,
@@ -51,9 +52,11 @@ function fixture(
   wire: Buffer[]
   maxima: number[]
   served: Promise<void>[]
+  requests: EventEmitter
 } {
   const maxima: number[] = []
   const served: Promise<void>[] = []
+  const requests = new EventEmitter()
   const host = new HostInference({
     provider: async (maximum): Promise<LLMProvider> => {
       maxima.push(maximum)
@@ -80,6 +83,7 @@ function fixture(
     inference: (stream): Promise<void> => {
       const serving = host.serve(stream)
       served.push(serving)
+      requests.emit('request')
       return serving
     },
   })
@@ -91,7 +95,16 @@ function fixture(
     toGuest.destroy()
     toHost.destroy()
   })
-  return { host, broker, link, provider: buildHostInferenceProvider(link), wire, maxima, served }
+  return {
+    host,
+    broker,
+    link,
+    provider: buildHostInferenceProvider(link),
+    wire,
+    maxima,
+    served,
+    requests,
+  }
 }
 async function collect(
   provider: LLMProvider,
@@ -119,6 +132,11 @@ describe('run-scoped host inference', () => {
     let settled = 0
     let cancelled = 0
     let continuedAfterDone = false
+    let cleanupStarted = Promise.withResolvers<undefined>()
+    let finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
     const f = fixture(t, {
       async *stream(_messages, _tools, signal) {
         try {
@@ -127,17 +145,29 @@ describe('run-scoped host inference', () => {
           yield { type: 'text', text: 'Must not read beyond the terminal chunk' }
         } finally {
           // Providers may finish transport cleanup after emitting their terminal chunk.
-          await new Promise((resolve) => setTimeout(resolve, 20))
+          cleanupStarted.resolve(undefined)
+          await finishCleanup.promise
           if (signal?.aborted) cancelled += 1
           settled += 1
         }
       },
     })
     for (let turn = 1; turn <= 2; turn += 1) {
-      for await (const chunk of f.provider.stream([{ role: 'user', content: 'Next' }], [])) {
-        if (chunk.type === 'done') break
-      }
-      assert.equal(settled, turn, 'done must not race ahead of host stream completion')
+      const consume = (async (): Promise<number> => {
+        for await (const chunk of f.provider.stream([{ role: 'user', content: 'Next' }], [])) {
+          if (chunk.type === 'done') break
+        }
+        return settled
+      })()
+      await cleanupStarted.promise
+      // Drain queued stream deliveries while cleanup is deliberately held open.
+      // An early done must be observable before the test releases the provider.
+      await new Promise((resolve) => setImmediate(resolve))
+      assert.equal(settled, turn - 1)
+      finishCleanup.resolve(undefined)
+      assert.equal(await consume, turn, 'done must not race ahead of host stream completion')
+      cleanupStarted = Promise.withResolvers<undefined>()
+      finishCleanup = Promise.withResolvers<undefined>()
     }
     assert.equal(cancelled, 0)
     assert.equal(continuedAfterDone, false)
@@ -339,6 +369,11 @@ describe('run-scoped host inference', () => {
   })
   it('waits for a cancelled stream to release the slot instead of refusing the recovery request', async (t) => {
     let calls = 0
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
     let started: () => void = () => {}
     const first = new Promise<void>((resolve) => {
       started = resolve
@@ -359,7 +394,8 @@ describe('run-scoped host inference', () => {
             )
           })
           // The provider is slow to stop generating after the cancel.
-          await new Promise((resolve) => setTimeout(resolve, 150))
+          cleanupStarted.resolve(undefined)
+          await finishCleanup.promise
           signal.throwIfAborted()
           yield { type: 'done' }
           return
@@ -374,14 +410,24 @@ describe('run-scoped host inference', () => {
     await first
     controller.abort()
     await assert.rejects(cancelled)
+    await cleanupStarted.promise
     // Sent at once, while the cancelled request still holds the slot.
-    const chunks = await collect(f.provider)
+    const recoveryStarted = once(f.requests, 'request')
+    const recovery = collect(f.provider)
+    await recoveryStarted
+    finishCleanup.resolve(undefined)
+    const chunks = await recovery
     assert.equal(calls, 2)
     assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
   })
   it('waits for cancellation when a consumer stops mid-stream and immediately recovers', async (t) => {
     let calls = 0
     let active = 0
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
     const f = fixture(t, {
       async *stream(_messages, _tools, signal) {
         calls += 1
@@ -402,7 +448,8 @@ describe('run-scoped host inference', () => {
                   { once: true },
                 )
             })
-            await new Promise((resolve) => setTimeout(resolve, 20))
+            cleanupStarted.resolve(undefined)
+            await finishCleanup.promise
             signal.throwIfAborted()
           }
           yield { type: 'text', text: 'recovered' }
@@ -415,7 +462,12 @@ describe('run-scoped host inference', () => {
     for await (const chunk of f.provider.stream([], [])) {
       if (chunk.type === 'reasoning') break
     }
-    const chunks = await collect(f.provider)
+    const recoveryStarted = once(f.requests, 'request')
+    const recovery = collect(f.provider)
+    await recoveryStarted
+    await cleanupStarted.promise
+    finishCleanup.resolve(undefined)
+    const chunks = await recovery
     assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
     assert.equal(calls, 2)
   })
@@ -458,9 +510,9 @@ describe('run-scoped host inference', () => {
     await first
     controller.abort()
     await assert.rejects(cancelled)
+    const recoveryStarted = once(f.requests, 'request')
     const waiting = collect(f.provider).catch(() => [])
-    for (let tries = 0; f.served.length < 2 && tries < 200; tries++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await recoveryStarted
     const recovery = f.served[1]
     assert.ok(recovery, 'the recovery request reached the host')
     f.host.stop()
