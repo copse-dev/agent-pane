@@ -269,7 +269,9 @@ export function createModelsAgentsList(
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Everything Copse can run a turn on. A ChatGPT plan, a coding agent and an API key are separate connections, so use any of them, or all. Agents and model servers on this machine show up on their own. Re-scan also reads API keys from your environment and shell startup files and imports new ones; existing keys are never overwritten.',
+      // The Re-scan sentence is the disclosure for the key import that clicking
+      // Re-scan opts into (see rescanAll), so it stays when the rest is cut.
+      'Plans, agents and API keys Copse can use. Agents and model servers on this machine appear on their own. Re-scan also imports new API keys from your environment and shell startup files, without overwriting saved ones.',
     ),
     el('div', { class: 'acp-list-bar' }, scanStatus, rescan),
     list,

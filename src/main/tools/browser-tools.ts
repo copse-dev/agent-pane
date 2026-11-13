@@ -63,9 +63,9 @@ export const browserSnapshotTool = defineTool({
 export const browserResizeTool = defineTool({
   name: 'browser_resize',
   description:
-    'Set the CSS viewport size of an isolated agent browser tab for responsive layout checks. Use 390×844 for a narrow phone-sized layout and 1280×800 to restore desktop. This changes layout dimensions, not the user’s visible Browser pane, device hardware, touch support or user agent. Take a fresh snapshot after resizing.',
+    'Set the CSS viewport size of an isolated agent browser tab for responsive layout checks. Pass the explicit viewId from browser_preview, browser_navigate or browser_tabs. Use 390×844 for a narrow phone-sized layout and 1280×800 to restore desktop. This changes layout dimensions, not the user’s visible Browser pane, device hardware, touch support or user agent. Take a fresh snapshot after resizing.',
   parameters: browserViewportSchema.extend({
-    viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
+    viewId: z.string().min(1).describe('Explicit target tab id; never defaults to a canvas tab.'),
   }),
   async execute({ width, height, viewId }) {
     return getBrowserSession().resize({ width, height }, viewId)

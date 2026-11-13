@@ -318,12 +318,21 @@ export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
   return commands
 }
 
+/** `Deferred <path>`: a held-back edit names what it would have changed, never `Edited`. */
+function deferredCallLabel(tc: ToolCall): string {
+  const patchFiles = copseToolCallName(tc) === 'apply_patch' ? getApplyPatchFiles(tc) : []
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`
+  const path = getToolEditPath(tc)
+  return path ? `Deferred ${path}` : 'Deferred edit'
+}
+
 /**
  * Human label for a tool card — file edits show `Edited <path>` (or progressive
  * while running) and shell commands surface the actual (cd-stripped) command
  * instead of a generic name, so the user can see what ran without expanding.
  */
 export function getToolCallLabel(tc: ToolCall): string {
+  if (tc.deferred === true) return deferredCallLabel(tc)
   const tense = tenseFromStatus(tc.status)
   // ACP can repeat the raw MCP identifier as its title. That is an identity,
   // not a human description, and must follow the same formatting as `name`.
@@ -451,12 +460,17 @@ function bucketKey(groupKey: string, isError: boolean): string {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey
 }
 
+/** A deferred call did none of its group's work, so it never joins or counts toward one. */
+function displayGroupKey(tc: ToolCall): string | null {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+}
+
 function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+    const groupKey = displayGroupKey(tc)
     if (!groupKey) continue
     const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
@@ -468,7 +482,7 @@ function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] 
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+    const groupKey = displayGroupKey(tc)
     if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue

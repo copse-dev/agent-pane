@@ -1289,12 +1289,65 @@ test('a disk attachment cannot resurrect a run already marked interrupted by rec
   const recovered = { ...thread('t1'), status: 'idle' as const, interruptedTurnAt: 20 }
   const { store, snapshot, unsub } = setup([recovered])
   snapshot({
+    source: 'disk',
     projectId: 'project-1',
     thread: thread('t1'),
     checkpoint: { stream: null, pendingTurn: null },
   })
   assert.equal(requireThread(store, 't1').status, 'idle')
   assert.equal(requireThread(store, 't1').interruptedTurnAt, 20)
+  unsub()
+})
+
+for (const status of ['idle', 'error'] as const) {
+  test(`a disk attachment adopts a newer ${status} completion beside an existing held queue`, () => {
+    const initial: Thread = {
+      ...thread('t1'),
+      pendingMessages: [
+        {
+          messageId: 'held',
+          createdAt: 1,
+          autoDispatch: false,
+          payload: { content: 'Wait for review' },
+        },
+      ],
+    }
+    const { store, snapshot, unsub } = setup([initial])
+    snapshot({
+      source: 'disk',
+      projectId: 'project-1',
+      thread: { ...initial, status, usage: { inputTokens: 75, outputTokens: 20 } },
+      checkpoint: { stream: null, pendingTurn: null },
+    })
+    const restored = requireThread(store, 't1')
+    assert.equal(restored.status, status)
+    assert.deepEqual(restored.usage, { inputTokens: 75, outputTokens: 20 })
+    assert.deepEqual(restored.pendingMessages, initial.pendingMessages)
+    unsub()
+  })
+}
+
+test('a live runtime seed supersedes a held idle status before its first stream chunk', () => {
+  const initial: Thread = {
+    ...thread('t1'),
+    status: 'idle',
+    pendingMessages: [
+      {
+        messageId: 'held',
+        createdAt: 1,
+        autoDispatch: false,
+        payload: { content: 'Wait for review' },
+      },
+    ],
+  }
+  const { store, snapshot, unsub } = setup([initial])
+  snapshot({
+    source: 'runtime',
+    projectId: 'project-1',
+    thread: { ...initial, status: 'running' },
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').status, 'running')
   unsub()
 })
 
@@ -1306,6 +1359,7 @@ test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint
   send({ type: 'text', text: 'missed while loading' }, 't1', { messageIds: [] })
   assert.equal(messages().length, 0)
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: structuredClone(requireThread(runtime, 't1')),
     checkpoint: reducer.checkpoint('t1'),
@@ -1321,6 +1375,7 @@ test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint
 test('a stamped chunk draws with the message ids main wrote', () => {
   const { send, messages, snapshot } = setup()
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1'),
     checkpoint: { stream: null, pendingTurn: null },
@@ -1353,6 +1408,7 @@ test('a turn seed preserves drained queue placement and window summaries', () =>
   const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
   store.setState({ threads: [thread('t1', [answer, prompt])] })
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1', [prompt, unlabeled]),
     checkpoint: { stream: null, pendingTurn: null },
@@ -1373,6 +1429,7 @@ test('a runtime prefix inserts missed messages before a local follow-up', () => 
   const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
   store.setState({ threads: [thread('t1', [prompt])] })
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1', [answer]),
     checkpoint: { stream: null, pendingTurn: null },

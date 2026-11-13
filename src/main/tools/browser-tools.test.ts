@@ -98,13 +98,28 @@ describe('browser_resize', () => {
       { width: Number.POSITIVE_INFINITY, height: 844 },
       { width: 390 },
     ]) {
-      assert.equal(browserResizeTool.parameters.safeParse(args).success, false)
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ ...args, viewId: 'tab-1' }).success,
+        false,
+      )
     }
     for (const args of [
       { width: 240, height: 240 },
       { width: 2560, height: 1600 },
     ]) {
-      assert.equal(browserResizeTool.parameters.safeParse(args).success, true)
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ ...args, viewId: 'tab-1' }).success,
+        true,
+      )
+    }
+  })
+
+  it('requires an explicit nonempty tab id instead of the last active canvas tab', () => {
+    for (const viewId of [undefined, '']) {
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ width: 390, height: 844, viewId }).success,
+        false,
+      )
     }
   })
 })

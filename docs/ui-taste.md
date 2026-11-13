@@ -219,8 +219,10 @@ that for the migrated hooks.
 ### Chips and composer strips share one box each
 
 - Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
-  transcript attachment chips, roadmap attachments, thread-proposal chips — take `--radius`. They
-  are data, not calls to action, and pill geometry is reserved for primary CTAs.
+  transcript attachment chips, roadmap attachments — take `--radius`. They are data, not calls to
+  action, and pill geometry is reserved for primary CTAs. A fact that is neither an attachment
+  nor clickable (a proposed thread's "Its own checkout" and file list) takes no box at all: it is
+  muted text with its icon.
 - Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
   context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
   `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
@@ -289,6 +291,11 @@ project-scope row in `--warning` beside a neutral `user`, the agent container in
 - **A publisher is not a badge.** A plugin's publisher follows its version in the name line
   (`1.2.3 · Copse`), in muted sentence-case text without a frame — not a caps caption over
   the name, and not a chip beside it.
+- **Labels outside the kit follow the kit.** Review finding severity and class, the plugin panel
+  badge, the roadmap review status, the branch picker's `default` and the memories `external
+  context` marker keep their own colours and frames but take `--badge-font-size`, normal tracking
+  and `::first-letter` sentence case. The image chip's `high` / `low` comes from `::after`, which
+  `::first-letter` cannot reach, so it stays lowercase at its overlay size.
 
 Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
 see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
@@ -377,6 +384,14 @@ approval. Do not reach for the approval chrome for one:
 
 Visual eval: `tests/e2e/thread-proposal-card.e2e.ts`.
 
+### Empty states are upright
+
+An empty state (`No output`, an empty tool result, an empty hook test, a plugin that contributes
+nothing, a diff's `\ No newline at end of file`) and an estimate note (`(est.)`) are muted text
+set upright. They are already quiet; a slant adds nothing and reads as emphasis. Italic stays
+where it carries meaning: the `edited` note on a human-edited message, and alt text that stands in
+for an image (`.remote-artifact-unavailable-alt`, `.plan-image-reference`).
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
@@ -437,12 +452,22 @@ the Changes, PR, Memories, and Roadmap lists, and the Terminal / Browser / Deskt
 products — thread rows at 40px next to PR rows at 24px was the symptom. Group headers
 (`.git-changes-section-title`, `.roadmap-category-header`) share `--spacing-xs` for the same reason.
 
-In-pane group headers — tracked caps over a list section or card (`.pane-projects-header`,
+In-pane group headers — the label over a list section or card (`.pane-projects-header`,
 `.git-changes-section-title`, `.pr-files-header`, `.agent-tasks-section-header`,
 `.roadmap-category-header`, and the plugin / review / comparison card headers) — take one recipe:
-`--group-header-font-size` (`--font-size-xs`), `--group-header-letter-spacing` (0.04em) and
+`--group-header-font-size` (`--font-size-xs`), `--group-header-letter-spacing` (`normal`) and
 `--group-header-font-weight` (600). Colour stays per surface (muted in lists, severity on review
 cards).
+
+Group headers are **sentence case**, never `text-transform: uppercase`. That covers the in-pane
+headers above and every other section label that groups a list: the command palette, model
+picker, file search and keyboard-shortcut groups, context-menu headings, the Context panel's
+permission groups, Activity, Desktop devices, roadmap filters, Memories and the Settings
+sub-headings. Tracked caps on every group label was one of the clearest generated-UI tells, and at
+10–11px they read as shouting next to the sentence-case rows beneath. A group label that was on
+`--font-size-2xs` for caps moves to `--font-size-xs`, since lowercase at 10px reads a size smaller.
+Uppercase stays only on badges (a review finding's severity, a queued-message tag), which are
+their own question.
 
 A row that needs more air should change the token, not opt out locally. Rows may still differ in
 what they stack inside that padding (memories rows are two lines, roadmap rows one).
@@ -755,6 +780,16 @@ It fills the window and its sections run several screens, so it is typed and spa
   locked. Only **first-party** plugins wear the Copse mark (`assets/brand-mark.svg`, copied to the
   renderer by `build.mts`) — a user-installed plugin gets a neutral initial tile, or a sideloaded plugin
   would be wearing our badge of trust.
+- **Settings rows sit on the page.** The plugin-row rule holds for every list in Settings: Sources
+  rows, the plugin Browse catalogue, automations and their permission rows, reviewed MCP servers,
+  agent cards, local classifiers, the OpenAI connection, the Usage value card, Apple development,
+  environment setup, the licences list, SSH hosts and mobile companion devices. No frame, fill or
+  rules between rows; vertical padding and the list's gap separate them, and rows start flush with
+  the section's text. A row that needs a state takes the plate rather than a tinted frame (a
+  blocked automation and a hooks.json warning sit on the warning plate). A scrolling picker such as the remote folder list
+  keeps a visible region, as a field-coloured well rather than an outline. Scope the rule to Settings when a
+  component also renders elsewhere: the Apple Development panel drops its card only under
+  `.plugin-settings-fold`, and keeps it above a conversation.
 
 Visual eval: [`tests/e2e/settings-styling.e2e.ts`](../tests/e2e/settings-styling.e2e.ts).
 
@@ -1262,7 +1297,7 @@ answer, so they take the **hatched plate** with `--sev` set to their state hue �
 for a normal review, `--accent` for a comparison, `--warning` for turn recovery, and `--danger` when
 a review or comparison run failed. Mix the background at the component using
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch` from `global/base.css`.
-No perimeter border, no elevation, no chips. The plate's title is caps in the `--sev` hue.
+No perimeter border, no elevation, no chips. The plate's title is sentence case in the `--sev` hue.
 
 A classified failure that ends a turn is written into the message stream, so it takes the flat plate
 instead: a `> [!CAUTION]` GitHub alert built by `agentErrorNotice` (`src/main/services/agent-errors.ts`),
@@ -1406,6 +1441,12 @@ tokens alone.
   (a sheen, a radial glow, a fading hatch, an edge and a highlight stacked on one disclosure),
   which was the busiest surface in the transcript for the least important text. Under increased
   contrast it gains a `--border-strong` edge.
+- **Notices are flat plates too.** A warning or error notice outside the transcript (the Activity
+  scheduler and run-issue notices, the Automations attention and scheduler notices, the remote
+  desktop's unencrypted-connection note, the staged-diff conflict banner, the LM Studio context
+  advisory and the MCP untrusted-workspace banner) sets `--sev` to `--warning` or `--danger` and
+  mixes its background at `--callout-plate-fill` over `--bg-elevated`, with no border and primary
+  text. It never mixes its own percentage or carries a fallback hex for a token that always exists.
 
 Expanded reasoning uses the raised plate both while live and after completion, including inside a
 tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not

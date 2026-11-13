@@ -64,24 +64,37 @@ export async function acceptThreadPrompt(
       Date.now() >= command.expiresAt
     )
       return { ok: false, error: 'The destination conversation is unavailable.' }
-    if (!current.worktreeChoice && current.messages.length === 0) {
+    if (
+      (!current.worktreeChoice && current.messages.length === 0) ||
+      (command.requireWorktree && (!current.worktree || current.worktree.retiredAt !== undefined))
+    ) {
       const prepared = await api.agent.prepareCheckout(
         command.projectId,
         threadId,
         command.text,
-        'automatic',
+        command.requireWorktree ? 'worktree' : 'automatic',
         current.model,
       )
       if (Date.now() >= command.expiresAt)
         return { ok: false, error: 'This prompt expired while preparing the checkout.' }
+      if (command.requireWorktree && prepared.checkoutMode !== 'worktree')
+        return { ok: false, error: 'Subthreads require an isolated checkout.' }
       applyPreparedThreadCheckout(store, threadId, prepared)
       current = getThreadById(store, threadId)
       if (!current || current.archivedAt !== undefined)
         return { ok: false, error: 'The destination conversation is unavailable.' }
     }
+    if (!(await api.threadPrompts.canSubmit(command.id)))
+      return {
+        ok: false,
+        error: 'The prompt was cancelled, expired, or its permission was revoked.',
+      }
+    current = getThreadById(store, threadId)
+    if (!current || current.archivedAt !== undefined || Date.now() >= command.expiresAt)
+      return { ok: false, error: 'The destination conversation is unavailable.' }
     const origin: MachineMessageOrigin = {
       kind: 'machine',
-      operationId: `thread:${command.sourceThreadId}`,
+      operationId: `${command.authorizingAccess ? 'subthread' : 'thread'}:${command.sourceThreadId}`,
     }
     // An earlier failed run does not prevent an authorized new prompt.
     if (current.status === 'error')

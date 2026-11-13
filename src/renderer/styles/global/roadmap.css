@@ -43,10 +43,8 @@
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .roadmap-filter-heading:first-child {
   margin-top: 0;
@@ -91,7 +89,6 @@
   font-weight: var(--group-header-font-weight);
   letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
-  text-transform: uppercase;
   cursor: pointer;
 }
 .roadmap-category-header:hover {
@@ -487,15 +484,18 @@
   gap: 4px;
   align-items: center;
 }
+/* Sentence case at the badge size (docs/ui-taste.md, "Badges are labels"). */
 .roadmap-review-applied-badge {
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
   color: var(--success, #3fb950);
+}
+.roadmap-review-applied-badge::first-letter {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;

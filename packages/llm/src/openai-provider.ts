@@ -25,7 +25,7 @@ import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
 import { markOpenRouterCacheBreakpoints } from './openrouter-prompt-cache.ts'
-import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
+import { PromptCacheDiagnostics, type PromptAttemptOutcome } from './prompt-cache-diagnostics.ts'
 
 /** A function tool as sent on Chat Completions, plus OpenRouter's block-cache marker. */
 type WireFunctionTool = ChatCompletionFunctionTool & { cache_control?: { type: 'ephemeral' } }
@@ -198,7 +198,7 @@ export class OpenAIProvider implements LLMProvider {
         let droppedImages = false
         let droppedCeiling = false
         let stream
-        let reportCache: ((usage: ModelUsage | null) => void) | undefined
+        let reportCache: ReturnType<PromptCacheDiagnostics['begin']> | undefined
         let mappedTools = buildTools()
         for (;;) {
           try {
@@ -232,10 +232,13 @@ export class OpenAIProvider implements LLMProvider {
             reportCache = self.cacheDiagnostics.begin(
               leading?.role === 'system' || leading?.role === 'developer' ? leading : null,
               request.tools,
+              request.messages,
+              options?.promptCatalog,
             )
             stream = await client.chat.completions.create(request, { signal })
             break
           } catch (err) {
+            reportCache?.(null, signal?.aborted ? 'cancelled' : 'failed')
             if (strictOn && isStrictSchemaRejectedError(err)) {
               strictOn = false
               self.strictTools = false
@@ -261,102 +264,109 @@ export class OpenAIProvider implements LLMProvider {
         let streamUsage: ModelUsage | null = null
         let responseServiceTier: ServiceTier | undefined
         let hostingProvider: string | undefined
-
-        for await (const event of stream) {
-          // OpenRouter adds `provider` outside the OpenAI SDK's declared shape.
-          // Accept only a bounded label, never arbitrary response/error bodies.
-          const reportedHost: unknown = Reflect.get(event, 'provider')
-          if (
-            typeof reportedHost === 'string' &&
-            /^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,79}$/.test(reportedHost)
-          ) {
-            hostingProvider = reportedHost.trim()
-          }
-          if (typeof event.service_tier === 'string' && isServiceTier(event.service_tier)) {
-            responseServiceTier = event.service_tier
-          }
-          if (event.usage) {
-            const cacheReadTokens = event.usage.prompt_tokens_details?.cached_tokens
-            const details = event.usage.prompt_tokens_details
-            const cacheCreationTokens =
-              details && 'cache_write_tokens' in details ? details.cache_write_tokens : undefined
-            streamUsage = {
-              inputTokens: event.usage.prompt_tokens,
-              outputTokens: event.usage.completion_tokens,
-              ...(typeof cacheReadTokens === 'number' ? { cacheReadTokens } : {}),
-              ...(typeof cacheCreationTokens === 'number' &&
-              Number.isFinite(cacheCreationTokens) &&
-              cacheCreationTokens >= 0
-                ? { cacheCreationTokens }
-                : {}),
+        let outcome: PromptAttemptOutcome = 'interrupted'
+        try {
+          for await (const event of stream) {
+            // OpenRouter adds `provider` outside the OpenAI SDK's declared shape.
+            // Accept only a bounded label, never arbitrary response/error bodies.
+            const reportedHost: unknown = Reflect.get(event, 'provider')
+            if (
+              typeof reportedHost === 'string' &&
+              /^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,79}$/.test(reportedHost)
+            ) {
+              hostingProvider = reportedHost.trim()
             }
-            self.lastUsage = streamUsage
-          }
-          const delta = event.choices[0]?.delta
-          if (!delta) continue
-
-          // Reasoning ("thinking") tokens. Not part of the OpenAI schema, but
-          // widely emitted by OpenAI-compatible servers under one of these field
-          // names: `reasoning_content` (DeepSeek, vLLM, LM Studio) or `reasoning`
-          // (OpenRouter). Surfaced as a separate chunk so it never leaks into the
-          // answer text or the history sent back upstream.
-          const reasoning = readReasoningDelta(delta)
-          if (reasoning) yield { type: 'reasoning', text: reasoning }
-
-          if (delta.content) yield { type: 'text', text: delta.content }
-
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx = toolCallSlot(toolCallBuilders, tc)
-              let builder = toolCallBuilders.get(idx)
-              if (!builder) {
-                builder = {
-                  id: tc.id ?? '',
-                  name: tc.function?.name ?? '',
-                  argsJson: '',
-                }
-                toolCallBuilders.set(idx, builder)
+            if (typeof event.service_tier === 'string' && isServiceTier(event.service_tier)) {
+              responseServiceTier = event.service_tier
+            }
+            if (event.usage) {
+              const cacheReadTokens = event.usage.prompt_tokens_details?.cached_tokens
+              const details = event.usage.prompt_tokens_details
+              const cacheCreationTokens =
+                details && 'cache_write_tokens' in details ? details.cache_write_tokens : undefined
+              streamUsage = {
+                inputTokens: event.usage.prompt_tokens,
+                outputTokens: event.usage.completion_tokens,
+                ...(typeof cacheReadTokens === 'number' ? { cacheReadTokens } : {}),
+                ...(typeof cacheCreationTokens === 'number' &&
+                Number.isFinite(cacheCreationTokens) &&
+                cacheCreationTokens >= 0
+                  ? { cacheCreationTokens }
+                  : {}),
               }
-              if (tc.id) builder.id = tc.id
-              if (tc.function?.name) builder.name = tc.function.name
-              if (tc.function?.arguments) builder.argsJson += tc.function.arguments
+              self.lastUsage = streamUsage
+            }
+            const delta = event.choices[0]?.delta
+            if (!delta) continue
+
+            // Reasoning ("thinking") tokens. Not part of the OpenAI schema, but
+            // widely emitted by OpenAI-compatible servers under one of these field
+            // names: `reasoning_content` (DeepSeek, vLLM, LM Studio) or `reasoning`
+            // (OpenRouter). Surfaced as a separate chunk so it never leaks into the
+            // answer text or the history sent back upstream.
+            const reasoning = readReasoningDelta(delta)
+            if (reasoning) yield { type: 'reasoning', text: reasoning }
+
+            if (delta.content) yield { type: 'text', text: delta.content }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = toolCallSlot(toolCallBuilders, tc)
+                let builder = toolCallBuilders.get(idx)
+                if (!builder) {
+                  builder = {
+                    id: tc.id ?? '',
+                    name: tc.function?.name ?? '',
+                    argsJson: '',
+                  }
+                  toolCallBuilders.set(idx, builder)
+                }
+                if (tc.id) builder.id = tc.id
+                if (tc.function?.name) builder.name = tc.function.name
+                if (tc.function?.arguments) builder.argsJson += tc.function.arguments
+              }
+            }
+
+            const reason = event.choices[0]?.finish_reason
+            if (reason) finishReason = reason
+
+            if (reason === 'tool_calls') {
+              yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
+              toolCallBuilders.clear()
             }
           }
-
-          const reason = event.choices[0]?.finish_reason
-          if (reason) finishReason = reason
-
-          if (reason === 'tool_calls') {
+          // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
+          if (toolCallBuilders.size > 0) {
             yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
             toolCallBuilders.clear()
           }
-        }
-        // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
-        if (toolCallBuilders.size > 0) {
-          yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
-          toolCallBuilders.clear()
-        }
-        // Emit usage per-stream so consumers attribute it to this exact stream
-        // rather than racing on the shared lastUsage field (#112).
-        if (streamUsage && (streamUsage.inputTokens || streamUsage.outputTokens)) {
-          yield {
-            type: 'usage',
-            model,
-            ...(hostingProvider === undefined ? {} : { hostingProvider }),
-            inputTokens: streamUsage.inputTokens,
-            outputTokens: streamUsage.outputTokens,
-            ...(streamUsage.cacheReadTokens !== undefined
-              ? { cacheReadTokens: streamUsage.cacheReadTokens }
-              : {}),
-            ...(streamUsage.cacheCreationTokens !== undefined
-              ? { cacheCreationTokens: streamUsage.cacheCreationTokens }
-              : {}),
-            ...(self.serviceTier !== undefined ? { requestedServiceTier: self.serviceTier } : {}),
-            ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
+          // Emit usage per-stream so consumers attribute it to this exact stream
+          // rather than racing on the shared lastUsage field (#112).
+          if (streamUsage && (streamUsage.inputTokens || streamUsage.outputTokens)) {
+            yield {
+              type: 'usage',
+              model,
+              ...(hostingProvider === undefined ? {} : { hostingProvider }),
+              inputTokens: streamUsage.inputTokens,
+              outputTokens: streamUsage.outputTokens,
+              ...(streamUsage.cacheReadTokens !== undefined
+                ? { cacheReadTokens: streamUsage.cacheReadTokens }
+                : {}),
+              ...(streamUsage.cacheCreationTokens !== undefined
+                ? { cacheCreationTokens: streamUsage.cacheCreationTokens }
+                : {}),
+              ...(self.serviceTier !== undefined ? { requestedServiceTier: self.serviceTier } : {}),
+              ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
+            }
           }
+          outcome = 'completed'
+          yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
+        } catch (error) {
+          outcome = 'failed'
+          throw error
+        } finally {
+          reportCache(streamUsage, signal?.aborted ? 'cancelled' : outcome)
         }
-        reportCache(streamUsage)
-        yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }
       },
       { ...(signal ? { signal } : {}) },
     )

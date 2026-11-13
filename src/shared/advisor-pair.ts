@@ -10,7 +10,7 @@ import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
  * at least as capable as the executor. We use this only as *advisory* UX: to
  * tell the user when a Claude/Claude pairing would also work with the native
  * server tool, keeping a future native switch clean. The client-side strategy
- * itself imposes no such restriction. the executor can be any model.
+ * itself imposes no such restriction: the executor can be any model.
  */
 const NATIVE_ADVISOR_COMPAT: Record<string, readonly string[]> = {
   'claude-haiku-4-5': [
@@ -79,7 +79,7 @@ type CapabilityAnnotation =
  * genuinely stronger than the other.
  *
  * The scale this reads used to be a 3-12 ordinal, where integer granularity
- * acted as an implicit tolerance. two models a fraction apart in capability
+ * acted as an implicit tolerance: two models a fraction apart in capability
  * shared a rank and were treated as equals. The canonical Index scale is
  * continuous, so without an explicit band a 0.3-point gap would be reported as
  * "stronger", overselling noise as a capability difference. Two points is a few
@@ -132,19 +132,19 @@ export function assessCloudAdvisorPair(
     return {
       ok: true,
       level: 'info',
-      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). expect a second opinion rather than stronger guidance.`,
+      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). Expect a second opinion rather than stronger guidance.`,
     }
   }
   return {
     ok: true,
     level: 'warn',
-    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
+    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). Its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
   }
 }
 
 /**
  * Whether the `advisor` tool is worth offering for this (executor, advisor)
- * pairing. used to hide the tool when a stronger executor would gain nothing
+ * pairing. Used to hide the tool when a stronger executor would gain nothing
  * from a weaker advisor. Deliberately conservative: it only returns `false`
  * when the annotations give *confident, same-scale* evidence the advisor is not
  * more capable than the executor —
@@ -161,7 +161,7 @@ export function assessCloudAdvisorPair(
  *
  * Both arguments must be *concrete* model ids. A dynamic selector such as the
  * default `auto:best-intellect` names a rule, not a model, so it carries no
- * annotation and would always read as "keep offering". even when it resolves
+ * annotation and would always read as "keep offering", even when it resolves
  * to the executor's own model. Expand it first (`resolveAdvisorModelForGating`
  * in advisor-runner.ts does).
  */
@@ -185,7 +185,7 @@ export function advisorAddsLift(executorModel: string, advisorModel: string): bo
 
 /**
  * Assess an (executor, advisor) pairing for the client-side strategy. Permissive
- * by design. the only pairing we refuse to bless is advising with the *same*
+ * by design: the only pairing we refuse to bless is advising with the *same*
  * model, which buys nothing. Everything else is allowed, but the model
  * annotations (cloud capability tiers, local catalog sizing) grade how much
  * lift to expect so the settings UI can steer the user toward a genuinely
@@ -203,7 +203,7 @@ export function validateAdvisorPair(
       native,
       level: 'warn',
       reason:
-        'Advisor and executor are the same model. pick a stronger advisor to get any lift. The advisor tool stays hidden while they match.',
+        'Advisor and executor are the same model. Pick a stronger advisor to get any lift; the advisor tool stays hidden while they match.',
     }
   }
   if (native) {
@@ -224,7 +224,7 @@ export function validateAdvisorPair(
       native,
       level: 'info',
       reason:
-        'One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs. the strength comparison happens then.',
+        'One side of this pairing is chosen when the advisor runs, so the strength comparison happens then.',
     }
   }
   if (isAcpModel(advisorModel)) {
@@ -254,14 +254,14 @@ export function validateAdvisorPair(
         native,
         level: 'good',
         reason:
-          'Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor. the setup this strategy is designed for.',
+          'Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor, the setup this strategy is designed for.',
       }
     }
     return {
       ok: true,
       native,
       level: band === 'low' ? 'warn' : 'info',
-      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. a stronger advisor gives more lift.`,
+      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. A stronger advisor gives more lift.`,
     }
   }
 
@@ -286,7 +286,7 @@ export function validateAdvisorPair(
           ok: true,
           native,
           level: 'info',
-          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). modest lift; a frontier cloud advisor gives more.`,
+          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). Modest lift; a frontier cloud advisor gives more.`,
         }
       }
       const hidden = advisor.paramsB < executor.paramsB
@@ -294,7 +294,7 @@ export function validateAdvisorPair(
         ok: true,
         native,
         level: 'warn',
-        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). pick a bigger model to get any lift.${
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). Pick a bigger model to get any lift.${
           hidden ? ' The advisor tool is hidden for this pairing.' : ''
         }`,
       }
@@ -304,7 +304,7 @@ export function validateAdvisorPair(
       native,
       level: 'warn',
       reason:
-        'A local advisor is unlikely to out-think the executor. this strategy expects a larger (ideally frontier cloud) advisor.',
+        'A local advisor is unlikely to out-think the executor. This strategy expects a larger (ideally frontier cloud) advisor.',
     }
   }
 
@@ -313,6 +313,6 @@ export function validateAdvisorPair(
     native,
     level: 'info',
     reason:
-      'Client-side pairing. any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible.',
+      'Client-side pairing: any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible.',
   }
 }

@@ -251,16 +251,7 @@ jobs:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          path="${RUNNER_TEMP}/${archive}"
-          curl --fail --location --retry 3 \
-            --output "${path}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
-          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
-          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
-          "${RUNNER_TEMP}/gitleaks" version
+        run: bash scripts/install-gitleaks.sh
       - name: Scan repository history for secrets
         if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         run: |
@@ -327,6 +318,26 @@ jobs:
             git fetch --no-tags --quiet origin "$BASE_SHA"
           fi
           node scripts/check-a11y-baseline.mts --base "$BASE_SHA"
+      # Static flake-risk ratchet (docs/testing-strategy.md#flake-risk-ratchet):
+      # per-file counts of fixed waits, checkout seeding and fixed ports may
+      # only shrink, and the committed baseline may not grow against the base.
+      - name: Flake-risk baseline only shrinks
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            BASE_SHA="$(git rev-parse HEAD^1)"
+          fi
+          if [ -z "${BASE_SHA:-}" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base sha for ${GITHUB_EVENT_NAME} -> checking counts only"
+            exec node scripts/check-flake-risks.mts
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          node scripts/check-flake-risks.mts --base "$BASE_SHA"
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that
@@ -2213,6 +2224,16 @@ jobs:
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
           done
           exit 1
+      # The retry above turns a spec that failed attempt 1 and passed attempt 2
+      # into a green job with no signal. Name each one in a ::warning:: and the
+      # job summary (docs/testing-strategy.md#flake-visibility). Advisory: the
+      # report always exits 0 and cannot change the shard's result.
+      - name: Report specs whose shard attempts disagreed
+        if: always()
+        continue-on-error: true
+        run: >-
+          node scripts/flake-report.mts shard e2e-evidence/outcomes
+          --log e2e-failure-artifacts/attempt-1.log --shard "${{ matrix.shard }}"
       - name: Preserve per-spec attempts (including partial failures)
         if: always()
         continue-on-error: true
@@ -2345,8 +2366,11 @@ jobs:
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
-    # cold runner, not the steady state.
-    timeout-minutes: 20
+    # cold runner, not the steady state. Raised again from 20 because the
+    # filter itself scales with the candidate count: a PR restyling shared
+    # surfaces rendered ~870 changed screenshots and the filter step took
+    # over 17 minutes, so 20 cancelled the job in most runs.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:

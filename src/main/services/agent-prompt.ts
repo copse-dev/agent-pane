@@ -239,7 +239,7 @@ You also have built-in browser tools (allowlisted origins, including localhost b
 - browser_preview: Serve a static HTML/CSS/JS project and open it in the visible Browser panel; use this instead of starting a server
 - browser_navigate: Open a URL in a headless browser tab
 - browser_snapshot: Read the page as an accessibility outline with [ref=…] handles
-- browser_resize: Set the agent tab’s CSS viewport for responsive checks (for example 390×844); restore 1280×800 for desktop. This does not emulate device hardware or change the visible Browser pane.
+- browser_resize: Set an explicit agent tab’s CSS viewport for responsive checks (for example 390×844); pass its viewId and restore 1280×800 for desktop. This does not emulate device hardware or change the visible Browser pane.
 - browser_screenshot: Inspect a PNG of the page and retain a short-lived capture handle
 - present_visual_evidence: Publish one inspected capture, or a before/after pair, as durable proof in your response
 - browser_click / browser_type: Interact with an element by its snapshot ref
