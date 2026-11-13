@@ -772,6 +772,40 @@ export async function restoreWorktreeBackup(
   return ok
 }
 
+/** Whether a retained snapshot still belongs to this checkout's current HEAD. */
+export async function getWorktreeBackupState(
+  ref: string,
+  root: string,
+): Promise<'current' | 'stale' | 'unavailable'> {
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree(root))) return 'unavailable'
+  const snapshot = await runGitRead(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], root)
+  if (snapshot.code === 1) return (await isInsideGitWorkTree(root)) ? 'stale' : 'unavailable'
+  if (snapshot.code !== 0) return 'unavailable'
+  const sha = snapshot.stdout.trim()
+  const head = await runGitRead(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], root)
+  if (head.code === 0 && sha === head.stdout.trim()) return 'current'
+  if (head.code !== 0) {
+    if (head.code !== 1) return 'unavailable'
+    // A failed HEAD read alone is not proof of an unborn repository. Confirm
+    // that HEAD names a branch whose ref has not been created yet.
+    const branch = await runGitRead(['symbolic-ref', '--quiet', 'HEAD'], root)
+    if (branch.code !== 0) return 'unavailable'
+    const branchRef = await runGitRead(
+      ['show-ref', '--verify', '--quiet', branch.stdout.trim()],
+      root,
+    )
+    if (branchRef.code !== 1 || !(await isInsideGitWorkTree(root))) return 'unavailable'
+  }
+  const commit = await runGitRead(['show', '-s', '--format=%P%x00%s', sha], root)
+  if (commit.code !== 0) return 'unavailable'
+  const [parents, subject] = commit.stdout.trim().split('\0')
+  // A clean/index-only snapshot can be HEAD itself. Its ordinary first parent
+  // is not the snapshot's baseline if the user later checks out that parent.
+  if (!subject?.startsWith('copse backup: ')) return 'stale'
+  if (head.code === 0) return parents === head.stdout.trim() ? 'current' : 'stale'
+  return parents === '' ? 'current' : 'stale'
+}
+
 /**
  * Delete all but the newest `keep` `refs/copse/backups/*` refs so per-turn
  * snapshots don't pile up unboundedly in the user's repository. Refs are named

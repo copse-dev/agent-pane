@@ -1,7 +1,13 @@
+import {
+  clearSessionBackupBinding,
+  loadSessionBackupBinding,
+  saveSessionBackupBinding,
+} from './thread-store.ts'
 import type { SessionBackup } from '@shared/types/git.ts'
 import {
   createWorktreeBackup,
   getGitStatus,
+  getWorktreeBackupState,
   pruneWorktreeBackups,
   restoreWorktreeBackup,
 } from './github/git-service.ts'
@@ -25,6 +31,7 @@ interface SessionBackupState {
   root: string | null
   current: SessionBackup | null
   inFlight: Promise<SessionBackup | null> | null
+  refresh: boolean
 }
 
 const statesByProject = new Map<string, Map<string, SessionBackupState>>()
@@ -37,7 +44,13 @@ function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): 
   }
   let state = projectStates.get(owner.threadId)
   if (!state) {
-    state = { root: null, current: null, inFlight: null }
+    const saved = loadSessionBackupBinding(owner.projectId, owner.threadId)
+    state = {
+      root: saved?.root ?? null,
+      current: saved?.backup ?? null,
+      inFlight: null,
+      refresh: true,
+    }
     projectStates.set(owner.threadId, state)
   }
   return state
@@ -65,15 +78,34 @@ function replaceState(owner: ThreadExecutionOwner, state: SessionBackupState): v
  * no safety net.
  */
 export async function ensureSessionBackup(root: string | null): Promise<SessionBackup | null> {
-  const state = stateFor()
-  if (root) state.root = root
-  if (state.current) return state.current
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  if (!root) return null
+  if (state.root !== root) {
+    state.root = root
+    state.current = null
+    state.refresh = true
+  }
+  if (!state.refresh) {
+    if (!state.current) return null
+    const current = await getRestorableSessionBackup(owner, root)
+    const latest = stateFor(owner)
+    if (latest !== state) return null
+    if (current || !latest.refresh) return current
+  }
   if (state.inFlight) return state.inFlight
   state.inFlight = (async (): Promise<SessionBackup | null> => {
     const status = await getGitStatus(root, { untrackedFiles: 'all' })
     if (!status) return null
     const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
-    if (paths.length === 0) return null
+    if (paths.length === 0) {
+      if (stateFor(owner) === state) {
+        await clearSessionBackupBinding(owner.projectId, owner.threadId)
+        state.current = null
+        state.refresh = false
+      }
+      return null
+    }
     const ref = await createWorktreeBackup(
       `pre-turn snapshot (${String(paths.length)} path(s))`,
       root,
@@ -82,8 +114,15 @@ export async function ensureSessionBackup(root: string | null): Promise<SessionB
     // Prune older snapshots now that a fresh one exists so refs don't accumulate
     // unboundedly; failure to prune must never sink the backup itself.
     await pruneWorktreeBackups(BACKUP_RETENTION, root).catch(() => {})
-    state.current = { ref, createdAt: Date.now(), paths }
-    return state.current
+    const backup = { ref, createdAt: Date.now(), paths }
+    // A read-only turn keeps the previous point. Publish a replacement only
+    // after both the Git snapshot and its thread-owned pointer are durable.
+    if (stateFor(owner) === state) {
+      await saveSessionBackupBinding(owner.projectId, owner.threadId, { v: 1, root, backup })
+      state.current = backup
+      state.refresh = false
+    }
+    return backup
   })()
   try {
     return await state.inFlight
@@ -103,19 +142,74 @@ export async function ensureSessionBackup(root: string | null): Promise<SessionB
  * with "backup failed"; callers gating auto-approval need the two kept apart.
  */
 export async function ensureWorktreeRecoverable(root: string | null): Promise<boolean> {
-  const state = stateFor()
-  if (root) state.root = root
-  if (state.current) return true
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  if (!root) return false
+  if (state.root !== root) {
+    state.root = root
+    state.current = null
+    state.refresh = true
+  }
+  // A clean result has no durable safety net. ACP permission requests must
+  // recheck it: user work may appear while the same external-agent turn runs.
+  if (!state.refresh && state.current !== null) {
+    if (await getRestorableSessionBackup(owner, root)) return true
+    const latest = stateFor(owner)
+    if (latest !== state || !latest.refresh) return false
+  }
   const status = await getGitStatus(root, { untrackedFiles: 'all' })
   if (!status) return false
   const dirty = status.staged.length > 0 || status.unstaged.length > 0
-  if (!dirty) return true
+  if (!dirty) {
+    await clearSessionBackupBinding(owner.projectId, owner.threadId)
+    state.current = null
+    state.refresh = false
+    return true
+  }
+  state.refresh = true
   return (await ensureSessionBackup(root)) !== null
 }
 
-/** The backup taken this turn, if any. */
-export function getSessionBackup(owner?: ThreadExecutionOwner): SessionBackup | null {
-  return stateFor(owner).current
+/** Cached point for edit bookkeeping; use getRestorableSessionBackup before offering restore. */
+export function getSessionBackup(
+  owner?: ThreadExecutionOwner,
+  root = getAgentExecutionRoot(),
+): SessionBackup | null {
+  const state = stateFor(owner)
+  return root !== null && state.root === root ? state.current : null
+}
+
+/** Validate the retained ref and baseline before offering or performing a restore. */
+export async function getRestorableSessionBackup(
+  owner?: ThreadExecutionOwner,
+  root = getAgentExecutionRoot(),
+): Promise<SessionBackup | null> {
+  const resolvedOwner = owner ?? requireThreadExecutionOwner()
+  const state = stateFor(resolvedOwner)
+  const backup = getSessionBackup(resolvedOwner, root)
+  if (!backup || !root) return null
+  const validity = await getWorktreeBackupState(backup.ref, root).catch(() => 'unavailable')
+  if (stateFor(resolvedOwner) !== state || state.current !== backup || state.root !== root)
+    return null
+  if (validity === 'current') return backup
+  if (validity === 'stale') {
+    // Retire only a demonstrably expired point. Read/clear failures leave its
+    // durable binding available for a later retry, without offering Restore.
+    try {
+      await clearSessionBackupBinding(resolvedOwner.projectId, resolvedOwner.threadId, {
+        v: 1,
+        root,
+        backup,
+      })
+    } catch {
+      return null
+    }
+    if (stateFor(resolvedOwner) === state && state.current === backup) {
+      state.current = null
+      state.refresh = true
+    }
+  }
+  return null
 }
 
 /**
@@ -125,13 +219,20 @@ export function getSessionBackup(owner?: ThreadExecutionOwner): SessionBackup | 
  * undoable via git, then restores the at-risk paths. Returns false when there is
  * no backup to restore from or the restore could not complete.
  */
-export async function restoreSessionBackup(owner?: ThreadExecutionOwner): Promise<boolean> {
+export async function restoreSessionBackup(
+  owner?: ThreadExecutionOwner,
+  root = getAgentExecutionRoot(),
+): Promise<boolean> {
   const state = stateFor(owner)
-  const backup = state.current
+  const backup = await getRestorableSessionBackup(owner, root)
   if (!backup) return false
   // A pre-restore snapshot makes this destructive step reversible: the agent's
   // version of the reverted paths stays recoverable from git even after restore.
-  await createWorktreeBackup('pre-restore snapshot', state.root).catch(() => null)
+  const safetyRef = await createWorktreeBackup('pre-restore snapshot', state.root).catch(() => null)
+  if (!safetyRef) return false
+  // The safety snapshot may take time; recheck the point after it and before
+  // touching any files, including when HEAD moved while a dialog was open.
+  if ((await getRestorableSessionBackup(owner, root)) !== backup) return false
   try {
     return await restoreWorktreeBackup(backup.ref, backup.paths, state.root)
   } finally {
@@ -141,16 +242,23 @@ export async function restoreSessionBackup(owner?: ThreadExecutionOwner): Promis
 }
 
 /**
- * Drop the current restore point so the next {@link ensureSessionBackup} takes a
- * fresh snapshot. Called at each turn boundary: the pre-turn worktree is the
+ * Keep the current restore point visible while the next {@link ensureSessionBackup} takes a
+ * fresh snapshot before any new edit. Called at each turn boundary: the pre-turn worktree is the
  * thing worth protecting, and re-snapshotting per turn keeps the restore point
  * aligned with any manual edits the user made between turns.
  */
 export function resetSessionBackup(owner?: ThreadExecutionOwner): void {
   const resolvedOwner = owner ?? requireThreadExecutionOwner()
-  // Replace the whole turn state so a backup already in flight for the prior
-  // turn can finish for its caller without publishing into the new turn.
-  replaceState(resolvedOwner, { root: getAgentExecutionRoot(), current: null, inFlight: null })
+  const previous = stateFor(resolvedOwner)
+  const root = getAgentExecutionRoot() ?? previous.root
+  // Refresh lazily before the next actual write. Questions and proposals must
+  // not discard the restore point for edits the user is still reviewing.
+  replaceState(resolvedOwner, {
+    root,
+    current: previous.root === root ? previous.current : null,
+    inFlight: null,
+    refresh: true,
+  })
   // The user had the floor since the last turn, so the diff queue's remembered
   // clean sweep no longer describes the tree this turn's restore point protects.
   noteWorktreeWrite()
@@ -162,7 +270,12 @@ export function setSessionBackupForTest(
   owner?: ThreadExecutionOwner,
 ): void {
   const resolvedOwner = owner ?? requireThreadExecutionOwner()
-  replaceState(resolvedOwner, { root: getAgentExecutionRoot(), current: backup, inFlight: null })
+  replaceState(resolvedOwner, {
+    root: getAgentExecutionRoot(),
+    current: backup,
+    inFlight: null,
+    refresh: false,
+  })
 }
 
 /** @internal test helper */

@@ -10,7 +10,11 @@ import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
-import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
+import {
+  ensureSessionBackup,
+  ensureWorktreeRecoverable,
+  getSessionBackup,
+} from './worktree-backup.ts'
 import {
   DEFERRED_CHECKOUT_BLOCK_MESSAGE,
   READONLY_MODE_BLOCK_MESSAGE,
@@ -477,6 +481,10 @@ async function readUnownedChanges(
   return { unowned: [...new Set(unowned)], sweep }
 }
 
+async function refreshRetainedRestorePoint(root: string | null): Promise<boolean> {
+  return getSessionBackup(undefined, root) === null || (await ensureWorktreeRecoverable(root))
+}
+
 async function canApplyDirectly(
   state: DiffQueueState,
   path: string,
@@ -512,7 +520,24 @@ async function canApplyDirectly(
   // here too, and for those the path *not* existing is a failure to report, not
   // a licence to skip review.
   if (op === 'write' && !(await pathExistsInWorktree(path, root))) {
+    if (!(await refreshRetainedRestorePoint(root))) {
+      return { ok: false, reason: 'the current turn could not refresh its worktree restore point' }
+    }
     return { ok: true, newFile: true }
+  }
+
+  // A changed owned file will become a proposal. Reject that direct path before
+  // adopting other work, so an unrelated new file cannot replace the retained
+  // restore point in a turn that applies no edit.
+  const lastDirectContent = state.directAppliedSnapshots.get(ownedKey(path))
+  if (
+    lastDirectContent !== undefined &&
+    (await readCurrentContent(path, root)) !== lastDirectContent
+  ) {
+    return {
+      ok: false,
+      reason: 'the file changed on disk since Copse last applied a direct edit',
+    }
   }
 
   if (fresh && fresh.unowned.length > 0) {
@@ -535,15 +560,11 @@ async function canApplyDirectly(
     state.cleanSweep = fresh.sweep
   }
 
-  const lastDirectContent = state.directAppliedSnapshots.get(ownedKey(path))
-  if (
-    lastDirectContent !== undefined &&
-    (await readCurrentContent(path, root)) !== lastDirectContent
-  ) {
-    return {
-      ok: false,
-      reason: 'the file changed on disk since Copse last applied a direct edit',
-    }
+  // Ownership survives turns. Editing an already-owned file must still refresh
+  // a retained restore point before this turn's first write, even when there
+  // are no unowned paths to trigger the adoption branch above.
+  if (!(await refreshRetainedRestorePoint(root))) {
+    return { ok: false, reason: 'the current turn could not refresh its worktree restore point' }
   }
 
   return { ok: true }

@@ -43,7 +43,7 @@ import {
   branchMergedThrough,
   getGitBranchStatus,
 } from '../services/github/pr-context-service.ts'
-import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
+import { getRestorableSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 
 export function registerGitHandlers(
@@ -193,19 +193,28 @@ export function registerGitHandlers(
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:session-backup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-    return getSessionBackup({ projectId, threadId })
-  })
+  ipcMain.handle(
+    'git:session-backup',
+    async (event, projectIdArg: unknown, threadIdArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      return getRestorableSessionBackup(
+        { projectId, threadId },
+        await resolveWatchedGitRoot(projectId, threadId),
+      )
+    },
+  )
   ipcMain.handle(
     'git:restore-backup',
     async (event, projectIdArg: unknown, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [projectIdArg])
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      return restoreSessionBackup({ projectId, threadId })
+      return restoreSessionBackup(
+        { projectId, threadId },
+        await resolveWatchedGitRoot(projectId, threadId),
+      )
     },
   )
 }

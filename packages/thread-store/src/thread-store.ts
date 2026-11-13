@@ -373,6 +373,37 @@ const acpSessionBindingSchema = z
  */
 export type AcpSessionBinding = z.infer<typeof acpSessionBindingSchema>
 
+const sessionBackupBindingSchema = z
+  .object({
+    v: z.literal(1),
+    root: z.string().min(1),
+    backup: z
+      .object({
+        ref: z.string().regex(/^refs\/copse\/backups\/[0-9]+$/),
+        createdAt: z.number().int().nonnegative(),
+        paths: z
+          .array(
+            z
+              .string()
+              .min(1)
+              .refine(
+                (path) =>
+                  !path.startsWith('/') &&
+                  !path.startsWith(':') &&
+                  !/^[A-Za-z]:/.test(path) &&
+                  !path.split(/[\\/]/).some((part) => part === '..') &&
+                  !path.includes('\0'),
+              ),
+          )
+          .min(1),
+      })
+      .strict(),
+  })
+  .strict()
+
+/** Private restore pointer; the snapshot itself remains in the repository. */
+export type SessionBackupBinding = z.infer<typeof sessionBackupBindingSchema>
+
 function isAgentHistoryMessage(value: unknown): value is LLMMessage {
   return (
     typeof value === 'object' &&
@@ -3362,6 +3393,48 @@ export function clearAgentTurnEpoch(projectId: string, threadId: string): Promis
 /** True when an `agent-history.json` sidecar already exists for the thread. */
 export function agentHistoryExists(projectId: string, threadId: string): Promise<boolean> {
   return runSerialized(queueKey(projectId), () => existsSync(agentHistoryPath(projectId, threadId)))
+}
+
+/** Load the last successful restore point without trusting corrupt or future records. */
+export function loadSessionBackupBinding(
+  projectId: string,
+  threadId: string,
+): SessionBackupBinding | null {
+  const raw = safeRead(join(threadDir(projectId, threadId), 'session-backup.json'))
+  return raw === null ? null : safeJsonParse(raw, decodeWithSchema(sessionBackupBindingSchema))
+}
+
+/** Save only after the Git snapshot exists, using the store's containment and atomic writer. */
+export function saveSessionBackupBinding(
+  projectId: string,
+  threadId: string,
+  binding: SessionBackupBinding,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    atomicWriteFile(join(dir, 'session-backup.json'), `${JSON.stringify(binding)}\n`, 0o600)
+  })
+}
+
+/** Retire an obsolete pointer before editing a checkout whose Git baseline is clean. */
+export function clearSessionBackupBinding(
+  projectId: string,
+  threadId: string,
+  expected?: SessionBackupBinding,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    if (expected) {
+      const current = loadSessionBackupBinding(projectId, threadId)
+      if (
+        current?.root !== expected.root ||
+        current.backup.ref !== expected.backup.ref ||
+        current.backup.createdAt !== expected.backup.createdAt
+      )
+        return
+    }
+    rmSync(join(threadDir(projectId, threadId), 'session-backup.json'), { force: true })
+  })
 }
 
 // --- External ACP session sidecar -------------------------------------------
