@@ -46,11 +46,12 @@ not `.copse/`; for example, `node scripts/check.mjs` loads the checkout's
 `scripts/check.mjs`. User hook commands keep the directory of their declaring
 `hooks.json` as their working directory.
 
-Sources **Test** runs outside an agent turn, using the asking window's project
-root for project-hook discovery, synthetic payloads and process cwd. Open a project
-before testing its project hooks. User hooks can still be tested without a project
-and retain their declaring-directory cwd. A test never applies the hook's outcome
-to a live agent turn.
+Sources **Test** runs outside an agent turn, using the asking window's local project
+root for project-hook discovery, synthetic payloads and process cwd. Open a local
+project before testing its project hooks; remote project hooks are not discovered.
+User hooks can still be tested without a local project and retain their
+declaring-directory cwd. Tests always execute locally, even if another window has
+an SSH project open. A test never applies the hook's outcome to a live agent turn.
 
 ## Canonical events
 

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import {
@@ -27,7 +27,8 @@ import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
-import { senderProjectRoot } from './sender-project-root.ts'
+import { senderProjectId } from './sender-project-root.ts'
+import { getLocalProjectRoot } from '../services/workspace.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 
 export function registerCustomizationHandlers(win: BrowserWindow): void {
@@ -67,7 +68,13 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
       warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   }
-  ipcMain.handle('hooks:list', (event) => listDiscoveredHooks(senderProjectRoot(event.sender)))
+  function hookProjectRoot(sender: WebContents): string | null {
+    const projectId = senderProjectId(sender)
+    // Hook config discovery uses local fs. A remote project must not make an
+    // identically named local path eligible; local user hooks remain available.
+    return projectId === null ? null : getLocalProjectRoot(projectId)
+  }
+  ipcMain.handle('hooks:list', (event) => listDiscoveredHooks(hookProjectRoot(event.sender)))
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
     // G2 dry-run tester: run one discovered hook once against a synthetic
@@ -78,7 +85,7 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     // re-running discovery here, so a compromised renderer cannot run an
     // arbitrary command or turn the sandbox off.
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    const root = senderProjectRoot(event.sender)
+    const root = hookProjectRoot(event.sender)
     const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks(root)).hooks)
     if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
     return dryRunHook(target, root)

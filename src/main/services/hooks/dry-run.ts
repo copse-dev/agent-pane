@@ -478,6 +478,8 @@ export async function dryRunHook(
 
   const spawn = await spawnHookProcess(hook.command, marshalled.request, {
     cwd: hook.cwd ?? process.cwd(),
+    // Sources discovers local config files and has no agent turn to own routing.
+    localOnly: true,
     timeoutMs: DRY_RUN_TIMEOUT_MS,
     ...(req.sandbox !== undefined ? { sandbox: req.sandbox } : {}),
   })

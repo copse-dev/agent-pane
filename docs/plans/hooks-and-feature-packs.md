@@ -1055,7 +1055,10 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   Sources Test has no agent turn and uses the asking window's project root for
   discovery, synthetic payload and project process cwd. Without that project it
   refuses a project-hook test instead of using an ambient root. Testing a user
-  hook without a project remains supported. These paths share the runtime mapping
+  hook without a project remains supported. Sources discovers local configs only:
+  remote projects do not expose project hooks, and every Test spawn explicitly
+  stays local even if another window owns an SSH project. Ordinary agent hooks
+  retain their turn's execution target. These paths share the runtime mapping
   and never weaken workspace trust or per-turn sandbox ownership.
 - **Hook stdout is the response channel.** Debug text can corrupt the wire response;
   stderr is captured separately in hook-run blobs. Parse failures follow the dialect's
