@@ -45,6 +45,99 @@ function answer(
   )
 }
 
+// Terminal-side worker rows exist before the transcript's delayed disclosures
+// open. Wait for their actual bodies and the natural live endpoint after framing.
+async function runningWorkerCaptureLayout(): Promise<string | null> {
+  return browser.execute(() => {
+    const list = document.querySelector('.messages-list')
+    if (!list) return null
+    const visible = (element: Element | null): boolean => {
+      if (!element) return false
+      const bounds = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return (
+        bounds.width > 0 &&
+        bounds.height > 0 &&
+        style.visibility !== 'hidden' &&
+        style.opacity !== '0'
+      )
+    }
+    const cards = [
+      ...list.querySelectorAll<HTMLDetailsElement>('.tool-card-subagent[data-status="running"]'),
+    ]
+    if (cards.length !== 2 || cards.some((card) => !card.open || !visible(card))) return null
+    const measured: Element[] = [list, ...list.children]
+    for (const name of ['alpha', 'beta']) {
+      const card = cards.find(
+        (candidate) =>
+          candidate.querySelector(':scope > .tool-card-header .tool-name')?.textContent.trim() ===
+          `Running ${name}`,
+      )
+      if (!card) return null
+      const header = card.querySelector(':scope > .tool-card-header .tool-name')
+      const model = card.querySelector(':scope > .subagent-model')
+      const args = card.querySelector(':scope > .tool-args > summary')
+      const argumentText = card.querySelector(':scope > .tool-args > pre')?.textContent ?? ''
+      if (
+        !header ||
+        !model ||
+        !args ||
+        !visible(header) ||
+        !visible(model) ||
+        !visible(args) ||
+        model.textContent.trim() !==
+          `Scripted Worker ${name === 'alpha' ? 'Alpha' : 'Beta'} · local` ||
+        args.textContent.trim() !== 'Arguments' ||
+        argumentText.trim() !== `subagent_type: ${name}\nprompt: Inspect ${name} independently.`
+      )
+        return null
+      measured.push(card, header, model, args)
+    }
+    const activity = list.querySelector('.agent-activity')
+    if (!activity || !visible(activity) || activity.textContent.trim() !== 'Running agent…')
+      return null
+    measured.push(activity)
+    const labels = [...document.querySelectorAll('.supervised-task-label')]
+      .map((label) => label.textContent.trim())
+      .sort()
+    if (
+      labels.length !== 2 ||
+      labels[0] !== 'alpha (read-only)' ||
+      labels[1] !== 'beta (read-only)'
+    )
+      return null
+    if (Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) > 1) return null
+    return JSON.stringify({
+      scrollTop: list.scrollTop,
+      scrollHeight: list.scrollHeight,
+      clientHeight: list.clientHeight,
+      bounds: measured.map((element) => {
+        const bounds = element.getBoundingClientRect()
+        return [bounds.x, bounds.y, bounds.width, bounds.height]
+      }),
+    })
+  })
+}
+
+async function waitForRunningWorkerCapture(): Promise<void> {
+  let previous: string | null = null
+  let stable = 0
+  await browser.waitUntil(
+    async () => {
+      const layout = await runningWorkerCaptureLayout()
+      stable = layout === null ? 0 : layout === previous ? stable + 1 : 1
+      previous = layout
+      return stable >= 3
+    },
+    {
+      timeout: 15_000,
+      interval: 50,
+      timeoutMsg:
+        'Running worker details and the natural latest transcript position did not settle',
+    },
+  )
+}
+
 describe('native supervised read-only workers', function () {
   this.timeout(120_000)
   let root = ''
@@ -309,7 +402,21 @@ describe('native supervised read-only workers', function () {
     })
     const labels = await $$('.supervised-task-label').map((label) => label.getText())
     assert.deepEqual(labels.sort(), ['alpha (read-only)', 'beta (read-only)'])
-    await saveAppScreenshot('native-readonly-workers-running.png')
+    const assertWorkersHeld = (): void => {
+      assert.deepEqual([...held.keys()].sort(), ['alpha', 'beta'])
+      for (const response of held.values()) {
+        assert.equal(response.writableEnded, false)
+        assert.equal(response.destroyed, false)
+      }
+      assert.deepEqual(errors, [])
+    }
+    await saveAppScreenshot('native-readonly-workers-running.png', undefined, async () => {
+      assertWorkersHeld()
+      await waitForRunningWorkerCapture()
+      assertWorkersHeld()
+    })
+    assertWorkersHeld()
+    assert.notEqual(await runningWorkerCaptureLayout(), null)
     await $('.stop-btn').click()
     await browser.waitUntil(() => closedWorkers.size === 2, {
       timeout: 15_000,
