@@ -1401,6 +1401,38 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
 
+It also re-allows, read-only and only when the directory exists, the installed package-manager and
+interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
+plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+`~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
+whose `bin/python` links into those installs therefore start contained instead of failing and
+offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later
+outside the sandbox), and a root is dropped when it is or contains home, or contains or sits inside
+a credential path (`~/.npmrc`, `~/.yarnrc.yml`, `~/.config/pnpm/rc`, `~/.bunfig.toml`,
+`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), a shared sensitive-path policy credential
+store such as `~/.ssh` or `~/.config/gh`, or Codex/Claude profile data. Copse's user-data, LAN and
+conversation stores are protected at their configured locations; its managed Corepack cache stays
+eligible. Credential-store aliases are resolved too, so linking a credential directory into a cache
+does not make its canonical contents eligible. These checks also apply to cache-root aliases.
+Read grants use the checked canonical destination, so replacing the original alias cannot redirect
+a later ASRT normalization. Replacing the canonical path or an ancestor before profile construction
+still races; this check does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+
+Everything inside an allowed root is readable, so a pyenv or conda prefix's own `pip.conf`, `pip.ini`, or `.condarc`
+can carry an index or channel token, and a contained command can read it. That is accepted, because
+the sandbox cannot deny a file pattern inside a read-only tree on both platforms (bubblewrap binds
+concrete paths). Keep such tokens in the user-level files above, which stay denied. Shells in a
+worktree with a valid preparation plan point `COREPACK_HOME` at Copse's Corepack cache only after
+preparation has stamped the worktree; before that, Copse's cache is empty, so they keep the user's.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.

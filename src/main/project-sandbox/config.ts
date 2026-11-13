@@ -14,6 +14,7 @@ import {
 } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
+import { createToolchainReadGuard, toolchainReadExceptions } from './toolchain-read-guard.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
   getChatStoreRootSync,
@@ -775,6 +776,64 @@ export function resolveRustToolchainAllowRead(
   return allow
 }
 
+/**
+ * Interpreter installs under home that a project's `.venv/bin/python` symlinks
+ * into, or that put `bun` on PATH. Worktree preparation reads the same roots.
+ */
+export const HOME_INTERPRETER_TOOLCHAIN_DIRS = [
+  '.bun/bin',
+  '.pyenv/versions',
+  '.local/share/uv/python',
+] as const
+
+/**
+ * Corepack's package-manager cache, resolved the way Corepack does: `$COREPACK_HOME`,
+ * else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`. macOS also gets
+ * `~/Library/Caches/node/corepack`, where some installs keep it.
+ */
+function corepackCacheCandidates(env: NodeJS.ProcessEnv, home: string): string[] {
+  const absolute = (value: string | undefined): string | null =>
+    value !== undefined && isAbsolute(value) ? value : null
+  const explicit = env['COREPACK_HOME']
+  if (explicit !== undefined && explicit !== '') {
+    const path = absolute(explicit)
+    return path ? [path] : []
+  }
+  const cacheHome = absolute(env['XDG_CACHE_HOME']) ?? join(home, '.cache')
+  return [
+    join(cacheHome, 'node', 'corepack'),
+    ...(process.platform === 'darwin' ? [join(home, 'Library', 'Caches', 'node', 'corepack')] : []),
+  ]
+}
+
+/**
+ * Resolve the user's installed package-manager and interpreter caches so contained
+ * commands can start them: Corepack's cache (pinned pnpm/yarn), `~/.bun/bin`, and
+ * the pyenv and uv Python installs a `.venv` links into.
+ *
+ * Read-only: a writable shim directory on PATH would let a contained command
+ * plant code that later runs unsandboxed. Only existing directories are added,
+ * and a root is dropped when it, or its canonical target, is home, an ancestor of
+ * home, or contains or sits inside a credential path such as `~/.npmrc`,
+ * `~/.config/uv`, or `~/.pypirc`.
+ */
+export function resolveInterpreterToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  const readTarget = createToolchainReadGuard(env, home)
+  const allow: string[] = []
+  for (const path of [
+    ...corepackCacheCandidates(env, home),
+    ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((dir) => join(home, dir)),
+  ]) {
+    const canonical = readTarget(path, true)
+    if (canonical === null || allow.includes(canonical)) continue
+    allow.push(canonical, `${canonical}/**`)
+  }
+  return allow
+}
+
 /** ASRT native helpers that must remain executable inside a denied home tree. */
 export function sandboxRuntimeHelperAllowReadPaths(
   seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
@@ -1294,7 +1353,11 @@ export function workspaceSandboxOverlay(
 ): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
-  const toolchainRead = [...resolveNodeToolchainAllowRead(), ...resolveRustToolchainAllowRead()]
+  const toolchainRead = [
+    ...resolveNodeToolchainAllowRead(),
+    ...resolveRustToolchainAllowRead(),
+    ...resolveInterpreterToolchainAllowRead(),
+  ]
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
@@ -1438,6 +1501,27 @@ export function workspaceSandboxOverlay(
           : []),
       ]
     : []
+  const existingRead = [
+    root,
+    `${root}/**`,
+    tmpDir,
+    `${tmpDir}/**`,
+    ...sandboxRuntimeRead,
+    ...preparationCacheRead,
+    ...gitConfigReadPaths(),
+    ...chatStoreRead,
+    ...worktreeDiscoveryRead,
+    ...gitAdminRead,
+    ...primaryCheckoutRead,
+    ...agentScratch,
+    ...threadReadRootAllowEntries(),
+  ]
+  const deniedRead = [
+    homedir(),
+    ...gitCredentialDenyReadPaths(),
+    ...siblingDeny,
+    ...nestedCheckoutDeny,
+  ]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1446,23 +1530,10 @@ export function workspaceSandboxOverlay(
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...gitCredentialDenyReadPaths(), ...siblingDeny, ...nestedCheckoutDeny],
+      denyRead: deniedRead,
       allowRead: [
-        root,
-        `${root}/**`,
-        tmpDir,
-        `${tmpDir}/**`,
-        ...toolchainRead,
-        ...sandboxRuntimeRead,
-        ...preparationCacheRead,
-        ...gitConfigReadPaths(),
-        ...chatStoreRead,
-        ...worktreeDiscoveryRead,
-        ...gitAdminRead,
-        ...primaryCheckoutRead,
-        ...agentScratch,
-        // Read-only roots the active thread earned (invoked skill directories).
-        ...threadReadRootAllowEntries(),
+        ...existingRead,
+        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
       ],
       allowWrite: [
         root,
