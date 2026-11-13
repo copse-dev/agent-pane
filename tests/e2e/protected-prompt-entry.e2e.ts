@@ -1,4 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
+import { join } from 'node:path'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import {
   resetUserData,
@@ -6,7 +7,7 @@ import {
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { saveFramedElementScreenshot, withCaptureFrame } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, withCaptureFrame } from './helpers/screenshot.ts'
 
 const PROJECT = 'e2e-protected-prompt-project'
 const THREAD = 'e2e-protected-prompt-thread'
@@ -93,9 +94,76 @@ describe('protected prompt entry', () => {
     )
     await expect($('#protected-prompt-context')).toHaveText(expect.stringContaining('high'))
 
-    await withCaptureFrame(() =>
-      saveFramedElementScreenshot('.protected-shell', 'protected-prompt-entry.png'),
-    )
+    await withCaptureFrame(async () => {
+      const top = await browser.execute(async () => {
+        window.scrollTo({ top: 0, behavior: 'instant' })
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => {
+            resolve()
+          }),
+        )
+        const header = document.querySelector('.protected-shell > header')?.getBoundingClientRect()
+        const target = document.querySelector('.protected-target')?.getBoundingClientRect()
+        if (!header || !target) throw new Error('Protected prompt header or target is missing')
+        return {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          scrollY: window.scrollY,
+          header: {
+            top: header.top,
+            right: header.right,
+            bottom: header.bottom,
+            left: header.left,
+          },
+          target: {
+            top: target.top,
+            right: target.right,
+            bottom: target.bottom,
+            left: target.left,
+          },
+        }
+      })
+      expect(top.viewport.width).toBeGreaterThanOrEqual(540)
+      expect(top.viewport.height).toBeGreaterThanOrEqual(450)
+      expect(top.scrollY).toBe(0)
+      expect(top.header.top).toBeGreaterThanOrEqual(0)
+      expect(top.header.left).toBeGreaterThanOrEqual(0)
+      expect(top.header.right).toBeLessThanOrEqual(top.viewport.width)
+      expect(top.header.bottom).toBeLessThanOrEqual(top.viewport.height)
+      expect(top.target.top).toBeGreaterThanOrEqual(top.header.bottom)
+      expect(top.target.left).toBeGreaterThanOrEqual(0)
+      expect(top.target.right).toBeLessThanOrEqual(top.viewport.width)
+      expect(top.target.bottom).toBeLessThanOrEqual(top.viewport.height)
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'protected-prompt-entry.png'))
+
+      const bottom = await browser.execute(async () => {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => {
+            resolve()
+          }),
+        )
+        const actions = document.querySelector('.protected-actions')?.getBoundingClientRect()
+        if (!actions) throw new Error('Protected prompt actions are missing')
+        return {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          scrollY: window.scrollY,
+          scrollHeight: document.documentElement.scrollHeight,
+          actions: {
+            top: actions.top,
+            right: actions.right,
+            bottom: actions.bottom,
+            left: actions.left,
+          },
+        }
+      })
+      expect(bottom.scrollHeight).toBeGreaterThan(bottom.viewport.height)
+      expect(bottom.scrollY).toBeGreaterThan(0)
+      expect(bottom.actions.top).toBeGreaterThanOrEqual(0)
+      expect(bottom.actions.left).toBeGreaterThanOrEqual(0)
+      expect(bottom.actions.right).toBeLessThanOrEqual(bottom.viewport.width)
+      expect(bottom.actions.bottom).toBeLessThanOrEqual(bottom.viewport.height)
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'protected-prompt-entry-actions.png'))
+    })
 
     await $('#protected-prompt-text').setValue(REVIEWED)
     await $('#protected-prompt-send').click()
