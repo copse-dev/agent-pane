@@ -392,6 +392,10 @@
     "label": "Send prompts to your other threads?"
   },
   {
+    "id": "approval-thread-orchestrate",
+    "label": "Allow subthread orchestration?"
+  },
+  {
     "id": "approval-git-push",
     "label": "Push branch to origin?"
   },
@@ -402,6 +406,10 @@
   {
     "id": "approval-project-preview",
     "label": "Allow this project to bind a local port?"
+  },
+  {
+    "id": "approval-automation-preparation",
+    "label": "Prepare this worktree?"
   },
   {
     "id": "approval-web-url",
