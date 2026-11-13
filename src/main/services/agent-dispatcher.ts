@@ -47,6 +47,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { perfMark } from './diagnostics/perf-trace.ts'
 import { getAutomationService } from './automations/automation-service.ts'
 import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
+import { runWithAutomationGrantScope } from './security/automation-grant-scope.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
@@ -135,6 +136,11 @@ export interface AgentDispatcherDependencies {
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
   isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
+  claimScheduledRunGrant: (
+    context: ThreadExecutionContext,
+    prompt: string,
+    model: string,
+  ) => Promise<boolean>
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -170,6 +176,16 @@ const defaultDependencies: AgentDispatcherDependencies = {
   isScheduledAutomationRun: (context) =>
     context.automation !== undefined &&
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
+  claimScheduledRunGrant: (context, prompt, model) =>
+    context.automation !== undefined
+      ? getAutomationService().claimRunGrant(
+          context.projectId,
+          context.threadId,
+          context.automation,
+          prompt,
+          model,
+        )
+      : Promise.resolve(false),
   transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
@@ -790,11 +806,36 @@ export class AgentDispatcher {
     // The first turn of a schedule-created thread runs without a person waiting
     // at the approval dialog. Keep the normal interactive path for later turns
     // the user sends to that same thread.
-    const deferApprovals =
+    const scheduledTranscriptLength =
+      payload.automationRun === true
+        ? await this.dependencies.transcriptLength(projectId, threadId).catch(() => Infinity)
+        : Infinity
+    const verifiedScheduledFirstTurn =
       payload.automationRun === true &&
-      !priorMessages.some((message) => message.role === 'assistant' || message.role === 'tool') &&
-      this.dependencies.isScheduledAutomationRun(executionContext)
-    if (deferApprovals) beginDeferralMode(threadId)
+      scheduledTranscriptLength === 1 &&
+      plan === null &&
+      typeof payload.userContent === 'string' &&
+      payload.model !== undefined &&
+      payload.invokedSkills.length === 0 &&
+      payload.priorTodos.length === 0 &&
+      payload.invokedAgent === undefined &&
+      payload.executionMode === undefined &&
+      payload.workingBrief === undefined &&
+      payload.reviewContext === undefined &&
+      payload.reasoning === undefined &&
+      payload.longTaskWake === undefined &&
+      (payload.continuationBudgetUsed ?? 0) === 0 &&
+      priorMessages.length <= 1 &&
+      priorMessages.every(
+        (message) => message.role === 'user' && message.content === payload.userContent,
+      ) &&
+      this.dependencies.isScheduledAutomationRun(executionContext) &&
+      (await this.dependencies.claimScheduledRunGrant(
+        executionContext,
+        payload.userContent,
+        payload.model,
+      ))
+    if (verifiedScheduledFirstTurn) beginDeferralMode(threadId)
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
@@ -804,21 +845,24 @@ export class AgentDispatcher {
                 run: (owner, execute) =>
                   this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
               },
-              () =>
-                this.dependencies.run(
-                  threadId,
-                  payload.userContent,
-                  priorMessages,
-                  host,
-                  this.registry,
-                  options,
-                ),
+              () => {
+                const invoke = (): ReturnType<AgentDispatcherDependencies['run']> =>
+                  this.dependencies.run(
+                    threadId,
+                    payload.userContent,
+                    priorMessages,
+                    host,
+                    this.registry,
+                    options,
+                  )
+                return verifiedScheduledFirstTurn ? runWithAutomationGrantScope(invoke) : invoke()
+              },
             ),
           ),
         ),
       )
     } finally {
-      if (deferApprovals) endDeferralMode(threadId)
+      if (verifiedScheduledFirstTurn) endDeferralMode(threadId)
       stopCheckoutForwarding?.()
       if (executionContext.deferredWorktree) releaseUpgradedThreadExecutionContext(executionContext)
       // Drain before the commit below so no checkpoint can land on top of the
