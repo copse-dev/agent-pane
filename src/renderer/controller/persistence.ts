@@ -281,6 +281,7 @@ function metaOf(thread: Thread): ThreadMeta {
     messages: _messages,
     messagesLoaded: _messagesLoaded,
     hasSavedPlan: _hasSavedPlan,
+    nativeSteeringRunId: _nativeSteeringRunId,
     ...meta
   } = thread
   return meta
@@ -484,7 +485,8 @@ function queueThreadWrite(
           }
           const creation = creations.get(threadId) ?? { meta: previous ?? target.meta }
           creations.set(threadId, creation)
-          await api.threads.create(projectId, { ...target.thread, ...target.meta })
+          const { nativeSteeringRunId: _nativeSteeringRunId, ...durableThread } = target.thread
+          await api.threads.create(projectId, { ...durableThread, ...target.meta })
           submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain)
         } else {
           submittedPatch = retryMetaPatch(previous, target.meta, uncertain)
@@ -916,6 +918,11 @@ let activeAutosave: Autosave | null = null
  */
 export function awaitPendingThreadPersistence(): Promise<void> {
   return activeAutosave?.whenIdle() ?? Promise.resolve()
+}
+
+/** Flush debounced metadata before an action whose admission reads it from disk. */
+export function flushPendingThreadPersistence(): Promise<void> {
+  return activeAutosave?.flush() ?? Promise.resolve()
 }
 
 /**

@@ -181,6 +181,8 @@ function dispatchKey(projectId: string, threadId: string): string {
 interface HistoryCheckpointWriter {
   /** Record the newest snapshot; never throws and never blocks the caller. */
   submit: (messages: LLMMessage[]) => void
+  /** Awaited, failure-reporting write for a human steering boundary. */
+  commit: (messages: LLMMessage[]) => Promise<void>
   /** Stop accepting, and resolve once every accepted snapshot has been written. */
   close: () => Promise<void>
 }
@@ -202,18 +204,14 @@ interface HistoryCheckpointWriter {
 function createHistoryCheckpointWriter(
   save: (messages: LLMMessage[]) => Promise<void>,
 ): HistoryCheckpointWriter {
-  let pending: LLMMessage[] | null = null
+  let pending: { messages: LLMMessage[] } | null = null
   let chain: Promise<void> = Promise.resolve()
   let closed = false
 
-  const flushNewest = async (): Promise<void> => {
-    const next = pending
-    pending = null
-    // Already written by an earlier link in the chain — this snapshot was
-    // superseded before it reached the front of the queue.
-    if (!next) return
+  const flushNewest = async (batch: { messages: LLMMessage[] }): Promise<void> => {
+    if (pending === batch) pending = null
     try {
-      await save(next)
+      await save(batch.messages)
     } catch {
       // A checkpoint is a best-effort durability aid. The end-of-turn commit
       // remains the authority, and a failing disk will surface there.
@@ -223,8 +221,20 @@ function createHistoryCheckpointWriter(
   return {
     submit(messages: LLMMessage[]): void {
       if (closed) return
-      pending = messages
-      chain = chain.then(flushNewest)
+      if (pending) {
+        pending.messages = messages
+        return
+      }
+      const batch = { messages }
+      pending = batch
+      chain = chain.then(() => flushNewest(batch))
+    },
+    commit(messages: LLMMessage[]): Promise<void> {
+      if (closed) return Promise.reject(new Error('The turn history is already closed.'))
+      pending = null
+      const committed = chain.then(() => save(messages))
+      chain = committed.catch(() => undefined)
+      return committed
     },
     close(): Promise<void> {
       closed = true
@@ -769,6 +779,7 @@ export class AgentDispatcher {
       priorTodos: plan?.meta.status === 'draft' ? [] : payload.priorTodos,
       ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),
       onHistoryCheckpoint: checkpoints.submit,
+      onSteeringCheckpoint: checkpoints.commit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
       ...(payload.reasoning !== undefined ? { reasoning: payload.reasoning } : {}),

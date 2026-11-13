@@ -233,6 +233,45 @@ export function createTranscriptReducer(
   const apply = (threadId: string, chunk: StreamChunk): void => {
     const st = get(threadId)
     switch (chunk.type) {
+      case 'steering_ready':
+        patchThreadAnywhere(store, threadId, (current) => {
+          const { nativeSteeringRunId: _old, ...rest } = current
+          return chunk.runId === null ? rest : { ...rest, nativeSteeringRunId: chunk.runId }
+        })
+        store.emit('threads_changed')
+        break
+      case 'steering_applied': {
+        if (st.msgId) store.emit('message_done', st.msgId)
+        st.msgId = null
+        st.toolSinceText = false
+        st.currentText = ''
+        const thread = getThreadById(store, threadId)
+        if (!thread?.messages.some((message) => message.id === chunk.messageId)) {
+          addMessage(store, threadId, 'user', chunk.text, undefined, undefined, {
+            id: chunk.messageId,
+          })
+        }
+        patchThreadAnywhere(store, threadId, (current) => {
+          const note = current.messages.find((message) => message.id === chunk.messageId)
+          const messages = current.messages.filter((message) => message.id !== chunk.messageId)
+          const pendingIds = new Set(current.pendingMessages?.map((item) => item.messageId))
+          // Match the durable writer's boundary, leaving later queued notes
+          // behind the applied note rather than treating them as completed work.
+          let boundary = 0
+          messages.forEach((message, index) => {
+            if (!pendingIds.has(message.id)) boundary = index + 1
+          })
+          if (note) messages.splice(boundary, 0, note)
+          return {
+            ...current,
+            messages,
+            pendingMessages: (current.pendingMessages ?? []).filter(
+              (item) => item.messageId !== chunk.messageId,
+            ),
+          }
+        })
+        break
+      }
       case 'machine_turn_start': {
         // Main admitted a new turn, just as dispatchAgentRun does for a human
         // submit. Its eventual completion must not inherit an old interruption,

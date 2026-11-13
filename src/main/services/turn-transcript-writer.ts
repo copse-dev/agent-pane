@@ -48,6 +48,12 @@ export interface TurnTranscriptWriterDependencies {
   snapshot?: (snapshot: TranscriptSnapshot) => void
   loadThread: (projectId: string, threadId: string) => Promise<Thread | null>
   appendMessage: (projectId: string, threadId: string, message: Message) => Promise<void>
+  placeMessageAfter: (
+    projectId: string,
+    threadId: string,
+    messageId: string,
+    previousMessageId: string,
+  ) => Promise<void>
   updateMeta: (
     projectId: string,
     threadId: string,
@@ -379,11 +385,38 @@ export class TurnTranscriptWriter {
       return
     }
     session.created = []
+    const before = getThreadById(session.store, session.threadId)
+    const previousMessageId =
+      chunk.type === 'steering_applied'
+        ? before?.messages
+            .filter(
+              (message) =>
+                message.id !== chunk.messageId &&
+                !before.pendingMessages?.some((pending) => pending.messageId === message.id),
+            )
+            .at(-1)?.id
+        : undefined
     try {
       session.reducer.apply(session.threadId, chunk)
     } catch (error) {
       // A chunk the reducer cannot place must not take the turn down with it.
       this.deps.onError?.(error)
+    }
+    if (chunk.type === 'steering_applied' && previousMessageId) {
+      // The window saved the queued note before this step was finalized. Its
+      // existing spine entry must move behind the step, just as the live reducer
+      // does. Earlier finalized-message writes are already on the store queue.
+      this.track(
+        session,
+        this.deps
+          .placeMessageAfter(
+            session.projectId,
+            session.threadId,
+            chunk.messageId,
+            previousMessageId,
+          )
+          .catch((error: unknown) => this.deps.onError?.(error)),
+      )
     }
     const stamp: TranscriptStamp = { messageIds: session.created }
     session.created = []

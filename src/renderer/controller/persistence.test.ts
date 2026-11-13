@@ -41,6 +41,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { startProposedThread } from './thread-proposals.ts'
+import { steerQueuedMessage } from './message-queue.ts'
 import {
   createThread,
   isBlankThread,
@@ -1180,6 +1181,53 @@ test('a turn starts only after the thread writes queued before it', async () => 
     ranSync = true
   })
   assert.equal(ranSync, true)
+  autosave.detach()
+})
+
+test('steering flushes a debounced hold and waits for its durable acknowledgement', async () => {
+  __resetPersistenceForTest()
+  let release: () => void = () => undefined
+  const durable = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const order: string[] = []
+  const { api, calls } = fakeApi({
+    updateMeta: async (_project, _thread, patch) => {
+      const record = expectRecord(patch)
+      assert.equal(Object.hasOwn(record, 'nativeSteeringRunId'), false)
+      if (!Object.hasOwn(record, 'pendingMessages')) return
+      order.push('holding')
+      await durable
+      order.push('held')
+    },
+  })
+  api.agent.steer = async (_p, _t, _m, runId): Promise<{ state: 'applied' | 'held' }> => {
+    assert.equal(runId, 'run')
+    order.push('steer')
+    return { state: 'held' }
+  }
+  const store = createStore({
+    activeProjectId: 'p',
+    threads: [
+      thread('t', {
+        status: 'running',
+        nativeSteeringRunId: 'run',
+        currentEpoch: 'human',
+        continuationUsed: 5,
+        pendingMessages: [{ messageId: 'note', payload: { content: 'Correction' }, createdAt: 1 }],
+      }),
+    ],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+  assert.ok(calls.creates.every((call) => call.thread.nativeSteeringRunId === undefined))
+  const steering = steerQueuedMessage(store, api, 't', 'note')
+  await tick()
+  assert.deepEqual(order, ['holding'])
+  release()
+  await steering
+  assert.deepEqual(order, ['holding', 'held', 'steer'])
   autosave.detach()
 })
 

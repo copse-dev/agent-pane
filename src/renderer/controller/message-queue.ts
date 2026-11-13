@@ -24,7 +24,8 @@ import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
-import { afterThreadWrites } from './persistence.ts'
+import { afterThreadWrites, flushPendingThreadPersistence } from './persistence.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -692,6 +693,85 @@ function prioritizeQueuedMessage(
   } else {
     drainMessageQueue(store, api, threadId)
   }
+}
+
+export function canSteerQueuedMessage(thread: Thread, item: QueuedUserMessage): boolean {
+  return (
+    thread.status === 'running' &&
+    !!thread.nativeSteeringRunId &&
+    !item.steeringRequested &&
+    item.origin === undefined &&
+    typeof item.payload.content === 'string' &&
+    item.payload.content.trim().length > 0 &&
+    item.payload.content.length <= 16_000 &&
+    (item.payload.invokedSkills?.length ?? 0) === 0 &&
+    item.payload.invokedAgent === undefined
+  )
+}
+
+/** Hold before crossing IPC, so a late boundary/Stop can never auto-submit the note. */
+export async function steerQueuedMessage(
+  store: AppStore,
+  api: Pick<ApiClient, 'agent'>,
+  threadId: string,
+  messageId: string,
+): Promise<void> {
+  const thread = getThreadById(store, threadId)
+  const item = thread?.pendingMessages?.find((entry) => entry.messageId === messageId)
+  if (!thread || !item || !canSteerQueuedMessage(thread, item)) return
+  const runId = thread.nativeSteeringRunId
+  if (!runId) return
+  const state = store.getState()
+  const projectId =
+    state.backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ??
+    state.activeProjectId
+  if (!projectId) return
+  patchThreadAnywhere(store, threadId, (current) => ({
+    ...current,
+    pendingMessages: (current.pendingMessages ?? []).map((entry) =>
+      entry.messageId === messageId
+        ? { ...entry, autoDispatch: false as const, steeringRequested: runId }
+        : entry,
+    ),
+  }))
+  store.emit('threads_changed')
+  try {
+    await flushPendingThreadPersistence()
+    const result = await afterThreadWrites(projectId, threadId, () =>
+      api.agent.steer(projectId, threadId, messageId, runId),
+    )
+    if (result.state === 'applied') {
+      patchThreadAnywhere(store, threadId, (current) => ({
+        ...current,
+        pendingMessages: (current.pendingMessages ?? []).filter(
+          (entry) => entry.messageId !== messageId,
+        ),
+      }))
+    } else {
+      addMessage(
+        store,
+        threadId,
+        'error',
+        'Your steering note was not delivered before the turn ended. It remains held for you to release or edit.',
+      )
+    }
+  } catch (error) {
+    addMessage(
+      store,
+      threadId,
+      'error',
+      ipcErrorMessage(error, 'Steering failed. Your note remains held.'),
+    )
+  }
+  patchThreadAnywhere(store, threadId, (current) => ({
+    ...current,
+    pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+      if (entry.messageId !== messageId) return entry
+      const { steeringRequested: _requested, ...held } = entry
+      return held
+    }),
+  }))
+  store.emit('threads_changed')
 }
 
 /** An async hook's `queueMessage` output, bridged from the host (decision 4). */

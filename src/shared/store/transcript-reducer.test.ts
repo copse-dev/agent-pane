@@ -54,6 +54,72 @@ function reduceBoth(chunks: readonly StreamChunk[]): { main: AppStore; window: A
   return { main, window }
 }
 
+test('steering separates the note from the tool step with matching main/window message IDs', () => {
+  const { main, window } = reduceBoth([
+    { type: 'steering_ready', runId: 'run' },
+    { type: 'text', text: 'Reading the files.' },
+    { type: 'steering_applied', messageId: 'correction', text: 'Keep the API.' },
+    { type: 'text', text: 'The API is unchanged.' },
+    { type: 'steering_ready', runId: null },
+    { type: 'done' },
+  ])
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.deepEqual(
+    messagesOf(main).map((message) => [message.id, message.role]),
+    [
+      ['u1', 'user'],
+      ['main-1', 'assistant'],
+      ['correction', 'user'],
+      ['main-2', 'assistant'],
+    ],
+  )
+  assert.equal(getThreadById(main, 't1')?.nativeSteeringRunId, undefined)
+  assert.equal(messagesOf(main).at(-1)?.content, 'The API is unchanged.')
+})
+
+for (const order of [
+  ['u1', 'step', 'note', 'later'],
+  ['u1', 'note', 'step', 'later'],
+  ['u1', 'step', 'later'],
+]) {
+  test(`steering leaves later pending notes behind the completed boundary: ${order.join(', ')}`, () => {
+    const messages: Message[] = order.map((id) => ({
+      ...humanPrompt(id, id === 'note' ? 'Keep the API.' : id),
+      role: id === 'step' ? 'assistant' : 'user',
+    }))
+    const store = createStore({
+      threads: [
+        {
+          ...threadWith('t1', messages),
+          pendingMessages: ['note', 'later'].map((messageId) => ({
+            messageId,
+            payload: { content: messageId },
+            createdAt: 20,
+            autoDispatch: false,
+          })),
+        },
+      ],
+      activeThreadId: 't1',
+    })
+    const reducer = createTranscriptReducer(store)
+    reducer.apply('t1', { type: 'steering_applied', messageId: 'note', text: 'Keep the API.' })
+    assert.deepEqual(
+      messagesOf(store).map((message) => message.id),
+      ['u1', 'step', 'note', 'later'],
+    )
+    assert.deepEqual(
+      getThreadById(store, 't1')?.pendingMessages?.map((item) => item.messageId),
+      ['later'],
+    )
+    reducer.apply('t1', { type: 'steering_applied', messageId: 'later', text: 'later' })
+    assert.deepEqual(
+      messagesOf(store).map((message) => message.id),
+      ['u1', 'step', 'note', 'later'],
+    )
+    assert.deepEqual(getThreadById(store, 't1')?.pendingMessages, [])
+  })
+}
+
 test('main and the window reduce a recorded turn to the same messages', () => {
   const { main, window } = reduceBoth(recordedTurn())
 

@@ -161,6 +161,10 @@ describe('explicit agent delegation and turn usage', () => {
                         }),
                     maxSteps: 3,
                     maxLlmCalls: 3,
+                    turnTreeId: `delegation-tree-${scenario}`,
+                    onSteeringCheckpoint: async () => {
+                      assert.fail('No steering note was submitted in this turn')
+                    },
                   },
                 ),
               ),
@@ -221,6 +225,11 @@ describe('explicit agent delegation and turn usage', () => {
               chunks.findIndex((chunk) => chunk.type === 'done'),
           )
         if (scenario !== 'parent-error') assert.equal(parentCalls, 0)
+        assert.equal(
+          chunks.filter((chunk) => chunk.type === 'steering_ready' && chunk.runId !== null).length,
+          scenario === 'parent-error' ? 1 : 0,
+          'Only the native parent loop may advertise a steering mailbox',
+        )
         if (scenario === 'success') {
           const report = result.messages.find((message) => message.role === 'assistant')
           assert.equal(typeof report?.content, 'string')

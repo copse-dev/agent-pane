@@ -164,6 +164,7 @@ for (const mode of [
           return captured
         }),
       appendMessage: async (): Promise<void> => {},
+      placeMessageAfter: async (): Promise<void> => {},
       updateMeta: api.threads.updateMeta,
       defaultModel: (): undefined => undefined,
       createId: (): string => 'unused',
