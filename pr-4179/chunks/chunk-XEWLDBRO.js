@@ -1,7 +1,7 @@
 import {
   dompurifyBackend,
   init_sanitize_dompurify
-} from "./chunk-D55J6ZRP.js";
+} from "./chunk-X6JZSFJR.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-6YY6Y3HG.js";
+} from "./chunk-TYQO7O5R.js";
 import {
   clear,
   el,
@@ -21602,6 +21602,453 @@ var init_appearance2 = __esm({
   }
 });
 
+// src/shared/types/todo.ts
+var init_todo = __esm({
+  "src/shared/types/todo.ts"() {
+  }
+});
+
+// packages/thread-store/src/thread-types.ts
+var init_thread_types = __esm({
+  "packages/thread-store/src/thread-types.ts"() {
+  }
+});
+
+// src/shared/types/thread.ts
+var init_thread = __esm({
+  "src/shared/types/thread.ts"() {
+    init_thread_types();
+  }
+});
+
+// src/shared/types/stream.ts
+var init_stream = __esm({
+  "src/shared/types/stream.ts"() {
+  }
+});
+
+// packages/thread-store/src/turn-outcome.ts
+var init_turn_outcome = __esm({
+  "packages/thread-store/src/turn-outcome.ts"() {
+  }
+});
+
+// src/shared/types/turn-outcome.ts
+var init_turn_outcome2 = __esm({
+  "src/shared/types/turn-outcome.ts"() {
+    init_turn_outcome();
+  }
+});
+
+// src/shared/types/llm.ts
+var init_llm = __esm({
+  "src/shared/types/llm.ts"() {
+  }
+});
+
+// src/shared/types/layout.ts
+var DEFAULT_LAYOUT, LAYOUT_LIMITS;
+var init_layout = __esm({
+  "src/shared/types/layout.ts"() {
+    DEFAULT_LAYOUT = {
+      projectsPaneWidth: 240,
+      filesPaneWidth: 480,
+      filesPaneHeight: 360,
+      fileTreeWidth: 200
+    };
+    LAYOUT_LIMITS = {
+      projects: { min: 180, max: 400 },
+      // In the side-by-side layout this ratio applies to the width left after the
+      // Projects pane, so chat always keeps at least one third of the shared area.
+      files: { min: 300, maxRatio: 2 / 3 },
+      // Panel opens at a third of the window's height in the stacked (vertical)
+      // layout until the user drags it to a different size.
+      filesStacked: { min: 220, maxRatio: 0.75, defaultRatio: 1 / 3 },
+      tree: { min: 120, max: 400 }
+    };
+  }
+});
+
+// packages/agent/src/wire-types.ts
+var init_wire_types = __esm({
+  "packages/agent/src/wire-types.ts"() {
+  }
+});
+
+// src/shared/types/tools.ts
+var init_tools = __esm({
+  "src/shared/types/tools.ts"() {
+    init_wire_types();
+  }
+});
+
+// src/shared/types/provider.ts
+var init_provider = __esm({
+  "src/shared/types/provider.ts"() {
+  }
+});
+
+// src/shared/types/skills.ts
+var init_skills = __esm({
+  "src/shared/types/skills.ts"() {
+  }
+});
+
+// src/shared/types/git.ts
+var init_git = __esm({
+  "src/shared/types/git.ts"() {
+  }
+});
+
+// packages/plugin-sdk/src/mcp-types.ts
+var init_mcp_types = __esm({
+  "packages/plugin-sdk/src/mcp-types.ts"() {
+  }
+});
+
+// src/shared/types/mcp.ts
+var init_mcp = __esm({
+  "src/shared/types/mcp.ts"() {
+    init_mcp_types();
+  }
+});
+
+// src/shared/types/tool-permissions.ts
+var TOOL_PERMISSION_POLICIES;
+var init_tool_permissions = __esm({
+  "src/shared/types/tool-permissions.ts"() {
+    TOOL_PERMISSION_POLICIES = ["allow", "ask", "block"];
+  }
+});
+
+// src/shared/types/usage.ts
+var init_usage = __esm({
+  "src/shared/types/usage.ts"() {
+  }
+});
+
+// packages/thread-store/src/worktree-types.ts
+var init_worktree_types = __esm({
+  "packages/thread-store/src/worktree-types.ts"() {
+  }
+});
+
+// src/shared/types/worktree.ts
+var init_worktree = __esm({
+  "src/shared/types/worktree.ts"() {
+    init_worktree_types();
+  }
+});
+
+// src/shared/types/guarded-yolo.ts
+var init_guarded_yolo = __esm({
+  "src/shared/types/guarded-yolo.ts"() {
+  }
+});
+
+// src/shared/types/automations.ts
+function automationPermissionKey(permission) {
+  return JSON.stringify([
+    permission.kind,
+    permission.toolName,
+    ...permission.kind === "worktree-preparation" ? [permission.directory, permission.planFingerprint, permission.offline] : []
+  ]);
+}
+var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
+var init_automations = __esm({
+  "src/shared/types/automations.ts"() {
+    init_member_of2();
+    AUTOMATION_FAILURE_CODES = [
+      "approval-stalled",
+      "no-model",
+      "container-missing",
+      "auth-expired",
+      "worktree-failed",
+      "scheduler-stopped",
+      "unknown"
+    ];
+    isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES);
+  }
+});
+
+// src/shared/types/apple-development.ts
+var APPLE_ACTIONS, APPLE_OPERATION_STATUSES, appleCandidateSchema, appleDestinationSchema, appleSelectionSchema, appleDiagnosticSchema, appleTestSummarySchema, appleOutcomeSchema, appleOperationSchema, appleProjectStateSchema, appleConfigureInputSchema, appleExecuteInputSchema, appleOperationInputSchema;
+var init_apple_development = __esm({
+  "src/shared/types/apple-development.ts"() {
+    init_zod();
+    APPLE_ACTIONS = ["build", "test", "run"];
+    APPLE_OPERATION_STATUSES = [
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled"
+    ];
+    appleCandidateSchema = external_exports.object({
+      id: external_exports.string().min(1).max(512),
+      name: external_exports.string().min(1).max(256),
+      kind: external_exports.enum(["workspace", "project"]),
+      schemes: external_exports.array(external_exports.string().min(1).max(256)).max(200),
+      metadataError: external_exports.string().min(1).max(2048).optional()
+    });
+    appleDestinationSchema = external_exports.object({
+      id: external_exports.string().min(1).max(512),
+      name: external_exports.string().min(1).max(256),
+      platform: external_exports.string().min(1).max(128),
+      supported: external_exports.boolean(),
+      booted: external_exports.boolean().optional()
+    });
+    appleSelectionSchema = external_exports.object({
+      candidateId: external_exports.string().min(1).max(512),
+      schemeId: external_exports.string().min(1).max(256),
+      configuration: external_exports.string().min(1).max(128),
+      destinationId: external_exports.string().min(1).max(512),
+      revision: external_exports.number().int().positive()
+    });
+    appleDiagnosticSchema = external_exports.object({
+      severity: external_exports.enum(["error", "warning", "note"]),
+      message: external_exports.string().max(8192),
+      file: external_exports.string().max(4096).optional(),
+      line: external_exports.number().int().positive().optional(),
+      column: external_exports.number().int().positive().optional()
+    });
+    appleTestSummarySchema = external_exports.object({
+      passed: external_exports.number().int().nonnegative().nullable(),
+      failed: external_exports.number().int().nonnegative().nullable(),
+      skipped: external_exports.number().int().nonnegative().nullable()
+    });
+    appleOutcomeSchema = external_exports.object({
+      operationId: external_exports.string().min(1),
+      status: external_exports.enum(["succeeded", "failed", "cancelled"]),
+      reason: external_exports.string().max(8192).optional(),
+      exitCode: external_exports.number().int().nullable(),
+      diagnostics: external_exports.array(appleDiagnosticSchema).max(500),
+      testSummary: appleTestSummarySchema.nullable(),
+      logArtifactId: external_exports.string().min(1),
+      resultBundleArtifactId: external_exports.string().min(1).optional(),
+      appSessionId: external_exports.string().min(1).optional(),
+      outputTruncated: external_exports.boolean()
+    });
+    appleOperationSchema = external_exports.object({
+      id: external_exports.string().min(1),
+      action: external_exports.enum(APPLE_ACTIONS),
+      status: external_exports.enum(APPLE_OPERATION_STATUSES),
+      target: appleSelectionSchema,
+      createdAt: external_exports.number().int(),
+      updatedAt: external_exports.number().int(),
+      outcome: appleOutcomeSchema.nullable()
+    });
+    appleProjectStateSchema = external_exports.object({
+      pluginEnabled: external_exports.boolean(),
+      enrolled: external_exports.boolean(),
+      supportedHost: external_exports.boolean(),
+      toolchain: external_exports.object({ developerDir: external_exports.string().min(1), version: external_exports.string().min(1).max(512) }).nullable(),
+      candidates: external_exports.array(appleCandidateSchema).max(100),
+      destinations: external_exports.array(appleDestinationSchema).max(200),
+      metadataRequiresExecution: external_exports.boolean(),
+      selection: appleSelectionSchema.nullable(),
+      operations: external_exports.array(appleOperationSchema).max(50),
+      setupMessage: external_exports.string().max(2048).nullable()
+    });
+    appleConfigureInputSchema = external_exports.object({
+      candidateId: external_exports.string().min(1).max(512),
+      schemeId: external_exports.string().min(1).max(256),
+      configuration: external_exports.string().min(1).max(128),
+      destinationId: external_exports.string().min(1).max(512),
+      expectedRevision: external_exports.number().int().nonnegative()
+    });
+    appleExecuteInputSchema = external_exports.object({
+      action: external_exports.enum(APPLE_ACTIONS),
+      expectedRevision: external_exports.number().int().positive(),
+      requestId: external_exports.string().min(1).max(256),
+      testFilter: external_exports.string().min(1).max(512).optional()
+    });
+    appleOperationInputSchema = external_exports.object({
+      operationId: external_exports.string().min(1).max(256),
+      action: external_exports.enum(["status", "logs", "cancel"]),
+      logCursor: external_exports.number().int().nonnegative().optional()
+    });
+  }
+});
+
+// src/shared/types/machine-dispatch.ts
+var init_machine_dispatch = __esm({
+  "src/shared/types/machine-dispatch.ts"() {
+  }
+});
+
+// src/shared/types/index.ts
+var init_types = __esm({
+  "src/shared/types/index.ts"() {
+    init_todo();
+    init_thread();
+    init_stream();
+    init_turn_outcome2();
+    init_llm();
+    init_layout();
+    init_state();
+    init_tools();
+    init_provider();
+    init_skills();
+    init_git();
+    init_mcp();
+    init_tool_permissions();
+    init_usage();
+    init_worktree();
+    init_guarded_yolo();
+    init_automations();
+    init_apple_development();
+    init_machine_dispatch();
+  }
+});
+
+// src/shared/store/store.ts
+function sameItems(a4, b2) {
+  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
+}
+function createStore(initial) {
+  let state = {
+    workspaceRoot: null,
+    projects: [],
+    projectGroups: [],
+    activeProjectId: null,
+    expandedProjectId: null,
+    threads: [],
+    backgroundThreads: [],
+    activeThreadId: null,
+    pendingSubmissionThreadIds: [],
+    panelTab: "file",
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+    filesPaneOpen: false,
+    rightPanelMode: "explorer",
+    rightPanelMaximized: false,
+    projectsPaneOpen: true,
+    layout: { ...DEFAULT_LAYOUT },
+    theme: "dark",
+    themePreference: DEFAULT_THEME_PREFERENCE,
+    fontSize: 14,
+    uiScale: 1,
+    animateAgentAvatars: true,
+    conciseThreadsEnabled: true,
+    autoPortraitRightPanel: true,
+    rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
+    openLinksInBuiltInBrowser: true,
+    developerMode: false,
+    ...initial
+  };
+  const listeners = {
+    message_added: /* @__PURE__ */ new Set(),
+    message_queued: /* @__PURE__ */ new Set(),
+    message_token: /* @__PURE__ */ new Set(),
+    message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
+    message_done: /* @__PURE__ */ new Set(),
+    tool_call_started: /* @__PURE__ */ new Set(),
+    tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
+    thread_status_changed: /* @__PURE__ */ new Set(),
+    agent_activity: /* @__PURE__ */ new Set(),
+    threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
+    thread_draft_changed: /* @__PURE__ */ new Set(),
+    new_thread_opened: /* @__PURE__ */ new Set(),
+    explorer_reveal: /* @__PURE__ */ new Set(),
+    projects_changed: /* @__PURE__ */ new Set(),
+    git_change_navigate: /* @__PURE__ */ new Set(),
+    roadmap_reveal: /* @__PURE__ */ new Set(),
+    thread_plan_open: /* @__PURE__ */ new Set(),
+    thread_plan_changed: /* @__PURE__ */ new Set(),
+    browser_url_requested: /* @__PURE__ */ new Set(),
+    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
+    pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
+    settings_changed: /* @__PURE__ */ new Set(),
+    usage_updated: /* @__PURE__ */ new Set(),
+    context_updated: /* @__PURE__ */ new Set(),
+    todos_changed: /* @__PURE__ */ new Set(),
+    review_changed: /* @__PURE__ */ new Set(),
+    hook_card_added: /* @__PURE__ */ new Set(),
+    comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
+    git_branch_changed: /* @__PURE__ */ new Set(),
+    thread_checkout_changed: /* @__PURE__ */ new Set(),
+    composer_draft_flush: /* @__PURE__ */ new Set(),
+    agent_task_selected: /* @__PURE__ */ new Set(),
+    shell_tab_activated: /* @__PURE__ */ new Set(),
+    request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
+  };
+  function on2(event, handler) {
+    listeners[event].add(handler);
+    return () => {
+      listeners[event].delete(handler);
+    };
+  }
+  function emit(event, ...args) {
+    listeners[event].forEach((handler) => {
+      handler(...args);
+    });
+  }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check2 = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check2);
+    return () => {
+      selections.delete(check2);
+    };
+  }
+  function setState(partial2) {
+    state = { ...state, ...partial2 };
+    for (const check2 of [...selections]) {
+      if (selections.has(check2)) check2();
+    }
+  }
+  return { getState: () => state, setState, on: on2, emit, select };
+}
+var init_store = __esm({
+  "src/shared/store/store.ts"() {
+    init_types();
+    init_layout();
+  }
+});
+
+// src/renderer/controller/active-workspace.ts
+function activeWorkspace(state) {
+  return [state.activeProjectId, state.workspaceRoot];
+}
+function selectActiveWorkspace(store, listener) {
+  return store.select(activeWorkspace, listener, sameItems);
+}
+var init_active_workspace = __esm({
+  "src/renderer/controller/active-workspace.ts"() {
+    init_store();
+  }
+});
+
 // packages/llm/src/service-tier.ts
 function usageServiceTierFor(value) {
   switch (value) {
@@ -21783,6 +22230,15 @@ function splitServiceTierUsage(usage) {
   }
   return { standard: remaining, tiers };
 }
+function legacyAcpCachedTokens(model, usage) {
+  if (parseModelSelection(model).namespace !== "acp") return null;
+  const cached2 = nonNegative(usage.cacheReadTokens) + nonNegative(usage.cacheCreationTokens);
+  return cached2 > usage.inputTokens ? cached2 : null;
+}
+function repairLegacyAcpTotalInputTokens(model, usage) {
+  const cached2 = legacyAcpCachedTokens(model, usage);
+  return cached2 === null ? usage : { ...usage, inputTokens: cached2 };
+}
 var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
@@ -21793,25 +22249,21 @@ var init_model_usage = __esm({
 
 // src/shared/store/pending-submissions.ts
 function beginThreadSubmission(store, threadId) {
-  let pending = pendingByStore.get(store);
-  if (!pending) {
-    pending = /* @__PURE__ */ new Set();
-    pendingByStore.set(store, pending);
-  }
-  if (pending.has(threadId)) return false;
-  pending.add(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (pending.includes(threadId)) return false;
+  store.setState({ pendingSubmissionThreadIds: [...pending, threadId] });
   return true;
 }
 function endThreadSubmission(store, threadId) {
-  pendingByStore.get(store)?.delete(threadId);
+  const pending = store.getState().pendingSubmissionThreadIds;
+  if (!pending.includes(threadId)) return;
+  store.setState({ pendingSubmissionThreadIds: pending.filter((id) => id !== threadId) });
 }
 function isThreadSubmitting(store, threadId) {
-  return pendingByStore.get(store)?.has(threadId) ?? false;
+  return store.getState().pendingSubmissionThreadIds.includes(threadId);
 }
-var pendingByStore;
 var init_pending_submissions = __esm({
   "src/shared/store/pending-submissions.ts"() {
-    pendingByStore = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -21948,13 +22400,137 @@ var init_thread_proposal2 = __esm({
   }
 });
 
+// packages/agent/src/hooks/inject-context.ts
+var SYSTEM_REMINDER_TAG;
+var init_inject_context = __esm({
+  "packages/agent/src/hooks/inject-context.ts"() {
+    init_nullish();
+    SYSTEM_REMINDER_TAG = "system-reminder";
+  }
+});
+
+// src/shared/tools/tool-result-reminders.ts
+function splitAppendedReminders(result, lengths) {
+  const raw = { output: result, reminders: [] };
+  if (lengths === void 0 || lengths.length === 0) return raw;
+  let end = result.length;
+  const reminders = [];
+  for (let index = lengths.length - 1; index >= 0; index -= 1) {
+    const length = lengths[index];
+    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
+    const start = end - length;
+    if (start < SEPARATOR.length) return raw;
+    const block = result.slice(start, end);
+    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
+      return raw;
+    }
+    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
+    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
+    end = start - SEPARATOR.length;
+  }
+  return { output: result.slice(0, end), reminders };
+}
+var OPEN, CLOSE, SEPARATOR;
+var init_tool_result_reminders = __esm({
+  "src/shared/tools/tool-result-reminders.ts"() {
+    init_inject_context();
+    OPEN = `<${SYSTEM_REMINDER_TAG}>
+`;
+    CLOSE = `
+</${SYSTEM_REMINDER_TAG}>`;
+    SEPARATOR = "\n\n";
+  }
+});
+
+// packages/std/src/safe-json.ts
+function decodeWithSchema(schema) {
+  return (value) => {
+    const result = schema.safeParse(value);
+    return result.success ? result.data : null;
+  };
+}
+function safeJsonStringify(value, indent) {
+  if (value === void 0 || typeof value === "function" || typeof value === "symbol") {
+    return void 0;
+  }
+  return JSON.stringify(value, null, indent);
+}
+function safeJsonParse(text, decoder) {
+  try {
+    const value = JSON.parse(text);
+    return decoder ? decoder(value) : value;
+  } catch {
+    return null;
+  }
+}
+var init_safe_json = __esm({
+  "packages/std/src/safe-json.ts"() {
+  }
+});
+
+// packages/agent/src/ask-user-format.ts
+function parseDeferredAskUserResult(result) {
+  if (!result.startsWith(DEFERRED_QUESTIONS_PREFIX)) return null;
+  return safeJsonParse(
+    result.slice(DEFERRED_QUESTIONS_PREFIX.length),
+    decodeWithSchema(askUserParamsSchema)
+  );
+}
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS, DEFERRED_ASK_USER_RESULT, DEFERRED_QUESTIONS_PREFIX;
+var init_ask_user_format = __esm({
+  "packages/agent/src/ask-user-format.ts"() {
+    init_zod();
+    init_safe_json();
+    askUserQuestionSchema = external_exports.object({
+      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
+      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
+      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
+      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
+    }).refine(
+      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
+      {
+        message: "recommendedOption must be one of options",
+        path: ["recommendedOption"]
+      }
+    ).refine(
+      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+      {
+        message: "A recommendation needs both an option and a reason",
+        path: ["recommendationReason"]
+      }
+    );
+    askUserParamsSchema = external_exports.object({
+      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
+    });
+    ASK_USER_ANSWER_MAX_LENGTH = 8192;
+    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
+    DEFERRED_ASK_USER_RESULT = "Saved for human review because this run is unattended. The user has not answered. Continue independent work; leave work that depends on this answer pending. Do not ask this question again or treat the missing answer as permission.";
+    DEFERRED_QUESTIONS_PREFIX = `${DEFERRED_ASK_USER_RESULT}
+
+Saved questions:
+`;
+  }
+});
+
 // src/shared/threads/reviewer-input.ts
 function isReviewerInputCall(call) {
-  return isCopseToolCall(call, REVIEWER_INPUT_TOOL);
+  return isCopseToolCall(call, REVIEWER_INPUT_TOOL) || isDeferredAskUserCall(call);
+}
+function isDeferredAskUserCall(call) {
+  return deferredAskUserParams(call) !== null;
+}
+function deferredAskUserParams(call) {
+  if (!isCopseToolCall(call, "ask_user") || call.status !== "done" || !askUserParamsSchema.safeParse(reviewerInputArguments(call)).success)
+    return null;
+  return parseDeferredAskUserResult(
+    splitAppendedReminders(call.result ?? "", call.appendedReminderLengths).output
+  );
 }
 function parseReviewerInputCall(call, messageId) {
-  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
-  const { question, context, recommendation, options } = call.args;
+  const args = reviewerInputArguments(call);
+  if (!isCopseToolCall(call, REVIEWER_INPUT_TOOL) || call.status !== "done" || !isRecord(args))
+    return null;
+  const { question, context, recommendation, options } = args;
   if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
     return null;
   }
@@ -21970,10 +22546,33 @@ function parseReviewerInputCall(call, messageId) {
     options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
   };
 }
+function reviewerInputArguments(call) {
+  const args = call.args;
+  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+    return args["arguments"];
+  return args;
+}
 function reviewerInputRequests(thread) {
   return thread.messages.flatMap(
-    (message) => message.toolCalls.map((call) => parseReviewerInputCall(call, message.id)).filter((request) => request !== null)
+    (message) => message.toolCalls.flatMap((call) => reviewerInputRequestsForCall(call, message.id))
   );
+}
+function reviewerInputRequestsForCall(call, messageId) {
+  const review = parseReviewerInputCall(call, messageId);
+  return review ? [review] : deferredAskUserRequests(call, messageId);
+}
+function deferredAskUserRequests(call, messageId) {
+  const parsed2 = deferredAskUserParams(call);
+  if (!parsed2) return [];
+  return parsed2.questions.map((question, index) => ({
+    id: `${call.id}:question:${String(index)}`,
+    toolCallId: call.id,
+    messageId,
+    question: question.question,
+    context: "Saved during an unattended run. Your answer will be sent as a follow-up message.",
+    options: question.options ?? [],
+    ...question.recommendedOption && question.recommendationReason ? { recommendation: `${question.recommendedOption} \u2014 ${question.recommendationReason}` } : {}
+  }));
 }
 function reviewerInputAnswer(answers, id) {
   return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
@@ -21999,6 +22598,8 @@ var init_reviewer_input = __esm({
   "src/shared/threads/reviewer-input.ts"() {
     init_unknown_value3();
     init_copse_tool_call();
+    init_tool_result_reminders();
+    init_ask_user_format();
     REVIEWER_INPUT_TOOL = "request_review_input";
   }
 });
@@ -24408,6 +25009,11 @@ async function loadPersistedThread(api, projectId, threadId) {
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
 }
+function afterPendingThreadPersistence(task) {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task);
+  });
+}
 function attachAutosave(store, api) {
   let timer = null;
   let projectsDirty = false;
@@ -24700,7 +25306,11 @@ function setArtefactPreview(threadId, title, preview) {
   const key = previewKey(threadId, title);
   if (!preview || previews.get(key) === preview) return;
   previews.set(key, preview);
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1);
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
+}
+function artefactPreviewVersion(threadId, title) {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0;
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
@@ -24754,11 +25364,12 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, previewVersions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
     previewRevisions = /* @__PURE__ */ new Map();
+    previewVersions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -26498,11 +27109,21 @@ function shellCommandsFromToolCalls(toolCalls) {
   }
   return commands;
 }
+function deferredCallLabel(tc) {
+  const patchFiles = copseToolCallName(tc) === "apply_patch" ? getApplyPatchFiles(tc) : [];
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`;
+  const path = getToolEditPath(tc);
+  return path ? `Deferred ${path}` : "Deferred edit";
+}
 function getToolCallLabel(tc) {
+  if (tc.deferred === true) return deferredCallLabel(tc);
   const tense = tenseFromStatus(tc.status);
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
   const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : void 0;
+  if (name === "run_background" && tc.commandPhase?.state === "not_started") {
+    return "Did not start background task";
+  }
   if (name === "read_skill") {
     const skillName = stringArg2(tc.args, "name");
     if (skillName) {
@@ -26591,11 +27212,14 @@ function aggregateToolStatus(toolCalls) {
 function bucketKey(groupKey, isError) {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
 }
+function displayGroupKey(tc) {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+}
 function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -26605,7 +27229,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc, label: getToolCallLabel(tc) });
       continue;
@@ -27076,6 +27700,19 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/thread-prompt.ts
+function isSubthreadPromptHeldError(reason) {
+  if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${SUBTHREAD_PROMPT_HELD_ERROR_NAME}:`);
+}
+var SUBTHREAD_PROMPT_HELD_ERROR_NAME;
+var init_thread_prompt = __esm({
+  "src/shared/thread-prompt.ts"() {
+    init_errors4();
+    SUBTHREAD_PROMPT_HELD_ERROR_NAME = "SubthreadPromptHeldError";
+  }
+});
+
 // src/renderer/controller/send-now-aborts.ts
 function markSendNowAbort(threadId) {
   sendNowThreads.add(threadId);
@@ -27191,11 +27828,23 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store, threadId);
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model));
-  const run = afterThreadWrites(
-    projectId,
-    threadId,
-    () => api.agent.run(projectId, threadId, runPayload)
-  );
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
+    if (!queued || parentThreadId === void 0) {
+      await api.agent.run(projectId, threadId, runPayload);
+      return;
+    }
+    const authorized = await api.threadPrompts?.canDispatch(projectId, parentThreadId, threadId).catch(() => false);
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId });
+        return;
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err;
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued);
+  });
   if (!queued) {
     void run;
     return;
@@ -27209,6 +27858,22 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
       drainMessageQueue(store, api, threadId);
     }
   });
+}
+function subthreadParentOf(item) {
+  const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
+}
+function holdRevokedSubthreadPrompt(store, threadId, item) {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: "idle",
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
+    updatedAt: Date.now()
+  }));
+  syncAgentActivity(store, threadId, false);
+  store.emit("message_queued", threadId, item.messageId);
+  store.emit("threads_changed");
 }
 function requeueBusyMessage(store, api, threadId, item) {
   patchThreadAnywhere(store, threadId, (t2) => {
@@ -27255,9 +27920,14 @@ function drainMessageQueue(store, api, threadId) {
   let used = thread.continuationUsed ?? 0;
   let next;
   const heldByBudget = [];
+  const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
     if (isMachineContinuation(item)) {
+      if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId);
+        continue;
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId);
         continue;
@@ -27269,14 +27939,15 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+      (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
@@ -27404,6 +28075,14 @@ function removeQueuedMessage(store, threadId, messageId) {
   store.emit("threads_changed");
 }
 function sendQueuedMessageNow(store, api, threadId, messageId) {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId
+  );
+  if (!item) return;
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId);
+  else prioritizeQueuedMessage(store, api, threadId, messageId);
+}
+function prioritizeQueuedMessage(store, api, threadId, messageId) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
   const pending = thread?.pendingMessages ?? [];
   const target = pending.find((p2) => p2.messageId === messageId);
@@ -27441,7 +28120,7 @@ function enqueueHookMessage(store, api, threadId, input2) {
   };
   enqueueUserMessage(store, threadId, item);
   if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store, api, threadId, messageId);
+  if (input2.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId);
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
@@ -27459,16 +28138,16 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
-        return rest;
+        return { ...rest, epoch };
       }),
       updatedAt: Date.now()
     };
   });
   store.setState({ threads });
   store.emit("threads_changed");
-  sendQueuedMessageNow(store, api, threadId, messageId);
+  prioritizeQueuedMessage(store, api, threadId, messageId);
 }
-var pendingDispatches;
+var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -27479,9 +28158,11 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
+    SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
 });
 
@@ -27714,6 +28395,7 @@ function sidebarLastPromptAt(thread) {
   return void 0;
 }
 function isAutomationPendingStart(thread) {
+  if (thread.automation === void 0) return false;
   return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
 }
 function sidebarHasRun(thread) {
@@ -27907,6 +28589,11 @@ function attentionThreadId(store, threadId) {
   }
   return threadId;
 }
+function proposingThreadId(store, threadId) {
+  const threads = store.getState().threads;
+  const proposerId = threads.find((t2) => t2.id === threadId)?.proposedBy?.threadId;
+  return proposerId !== void 0 && proposerId !== threadId && threads.some((t2) => t2.id === proposerId) ? proposerId : null;
+}
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
   residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
@@ -27975,6 +28662,43 @@ function attachProjectThreadCache(store) {
     }
   });
 }
+async function refreshProjectThreadWorktrees(store, api, projectId) {
+  invalidateProjectThreadLoads(api, projectId);
+  let revision;
+  let loaded;
+  do {
+    revision = projectThreadLoadRevision(api, projectId);
+    loaded = await api.threads.loadProject(projectId);
+  } while (isListedProject(store, projectId) && revision !== projectThreadLoadRevision(api, projectId));
+  if (!isListedProject(store, projectId)) return;
+  const byId = new Map(loaded.map((thread) => [thread.id, thread]));
+  function refreshed(thread) {
+    const latest = byId.get(thread.id);
+    if (!latest || JSON.stringify(latest.worktree) === JSON.stringify(thread.worktree))
+      return thread;
+    const next = { ...thread };
+    if (latest.worktree) next.worktree = latest.worktree;
+    else delete next.worktree;
+    return next;
+  }
+  const runtime = (thread) => {
+    const next = refreshed(thread);
+    if (next !== thread) acceptRuntimeThreadMeta(projectId, next, transcriptMeta(thread));
+    return next;
+  };
+  const state = store.getState();
+  const threads = state.activeProjectId === projectId ? state.threads.map(runtime) : state.threads;
+  const backgroundThreads = state.backgroundThreads.map((entry) => {
+    if (entry.projectId !== projectId) return entry;
+    const thread = runtime(entry.thread);
+    return thread === entry.thread ? entry : { ...entry, thread };
+  });
+  store.setState({ threads, backgroundThreads });
+  const cached2 = threadCache.get(projectId);
+  if (state.activeProjectId === projectId) cacheThreads(projectId, threads);
+  else if (cached2) threadCache.set(projectId, cached2.map(refreshed));
+  store.emit("sidebar_threads_loaded");
+}
 async function setWorkspaceForSelection(api, path, sshHost) {
   try {
     await api.workspace.set(path, sshHost);
@@ -28013,7 +28737,6 @@ function abortProjectActivation(store, id, gen, outgoingId, error62) {
     store.setState({ expandedProjectId: revertExpanded });
   }
   store.emit("projects_changed");
-  store.emit("workspace_changed");
 }
 function clearMissing(project) {
   if (!project.missing) return project;
@@ -28073,7 +28796,6 @@ async function removeProject(store, api, id) {
       filesPaneOpen: false
     });
     store.emit("projects_changed");
-    store.emit("workspace_changed");
     store.emit("threads_changed");
     return;
   }
@@ -28091,6 +28813,7 @@ function expandProject(store, id) {
 function applyProjectSelection(store, api, id, path, loaded, revision, pendingThreadId, outgoingId, outgoingThreads) {
   const endApply = begin("switch:apply-state");
   if (outgoingId && outgoingId !== id) {
+    if (store.getState().activeProjectId === outgoingId) store.emit("composer_draft_flush");
     const state = store.getState();
     const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
     if (liveOutgoingThreads !== outgoingThreads && isListedProject(store, outgoingId)) {
@@ -28128,7 +28851,6 @@ function applyProjectSelection(store, api, id, path, loaded, revision, pendingTh
   if (merged.length === 0) createThread(store);
   else normalizeBlankThreads(store);
   store.emit("projects_changed");
-  store.emit("workspace_changed");
   store.emit("threads_changed");
   residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId);
   endApply({ threads: merged.length });
@@ -28237,6 +28959,7 @@ function dispatchCallers() {
   return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store, api, id, path, sshHost, pendingThreadId) {
+  if (store.getState().activeProjectId !== id) store.emit("composer_draft_flush");
   const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState();
   if (activeProjectId === id) {
     if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store, id);
@@ -28361,6 +29084,11 @@ function switchProject(store, api, id, pendingThreadId = null) {
   if (!proj) return;
   activate(store, api, id, proj.path, proj.sshHost, pendingThreadId);
 }
+function switchProjectAndWait(store, api, id) {
+  const proj = store.getState().projects.find((p2) => p2.id === id);
+  if (!proj) return Promise.resolve();
+  return activateAndWait(store, api, id, proj.path, proj.sshHost);
+}
 async function activateMobileProject(store, api, id) {
   const project = store.getState().projects.find((item) => item.id === id);
   if (!project || project.missing) throw new Error("Project unavailable on the desktop.");
@@ -28443,6 +29171,7 @@ async function quarantineAndRestoreNext(store, api, id) {
     await restoreProject(store, api, next.id);
     return;
   }
+  const persisted = saveProjects(api, store.getState().projects, null, null);
   store.setState({
     activeProjectId: null,
     expandedProjectId: null,
@@ -28450,8 +29179,7 @@ async function quarantineAndRestoreNext(store, api, id) {
     threads: [],
     activeThreadId: null
   });
-  await saveProjects(api, store.getState().projects, null, null);
-  store.emit("workspace_changed");
+  await persisted;
   store.emit("threads_changed");
 }
 async function restoreProject(store, api, id, preferredThreadId = null) {
@@ -28479,24 +29207,24 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   cacheThreads(id, merged);
   residentThreads.remember(id, merged, revision);
   activeListRevision = { projectId: id, revision };
+  const activeThreadId = preferredThreadId && merged.some((thread) => thread.id === preferredThreadId) ? preferredThreadId : merged[0]?.id ?? null;
+  const projects = projectsWithMissingCleared(store.getState().projects, id);
+  const persisted = saveProjects(api, projects, id, activeThreadId).catch((error62) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error62);
+  });
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
     workspaceRoot: proj.path,
     threads: merged,
-    activeThreadId: preferredThreadId && merged.some((thread) => thread.id === preferredThreadId) ? preferredThreadId : merged[0]?.id ?? null,
-    // Opening succeeded — lift any prior quarantine on this project (#997).
-    projects: projectsWithMissingCleared(store.getState().projects, id)
+    activeThreadId,
+    projects
   });
-  const activeThreadId = store.getState().activeThreadId;
   if (activeThreadId) markThreadRead(store, activeThreadId);
-  await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error62) => {
-    console.warn(`[projects] could not persist the restored project ${id}:`, error62);
-  });
+  await persisted;
   if (merged.length === 0) createThread(store);
   else normalizeBlankThreads(store);
   store.emit("projects_changed");
-  store.emit("workspace_changed");
   store.emit("threads_changed");
   void resumePendingQueues(store, api);
 }
@@ -28536,7 +29264,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-DIAL6CUR.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-PRYAKWO4.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -28607,9 +29335,10 @@ async function recoverOrphanProject(store, api, storeId, confirm) {
   await activateAndWait(store, api, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, threadRelationsKey, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
+    init_transcript_state();
     init_side_chat2();
     init_thread_helpers();
     init_persistence();
@@ -28633,6 +29362,16 @@ var init_projects = __esm({
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
     sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
+    threadRelationsKey = /* @__PURE__ */ (() => {
+      let lastThreads = null;
+      let lastKey = "";
+      return (threads) => {
+        if (threads === lastThreads) return lastKey;
+        lastThreads = threads;
+        lastKey = threads.map((t2) => `${t2.id}<${t2.sideChat?.parentThreadId ?? ""}<${t2.proposedBy?.threadId ?? ""}`).join("\n");
+        return lastKey;
+      };
+    })();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
     dismissedOrphanStoresChain = Promise.resolve();
@@ -28757,7 +29496,11 @@ function attachThreadHydration(store, api) {
     void fetchInto(activeProjectId, activeThreadId);
   };
   const offThreads = store.on("threads_changed", hydrateActive);
-  const offWorkspace = store.on("workspace_changed", hydrateActive);
+  const offWorkspace = store.select(
+    (s2) => [s2.activeProjectId, s2.activeThreadId],
+    hydrateActive,
+    sameItems
+  );
   hydrateActive();
   const offPrRefs = api.threads.onPrRefs((projectId, refs) => {
     const state = store.getState();
@@ -28789,6 +29532,7 @@ function attachThreadHydration(store, api) {
 var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
 var init_thread_hydration = __esm({
   "src/renderer/controller/thread-hydration.ts"() {
+    init_store();
     init_perf();
     init_thread_helpers();
     init_artefact_previews();
@@ -28802,6 +29546,11 @@ var init_thread_hydration = __esm({
 // src/shared/automation-failure.ts
 function describeAutomationFailure(code) {
   return DESCRIPTIONS[code];
+}
+function classifyAutomationCheckoutFailure(message) {
+  if (message.includes("The selected coding agent is not enabled.") || message.includes("cannot start because its configured command is missing or not executable."))
+    return "no-model";
+  return "worktree-failed";
 }
 function classifyAutomationFailureMessage(message) {
   if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
@@ -28832,7 +29581,7 @@ var init_automation_failure = __esm({
       },
       "no-model": {
         title: "Model unavailable",
-        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        remedy: "Check the model or coding agent in Settings \u2192 General \u2192 Models & agents, or pick another model in the automation.",
         action: "open-automations",
         actionLabel: "Edit automation"
       },
@@ -29003,7 +29752,7 @@ function attachAutomationController(store, api) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         const message = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message);
+        const code = checkoutStarted ? classifyAutomationCheckoutFailure(message) : classifyAutomationFailureMessage(message);
         markAutomationStartFailed(store, threadId, { code, message });
         api.automations.reportStartFailure(projectId, threadId, { code, message }).catch((reportError) => {
           console.error("[automations] Could not report a start failure:", reportError);
@@ -29029,47 +29778,52 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   async function receiveTrigger(event) {
     if (store.getState().activeProjectId !== event.projectId) return;
     const observedEpoch = getThreadById(store, event.threadId)?.currentEpoch;
-    const loaded = await api.threads.loadProject(event.projectId);
-    if (store.getState().activeProjectId !== event.projectId) return;
-    const created = loaded.find((thread) => thread.id === event.threadId);
-    if (!created) return;
-    if (event.headlessSettled) {
-      if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
-      if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return;
-      const messages = await api.threads.loadMessages(event.projectId, event.threadId);
+    for (; ; ) {
+      const revision = projectThreadLoadRevision(api, event.projectId);
+      const loaded = await api.threads.loadProject(event.projectId);
       if (store.getState().activeProjectId !== event.projectId) return;
-      if (created.automation?.triggeredAt !== event.triggeredAt) return;
-      const current = getThreadById(store, event.threadId);
-      if (current?.currentEpoch !== observedEpoch) return;
-      if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
-      const persistedIds = new Set(messages.map((message) => message.id));
-      if (current?.messages.some(
-        (message) => message.role === "user" && !persistedIds.has(message.id)
-      )) {
+      const created = loaded.find((thread) => thread.id === event.threadId);
+      if (!created) return;
+      if (event.headlessSettled) {
+        if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
+        if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return;
+        const messages = await api.threads.loadMessages(event.projectId, event.threadId);
+        if (store.getState().activeProjectId !== event.projectId) return;
+        if (created.automation?.triggeredAt !== event.triggeredAt) return;
+        const current = getThreadById(store, event.threadId);
+        if (current?.currentEpoch !== observedEpoch) return;
+        if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
+        const persistedIds = new Set(messages.map((message) => message.id));
+        if (current?.messages.some(
+          (message) => message.role === "user" && !persistedIds.has(message.id)
+        )) {
+          return;
+        }
+        if (projectThreadLoadRevision(api, event.projectId) !== revision) continue;
+        store.setState({
+          threads: sortThreadsNewestFirst([
+            {
+              ...created,
+              draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
+              messages,
+              messagesLoaded: true
+            },
+            ...store.getState().threads.filter((thread) => thread.id !== created.id)
+          ])
+        });
+        store.emit("thread_status_changed", created.id, created.status);
+        store.emit("threads_changed");
         return;
       }
-      store.setState({
-        threads: sortThreadsNewestFirst([
-          {
-            ...created,
-            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
-            messages,
-            messagesLoaded: true
-          },
-          ...store.getState().threads.filter((thread) => thread.id !== created.id)
-        ])
-      });
-      store.emit("thread_status_changed", created.id, created.status);
-      store.emit("threads_changed");
+      if (!store.getState().threads.some((thread) => thread.id === created.id)) {
+        store.setState({
+          threads: sortThreadsNewestFirst([created, ...store.getState().threads])
+        });
+        store.emit("threads_changed");
+      }
+      await startThread(created.id);
       return;
     }
-    if (!store.getState().threads.some((thread) => thread.id === created.id)) {
-      store.setState({
-        threads: sortThreadsNewestFirst([created, ...store.getState().threads])
-      });
-      store.emit("threads_changed");
-    }
-    await startThread(created.id);
   }
   function refreshSchedulesForActiveProject() {
     const projectId = store.getState().activeProjectId;
@@ -29081,7 +29835,7 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeTrigger = api.automations.onTriggered((event) => {
     void receiveTrigger(event);
   });
-  const unsubscribeWorkspace = store.on("workspace_changed", () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     startPendingForActiveProject();
     refreshSchedulesForActiveProject();
   });
@@ -29096,13 +29850,15 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   };
 }
 var scheduleCache, eventAutomationCache, AUTOMATION_START_RETRY_MS;
-var init_automations = __esm({
+var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
+    init_active_workspace();
     init_ipc_error_message();
     init_automation_failure();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    init_persistence();
     scheduleCache = /* @__PURE__ */ new Map();
     eventAutomationCache = /* @__PURE__ */ new Map();
     AUTOMATION_START_RETRY_MS = 15e3;
@@ -29262,7 +30018,7 @@ var init_navigation = __esm({
 
 // packages/llm/src/classifiers/types.ts
 var HTTP_CLASSIFIER_PROTOCOLS;
-var init_types = __esm({
+var init_types2 = __esm({
   "packages/llm/src/classifiers/types.ts"() {
     HTTP_CLASSIFIER_PROTOCOLS = ["systemone", "featherless", "decisions"];
   }
@@ -29392,6 +30148,20 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "strands-decider",
+        label: "Strands Decider 2B (local)",
+        // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+        model: "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          // Not the server's default 8000, which a stray dev server would be mistaken for.
+          baseUrl: "http://127.0.0.1:8011/v1",
           auth: "none"
         }
       },
@@ -30269,7 +31039,7 @@ function createClassifiersSection(api) {
 var PROTOCOL_CHOICES, isHttpClassifierProtocol, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
 var init_classifiers_section = __esm({
   "src/renderer/views/setup/classifiers-section.ts"() {
-    init_types();
+    init_types2();
     init_presets();
     init_member_of2();
     init_helpers();
@@ -31254,14 +32024,6 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
-// src/shared/types/tool-permissions.ts
-var TOOL_PERMISSION_POLICIES;
-var init_tool_permissions = __esm({
-  "src/shared/types/tool-permissions.ts"() {
-    TOOL_PERMISSION_POLICIES = ["allow", "ask", "block"];
-  }
-});
-
 // src/renderer/views/tool-permissions-panel.ts
 function cloneCatalog(catalog) {
   return structuredClone(catalog);
@@ -31765,10 +32527,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 18.7,
+          value: 18.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "QwQ-32B-Preview": [
@@ -31825,6 +32587,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-beta', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "agnes-2-5-pro-theta": [
+        {
+          value: 24,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'agnes-2-5-pro-theta', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "agnes-3-0-flash": [
@@ -32127,6 +32897,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 7.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-4-5-haiku-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-4-5-sonnet": [
@@ -32235,10 +33011,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49,
+          value: 49.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-high": [
@@ -32249,10 +33025,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 47,
+          value: 47.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-low": [
@@ -32263,10 +33039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 38.5,
+          value: 38.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-medium": [
@@ -32277,10 +33053,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -32291,10 +33067,50 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49.7,
+          value: 50,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2": [
+        {
+          value: 64.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-high": [
+        {
+          value: 61.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-low": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-medium": [
+        {
+          value: 56.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-xhigh": [
+        {
+          value: 62.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-4-5": [
@@ -32313,10 +33129,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 36.2,
+          value: 36.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-high": [
@@ -32327,10 +33143,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 29.6,
+          value: 29.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-low": [
@@ -32369,10 +33185,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 34.3,
+          value: 34.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-instant": [
@@ -32505,6 +33321,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5": [
@@ -32515,10 +33337,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 58.4,
+          value: 59.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-high": [
@@ -32529,10 +33351,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.7,
+          value: 51.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-low": [
@@ -32543,10 +33365,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-medium": [
@@ -32557,10 +33379,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 48.1,
+          value: 48.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-xhigh": [
@@ -32571,10 +33393,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 57,
+          value: 57.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-high": [
@@ -32697,10 +33519,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 54.2,
+          value: 54.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-high": [
@@ -32711,10 +33533,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 41.1,
+          value: 41.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-low": [
@@ -32725,10 +33547,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 25.3,
+          value: 25.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-medium": [
@@ -32739,10 +33561,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.3,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-xhigh": [
@@ -32753,10 +33575,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 49.6,
+          value: 49.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-high": [
@@ -33261,18 +34083,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 32.5,
+          value: 32.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-high": [
         {
-          value: 28.5,
+          value: 28.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-non-reasoning": [
@@ -33437,6 +34259,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-non-reasoning', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 12.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -34081,6 +34909,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-1-flash-lite-preview', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -34223,10 +35057,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30.5,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-low": [
@@ -34237,10 +35071,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 22.3,
+          value: 22.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-medium": [
@@ -34251,10 +35085,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30,
+          value: 30.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-flash": [
@@ -34329,26 +35163,26 @@ var init_model_intellect_generated = __esm({
       ],
       "gemini-4-carbon": [
         {
-          value: 59.4,
+          value: 60,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-low": [
         {
-          value: 53.7,
+          value: 54.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-medium": [
         {
-          value: 57.7,
+          value: 58.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemma-3-1b": [
@@ -34517,6 +35351,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 4.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-31b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -35635,6 +36475,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 32.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -35887,6 +36733,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 23.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5.6-sol": [
@@ -35913,10 +36765,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 54.5,
+          value: 54.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-high": [
@@ -35927,10 +36779,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 50.2,
+          value: 50.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-low": [
@@ -35941,10 +36793,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-medium": [
@@ -35955,10 +36807,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 46.1,
+          value: 46.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-xhigh": [
@@ -35969,10 +36821,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 52.3,
+          value: 52.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra": [
@@ -35983,10 +36835,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 51,
+          value: 51.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-high": [
@@ -35997,10 +36849,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 42.3,
+          value: 42.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-low": [
@@ -36011,10 +36863,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.2,
+          value: 29.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-medium": [
@@ -36025,10 +36877,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 38.1,
+          value: 38.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-non-reasoning": [
@@ -36039,10 +36891,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 30.4,
+          value: 30.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-xhigh": [
@@ -36053,10 +36905,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 45,
+          value: 45.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra": [
@@ -36095,10 +36947,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-medium": [
@@ -36109,10 +36961,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.5,
+          value: 51.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -36145,10 +36997,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 27.8,
+          value: 27.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-high": [
@@ -36187,10 +37039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 18.3,
+          value: 18.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-non-reasoning": [
@@ -36215,10 +37067,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 23.3,
+          value: 23.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol": [
@@ -36227,6 +37079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol-high": [
@@ -36281,6 +37139,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-oss-120b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-oss-120b-low": [
@@ -36797,6 +37661,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 31,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-6-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7": [
@@ -36807,10 +37677,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35.3,
+          value: 35.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-high": [
@@ -36821,10 +37691,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35,
+          value: 35.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-low": [
@@ -36835,10 +37705,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.9,
+          value: 31.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-fast": [
@@ -37085,6 +37955,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "inkling-2-small": [
+        {
+          value: 30.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling-2-small', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "inkling-small": [
         {
           value: 41.2,
@@ -37293,6 +38171,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0-0803', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "k-exaone-non-reasoning": [
@@ -37585,10 +38469,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 46,
+          value: 46.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "kimi-k3-low": [
@@ -37867,10 +38751,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.5,
+          value: 29.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ling-flash-2-0": [
@@ -38653,10 +39537,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 28.9,
+          value: 29.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ministral-3-14b": [
@@ -38793,10 +39677,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 26,
+          value: 26.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-large-4-medium": [
@@ -38869,6 +39753,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 4.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-medium-3-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-saba": [
@@ -39093,6 +39983,22 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "muse-ember": [
+        {
+          value: 36,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-ember-xhigh": [
+        {
+          value: 34.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "muse-glimmer": [
         {
           value: 35.1,
@@ -39163,10 +40069,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 36.4,
+          value: 36.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-spark-1-3-xhigh": [
@@ -39185,10 +40091,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 24.7,
+          value: 24.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder": [
@@ -39199,10 +40105,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 43.3,
+          value: 43.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder-full": [
@@ -39213,10 +40119,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 49.7,
+          value: 50.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-wonder-high": [
+        {
+          value: 40.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nanbeige4-1-3b": [
@@ -39337,6 +40251,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'north-mini-code', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nova-2-0-lite": [
@@ -40895,10 +41815,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 33.6,
+          value: 33.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "qwen3-8-max-0803": [
@@ -41657,6 +42577,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
           asOf: "2026-10-29"
+        }
+      ],
+      "tencent-hy4": [
+        {
+          value: 34.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'tencent-hy4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "tiny-aya-global": [
@@ -43439,12 +44367,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -43538,12 +44467,13 @@ var init_acp_known_agents = __esm({
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
           //
-          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-          // exports to its own shell, overriding the workspace-owned one Copse
-          // passes at spawn. Everything downstream inherits it, so an agent
-          // following the "put scratch in $TMPDIR" steer lands there, as does
-          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-          // `-*` glob does not reach it: that hyphen is load-bearing.
+          // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+          // (not Claude Code's), baked into the wrapped command from the wrapping
+          // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+          // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+          // #4149), so a sandboxed agent normally never sees it. The entry stays as
+          // a safety net. The `-*` glob does not reach it: that hyphen is
+          // load-bearing.
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
@@ -47048,7 +47978,10 @@ async function fetchModelOptions(api, current, opts = {}) {
       {
         ...option,
         label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
-        disabled: true
+        disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...option.disabled === true ? {} : { superseded: true }
       }
     ];
   });
@@ -49249,6 +50182,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         ] : []
       );
       if (selected) item.classList.add("is-selected");
+      if (opt.superseded) item.classList.add("is-superseded");
       if (opt.value === activeValue) item.classList.add("is-active");
       item.addEventListener("click", () => {
         selectOption(opt.value);
@@ -53418,7 +54352,9 @@ function createModelsAgentsList(api, opts = {}) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Everything Copse can run a turn on. A ChatGPT plan, a coding agent and an API key are separate connections, so use any of them, or all. Agents and model servers on this machine show up on their own. Re-scan also reads API keys from your environment and shell startup files and imports new ones; existing keys are never overwritten."
+      // The Re-scan sentence is the disclosure for the key import that clicking
+      // Re-scan opts into (see rescanAll), so it stays when the rest is cut.
+      "Plans, agents and API keys Copse can use. Agents and model servers on this machine appear on their own. Re-scan also imports new API keys from your environment and shell startup files, without overwriting saved ones."
     ),
     el("div", { class: "acp-list-bar" }, scanStatus, rescan),
     list,
@@ -55387,7 +56323,7 @@ function mountEnvironmentSetupOffer(store, api) {
   never2.addEventListener("click", () => {
     dismiss(true);
   });
-  const unsubscribeWorkspace = store.on("workspace_changed", () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     void evaluate();
   });
   const unsubscribeStatus = store.on("thread_status_changed", schedule);
@@ -55412,6 +56348,7 @@ var init_environment_setup = __esm({
     init_actions();
     init_dialog_shell();
     init_toast();
+    init_active_workspace();
     SECTIONS = [
       { kind: "auto-approval-level", title: "Shell commands" },
       { kind: "web-origin", title: "Web origins" },
@@ -55886,7 +56823,7 @@ var init_settings_sources_skills = __esm({
     skillsSourcesMarkup = `
   <fieldset id="sources-skills-fieldset">
     <legend>Skills</legend>
-    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <p class="settings-fieldset-desc">Skills the agent can use. They refresh when Sources opens or you reload, and apply from the next turn.</p>
     <div id="sources-skills-list" class="sources-group"></div>
     <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
     <details class="sources-skill-folders">
@@ -56201,7 +57138,7 @@ function createSourcesSection({
       fillSourceList(
         "#sources-instructions-list",
         instructions.map((f3) => makeInstructionRow(f3)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+        "No instruction files yet. Add AGENTS.md to the project root."
       );
       if (instructions.some((f3) => f3.discoveryTruncated)) {
         const note = document.createElement("span");
@@ -65674,294 +66611,6 @@ var init_apple_development_plugin = __esm({
   }
 });
 
-// src/shared/types/todo.ts
-var init_todo = __esm({
-  "src/shared/types/todo.ts"() {
-  }
-});
-
-// packages/thread-store/src/thread-types.ts
-var init_thread_types = __esm({
-  "packages/thread-store/src/thread-types.ts"() {
-  }
-});
-
-// src/shared/types/thread.ts
-var init_thread = __esm({
-  "src/shared/types/thread.ts"() {
-    init_thread_types();
-  }
-});
-
-// src/shared/types/stream.ts
-var init_stream = __esm({
-  "src/shared/types/stream.ts"() {
-  }
-});
-
-// packages/thread-store/src/turn-outcome.ts
-var init_turn_outcome = __esm({
-  "packages/thread-store/src/turn-outcome.ts"() {
-  }
-});
-
-// src/shared/types/turn-outcome.ts
-var init_turn_outcome2 = __esm({
-  "src/shared/types/turn-outcome.ts"() {
-    init_turn_outcome();
-  }
-});
-
-// src/shared/types/llm.ts
-var init_llm = __esm({
-  "src/shared/types/llm.ts"() {
-  }
-});
-
-// src/shared/types/layout.ts
-var DEFAULT_LAYOUT, LAYOUT_LIMITS;
-var init_layout = __esm({
-  "src/shared/types/layout.ts"() {
-    DEFAULT_LAYOUT = {
-      projectsPaneWidth: 240,
-      filesPaneWidth: 480,
-      filesPaneHeight: 360,
-      fileTreeWidth: 200
-    };
-    LAYOUT_LIMITS = {
-      projects: { min: 180, max: 400 },
-      // In the side-by-side layout this ratio applies to the width left after the
-      // Projects pane, so chat always keeps at least one third of the shared area.
-      files: { min: 300, maxRatio: 2 / 3 },
-      // Panel opens at a third of the window's height in the stacked (vertical)
-      // layout until the user drags it to a different size.
-      filesStacked: { min: 220, maxRatio: 0.75, defaultRatio: 1 / 3 },
-      tree: { min: 120, max: 400 }
-    };
-  }
-});
-
-// packages/agent/src/wire-types.ts
-var init_wire_types = __esm({
-  "packages/agent/src/wire-types.ts"() {
-  }
-});
-
-// src/shared/types/tools.ts
-var init_tools = __esm({
-  "src/shared/types/tools.ts"() {
-    init_wire_types();
-  }
-});
-
-// src/shared/types/provider.ts
-var init_provider = __esm({
-  "src/shared/types/provider.ts"() {
-  }
-});
-
-// src/shared/types/skills.ts
-var init_skills = __esm({
-  "src/shared/types/skills.ts"() {
-  }
-});
-
-// src/shared/types/git.ts
-var init_git = __esm({
-  "src/shared/types/git.ts"() {
-  }
-});
-
-// packages/plugin-sdk/src/mcp-types.ts
-var init_mcp_types = __esm({
-  "packages/plugin-sdk/src/mcp-types.ts"() {
-  }
-});
-
-// src/shared/types/mcp.ts
-var init_mcp = __esm({
-  "src/shared/types/mcp.ts"() {
-    init_mcp_types();
-  }
-});
-
-// src/shared/types/usage.ts
-var init_usage = __esm({
-  "src/shared/types/usage.ts"() {
-  }
-});
-
-// packages/thread-store/src/worktree-types.ts
-var init_worktree_types = __esm({
-  "packages/thread-store/src/worktree-types.ts"() {
-  }
-});
-
-// src/shared/types/worktree.ts
-var init_worktree = __esm({
-  "src/shared/types/worktree.ts"() {
-    init_worktree_types();
-  }
-});
-
-// src/shared/types/guarded-yolo.ts
-var init_guarded_yolo = __esm({
-  "src/shared/types/guarded-yolo.ts"() {
-  }
-});
-
-// src/shared/types/automations.ts
-function automationPermissionKey(permission) {
-  return JSON.stringify([permission.kind, permission.toolName]);
-}
-var AUTOMATION_FAILURE_CODES, isAutomationFailureCode;
-var init_automations2 = __esm({
-  "src/shared/types/automations.ts"() {
-    init_member_of2();
-    AUTOMATION_FAILURE_CODES = [
-      "approval-stalled",
-      "no-model",
-      "container-missing",
-      "auth-expired",
-      "worktree-failed",
-      "scheduler-stopped",
-      "unknown"
-    ];
-    isAutomationFailureCode = memberOf(AUTOMATION_FAILURE_CODES);
-  }
-});
-
-// src/shared/types/apple-development.ts
-var APPLE_ACTIONS, APPLE_OPERATION_STATUSES, appleCandidateSchema, appleDestinationSchema, appleSelectionSchema, appleDiagnosticSchema, appleTestSummarySchema, appleOutcomeSchema, appleOperationSchema, appleProjectStateSchema, appleConfigureInputSchema, appleExecuteInputSchema, appleOperationInputSchema;
-var init_apple_development = __esm({
-  "src/shared/types/apple-development.ts"() {
-    init_zod();
-    APPLE_ACTIONS = ["build", "test", "run"];
-    APPLE_OPERATION_STATUSES = [
-      "queued",
-      "running",
-      "succeeded",
-      "failed",
-      "cancelled"
-    ];
-    appleCandidateSchema = external_exports.object({
-      id: external_exports.string().min(1).max(512),
-      name: external_exports.string().min(1).max(256),
-      kind: external_exports.enum(["workspace", "project"]),
-      schemes: external_exports.array(external_exports.string().min(1).max(256)).max(200),
-      metadataError: external_exports.string().min(1).max(2048).optional()
-    });
-    appleDestinationSchema = external_exports.object({
-      id: external_exports.string().min(1).max(512),
-      name: external_exports.string().min(1).max(256),
-      platform: external_exports.string().min(1).max(128),
-      supported: external_exports.boolean(),
-      booted: external_exports.boolean().optional()
-    });
-    appleSelectionSchema = external_exports.object({
-      candidateId: external_exports.string().min(1).max(512),
-      schemeId: external_exports.string().min(1).max(256),
-      configuration: external_exports.string().min(1).max(128),
-      destinationId: external_exports.string().min(1).max(512),
-      revision: external_exports.number().int().positive()
-    });
-    appleDiagnosticSchema = external_exports.object({
-      severity: external_exports.enum(["error", "warning", "note"]),
-      message: external_exports.string().max(8192),
-      file: external_exports.string().max(4096).optional(),
-      line: external_exports.number().int().positive().optional(),
-      column: external_exports.number().int().positive().optional()
-    });
-    appleTestSummarySchema = external_exports.object({
-      passed: external_exports.number().int().nonnegative().nullable(),
-      failed: external_exports.number().int().nonnegative().nullable(),
-      skipped: external_exports.number().int().nonnegative().nullable()
-    });
-    appleOutcomeSchema = external_exports.object({
-      operationId: external_exports.string().min(1),
-      status: external_exports.enum(["succeeded", "failed", "cancelled"]),
-      reason: external_exports.string().max(8192).optional(),
-      exitCode: external_exports.number().int().nullable(),
-      diagnostics: external_exports.array(appleDiagnosticSchema).max(500),
-      testSummary: appleTestSummarySchema.nullable(),
-      logArtifactId: external_exports.string().min(1),
-      resultBundleArtifactId: external_exports.string().min(1).optional(),
-      appSessionId: external_exports.string().min(1).optional(),
-      outputTruncated: external_exports.boolean()
-    });
-    appleOperationSchema = external_exports.object({
-      id: external_exports.string().min(1),
-      action: external_exports.enum(APPLE_ACTIONS),
-      status: external_exports.enum(APPLE_OPERATION_STATUSES),
-      target: appleSelectionSchema,
-      createdAt: external_exports.number().int(),
-      updatedAt: external_exports.number().int(),
-      outcome: appleOutcomeSchema.nullable()
-    });
-    appleProjectStateSchema = external_exports.object({
-      pluginEnabled: external_exports.boolean(),
-      enrolled: external_exports.boolean(),
-      supportedHost: external_exports.boolean(),
-      toolchain: external_exports.object({ developerDir: external_exports.string().min(1), version: external_exports.string().min(1).max(512) }).nullable(),
-      candidates: external_exports.array(appleCandidateSchema).max(100),
-      destinations: external_exports.array(appleDestinationSchema).max(200),
-      metadataRequiresExecution: external_exports.boolean(),
-      selection: appleSelectionSchema.nullable(),
-      operations: external_exports.array(appleOperationSchema).max(50),
-      setupMessage: external_exports.string().max(2048).nullable()
-    });
-    appleConfigureInputSchema = external_exports.object({
-      candidateId: external_exports.string().min(1).max(512),
-      schemeId: external_exports.string().min(1).max(256),
-      configuration: external_exports.string().min(1).max(128),
-      destinationId: external_exports.string().min(1).max(512),
-      expectedRevision: external_exports.number().int().nonnegative()
-    });
-    appleExecuteInputSchema = external_exports.object({
-      action: external_exports.enum(APPLE_ACTIONS),
-      expectedRevision: external_exports.number().int().positive(),
-      requestId: external_exports.string().min(1).max(256),
-      testFilter: external_exports.string().min(1).max(512).optional()
-    });
-    appleOperationInputSchema = external_exports.object({
-      operationId: external_exports.string().min(1).max(256),
-      action: external_exports.enum(["status", "logs", "cancel"]),
-      logCursor: external_exports.number().int().nonnegative().optional()
-    });
-  }
-});
-
-// src/shared/types/machine-dispatch.ts
-var init_machine_dispatch = __esm({
-  "src/shared/types/machine-dispatch.ts"() {
-  }
-});
-
-// src/shared/types/index.ts
-var init_types2 = __esm({
-  "src/shared/types/index.ts"() {
-    init_todo();
-    init_thread();
-    init_stream();
-    init_turn_outcome2();
-    init_llm();
-    init_layout();
-    init_state();
-    init_tools();
-    init_provider();
-    init_skills();
-    init_git();
-    init_mcp();
-    init_tool_permissions();
-    init_usage();
-    init_worktree();
-    init_guarded_yolo();
-    init_automations2();
-    init_apple_development();
-    init_machine_dispatch();
-  }
-});
-
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api, showStatus, hideStatus } = options;
@@ -66523,7 +67172,7 @@ var init_automation_retained_worktrees = __esm({
       "uncommitted-changes": "has uncommitted changes",
       "unmerged-commits": "has commits that are not merged",
       "unpushed-pull-request": "has a pull request branch that is not pushed",
-      "in-use": "still has a terminal or background process open"
+      "in-use": "still has an agent, terminal or background process using the checkout"
     };
   }
 });
@@ -66777,12 +67426,50 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     "aria-live": "polite"
   });
   const permissionsList = el("div", { class: "automation-permission-list" });
+  const preparationDirectory = el("input", {
+    type: "text",
+    class: "automation-input automation-preparation-directory",
+    value: ".",
+    maxlength: "4096"
+  });
+  const preparationNetwork = el(
+    "select",
+    { class: "automation-input automation-preparation-network" },
+    el("option", { value: "allowed" }, "Allowed during setup"),
+    el("option", { value: "offline" }, "Blocked (offline setup)")
+  );
+  const reviewPreparationButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-preparation-review-btn"
+    },
+    "Review worktree setup"
+  );
+  const preparationProposalHint = el(
+    "p",
+    { class: "automation-hint automation-preparation-proposal-hint", hidden: true },
+    "These fields are for another setup review. Saved setup permissions below keep their listed folder and network scope."
+  );
   permissionsFieldset.append(
     el("legend", {}, "Allowed without asking"),
     el(
       "p",
       { class: "automation-hint automation-permissions-hint" },
-      "Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask."
+      "Only selected actions and reviewed setup plans run without asking. Other shell commands, file approvals, websites, sensitive data and model spend keep their normal permissions."
+    ),
+    el(
+      "div",
+      { class: "automation-preparation-setup" },
+      preparationProposalHint,
+      el(
+        "label",
+        { class: "automation-label" },
+        "Setup folder (relative to this project)",
+        preparationDirectory
+      ),
+      el("label", { class: "automation-label" }, "Network during setup", preparationNetwork),
+      reviewPreparationButton
     ),
     el("div", { class: "automation-permission-toolbar" }, permissionFilterInput, permissionCount),
     permissionsList
@@ -66846,6 +67533,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   let permissionValuesByKey = /* @__PURE__ */ new Map();
   let selectedPermissionKeys = /* @__PURE__ */ new Set();
   let editingId = null;
+  let preparationReviewEpoch = 0;
   let customCron = null;
   let pendingReveal = revealScheduleId;
   let pendingCreate = createNew;
@@ -66860,6 +67548,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     status.classList.remove("automation-status-error");
   }
   function closeForm() {
+    preparationReviewEpoch++;
     editingId = null;
     ciEditor.showList();
     form.hidden = true;
@@ -66942,6 +67631,13 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     updateScheduleControls();
   }
   function unavailablePermissionOption(permission) {
+    if (permission.kind === "worktree-preparation") {
+      return {
+        permission,
+        label: `Prepare worktree (${permission.directory})`,
+        detail: `Reviewed plan ${permission.planFingerprint.slice(0, 12)} \xB7 ${permission.offline ? "Offline" : "Network allowed"}. Changed preparation inputs require approval again.`
+      };
+    }
     const parts = permission.toolName.split("__");
     const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${humanizeIdentifier(parts[1] ?? "MCP")} / ${humanizeIdentifier(parts.slice(2).join("__"))}` : humanizeIdentifier(permission.toolName);
     return {
@@ -66987,7 +67683,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
             {
               class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`
             },
-            unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+            unavailable ? "Unavailable" : option.permission.kind !== "mcp-tool" ? "Copse action" : "MCP tool"
           )
         ),
         el("span", { class: "automation-permission-detail" }, option.detail)
@@ -67003,7 +67699,10 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     const unavailable = [...permissionValuesByKey.values()].filter((permission) => !availableKeys.has(automationPermissionKey(permission))).map(unavailablePermissionOption);
     const allOptions = [
       ...availablePermissions.map((option) => ({ option, unavailable: false })),
-      ...unavailable.map((option) => ({ option, unavailable: true }))
+      ...unavailable.map((option) => ({
+        option,
+        unavailable: option.permission.kind !== "worktree-preparation"
+      }))
     ];
     const query = permissionFilterInput.value.trim().toLowerCase();
     const terms = query ? query.split(/\s+/) : [];
@@ -67012,7 +67711,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
         option.label,
         option.detail,
         option.permission.toolName,
-        option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+        option.permission.kind !== "mcp-tool" ? "Copse action" : "MCP tool"
       ].join(" ").toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
@@ -67053,7 +67752,68 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
+  reviewPreparationButton.addEventListener("click", () => {
+    if (!projectId || form.hidden) return;
+    const reviewProjectId = projectId;
+    const epoch = preparationReviewEpoch;
+    const ownerDialog = root.closest("dialog");
+    const isCurrent = () => root.isConnected && !form.hidden && preparationReviewEpoch === epoch && !root.closest("[hidden]") && (!ownerDialog || ownerDialog.open);
+    const cancelReview = () => {
+      if (preparationReviewEpoch !== epoch) return;
+      preparationReviewEpoch++;
+      reviewPreparationButton.disabled = false;
+    };
+    ownerDialog?.addEventListener("close", cancelReview, { once: true });
+    reviewPreparationButton.disabled = true;
+    hideStatus();
+    void (async () => {
+      try {
+        const review = await api.automations.reviewPreparation(reviewProjectId, {
+          directory: preparationDirectory.value.trim() || ".",
+          offline: preparationNetwork.value === "offline"
+        });
+        if (!isCurrent()) return;
+        if (review.projectId !== reviewProjectId)
+          throw new Error("The setup review belongs to another project. Review it again.");
+        const confirmed = await showConfirmDialog({
+          message: `Allow this setup for \u201C${nameInput.value.trim() || "this automation"}\u201D?`,
+          detail: el(
+            "div",
+            { class: "automation-preparation-review" },
+            el("p", {}, `Project: ${review.projectName} \xB7 Folder: ${review.permission.directory}`),
+            el("p", {}, review.bodyAdvice),
+            el("code", { class: "automation-preparation-review-commands" }, review.body),
+            el("p", {}, review.bodyFooter),
+            el(
+              "p",
+              {},
+              "This selects the exact setup for future runs. Save the automation to keep it. Changed setup files need another review."
+            )
+          ),
+          confirmLabel: "Use this setup"
+        });
+        if (!confirmed || !isCurrent()) return;
+        for (const [oldKey, permission] of permissionValuesByKey) {
+          if (permission.kind === "worktree-preparation" && permission.directory === review.permission.directory && permission.offline === review.permission.offline) {
+            permissionValuesByKey.delete(oldKey);
+            selectedPermissionKeys.delete(oldKey);
+          }
+        }
+        const key = automationPermissionKey(review.permission);
+        permissionValuesByKey.set(key, review.permission);
+        selectedPermissionKeys.add(key);
+        renderPermissionChoices();
+        showStatus("Reviewed setup selected. Save the automation to keep it.");
+      } catch (error62) {
+        if (isCurrent()) showStatus(cleanIpcError(error62), true);
+      } finally {
+        ownerDialog?.removeEventListener("close", cancelReview);
+        if (preparationReviewEpoch === epoch) reviewPreparationButton.disabled = false;
+      }
+    })();
+  });
   async function openForm(schedule, draft) {
+    preparationReviewEpoch++;
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
@@ -67073,6 +67833,12 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
     }
     worktreeLimitSelect.value = savedLimit;
     permissionFilterInput.value = "";
+    preparationDirectory.value = ".";
+    preparationNetwork.value = "allowed";
+    const hasSavedPreparation = schedule?.permissions?.some((permission) => permission.kind === "worktree-preparation") ?? false;
+    preparationProposalHint.hidden = !hasSavedPreparation;
+    reviewPreparationButton.textContent = hasSavedPreparation ? "Review another setup" : "Review worktree setup";
+    reviewPreparationButton.disabled = false;
     setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
@@ -67381,6 +68147,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       },
       (error62) => {
         showStatus(cleanIpcError(error62), true);
+        status.scrollIntoView({ block: "nearest" });
       }
     ).finally(() => {
       saveButton.removeAttribute("disabled");
@@ -67414,7 +68181,7 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
-    init_types2();
+    init_types();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
@@ -67424,7 +68191,7 @@ var init_automation_plugin_settings = __esm({
     init_ipc_error_message();
     init_automation_retained_worktrees();
     init_automation_failure();
-    init_automations();
+    init_automations2();
     init_humanize_identifier();
     WEEKDAYS = [
       "Sunday",
@@ -67953,13 +68720,13 @@ function assessCloudAdvisorPair(executorIntellect, advisorIntellect) {
     return {
       ok: true,
       level: "info",
-      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). expect a second opinion rather than stronger guidance.`
+      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). Expect a second opinion rather than stronger guidance.`
     };
   }
   return {
     ok: true,
     level: "warn",
-    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
+    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). Its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
   };
 }
 function validateAdvisorPair(executorModel, advisorModel) {
@@ -67969,7 +68736,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: false,
       native,
       level: "warn",
-      reason: "Advisor and executor are the same model. pick a stronger advisor to get any lift. The advisor tool stays hidden while they match."
+      reason: "Advisor and executor are the same model. Pick a stronger advisor to get any lift; the advisor tool stays hidden while they match."
     };
   }
   if (native) {
@@ -67985,7 +68752,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs. the strength comparison happens then."
+      reason: "One side of this pairing is chosen when the advisor runs, so the strength comparison happens then."
     };
   }
   if (isAcpModel(advisorModel)) {
@@ -68005,14 +68772,14 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "good",
-        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor. the setup this strategy is designed for."
+        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor, the setup this strategy is designed for."
       };
     }
     return {
       ok: true,
       native,
       level: band === "low" ? "warn" : "info",
-      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. a stronger advisor gives more lift.`
+      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. A stronger advisor gives more lift.`
     };
   }
   if (advisor.kind === "cloud" && executor.kind === "cloud") {
@@ -68033,7 +68800,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
           ok: true,
           native,
           level: "info",
-          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). modest lift; a frontier cloud advisor gives more.`
+          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). Modest lift; a frontier cloud advisor gives more.`
         };
       }
       const hidden = advisor.paramsB < executor.paramsB;
@@ -68041,21 +68808,21 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "warn",
-        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). Pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
       };
     }
     return {
       ok: true,
       native,
       level: "warn",
-      reason: "A local advisor is unlikely to out-think the executor. this strategy expects a larger (ideally frontier cloud) advisor."
+      reason: "A local advisor is unlikely to out-think the executor. This strategy expects a larger (ideally frontier cloud) advisor."
     };
   }
   return {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing. any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
+    reason: "Client-side pairing: any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -68107,6 +68874,13 @@ function pluginDisplayName(plugin) {
   if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped).replaceAll("-", " ") : raw;
+}
+function appendPublisher(nameLine, publisher2) {
+  const separator = document.createElement("span");
+  separator.className = "plugin-name-separator";
+  separator.setAttribute("aria-hidden", "true");
+  separator.textContent = "\xB7";
+  nameLine.append(separator, publisher2);
 }
 function countLabel(count, noun) {
   return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
@@ -68358,7 +69132,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     const trustBadge = document.createElement("span");
     trustBadge.className = plugin.trust === "first-party" ? "plugin-badge plugin-badge-first-party" : "plugin-badge plugin-badge-user";
     trustBadge.textContent = plugin.trust === "first-party" ? "Copse" : "User";
-    title.append(trustBadge);
     const nameLine = document.createElement("div");
     nameLine.className = "plugin-row-name-line";
     const nameEl = document.createElement("span");
@@ -68371,11 +69144,14 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       versionEl.textContent = plugin.version;
       nameLine.append(versionEl);
     }
-    const stabilityBadge = document.createElement("span");
-    stabilityBadge.className = `ui-badge plugin-badge-${plugin.stability}`;
-    stabilityBadge.textContent = plugin.stability;
-    stabilityBadge.title = plugin.stability === "experimental" ? "Experimental: behavior and compatibility may change." : "Stable: supported as part of the current plugin contract.";
-    nameLine.append(stabilityBadge);
+    appendPublisher(nameLine, trustBadge);
+    if (plugin.stability === "experimental") {
+      const stabilityBadge = document.createElement("span");
+      stabilityBadge.className = "ui-badge plugin-badge-experimental";
+      stabilityBadge.textContent = plugin.stability;
+      stabilityBadge.title = "Experimental: behavior and compatibility may change.";
+      nameLine.append(stabilityBadge);
+    }
     title.append(nameLine);
     const toggleControl = document.createElement("div");
     toggleControl.className = "plugin-toggle-control";
@@ -68892,7 +69668,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     originBadge.className = "plugin-badge plugin-badge-cursor";
     originBadge.textContent = "Cursor";
     originBadge.title = "Installed through Cursor. Cursor manages this plugin.";
-    title.append(originBadge);
     const nameLine = document.createElement("div");
     nameLine.className = "plugin-row-name-line";
     const nameEl = document.createElement("span");
@@ -68905,6 +69680,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       versionEl.textContent = plugin.version;
       nameLine.append(versionEl);
     }
+    appendPublisher(nameLine, originBadge);
     title.append(nameLine);
     const toggleControl = document.createElement("div");
     toggleControl.className = "plugin-toggle-control";
@@ -68985,7 +69761,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     originBadge.className = "plugin-badge plugin-badge-cursor";
     originBadge.textContent = "Cursor \xB7 Bundled";
     originBadge.title = "Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.";
-    title.append(originBadge);
     const nameLine = document.createElement("div");
     nameLine.className = "plugin-row-name-line";
     const nameEl = document.createElement("span");
@@ -68998,6 +69773,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       versionEl.textContent = plugin.version;
       nameLine.append(versionEl);
     }
+    appendPublisher(nameLine, originBadge);
     title.append(nameLine);
     const toggleControl = document.createElement("div");
     toggleControl.className = "plugin-toggle-control";
@@ -69183,20 +69959,15 @@ var init_general_markup = __esm({
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
-                Choose the main chat model and the models used for background tasks. The defaults
-                prefer a model running on this machine, but anything from a provider you have set
-                up can be selected.
+                The chat model, and the models used for background tasks.
               </p>
               <label>
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks
-                  the model that gives the most for what it costs on your plan, and sends the turn
-                  to that provider. You can pin a specific model here instead, or from the picker
-                  beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under its API key\u2019s Options in
-                  Models &amp; agents.
+                  Best value picks the model that gives the most for what it costs on your plans,
+                  and sends each turn to that model's provider. Pin one here or from the chat
+                  picker.
                 </span>
               </label>
               <label>
@@ -69555,18 +70326,16 @@ var init_permissions_markup = __esm({
     ).join("")}
                 </select>
                 <span class="field-hint">
-                  Matches a fixed list of command shapes exactly, never a model's judgement, and
-                  never anything it doesn't recognise. Reads cover local queries plus
-                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
-                  already has configured; a URL never qualifies. Higher levels add local commits,
-                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
-                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
-                  and anything containing <code>$(\u2026)</code> always ask. Only applies in a trusted
-                  project with the setting above turned on, and only while the project sandbox is
-                  running. Without a sandbox, Windows, or if the sandbox failed to start, every
-                  recognised shape still asks. At the two write levels
-                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks; the project sandbox contains those.
+                  Only exact command shapes, never a model's judgement. Reads include
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote the project
+                  already has; a URL never counts. Higher levels add local commits, then
+                  <code>git push</code> and <code>gh pr create</code>. Force pushes, branch
+                  deletes, installs, <code>npx</code>, project scripts and anything with
+                  <code>$(\u2026)</code> always ask. It applies only in a trusted project with the
+                  setting above on, and only while the project sandbox is running. Without a
+                  sandbox, on Windows, or if it failed to start, every shape asks. At the write levels,
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run the
+                  project's git hooks inside the project sandbox.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -69682,11 +70451,10 @@ var init_permissions_markup = __esm({
                 Skip approval for deletes, renames, and new folders in an isolated worktree
               </label>
               <p class="field-hint">
-                A thread on an isolated worktree edits its own checkout on its own branch, your
-                files and branch are never touched, so it applies these straight away instead of
-                asking. Threads on the shared checkout keep asking. Copse still asks if the file
-                changed underneath it or its work could not be backed up. Turn off to review every
-                one.
+                A thread on an isolated worktree edits its own checkout and branch, never yours,
+                so it applies these without asking. Threads on the shared checkout still ask, and
+                so does any thread when the file changed underneath it or its work could not be
+                backed up. Turn off to review every one.
               </p>
             </fieldset>
 
@@ -69769,15 +70537,13 @@ var init_permissions_markup = __esm({
                 Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                On by default. Copse's system SSH signer uses your configured key through
-                ssh-agent to sign commits without asking each time. A changed key, signer or
-                socket is re-verified before it's used again. Git hooks keep their project
-                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
-                in Tool Permissions to confirm every signing helper use. Turning this off
-                prevents further ssh-agent signing. With this off, a configured private key file
-                can be read and used only after a separate approval for each commit. Key contents
-                are never sent to the agent. Custom signing programs run with ordinary project
-                access. Scoped signing is macOS only.
+                On by default: Copse's system SSH signer signs commits with your key through
+                ssh-agent without asking, and re-checks a changed key, signer or socket before
+                using it again. Git hooks keep their sandbox, with no ssh-agent access. To confirm
+                each signature, set git_commit to Always ask in Tool Permissions. Off: no further
+                ssh-agent signing, and a configured key file signs only after a separate approval
+                for each commit. Key contents are never sent to the agent, and custom signing
+                programs run with ordinary project access. Scoped signing is macOS only.
               </p>
             </fieldset>
 
@@ -69788,12 +70554,11 @@ var init_permissions_markup = __esm({
                 Fetch each project's default branch in the background
               </label>
               <p class="field-hint">
-                Copse fetches the latest default branch from origin hourly and when a thread
-                starts, so new threads begin from current upstream code. It updates only the
-                stored copy of origin's branch; your checkout and branches are never changed. The
-                fetch uses your own Git credentials but ignores the project's Git configuration.
-                Turn off to keep Copse from contacting origin; threads then start from whatever
-                you last fetched yourself.
+                Copse fetches origin's default branch hourly and when a thread starts, so new
+                threads begin from current code. It updates only its stored copy of origin's branch;
+                your checkout and branches are never changed. The fetch uses your Git credentials
+                but ignores the project's Git configuration. Turn off to stop contacting origin;
+                threads then start from your last fetch.
               </p>
             </fieldset>
           </section>
@@ -69915,8 +70680,7 @@ var init_customise_markup = __esm({
           <section class="settings-section" data-section="customise">
             <h3>Customise</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project, and every plugin extending it. The loaded
-              lists are read-only: edit the files themselves to change what is loaded.
+              What Copse loads for this project. Edit the files to change it.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -69928,16 +70692,7 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files available to the system prompt, in precedence order. Global steering
-                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
-                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
-                <code>AGENTS.md</code>, and always-applied Cursor rules
-                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
-                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them. Nested
-                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
-                formats.
+                Added to the system prompt, in the order they load.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -69960,10 +70715,9 @@ var init_customise_markup = __esm({
             <fieldset>
               <legend>Agents</legend>
               <p class="settings-fieldset-desc">
-                Subagent definitions found in <code>agents/</code> folders under
-                <code>.copse</code>, <code>.cursor</code>, and <code>.claude</code>, in this
-                project and in your home directory. Hover a row to see its path. Project agents
-                are only read once you trust the project.
+                Subagents from <code>agents/</code> folders in <code>.copse</code>,
+                <code>.cursor</code> and <code>.claude</code>. Project agents load once you trust
+                the project.
               </p>
               <div id="sources-agents-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
@@ -70423,10 +71177,10 @@ var init_experimental_markup = __esm({
                 Create a worktree only when the agent needs to write
               </label>
               <p class="field-hint">
-                Applies across Copse to new threads using automatic checkout. Eligible agents
-                start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and agents installed on this device still create one up front.
-                Projects with worktrees disabled and existing threads keep their checkout behavior.
+                Applies across Copse to new threads using automatic checkout: eligible agents read
+                your checkout first and get an isolated worktree before writing. Explicit worktree
+                choices and agents installed on this device still create one up front. Existing
+                threads, and projects with worktrees off, keep their checkout.
               </p>
             </fieldset>
 
@@ -70438,12 +71192,12 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
-                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
-                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
-                External coding agents run in the container with their selected API key, or, if you opt in
-                per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout without prompts and brings its commits back for
+                you to apply. Built-in models still infer on the desktop, so their keys and sign-in
+                tokens stay there. Installing dependencies (on by default, per run) lets it reach
+                the npm registry, GitHub and Electron's download hosts. Needs Apple container or
+                Docker; the first run builds the worker image. External coding agents use their
+                selected API key, or your Codex or Gemini sign-in copied in if you opt in per run.
               </p>
             </fieldset>
 
@@ -70455,8 +71209,8 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Breaks a task into a living plan with explicit steps and acceptance criteria before
-                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
-                run while a plan is active, and a step's "done" is the agent's own report, not a
+                the agent starts. While a plan is active, coding agents and container, remote or
+                plugin-hosted agents can't run, and a step's "done" is the agent's word, not a
                 verified check.
               </p>
             </fieldset>
@@ -70481,10 +71235,9 @@ var init_experimental_markup = __esm({
                 Let the agent hand implementation steps to a cheaper model
               </label>
               <p class="field-hint">
-                The opposite of the advisor: your chat model plans the work and passes each step,
-                with the context it needs, to a cheaper and faster model that does the editing.
-                Every step comes back with a report and a summary of what changed, so the chat
-                model can review it before moving on.
+                The opposite of the advisor: your chat model plans, then hands each step and its
+                context to a cheaper, faster model that edits. Each step returns a report and a
+                summary of changes for the chat model to review.
               </p>
               <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
               <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
@@ -71287,140 +72040,6 @@ var init_announcement_catalog = __esm({
   }
 });
 
-// src/shared/store/store.ts
-function sameItems(a4, b2) {
-  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
-}
-function createStore(initial) {
-  let state = {
-    workspaceRoot: null,
-    projects: [],
-    projectGroups: [],
-    activeProjectId: null,
-    expandedProjectId: null,
-    threads: [],
-    backgroundThreads: [],
-    activeThreadId: null,
-    panelTab: "file",
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: [],
-    filesPaneOpen: false,
-    rightPanelMode: "explorer",
-    rightPanelMaximized: false,
-    projectsPaneOpen: true,
-    layout: { ...DEFAULT_LAYOUT },
-    theme: "dark",
-    themePreference: DEFAULT_THEME_PREFERENCE,
-    fontSize: 14,
-    uiScale: 1,
-    animateAgentAvatars: true,
-    conciseThreadsEnabled: true,
-    autoPortraitRightPanel: true,
-    rightPanelPosition: "auto",
-    sidebarProjectFilterId: null,
-    sidebarThreadSort: "activity",
-    sidebarThreadSortReverse: false,
-    sidebarThreadGroup: "project",
-    openLinksInBuiltInBrowser: true,
-    developerMode: false,
-    ...initial
-  };
-  const listeners = {
-    message_added: /* @__PURE__ */ new Set(),
-    message_queued: /* @__PURE__ */ new Set(),
-    message_token: /* @__PURE__ */ new Set(),
-    message_reasoning: /* @__PURE__ */ new Set(),
-    message_acp_content: /* @__PURE__ */ new Set(),
-    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
-    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
-    message_done: /* @__PURE__ */ new Set(),
-    tool_call_started: /* @__PURE__ */ new Set(),
-    tool_call_updated: /* @__PURE__ */ new Set(),
-    thread_model_resolved: /* @__PURE__ */ new Set(),
-    thread_status_changed: /* @__PURE__ */ new Set(),
-    agent_activity: /* @__PURE__ */ new Set(),
-    threads_changed: /* @__PURE__ */ new Set(),
-    reviewer_input_open: /* @__PURE__ */ new Set(),
-    reviewer_input_jump: /* @__PURE__ */ new Set(),
-    thread_draft_changed: /* @__PURE__ */ new Set(),
-    new_thread_opened: /* @__PURE__ */ new Set(),
-    explorer_reveal: /* @__PURE__ */ new Set(),
-    workspace_changed: /* @__PURE__ */ new Set(),
-    projects_changed: /* @__PURE__ */ new Set(),
-    git_change_navigate: /* @__PURE__ */ new Set(),
-    roadmap_reveal: /* @__PURE__ */ new Set(),
-    thread_plan_open: /* @__PURE__ */ new Set(),
-    thread_plan_changed: /* @__PURE__ */ new Set(),
-    browser_url_requested: /* @__PURE__ */ new Set(),
-    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
-    pr_open_requested: /* @__PURE__ */ new Set(),
-    thread_archive_requested: /* @__PURE__ */ new Set(),
-    side_chat_open_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
-    settings_changed: /* @__PURE__ */ new Set(),
-    usage_updated: /* @__PURE__ */ new Set(),
-    context_updated: /* @__PURE__ */ new Set(),
-    todos_changed: /* @__PURE__ */ new Set(),
-    review_changed: /* @__PURE__ */ new Set(),
-    hook_card_added: /* @__PURE__ */ new Set(),
-    comparison_changed: /* @__PURE__ */ new Set(),
-    review_report_changed: /* @__PURE__ */ new Set(),
-    git_branch_changed: /* @__PURE__ */ new Set(),
-    thread_checkout_changed: /* @__PURE__ */ new Set(),
-    composer_draft_flush: /* @__PURE__ */ new Set(),
-    agent_task_selected: /* @__PURE__ */ new Set(),
-    shell_tab_activated: /* @__PURE__ */ new Set(),
-    request_terminal_command: /* @__PURE__ */ new Set(),
-    code_block_run_requested: /* @__PURE__ */ new Set(),
-    code_block_run_finished: /* @__PURE__ */ new Set(),
-    thread_reference_attach: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set(),
-    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
-    automation_schedules_loaded: /* @__PURE__ */ new Set()
-  };
-  function on2(event, handler) {
-    listeners[event].add(handler);
-    return () => {
-      listeners[event].delete(handler);
-    };
-  }
-  function emit(event, ...args) {
-    listeners[event].forEach((handler) => {
-      handler(...args);
-    });
-  }
-  const selections = /* @__PURE__ */ new Set();
-  function select(selector, listener, equals = Object.is) {
-    let value = selector(state);
-    const check2 = () => {
-      const next = selector(state);
-      const prev = value;
-      if (equals(prev, next)) return;
-      value = next;
-      listener(next, prev);
-    };
-    selections.add(check2);
-    return () => {
-      selections.delete(check2);
-    };
-  }
-  function setState(partial2) {
-    state = { ...state, ...partial2 };
-    for (const check2 of [...selections]) {
-      if (selections.has(check2)) check2();
-    }
-  }
-  return { getState: () => state, setState, on: on2, emit, select };
-}
-var init_store = __esm({
-  "src/shared/store/store.ts"() {
-    init_types2();
-    init_layout();
-  }
-});
-
 // src/renderer/controller/panels.ts
 function syncFilesPaneDom(store) {
   if (typeof document === "undefined") return;
@@ -71803,6 +72422,27 @@ function requireActiveThreadOwner(store) {
   const owner = getActiveThreadOwner(store);
   if (!owner) throw new Error("No active task");
   return owner;
+}
+function activeThreadOf(state) {
+  const { activeThreadId, threads, backgroundThreads } = state;
+  if (!activeThreadId) return void 0;
+  return threads.find((t2) => t2.id === activeThreadId) ?? backgroundThreads.find((b2) => b2.thread.id === activeThreadId)?.thread;
+}
+function besidesDraft(thread) {
+  return Object.entries(thread).filter(([key]) => key !== "draftPrompt" && key !== "updatedAt");
+}
+function sameThreadBesidesDraft(a4, b2) {
+  if (a4 === b2) return true;
+  if (!a4 || !b2 || a4.id !== b2.id) return false;
+  const left = besidesDraft(a4);
+  const right = new Map(besidesDraft(b2));
+  return left.length === right.size && left.every(([key, value]) => right.has(key) && Object.is(value, right.get(key)));
+}
+function activeProjectThreadOf(state) {
+  return [state.activeProjectId, activeThreadOf(state)];
+}
+function sameProjectThreadBesidesDraft(a4, b2) {
+  return a4[0] === b2[0] && sameThreadBesidesDraft(a4[1], b2[1]);
 }
 var init_active_thread_owner = __esm({
   "src/renderer/controller/active-thread-owner.ts"() {
@@ -73786,8 +74426,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     };
     unsubs.push(
       store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
-      store.on("threads_changed", checkOwner),
-      store.on("workspace_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
         if (changedThreadId === threadId) preview.close();
       })
@@ -74048,6 +74686,16 @@ export {
   init_appearance,
   applyUiAccent,
   applyUiTint,
+  DEFAULT_LAYOUT,
+  LAYOUT_LIMITS,
+  init_layout,
+  isAutomationFailureCode,
+  init_types,
+  sameItems,
+  createStore,
+  init_store,
+  selectActiveWorkspace,
+  init_active_workspace,
   mountEnvironmentSetupOffer,
   init_environment_setup,
   fileExtension,
@@ -74057,6 +74705,8 @@ export {
   init_attachment_preview,
   emptyContainerStorage,
   init_storage_cleanup,
+  transcriptMeta,
+  init_transcript_state,
   T,
   init_marked_esm,
   excerptText,
@@ -74064,6 +74714,8 @@ export {
   sideChatsOf,
   withoutSideChats,
   init_side_chat2 as init_side_chat,
+  repairLegacyAcpTotalInputTokens,
+  init_model_usage,
   beginThreadSubmission,
   endThreadSubmission,
   isThreadSubmitting,
@@ -74080,9 +74732,17 @@ export {
   init_copse_tool_call,
   isThreadProposalCall,
   init_thread_proposal2 as init_thread_proposal,
+  splitAppendedReminders,
+  init_tool_result_reminders,
+  decodeWithSchema,
+  safeJsonStringify,
+  safeJsonParse,
+  init_safe_json,
+  ASK_USER_ANSWER_MAX_LENGTH,
+  init_ask_user_format,
   isReviewerInputCall,
-  parseReviewerInputCall,
   reviewerInputRequests,
+  reviewerInputRequestsForCall,
   reviewerInputAnswer,
   init_reviewer_input,
   isHumanUserPrompt,
@@ -74161,8 +74821,6 @@ export {
   bindThreadGitBranchIfUnset,
   applyPreparedThreadCheckout,
   init_thread_helpers,
-  transcriptMeta,
-  init_transcript_state,
   backgroundProjectOf,
   dropBackgroundThread,
   init_background_threads,
@@ -74182,6 +74840,7 @@ export {
   loadThreads,
   loadPersistedThread,
   awaitPendingThreadPersistence,
+  afterPendingThreadPersistence,
   attachAutosave,
   init_persistence,
   RUN_ROLLUP_KEY,
@@ -74211,6 +74870,7 @@ export {
   begin,
   init_perf,
   setArtefactPreview,
+  artefactPreviewVersion,
   getArtefactPreview,
   artefactPreviewRevision,
   setArtefactContent,
@@ -74232,6 +74892,7 @@ export {
   startHumanTurnTree,
   foldBackContinuationUsed,
   refreshAgentRunPayload,
+  hasPendingDispatch,
   dispatchAgentRun,
   enqueueUserMessage,
   updateQueuedMessageModel,
@@ -74247,6 +74908,7 @@ export {
   parseGithubPrUrl,
   stripUrlTrailingPunctuation,
   githubPrKeyMatchesTerm,
+  extractGithubPrUrls,
   githubPrKey,
   init_github_pr_url,
   init_github_pr_url2,
@@ -74269,14 +74931,18 @@ export {
   getSidebarThreads,
   getSideChatUnreadParents,
   attentionThreadId,
+  proposingThreadId,
+  threadRelationsKey,
   archiveCachedSidebarThread,
   isProjectSwitchInFlight,
   preloadSidebarThreads,
   attachProjectThreadCache,
+  refreshProjectThreadWorktrees,
   removeProject,
   openNewProjectThread,
   setSidebarProjectFilter,
   switchProject,
+  switchProjectAndWait,
   activateMobileProject,
   switchProjectThread,
   addProjectFromPath,
@@ -74300,11 +74966,6 @@ export {
   init_automations_plugin,
   APPLE_DEVELOPMENT_PLUGIN_ID,
   init_apple_development_plugin,
-  DEFAULT_LAYOUT,
-  LAYOUT_LIMITS,
-  init_layout,
-  isAutomationFailureCode,
-  init_types2 as init_types,
   describeAutomationFailure,
   classifyAutomationFailureMessage,
   isApprovalStalled,
@@ -74314,7 +74975,7 @@ export {
   getCachedAutomationSchedules,
   getCachedEventAutomations,
   attachAutomationController,
-  init_automations,
+  init_automations2 as init_automations,
   createAutomationPluginSettings,
   init_automation_plugin_settings,
   createAppleDevelopmentPanel,
@@ -74334,10 +74995,13 @@ export {
   announcementCatalog,
   useAnnouncementCatalog,
   init_announcement_catalog,
+  prProductionSchema,
+  commitProductionSchema,
   prRelationKey,
   threadPrRelationships,
   ThreadPrRelationshipIndex,
-  init_thread_pr_relations2 as init_thread_pr_relations,
+  init_thread_pr_relations,
+  init_thread_pr_relations2,
   mergeThreadLinks,
   collectThreadLinks,
   backlinksFor,
@@ -74346,11 +75010,12 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
-  sameItems,
-  createStore,
-  init_store,
   getActiveThreadOwner,
   requireActiveThreadOwner,
+  activeThreadOf,
+  sameThreadBesidesDraft,
+  activeProjectThreadOf,
+  sameProjectThreadBesidesDraft,
   init_active_thread_owner,
   syncFilesPaneDom,
   selectRightPanelMode,
