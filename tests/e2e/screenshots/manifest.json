@@ -725,6 +725,18 @@
       "sha256": "07f118ecd258812acbe53ae187e7526ec15fc42e4d82a9bb5e36b5533be277fc",
       "bytes": 238352
     },
+    "automation-carried-completed-history.png": {
+      "sha256": "553e08193d866072dc1652165b4165cbacb8dcd27484b440f980b17e2e23e913",
+      "bytes": 289191
+    },
+    "automation-completed-draft-manual.png": {
+      "sha256": "a0d5a0e47c86c94ccd5ff21e057a1b9f9c95e64f47650a2df74fd91dbd9af9d3",
+      "bytes": 270646
+    },
+    "automation-completed-draft-next-run.png": {
+      "sha256": "f0f4340ba60de2de16ea30abc4a666d25416d243f8fe3e3d45204c0ce5b0bd54",
+      "bytes": 283837
+    },
     "automation-create-modal.png": {
       "sha256": "97bb6097b3c6631c66746efb39d59cd5a5c850fe9048bce5957e1e7bccafa176",
       "bytes": 290339
@@ -780,6 +792,10 @@
     "automation-hourly-schedule.png": {
       "sha256": "df4f7acacaba999f66c04d6782a55ac7862b9bf430bbf21ec7adca412a75fa0e",
       "bytes": 234212
+    },
+    "automation-inactive-project-completed.png": {
+      "sha256": "5ad1a18f4980e561def3feace9d24381bb1ddfed38db8bc09ce9244f89d00f5f",
+      "bytes": 260683
     },
     "automation-interrupted-fresh-run.png": {
       "sha256": "43b0be0d4f984efed9f9240a23dd460f07e9c142d7ed280341100ec5ee45dfe1",

@@ -336,6 +336,17 @@ export function applyCachedSidebarPrRefs(
   return true
 }
 
+/** Replace one completed runtime owner without retaining its transcript in the sidebar. */
+export function refreshCachedSidebarThread(projectId: string, thread: Thread): void {
+  residentThreads.update(projectId, (cached) => (cached.id === thread.id ? thread : cached))
+  const cached = threadCache.get(projectId)
+  if (!cached) return
+  threadCache.set(
+    projectId,
+    cached.map((entry) => (entry.id === thread.id ? compactSidebarThread(thread) : entry)),
+  )
+}
+
 export function isProjectSwitchInFlight(store: AppStore, projectId: string): boolean {
   const { activeProjectId, expandedProjectId, workspaceRoot } = store.getState()
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true
