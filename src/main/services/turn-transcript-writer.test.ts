@@ -161,6 +161,30 @@ describe('TurnTranscriptWriter', () => {
     assert.equal((await stored()).status, 'idle')
   })
 
+  it('does not restore an old interruption in an ordinary human turn snapshot', async () => {
+    // The renderer clears its marker after its user-message save has already
+    // captured the old metadata. Main must not echo that stale disk marker.
+    await updateMeta(PROJECT, THREAD, {
+      status: 'idle',
+      interruptedTurnAt: 20,
+      draftPrompt: 'Keep the separate draft.',
+    })
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [{ type: 'text', text: 'The fresh human request is complete.' }, { type: 'done' }],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await dispatch(turn)
+    const first = snapshots[0]
+    assert.ok(first)
+    assert.equal(first.source, 'runtime')
+    assert.equal(first.thread.status, 'running')
+    assert.equal(first.thread.interruptedTurnAt, undefined)
+    assert.equal((await stored()).interruptedTurnAt, undefined)
+    assert.equal((await stored()).draftPrompt, 'Keep the separate draft.')
+  })
+
   it('writes the whole turn with no window to deliver it to', async () => {
     // The window closed before the turn started streaming: nothing is received.
     const turn = harness(recordedTurn)
@@ -424,6 +448,46 @@ describe('TurnTranscriptWriter', () => {
     assert.deepEqual(snapshots.at(-1)?.checkpoint, { stream: null, pendingTurn: null })
     transcript.end()
     await turn.writer.settled(THREAD)
+  })
+
+  it('persists interruption removal after a hidden main-owned continuation', async () => {
+    await updateMeta(PROJECT, THREAD, {
+      status: 'idle',
+      interruptedTurnAt: 20,
+      draftPrompt: 'Keep this human follow-up unsent.',
+    })
+    const turn = harness(() => [
+      { type: 'text', text: 'The accepted change is verified.' },
+      { type: 'done' },
+    ])
+    assert.equal(
+      await turn.dispatcher.dispatchMachine({
+        projectId: PROJECT,
+        threadId: THREAD,
+        operationId: 'accept-change',
+        turnTreeId: THREAD,
+        display: 'hidden',
+        payload: { userContent: 'The user accepted a.txt.', invokedSkills: [], priorTodos: [] },
+      }),
+      'completed',
+    )
+    await turn.writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'idle')
+    assert.equal(thread.interruptedTurnAt, undefined)
+    assert.equal(thread.draftPrompt, 'Keep this human follow-up unsent.')
+    assert.equal(thread.messages.filter((message) => message.role === 'user').length, 1)
+    assert.equal(thread.messages.at(-1)?.content, 'The accepted change is verified.')
+
+    const snapshots: TranscriptSnapshot[] = []
+    const cold = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await cold.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'disk')
+    assert.equal(snapshots.at(-1)?.thread.interruptedTurnAt, undefined)
   })
 
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {
