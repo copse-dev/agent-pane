@@ -487,7 +487,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-FWW5XVOW.js";
+} from "./chunk-2QLUHKRF.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -88635,18 +88635,23 @@ function createTranscriptReducer(store2, hooks = {}) {
             id: chunk.messageId
           });
         }
-        patchThreadAnywhere(store2, threadId, (current) => ({
-          ...current,
-          // A queued note may precede later tool steps in the live window's
-          // array. Its application belongs at this boundary in both copies.
-          messages: [
-            ...current.messages.filter((message2) => message2.id !== chunk.messageId),
-            ...current.messages.filter((message2) => message2.id === chunk.messageId)
-          ],
-          pendingMessages: (current.pendingMessages ?? []).filter(
-            (item) => item.messageId !== chunk.messageId
-          )
-        }));
+        patchThreadAnywhere(store2, threadId, (current) => {
+          const note = current.messages.find((message2) => message2.id === chunk.messageId);
+          const messages = current.messages.filter((message2) => message2.id !== chunk.messageId);
+          const pendingIds = new Set(current.pendingMessages?.map((item) => item.messageId));
+          let boundary = 0;
+          messages.forEach((message2, index) => {
+            if (!pendingIds.has(message2.id)) boundary = index + 1;
+          });
+          if (note) messages.splice(boundary, 0, note);
+          return {
+            ...current,
+            messages,
+            pendingMessages: (current.pendingMessages ?? []).filter(
+              (item) => item.messageId !== chunk.messageId
+            )
+          };
+        });
         break;
       }
       case "machine_turn_start": {
@@ -90917,7 +90922,7 @@ function bindChatComposerLayout(store2, onActivityHome) {
   sync();
   requestAnimationFrame(sync);
   const observer = new ResizeObserver(sync);
-  observer.observe(input);
+  observer.observe(input, { box: "border-box" });
   window.addEventListener("resize", sync, { passive: true });
   const unsubs = [
     // Which thread, and whether it is the empty Activity home.

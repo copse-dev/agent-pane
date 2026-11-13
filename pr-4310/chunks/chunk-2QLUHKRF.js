@@ -27375,6 +27375,11 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      search_project_context: {
+        running: "Searching project history",
+        done: "Searched project history"
+      },
+      read_project_context: { running: "Reading project history", done: "Read project history" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
       search_codebase: { running: "Searching codebase", done: "Searched codebase" },
