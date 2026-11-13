@@ -109,7 +109,6 @@
       "src/main/services/container-runtime/egress-broker.test.ts": 4,
       "src/main/services/container-runtime/egress-link.test.ts": 9,
       "src/main/services/container-runtime/guest-egress-proxy.test.ts": 1,
-      "src/main/services/container-runtime/host-inference.test.ts": 2,
       "src/main/services/exec/background-process.test.ts": 3,
       "src/main/services/exec/foreground-shell-process.test.ts": 1,
       "src/main/services/exec/foreground-shell-shutdown-startup.test.ts": 2,

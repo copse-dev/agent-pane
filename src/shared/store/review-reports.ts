@@ -170,3 +170,20 @@ export function withReviewContext(
   if (typeof prompt === 'string') return `${reviewContext}\n\n${prompt}`
   return [{ type: 'text', text: reviewContext }, ...prompt]
 }
+
+/** Keep a prefixed model-authored review report out of the user's review brief. */
+export function withoutReviewContext(prompt: UserContent): UserContent {
+  const strip = (text: string): string => {
+    const opening = `<${REVIEW_CONTEXT_TAG}>`
+    const closing = `</${REVIEW_CONTEXT_TAG}>`
+    if (!text.startsWith(opening)) return text
+    const end = text.indexOf(closing, opening.length)
+    return end < 0 ? text : text.slice(end + closing.length).trimStart()
+  }
+  if (typeof prompt === 'string') return strip(prompt)
+  const [first, ...rest] = prompt
+  if (first?.type !== 'text') return prompt
+  const text = strip(first.text)
+  if (text === first.text) return prompt
+  return text ? [{ type: 'text', text }, ...rest] : rest
+}

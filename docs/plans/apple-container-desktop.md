@@ -148,6 +148,19 @@ The desktop commands support both `/opt/homebrew/bin/container` and
 path/profile and cause. A freshly seeded guest skips provider onboarding because the approved
 session provider is already configured; Finish must not replace it with Balanced.
 
+### Inference accounting
+
+Host stderr diagnostics prefixed `[host-inference-accounting]` identify each session
+and request without recording prompt text, schemas, images or provider state. They
+keep CLI result stdout free of diagnostic records. Admission
+records contain cumulative usage before the request, the estimated input reservation,
+remaining output cap, serialized message bytes by role, schema bytes and image-data
+bytes. Byte counts are estimates, not tokenizer measurements. Usage records contain
+actual provider-reported input/output tokens; settlement records show any retained
+reservation when usage was unavailable. Chat, review and auxiliary calls share the
+same grant. No maximum-output allowance is charged in advance: only estimated input
+is reserved, and remaining tokens cap the provider's output.
+
 ## Accepted on-device evidence
 
 These are distinct observations, not claims of general isolation or model reliability.

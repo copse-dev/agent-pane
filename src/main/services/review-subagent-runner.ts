@@ -23,6 +23,7 @@ import { subagentHookCallbacks } from './hooks/subagent.ts'
 
 export interface RunPostTurnReviewOptions {
   parentGoal: string
+  currentRequest: string
   provider: LLMProvider
   registry: ToolRegistry
   contextWindow: number
@@ -67,6 +68,7 @@ export async function runPostTurnReview(
 ): Promise<PostTurnReviewResult> {
   const {
     parentGoal,
+    currentRequest,
     provider,
     registry,
     contextWindow,
@@ -80,7 +82,7 @@ export async function runPostTurnReview(
   // workspace is a tree the reviewer's tools never touch (#1724, #3958).
   const workspace = agentWorkspaceLabel()
   const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
-  const prompt = buildReviewPrompt(parentGoal, diff)
+  const prompt = buildReviewPrompt(parentGoal, diff, [], currentRequest)
 
   const subagentMessages: LLMMessage[] = [
     { role: 'system', content: REVIEW_SYSTEM_PROMPT },

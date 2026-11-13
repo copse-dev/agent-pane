@@ -224,6 +224,7 @@ export function buildReviewRemediationNudge(verdict: ParsedReviewVerdict): strin
 
 export interface RunPostTurnReviewOnceOptions {
   parentGoal: string
+  currentRequest: string
   todos: readonly TodoItem[]
   provider: LLMProvider
   registry: ToolRegistry
@@ -240,7 +241,7 @@ export async function runPostTurnReviewOnce(
 ): Promise<PostTurnReviewOutcome> {
   const workspace = agentWorkspaceLabel()
   const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
-  const prompt = buildReviewPrompt(opts.parentGoal, diff, opts.todos)
+  const prompt = buildReviewPrompt(opts.parentGoal, diff, opts.todos, opts.currentRequest)
 
   const subagentMessages: LLMMessage[] = [
     { role: 'system', content: REVIEW_SYSTEM_PROMPT },

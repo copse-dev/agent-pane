@@ -1,5 +1,6 @@
 /** Host-owned authentication: the guest can ask only the provider pinned to this run. */
 import type { Duplex } from 'node:stream'
+import { randomUUID } from 'node:crypto'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { INFERENCE_MESSAGE_LIMIT, inferenceRequestSchema } from './host-inference-wire.ts'
@@ -22,6 +23,7 @@ const CANCELLED_SLOT_RELEASE_MS = 60_000
 interface InferenceSlot {
   /** Aborts when the guest disconnects or the run stops. */
   readonly signal: AbortSignal
+  readonly stream: Duplex
   readonly released: Promise<void>
   readonly release: () => void
 }
@@ -32,6 +34,8 @@ export class HostInference {
   private readonly options: HostInferenceOptions
   private active: InferenceSlot | null = null
   private used = 0
+  private readonly accountingId = randomUUID()
+  private requestCount = 0
   private readonly stopRequested = (): void => {
     this.stop()
   }
@@ -65,6 +69,15 @@ export class HostInference {
     }
     signal.addEventListener('abort', abortStream, { once: true })
     let slot: InferenceSlot | null = null
+    let accountingRequestId: number | null = null
+    let retainedReservation = 0
+    let usageReported = false
+    const releaseSlot = (): void => {
+      if (slot === null) return
+      this.active = null
+      slot.release()
+      slot = null
+    }
     const send = (value: unknown): Promise<void> =>
       new Promise((resolve, reject) => {
         const line = JSON.stringify(value) + '\n'
@@ -81,7 +94,10 @@ export class HostInference {
       signal.throwIfAborted()
       const previous = this.active
       if (previous !== null) {
-        if (!previous.signal.aborted)
+        // RESET destroys the mux stream synchronously, but its close event (and
+        // therefore signal) arrives on a later tick. An immediate recovery OPEN
+        // may already be in this batch; wait for cleanup without admitting overlap.
+        if (!previous.signal.aborted && !previous.stream.destroyed)
           throw new Error('Only one inference request may run at a time')
         await this.waitForRelease(previous, signal)
         signal.throwIfAborted()
@@ -91,7 +107,7 @@ export class HostInference {
       const released = new Promise<void>((resolve) => {
         release = resolve
       })
-      slot = { signal, released, release }
+      slot = { signal, stream, released, release }
       this.active = slot
       const parts: Buffer[] = []
       let bytes = 0
@@ -108,9 +124,44 @@ export class HostInference {
       // Reserve estimated input tokens before making a paid request. Actual usage replaces
       // this estimate; a failure with no usage keeps the reservation.
       const reservation = Math.ceil(bytes / 4)
-      if (this.used + reservation >= this.options.tokenCeiling)
-        throw new Error('Host inference token budget reached')
+      let imageDataBytes = 0
+      const messagesJson = JSON.stringify(request.messages, (key, value: unknown) => {
+        if (key === 'dataUrl' && typeof value === 'string' && value.startsWith('data:image/'))
+          imageDataBytes += Buffer.byteLength(value)
+        return value
+      })
+      const messageBytesByRole = new Map<string, number>()
+      for (const message of request.messages) {
+        messageBytesByRole.set(
+          message.role,
+          (messageBytesByRole.get(message.role) ?? 0) + Buffer.byteLength(JSON.stringify(message)),
+        )
+      }
+      const requestId = ++this.requestCount
+      accountingRequestId = requestId
+      const admitted = this.used + reservation < this.options.tokenCeiling
+      // Content-free accounting: serialized byte estimates are not tokenizer counts.
+      // Input alone is reserved; the remaining allowance caps provider output.
+      console.error('[host-inference-accounting]', {
+        session: this.accountingId,
+        at: new Date().toISOString(),
+        requestId,
+        event: admitted ? 'admitted' : 'refused',
+        usedBefore: this.used,
+        tokenCeiling: this.options.tokenCeiling,
+        inputReservation: reservation,
+        maxOutputTokens: admitted ? this.options.tokenCeiling - this.used - reservation : 0,
+        requestBytes: bytes,
+        messageBytes: Buffer.byteLength(messagesJson),
+        messageBytesByRole: Object.fromEntries(messageBytesByRole),
+        toolSchemaBytes: Buffer.byteLength(JSON.stringify(request.tools)),
+        toolCount: request.tools.length,
+        messageCount: request.messages.length,
+        imageDataBytes,
+      })
+      if (!admitted) throw new Error('Host inference token budget reached')
       this.used += reservation
+      retainedReservation = reservation
       const provider = await this.options.provider(this.options.tokenCeiling - this.used)
       signal.throwIfAborted()
       let reported = false
@@ -125,26 +176,48 @@ export class HostInference {
           if (!reported) {
             this.used -= reservation
             reported = true
+            usageReported = true
+            retainedReservation = 0
           }
           this.used += chunk.inputTokens + chunk.outputTokens
+          console.error('[host-inference-accounting]', {
+            session: this.accountingId,
+            at: new Date().toISOString(),
+            requestId,
+            event: 'usage',
+            inputTokens: chunk.inputTokens,
+            outputTokens: chunk.outputTokens,
+            usedAfter: this.used,
+          })
         }
         await send({ chunk })
         if (this.used >= this.options.tokenCeiling)
           throw new Error('Host inference token budget reached')
+        if (chunk.type === 'done') break
       }
+      // The terminal frame lets the guest immediately begin its next turn.
+      // Release only after the provider finishes, but before publishing that frame.
+      releaseSlot()
       await send({ end: true })
       stream.end()
     } catch (error) {
+      releaseSlot()
       if (!stream.destroyed) {
         const message = error instanceof Error ? error.message : 'Host inference failed'
         await send({ error: message.slice(0, 4096) }).catch(() => {})
         stream.end()
       }
     } finally {
-      if (slot !== null) {
-        this.active = null
-        slot.release()
-      }
+      if (accountingRequestId !== null)
+        console.error('[host-inference-accounting]', {
+          session: this.accountingId,
+          at: new Date().toISOString(),
+          requestId: accountingRequestId,
+          event: 'settled',
+          usageReported,
+          retainedReservation,
+        })
+      releaseSlot()
       signal.removeEventListener('abort', abortStream)
       stream.removeListener('close', disconnected)
       stream.removeListener('error', disconnected)

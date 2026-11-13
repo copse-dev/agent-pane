@@ -520,6 +520,21 @@ revisiting this document, not silently diverging in an implementation PR.
     `claude-md-and-agents-md`, preserving Copse's former additive behavior.
 
 29. **Post-turn review specialists investigate; the primary reviewer decides.**
+    The primary review receives the current redacted turn request alongside the
+    durable parent task. A follow-up may revise an earlier requirement; the stored
+    first-turn brief alone must not cause review to undo the requested change.
+    Automatic review and manual retry share bounded brief formatting: remove any
+    leading model-authored Copse Reviewer report, cap both request and durable
+    task to 2,000 characters, and omit a duplicate request. Automatic review uses
+    the current turn's redacted request, including a machine-initiated turn's own
+    prompt. A manual retry selects the latest human-origin request instead; it
+    does not replay the machine turn's prompt. It reapplies the existing user-text
+    privacy filter to both
+    briefs, because the transcript can contain raw text. It selects the latest
+    human-origin transcript request, never a machine-origin message or unmarked
+    provider-history nudge. If no authoritative human request is available, omit
+    the current-request brief rather than treating a model nudge as user intent.
+    It preserves the ordinary redaction failure notice and fallback behavior.
     The `copse.post-turn-review` plugin may offer host-registered specialist
     checks to its primary reviewer. A specialist definition owns its model,
     prompt, read-only tool allowlist, step/context limits, and output schema;

@@ -86,6 +86,7 @@ import {
   appendContextCompaction,
   getThreadMeta,
   getLatestThreadPlan,
+  loadThreadMessages,
   updateMeta,
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
@@ -210,7 +211,7 @@ import {
   runWithReviewToolContext,
   type ReviewRunResult,
 } from './review/review-service.ts'
-import { withReviewContext } from '@shared/store/review-reports.ts'
+import { withReviewContext, withoutReviewContext } from '@shared/store/review-reports.ts'
 import {
   runWithSubagentUsageScope,
   getAccumulatedSubagentUsage,
@@ -2990,6 +2991,7 @@ async function runAgentWithInlineCanvas(
             runReviewOnce: (todos) =>
               runPostTurnReviewOnce({
                 parentGoal,
+                currentRequest: promptTextForSubmit(withoutReviewContext(outboundPrompt)),
                 todos,
                 provider: reviewProvider,
                 registry,
@@ -3310,10 +3312,31 @@ export async function retryPostTurnReview(
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model, threadId)
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
+    // Provider history also contains unmarked in-loop and remediation nudges.
+    // Only the transcript preserves the provenance of the human's request.
+    const owner = getThreadExecutionContext()
+    const transcript = owner ? await loadThreadMessages(owner.projectId, threadId) : []
+    const latestUser = transcript.findLast(
+      (message) => message.role === 'user' && message.origin === undefined,
+    )
+    // The transcript stores original user text. Apply the same privacy boundary
+    // as a normal submitted turn before passing either brief to the reviewer.
+    const [goalRedaction, requestRedaction] = await Promise.all([
+      redactUserContent(threadId, parentGoal),
+      redactUserContent(
+        threadId,
+        latestUser ? promptTextForSubmit(withoutReviewContext(latestUser.content)) : '',
+      ),
+    ])
+    controller.signal.throwIfAborted()
+    for (const notice of new Set([goalRedaction.notice, requestRedaction.notice])) {
+      if (notice) sendChunk({ type: 'text', text: notice })
+    }
     const reviewRoute = await buildReviewRoute()
     const reviewUsageModel = reviewRoute?.usageModel ?? model
     const review = await runPostTurnReview({
-      parentGoal,
+      parentGoal: promptTextForSubmit(goalRedaction.content),
+      currentRequest: promptTextForSubmit(requestRedaction.content),
       provider: reviewRoute?.provider ?? provider,
       registry,
       contextWindow: reviewRoute?.contextWindow ?? contextWindow,

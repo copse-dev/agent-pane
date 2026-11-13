@@ -1,6 +1,8 @@
 import { describe, it, afterEach, type TestContext } from 'node:test'
+import { z } from 'zod'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
+import { EventEmitter, once } from 'node:events'
 import type {
   LLMMessage,
   LLMProvider,
@@ -51,9 +53,11 @@ function fixture(
   wire: Buffer[]
   maxima: number[]
   served: Promise<void>[]
+  requests: EventEmitter
 } {
   const maxima: number[] = []
   const served: Promise<void>[] = []
+  const requests = new EventEmitter()
   const host = new HostInference({
     provider: async (maximum): Promise<LLMProvider> => {
       maxima.push(maximum)
@@ -80,6 +84,7 @@ function fixture(
     inference: (stream): Promise<void> => {
       const serving = host.serve(stream)
       served.push(serving)
+      requests.emit('request')
       return serving
     },
   })
@@ -91,7 +96,16 @@ function fixture(
     toGuest.destroy()
     toHost.destroy()
   })
-  return { host, broker, link, provider: buildHostInferenceProvider(link), wire, maxima, served }
+  return {
+    host,
+    broker,
+    link,
+    provider: buildHostInferenceProvider(link),
+    wire,
+    maxima,
+    served,
+    requests,
+  }
 }
 async function collect(
   provider: LLMProvider,
@@ -115,6 +129,50 @@ async function raw(link: EgressLink, body: string): Promise<string> {
   return result
 }
 describe('run-scoped host inference', () => {
+  it('finishes the host stream before a consumer stops at done and starts its next turn', async (t) => {
+    let settled = 0
+    let cancelled = 0
+    let continuedAfterDone = false
+    let cleanupStarted = Promise.withResolvers<undefined>()
+    let finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
+    const f = fixture(t, {
+      async *stream(_messages, _tools, signal) {
+        try {
+          yield { type: 'done', stopReason: 'end_turn' }
+          continuedAfterDone = true
+          yield { type: 'text', text: 'Must not read beyond the terminal chunk' }
+        } finally {
+          // Providers may finish transport cleanup after emitting their terminal chunk.
+          cleanupStarted.resolve(undefined)
+          await finishCleanup.promise
+          if (signal?.aborted) cancelled += 1
+          settled += 1
+        }
+      },
+    })
+    for (let turn = 1; turn <= 2; turn += 1) {
+      const consume = (async (): Promise<number> => {
+        for await (const chunk of f.provider.stream([{ role: 'user', content: 'Next' }], [])) {
+          if (chunk.type === 'done') break
+        }
+        return settled
+      })()
+      await cleanupStarted.promise
+      // Drain queued stream deliveries while cleanup is deliberately held open.
+      // An early done must be observable before the test releases the provider.
+      await new Promise((resolve) => setImmediate(resolve))
+      assert.equal(settled, turn - 1)
+      finishCleanup.resolve(undefined)
+      assert.equal(await consume, turn, 'done must not race ahead of host stream completion')
+      cleanupStarted = Promise.withResolvers<undefined>()
+      finishCleanup = Promise.withResolvers<undefined>()
+    }
+    assert.equal(cancelled, 0)
+    assert.equal(continuedAfterDone, false)
+  })
   it('streams tools, text and usage over stdio with no guest credential', async (t) => {
     const f = fixture(t, echo)
     assert.equal((await collect(f.provider)).length, 4)
@@ -206,6 +264,57 @@ describe('run-scoped host inference', () => {
     await assert.rejects(collect(f.provider), /token budget/)
     assert.equal(calls, 1)
     assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 2)
+  })
+  it('reports actual usage on stderr without contaminating CLI result output', async (t) => {
+    const stdout = t.mock.method(console, 'info', () => {})
+    const log = t.mock.method(console, 'error', () => {})
+    const f = fixture(t, echo, { tokenCeiling: 110 })
+    await collect(f.provider)
+    await assert.rejects(collect(f.provider), /token budget/)
+    assert.equal(stdout.mock.calls.length, 0, 'Accounting must not mix with stdout JSON results')
+    const events = log.mock.calls
+      .filter((call) => call.arguments[0] === '[host-inference-accounting]')
+      .map((call) =>
+        z
+          .object({
+            event: z.string(),
+            requestId: z.number(),
+            usedBefore: z.number().optional(),
+            usedAfter: z.number().optional(),
+            inputTokens: z.number().optional(),
+            outputTokens: z.number().optional(),
+            inputReservation: z.number().optional(),
+            maxOutputTokens: z.number().optional(),
+            toolSchemaBytes: z.number().optional(),
+            imageDataBytes: z.number().optional(),
+          })
+          .parse(call.arguments[1]),
+      )
+      .filter((event) => event.event !== 'settled')
+    assert.equal(events.length, 3)
+    const first = events[0]
+    const refusal = events[2]
+    assert.ok(first && refusal)
+    assert.equal(first.event, 'admitted')
+    assert.equal(first.usedBefore, 0)
+    assert.equal(first.maxOutputTokens, f.maxima[0])
+    assert.equal(first.imageDataBytes, 0)
+    assert.ok((first.toolSchemaBytes ?? 0) > 0)
+    assert.deepEqual(events[1], {
+      event: 'usage',
+      requestId: 1,
+      inputTokens: 80,
+      outputTokens: 20,
+      usedAfter: 100,
+    })
+    assert.equal(refusal.event, 'refused')
+    assert.equal(refusal.requestId, 2)
+    assert.equal(refusal.usedBefore, 100)
+    assert.equal(refusal.maxOutputTokens, 0)
+    assert.doesNotMatch(
+      JSON.stringify(log.mock.calls.map((call) => call.arguments)),
+      /Hello|README|read_file/,
+    )
   })
   it('passes the full remaining budget after input reservation and reported usage', async (t) => {
     const f = fixture(t, echo, { tokenCeiling: 30000 })
@@ -312,6 +421,11 @@ describe('run-scoped host inference', () => {
   })
   it('waits for a cancelled stream to release the slot instead of refusing the recovery request', async (t) => {
     let calls = 0
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
     let started: () => void = () => {}
     const first = new Promise<void>((resolve) => {
       started = resolve
@@ -332,7 +446,8 @@ describe('run-scoped host inference', () => {
             )
           })
           // The provider is slow to stop generating after the cancel.
-          await new Promise((resolve) => setTimeout(resolve, 150))
+          cleanupStarted.resolve(undefined)
+          await finishCleanup.promise
           signal.throwIfAborted()
           yield { type: 'done' }
           return
@@ -347,10 +462,66 @@ describe('run-scoped host inference', () => {
     await first
     controller.abort()
     await assert.rejects(cancelled)
+    await cleanupStarted.promise
     // Sent at once, while the cancelled request still holds the slot.
-    const chunks = await collect(f.provider)
+    const recoveryStarted = once(f.requests, 'request')
+    const recovery = collect(f.provider)
+    await recoveryStarted
+    finishCleanup.resolve(undefined)
+    const chunks = await recovery
     assert.equal(calls, 2)
     assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+  })
+  it('waits for cancellation when a consumer stops mid-stream and immediately recovers', async (t) => {
+    let calls = 0
+    let active = 0
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const finishCleanup = Promise.withResolvers<undefined>()
+    t.after(() => {
+      finishCleanup.resolve(undefined)
+    })
+    const f = fixture(t, {
+      async *stream(_messages, _tools, signal) {
+        calls += 1
+        active += 1
+        assert.equal(active, 1, 'the host must never overlap provider requests')
+        try {
+          if (calls === 1) {
+            assert.ok(signal)
+            yield { type: 'reasoning', text: 'reasoning limit reached' }
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) resolve()
+              else
+                signal.addEventListener(
+                  'abort',
+                  () => {
+                    resolve()
+                  },
+                  { once: true },
+                )
+            })
+            cleanupStarted.resolve(undefined)
+            await finishCleanup.promise
+            signal.throwIfAborted()
+          }
+          yield { type: 'text', text: 'recovered' }
+          yield { type: 'done' }
+        } finally {
+          active -= 1
+        }
+      },
+    })
+    for await (const chunk of f.provider.stream([], [])) {
+      if (chunk.type === 'reasoning') break
+    }
+    const recoveryStarted = once(f.requests, 'request')
+    const recovery = collect(f.provider)
+    await recoveryStarted
+    await cleanupStarted.promise
+    finishCleanup.resolve(undefined)
+    const chunks = await recovery
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+    assert.equal(calls, 2)
   })
   it('stops waiting for a cancelled predecessor as soon as the waiting request is stopped', async (t) => {
     let started: () => void = () => {}
@@ -391,9 +562,9 @@ describe('run-scoped host inference', () => {
     await first
     controller.abort()
     await assert.rejects(cancelled)
+    const recoveryStarted = once(f.requests, 'request')
     const waiting = collect(f.provider).catch(() => [])
-    for (let tries = 0; f.served.length < 2 && tries < 200; tries++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await recoveryStarted
     const recovery = f.served[1]
     assert.ok(recovery, 'the recovery request reached the host')
     f.host.stop()

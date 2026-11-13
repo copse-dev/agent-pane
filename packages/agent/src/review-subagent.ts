@@ -6,6 +6,7 @@
 
 import type { TodoItem, TodoUpdateInput } from './wire-types.ts'
 import { z } from 'zod'
+import { WORKING_BRIEF_MAX_LEN } from './working-brief.ts'
 
 /** Tools the parent agent uses to mutate files. A turn that runs any of these
  * changed the workspace and is therefore eligible for a post-turn review. */
@@ -216,7 +217,10 @@ export function buildReviewPrompt(
   parentGoal: string,
   diff: string,
   todos: readonly TodoItem[] = [],
+  currentRequest?: string,
 ): string {
+  const brief = parentGoal.trim().slice(0, WORKING_BRIEF_MAX_LEN).trimEnd()
+  const request = currentRequest?.trim().slice(0, WORKING_BRIEF_MAX_LEN).trimEnd()
   const trimmedDiff = diff.trim()
   const diffBlock =
     trimmedDiff.length > MAX_DIFF_CHARS
@@ -224,7 +228,15 @@ export function buildReviewPrompt(
       : trimmedDiff || '(git reported no textual diff; use git_status / staged_diffs to inspect.)'
 
   return [
-    `Parent task: ${parentGoal}`,
+    `Parent task: ${brief}`,
+    ...(request && request !== brief
+      ? [
+          '',
+          '## Current turn request',
+          request,
+          'Review the current request in the context of the parent task. Later user instructions can revise earlier requirements; do not request reverting an explicitly requested change merely to match the earlier task.',
+        ]
+      : []),
     formatTodosForReviewPrompt(todos),
     '',
     'Review the changes the parent agent just made. Working diff:',

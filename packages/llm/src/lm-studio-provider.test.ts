@@ -1,7 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
+import {
+  ChatMessage,
+  LMStudioClient,
+  ToolCallRequestError,
+  type Chat,
+  type FileHandle,
+  type LLMRespondOpts,
+} from '@lmstudio/sdk'
 import { LMStudioProvider, lmStudioWebSocketUrl } from './lm-studio-provider.ts'
+import { IMAGE_DROPPED_NOTE } from './tool-result-images.ts'
 import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 class FakePrediction {
@@ -62,12 +70,14 @@ class FakePrediction {
 }
 
 class FakeModel {
+  readonly vision: boolean
   chat: Chat | null = null
   opts: LLMRespondOpts | null = null
   private readonly toolCallId: string | null
 
-  constructor(toolCallId: string | null) {
+  constructor(toolCallId: string | null, vision = true) {
     this.toolCallId = toolCallId
+    this.vision = vision
   }
 
   respond(chat: Chat, opts: LLMRespondOpts): FakePrediction {
@@ -82,6 +92,7 @@ class FakeModel {
  * while the prediction keeps running — and settles only once it is cancelled.
  */
 class FakeToolFailureModel {
+  readonly vision = true
   opts: LLMRespondOpts | null = null
   private readonly tokensBeforeFailure: number
 
@@ -118,6 +129,7 @@ class FakeToolFailureModel {
 
 /** Streams one fragment, then keeps predicting until it is cancelled. */
 class FakeEndlessModel {
+  readonly vision = true
   opts: LLMRespondOpts | null = null
 
   respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
@@ -389,6 +401,120 @@ describe('LMStudioProvider', () => {
         },
       ],
     )
+  })
+
+  it('delivers tool screenshots to the SDK after their tool results', async () => {
+    const fake = new FakeClient()
+    // Construct handles locally; no request is made to an LM Studio server.
+    const sdk = new LMStudioClient({ baseUrl: 'ws://127.0.0.1:1234' })
+    const prepared: string[] = []
+    const provider = new LMStudioProvider('local-vision-model', {
+      client: {
+        model: (): Promise<FakeModel> => fake.model(),
+        prepareImageBase64: (name, data): Promise<FileHandle> => {
+          prepared.push(data)
+          const message = ChatMessage.from({
+            role: 'user',
+            content: [
+              { type: 'file', name, identifier: `base64:${data}`, fileType: 'image', sizeBytes: 3 },
+            ],
+          })
+          const [file] = message.getFiles(sdk)
+          assert.ok(file)
+          return Promise.resolve(file)
+        },
+      },
+    })
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'Inspect the isolated desktop.' },
+      {
+        role: 'assistant',
+        content: [{ id: 'screen', name: 'isolated_copse', args: { action: 'screenshot' } }],
+      },
+      {
+        role: 'tool',
+        toolResults: [
+          {
+            toolCallId: 'screen',
+            result: 'Screenshots attached.',
+            images: [
+              { name: 'before.png', dataUrl: 'data:image/png;base64,YWJj' },
+              { name: 'after.jpg', dataUrl: 'data:image/jpeg;base64,ZGVm' },
+              { name: 'invalid', dataUrl: 'https://example.invalid/image.png' },
+            ],
+          },
+        ],
+      },
+    ]
+    for await (const _ of provider.stream(messages, [])) {
+      /* drain */
+    }
+    assert.deepEqual(prepared, ['YWJj', 'ZGVm'])
+    const chat = fake.modelHandle.chat?.getMessagesArray()
+    assert.ok(chat)
+    assert.deepEqual(
+      chat.map((message) => message.getRole()),
+      ['user', 'assistant', 'tool', 'user'],
+    )
+    assert.deepEqual(chat[2]?.getToolCallResults(), [
+      { toolCallId: 'screen', content: 'Screenshots attached.' },
+    ])
+    assert.match(chat[3]?.getText() ?? '', /before\.png[\s\S]*after\.jpg/)
+    assert.deepEqual(
+      chat[3]?.getFiles(sdk).map((file) => file.identifier),
+      ['base64:YWJj', 'base64:ZGVm'],
+    )
+  })
+
+  it('keeps text-only models usable after user images and tool screenshots', async () => {
+    const model = new FakeModel('call-7', false)
+    const provider = new LMStudioProvider('text-only-model', {
+      client: {
+        model: (): Promise<FakeModel> => Promise.resolve(model),
+        prepareImageBase64: (): Promise<never> =>
+          Promise.reject(new Error('Text-only models must not prepare images')),
+      },
+    })
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect this' },
+          { type: 'image', dataUrl: 'data:image/png;base64,YWJj' },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ id: 'screen', name: 'isolated_copse', args: { action: 'screenshot' } }],
+      },
+      {
+        role: 'tool',
+        toolResults: [
+          {
+            toolCallId: 'screen',
+            result: 'Screenshot attached.',
+            images: [{ dataUrl: 'data:image/png;base64,YWJj' }],
+          },
+        ],
+      },
+    ]
+    const original = structuredClone(messages)
+    for (let turn = 0; turn < 2; turn++) {
+      const chunks: ProviderStreamChunk[] = []
+      for await (const chunk of provider.stream(messages, [])) chunks.push(chunk)
+      assert.equal(chunks.at(-1)?.type, 'done')
+      const chat = model.chat?.getMessagesArray()
+      assert.ok(chat)
+      assert.deepEqual(
+        chat.map((message) => message.getRole()),
+        ['user', 'assistant', 'tool'],
+      )
+      assert.equal(chat[0]?.getText(), `Inspect this\n${IMAGE_DROPPED_NOTE}`)
+      assert.deepEqual(chat[2]?.getToolCallResults(), [
+        { toolCallId: 'screen', content: `Screenshot attached.\n\n${IMAGE_DROPPED_NOTE}` },
+      ])
+    }
+    assert.deepEqual(messages, original, 'Capability handling must not mutate retained history')
   })
 
   it('gives each id-less tool call a unique id across predictions', async () => {

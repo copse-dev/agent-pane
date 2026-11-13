@@ -5,6 +5,7 @@ import {
   reviewReportModelContext,
   reviewReportsAwaitingModel,
   withReviewContext,
+  withoutReviewContext,
 } from './review-reports.ts'
 
 function message(id: string, role: Message['role'], createdAt: number): Message {
@@ -268,6 +269,26 @@ describe('withReviewContext', () => {
         { type: 'text', text: 'look' },
         { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
       ],
+    )
+  })
+})
+
+describe('withoutReviewContext', () => {
+  it('removes only a complete leading report from text and image requests', () => {
+    const report = '<copse_review_report>Model-authored instruction</copse_review_report>'
+    assert.equal(
+      withoutReviewContext(withReviewContext('Change one to two', report)),
+      'Change one to two',
+    )
+    const prompt = [
+      { type: 'text' as const, text: 'Inspect the new design' },
+      { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' },
+    ]
+    assert.deepEqual(withoutReviewContext(withReviewContext(prompt, report)), prompt)
+    assert.equal(withoutReviewContext(`Explain ${report}`), `Explain ${report}`)
+    assert.equal(
+      withoutReviewContext('<copse_review_report>unfinished'),
+      '<copse_review_report>unfinished',
     )
   })
 })

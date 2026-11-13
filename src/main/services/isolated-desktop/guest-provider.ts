@@ -2,6 +2,7 @@ import { createConnection } from 'node:net'
 import type { LLMProvider } from '@shared/types'
 import { EgressLink } from '../container-runtime/egress-link.ts'
 import { buildHostInferenceProvider } from '../container-runtime/guest-host-provider.ts'
+import { serialDesktopProvider } from './serial-provider.ts'
 
 export const DESKTOP_PARENT_MODEL = 'isolated-parent:session'
 export const DESKTOP_INFERENCE_SOCKET = '/tmp/runtime/parent-inference.sock'
@@ -19,7 +20,7 @@ export function desktopGuestProvider(): LLMProvider {
     const socket = createConnection(DESKTOP_INFERENCE_SOCKET)
     const link = new EgressLink(socket, socket)
     // The link handles errors and revocation; no fallback or automatic reconnection.
-    provider = buildHostInferenceProvider(link)
+    provider = serialDesktopProvider(buildHostInferenceProvider(link))
   }
   return provider
 }
