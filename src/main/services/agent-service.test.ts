@@ -37,6 +37,7 @@ import { execFileSync } from 'node:child_process'
 import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 
 it('Stop revokes task retries from earlier turns without affecting another chat', () => {
   const identity = {
@@ -1754,6 +1755,107 @@ describe('runAgent AgentHost decoupling', () => {
 })
 
 describe('standalone review admission', () => {
+  it('retries against the latest redacted request without promoting a review report', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-review-current-request-'))
+    execFileSync('git', ['init', '-b', 'main'], { cwd: root })
+    const threadId = `review-current-request-${randomUUID()}`
+    const saved = ['reviewModel', 'extraProviders'].map((key) => ({
+      key,
+      value: getSetting<unknown>(key, undefined),
+    }))
+    const model = 'retry-review:review'
+    const requests: string[] = []
+    const chunks: StreamChunk[] = []
+    const network = mock.method(
+      globalThis,
+      'fetch',
+      async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+        if (url.pathname.endsWith('/models'))
+          return Response.json({ data: [{ id: 'review', context_length: 128_000 }] })
+        assert.equal(url.pathname, '/v1/chat/completions')
+        const body =
+          typeof init?.body === 'string'
+            ? init.body
+            : input instanceof Request
+              ? await input.text()
+              : ''
+        const request = safeJsonParse(
+          body,
+          decodeWithSchema(
+            z.object({ messages: z.array(z.object({ role: z.string(), content: z.string() })) }),
+          ),
+        )
+        assert.ok(request)
+        requests.push(
+          ...request.messages
+            .filter((message) => message.role === 'user')
+            .map((message) => message.content),
+        )
+        const text =
+          'Looks correct.\nREVIEW_JSON: {"issuesFound":false,"requestFollowUp":false,"todoUpdates":[],"followUpPrompt":null}'
+        return new Response(
+          `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      },
+    )
+    try {
+      await setSetting('reviewModel', model)
+      await setSetting('extraProviders', [
+        {
+          slug: 'retry-review',
+          label: 'Review retry fixture',
+          baseUrl: 'http://127.0.0.1:59992/v1',
+          models: [{ id: 'review', contextWindow: 128_000 }],
+        },
+      ])
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'review-current-request',
+            threadId,
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity(threadId, () =>
+              agentService.retryPostTurnReview(
+                threadId,
+                [
+                  { role: 'user', content: 'Create Copse smoke one.' },
+                  { role: 'assistant', content: 'Created it.' },
+                  {
+                    role: 'user',
+                    content:
+                      '<copse_review_report>MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST</copse_review_report>\n\nChange Copse smoke one to Copse smoke two for [PERSON_1].',
+                  },
+                  { role: 'assistant', content: 'Changed it; review failed transiently.' },
+                ],
+                { emit: (_id, chunk) => chunks.push(chunk) },
+                new ToolRegistry(),
+                { model, workingBrief: 'Create Copse smoke one.' },
+              ),
+            ),
+        ),
+      )
+    } finally {
+      network.mock.restore()
+      for (const setting of saved) {
+        if (setting.value === undefined) await deleteSetting(setting.key)
+        else await setSetting(setting.key, setting.value)
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+    assert.equal(requests.length, 1)
+    assert.match(requests[0] ?? '', /Parent task: Create Copse smoke one\./)
+    assert.match(requests[0] ?? '', /Change Copse smoke one to Copse smoke two for \[PERSON_1\]/)
+    assert.doesNotMatch(requests[0] ?? '', /MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST/)
+    assert.ok(chunks.some((chunk) => chunk.type === 'post_turn_review' && chunk.status === 'done'))
+  })
+
   it('keeps Stop bound to an active turn when a review is requested concurrently', async () => {
     const threadId = `thread-review-admission-${randomUUID()}`
     const started = Promise.withResolvers<AbortSignal>()

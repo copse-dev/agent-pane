@@ -20,7 +20,7 @@ import {
 import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import { toolResultImageFollowUp } from './tool-result-images.ts'
+import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 import type {
   LLMMessage,
   LLMProvider,
@@ -49,6 +49,7 @@ interface PredictionAdapter {
 }
 
 interface ModelAdapter {
+  readonly vision: boolean
   respond(chat: Chat, opts: RespondOptions): PredictionAdapter
 }
 
@@ -62,6 +63,10 @@ class SdkModelAdapter implements ModelAdapter {
 
   constructor(modelHandle: LMStudioModel) {
     this.modelHandle = modelHandle
+  }
+
+  get vision(): boolean {
+    return this.modelHandle.vision
   }
 
   respond(chat: Chat, opts: RespondOptions): Pick<OngoingPrediction, 'result'> {
@@ -263,10 +268,14 @@ export class LMStudioProvider implements LLMProvider {
     // read.
     let predictedTokens = 0
     try {
-      const [model, chat] = await Promise.all([
-        this.client.model(this.modelName),
-        toLmStudioChat(messages, this.client),
-      ])
+      const model = await this.client.model(this.modelName)
+      // The loaded SDK model is authoritative: a text-only model must not
+      // receive files, including screenshots carried by a tool result. Keep
+      // the omission explicit so it cannot claim to have inspected the image.
+      const chat = await toLmStudioChat(
+        model.vision ? messages : withoutProviderState(dropImageContent(messages)),
+        this.client,
+      )
       const rawTools = toLmStudioTools(tools)
       const prediction = model.respond(chat, {
         ...this.predictionConfig(),

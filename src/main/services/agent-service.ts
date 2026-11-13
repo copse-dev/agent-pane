@@ -210,7 +210,7 @@ import {
   runWithReviewToolContext,
   type ReviewRunResult,
 } from './review/review-service.ts'
-import { withReviewContext } from '@shared/store/review-reports.ts'
+import { withReviewContext, withoutReviewContext } from '@shared/store/review-reports.ts'
 import {
   runWithSubagentUsageScope,
   getAccumulatedSubagentUsage,
@@ -2990,7 +2990,7 @@ async function runAgentWithInlineCanvas(
             runReviewOnce: (todos) =>
               runPostTurnReviewOnce({
                 parentGoal,
-                currentRequest: promptTextForSubmit(outboundPrompt),
+                currentRequest: promptTextForSubmit(withoutReviewContext(outboundPrompt)),
                 todos,
                 provider: reviewProvider,
                 registry,
@@ -3311,10 +3311,14 @@ export async function retryPostTurnReview(
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model, threadId)
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
+    const latestUser = priorMessages.findLast((message) => message.role === 'user')
     const reviewRoute = await buildReviewRoute()
     const reviewUsageModel = reviewRoute?.usageModel ?? model
     const review = await runPostTurnReview({
       parentGoal,
+      currentRequest: latestUser
+        ? promptTextForSubmit(withoutReviewContext(latestUser.content))
+        : '',
       provider: reviewRoute?.provider ?? provider,
       registry,
       contextWindow: reviewRoute?.contextWindow ?? contextWindow,

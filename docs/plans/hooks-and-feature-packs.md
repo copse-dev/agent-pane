@@ -523,6 +523,9 @@ revisiting this document, not silently diverging in an implementation PR.
     The primary review receives the current redacted turn request alongside the
     durable parent task. A follow-up may revise an earlier requirement; the stored
     first-turn brief alone must not cause review to undo the requested change.
+    Automatic review and manual retry use the same bounded user-request brief:
+    remove any leading model-authored Copse Reviewer report, cap both request
+    and durable task to 2,000 characters, and omit a duplicate request.
     The `copse.post-turn-review` plugin may offer host-registered specialist
     checks to its primary reviewer. A specialist definition owns its model,
     prompt, read-only tool allowlist, step/context limits, and output schema;

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { WORKING_BRIEF_MAX_LEN } from './working-brief.ts'
 import {
   EDIT_TOOL_NAMES,
   REVIEW_TOOL_NAMES,
@@ -80,6 +81,23 @@ REVIEW_JSON: {"issuesFound":true,"requestFollowUp":true,"todoUpdates":[{"id":"t1
     assert.equal(parsed.todoUpdates.length, 1)
     assert.equal(parsed.followUpPrompt, 'Unregister on close')
     assert.doesNotMatch(parsed.summary, /REVIEW_JSON/)
+  })
+
+  it('bounds both briefs before comparing and including a follow-up request', () => {
+    const first = 'a'.repeat(WORKING_BRIEF_MAX_LEN + 100)
+    const request = 'b'.repeat(WORKING_BRIEF_MAX_LEN + 100)
+    const repeated = buildReviewPrompt(first.slice(0, WORKING_BRIEF_MAX_LEN), '+one', [], first)
+    assert.doesNotMatch(repeated, /Current turn request/)
+    const spaced = 'abc '.repeat(WORKING_BRIEF_MAX_LEN)
+    assert.doesNotMatch(
+      buildReviewPrompt(spaced.slice(0, WORKING_BRIEF_MAX_LEN), '+one', [], spaced),
+      /Current turn request/,
+    )
+    const prompt = buildReviewPrompt(first, '+two', [], request)
+    assert.ok(prompt.includes('a'.repeat(WORKING_BRIEF_MAX_LEN)))
+    assert.ok(prompt.includes('b'.repeat(WORKING_BRIEF_MAX_LEN)))
+    assert.ok(!prompt.includes('a'.repeat(WORKING_BRIEF_MAX_LEN + 1)))
+    assert.ok(!prompt.includes('b'.repeat(WORKING_BRIEF_MAX_LEN + 1)))
   })
 
   it('infers follow-up from free-text when JSON is missing', () => {
