@@ -487,7 +487,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Y42J5AYA.js";
+} from "./chunk-FWW5XVOW.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -88619,7 +88619,6 @@ function createTranscriptReducer(store2, hooks = {}) {
             (item) => item.messageId !== chunk.messageId
           )
         }));
-        appendText(threadId, st, "Added your note to the running turn.\n\n");
         break;
       }
       case "machine_turn_start": {

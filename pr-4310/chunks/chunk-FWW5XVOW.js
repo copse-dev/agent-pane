@@ -24612,6 +24612,7 @@ function metaOf(thread) {
     messages: _messages,
     messagesLoaded: _messagesLoaded,
     hasSavedPlan: _hasSavedPlan,
+    nativeSteeringRunId: _nativeSteeringRunId,
     ...meta3
   } = thread;
   return meta3;
@@ -24712,7 +24713,8 @@ function queueThreadWrite(api, projectId, threadId, target) {
           }
           const creation = creations2.get(threadId) ?? { meta: previous ?? target.meta };
           creations2.set(threadId, creation);
-          await api.threads.create(projectId, { ...target.thread, ...target.meta });
+          const { nativeSteeringRunId: _nativeSteeringRunId, ...durableThread } = target.thread;
+          await api.threads.create(projectId, { ...durableThread, ...target.meta });
           submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain);
         } else {
           submittedPatch = retryMetaPatch(previous, target.meta, uncertain);
