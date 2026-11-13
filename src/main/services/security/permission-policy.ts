@@ -531,8 +531,9 @@ export function formatPortBindingPromptParts(
       'loopback port and stays alive across turns:\n\n' +
       `Project: ${workspaceRoot}`,
     bodyFooter:
-      "It runs with the project's sandbox filesystem rules, relaxed only to allow " +
-      'binding on localhost.',
+      'One-time approval covers this start. Remembered permission lets future tasks and chats in this project, ' +
+      'including its worktrees, bind on localhost until revoked. Other shell permissions still apply. ' +
+      'Revoke it in Context → Permissions → Project → Local port binding. Stop running tasks separately.',
   }
 }
 

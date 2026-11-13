@@ -47,6 +47,7 @@ import {
   pendingApprovalCountForThread,
   setApprovalHandler,
   supportsInteractiveClientApproval,
+  type ApprovalRequest,
   type ApprovalResponse,
 } from '../approval.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
@@ -1916,6 +1917,60 @@ describe('run_background permission', () => {
     }
   })
 
+  it('offers explicit project and once actions for the first local preview', async () => {
+    setPermissionGateForTests(null)
+    const root = '/tmp/preview-action-project'
+    const restore = setWorkspaceRootForTest(root)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting('portBindingAllowedRoots', [])
+    let portPrompts = 0
+    let portRequest: ApprovalRequest | undefined
+    setApprovalHandler(async (request) => {
+      if (request.cause !== 'shell-port-binding') return { approved: true, remember: false }
+      portPrompts++
+      portRequest = request
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await runWithThreadExecutionContext(
+          {
+            projectId: root,
+            projectRoot: root,
+            threadId: 'preview-first',
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            ensureToolPermitted({
+              toolName: 'run_background',
+              args: { action: 'start', command: 'npm run dev', allow_port_binding: true },
+            }),
+        ),
+        false,
+      )
+      assert.equal(portPrompts, 1)
+      assert.ok(portRequest)
+      assert.equal(portRequest.approveLabel, 'Allow for this project')
+      assert.equal(portRequest.approveOnceLabel, 'Allow once')
+      assert.equal(portRequest.allowRemember, true)
+      assert.equal(
+        portRequest.rememberLabel,
+        `Always allow local port binding in this project: ${root}`,
+      )
+      assert.ok(portRequest.bodyAdvice?.includes(`Project: ${root}`))
+      assert.ok(portRequest.bodyFooter?.includes('localhost'))
+      assert.ok(portRequest.bodyFooter?.includes('future tasks and chats in this project'))
+      assert.ok(portRequest.bodyFooter?.includes('Context → Permissions → Project'))
+      assert.doesNotMatch(portRequest.bodyFooter ?? '', /Allow once|Allow for this project/)
+      assert.deepEqual(getSetting('portBindingAllowedRoots', []), [])
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
   it('remembers port binding across sibling worktrees but not other projects', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
@@ -1967,6 +2022,88 @@ describe('run_background permission', () => {
       setApprovalHandler(null)
       restore()
       await setSetting('safetyClassifierEnabled', false)
+    }
+  })
+
+  it('asks again after each one-time local-preview approval without saving project consent', async () => {
+    setPermissionGateForTests(null)
+    const root = '/tmp/preview-once-project'
+    const restore = setWorkspaceRootForTest(root)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting('portBindingAllowedRoots', [])
+    let portPrompts = 0
+    setApprovalHandler(async (request) => {
+      if (request.cause === 'shell-port-binding') portPrompts++
+      return { approved: true, remember: false }
+    })
+    const start = (): Promise<boolean> =>
+      runWithThreadExecutionContext(
+        {
+          projectId: root,
+          projectRoot: root,
+          threadId: 'preview-once',
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          ensureToolPermitted({
+            toolName: 'run_background',
+            args: { action: 'start', command: 'pwd', allow_port_binding: true },
+          }),
+      )
+    try {
+      assert.equal(await start(), true)
+      assert.equal(await start(), true)
+      assert.equal(portPrompts, 2)
+      assert.deepEqual(getSetting('portBindingAllowedRoots', []), [])
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('retains Always ask and Blocked for a background start with saved project consent', async () => {
+    setPermissionGateForTests(null)
+    const root = '/tmp/preview-explicit-policy'
+    const restore = setWorkspaceRootForTest(root)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting('portBindingAllowedRoots', [root])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    const start = (): Promise<boolean> =>
+      runWithThreadExecutionContext(
+        {
+          projectId: root,
+          projectRoot: root,
+          threadId: 'preview-explicit',
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          ensureToolPermitted({
+            toolName: 'run_background',
+            args: { action: 'start', command: 'pwd', allow_port_binding: true },
+          }),
+      )
+    try {
+      const id = copseToolPermissionId('run_background')
+      await setSetting('toolPermissionOverrides', { [id]: 'ask' })
+      assert.equal(await start(), false)
+      assert.equal(await start(), false)
+      assert.equal(prompts, 2)
+      await setSetting('toolPermissionOverrides', { [id]: 'block' })
+      assert.equal(await start(), false)
+      assert.equal(prompts, 2, 'Blocked must refuse without prompting')
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting('portBindingAllowedRoots', [])
+      setApprovalHandler(null)
+      restore()
     }
   })
 

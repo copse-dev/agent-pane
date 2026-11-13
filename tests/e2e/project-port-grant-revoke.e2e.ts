@@ -60,7 +60,10 @@ function thread(id: string): Record<string, unknown> {
   }
 }
 
-async function startServer(prompt: string, decision?: 'remember' | 'reject'): Promise<number> {
+async function startServer(
+  prompt: string,
+  decision?: 'project' | 'once' | 'reject',
+): Promise<number> {
   const scenario = await installMockScenario({
     title: 'Synthetic local preview',
     turns: [
@@ -98,14 +101,17 @@ async function startServer(prompt: string, decision?: 'remember' | 'reject'): Pr
           portPrompts++
           if (decision === undefined)
             throw new Error('a saved project grant unexpectedly asked again')
-          await expect(dialog.$('.approval-remember')).toHaveText(
-            'Always allow local port binding in this project',
-            { containing: true },
+          await expect(dialog.$('.approval-approve')).toHaveText('Allow for this project')
+          await expect(dialog.$('.approval-approve-once')).toHaveText('Allow once')
+          await expect(dialog.$('.approval-approve-once')).toBeDisplayed()
+          await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
+          await expect(dialog.$('.approval-footer')).toHaveText(
+            expect.stringContaining('Context → Permissions → Project → Local port binding'),
           )
-          if (decision === 'remember') {
-            await dialog.$('.approval-remember-input').click()
+          if (decision === 'project') {
             await dialog.$('.approval-approve').click()
-          } else await dialog.$('.approval-reject').click()
+          } else if (decision === 'once') await dialog.$('.approval-approve-once').click()
+          else await dialog.$('.approval-reject').click()
         } else await dialog.$('.approval-approve').click()
       }
       return agentIsIdle()
@@ -179,7 +185,7 @@ describe('remember and revoke project local-port consent', function () {
 
   it('remembers only project A, asks in B, revokes from Context and asks again after restart', async () => {
     assert.equal(
-      await startServer('Start a local preview and remember consent for project A.', 'remember'),
+      await startServer('Start a local preview and remember consent for project A.', 'project'),
       1,
     )
     // An overlapping live task intentionally asks about its widened network
@@ -269,5 +275,12 @@ describe('remember and revoke project local-port consent', function () {
     )
     await parkPointer()
     await saveAppScreenshot('project-port-grant-asks-again.png')
+  })
+
+  it('offers one-time consent without saving a project grant and asks on the next start', async () => {
+    assert.equal(await startServer('Start this local preview once.', 'once'), 1)
+    assert.deepEqual(readSeededSettings()['portBindingAllowedRoots'] ?? [], [])
+    assert.equal(await startServer('Start another preview after a one-time answer.', 'reject'), 1)
+    assert.deepEqual(readSeededSettings()['portBindingAllowedRoots'] ?? [], [])
   })
 })
