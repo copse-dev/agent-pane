@@ -254,6 +254,38 @@ export function createTranscriptReducer(
         )
         break
       }
+      case 'protected_human_turn_start': {
+        hooks.turnStarted?.(threadId)
+        setThreadStatus(store, threadId, 'running')
+        const thread = getThreadById(store, threadId)
+        const existing = chunk.messageId
+          ? thread?.messages.find(
+              (message) => message.id === chunk.messageId && message.role === 'user',
+            )
+          : undefined
+        const content =
+          typeof chunk.content === 'string'
+            ? chunk.content
+            : chunk.content
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n')
+        if (existing) {
+          setMessageContent(store, existing.id, content)
+          // User prompts do not receive the assistant stream's later
+          // `message_done`, so finalize this canonical replacement now.
+          store.emit('message_done', existing.id)
+        } else {
+          const images =
+            typeof chunk.content === 'string'
+              ? undefined
+              : chunk.content
+                  .filter((block) => block.type === 'image')
+                  .map((block) => block.dataUrl)
+          addMessage(store, threadId, 'user', content, images)
+        }
+        break
+      }
       case 'text': {
         const text = appendText(threadId, st, chunk.text)
         if (text === null) break

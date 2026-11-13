@@ -42,6 +42,19 @@ shell startup variable cannot run code in the unsandboxed launcher.
    trusted commands, and other ambient capabilities may be exercised without the new native
    approval. User input that can activate those grants needs provenance from a trusted input
    surface or a fresh main-owned confirmation of the concrete privileged action.
+
+   The selected product direction is a protected message-entry surface. Main must own its
+   `WebContents`, preload, submitted bytes, target thread, and one-use dispatch record. The
+   ordinary app renderer may display the conversation but must not receive a token it can spend
+   on another prompt. Moving only the visible text box is insufficient: attachments, inline
+   chips, queued sends, side chats, resends, delegated prompts, Git recovery continuations,
+   review starts, and persisted user-role transcript writes can otherwise carry forged input.
+   Main-owned automation and agent continuations need separate provenance and budgets. Ship the
+   protected entry only after direct main-renderer IPC and transcript-write probes cannot forge
+   any of those routes while normal compose, queue, attachment, and recovery workflows still
+   work. The protected surface must have a narrow preload, strict CSP, no opener or webview
+   access, no access to the app renderer DOM, and a main-owned visible project/thread identity.
+
 3. **Broader renderer data access and side effects.** The renderer still has many read and
    low-friction write APIs. In particular, the visible browser's public-web session accepts
    renderer-created webviews and arbitrary HTTP(S) navigations, so an XSS can use it as a

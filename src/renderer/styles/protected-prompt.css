@@ -1,0 +1,210 @@
+@import './tokens.css';
+
+:root {
+  color-scheme: dark;
+  font-family: var(--font-family);
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+}
+
+.protected-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+}
+
+.protected-eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0;
+  font-size: calc(24px * var(--ui-scale));
+  font-weight: 400;
+}
+
+h2 {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.protected-intro,
+.protected-note {
+  color: var(--text-secondary);
+}
+
+.protected-intro {
+  margin: var(--spacing-xs) 0 0;
+  line-height: 1.4;
+}
+
+.protected-target {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm) var(--spacing-lg);
+  margin: 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.protected-target div {
+  min-width: 0;
+}
+.protected-target div:nth-child(odd) {
+  padding-right: var(--spacing-lg);
+  border-right: 1px solid var(--border-subtle);
+}
+.protected-target dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.protected-target dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.protected-context {
+  max-height: 180px;
+  overflow: auto;
+  padding: var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-elevated));
+}
+
+.protected-images {
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.protected-image-list {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  overflow-x: auto;
+}
+
+.protected-image-list img {
+  width: 96px;
+  height: 72px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  object-fit: contain;
+}
+
+.protected-context > p {
+  margin: 4px 0 var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.protected-context dl,
+.protected-context dl div {
+  margin: 0;
+}
+
+.protected-context dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.protected-context dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.protected-context dd {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+form {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+label {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+textarea {
+  flex: 1;
+  min-height: 100px;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--bg-input);
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  outline: none;
+}
+
+textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.protected-note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.protected-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+}
+
+button {
+  min-height: var(--action-min-height);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--action-radius);
+  padding: 0 18px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  color: inherit;
+}
+button.primary {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}

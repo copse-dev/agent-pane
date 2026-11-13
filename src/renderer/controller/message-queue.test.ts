@@ -2,11 +2,12 @@ import { takeSendNowAbort } from './send-now-aborts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, Thread, ThreadReviewReport } from '@shared/types'
+import type { Message, QueuedUserMessage, Thread, ThreadReviewReport } from '@shared/types'
 import { at } from '@shared/array-utils.ts'
 import {
   addMessage,
   createThread,
+  getThreadById,
   setMessageReviewReport,
   setQueuePaused,
   setThreadStatus,
@@ -139,8 +140,8 @@ test('only delegated subthread prompts mark their run for main to recheck', asyn
   setCurrentEpoch(store, threadId, 'destination-task')
   const api = fakeApi()
   const delegations: unknown[] = []
-  api.agent.run = (_projectId, _threadId, _payload, ...rest): Promise<void> => {
-    delegations.push(rest)
+  api.agent.run = (_projectId, _threadId, _payload, delegation): Promise<void> => {
+    delegations.push(delegation)
     return Promise.resolve()
   }
   enqueueUserMessage(store, threadId, {
@@ -151,7 +152,7 @@ test('only delegated subthread prompts mark their run for main to recheck', asyn
   })
   drainMessageQueue(store, api, threadId)
   await new Promise<void>((resolve) => setImmediate(resolve))
-  assert.deepEqual(delegations, [[]])
+  assert.deepEqual(delegations, [undefined])
 })
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
@@ -552,6 +553,25 @@ test('dispatchAgentRun marks the thread running and sends payload', () => {
 
   assert.equal(store.getState().threads.find((t) => t.id === threadId)?.status, 'running')
   assert.equal(api.runs.length, 1)
+})
+
+test('cancelling protected entry returns the optimistic prompt as held', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  const item: QueuedUserMessage = {
+    messageId: 'review-me',
+    payload: { content: 'Do not run yet' },
+    createdAt: 1,
+  }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const thread = getThreadById(store, threadId)
+  assert.equal(thread?.status, 'idle')
+  assert.deepEqual(thread.pendingMessages, [{ ...item, autoDispatch: false }])
 })
 
 test('resumePendingQueues drains idle threads with pending messages', async () => {

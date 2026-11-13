@@ -281,6 +281,11 @@ export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z
   parentThreadId: zThreadId,
 })
 
+/** Untrusted hint used only to reconcile an optimistic user bubble after review. */
+export const protectedHumanTurnDisplaySchema = z
+  .strictObject({ messageId: z.string().min(1).max(200).optional() })
+  .optional()
+
 export const mainWindowNavigationSchema = z.object({
   activeProjectId: zProjectId.nullable(),
   activeThreadId: zThreadId.nullable(),
