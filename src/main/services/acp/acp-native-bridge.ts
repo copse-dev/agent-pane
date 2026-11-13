@@ -186,6 +186,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_preview',
   'browser_navigate',
   'browser_snapshot',
+  'browser_resize',
   'browser_screenshot',
   'browser_click',
   'browser_type',

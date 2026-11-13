@@ -17,6 +17,7 @@ export const BROWSER_TOOLS = new Set([
   'browser_preview',
   'browser_navigate',
   'browser_snapshot',
+  'browser_resize',
   'browser_screenshot',
   'browser_click',
   'browser_type',
@@ -28,6 +29,7 @@ export const BROWSER_TOOLS = new Set([
 /** Browser tools that never leave the current page and so never need an origin prompt. */
 export const READ_ONLY_BROWSER_TOOLS = new Set([
   'browser_snapshot',
+  'browser_resize',
   'browser_screenshot',
   'browser_tabs',
   'present_visual_evidence',

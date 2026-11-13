@@ -6,6 +6,7 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { browserViewportSchema, type BrowserViewport } from '@shared/browser-viewport.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -56,14 +57,17 @@ function previewLayoutScript(width: number): string {
 }
 
 /** Bound native IPC even when the renderer cannot run its own deadline. */
-async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
+async function waitForBrowserOperation(
+  operation: Promise<unknown>,
+  timeoutMessage = 'Preview capture timed out',
+): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
       operation,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
-          reject(new Error('Preview capture timed out'))
+          reject(new Error(timeoutMessage))
         }, 5000)
       }),
     ])
@@ -73,12 +77,18 @@ async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unk
 }
 
 /**
- * The latest preview capture queued on each tab. Two quick re-renders of one
- * artefact can capture the same tab at once, and each capture restores the
- * zoom it found, so interleaved captures would leave the tab at the preview
- * zoom. Captures of one tab therefore run one after another.
+ * Preview captures temporarily change zoom, while responsive checks change
+ * the viewport. Serialize captures and resizes on each tab so a screenshot
+ * cannot observe another operation's temporary layout.
  */
-const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
+const tabOperations = new WeakMap<PreviewContents, Promise<unknown>>()
+
+function queueTabOperation<T>(wc: PreviewContents, operation: () => Promise<T>): Promise<T> {
+  const previous = tabOperations.get(wc) ?? Promise.resolve()
+  const next = previous.catch(() => {}).then(operation)
+  tabOperations.set(wc, next)
+  return next
+}
 
 /**
  * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
@@ -89,16 +99,109 @@ export function capturePreviewDataUrl(
   wc: PreviewContents,
   decodeImage: (dataUrl: string) => PreviewImage,
   maxWidth = PREVIEW_WIDTH,
-  viewportWidth = DEFAULT_WIDTH,
+  getViewportWidth: () => number = () => DEFAULT_WIDTH,
 ): Promise<string | null> {
-  const previous = previewCaptures.get(wc) ?? Promise.resolve(null)
-  // `captureAtPreviewZoom` never rejects, so one failed capture cannot stall
-  // the queue behind it.
-  const capture = previous.then(() =>
-    captureAtPreviewZoom(wc, decodeImage, maxWidth, viewportWidth),
+  return queueTabOperation(wc, () =>
+    captureAtPreviewZoom(wc, decodeImage, maxWidth, getViewportWidth()),
   )
-  previewCaptures.set(wc, capture)
-  return capture
+}
+
+interface ViewportWindow {
+  setContentSize: BrowserWindow['setContentSize']
+  getContentSize: BrowserWindow['getContentSize']
+  webContents: PreviewContents
+}
+
+async function captureScreenshotDataUrl(
+  wc: PreviewContents,
+  timeoutMessage = 'Preview capture timed out',
+): Promise<string> {
+  const response = await waitForBrowserOperation(
+    wc.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    }),
+    timeoutMessage,
+  )
+  const data = expectString(expectRecord(response, 'browser screenshot')['data'], 'screenshot PNG')
+  return `data:image/png;base64,${data}`
+}
+
+/** Capture the current viewport with a fresh frame, including on hidden Linux tabs. */
+export function captureBrowserScreenshotDataUrl(
+  window: Pick<ViewportWindow, 'webContents' | 'getContentSize'>,
+): Promise<string> {
+  const wc = window.webContents
+  return queueTabOperation(wc, async () => {
+    let attachedHere = false
+    try {
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach('1.3')
+        attachedHere = true
+      }
+      const [width, height] = window.getContentSize()
+      const viewport = browserViewportSchema.parse({ width, height })
+      const zoom = wc.getZoomFactor()
+      // A preceding preview restores zoom before its renderer has applied it.
+      // Wait for that layout without changing the screenshot's zoom or bounds.
+      await waitForBrowserOperation(
+        wc.executeJavaScript(
+          `(async () => {
+            const deadline = performance.now() + 5000;
+            while (Math.abs(window.innerWidth - ${String(viewport.width / zoom)}) > 1 || Math.abs(window.innerHeight - ${String(viewport.height / zoom)}) > 1) {
+              if (performance.now() >= deadline) throw new Error('Browser screenshot layout did not reach the renderer');
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          })()`,
+          false,
+        ),
+        'Browser screenshot layout timed out',
+      )
+      return await captureScreenshotDataUrl(wc, 'Browser screenshot timed out')
+    } finally {
+      if (attachedHere) {
+        try {
+          wc.debugger.detach()
+        } catch {
+          /* The tab may have closed. */
+        }
+      }
+    }
+  })
+}
+
+/** Apply and measure native viewport bounds without racing preview zoom. */
+export async function resizeBrowserViewport(
+  window: ViewportWindow,
+  viewport: BrowserViewport,
+): Promise<BrowserViewport> {
+  const { width, height } = browserViewportSchema.parse(viewport)
+  const wc = window.webContents
+  return queueTabOperation(wc, async () => {
+    wc.setZoomFactor(1)
+    window.setContentSize(width, height)
+    const [contentWidth, contentHeight] = window.getContentSize()
+    const applied = browserViewportSchema.parse({ width: contentWidth, height: contentHeight })
+    // The OS can clamp a native window. Wait for the renderer to acknowledge
+    // the applied content bounds and restored zoom, then report what it sees.
+    return browserViewportSchema.parse(
+      await waitForBrowserOperation(
+        wc.executeJavaScript(
+          `(async () => {
+            const deadline = performance.now() + 5000;
+            while (window.innerWidth !== ${String(applied.width)} || window.innerHeight !== ${String(applied.height)}) {
+              if (performance.now() >= deadline) throw new Error('Browser viewport did not reach the renderer');
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            return { width: window.innerWidth, height: window.innerHeight };
+          })()`,
+          false,
+        ),
+        'Browser resize timed out',
+      ),
+    )
+  })
 }
 
 async function captureAtPreviewZoom(
@@ -120,19 +223,11 @@ async function captureAtPreviewZoom(
     // immediate captures can therefore both copy the unzoomed frame (#3240).
     // Use the window's content size: a previous zoom restoration may itself
     // still be pending in the renderer, so its current innerWidth is not a base.
-    await waitForPreviewOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
+    await waitForBrowserOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
     // Page.captureScreenshot requests a fresh compositor frame. capturePage()
     // can return the same cached pre-zoom (or blank) surface twice, even after
     // the DOM reports the new viewport. This works in native and headless mode.
-    const response: unknown = await waitForPreviewOperation(
-      wc.debugger.sendCommand('Page.captureScreenshot', {
-        format: 'png',
-        fromSurface: true,
-        captureBeyondViewport: false,
-      }),
-    )
-    const data = expectString(expectRecord(response, 'preview screenshot')['data'], 'preview PNG')
-    const image = decodeImage(`data:image/png;base64,${data}`)
+    const image = decodeImage(await captureScreenshotDataUrl(wc))
     if (image.isEmpty()) return null
     const { width: imageWidth } = image.getSize()
     const scaled =
@@ -342,9 +437,18 @@ export class BrowserSessionManager {
     return renderSnapshot(parsePageSnapshot(raw))
   }
 
+  async resize(viewport: BrowserViewport, viewId: string): Promise<string> {
+    browserViewportSchema.parse(viewport)
+    if (!viewId) throw new Error('browser_resize requires an explicit tab id')
+    const tab = this.resolveTab(viewId)
+    const measured = await resizeBrowserViewport(tab.window, viewport)
+    return `Resized ${tab.id} to ${String(measured.width)}×${String(measured.height)} CSS pixels. Take a fresh browser_snapshot before interacting.`
+  }
+
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const image = await tab.window.webContents.capturePage()
+    const { nativeImage } = await import('electron')
+    const image = nativeImage.createFromDataURL(await captureBrowserScreenshotDataUrl(tab.window))
     if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
     const { width, height } = image.getSize()
     return {
@@ -375,7 +479,7 @@ export class BrowserSessionManager {
       tab.window.webContents,
       (dataUrl) => nativeImage.createFromDataURL(dataUrl),
       maxWidth,
-      tab.window.getContentSize()[0],
+      () => tab.window.getContentSize()[0] ?? DEFAULT_WIDTH,
     )
   }
 

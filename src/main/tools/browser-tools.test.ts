@@ -7,7 +7,7 @@ import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
 } from '../services/browser/browser-origin-policy.ts'
-import { browserScreenshotTool, browserShowTool } from './browser-tools.ts'
+import { browserResizeTool, browserScreenshotTool, browserShowTool } from './browser-tools.ts'
 import {
   getBrowserSession,
   setBrowserSessionPlatform,
@@ -46,6 +46,7 @@ describe('browser tools registration', () => {
     const registry = createRegistry()
     assert.equal(registry.has('browser_navigate'), false)
     assert.equal(registry.has('browser_snapshot'), false)
+    assert.equal(registry.has('browser_resize'), false)
   })
 
   it('keeps browser tools out of the always-auto-run set', () => {
@@ -59,6 +60,67 @@ describe('browser tools registration', () => {
     // already-open check in the tool is what makes that claim true.
     assert.equal(BROWSER_TOOLS.has('browser_show'), true)
     assert.equal(READ_ONLY_BROWSER_TOOLS.has('browser_show'), true)
+  })
+
+  it('keeps viewport changes in the browser permission family without a navigation grant', () => {
+    assert.equal(BROWSER_TOOLS.has('browser_resize'), true)
+    assert.equal(READ_ONLY_BROWSER_TOOLS.has('browser_resize'), true)
+    assert.equal(SANDBOX_TOOLS.has('browser_resize'), false)
+  })
+})
+
+describe('browser_resize', () => {
+  it('routes bounded dimensions and the selected tab to the scoped browser session', async (t) => {
+    const calls: unknown[] = []
+    const session = getBrowserSession()
+    t.mock.method(session, 'resize', async (...args: Parameters<typeof session.resize>) => {
+      calls.push(args)
+      return 'resized'
+    })
+    assert.equal(
+      await browserResizeTool.execute(
+        { width: 390, height: 844, viewId: 'tab-2' },
+        new AbortController().signal,
+      ),
+      'resized',
+    )
+    assert.deepEqual(calls, [[{ width: 390, height: 844 }, 'tab-2']])
+  })
+
+  it('rejects fractional, non-finite, missing and excessive viewport dimensions', () => {
+    for (const args of [
+      { width: 239, height: 844 },
+      { width: 390, height: 239 },
+      { width: 2561, height: 844 },
+      { width: 390, height: 1601 },
+      { width: 390.5, height: 844 },
+      { width: 390, height: Number.NaN },
+      { width: Number.POSITIVE_INFINITY, height: 844 },
+      { width: 390 },
+    ]) {
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ ...args, viewId: 'tab-1' }).success,
+        false,
+      )
+    }
+    for (const args of [
+      { width: 240, height: 240 },
+      { width: 2560, height: 1600 },
+    ]) {
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ ...args, viewId: 'tab-1' }).success,
+        true,
+      )
+    }
+  })
+
+  it('requires an explicit nonempty tab id instead of the last active canvas tab', () => {
+    for (const viewId of [undefined, '']) {
+      assert.equal(
+        browserResizeTool.parameters.safeParse({ width: 390, height: 844, viewId }).success,
+        false,
+      )
+    }
   })
 })
 
