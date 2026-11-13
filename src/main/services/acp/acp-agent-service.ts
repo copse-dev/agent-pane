@@ -562,6 +562,21 @@ export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<Ru
   })
 }
 
+/**
+ * Attach the chat-store roots resolved for this turn to the process config.
+ * Kept as one composition boundary so the sandbox input cannot silently drift
+ * away from the turn-side consent decision.
+ */
+export function acpTurnSpawnConfig(
+  config: Omit<AcpAgentSpawnConfig, 'chatReadRoots'>,
+  chatReadRoots: readonly string[] | undefined,
+): AcpAgentSpawnConfig {
+  return {
+    ...config,
+    ...(chatReadRoots ? { chatReadRoots: [...chatReadRoots] } : {}),
+  }
+}
+
 /** What {@link runAcpTurnWithContinuation} needs from the live thread and the agent. */
 export interface AcpContinuationDependencies {
   runTurn: (
@@ -767,21 +782,23 @@ async function runAcpAgentTurn(
   const chatReadRoots = chatStoreRoot
     ? chatReadRootsForThread(options.threadId, chatStoreRoot)
     : undefined
-  const spawnConfig: AcpAgentSpawnConfig = {
-    command: agent.command,
-    ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
-    cwd,
-    sshTarget,
-    ...(agent.args ? { args: agent.args } : {}),
-    ...(env ? { env } : {}),
-    ...(mcpServers.length > 0 ? { mcpServers } : {}),
-    ...(sandbox ? { sandbox } : {}),
-    ...(sandbox && stateDir ? { stateDir } : {}),
-    ...(chatReadRoots ? { chatReadRoots } : {}),
-    ...(permissionMode ? { permissionMode } : {}),
-    ...(configOptions ? { configOptions } : {}),
-    ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
-  }
+  const spawnConfig = acpTurnSpawnConfig(
+    {
+      command: agent.command,
+      ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+      cwd,
+      sshTarget,
+      ...(agent.args ? { args: agent.args } : {}),
+      ...(env ? { env } : {}),
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
+      ...(sandbox ? { sandbox } : {}),
+      ...(sandbox && stateDir ? { stateDir } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(configOptions ? { configOptions } : {}),
+      ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
+    },
+    chatReadRoots,
+  )
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
   // credentials already live on that host. No-op for local workspaces.

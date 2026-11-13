@@ -271,6 +271,14 @@ describe('ACP session continuity across a new agent process', () => {
     assert.equal(acpSessionLineage(READ_ONLY), acpSessionLineage(writable))
   })
 
+  it('respawns for changed chat roots while preserving the agent session lineage', () => {
+    const ownThread = { ...WRITABLE, chatReadRoots: ['/profile/workspace/project/thread'] }
+    const wholeStore = { ...WRITABLE, chatReadRoots: ['/profile/workspace'] }
+
+    assert.notEqual(acpSessionFingerprint(ownThread), acpSessionFingerprint(wholeStore))
+    assert.equal(acpSessionLineage(ownThread), acpSessionLineage(wholeStore))
+  })
+
   it('stays in the moved session across a later idle reap', async () => {
     const fake = fakeAgent('global', { load: true, resume: true })
     await prompt(fake, READ_ONLY, 'one')
