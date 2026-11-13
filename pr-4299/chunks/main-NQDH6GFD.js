@@ -10622,7 +10622,9 @@ function explicitAgentForMessage(messages, messageIndex) {
     const message2 = messages[index];
     if (!message2 || message2.role === "user") break;
     for (const call of message2.toolCalls) {
-      if (agent2 !== void 0 || call.name !== "task" || !isRecord(call.args) || typeof call.args["subagent_type"] !== "string" || call.args["subagent_type"].length === 0) {
+      if (agent2 !== void 0 || call.name !== "task" || // ACP can use the same name; its title/kind/identity metadata belongs
+      // to the external parent, not a host-synthesized explicit invocation.
+      call.title !== void 0 || call.kind !== void 0 || call.programmaticName !== void 0 || !isRecord(call.args) || typeof call.args["subagent_type"] !== "string" || call.args["subagent_type"].length === 0) {
         return void 0;
       }
       agent2 = call.args["subagent_type"];
