@@ -68,10 +68,6 @@ describe('custom agent progressive skill access', () => {
             {
               expectToolResults: [{ name: 'read_skill', includes: 'silver birch' }],
               text: 'The tiny workflow result is a silver birch.',
-              continueTurn: true,
-            },
-            {
-              text: 'The tiny-reader agent reports that the tiny workflow result is a silver birch.',
             },
           ],
         },

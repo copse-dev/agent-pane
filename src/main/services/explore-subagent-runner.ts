@@ -58,7 +58,7 @@ export function getExploreSubagentRunner(): ExploreSubagentRunner | null {
       usageModel: ctx.usageModel,
       ...(ctx.localFallback !== undefined ? { localFallback: ctx.localFallback } : {}),
     })
-    addSubagentUsage(result.usage)
+    addSubagentUsage(ctx.usageModel, result.usage)
     return result
   }
 }

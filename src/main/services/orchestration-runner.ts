@@ -128,9 +128,8 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
         kind: 'delegate',
       })
 
-      // Worker tokens are billed at the worker model's rate; like the advisor
-      // they fold into the run's aux-model usage line for now.
-      addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })
+      // Credit the resolved worker model, including partial or failed sessions.
+      addSubagentUsage(workerModel, session.usage ?? { inputTokens: 0, outputTokens: 0 })
 
       // The observation the orchestrator reviews between steps: the worker's
       // report plus what the working tree actually looks like now.
