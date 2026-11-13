@@ -380,15 +380,13 @@ async function runContainedPreparationProcess(
     // Recheck after an asynchronous wrap: a disabled sandbox never earns fallback.
     requirePreparationSandbox()
     options.signal?.throwIfAborted()
-    // bwrap flattens granted PATH symlinks into copies of their targets. Run the
-    // toolchain through private symlinks in scratch (a directory bind keeps
-    // them) to the canonical executables the read grants above already cover.
-    if (process.platform === 'linux') {
-      toolchainLinks = mkdtempSync(join(scratch, 'node-toolchain-'))
-    }
+    // bwrap flattens granted PATH symlinks, while Seatbelt can refuse to traverse
+    // their denied installation aliases. Private links in granted scratch keep
+    // both platforms on canonical executables covered by the existing reads.
+    toolchainLinks = mkdtempSync(join(scratch, 'node-toolchain-'))
     const child = spawn('/bin/bash', ['-c', wrapped], {
       cwd: root,
-      env: toolchainLinks ? linkPreparationNodeToolchain(env, toolchainLinks) : env,
+      env: linkPreparationNodeToolchain(env, toolchainLinks),
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
