@@ -39,6 +39,7 @@ import {
 } from '../thread-checkout-transaction.ts'
 import { createHeadlessAutomationRun } from './headless-message-assembler.ts'
 import {
+  automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
   type AutomationRunLiveness,
 } from './automation-run-recovery.ts'
@@ -341,6 +342,7 @@ export interface AutomationService {
     dispatch: DispatchHeadlessTurn,
     shownProjectId: () => string | null,
     isRunActive?: AutomationRunLiveness,
+    ownsAgentWork?: AutomationRunLiveness,
   ): void
   sync(): Promise<void>
   stop(): void
@@ -412,6 +414,7 @@ export function createAutomationService(
   let notifiedWindowProjectId: (() => string | null) | null = null
   let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
   let isRunActive: AutomationRunLiveness | undefined
+  let ownsAgentWork: AutomationRunLiveness | undefined
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -880,7 +883,9 @@ export function createAutomationService(
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
-      const busy = scheduleThreads.find((thread) => automationRunBlock(thread) !== null)
+      const busy = scheduleThreads.find((thread) =>
+        automationRunBlocksAdmission(schedule.projectId, thread, ownsAgentWork),
+      )
 
       if (busy) {
         if (automationRunBlock(busy) === 'pending-start') {
@@ -1226,11 +1231,12 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender, dispatch, shownProjectId, runtimeIsActive) {
+    start(sender, dispatch, shownProjectId, runtimeIsActive, runtimeOwnsAgentWork) {
       notify = sender
       notifiedWindowProjectId = shownProjectId
       dispatchHeadlessTurn = dispatch
       isRunActive = runtimeIsActive
+      ownsAgentWork = runtimeOwnsAgentWork
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async (task) => {
@@ -1270,6 +1276,7 @@ export function createAutomationService(
       notify = null
       notifiedWindowProjectId = null
       isRunActive = undefined
+      ownsAgentWork = undefined
     },
     async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return

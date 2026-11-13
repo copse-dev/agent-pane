@@ -210,6 +210,7 @@ export const runBackgroundTool = defineTool({
       suppressSandboxRetry,
       allowPortBinding: allow_port_binding === true,
       owner,
+      completionWakeArmed: turnTreeId !== null && armedWakeHandler !== null,
       ...(timeout_ms !== undefined ? { timeoutMs: timeout_ms } : {}),
       onCancelled: ({ id: taskId }) => {
         void reportEnd('cancelled', { backgroundTaskId: taskId })
