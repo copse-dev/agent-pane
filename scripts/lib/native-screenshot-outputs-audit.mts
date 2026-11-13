@@ -81,6 +81,10 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'new-thread-default-branch-worktree-sent.png',
     ],
   },
+  'tests/e2e/paired-browser-chat.e2e.ts': {
+    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
+    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+  },
   'tests/e2e/pane-loading.e2e.ts': {
     sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
     filenames: [
@@ -105,7 +109,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: 'e77a734069b31da7f4c330045801eaafa4d62931c632409b70a8452ad1cdbb42',
+    sourceSha256: 'dcfee9e9e5e0a6335dc2ede8c2c617815a28dec7ac7d19e57e31b3a81bd10fd3',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {

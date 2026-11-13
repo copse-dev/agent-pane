@@ -143,12 +143,6 @@ describe('native supervised read-only workers', function () {
         } else answer(response, `${name} inspection complete; the write was blocked.`)
         return
       }
-      if (scenario === 'slash' && system.includes('<agent_report')) {
-        if ((parsed.tools ?? []).length !== 0) errors.push('Slash parent was offered tools')
-        parentCalls++
-        answer(response, 'Alpha reports a silver birch; this is the worker’s finding.')
-        return
-      }
       // Title/summary requests use the same endpoint but have no worker tool.
       if (!parsed.tools?.some((tool) => tool.function.name === 'run_readonly_workers')) {
         answer(response, 'Independent inspections')
@@ -340,6 +334,20 @@ describe('native supervised read-only workers', function () {
     assert.deepEqual(workerCalls, before)
     assert.deepEqual(errors, [])
     await expect($('.messages-list')).toHaveText(expect.stringContaining('agent did not finish'))
+    const outcome = await browser.execute(async (id) => {
+      const thread = (await window.api.threads.loadProject(id))[0]
+      if (!thread) return null
+      const messages = await window.api.threads.loadMessages(id, thread.id)
+      const lastOutcome = messages.at(-1)?.turnOutcome
+      return {
+        status: lastOutcome?.status,
+        source: lastOutcome?.source,
+        calls: JSON.stringify(messages.at(-1)?.toolCalls),
+      }
+    }, PROJECT_ID)
+    assert.equal(outcome?.status, 'failed')
+    assert.equal(outcome.source, 'host')
+    assert.equal((await $$('[data-turn-recovery-card]')).length, 0, JSON.stringify(outcome))
     await saveAppScreenshot('native-worker-isolation-unavailable.png')
   })
 })

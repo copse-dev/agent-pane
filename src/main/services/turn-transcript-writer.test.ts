@@ -409,6 +409,23 @@ describe('TurnTranscriptWriter', () => {
     assert.deepEqual(deliveries, [])
   })
 
+  it('distinguishes cold disk attachment from an empty live runtime seed', async () => {
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'disk')
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'runtime')
+    assert.deepEqual(snapshots.at(-1)?.checkpoint, { stream: null, pendingTurn: null })
+    transcript.end()
+    await turn.writer.settled(THREAD)
+  })
+
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {
     const window = createStore({ threads: [threadWith(THREAD)] })
     let ids: string[] = []

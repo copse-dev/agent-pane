@@ -1,4 +1,5 @@
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } from './agent-turn-scheduler.ts'
 import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
@@ -119,6 +120,7 @@ import {
 import {
   requestApproval,
   cancelApprovalsForThread,
+  discardApprovalsForThread,
   pendingApprovalParkedToolCallIds,
   releaseParkedApprovalsForThread,
 } from './approval.ts'
@@ -179,7 +181,10 @@ import {
   collectDiscoveryRoots,
   discoverAgentsFromRoots,
 } from './agents/agents-registry.ts'
-import { customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
+import {
+  buildAgentReportHistory,
+  customAgentInvocationTask,
+} from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import {
   isPhasedCommandCall,
@@ -857,6 +862,12 @@ export async function runAgent(
   // continue to own a queued turn even though no provider process has started.
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
   const admission = new AbortController()
+  const revokeTaskApprovals = (): void => {
+    if (admission.signal.reason === 'send_now') return
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
+  admission.signal.addEventListener('abort', revokeTaskApprovals, { once: true })
   abortMap.set(threadId, admission)
   const phase = { preflightComplete: false }
   try {
@@ -893,6 +904,7 @@ export async function runAgent(
       messages: [...priorMessages, { role: 'user', content: userPrompt }],
     }
   } finally {
+    admission.signal.removeEventListener('abort', revokeTaskApprovals)
     if (abortMap.get(threadId) === admission) abortMap.delete(threadId)
   }
 }
@@ -2103,6 +2115,7 @@ async function runAgentWithInlineCanvas(
       })
       let report: string
       let reportIsError = false
+      const workerProgress = { started: false }
       try {
         const agent = getAgent(invokedAgent)
         if (!agent) throw new Error('The agent definition is no longer available.')
@@ -2115,7 +2128,11 @@ async function runAgentWithInlineCanvas(
             registry,
             contextWindow,
             toolSchemaReserve,
-            onChunk: sendChunk,
+            operatorContext: [turnStartInjected, submitInjectContext].filter(Boolean).join('\n\n'),
+            onChunk: (chunk) => {
+              if (chunk.type === 'subagent_start') workerProgress.started = true
+              sendChunk(chunk)
+            },
           },
           agent,
           agentTask,
@@ -2124,6 +2141,24 @@ async function runAgentWithInlineCanvas(
       } catch (err) {
         report = `The "${invokedAgent}" agent did not finish: ${errorMessage(err)}`
         reportIsError = true
+        const timedOut = isAgentRunTimeoutAbort(controller.signal)
+        recordTurnFailure(err, {
+          source: hookHaltStopReason
+            ? 'hook'
+            : timedOut
+              ? 'host'
+              : controller.signal.aborted
+                ? 'user'
+                : workerProgress.started
+                  ? 'provider'
+                  : 'host',
+          ...(timedOut
+            ? { stopReason: 'timeout' }
+            : controller.signal.aborted
+              ? { stopReason: 'cancelled' }
+              : {}),
+          ...(hookHaltStopReason ? { rawStopReason: hookHaltStopReason } : {}),
+        })
       }
       sendChunk({
         type: 'tool_result',
@@ -2133,7 +2168,7 @@ async function runAgentWithInlineCanvas(
       })
       const response = reportIsError ? report : `Agent ${invokedAgent} reports:\n\n${report}`
       sendChunk({ type: 'text', text: response })
-      trimmed.push({ role: 'assistant', content: response })
+      trimmed.push({ role: 'assistant', content: buildAgentReportHistory(invokedAgent, report) })
       checkpointHistory()
       sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
       const stopReason = isAgentRunTimeoutAbort(controller.signal)
@@ -3159,6 +3194,10 @@ async function runAgentWithInlineCanvas(
 }
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  if (reason !== 'send_now') {
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
   cancelAgentInitiatedAcpTurn(threadId)
@@ -3167,6 +3206,7 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
 /** Fence new turns and interrupt existing work before command cleanup can settle tools. */
 export function stopAllAgentRuns(): void {
   shuttingDown = true
+  shellReplayLeaseStore.clear()
   for (const controller of abortMap.values()) controller.abort()
   cancelAllAgentInitiatedAcpTurns()
 }

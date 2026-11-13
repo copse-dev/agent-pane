@@ -1326,8 +1326,11 @@ phase of the same review turn, not product auto-continuation or a change to hook
 
 ### September 24: reviewer startup
 
-PR and nightly ground/findings checkouts retain full Git ancestry (`fetch-depth: 0`)
-but use `filter: blob:none` to omit historical file contents. Trusted code is checked
+PR and nightly ground/findings checkouts retain full Git ancestry of the reviewed head
+and base but use `filter: blob:none` to omit historical file contents. (November 8: the
+nightly and summary checkouts are shallow and unshallow only the head and base refs they
+diff, instead of `fetch-depth: 0`'s every branch and tag; nightly ground's checkout keeps
+no history because its cell makes its own clone.) Trusted code is checked
 out normally; materializing the exact head and merge-base worktrees hydrates their
 contents on the host before commands run in the network-disabled cell. No shared
 writable cache, broader credentials or change to the protected environment is involved.

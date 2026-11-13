@@ -79,6 +79,8 @@ export interface CustomAgentRunContext {
   registry: ToolRegistry
   contextWindow: number
   toolSchemaReserve: number
+  /** Current-turn hook additions for an explicit invocation, isolated from other workers. */
+  operatorContext?: string
   onChunk: (chunk: StreamChunk) => void
 }
 
@@ -153,7 +155,9 @@ export async function runCustomAgent(
   // A child owns its allowance, even when launched inside a parent activation scope.
   const skillTurn = createSkillActivationTurn([], toolNames, 0, 'subagent')
   const systemPrompt =
-    buildCustomAgentSystemPrompt(agent) + buildSkillsCatalogBlock(toolNames, 'subagent')
+    buildCustomAgentSystemPrompt(agent) +
+    buildSkillsCatalogBlock(toolNames, 'subagent') +
+    (ctx.operatorContext ? `\n\n${ctx.operatorContext}` : '')
   const userTask = buildCustomAgentTask({ prompt, parentGoal: ctx.parentGoal, workspace })
 
   const subagentMessages: LLMMessage[] = [

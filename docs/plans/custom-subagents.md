@@ -154,6 +154,14 @@ Turn and subagent hooks retain their lifecycle; the explicit turn spends no pare
 continuation. Every worker's usage is scoped to the entire admitted turn and recorded
 under its resolved model, including explicit invocation and continuation work.
 
+**Review follow-up (2026-11-13): preserve failure and trust semantics.** Explicit
+worker failures record a durable failed outcome, including failures before provider
+startup; cancellation remains distinct. Generic recovery does not offer a parent
+continuation for this one-shot route: retry by invoking `/name` again. Reports are
+displayed with attribution and persisted inside an escaped external-content boundary,
+including when history is rebuilt for a fork. Turn-start and submit-hook context is
+passed to the selected worker without leaking into concurrent worker turns.
+
 **Eval result (2026-08-21): (1) did not hold; (2) is implemented and verified.** Three runs of
 `tests/e2e/scenarios/custom-subagent-invocation.json` on a GUI machine against
 `lmstudio:qwen/qwen3.5-9b`, driving the real Electron app with a definition seeded at

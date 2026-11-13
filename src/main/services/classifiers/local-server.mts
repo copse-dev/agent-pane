@@ -80,6 +80,36 @@ export const LOCAL_CLASSIFIER_SERVERS: Readonly<Record<string, CatalogEntry>> = 
     serve: ({ models }) => ['python3', 'scripts/serve.py', '--text-only', '--model-dir', models],
     port: 8091,
   },
+  'strands-decider': {
+    presetId: 'strands-decider',
+    label: 'Strands Decider 2B',
+    // The checkpoint is a LoRA adapter and readout head; the Qwen3.5-2B base it loads is about 4.5 GB.
+    downloadGb: 5,
+    prerequisites: ['git', 'uv'],
+    weights: ['StrandsAgents/strands-decider-2B-qwen3.5-v1-2610', 'Qwen/Qwen3.5-2B-Base'],
+    repository: 'https://github.com/strands-labs/strands-decider.git',
+    // Release v0.3.0. It commits no uv.lock and its pyproject gives only lower bounds, so the
+    // commit pins Strands' own code but not what it installs. Resolve as PyPI stood the day
+    // after the release reached it: reproducible, and nothing published later can be picked up.
+    // The lock that writes is git-ignored upstream, so the pinned-checkout check still passes.
+    revision: '87d0fd5774587ae786ccfea7470e58f6a5b4ddef',
+    setup: () => [['uv', 'sync', '--exclude-newer', '2026-11-06T00:00:00Z']],
+    // `--frozen` runs from that lock and never re-resolves. The device is CUDA, then MPS, then
+    // CPU, whichever is present.
+    serve: () => [
+      'uv',
+      'run',
+      '--frozen',
+      'strands-decider',
+      'serve',
+      'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '8011',
+    ],
+    port: 8011,
+  },
 }
 
 export function localClassifierEntry(name: string): CatalogEntry | undefined {
@@ -112,6 +142,9 @@ export function cacheEnvironment(root: string): NodeJS.ProcessEnv {
     // The cache may sit on another volume, where uv cannot hard-link.
     UV_LINK_MODE: 'copy',
     HF_HOME: join(root, 'huggingface'),
+    // huggingface_hub reads this before HF_HOME, so a user's own setting would send the
+    // weights to their shared cache, where Uninstall cannot remove them.
+    HF_HUB_CACHE: join(root, 'huggingface', 'hub'),
     // A clone that needs credentials must fail, not wait on a terminal nobody sees.
     GIT_TERMINAL_PROMPT: '0',
   }

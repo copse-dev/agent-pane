@@ -20,7 +20,12 @@ import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import { toolRunForMessage } from '@shared/tools/tool-runs.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
-import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
+import {
+  drainMessageQueue,
+  enqueueHookMessage,
+  foldBackContinuationUsed,
+  hasPendingDispatch,
+} from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
@@ -234,35 +239,47 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   const detachDiffState = attachDiffState(store, api, { revealOnShowDiff: true })
 
   const attached = new Set<string>()
-  const unsubSnapshot = api.agent.onTranscriptSnapshot(({ projectId, thread, checkpoint }) => {
-    if (getThreadProjectId(store, thread.id) !== projectId) return
-    applyRuntimeOwnedChunk(
-      thread.messages.map((message) => message.id),
-      () => {
-        patchThreadAnywhere(store, thread.id, (current) => {
-          return {
-            ...current,
-            ...transcriptMeta(thread),
-            // Queue recovery may already have proven the persisted run died.
-            // An idle attachment's disk snapshot must not resurrect that stale
-            // running flag after recovery has offered an explicit retry.
-            ...(current.interruptedTurnAt !== undefined &&
-            checkpoint.stream === null &&
-            checkpoint.pendingTurn === null
-              ? { status: current.status }
-              : {}),
-            messages: mergeRuntimeMessages(current.messages, thread.messages),
-          }
-        })
-        reducer.restore(thread.id, checkpoint)
-        attached.add(thread.id)
-        const current = getThreadById(store, thread.id)
-        if (current) acceptRuntimeThreadMeta(projectId, current)
-        store.emit('threads_changed')
-        syncAgentActivity(store, thread.id, checkpoint.stream?.writing ?? false)
-      },
-    )
-  })
+  const unsubSnapshot = api.agent.onTranscriptSnapshot(
+    ({ projectId, source, thread, checkpoint }) => {
+      if (getThreadProjectId(store, thread.id) !== projectId) return
+      const previous = getThreadById(store, thread.id)
+      const beforeMeta = previous ? transcriptMeta(previous) : undefined
+      applyRuntimeOwnedChunk(
+        thread.messages.map((message) => message.id),
+        () => {
+          patchThreadAnywhere(store, thread.id, (current) => {
+            return {
+              ...current,
+              ...transcriptMeta(thread),
+              // A cold read can arrive while a queued dispatch awaits its grant,
+              // or after that dispatch has been denied and restored as held.
+              // Preserve that local status decision. A real runtime snapshot is
+              // authoritative even before its first chunk creates a checkpoint.
+              ...(source === 'disk' &&
+              (current.interruptedTurnAt !== undefined ||
+                hasPendingDispatch(store, thread.id) ||
+                (current.status === 'idle' &&
+                  thread.status === 'running' &&
+                  (current.pendingMessages?.length ?? 0) > 0))
+                ? { status: current.status }
+                : {}),
+              messages: mergeRuntimeMessages(current.messages, thread.messages),
+            }
+          })
+          reducer.restore(thread.id, checkpoint)
+          attached.add(thread.id)
+          const current = getThreadById(store, thread.id)
+          // A read must not acknowledge unchanged local values as a new main
+          // write: that can rewrite the target of an in-flight status save and
+          // prevent the later held/idle state from reaching disk.
+          if (current)
+            acceptRuntimeThreadMeta(projectId, current, source === 'disk' ? beforeMeta : undefined)
+          store.emit('threads_changed')
+          syncAgentActivity(store, thread.id, checkpoint.stream?.writing ?? false)
+        },
+      )
+    },
+  )
   const attach = (): void => {
     const { activeProjectId, threads } = store.getState()
     if (!activeProjectId) return
