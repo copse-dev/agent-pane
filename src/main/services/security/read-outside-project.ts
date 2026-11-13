@@ -24,12 +24,19 @@ export const READ_OUTSIDE_PROJECT_WARNING =
 export function formatReadOutsideProjectPromptParts(
   command: string,
   analysis: ReadOutsideProjectAnalysis,
+  canonicalTargets: readonly (string | null)[] = [],
 ): ShellPromptParts {
   return {
     command,
     bodyAdvice:
       `The agent requests read access to ${analysis.targets.length === 1 ? 'this path' : 'these paths'} for this thread:\n` +
-      analysis.targets.map((target) => `• ${target}`).join('\n') +
+      analysis.targets
+        .map((target, index) => {
+          const canonical = canonicalTargets[index]
+          const named = analysis.resolvedTargets[index]
+          return canonical && named !== canonical ? `• ${target} → ${canonical}` : `• ${target}`
+        })
+        .join('\n') +
       `\n\n⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
     bodyFooter:
       'Approve grants reads of the listed paths and files within listed directories for the rest of this thread. ' +

@@ -14,6 +14,8 @@ import {
 } from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
 import { readOutsideProjectGrantTargets } from './read-outside-project.ts'
+import { standingCanonicalReadTargets } from './read-outside-grant.ts'
+import { getActiveRunThread } from '../active-run-identity.ts'
 import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 
 export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
@@ -118,7 +120,15 @@ export function shellReadGrantTargets(
 ): string[] | null {
   if (!isProjectSandboxEnabled()) return null
   if (routeShellCommand(command, roots, toolName).outcome === 'allow') return null
-  return readOutsideProjectGrantTargets(command, executionRoot)
+  const targets = readOutsideProjectGrantTargets(command, executionRoot)
+  if (targets === null) return null
+  // A standing grant pins each target's identity and destination. Use that
+  // canonical destination in the per-spawn overlay, so ordinary symlinked
+  // paths work without allowing a link swapped after the gate to widen reads.
+  // One-command approvals have no pinned identity and keep the conservative
+  // link refusal in readAllowedSandboxOverlay.
+  const threadId = getActiveRunThread()
+  return targets.map((target) => standingCanonicalReadTargets(threadId, [target])?.[0] ?? target)
 }
 
 /**

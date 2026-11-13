@@ -807,11 +807,14 @@ The approved root is identity-pinned while it exists: replacing a granted file o
 retargeting a granted symlink, revokes that grant and asks again. Before reusing a directory grant,
 Copse resolves the requested path (including existing ancestors of a missing leaf) and checks that
 its destination stays within the approved root and does not name a credential target. A symlink
-inside the directory that leads outside it therefore cannot reuse the grant. The per-spawn read
-overlay rejects symlinked targets instead of widening `allowRead` to their destination, even if
-the link changes after the gate's check. The agent can retry with the canonical path and seek
-approval for that destination. An expanded “Approve this command” action approves one invocation
-without a grant.
+inside the directory that leads outside it therefore cannot reuse the grant. A new narrow approval
+also checks the resolved destination and shows it in the prompt when it differs from the named path;
+a link to a credential store, home root or filesystem root cannot receive a narrow grant. For a
+standing grant, the per-spawn overlay allows only the pinned canonical destination. If the link
+changes after the gate checks it, the new destination remains outside that overlay. A one-command
+approval has no pinned standing identity, so a linked target fails closed inside the sandbox; the
+agent can retry with its canonical path and seek approval there. A failure under either kind of
+read-only approval cannot trigger an outside-sandbox retry, including in Guarded YOLO mode.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
 skip the question: the seatbelt already lets every command read there, so the gate records a

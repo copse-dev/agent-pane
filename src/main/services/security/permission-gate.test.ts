@@ -3842,6 +3842,31 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  it('shows a linked read destination and refuses a narrow grant for a disguised credential', async () => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
+      const noteLink = join(readDir, 'current.txt')
+      symlinkSync(note, noteLink)
+      const normal = await runGate(`cat ${noteLink}`, { approved: false, remember: false }, root)
+      assert.equal(normal.prompt?.title, 'Allow read access outside of the project?')
+      assert.match(normal.prompt.bodyAdvice, /→/)
+      assert.ok(normal.prompt.bodyAdvice.includes('note.txt'))
+
+      const secret = join(readDir, '.env')
+      const secretLink = join(readDir, 'innocent.txt')
+      writeFileSync(secret, 'private')
+      symlinkSync(secret, secretLink)
+      const disguised = await runGate(
+        `cat ${secretLink}`,
+        { approved: false, remember: false },
+        root,
+      )
+      assert.equal(disguised.permitted, false)
+      assert.ok(disguised.prompt)
+      assert.notEqual(disguised.prompt.title, 'Allow read access outside of the project?')
+    })
+  })
+
   it('does not reuse a directory grant through a symlink followed by dot-dot', async () => {
     await withRoot(async (root, readDir) => {
       const outside = mkdtempSync(`${readDir}-outside-`)

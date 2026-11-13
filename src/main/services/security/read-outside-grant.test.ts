@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
@@ -8,6 +8,8 @@ import {
   grantReadOutsideProject,
   hasReadOutsideProjectGrant,
   listReadOutsideProjectGrants,
+  safeCanonicalReadTarget,
+  standingCanonicalReadTargets,
 } from './read-outside-grant.ts'
 
 describe('read-outside grant coverage', () => {
@@ -120,6 +122,50 @@ describe('read-outside grant coverage', () => {
     symlinkSync(secret, link)
 
     assert.equal(covered(link), false)
+  })
+
+  it('uses a pinned destination for an explicitly approved file symlink', () => {
+    const first = join(base, 'first.txt')
+    const second = join(base, 'second.txt')
+    const link = join(base, 'current.txt')
+    writeFileSync(first, 'first')
+    writeFileSync(second, 'second')
+    symlinkSync(first, link)
+    grantReadOutsideProject(thread, [link])
+    assert.deepEqual(standingCanonicalReadTargets(thread, [link]), [realpathSync.native(first)])
+    rmSync(link)
+    symlinkSync(second, link)
+    assert.equal(standingCanonicalReadTargets(thread, [link]), null)
+  })
+
+  it('rejects links to a credential or whole-home authority', () => {
+    const secret = join(base, '.env')
+    const secretLink = join(base, 'ordinary.txt')
+    writeFileSync(secret, 'secret')
+    symlinkSync(secret, secretLink)
+    assert.equal(safeCanonicalReadTarget(secretLink), null)
+    const homeLink = join(base, 'other')
+    symlinkSync(homedir(), homeLink, 'dir')
+    assert.equal(safeCanonicalReadTarget(homeLink), null)
+    assert.equal(safeCanonicalReadTarget(join(homeLink, 'not-yet-created.txt')) !== null, true)
+  })
+
+  it('rejects a symlinked profile’s LAN credentials by canonical destination', () => {
+    const profile = join(base, 'profile')
+    const lan = join(profile, 'lan')
+    const alias = join(base, 'profile-alias')
+    mkdirSync(lan, { recursive: true })
+    const credential = join(lan, 'marker.txt')
+    writeFileSync(credential, 'private')
+    symlinkSync(profile, alias, 'dir')
+    const prior = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = alias
+    try {
+      assert.equal(safeCanonicalReadTarget(credential), null)
+    } finally {
+      if (prior === undefined) Reflect.deleteProperty(process.env, 'COPSE_DIR')
+      else process.env['COPSE_DIR'] = prior
+    }
   })
 
   it('checks the destination of a linked parent when the leaf is missing', () => {

@@ -1,5 +1,8 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { getSetting, setSetting, updateSetting } from '../storage/settings.ts'
 import { SETTINGS_WRITE_QUEUE, runSerialized } from '../storage/write-queue.ts'
@@ -10,6 +13,8 @@ import {
 } from '../thread-execution-context.ts'
 import { currentAgentRoots } from '../execution-root.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 import {
@@ -117,6 +122,53 @@ describe('sandbox routing in a worktree thread', () => {
       setWorkspaceTrusted(projectRoot, false)
       setWorkspaceTrusted('/tmp/copse-routing-other-window', false)
       restore()
+    }
+  })
+})
+
+describe('identity-pinned read routing', () => {
+  it('passes the approved symlink destination to the sandbox and refuses a retargeted link', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-read-route-')))
+    const root = join(base, 'project')
+    const first = join(base, 'first.txt')
+    const second = join(base, 'second.txt')
+    const link = join(base, 'link.txt')
+    mkdirSync(root)
+    writeFileSync(first, 'first')
+    writeFileSync(second, 'second')
+    symlinkSync(first, link)
+    const context: ThreadExecutionContext = {
+      projectId: 'read-route',
+      threadId: 'read-route',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      grantReadOutsideProject(context.threadId, [link])
+      const targets = (): string[] | null =>
+        runWithActiveRunIdentity(context.threadId, () =>
+          runWithThreadExecutionContext(context, () =>
+            shellReadGrantTargets(`cat ${link}`, currentAgentRoots(), root),
+          ),
+        )
+      assert.deepEqual(targets(), [first])
+      rmSync(link)
+      symlinkSync(second, link)
+      // A stale standing grant is no longer reusable. The ordinary overlay
+      // sees the literal link and refuses it rather than granting second.txt.
+      assert.deepEqual(targets(), [link])
+    } finally {
+      clearReadOutsideProjectGrants()
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
     }
   })
 })

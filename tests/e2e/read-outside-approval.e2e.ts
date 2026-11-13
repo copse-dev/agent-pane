@@ -116,4 +116,50 @@ describe('read access outside the project approval', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('names the destination of a symlink before granting read access', async function () {
+    this.timeout(90_000)
+    const root = mkdtempSync(
+      join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'copse-e2e-read-dest-'),
+    )
+    try {
+      const destination = join(root, 'notes.txt')
+      const link = join(root, 'current.txt')
+      writeFileSync(destination, 'ordinary notes')
+      symlinkSync(destination, link)
+      await prepareMockToolTurn(
+        'Read the linked notes.',
+        { name: 'run_shell', args: { command: `cat ${link}` } },
+        'The linked notes were declined.',
+      )
+      await submitComposer()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText(
+        'Allow read access outside of the project?',
+      )
+      const advice = await dialog.$('.approval-advice').getText()
+      expect(advice).toContain(`→ ${destination}`)
+      // Keep the temporary directory's random suffix out of the reference
+      // image after asserting the real destination shown to the user.
+      await browser.execute((temporaryRoot) => {
+        for (const item of document.querySelectorAll(
+          '#approval-dialog .approval-advice, #approval-dialog .approval-reasons li',
+        )) {
+          const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT)
+          while (walker.nextNode()) {
+            const node = walker.currentNode
+            if (node.textContent) {
+              node.textContent = node.textContent.replaceAll(temporaryRoot, '/outside/read-dest')
+            }
+          }
+        }
+      }, root)
+      await saveElementScreenshot('#approval-dialog', 'read-outside-symlink-destination.png')
+      await dialog.$('.approval-reject').click()
+      await expectAssistantReply('The linked notes were declined.')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

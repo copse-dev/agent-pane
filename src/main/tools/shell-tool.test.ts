@@ -10,8 +10,14 @@ import {
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
 import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
+import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import { clearGitRemotesCache } from '../services/security/git-remotes.ts'
+import {
+  activateGuardedYoloForRun,
+  armGuardedYolo,
+  disableGuardedYolo,
+} from '../services/security/guarded-yolo.ts'
 import { setWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import { setSetting } from '../services/storage/settings.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
@@ -267,5 +273,65 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     const text = [prompt.body, prompt.bodyAdvice ?? '', prompt.bodyFooter ?? ''].join('\n')
     assert.ok(text.includes(command), text)
     assert.ok(!text.includes('pipefail'), text)
+  })
+})
+
+describe('run_shell with an outside-project read grant', () => {
+  it('does not escape to the host when the read overlay fails to start under Guarded YOLO', async () => {
+    const base = await realpath(await mkdtemp(join(tmpdir(), 'copse-read-retry-')))
+    const root = join(base, 'project')
+    const secret = join(base, 'notes.txt')
+    const threadId = 'read-retry'
+    const restoreWorkspace = setWorkspaceRootForTest(root)
+    await mkdir(root)
+    await writeFile(secret, 'outside-only-content')
+    setWorkspaceTrusted(root, true)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    await setSetting('autoRunSandboxCommands', true)
+    armGuardedYolo(threadId)
+    activateGuardedYoloForRun(threadId)
+    const prompts: ApprovalRequest[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', () => {
+      throw new Error('read overlay could not start')
+    })
+    setProjectSandboxEnabled(true)
+    try {
+      const context: ThreadExecutionContext = {
+        projectId: threadId,
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      }
+      const command = `cat ${secret}`
+      const outcome = await Promise.resolve(
+        runWithActiveRunIdentity(threadId, () =>
+          runWithThreadExecutionContext(context, () =>
+            runShellTool.execute({ command, timeout_ms: 30_000 }, new AbortController().signal),
+          ),
+        ),
+      ).then(
+        (result) => (typeof result === 'string' ? result : result.result),
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      )
+      assert.match(outcome, /read overlay could not start/)
+      assert.doesNotMatch(outcome, /outside-only-content/)
+      assert.deepEqual(prompts, [])
+    } finally {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      setApprovalHandler(null)
+      disableGuardedYolo(threadId)
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      setWorkspaceTrusted(root, false)
+      restoreWorkspace()
+      await rm(base, { recursive: true, force: true })
+    }
   })
 })
