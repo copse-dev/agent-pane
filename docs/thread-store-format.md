@@ -18,6 +18,16 @@ conversation-read consent and do not index private provider/session files. See t
 
 ## Location
 
+Native human steering records metadata-only `accepted`, `applied`, and `held`
+receipts in a thread-local `user-steering.jsonl`. Each receipt names the message,
+primary run, human epoch and timestamp; text stays in the transcript/provider
+history. `applied` follows an awaited history checkpoint and durable queue removal,
+and means saved context rather than proof of model attention. Main removes the
+held entry without a connected window; later autosaves cannot restore an applied
+entry. Receipts survive full thread saves and never schedule work. A crash before
+queue removal can leave an ambiguous accepted note held for explicit inspection;
+the same message ID cannot be injected again. See [delivery and restart limits](plans/native-parent-steering.md).
+
 ```
 ~/.copse/workspace/<projectId>/
 ```

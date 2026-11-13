@@ -10,6 +10,7 @@ import {
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
 import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
+import { steerNativeParent } from './services/native-steering.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -174,6 +175,7 @@ import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
   appendMessage,
+  placeMessageAfter,
   clearAgentHistory,
   closeThreadStoreIndexes,
   getProjectThread,
@@ -712,6 +714,7 @@ app
       },
       loadThread: getProjectThread,
       appendMessage,
+      placeMessageAfter,
       updateMeta,
       defaultModel: (): string | undefined => {
         const model = getSetting<unknown>('model', undefined)
@@ -1207,6 +1210,25 @@ app
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
     })
+
+    ipcMain.handle(
+      'agent:steer',
+      (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        messageIdArg: unknown,
+        runIdArg: unknown,
+      ) => {
+        assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const messageId = z.string().min(1).max(200).parse(messageIdArg)
+        const runId = parseIpcArgs(z.uuid(), [runIdArg])
+        return steerNativeParent(projectId, threadId, messageId, runId)
+      },
+    )
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a

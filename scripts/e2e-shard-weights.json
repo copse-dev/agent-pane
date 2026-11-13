@@ -1,5 +1,5 @@
 {
-  "source": "thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "native-parent-steering provisional at its first passing macOS run (10.3s) until its first CI run is measured, 2026-11-13; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -196,6 +196,7 @@
     "tests/e2e/multi-window-ipc.e2e.ts": 6.4,
     "tests/e2e/multiple-main-windows.e2e.ts": 11.3,
     "tests/e2e/native-isolated-workers.e2e.ts": 28,
+    "tests/e2e/native-parent-steering.e2e.ts": 10.3,
     "tests/e2e/native-readonly-workers.e2e.ts": 9.9,
     "tests/e2e/nested-tool-activity-colors.e2e.ts": 7.3,
     "tests/e2e/new-project-flow.e2e.ts": 11.9,

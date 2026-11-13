@@ -414,6 +414,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
     abort: (threadId: string, reason?: 'send_now') =>
       ipcRenderer.invoke('agent:abort', threadId, reason),
+    steer: (projectId: string, threadId: string, messageId: string, runId: string) =>
+      ipcRenderer.invoke('agent:steer', projectId, threadId, messageId, runId),
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
