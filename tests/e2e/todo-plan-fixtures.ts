@@ -33,6 +33,7 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
   noPlanThreadTitle: string
   allCancelledThreadTitle: string
 } {
+  const now = Date.now()
   const projectId = 'e2e-todo-project'
   const planThreadId = 'e2e-todo-thread'
   const noPlanThreadId = 'e2e-todo-no-plan-thread'
@@ -63,6 +64,9 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
+    // The panel cases must start on this thread, not whichever async sidebar
+    // hydration happens to rank first. Thread ordering is a separate concern.
+    activeThreadId: planThreadId,
     [`threads:${projectId}`]: [
       {
         id: planThreadId,
@@ -74,20 +78,20 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
             role: 'user',
             content: 'Implement mermaid and open an issue for diagram steering.',
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
           {
             id: 'msg-assistant-todo',
             role: 'assistant',
             content: 'Working through the plan.',
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
         ],
         todos,
         usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now() + 3,
-        updatedAt: Date.now() + 3,
+        createdAt: now + 3,
+        updatedAt: now + 3,
       },
       {
         id: allCancelledThreadId,
@@ -99,14 +103,14 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
             role: 'user',
             content: 'Scratch that plan — cancel the remaining todos.',
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
           {
             id: 'msg-assistant-all-cancelled',
             role: 'assistant',
             content: "Cancelled the leftover todos; there's nothing left on the plan.",
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
         ],
         todos: [
@@ -117,8 +121,8 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now() + 2,
-        updatedAt: Date.now() + 2,
+        createdAt: now + 2,
+        updatedAt: now + 2,
       },
       {
         id: noPlanThreadId,
@@ -130,19 +134,19 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
             role: 'user',
             content: 'What files are in src/?',
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
           {
             id: 'msg-assistant-no-plan',
             role: 'assistant',
             content: 'I can list the src directory for you.',
             toolCalls: [],
-            createdAt: Date.now(),
+            createdAt: now,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now() + 1,
-        updatedAt: Date.now() + 1,
+        createdAt: now + 1,
+        updatedAt: now + 1,
       },
     ],
   })

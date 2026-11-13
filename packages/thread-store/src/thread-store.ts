@@ -56,6 +56,8 @@ import {
 import {
   remoteAgentPrIndexKey,
   isImportedCursorAgentThread,
+  MAX_CURSOR_AGENT_IDS,
+  MAX_CURSOR_AGENT_ID_LENGTH,
   type RemoteAgentLink,
   type RemoteAgentPrIndexEntry,
 } from './remote-agent-link.ts'
@@ -1836,17 +1838,36 @@ export function getProjectThread(projectId: string, threadId: string): Promise<T
  * on the same per-project queue as every other meta write so a concurrent
  * renderer reconcile can't clobber it.
  */
-export function recordThreadAgentLink(
+function recordThreadAgentLinkInner(
   projectId: string,
   threadId: string,
   link: RemoteAgentLink,
+  rememberCursorLaunch: boolean,
 ): Promise<void> {
   return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     // Only patch an existing thread; the renderer writes the initial meta.json.
     if (current === null) return
-    const nextMeta: ThreadMeta = { ...current, remoteAgentLink: { ...link }, id: threadId }
+    // Only an actual main-process launch may extend this history. The latest
+    // link remains independently usable for imported and older threads.
+    const cursorCandidates = [
+      ...(current.cursorAgentIds ?? []),
+      ...(current.remoteAgentLink?.provider === 'cursor' ? [current.remoteAgentLink.agentId] : []),
+      ...(link.provider === 'cursor' ? [link.agentId] : []),
+    ].filter((id) => id.length > 0 && id.length <= MAX_CURSOR_AGENT_ID_LENGTH)
+    // Keep the most recent occurrence when the same agent is relaunched.
+    const cursorAgentIds = rememberCursorLaunch
+      ? cursorCandidates
+          .filter((id, index) => cursorCandidates.lastIndexOf(id) === index)
+          .slice(-MAX_CURSOR_AGENT_IDS)
+      : null
+    const nextMeta: ThreadMeta = {
+      ...current,
+      remoteAgentLink: { ...link },
+      ...(cursorAgentIds && cursorAgentIds.length > 0 ? { cursorAgentIds } : {}),
+      id: threadId,
+    }
     atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     const index = loadOrRebuildAgentPrIndex(projectId)
     let changed = removeThreadFromIndex(index, threadId)
@@ -1856,6 +1877,24 @@ export function recordThreadAgentLink(
     }
     if (changed) writeAgentPrIndex(projectId, index)
   })
+}
+
+/** Replace the current cloud link without changing launch provenance. */
+export function recordThreadAgentLink(
+  projectId: string,
+  threadId: string,
+  link: RemoteAgentLink,
+): Promise<void> {
+  return recordThreadAgentLinkInner(projectId, threadId, link, false)
+}
+
+/** Main-owned launch: retain a bounded list of this chat's Cursor agent IDs. */
+export function recordThreadAgentLaunchLink(
+  projectId: string,
+  threadId: string,
+  link: RemoteAgentLink,
+): Promise<void> {
+  return recordThreadAgentLinkInner(projectId, threadId, link, true)
 }
 
 /**

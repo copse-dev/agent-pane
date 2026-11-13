@@ -3,6 +3,7 @@ import type {
   RemoteArtifactImageRequest,
   RemoteArtifactImageResult,
 } from '@shared/remote-artifact-image.ts'
+import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type {
   AppRunOwner,
   AppRunSelection,
@@ -201,7 +202,9 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
-    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
+    canSubmit: (id: string) => Promise<boolean>
+    revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>
     onPrompt: (
       handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
     ) => () => void
@@ -209,6 +212,10 @@ export interface ApiClient {
       id: string,
       result: import('@shared/thread-prompt.ts').ThreadPromptResult,
     ) => Promise<void>
+  }
+  remote: {
+    /** Publish the desktop-owned live view to authenticated remote clients. */
+    publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
   }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
@@ -364,7 +371,17 @@ export interface ApiClient {
     ) => () => void
   }
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    /**
+     * Start a turn. With `delegation`, main starts it only while the parent
+     * still owns the child and holds orchestration, rechecked as it dispatches;
+     * otherwise it rejects with `SubthreadPromptHeldError` and runs nothing.
+     */
+    run: (
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
+    ) => Promise<void>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
@@ -976,8 +993,8 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
-    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
-    downloadArtifact: (agentId: string, path: string) => Promise<string>
+    /** Authorize an artifact for this chat and open its download outside the renderer. */
+    downloadArtifact: (request: RemoteArtifactDownloadRequest) => Promise<void>
     /** Hydrate one artifact image for the thread on screen; see sandboxed-artifact-image-downloads.md. */
     artifactImageDataUrl: (
       request: RemoteArtifactImageRequest,

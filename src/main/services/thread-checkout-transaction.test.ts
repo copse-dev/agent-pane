@@ -65,6 +65,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
       thread = { ...thread, ...patch }
     },
     warmupModel: async () => undefined,
+    preflightModel: async () => undefined,
     inspect: async () => ({
       isGitRepository: true,
       currentBranch: 'main',
@@ -94,6 +95,62 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
 }
 
 describe('first-message checkout transaction', () => {
+  it('rejects missing prerequisites before model warmup, Git inspection or checkout persistence', async () => {
+    const operations: string[] = []
+    const { prepare, patches, checkouts } = fixture({
+      getThread: async () => blankThread({ model: 'acp:codex-acp' }),
+      preflightModel: async (model, cwd) => {
+        assert.equal(model, 'acp:codex-acp')
+        assert.equal(cwd, '/repo')
+        throw new Error('Missing adapter; open Settings')
+      },
+      warmupModel: async () => {
+        operations.push('warmup')
+      },
+      inspect: async () => {
+        throw new Error('Git must not be inspected')
+      },
+    })
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Long task',
+        choice: 'shared',
+      }),
+      /Missing adapter/,
+    )
+    assert.deepEqual(operations, [])
+    assert.deepEqual(patches, [])
+    assert.deepEqual(checkouts, [])
+  })
+
+  it('does not check local prerequisites for an SSH project or an already prepared thread', async () => {
+    const preflightModel = async (): Promise<void> => {
+      throw new Error('unexpected local check')
+    }
+    for (const overrides of [
+      {
+        getProject: (): Project => ({
+          id: 'project-1',
+          name: 'Remote',
+          path: '/repo',
+          sshHost: 'host-1',
+        }),
+      },
+      { getThread: async (): Promise<Thread> => blankThread({ worktreeChoice: 'shared' }) },
+    ]) {
+      const { prepare } = fixture({ preflightModel, ...overrides })
+      await prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Task',
+        choice: 'shared',
+        model: 'acp:claude-acp',
+      })
+    }
+  })
+
   it('starts model loading before inspection and allocates without waiting for it', async () => {
     const loading = Promise.withResolvers<undefined>()
     const events: string[] = []

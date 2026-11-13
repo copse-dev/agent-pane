@@ -2,13 +2,14 @@ import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   syncPluginClientApi,
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { initThreadPrompts } from './services/thread-prompts.ts'
+import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -78,6 +79,7 @@ import { createKeyringCipher, createMigratingCipher } from './services/storage/k
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import {
+  getMobileCompanionState,
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
@@ -208,6 +210,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
   zThreadId,
@@ -635,12 +638,14 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win, () => {
+      const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
         runningTurns: listRunningThreadIds().length,
+        mobileCompanionEnabled: mobile,
       })
-      if (detach) detachWindow(win)
+      if (detach) detachWindow(win, { keepRenderer: mobile })
       return detach
     })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
@@ -744,6 +749,7 @@ app
     })
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
+    initRemoteInterface(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
@@ -1038,16 +1044,26 @@ app
 
     ipcMain.handle(
       'agent:run',
-      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        rawPrompt: string,
+        delegationArg?: unknown,
+      ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await agentDispatcher.dispatch({
-          projectId,
-          threadId,
-          payload: parseAgentRunPayload(rawPrompt),
-        })
+        const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
+        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // A delegated prompt's authority is decided here, not by the renderer's
+        // pre-check: a revoke can land between that check and this invoke.
+        await (delegation
+          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+              agentDispatcher.dispatch(request),
+            )
+          : agentDispatcher.dispatch(request))
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })

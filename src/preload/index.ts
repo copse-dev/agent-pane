@@ -2,23 +2,29 @@ import type { SimulatorDesktopPresentation } from '@shared/types/simulator-deskt
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.ts'
+import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
+import { installRemoteReadRelay } from './remote-interface.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
 installPreloadPerfTracing()
 exposePerfBridge()
 ipcRenderer.invoke = createWorkspaceNavigation(ipcRenderer.invoke.bind(ipcRenderer))
+installRemoteReadRelay()
 
 // Typed against the contract so the facade cannot drift from `ApiClient`: a
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  remote: {
+    publish: (view) => ipcRenderer.invoke('remote:publish', view),
+  },
   clientActions: {
     claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
     publish: (offer) => ipcRenderer.invoke('client-actions:publish', offer),
@@ -37,6 +43,9 @@ const api: ApiClient = {
     },
   },
   threadPrompts: {
+    canDispatch: (projectId, parentId, childId) =>
+      ipcRenderer.invoke('thread-prompts:can-dispatch', projectId, parentId, childId),
+    canSubmit: (id) => ipcRenderer.invoke('thread-prompts:can-submit', id),
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
     onPrompt: (handler) => {
@@ -365,8 +374,8 @@ const api: ApiClient = {
     },
   },
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) =>
-      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    run: (projectId, threadId, prompt, delegation) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation),
     runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
@@ -1245,8 +1254,8 @@ const api: ApiClient = {
     },
   },
   remoteAgent: {
-    downloadArtifact: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remote-agent:download-artifact', agentId, path),
+    downloadArtifact: (request: RemoteArtifactDownloadRequest) =>
+      ipcRenderer.invoke('remote-agent:download-artifact', request),
     artifactImageDataUrl: (request: RemoteArtifactImageRequest) =>
       ipcRenderer.invoke('remote-agent:artifact-image-data-url', request),
     models: () => ipcRenderer.invoke('remote-agent:models'),

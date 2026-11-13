@@ -284,6 +284,31 @@ describe('settings sources skills origin hover', () => {
       'block',
     )
     assert.equal(await title.getText(), LONG_SKILL_NAME)
+    // Rows sit flush with the section text, so the disclosure's focus ring is
+    // drawn just outside the row's box. No clipping ancestor may cut it there.
+    const ringRoom = await browser.execute(() => {
+      const el = document.activeElement
+      if (!(el instanceof HTMLElement)) return null
+      const box = el.getBoundingClientRect()
+      let room = Number.POSITIVE_INFINITY
+      for (let a = el.parentElement; a && !a.matches('.settings-section'); a = a.parentElement) {
+        const style = getComputedStyle(a)
+        if (style.overflowX === 'visible') continue
+        const rect = a.getBoundingClientRect()
+        const margin =
+          style.overflowX === 'clip' ? Number.parseFloat(style.overflowClipMargin) || 0 : 0
+        room = Math.min(
+          room,
+          box.left - (rect.left + Number.parseFloat(style.borderLeftWidth) - margin),
+          rect.right - Number.parseFloat(style.borderRightWidth) + margin - box.right,
+        )
+      }
+      return room
+    })
+    assert.ok(
+      ringRoom !== null && ringRoom >= 2,
+      `the focused disclosure's ring has ${String(ringRoom)}px of room before a clip`,
+    )
     await row.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'settings-sources-long-title-keyboard.png'))
   })
 })
