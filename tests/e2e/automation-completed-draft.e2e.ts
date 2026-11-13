@@ -64,6 +64,7 @@ function readMeta(): z.infer<typeof metaSchema> {
 
 describe('manual follow-up on a completed automation', function () {
   this.timeout(60_000)
+  let closedProjectRunId: string | undefined
 
   before(async () => {
     resetUserData()
@@ -188,10 +189,12 @@ describe('manual follow-up on a completed automation', function () {
           join(e2eWorkspaceDir(), PROJECT, event.threadId, 'meta.json'),
           'utf8',
         )
-        return safeJsonParse(raw, decodeWithSchema(freshMetaSchema))?.status === 'idle'
+        const settled = safeJsonParse(raw, decodeWithSchema(freshMetaSchema))
+        return settled?.id === event.threadId && settled.status === 'idle'
       },
       { timeout: 10_000, timeoutMsg: 'the new closed-project legacy run did not settle' },
     )
+    closedProjectRunId = event.threadId
     assert.deepEqual(readMeta(), before)
     assert.deepEqual(readFileSync(join(threadRoot, 'events.jsonl')), spine)
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', 'notes-thread')
@@ -308,6 +311,7 @@ describe('manual follow-up on a completed automation', function () {
   })
 
   it('starts a distinct run while preserving the completed human draft', async () => {
+    assert.ok(closedProjectRunId, 'the earlier closed-project run must have settled')
     const projectRoot = join(e2eWorkspaceDir(), PROJECT)
     const threadRoot = join(projectRoot, THREAD)
     const previous = readMeta()
@@ -416,7 +420,7 @@ describe('manual follow-up on a completed automation', function () {
     )
     try {
       const restoreEarlierTime = await pinTextForCapture(
-        '.automation-schedule-runs .chat-row:not(.selected) .chat-title',
+        `.automation-schedule-runs .chat-row[data-thread-id="${closedProjectRunId}"]:not(.selected) .chat-title`,
         /^(?!Latest · ).+$/,
         'Nov 6, 2026, 10:01 AM',
       )
