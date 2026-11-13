@@ -19,6 +19,9 @@ const receiptSchema = z.object({
   checkedSha: sha,
   // Stable check/provider identity. Distinct sources never supersede each other.
   source: z.string().min(1),
+  // Workflow run number, then check-run sequence within that run. Older snapshot
+  // collectors have one generation; their sequence ordering remains unchanged.
+  generation: z.number().int().nonnegative().default(0),
   sequence: z.number().int().nonnegative(),
   outcome: z.enum(['passed', 'failed', 'pending', 'skipped', 'unknown']),
   detail: z.string(),
@@ -113,10 +116,15 @@ export function assessPrReadiness(
     const latest = new Map<string, ReadinessReceipt[]>()
     for (const receipt of current.filter((item) => item.requirement === requirement.key)) {
       const prior = latest.get(receipt.source)
-      const sequence = prior?.[0]?.sequence
-      if (sequence === undefined || receipt.sequence > sequence)
+      const previous = prior?.[0]
+      if (
+        previous === undefined ||
+        receipt.generation > previous.generation ||
+        (receipt.generation === previous.generation && receipt.sequence > previous.sequence)
+      )
         latest.set(receipt.source, [receipt])
-      else if (receipt.sequence === sequence) prior?.push(receipt)
+      else if (receipt.generation === previous.generation && receipt.sequence === previous.sequence)
+        prior?.push(receipt)
     }
     const evidence = [...latest.values()].flat()
     let state: ReadinessState
@@ -128,7 +136,7 @@ export function assessPrReadiness(
       [...latest.values()].some((items) => new Set(items.map((item) => item.outcome)).size > 1)
     ) {
       state = 'unknown'
-      reason = 'Conflicting results have the same source and sequence.'
+      reason = 'Conflicting results have the same source, generation and sequence.'
     } else if (evidence.some((item) => item.outcome === 'failed')) {
       state = 'blocked'
       reason = 'A current result failed.'

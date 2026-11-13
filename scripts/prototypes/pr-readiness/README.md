@@ -1,7 +1,7 @@
 # Current-head PR readiness prototype
 
 Task brief: establish a deterministic readiness decision before adding the shipping loop in
-#873. Base: `95dd2bd701472f40adb2a18d68d23d5d82817da7`. This is a standalone, read-only
+#873. This is a standalone, read-only
 prototype with no renderer, live agent, permission, persistence or merge-policy changes.
 It does not close #873, #690 or #3073.
 
@@ -9,8 +9,9 @@ Acceptance criteria:
 
 - A pass for an older head, changed base, other PR/repository or different checked commit cannot
   establish readiness. It remains historical evidence.
-- Newer attempts supersede only their own source. A similarly named check from another provider,
-  workflow/check suite, or legacy status cannot hide a failure.
+- Newer workflow runs supersede earlier suites only for the same provider, workflow and check.
+  A late rerun of an older workflow run cannot hide a newer run's failure. A similarly named
+  check from another provider, workflow or legacy status cannot hide a failure.
 - Incomplete reads, missing results, unknown states, skipped tests, stale approvals and expired
   observations cannot produce `ready`. Failures remain visible alongside pending work.
 - A live observation re-reads the same PR and evidence to detect changes during collection.
@@ -43,15 +44,22 @@ publication. No CLI path performs a write even when a decision is `ready`.
 `assessPrReadiness(snapshot, now)` is pure and checks freshness against an injected clock. The
 default observation lifetime is five minutes. A complete requirement inventory, confirmation of
 the repository/PR/head/base, and a current passing result for every requirement are necessary.
-Source sequence numbers are monotonic within one source, never comparable across sources.
-Contradictory outcomes at the same source/sequence remain unknown. Every receipt carries both
-the PR identity and the actual checked SHA; this first prototype supports head evidence only.
+Receipts compare `generation` first, then `sequence`, within one source. GitHub Actions uses the
+workflow run number as the generation and the check-run database ID as the sequence. A newer
+workflow run replaces older suites even if an older run is retried later. Older snapshot formats
+default to generation zero. Contradictory outcomes at the same source/generation/sequence remain
+unknown. Every receipt carries the PR identity and the provider-reported checked SHA; this first
+prototype supports head evidence only, not an attestation of the CI process's actual checkout.
 
 The GitHub adapter reads required contexts using GitHub's `isRequired`, preserves source
 identity and checked commit, and uses GitHub's merge-rule evaluation instead of hardcoded check
-names. It also reads draft/conflict/review/discussion state. It is conservative: skipped/neutral
-checks remain distinguishable from tests that ran; unresolved discussions block even where the
-repository permits merging them. It does not override GitHub rules.
+names. Check sources use app ID, workflow ID and check name; checks without workflow metadata
+retain separate suite identities rather than guessing that names establish supersession.
+It also reads draft/conflict/review/discussion state. It is conservative: skipped/neutral checks
+remain distinguishable from tests that ran; unresolved discussions and any latest review requesting
+changes block even when GitHub's required-review verdict permits merging. `UNSTABLE` remains unknown
+because non-required failures do not establish a required-rule failure. This observation adds those
+explicit conservative limits; it does not change GitHub rules.
 
 Three connections are capped at 100 records. A truncated page, GraphQL error, changed observation,
 unavailable confirmation, or missing check identity makes coverage incomplete. There is no cache

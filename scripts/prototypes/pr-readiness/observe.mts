@@ -27,7 +27,10 @@ export const READINESS_QUERY = `query($owner: String!, $repo: String!, $number: 
             ... on CheckRun {
               id databaseId name status conclusion detailsUrl
               isRequired(pullRequestNumber: $number)
-              checkSuite { id commit { oid } app { id } }
+              checkSuite {
+                id commit { oid } app { id }
+                workflowRun { runNumber workflow { id } }
+              }
             }
             ... on StatusContext {
               id context state targetUrl createdAt commit { oid }
@@ -57,6 +60,12 @@ const checkSchema = z.discriminatedUnion('__typename', [
       id: z.string(),
       commit: commitSchema,
       app: z.object({ id: z.string() }).nullable(),
+      workflowRun: z
+        .object({
+          runNumber: z.number().int().positive(),
+          workflow: z.object({ id: z.string().min(1) }),
+        })
+        .nullable(),
     }),
   }),
   z.object({
@@ -196,6 +205,7 @@ export async function observePrReadiness(
       target,
       checkedSha: target.headSha,
       source: 'github',
+      generation: 0,
       sequence: 0,
       outcome,
       detail,
@@ -233,7 +243,7 @@ export async function observePrReadiness(
     'ci',
     pr.mergeStateStatus === 'CLEAN'
       ? 'passed'
-      : ['BEHIND', 'DIRTY', 'UNSTABLE', 'DRAFT'].includes(pr.mergeStateStatus)
+      : ['BEHIND', 'DIRTY', 'DRAFT'].includes(pr.mergeStateStatus)
         ? 'failed'
         : 'unknown',
     `${pr.mergeStateStatus}; this prototype does not enumerate repository rules or missing required checks.`,
@@ -288,8 +298,17 @@ export async function observePrReadiness(
     if (!check.isRequired) continue
     const isRun = check.__typename === 'CheckRun'
     const name = isRun ? check.name : check.context
+    const workflowRun = isRun ? check.checkSuite.workflowRun : null
+    // Workflow identity survives new suites on the same head. Providers without
+    // workflow metadata keep separate suites: a shared display name is not proof
+    // that a later suite supersedes another one.
     const source = isRun
-      ? JSON.stringify(['check', check.checkSuite.app?.id, check.checkSuite.id, name])
+      ? JSON.stringify([
+          'check',
+          check.checkSuite.app?.id,
+          workflowRun ? ['workflow', workflowRun.workflow.id] : ['suite', check.checkSuite.id],
+          name,
+        ])
       : JSON.stringify(['status', name])
     const key = `check:${source}`
     if (!snapshot.requirements.some((item) => item.key === key))
@@ -300,6 +319,8 @@ export async function observePrReadiness(
       snapshot.problems.push(`Check ${name} has incomplete identity.`)
       continue
     }
+    if (checkedSha !== target.headSha)
+      snapshot.problems.push(`Check ${name} reports a commit outside the requested head.`)
     const outcome: Outcome = isRun
       ? checkOutcome(check.status, check.conclusion)
       : check.state === 'SUCCESS'
@@ -314,6 +335,7 @@ export async function observePrReadiness(
       target,
       checkedSha,
       source,
+      generation: workflowRun?.runNumber ?? 0,
       sequence,
       outcome,
       detail: isRun ? `${check.status}/${check.conclusion ?? 'unknown'}` : check.state,

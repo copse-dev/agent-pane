@@ -64,6 +64,7 @@ it('offline snapshots use distinct ready, unknown and input-error exits', () => 
         target,
         checkedSha: target.headSha,
         source: 'ci',
+        generation: 0,
         sequence: 1,
         outcome: 'passed',
         detail: 'Fixture only',

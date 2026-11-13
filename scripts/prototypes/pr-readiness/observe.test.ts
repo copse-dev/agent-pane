@@ -18,9 +18,20 @@ const initialCheck = {
   conclusion: 'SUCCESS',
   detailsUrl: 'https://example.test/check',
   isRequired: true,
-  checkSuite: { id: 'suite-1', commit: { oid: head }, app: { id: 'app-1' } },
+  checkSuite: {
+    id: 'suite-1',
+    commit: { oid: head },
+    app: { id: 'app-1' },
+    workflowRun: { runNumber: 1, workflow: { id: 'workflow-1' } },
+  },
 }
-function check(id = 10, name = 'CI Passed'): typeof initialCheck {
+type CheckFixture = Omit<typeof initialCheck, 'checkSuite' | 'conclusion'> & {
+  conclusion: string | null
+  checkSuite: Omit<typeof initialCheck.checkSuite, 'workflowRun'> & {
+    workflowRun: typeof initialCheck.checkSuite.workflowRun | null
+  }
+}
+function check(id = 10, name = 'CI Passed'): CheckFixture {
   return { ...structuredClone(initialCheck), id: `check-${String(id)}`, databaseId: id, name }
 }
 const initialStatus = {
@@ -228,6 +239,88 @@ describe('bounded current-head GitHub observation', () => {
       result.requirements.find((item) => item.key.startsWith('check:'))?.evidence[0]?.sequence,
       11,
     )
+  })
+  for (const previousConclusion of ['FAILURE', 'CANCELLED']) {
+    it(`a newer suite of the same workflow supersedes ${previousConclusion}`, async () => {
+      const older = { ...check(), conclusion: previousConclusion }
+      const newer = check(20)
+      newer.checkSuite.id = 'suite-2'
+      newer.checkSuite.workflowRun = { runNumber: 2, workflow: { id: 'workflow-1' } }
+      for (const nodes of [
+        [older, newer],
+        [newer, older],
+      ]) {
+        const data = fixture()
+        at(prOf(data).commits.nodes, 0).commit.statusCheckRollup.contexts.nodes = nodes
+        const result = assessPrReadiness(await observe(data), now)
+        const checks = result.requirements.filter((item) => item.key.startsWith('check:'))
+        assert.equal(checks.length, 1)
+        const requirement = at(checks, 0)
+        assert.equal(requirement.state, 'ready')
+        const evidence = at(requirement.evidence, 0)
+        assert.equal(evidence.generation, 2)
+        assert.equal(evidence.sequence, 20)
+        assert.equal(result.state, 'unknown', 'live acceptance is still uncollected')
+      }
+    })
+  }
+  for (const [status, conclusion, expected] of [
+    ['COMPLETED', 'FAILURE', 'blocked'],
+    ['IN_PROGRESS', null, 'waiting'],
+  ] as const) {
+    it(`a later workflow run stays ${expected} despite a late passing rerun of an older run`, async () => {
+      const data = fixture()
+      const olderRerun = check(999)
+      const newer = { ...check(20), status, conclusion }
+      newer.checkSuite.id = 'suite-2'
+      newer.checkSuite.workflowRun = { runNumber: 2, workflow: { id: 'workflow-1' } }
+      at(prOf(data).commits.nodes, 0).commit.statusCheckRollup.contexts.nodes = [olderRerun, newer]
+      const result = assessPrReadiness(await observe(data), now)
+      assert.equal(
+        result.requirements.find((item) => item.key.startsWith('check:'))?.state,
+        expected,
+      )
+    })
+  }
+  for (const identity of ['workflow', 'app', 'no workflow metadata'] as const) {
+    it(`keeps similarly named checks independent across ${identity}`, async () => {
+      const data = fixture()
+      const failed = { ...check(), conclusion: 'FAILURE' }
+      const passed = check(20)
+      passed.checkSuite.id = 'suite-2'
+      passed.checkSuite.workflowRun = {
+        runNumber: 2,
+        workflow: { id: identity === 'workflow' ? 'workflow-2' : 'workflow-1' },
+      }
+      if (identity === 'app') passed.checkSuite.app.id = 'app-2'
+      if (identity === 'no workflow metadata') {
+        failed.checkSuite.workflowRun = null
+        passed.checkSuite.workflowRun = null
+      }
+      at(prOf(data).commits.nodes, 0).commit.statusCheckRollup.contexts.nodes = [failed, passed]
+      const result = assessPrReadiness(await observe(data), now)
+      assert.equal(result.requirements.filter((item) => item.key.startsWith('check:')).length, 2)
+      assert.equal(result.state, 'blocked')
+    })
+  }
+  it('does not let unexpected commit provenance silently fall back to an older pass', async () => {
+    const data = fixture()
+    const wrong = check(20)
+    wrong.checkSuite.commit.oid = 'd'.repeat(40)
+    wrong.checkSuite.workflowRun = { runNumber: 2, workflow: { id: 'workflow-1' } }
+    at(prOf(data).commits.nodes, 0).commit.statusCheckRollup.contexts.nodes = [check(), wrong]
+    const input = await observe(data)
+    assert.equal(input.complete, false)
+    assert.match(input.problems.join(' '), /outside the requested head/)
+    assert.equal(assessPrReadiness(input, now).historical.length, 1)
+  })
+  it('keeps non-required failures unknown and documents conservative review blocking', async () => {
+    const data = fixture()
+    prOf(data).mergeStateStatus = 'UNSTABLE'
+    at(prOf(data).latestReviews.nodes, 0).state = 'CHANGES_REQUESTED'
+    const result = assessPrReadiness(await observe(data), now)
+    assert.equal(result.requirements.find((item) => item.key === 'rules')?.state, 'unknown')
+    assert.equal(result.requirements.find((item) => item.key === 'reviews')?.state, 'blocked')
   })
   it('stale approvals, unresolved discussions and drafts are not ready', async () => {
     const data = fixture()

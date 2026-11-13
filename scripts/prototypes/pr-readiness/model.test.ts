@@ -27,6 +27,7 @@ function snapshot(): ReadinessSnapshot {
         target,
         checkedSha: head,
         source: 'workflow:1/check:tests',
+        generation: 0,
         sequence: 1,
         outcome: 'passed',
         detail: 'Tests passed.',
@@ -42,6 +43,35 @@ const decide = (value: ReadinessSnapshot): ReturnType<typeof assessPrReadiness> 
   assessPrReadiness(value, now)
 
 describe('current-head PR readiness', () => {
+  it('orders workflow generations before check attempts, without depending on array order', () => {
+    for (const outcome of ['passed', 'failed'] as const) {
+      const current = receipt({ generation: 2, sequence: 10, outcome })
+      const old = receipt({
+        generation: 1,
+        sequence: 999,
+        outcome: outcome === 'passed' ? 'failed' : 'passed',
+      })
+      for (const receipts of [
+        [old, current],
+        [current, old],
+      ]) {
+        const result = decide({ ...snapshot(), receipts })
+        assert.equal(result.state, outcome === 'passed' ? 'ready' : 'blocked')
+        assert.deepEqual(result.requirements[0]?.evidence, [current])
+      }
+    }
+  })
+  it('decodes older snapshots as a single generation and rejects invalid generations', () => {
+    const input = { ...snapshot(), receipts: [{ ...receipt(), generation: undefined }] }
+    assert.equal(readinessSnapshotSchema.parse(input).receipts[0]?.generation, 0)
+    assert.equal(
+      readinessSnapshotSchema.safeParse({
+        ...snapshot(),
+        receipts: [{ ...receipt(), generation: -1 }],
+      }).success,
+      false,
+    )
+  })
   it('is a pure decision with linked evidence and no input mutation', () => {
     const input = snapshot()
     const before = structuredClone(input)
