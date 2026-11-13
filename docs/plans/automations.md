@@ -93,6 +93,28 @@ refreshes the authoritative transcript and status in any renderer that opened th
 mid-turn; the renderer never re-dispatches that completion. This does not provide
 a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
+Main admission, cleanup and checkout reuse share the renderer's prior-run metadata
+evidence and first-start classification.
+Submitted-prompt or prior-run evidence makes an unsent follow-up a human draft,
+not a scheduled first submission when its project is reopened, nor a pending start
+that blocks later scheduled or branch-CI runs. Running turns and independent live
+checkout owners still block overlapping work. Metadata-only
+views use persisted run evidence; an already loaded legacy transcript can also
+prove the earlier submission without loading history for the sidebar.
+Before main admission or cleanup classifies an otherwise ambiguous legacy draft,
+it reads a human prompt followed by an assistant response from committed spine
+metadata under the project's store queue. A human prompt alone can precede
+admission and is not sufficient; explicitly interrupted runs remain conservative.
+This reads no message bodies or tool blobs. Proven runtime absence is required
+before and after the awaited read. The inferred prompt timestamp exists only in
+the admission view: disk metadata and the catalog stay unchanged, so every later
+attempt rechecks the same legacy evidence and liveness. Missing, unreadable or
+invalid history, or history without a responded-to human prompt, remains pending.
+Ordinary metadata loads and already-proven runs do not scan history.
+At checkout release, the canonical ownership check discounts only its own exact
+idle-ACP maintenance reservation inside that callback. External observers, later
+queued ACP operations and actual session activity remain busy.
+
 On admission or user-requested cleanup, main reconciles an earlier run's persisted
 `running` status even when its project stays closed after a restart. Only a run
 proved absent by the live dispatcher, native/container owners and ACP session state
@@ -160,7 +182,7 @@ run behind it ("live worktree limit"). The next run now takes over that checkout
 of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
 
 - it is the schedule's most recent run that still holds a checkout, that run is settled (not
-  running, no unsent draft), and no terminal, background process or ACP session is live in it;
+  running, no unstarted scheduled draft), and no terminal, background process or ACP session is live in it;
 - the checkout is registered, on its branch, with no merge/rebase in flight, and has no modified,
   staged or untracked (non-ignored) file;
 - its branch holds no commit beyond the base it was cut from, so nothing can be lost;

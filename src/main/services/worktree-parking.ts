@@ -1,5 +1,9 @@
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
+import {
+  resolveLegacyAutomationRunMetadata,
+  type AutomationRunLiveness,
+} from './automations/automation-run-recovery.ts'
 import type { Thread } from '@shared/types'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { withIdleAcpSession } from './acp/acp-session-pool.ts'
@@ -141,10 +145,14 @@ const MAX_REPORTED_PATHS = 5
 export async function releaseCompletedAutomationWorktree(
   projectId: string,
   threadId: string,
+  isRunActive?: AutomationRunLiveness,
 ): Promise<AutomationWorktreeRelease> {
   return withThreadResourceFence({ projectId, threadId }, async () => {
     const projectRoot = getProjectRoot(projectId)
-    const meta = await getThreadMeta(projectId, threadId)
+    const stored = await getThreadMeta(projectId, threadId)
+    const meta = stored
+      ? await resolveLegacyAutomationRunMetadata(projectId, stored, isRunActive)
+      : null
     if (!projectRoot || !meta?.automation || automationRunBlock(meta) !== null)
       return { released: false, reason: 'in-use' }
     const original = meta.worktree
@@ -155,7 +163,10 @@ export async function releaseCompletedAutomationWorktree(
     const released = await withIdleAcpSession(
       threadId,
       async (): Promise<AutomationWorktreeRelease> => {
-        const current = await getThreadMeta(projectId, threadId)
+        const storedCurrent = await getThreadMeta(projectId, threadId)
+        const current = storedCurrent
+          ? await resolveLegacyAutomationRunMetadata(projectId, storedCurrent, isRunActive)
+          : null
         if (!current?.automation || automationRunBlock(current) !== null)
           return { released: false, reason: 'in-use' }
         const worktree = current.worktree

@@ -358,7 +358,11 @@ export interface BranchCiAutomationDependencies {
   loadProjectThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
   getProjectThread(projectId: string, threadId: string): Promise<Thread | null>
   createProjectThread(projectId: string, thread: Thread): Promise<void>
-  releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
+  releasePreviousRun(
+    projectId: string,
+    threadId: string,
+    isRunActive?: AutomationRunLiveness,
+  ): Promise<AutomationWorktreeRelease>
   /** See `AutomationServiceDependencies.canReusePreviousRun`. */
   canReusePreviousRun?(projectId: string, threadId: string): Promise<boolean>
   supervisor(): TaskSupervisor
@@ -587,7 +591,7 @@ export function createBranchCiAutomationService(
         for (const thread of threads) {
           if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
           const released = await deps
-            .releasePreviousRun(definition.projectId, thread.id)
+            .releasePreviousRun(definition.projectId, thread.id, isRunActive)
             .catch((error: unknown): AutomationWorktreeRelease => {
               console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
               return { released: false, reason: 'in-use' }

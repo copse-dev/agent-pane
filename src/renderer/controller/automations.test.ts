@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -16,6 +17,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 import { addMessage, getThreadById, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import { startHumanTurnTree } from './message-queue.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { attachThreadHydration } from './thread-hydration.ts'
 import { withoutMainOwnedThreadFields } from '../../main/ipc/thread-meta-guard.ts'
 import {
   createThread as createStoredThread,
@@ -115,6 +117,137 @@ function controllerApi(loaded: Thread[]): {
     prepared,
     runs,
   }
+}
+
+for (const entry of ['startup', 'navigation']) {
+  for (const projection of ['loaded', 'metadata']) {
+    test(`a completed automation draft stays manual on ${entry} with ${projection} history`, async () => {
+      const prompt: Thread['messages'][number] = {
+        id: 'submitted-scheduled-prompt',
+        role: 'user',
+        content: 'Review CI.',
+        toolCalls: [],
+        createdAt: 100,
+      }
+      const completed: Thread = {
+        ...automationThread(),
+        draftPrompt: 'Ask about the next release when I return.',
+        ...(projection === 'metadata'
+          ? { messages: [], messagesLoaded: false, lastPromptAt: 100 }
+          : { messages: [prompt], messagesLoaded: true }),
+      }
+      const store = createStore({
+        activeProjectId: entry === 'startup' ? 'project-a' : 'project-b',
+        workspaceRoot: entry === 'startup' ? '/repo/a' : '/repo/b',
+        threads: entry === 'startup' ? [completed] : [],
+      })
+      const harness = controllerApi([completed])
+      const dispose = attachAutomationController(store, harness.api)
+      try {
+        if (entry === 'navigation') {
+          store.setState({
+            activeProjectId: 'project-a',
+            workspaceRoot: '/repo/a',
+            threads: [completed],
+          })
+        }
+        await tick()
+        await tick()
+        assert.deepEqual(harness.prepared, [])
+        assert.deepEqual(harness.runs, [])
+        assert.strictEqual(store.getState().threads[0], completed)
+        assert.equal(store.getState().threads[0]?.currentEpoch, undefined)
+      } finally {
+        dispose()
+      }
+    })
+  }
+}
+
+for (const completed of [true, false]) {
+  test(`actual hydration ${completed ? 'keeps a legacy completed draft manual before checkout' : 'preserves a fresh scheduled first start'}`, async () => {
+    const pending: Thread = {
+      ...automationThread(),
+      messagesLoaded: false,
+      draftPrompt: completed ? 'Keep this follow-up manual.' : 'Review CI and report any failures.',
+    }
+    const store = createStore({
+      activeProjectId: 'project-b',
+      workspaceRoot: '/repo/b',
+      threads: [],
+    })
+    const base = createFakeApi()
+    let prepared = 0
+    let runs = 0
+    const api = {
+      ...base,
+      threads: {
+        ...base.threads,
+        loadMessages: (): Promise<Thread['messages']> =>
+          Promise.resolve(
+            completed
+              ? [
+                  {
+                    id: 'prior-user',
+                    role: 'user',
+                    content: 'Review CI.',
+                    toolCalls: [],
+                    createdAt: 100,
+                  },
+                  {
+                    id: 'prior-answer',
+                    role: 'assistant',
+                    content: 'Finished.',
+                    toolCalls: [],
+                    createdAt: 200,
+                  },
+                ]
+              : [],
+          ),
+      },
+      agent: {
+        ...base.agent,
+        prepareCheckout: (): ReturnType<typeof base.agent.prepareCheckout> => {
+          prepared++
+          return Promise.resolve({ checkoutMode: 'shared', choice: 'automatic', branch: 'main' })
+        },
+        run: (): Promise<void> => {
+          runs++
+          return Promise.resolve()
+        },
+      },
+      automations: {
+        ...base.automations,
+        list: (): ReturnType<typeof base.automations.list> => Promise.resolve([]),
+        listBranchCi: (): ReturnType<typeof base.automations.listBranchCi> => Promise.resolve([]),
+        canStart: (): ReturnType<typeof base.automations.canStart> =>
+          Promise.resolve({ allowed: true }),
+      },
+    }
+    const detachHydration = attachThreadHydration(store, api)
+    const detachAutomation = attachAutomationController(store, api)
+    try {
+      store.setState({
+        activeProjectId: 'project-a',
+        workspaceRoot: '/repo/a',
+        activeThreadId: pending.id,
+        threads: [pending],
+      })
+      await tick()
+      await tick()
+      const current = store.getState().threads[0]
+      assert.equal(prepared, completed ? 0 : 1)
+      assert.equal(runs, completed ? 0 : 1)
+      if (completed) {
+        assert.equal(current?.lastPromptAt, 100)
+        assert.equal(current.draftPrompt, pending.draftPrompt)
+        assert.equal(current.worktreeChoice, undefined)
+      }
+    } finally {
+      detachAutomation()
+      detachHydration()
+    }
+  })
 }
 
 test('a cron trigger submits its prompt as a new root agent turn', async () => {

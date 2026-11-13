@@ -381,7 +381,11 @@ export interface AutomationServiceDependencies {
   deleteProjectThread?: (projectId: string, threadId: string) => Promise<void>
   /** Run admission needs metadata only; never hydrate project transcripts. */
   loadProjectThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
-  releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
+  releasePreviousRun(
+    projectId: string,
+    threadId: string,
+    isRunActive?: AutomationRunLiveness,
+  ): Promise<AutomationWorktreeRelease>
   /**
    * Whether this retained checkout is the one the next run will take over. A checkout that is
    * about to be handed on is not an extra live worktree, so it does not count against the cap.
@@ -841,7 +845,7 @@ export function createAutomationService(
     for (const thread of threads) {
       if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
       const release = await dependencies
-        .releasePreviousRun(projectId, thread.id)
+        .releasePreviousRun(projectId, thread.id, isRunActive)
         .catch((error: unknown): AutomationWorktreeRelease => {
           console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
           return { released: false, reason: 'in-use' }
@@ -918,7 +922,7 @@ export function createAutomationService(
       for (const thread of scheduleThreads) {
         if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
         const release = await dependencies
-          .releasePreviousRun(schedule.projectId, thread.id)
+          .releasePreviousRun(schedule.projectId, thread.id, isRunActive)
           .catch((error: unknown): AutomationWorktreeRelease => {
             console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
             return { released: false, reason: 'in-use' }

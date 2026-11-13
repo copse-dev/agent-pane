@@ -133,6 +133,32 @@ describe('automation worktree reuse', () => {
     assert.equal(first.adoptCalls.length, 0)
   })
 
+  it('hands over a completed run without sending or discarding its human draft', async () => {
+    const previous = run('previous', 2, {
+      lastPromptAt: 1,
+      draftPrompt: 'Keep this follow-up manual.',
+    })
+    const next = run('next', 3, { worktree: undefined })
+    const { reuse, adoptCalls, metaUpdates } = harness([previous, next])
+    const result = await reuse.reuseFor({
+      projectId: 'p',
+      threadId: 'next',
+      projectRoot: '/repo',
+      baseBranch: 'main',
+    })
+    assert.ok(result)
+    assert.deepEqual(adoptCalls, [{ from: 'previous', to: 'next', baseBranch: 'main' }])
+    assert.equal(previous.draftPrompt, 'Keep this follow-up manual.')
+    assert.deepEqual(metaUpdates, [
+      {
+        threadId: previous.id,
+        patch: {
+          worktree: { ...worktree('previous'), retiredAt: 99, retiredHead: 'b'.repeat(40) },
+        },
+      },
+    ])
+  })
+
   it('never takes a checkout from a different schedule, a running or unstarted run, or a live one', async () => {
     const next = run('next', 9, { worktree: undefined })
     const input = { projectId: 'p', threadId: 'next', projectRoot: '/repo', baseBranch: 'main' }

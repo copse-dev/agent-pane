@@ -23,7 +23,7 @@ import type {
   ThreadCatalogHit,
   ThreadLink,
 } from './thread-types.ts'
-import { sortThreadsNewestFirst } from './thread-sort.ts'
+import { isHumanUserPrompt, sortThreadsNewestFirst } from './thread-sort.ts'
 import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
 import {
   attachHookCards,
@@ -1824,6 +1824,49 @@ export async function measureThreadStorage(
 /** A thread's on-disk metadata (`meta.json`), or null if missing/malformed. */
 export function getThreadMeta(projectId: string, threadId: string): Promise<ThreadMeta | null> {
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
+}
+
+/**
+ * Read a legacy missing prompt timestamp from responded-to spine metadata.
+ * Callers choose the ambiguous history that needs this read; ordinary metadata
+ * loads never scan transcripts. The project queue preserves newer draft/status
+ * writes, and no message body or tool blob is loaded to establish submission.
+ */
+export function getThreadMetaWithRespondedPrompt(
+  projectId: string,
+  threadId: string,
+): Promise<{ meta: ThreadMeta; lastPromptAt?: number } | null> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (
+      !current ||
+      current.lastPromptAt !== undefined ||
+      current.status === 'running' ||
+      current.interruptedTurnAt !== undefined
+    )
+      return current ? { meta: current } : null
+    const raw = safeRead(join(dir, EVENTS_FILE))
+    if (raw === null) return { meta: current }
+    const entries = parseSpineEntries(raw)
+    // An unreadable, malformed or future record cannot authorize admission.
+    if (entries.some((entry) => entry.line === null)) return { meta: current }
+    let responded = false
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const line = entries[index]?.line
+      if (line?.type !== 'message') continue
+      if (line.role === 'assistant') {
+        responded = true
+        continue
+      }
+      // A human message can be committed before main admits its run. Only
+      // an actual model response proves this was more than an unsent draft.
+      if (!responded || !isHumanUserPrompt(line)) continue
+      // Matches folding's fallback for messages written before timestamps.
+      return { meta: current, lastPromptAt: line.createdAt ?? 0 }
+    }
+    return { meta: current }
+  })
 }
 
 /** A fully folded thread, serialized with writes for an authoritative blank-thread check. */

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AcpTranscriptCheckpoint } from './acp-transcript-checkpoint.ts'
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
@@ -117,11 +118,20 @@ const pool = new Map<string, PooledAcpSession>()
  * reap or explicit disposal is still shutting down the previous writer.
  */
 const threadOperations = new Map<string, Promise<void>>()
+interface IdleCheckoutMutation {
+  readonly threadId: string
+  readonly reservation: Promise<void>
+  active: boolean
+}
+const idleCheckoutMutation = new AsyncLocalStorage<IdleCheckoutMutation>()
 
-function runThreadOperation<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
+function runThreadOperation<T>(
+  threadId: string,
+  operation: (reservation: Promise<void>) => Promise<T>,
+): Promise<T> {
   const previous = threadOperations.get(threadId) ?? Promise.resolve()
-  const result = previous.then(operation)
-  const tail = result.then(
+  const result: Promise<T> = previous.then(() => operation(tail))
+  const tail: Promise<void> = result.then(
     () => {},
     () => {},
   )
@@ -581,7 +591,7 @@ export function withIdleAcpSession<T>(
   // Startup can be waiting for a user. An automatic cleanup must neither wait
   // for that approval nor queue an unconditional close behind it.
   if (threadOperations.has(threadId)) return Promise.resolve({ status: 'busy' })
-  return runThreadOperation(threadId, async () => {
+  return runThreadOperation(threadId, async (reservation) => {
     const entry = pool.get(threadId)
     if (entry && sessionHasActiveTurn(entry)) return { status: 'busy' }
     // The guard and connection close run synchronously, before the first
@@ -592,7 +602,15 @@ export function withIdleAcpSession<T>(
       await evictAcpSession(threadId, entry, { preserveForResume: false, retainOnFailure: true })
       notifyThreadResourceFinished(threadId)
     }
-    return { status: 'released', value: await operation() }
+    // Canonical liveness inside this callback must not count its own idle
+    // maintenance lock as an agent turn. External callers and any newer queued
+    // acquire still see busy; the session's actual activity is never discounted.
+    const mutation = { threadId, reservation, active: true }
+    try {
+      return { status: 'released', value: await idleCheckoutMutation.run(mutation, operation) }
+    } finally {
+      mutation.active = false
+    }
   })
 }
 
@@ -617,7 +635,13 @@ export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
 
 /** Runtime ownership includes self-started turns and tools reported between prompts. */
 export function hasActiveAcpTurn(threadId: string): boolean {
-  if (threadOperations.has(threadId)) return true
+  const reservation = threadOperations.get(threadId)
+  const mutation = idleCheckoutMutation.getStore()
+  if (
+    reservation &&
+    !(mutation?.active && mutation.threadId === threadId && mutation.reservation === reservation)
+  )
+    return true
   const entry = pool.get(threadId)
   return entry !== undefined && sessionHasActiveTurn(entry)
 }

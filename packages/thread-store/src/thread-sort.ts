@@ -9,7 +9,9 @@ import type { Message, Thread } from './thread-types.ts'
  * — the origin stays `hook` so authorship is never lost, but the words are the
  * user's, so it counts as their prompt.
  */
-export function isHumanUserPrompt(message: Message): boolean {
+export function isHumanUserPrompt(
+  message: Pick<Message, 'role' | 'origin' | 'editedByUser'>,
+): boolean {
   return message.role === 'user' && (message.origin === undefined || message.editedByUser === true)
 }
 
