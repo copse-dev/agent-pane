@@ -1014,8 +1014,8 @@
       "bytes": 271912
     },
     "browser-form-fields-entered.png": {
-      "sha256": "f2fc71682e381d623b8c3ad022a1b0c0904712a8fc25e1d1d5b85a83a7833ced",
-      "bytes": 216309
+      "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
+      "bytes": 223705
     },
     "browser-link-chat-local-page.png": {
       "sha256": "b66c469d03e0042744e9896f6abe26625d579ee8b08ba22af3131b624d0fe5b7",
@@ -2609,6 +2609,14 @@
       "sha256": "4046d1744ddb2b546c0e39cbe49f614f62f2a34153b1d94d6219b699861d10e7",
       "bytes": 335881
     },
+    "mcp-navigation-original-project.png": {
+      "sha256": "4ea0347ab66a3070ca4e4a5d13b35389fcbe88a73d3cfb0b8fa66b5de23763f5",
+      "bytes": 329802
+    },
+    "mcp-navigation-selected-project.png": {
+      "sha256": "d38c5f4f7fce2a5e0aff9cac1a1b7dfe50c966d8b84b997dd5dd7b3f9dd98372",
+      "bytes": 316259
+    },
     "mcp-settings-connected.png": {
       "sha256": "f89fd48f8a5463fa2170501a2b1a3730a4ce9a400ea611d1e74471b422dd1dcf",
       "bytes": 357661
@@ -3654,8 +3662,8 @@
       "bytes": 27188
     },
     "queued-held.png": {
-      "sha256": "3ecab75386f398e5aed8e88cf508525a7ccce09e58795d5290bcf9a533f07666",
-      "bytes": 287947
+      "sha256": "58ab3b7fb85f2a0eb97d0648915605ac10b44885cecb9ee0639fcaa581f030aa",
+      "bytes": 288223
     },
     "queued-hook-held-after-human-task.png": {
       "sha256": "c80da3785606b65bce334164ee6d3dc85b32c4b454c46328d96c212d4f27e48f",
@@ -4782,8 +4790,8 @@
       "bytes": 105393
     },
     "settings-sources-hook-cwd.png": {
-      "sha256": "3ad5adb529911e0b891119a346142930edd93c011e7345ff058c7c89ed0dcb5b",
-      "bytes": 81758
+      "sha256": "de703f2a59f353b7c8466b9cfd585e24742e0f90c60fa7a08b2a2137b5613bfd",
+      "bytes": 80031
     },
     "settings-sources-hook-test-page-2.png": {
       "sha256": "649a47161de451952199c59765f900db16f501a7c31b482b5ce7e0ce73e21839",
