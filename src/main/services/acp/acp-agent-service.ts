@@ -128,6 +128,7 @@ import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
+import { chatReadRootsForThread } from '../security/thread-access.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
@@ -135,6 +136,7 @@ import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent } from '../workspace-fs/file-content.ts'
 import {
   getActiveProjectRoot,
+  getChatStoreRootSync,
   getWorkspaceRoot,
   resolvePathWithinRoot,
   toRelativePathWithinRoot,
@@ -560,6 +562,21 @@ export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<Ru
   })
 }
 
+/**
+ * Attach the chat-store roots resolved for this turn to the process config.
+ * Kept as one composition boundary so the sandbox input cannot silently drift
+ * away from the turn-side consent decision.
+ */
+export function acpTurnSpawnConfig(
+  config: Omit<AcpAgentSpawnConfig, 'chatReadRoots'>,
+  chatReadRoots: readonly string[] | undefined,
+): AcpAgentSpawnConfig {
+  return {
+    ...config,
+    ...(chatReadRoots ? { chatReadRoots: [...chatReadRoots] } : {}),
+  }
+}
+
 /** What {@link runAcpTurnWithContinuation} needs from the live thread and the agent. */
 export interface AcpContinuationDependencies {
   runTurn: (
@@ -757,20 +774,31 @@ async function runAcpAgentTurn(
     }),
   )
   const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
-  const spawnConfig: AcpAgentSpawnConfig = {
-    command: agent.command,
-    ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
-    cwd,
-    sshTarget,
-    ...(agent.args ? { args: agent.args } : {}),
-    ...(env ? { env } : {}),
-    ...(mcpServers.length > 0 ? { mcpServers } : {}),
-    ...(sandbox ? { sandbox } : {}),
-    ...(sandbox && stateDir ? { stateDir } : {}),
-    ...(permissionMode ? { permissionMode } : {}),
-    ...(configOptions ? { configOptions } : {}),
-    ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
-  }
+  // The transcripts a sandboxed agent may read natively, resolved here while
+  // this turn's run and execution context exist. The agent is spawned by a
+  // session-host worker with no run of its own, so the answer travels in the
+  // spawn config (docs/shell-permissions.md, "Access to other conversations").
+  const chatStoreRoot = sandbox ? getChatStoreRootSync() : null
+  const chatReadRoots = chatStoreRoot
+    ? chatReadRootsForThread(options.threadId, chatStoreRoot)
+    : undefined
+  const spawnConfig = acpTurnSpawnConfig(
+    {
+      command: agent.command,
+      ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+      cwd,
+      sshTarget,
+      ...(agent.args ? { args: agent.args } : {}),
+      ...(env ? { env } : {}),
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
+      ...(sandbox ? { sandbox } : {}),
+      ...(sandbox && stateDir ? { stateDir } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(configOptions ? { configOptions } : {}),
+      ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
+    },
+    chatReadRoots,
+  )
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
   // credentials already live on that host. No-op for local workspaces.
