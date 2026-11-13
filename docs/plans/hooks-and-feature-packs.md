@@ -523,10 +523,13 @@ revisiting this document, not silently diverging in an implementation PR.
     The primary review receives the current redacted turn request alongside the
     durable parent task. A follow-up may revise an earlier requirement; the stored
     first-turn brief alone must not cause review to undo the requested change.
-    Automatic review and manual retry use the same bounded user-request brief:
-    remove any leading model-authored Copse Reviewer report, cap both request
-    and durable task to 2,000 characters, and omit a duplicate request.
-    A manual retry reapplies the existing user-text privacy filter to both
+    Automatic review and manual retry share bounded brief formatting: remove any
+    leading model-authored Copse Reviewer report, cap both request and durable
+    task to 2,000 characters, and omit a duplicate request. Automatic review uses
+    the current turn's redacted request, including a machine-initiated turn's own
+    prompt. A manual retry selects the latest human-origin request instead; it
+    does not replay the machine turn's prompt. It reapplies the existing user-text
+    privacy filter to both
     briefs, because the transcript can contain raw text. It selects the latest
     human-origin transcript request, never a machine-origin message or unmarked
     provider-history nudge. If no authoritative human request is available, omit
