@@ -1022,8 +1022,8 @@
       "bytes": 271912
     },
     "browser-form-fields-entered.png": {
-      "sha256": "f2fc71682e381d623b8c3ad022a1b0c0904712a8fc25e1d1d5b85a83a7833ced",
-      "bytes": 216309
+      "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
+      "bytes": 223705
     },
     "browser-link-chat-local-page.png": {
       "sha256": "b66c469d03e0042744e9896f6abe26625d579ee8b08ba22af3131b624d0fe5b7",
@@ -1426,16 +1426,16 @@
       "bytes": 121995
     },
     "composer-observer-bordered.png": {
-      "sha256": "84eaf2098862be335abc77b689a2f39c18c991a48fd257d76130d5e8082e9ba5",
-      "bytes": 326418
+      "sha256": "9ec5c870f2ef9a06b812ebf2664af9d35fbc3a62dce7a9c4ae976860e6aac25d",
+      "bytes": 326198
     },
     "composer-observer-borderless.png": {
       "sha256": "1abd984edbea24533bd1bd585df612dbc12b99f1f0382e9a777790af5fb4c27e",
       "bytes": 325624
     },
     "composer-observer-content-grown.png": {
-      "sha256": "7468721de6ae9dff53e21125e6b4722a3a31c4cbde74ba33284f2c4f639b3aa7",
-      "bytes": 331619
+      "sha256": "7df5acc820b2fb347c7389514eb63ae1a0db05ca4e137b2c9a9ec46c2f26c5b9",
+      "bytes": 331961
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
@@ -3670,8 +3670,8 @@
       "bytes": 27188
     },
     "queued-held.png": {
-      "sha256": "3ecab75386f398e5aed8e88cf508525a7ccce09e58795d5290bcf9a533f07666",
-      "bytes": 287947
+      "sha256": "58ab3b7fb85f2a0eb97d0648915605ac10b44885cecb9ee0639fcaa581f030aa",
+      "bytes": 288223
     },
     "queued-hook-held-after-human-task.png": {
       "sha256": "c80da3785606b65bce334164ee6d3dc85b32c4b454c46328d96c212d4f27e48f",
@@ -4798,8 +4798,8 @@
       "bytes": 105393
     },
     "settings-sources-hook-cwd.png": {
-      "sha256": "3ad5adb529911e0b891119a346142930edd93c011e7345ff058c7c89ed0dcb5b",
-      "bytes": 81758
+      "sha256": "de703f2a59f353b7c8466b9cfd585e24742e0f90c60fa7a08b2a2137b5613bfd",
+      "bytes": 80031
     },
     "settings-sources-hook-test-page-2.png": {
       "sha256": "649a47161de451952199c59765f900db16f501a7c31b482b5ce7e0ce73e21839",
