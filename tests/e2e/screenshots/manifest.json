@@ -357,6 +357,10 @@
       "sha256": "dc4e273530d2bc7cdeddd34ee4683c2574c8882943495adc0d45b2ca7121eb6f",
       "bytes": 134047
     },
+    "activity-interrupted-run.png": {
+      "sha256": "b079810d83ed633f106fdeca7c16a1bf64a56c948d70c1d41b78eb8dbcbcd65c",
+      "bytes": 256664
+    },
     "activity-panel-approved.png": {
       "sha256": "facf7120c45d6096d36189eb1555e2e1e5ed59f2f168833f8489453b25cf1bfa",
       "bytes": 318302
@@ -697,6 +701,10 @@
       "sha256": "ebb58468a0e1758d8d28c72a7566a6218be33ff2fdcfbfbb76436543f81fc15c",
       "bytes": 26176
     },
+    "automation-active-acp-busy.png": {
+      "sha256": "d90d5d84ddad1190b399a46655eb1d4957478e53e2256855431145ed4809939b",
+      "bytes": 329277
+    },
     "automation-active-acp-held.png": {
       "sha256": "b3e5c71350262b9782e141d564c763625028ea2ab39ab65568fb1370edc4e58e",
       "bytes": 343458
@@ -712,6 +720,10 @@
     "automation-attention-group.png": {
       "sha256": "c61f238152f474ac08522638b3b242da81b550a5f1b3233a3f1e5f0e6a6520d4",
       "bytes": 15233
+    },
+    "automation-background-server-admitted.png": {
+      "sha256": "53c5f3933eea22c6e5ae91a8ada04b802c01efcfeb2005ca3517dd6c5dd22abb",
+      "bytes": 325495
     },
     "automation-branch-ci-edit.png": {
       "sha256": "3030122e62a6dbda36910e6f319d9a9c3feebac43b41804172092688fe658890",
@@ -1014,8 +1026,8 @@
       "bytes": 271912
     },
     "browser-form-fields-entered.png": {
-      "sha256": "f2fc71682e381d623b8c3ad022a1b0c0904712a8fc25e1d1d5b85a83a7833ced",
-      "bytes": 216309
+      "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
+      "bytes": 223705
     },
     "browser-link-chat-local-page.png": {
       "sha256": "b66c469d03e0042744e9896f6abe26625d579ee8b08ba22af3131b624d0fe5b7",
@@ -1418,16 +1430,16 @@
       "bytes": 121995
     },
     "composer-observer-bordered.png": {
-      "sha256": "84eaf2098862be335abc77b689a2f39c18c991a48fd257d76130d5e8082e9ba5",
-      "bytes": 326418
+      "sha256": "9ec5c870f2ef9a06b812ebf2664af9d35fbc3a62dce7a9c4ae976860e6aac25d",
+      "bytes": 326198
     },
     "composer-observer-borderless.png": {
       "sha256": "1abd984edbea24533bd1bd585df612dbc12b99f1f0382e9a777790af5fb4c27e",
       "bytes": 325624
     },
     "composer-observer-content-grown.png": {
-      "sha256": "7468721de6ae9dff53e21125e6b4722a3a31c4cbde74ba33284f2c4f639b3aa7",
-      "bytes": 331619
+      "sha256": "7df5acc820b2fb347c7389514eb63ae1a0db05ca4e137b2c9a9ec46c2f26c5b9",
+      "bytes": 331961
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
@@ -4782,8 +4794,8 @@
       "bytes": 105393
     },
     "settings-sources-hook-cwd.png": {
-      "sha256": "3ad5adb529911e0b891119a346142930edd93c011e7345ff058c7c89ed0dcb5b",
-      "bytes": 81758
+      "sha256": "de703f2a59f353b7c8466b9cfd585e24742e0f90c60fa7a08b2a2137b5613bfd",
+      "bytes": 80031
     },
     "settings-sources-hook-test-page-2.png": {
       "sha256": "649a47161de451952199c59765f900db16f501a7c31b482b5ce7e0ce73e21839",
