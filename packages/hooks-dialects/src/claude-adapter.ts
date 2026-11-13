@@ -31,10 +31,11 @@ import type {
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
-import type {
-  DialectAdapter,
-  DialectDiscoverOpts,
-  DialectInterpretation,
+import {
+  resolveCommandHookCwd,
+  type DialectAdapter,
+  type DialectDiscoverOpts,
+  type DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { testHookMatcher } from './matcher-regex.ts'
@@ -338,7 +339,7 @@ function toCommandHook<E extends HookEventName>(
     wireEvent: hook.event,
     command: hook.command,
     onFailure: 'closed' as const,
-    cwd: hook.scope === 'project' ? (opts.executionRoot ?? hook.cwd) : hook.cwd,
+    cwd: resolveCommandHookCwd(hook.scope, hook.cwd, opts.executionRoot),
     ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
     timeoutMs: hook.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
   }

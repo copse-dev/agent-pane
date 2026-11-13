@@ -442,6 +442,19 @@ export function getProjectById(
   return project ?? null
 }
 
+/** A local filesystem root for this project only; remote paths are not local roots. */
+export function getLocalProjectRoot(projectId: string): string | null {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return null
+  for (const project of projects) {
+    if (!isRecord(project) || project['id'] !== projectId) continue
+    if (typeof project['sshHost'] === 'string') return null
+    const path = project['path']
+    return typeof path === 'string' && path.length > 0 ? path : null
+  }
+  return null
+}
+
 /** Paths of persisted projects backed by a local checkout (no `sshHost`). */
 export function listLocalProjectRoots(): readonly string[] {
   const projects = storageGet(PROJECTS_KEY)
