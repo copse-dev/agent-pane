@@ -164,11 +164,21 @@ describe('browser guest permission policy', function () {
         decisions.length > 0,
         `${contentsType}: ${permission} must reach a production callback: ${JSON.stringify(observations)}`,
       )
-      for (const decision of decisions) {
-        assert.ok(decision.type === 'request' || decision.type === 'check')
-        assert.equal(
-          decision.allowed,
-          allowedPermissions.has(permission),
+      if (allowedPermissions.has(permission)) {
+        assert.ok(
+          decisions.some((decision) => decision.type === 'request' && decision.allowed),
+          `${contentsType}: activated ${permission} request must be allowed`,
+        )
+        assert.ok(
+          decisions.every((decision) => decision.type !== 'check' || !decision.allowed),
+          `${contentsType}: ${permission} checks must never create a durable grant`,
+        )
+      } else {
+        assert.ok(
+          decisions.every(
+            (decision) =>
+              (decision.type !== 'request' && decision.type !== 'check') || !decision.allowed,
+          ),
           `${contentsType}: ${permission}`,
         )
       }
@@ -192,14 +202,17 @@ describe('browser guest permission policy', function () {
     )
     assert.equal(result.results['notifications'], 'denied')
     assert.equal(result.results['clipboard-read-query'], 'denied')
-    assert.equal(
-      result.results['clipboard-write-query'],
-      allowedPermissions.has('clipboard-sanitized-write') ? 'granted' : 'denied',
-    )
+    assert.equal(result.results['clipboard-write-query'], 'denied')
     for (const permission of ['display-capture', 'clipboard-read']) {
       assert.equal(result.results[permission], 'NotAllowedError', `${contentsType}: ${permission}`)
     }
     for (const permission of ['clipboard-sanitized-write', 'fullscreen']) {
+      assert.ok(
+        ['NotAllowedError', 'TypeError'].includes(
+          result.results[`${permission}-without-gesture`] ?? '',
+        ),
+        `${contentsType}: ${permission} must fail without transient activation`,
+      )
       if (allowedPermissions.has(permission)) {
         assert.equal(
           result.results[permission],

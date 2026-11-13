@@ -22,6 +22,7 @@ import {
   clearAllowedWorkspaceRootsForTest,
   getChatStoreRoot,
   getInternalWorkspaceRootRegistration,
+  getLocalProjectRoot,
   getProjectRoot,
   getWorkspaceRoot,
   isResolvedPathInsideWorkspace,
@@ -564,6 +565,18 @@ describe('allowed workspace roots', () => {
 
     assert.equal(getProjectRoot('p2'), '/projects/two')
     assert.equal(getProjectRoot('missing'), null)
+  })
+
+  it('resolves local hook discovery by project identity when remote and local paths collide', () => {
+    storageSet('projects', [
+      { id: 'remote', path: '/projects/shared', sshHost: 'dev' },
+      { id: 'local', path: '/projects/shared' },
+      { id: 'empty', path: '' },
+    ])
+    assert.equal(getLocalProjectRoot('remote'), null)
+    assert.equal(getLocalProjectRoot('local'), '/projects/shared')
+    assert.equal(getLocalProjectRoot('empty'), null)
+    assert.equal(getLocalProjectRoot('missing'), null)
   })
 
   it('listLocalProjectRoots returns only projects without an sshHost', () => {

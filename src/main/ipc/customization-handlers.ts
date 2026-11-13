@@ -1,6 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { z } from 'zod'
-import { getWorkspaceRoot } from '../services/workspace.ts'
 import {
   assertMainFrameSender,
   IpcValidationError,
@@ -28,7 +27,8 @@ import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
-import { senderProjectRoot } from './sender-project-root.ts'
+import { senderProjectId } from './sender-project-root.ts'
+import { getLocalProjectRoot } from '../services/workspace.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 
 export function registerCustomizationHandlers(win: BrowserWindow): void {
@@ -59,8 +59,7 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     return listBundledSkillPlugins()
   })
-  async function listDiscoveredHooks(): Promise<HooksListResult> {
-    const root = getWorkspaceRoot()
+  async function listDiscoveredHooks(root: string | null): Promise<HooksListResult> {
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude, copse] = await Promise.all([
       listCursorHooksForSources(opts),
@@ -72,9 +71,15 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
       warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   }
+  function hookProjectRoot(sender: WebContents): string | null {
+    const projectId = senderProjectId(sender)
+    // Hook config discovery uses local fs. A remote project must not make an
+    // identically named local path eligible; local user hooks remain available.
+    return projectId === null ? null : getLocalProjectRoot(projectId)
+  }
   ipcMain.handle('hooks:list', (event) => {
     assertMainFrameSender(event, win)
-    return listDiscoveredHooks()
+    return listDiscoveredHooks(hookProjectRoot(event.sender))
   })
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
@@ -86,9 +91,10 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     // re-running discovery here, so a compromised renderer cannot run an
     // arbitrary command or turn the sandbox off.
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
+    const root = hookProjectRoot(event.sender)
+    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks(root)).hooks)
     if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
-    return dryRunHook(target, senderProjectRoot(event.sender))
+    return dryRunHook(target, root)
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.

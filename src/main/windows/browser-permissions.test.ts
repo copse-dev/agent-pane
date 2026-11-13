@@ -83,29 +83,54 @@ function installedHandlers(profile: BrowserPermissionProfile): {
   return { request: registered.request, check: registered.check }
 }
 
-function expectDecision(
+async function requestDecision(
+  request: RequestHandler,
+  permission: string,
+  isMainFrame: boolean,
+  active: boolean,
+  destroyed = false,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    Reflect.apply(request, undefined, [
+      {
+        isDestroyed: (): boolean => destroyed,
+        executeJavaScript: (): Promise<boolean> => Promise.resolve(active),
+      },
+      permission,
+      resolve,
+      { requestingUrl: 'https://example.com/', isMainFrame },
+    ])
+  })
+}
+
+async function expectDecision(
   profile: BrowserPermissionProfile,
   permission: string,
   expected: boolean,
-): void {
+): Promise<void> {
   assert.equal(isBrowserPermissionAllowed(permission, profile), expected, permission)
   const { request, check } = installedHandlers(profile)
   for (const isMainFrame of [true, false]) {
     const details = { requestingUrl: 'https://example.com/', isMainFrame }
-    const replies: boolean[] = []
-    Reflect.apply(request, undefined, [
-      {},
-      permission,
-      (value: boolean): void => {
-        replies.push(value)
-      },
-      details,
-    ])
-    assert.deepEqual(replies, [expected], `request ${permission}`)
+    assert.equal(
+      await requestDecision(request, permission, isMainFrame, true),
+      expected,
+      `activated request ${permission}`,
+    )
+    assert.equal(
+      await requestDecision(request, permission, isMainFrame, false),
+      false,
+      `unactivated request ${permission}`,
+    )
+    assert.equal(
+      await requestDecision(request, permission, isMainFrame, true, true),
+      false,
+      `destroyed guest request ${permission}`,
+    )
     for (const contents of [{}, null]) {
       assert.equal(
         Reflect.apply(check, undefined, [contents, permission, 'https://example.com', details]),
-        expected,
+        false,
         `check ${permission}`,
       )
     }
@@ -113,7 +138,7 @@ function expectDecision(
 }
 
 describe('browser permissions', () => {
-  it('denies every current permission and future, malformed or prototype-like names', () => {
+  it('denies every current permission and future, malformed or prototype-like names', async () => {
     const names = [
       ...Object.keys(permissions satisfies Record<Parameters<CheckHandler>[1], false>),
       'future-chromium-permission',
@@ -126,14 +151,14 @@ describe('browser permissions', () => {
       'display-capture\n',
     ]
     for (const permission of names) {
-      expectDecision('restricted', permission, false)
+      await expectDecision('restricted', permission, false)
     }
   })
 
-  it('allows only user-gesture copy and fullscreen in the interactive profile', () => {
+  it('allows only user-gesture copy and fullscreen requests in the interactive profile', async () => {
     for (const permission of ['clipboard-sanitized-write', 'fullscreen']) {
-      expectDecision('interactive', permission, true)
-      expectDecision('restricted', permission, false)
+      await expectDecision('interactive', permission, true)
+      await expectDecision('restricted', permission, false)
     }
     for (const permission of [
       'clipboard-read',
@@ -142,7 +167,7 @@ describe('browser permissions', () => {
       'FULLSCREEN',
       '__proto__',
     ]) {
-      expectDecision('interactive', permission, false)
+      await expectDecision('interactive', permission, false)
     }
   })
 

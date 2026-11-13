@@ -27,6 +27,7 @@ import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
+  acpTurnSpawnConfig,
   acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
@@ -216,6 +217,15 @@ describe('sliceLines', () => {
   it('applies a max line count from the start', () => {
     assert.equal(sliceLines(file, 2, 2), 'two\nthree')
     assert.equal(sliceLines(file, 1, 1), 'one')
+  })
+})
+
+describe('ACP turn spawn config', () => {
+  it("carries the turn's resolved chat roots into the hosted agent sandbox", () => {
+    const own = '/profile/workspace/project/thread'
+    const config = acpTurnSpawnConfig({ command: 'agent', cwd: '/workspace' }, [own])
+
+    assert.deepEqual(config.chatReadRoots, [own])
   })
 })
 

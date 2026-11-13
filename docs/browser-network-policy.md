@@ -20,12 +20,14 @@ Interactive and agent browser profiles remain separate. Existing tabs keep their
 original owner when the selected task changes; popup tabs inherit that owner.
 Tab persistence, pop-outs and agent preview promotion preserve that scope too.
 
-Both browser profiles use explicit web-platform permission allowlists for checks
-and requests. Unknown/new names are denied along with camera/microphone, display
-capture, filesystem, clipboard reads, location, device and notification access.
-The visible user-controlled browser additionally allows gesture-gated sanitized
-clipboard writes and fullscreen; agent profiles and hidden previews remain
-deny-all. Origin approval grants network access, not these capabilities.
+Both browser profiles fail closed on web-platform permission checks. Unknown/new
+names are denied along with camera/microphone, display capture, filesystem,
+clipboard reads, location, device and notification access. The visible
+user-controlled browser additionally allows requests for sanitized clipboard
+writes and fullscreen only while its live guest has transient user activation;
+the grant is never exposed as a durable origin permission. Agent profiles and
+hidden previews remain deny-all. Origin approval grants network access, not these
+capabilities.
 Host-owned copy/paste, screenshots and exports remain available through Copse's
 controls.
 

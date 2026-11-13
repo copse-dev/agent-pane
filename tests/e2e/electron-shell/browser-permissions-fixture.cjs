@@ -8,6 +8,7 @@ const { app, BrowserWindow, Menu, webContents, clipboard } = require('electron')
 
 function install(dir) {
   fs.mkdirSync(dir, { recursive: true })
+  const permissionRequests = []
   const record = (event) =>
     fs.appendFileSync(path.join(dir, 'events.jsonl'), `${JSON.stringify(event)}\n`)
   app.on('session-created', (sess) => {
@@ -21,14 +22,16 @@ function install(dir) {
               wc,
               permission,
               (allowed) => {
-                record({
+                const observation = {
                   type: 'request',
                   permission,
                   allowed,
                   contentsType: wc.getType(),
                   url: details.requestingUrl,
                   mediaTypes: details.mediaTypes,
-                })
+                }
+                permissionRequests.push(observation)
+                record(observation)
                 callback(allowed)
               },
               details,
@@ -59,11 +62,15 @@ function install(dir) {
     wc.on('did-finish-load', () => {
       if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\/permissions$/.test(wc.getURL())) return
       wc.focus()
-      // A real automation click supplies user activation too. Do not let absent
-      // activation masquerade as enforcement of the permission callbacks.
+      // First prove the same APIs fail without activation; the interactive
+      // allowance is exercised later through real input.
       void (async () => {
-        const results = await wc.executeJavaScript('window.runPermissionProbes()', true)
+        const results = await wc.executeJavaScript('window.runPermissionProbes()', false)
         for (const permission of ['fullscreen', 'clipboard-sanitized-write']) {
+          results[`${permission}-without-gesture`] = await wc.executeJavaScript(
+            `window.runAffordanceProbe(${JSON.stringify(permission)})`,
+            false,
+          )
           if (wc.getType() !== 'webview') {
             results[permission] = await wc.executeJavaScript(
               `window.runAffordanceProbe(${JSON.stringify(permission)})`,
@@ -80,6 +87,7 @@ function install(dir) {
             })()`,
             false,
           )
+          const requestCountBeforeClick = permissionRequests.length
           const owner = BrowserWindow.fromWebContents(wc.hostWebContents)
           owner?.show()
           owner?.focus()
@@ -91,8 +99,24 @@ function install(dir) {
           wc.sendInputEvent({ type: 'mouseUp', button: 'left', x, y, clickCount: 1 })
           if (permission === 'clipboard-sanitized-write') {
             // macOS automation can leave the OS clipboard promise unresolved,
-            // but the real click must still reach the production request callback.
-            await new Promise((resolve) => setTimeout(resolve, 250))
+            // but the real click must still reach and pass the production
+            // request callback. Never substitute the earlier permission check.
+            const deadline = Date.now() + 4000
+            while (
+              !permissionRequests
+                .slice(requestCountBeforeClick)
+                .some(
+                  (event) =>
+                    event.permission === permission &&
+                    event.contentsType === wc.getType() &&
+                    event.allowed,
+                )
+            ) {
+              if (Date.now() >= deadline) {
+                throw new Error('clipboard write did not reach an allowed request callback')
+              }
+              await new Promise((resolve) => setTimeout(resolve, 25))
+            }
             results[permission] = 'requested'
             continue
           }

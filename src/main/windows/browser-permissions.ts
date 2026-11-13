@@ -17,15 +17,31 @@ export function isBrowserPermissionAllowed(
   return profile === 'interactive' && INTERACTIVE_BROWSER_PERMISSIONS.has(permission)
 }
 
+async function hasTransientUserActivation(webContents: Electron.WebContents): Promise<boolean> {
+  if (webContents.isDestroyed()) return false
+  try {
+    return (
+      (await webContents.executeJavaScript('navigator.userActivation.isActive', false)) === true
+    )
+  } catch {
+    return false
+  }
+}
+
 /** Install before creating guests; checks and requests must use the same policy. */
 export function configureBrowserPermissions(
   sess: Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>,
   profile: BrowserPermissionProfile = 'restricted',
 ): void {
-  sess.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(isBrowserPermissionAllowed(permission, profile))
+  sess.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (!isBrowserPermissionAllowed(permission, profile)) {
+      callback(false)
+      return
+    }
+    void hasTransientUserActivation(webContents).then(callback)
   })
-  sess.setPermissionCheckHandler((_wc, permission) =>
-    isBrowserPermissionAllowed(permission, profile),
-  )
+  // Never turn a gesture-scoped affordance into a durable origin permission.
+  // Chromium asks the request handler after a denied check; that path verifies
+  // the guest's live transient activation immediately before granting access.
+  sess.setPermissionCheckHandler(() => false)
 }
