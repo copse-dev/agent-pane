@@ -37,12 +37,11 @@ describe('audited IPC sender checks', () => {
           const name = ts.isStringLiteral(channel) ? channel.text : channel.getText(source)
           found.add(name)
           if (file === 'src/main/ipc/define-handler.ts') {
-            assert.match(callback.getText(source), /senderCheck\(win, options\)/, name)
+            assert.match(callback.getText(source), /senderCheck\(win\)/, name)
           } else if (name === 'skills:set-roots') {
-            assert.equal(
-              callback.getText(source),
-              'createSkillRootsHandler(win, { setSetting, initSkillsRegistry, listSkillSources })',
-            )
+            assert.ok(ts.isCallExpression(callback), name)
+            assert.equal(callback.expression.getText(source), 'createSkillRootsHandler', name)
+            assert.equal(callback.arguments[0]?.getText(source), 'win', name)
           } else {
             assert.ok(ts.isArrowFunction(callback) && ts.isBlock(callback.body), name)
             const statement = callback.body.statements[0]
@@ -69,19 +68,6 @@ describe('audited IPC sender checks', () => {
       if (file === 'src/main/index.ts') assert.ok(found.has('lm-studio:models'))
     })
   }
-
-  it('does not opt production domain handlers out of the sender check', () => {
-    const source = globSync('src/main/ipc/*.ts')
-      .filter(
-        (file) =>
-          !file.endsWith('.test.ts') &&
-          file !== 'src/main/ipc/define-handler.ts' &&
-          file !== 'src/main/ipc/ipc-handler.ts',
-      )
-      .map((file) => readFileSync(file, 'utf8'))
-      .join('\n')
-    assert.doesNotMatch(source, /sender:\s*['"]any['"]/)
-  })
 
   it('keeps the client action owner check rooted in the main frame', () => {
     const source = readFileSync('src/main/services/clients/client-action-ipc.ts', 'utf8')

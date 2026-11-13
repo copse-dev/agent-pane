@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { signatureGridFor, signatureLength } from '@shared/video/frame-selection.ts'
 import type { DecodeFramesResponse } from '@shared/video/decode-contract.ts'
-import { parseDecodeResponse } from './decode-response.ts'
+import { parseDecodeResponse, parseDecodeResponseRequestId } from './decode-response.ts'
 
 const requestId = '6c2bfc3a-9a67-40ec-8a40-fd9649a02dd2'
 const signature = Array.from({ length: signatureLength(signatureGridFor(1280, 720)) }, () => 128)
@@ -45,6 +45,13 @@ describe('video decoder IPC response', () => {
       { requestId, ok: false, error: 'x'.repeat(8193) },
     ]) {
       assert.equal(parseDecodeResponse(value), null)
+    }
+  })
+
+  it('extracts only a valid correlation id from a malformed reply', () => {
+    assert.equal(parseDecodeResponseRequestId({ requestId, injected: '<script>' }), requestId)
+    for (const value of [null, {}, { requestId: 'wrong-id' }, { requestId: 42 }]) {
+      assert.equal(parseDecodeResponseRequestId(value), null)
     }
   })
 })

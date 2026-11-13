@@ -39,7 +39,7 @@ const page = `<!doctype html><title>Browser permission boundary</title>
 <style>body{font:16px system-ui;margin:24px;background:#f3f5ef;color:#23332d}main{max-width:560px;background:white;padding:24px;border:1px solid #c7d0c8}h1{font-size:22px}li{margin:8px 0}a{display:inline-block;padding:12px;background:#edf3ef}</style>
 <main><h1>Browser permission boundary</h1><p id="status">Checking guest permissions…</p>
 <a id="copy-target" href="/copied-link">Copy this link with Copse's context menu</a>
-<ul id="results"></ul><label>Browser form <input id="entry"></label><button onclick="document.querySelector('#form-status').textContent=document.querySelector('#entry').value">Apply</button><p id="form-status"></p></main>
+<ul id="results"></ul><button id="clipboard-sanitized-write-probe">Write clipboard</button><button id="fullscreen-probe">Enter fullscreen</button><label>Browser form <input id="entry"></label><button onclick="document.querySelector('#form-status').textContent=document.querySelector('#entry').value">Apply</button><p id="form-status"></p></main>
 <script>
 window.runPermissionProbes = async () => {
   const probes = {
@@ -48,7 +48,6 @@ window.runPermissionProbes = async () => {
     geolocation: () => new Promise((resolve,reject) => navigator.geolocation.getCurrentPosition(resolve,reject)),
     notifications: () => Notification.requestPermission(),
     'clipboard-read': () => navigator.clipboard.readText(),
-    'clipboard-sanitized-write': () => navigator.clipboard.writeText('guest must not write this'),
     'clipboard-read-query': () => navigator.permissions.query({name:'clipboard-read'}).then(permission=>permission.state),
     'clipboard-write-query': () => navigator.permissions.query({name:'clipboard-write'}).then(permission=>permission.state),
     'persistent-storage': () => navigator.storage.persist(),
@@ -69,6 +68,23 @@ window.runPermissionProbes = async () => {
   document.querySelector('#status').textContent='Permission probes complete';
   return results;
 };
+window.runAffordanceProbe = async name => {
+  const probes = {
+    'clipboard-sanitized-write': async () => { await navigator.clipboard.writeText('guest write probe'); return 'allowed'; },
+    fullscreen: async () => { await document.documentElement.requestFullscreen(); await document.exitFullscreen(); return 'allowed'; },
+  };
+  let timeout;
+  try {
+    return await Promise.race([probes[name](), new Promise(resolve => {timeout=setTimeout(()=>resolve('timed out'),3000)})]);
+  } catch(error) { return error.name || String(error); }
+  finally { clearTimeout(timeout); }
+};
+window.affordanceResults = {};
+for (const name of ['clipboard-sanitized-write', 'fullscreen']) {
+  document.querySelector('#' + name + '-probe').addEventListener('click', async () => {
+    window.affordanceResults[name] = await window.runAffordanceProbe(name);
+  });
+}
 </script>`
 
 describe('browser guest permission policy', function () {
@@ -112,7 +128,10 @@ describe('browser guest permission policy', function () {
       })
   }
 
-  async function expectDenials(contentsType: string): Promise<void> {
+  async function expectPermissionPolicy(
+    contentsType: string,
+    allowedPermissions: ReadonlySet<string> = new Set(),
+  ): Promise<void> {
     await browser.waitUntil(
       () =>
         events().some((event) => event.type === 'results' && event.contentsType === contentsType),
@@ -132,6 +151,7 @@ describe('browser guest permission policy', function () {
       'notifications',
       'clipboard-read',
       'clipboard-sanitized-write',
+      'fullscreen',
       'persistent-storage',
     ]) {
       const decisions = observations.filter(
@@ -146,7 +166,11 @@ describe('browser guest permission policy', function () {
       )
       for (const decision of decisions) {
         assert.ok(decision.type === 'request' || decision.type === 'check')
-        assert.equal(decision.allowed, false, `${contentsType}: ${permission}`)
+        assert.equal(
+          decision.allowed,
+          allowedPermissions.has(permission),
+          `${contentsType}: ${permission}`,
+        )
       }
     }
     const result = observations.find(
@@ -168,9 +192,26 @@ describe('browser guest permission policy', function () {
     )
     assert.equal(result.results['notifications'], 'denied')
     assert.equal(result.results['clipboard-read-query'], 'denied')
-    assert.equal(result.results['clipboard-write-query'], 'denied')
-    for (const permission of ['display-capture', 'clipboard-read', 'clipboard-sanitized-write']) {
+    assert.equal(
+      result.results['clipboard-write-query'],
+      allowedPermissions.has('clipboard-sanitized-write') ? 'granted' : 'denied',
+    )
+    for (const permission of ['display-capture', 'clipboard-read']) {
       assert.equal(result.results[permission], 'NotAllowedError', `${contentsType}: ${permission}`)
+    }
+    for (const permission of ['clipboard-sanitized-write', 'fullscreen']) {
+      if (allowedPermissions.has(permission)) {
+        assert.equal(
+          result.results[permission],
+          permission === 'clipboard-sanitized-write' ? 'requested' : 'allowed',
+          `${contentsType}: ${permission}`,
+        )
+      } else {
+        assert.ok(
+          ['NotAllowedError', 'timed out'].includes(result.results[permission] ?? ''),
+          `${contentsType}: ${permission}`,
+        )
+      }
     }
     // On a host with no camera/mic, Chromium may find no device before it
     // reports the denied result. The production callback above must still
@@ -220,7 +261,7 @@ describe('browser guest permission policy', function () {
   it('denies page capabilities in the interactive browser while host copy and capture work', async () => {
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     await navigateActiveBrowserTab(`${origin}/permissions`)
-    await expectDenials('webview')
+    await expectPermissionPolicy('webview', new Set(['clipboard-sanitized-write', 'fullscreen']))
     writeFileSync(join(fixtureDir, 'copy-link'), '')
     await browser.waitUntil(
       () =>
@@ -267,7 +308,7 @@ describe('browser guest permission policy', function () {
       { url: `${origin}/permissions` },
       'Browser navigation completed.',
     )
-    await expectDenials('offscreen')
+    await expectPermissionPolicy('offscreen')
     await runTool('browser_snapshot', {}, 'Browser snapshot completed.')
     const result = await snapshotText()
     expect(result).toContain('Browser permission boundary')

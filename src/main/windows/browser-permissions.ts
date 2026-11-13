@@ -1,20 +1,31 @@
 import type { Session } from 'electron'
 
-// Neither interactive browsing nor agent automation needs a guest-page grant.
-// Host-owned copy/paste, exports and capturePage do not use these permissions.
-// Keep exceptions explicit: a new Chromium permission must never inherit access.
-const ALLOWED_BROWSER_PERMISSIONS: ReadonlySet<string> = new Set<string>()
+export type BrowserPermissionProfile = 'interactive' | 'restricted'
 
-export function isBrowserPermissionAllowed(permission: string): boolean {
-  return ALLOWED_BROWSER_PERMISSIONS.has(permission)
+// The visible browser retains two gesture-gated browser affordances. Agent
+// automation and hidden previews remain deny-all. Keep this list explicit: a
+// new Chromium permission must never inherit access by omission.
+const INTERACTIVE_BROWSER_PERMISSIONS: ReadonlySet<string> = new Set([
+  'clipboard-sanitized-write',
+  'fullscreen',
+])
+
+export function isBrowserPermissionAllowed(
+  permission: string,
+  profile: BrowserPermissionProfile,
+): boolean {
+  return profile === 'interactive' && INTERACTIVE_BROWSER_PERMISSIONS.has(permission)
 }
 
 /** Install before creating guests; checks and requests must use the same policy. */
 export function configureBrowserPermissions(
   sess: Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>,
+  profile: BrowserPermissionProfile = 'restricted',
 ): void {
   sess.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(isBrowserPermissionAllowed(permission))
+    callback(isBrowserPermissionAllowed(permission, profile))
   })
-  sess.setPermissionCheckHandler((_wc, permission) => isBrowserPermissionAllowed(permission))
+  sess.setPermissionCheckHandler((_wc, permission) =>
+    isBrowserPermissionAllowed(permission, profile),
+  )
 }

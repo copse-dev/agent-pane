@@ -1,7 +1,7 @@
 import type { BrowserWindow, WebContents } from 'electron'
 import type { z } from 'zod'
 import { defineSenderHandler, type InvokeChannel } from './define-handler.ts'
-import type { IpcHandlerOptions, PositionalArgsOptions } from './ipc-handler.ts'
+import type { PositionalArgsOptions } from './ipc-handler.ts'
 import type { AgentRoots } from '../services/execution-root.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { getMainWindowNavigation } from '../windows/create-main-window.ts'
@@ -38,7 +38,7 @@ export function defineSenderRootHandler<T extends readonly z.ZodType[]>(
   channel: InvokeChannel,
   args: z.ZodTuple<T, null>,
   fn: (root: string | null, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
-  options?: IpcHandlerOptions & PositionalArgsOptions,
+  options?: PositionalArgsOptions,
 ): void {
   defineSenderHandler(
     win,

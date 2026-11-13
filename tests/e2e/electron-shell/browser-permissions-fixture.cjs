@@ -4,7 +4,7 @@
 // The test launcher is the injection boundary: no product IPC or setting is added.
 const fs = require('node:fs')
 const path = require('node:path')
-const { app, Menu, webContents, clipboard } = require('electron')
+const { app, BrowserWindow, Menu, webContents, clipboard } = require('electron')
 
 function install(dir) {
   fs.mkdirSync(dir, { recursive: true })
@@ -61,10 +61,57 @@ function install(dir) {
       wc.focus()
       // A real automation click supplies user activation too. Do not let absent
       // activation masquerade as enforcement of the permission callbacks.
-      void wc.executeJavaScript('window.runPermissionProbes()', true).then(
-        (results) => record({ type: 'results', contentsType: wc.getType(), results }),
-        (error) => record({ type: 'error', error: String(error) }),
-      )
+      void (async () => {
+        const results = await wc.executeJavaScript('window.runPermissionProbes()', true)
+        for (const permission of ['fullscreen', 'clipboard-sanitized-write']) {
+          if (wc.getType() !== 'webview') {
+            results[permission] = await wc.executeJavaScript(
+              `window.runAffordanceProbe(${JSON.stringify(permission)})`,
+              true,
+            )
+            continue
+          }
+          const { x, y } = await wc.executeJavaScript(
+            `(() => {
+              const element = document.querySelector(${JSON.stringify(`#${permission}-probe`)});
+              element.scrollIntoView({ block: 'center' });
+              const box = element.getBoundingClientRect();
+              return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+            })()`,
+            false,
+          )
+          const owner = BrowserWindow.fromWebContents(wc.hostWebContents)
+          owner?.show()
+          owner?.focus()
+          app.focus({ steal: true })
+          wc.focus()
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          wc.sendInputEvent({ type: 'mouseMove', x, y })
+          wc.sendInputEvent({ type: 'mouseDown', button: 'left', x, y, clickCount: 1 })
+          wc.sendInputEvent({ type: 'mouseUp', button: 'left', x, y, clickCount: 1 })
+          if (permission === 'clipboard-sanitized-write') {
+            // macOS automation can leave the OS clipboard promise unresolved,
+            // but the real click must still reach the production request callback.
+            await new Promise((resolve) => setTimeout(resolve, 250))
+            results[permission] = 'requested'
+            continue
+          }
+          results[permission] = await wc.executeJavaScript(
+            `new Promise((resolve, reject) => {
+              const started = Date.now();
+              const poll = () => {
+                const value = window.affordanceResults[${JSON.stringify(permission)}];
+                if (value !== undefined) resolve(value);
+                else if (Date.now() - started > 4000) reject(new Error('affordance probe timed out'));
+                else setTimeout(poll, 25);
+              };
+              poll();
+            })`,
+            false,
+          )
+        }
+        record({ type: 'results', contentsType: wc.getType(), results })
+      })().catch((error) => record({ type: 'error', error: String(error) }))
     })
   })
 

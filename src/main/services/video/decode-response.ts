@@ -45,6 +45,12 @@ const failure = z.strictObject({
 
 const response = z.discriminatedUnion('ok', [success, failure])
 
+/** Extract only the correlation id so a malformed reply can fail its own request promptly. */
+export function parseDecodeResponseRequestId(value: unknown): string | null {
+  const parsed = z.object({ requestId }).safeParse(value)
+  return parsed.success ? parsed.data.requestId : null
+}
+
 /** IPC payloads are untrusted even when they came from the designated decoder frame. */
 export function parseDecodeResponse(value: unknown): DecodeFramesResponse | null {
   const parsed = response.safeParse(value)

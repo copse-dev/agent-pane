@@ -8,7 +8,7 @@ import type {
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { isWindowMainFrameSender } from '../../ipc/ipc-guards.ts'
-import { parseDecodeResponse } from './decode-response.ts'
+import { parseDecodeResponse, parseDecodeResponseRequestId } from './decode-response.ts'
 import {
   VIDEO_DECODE_READY_CHANNEL,
   VIDEO_DECODE_REQUEST_CHANNEL,
@@ -83,7 +83,16 @@ function attachListeners(): void {
     // Only the decoder window may answer; anything else is ignored outright.
     if (!isWindowMainFrameSender(event, decoderWindow)) return
     const response = parseDecodeResponse(raw)
-    if (!response) return
+    if (!response) {
+      const malformedRequestId = parseDecodeResponseRequestId(raw)
+      if (!malformedRequestId) return
+      const malformedEntry = pending.get(malformedRequestId)
+      if (!malformedEntry) return
+      pending.delete(malformedRequestId)
+      clearTimeout(malformedEntry.timer)
+      malformedEntry.reject(new Error('The video decoder returned a malformed reply.'))
+      return
+    }
     const entry = pending.get(response.requestId)
     if (!entry) return
     pending.delete(response.requestId)

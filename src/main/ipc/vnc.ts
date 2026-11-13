@@ -194,7 +194,8 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     // turn a renderer message into an uncaught main-process exception.
     try {
       service.start(id.data, event.sender.id)
-    } catch {
+    } catch (error) {
+      console.warn('[vnc] ignored a failed one-way start event', error)
       return
     }
   }
@@ -204,7 +205,8 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     if (!id.success) return
     try {
       service.send(id.data, event.sender.id, parseClientBytes(rawBytes))
-    } catch {
+    } catch (error) {
+      console.warn('[vnc] ignored a failed one-way send event', error)
       return
     }
   }
