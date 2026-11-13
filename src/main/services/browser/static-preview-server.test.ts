@@ -136,7 +136,9 @@ describe('static browser preview server', () => {
           response.on('data', (chunk: string) => {
             body += chunk
           })
-          response.once('end', () => resolve({ status: response.statusCode ?? 0, body }))
+          response.once('end', () => {
+            resolve({ status: response.statusCode ?? 0, body })
+          })
           response.once('error', reject)
         },
       )
