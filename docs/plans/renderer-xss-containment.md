@@ -12,13 +12,19 @@ The first containment step keeps each pending approval request in main and requi
 OS-owned confirmation before accepting a positive renderer answer. The dialog shows the
 main-owned action and proposed grant scope. High-impact renderer IPC paths now require the
 same confirmation before changing permissions, loading executable integrations, starting
-unsandboxed app tooling, or publishing GitHub changes. Rejected or unavailable confirmation
-must leave the underlying state unchanged.
+unsandboxed app tooling, publishing GitHub changes, or opening renderer-supplied links in the
+system browser. An MCP server's discovered sign-in destination receives a separate exact-URL
+confirmation before the system browser opens it. Rejected or unavailable confirmation must leave
+the underlying state unchanged.
 
 Project MCP definitions are pinned to the exact configuration shown in the OS confirmation.
 An edit to a trusted project's MCP configuration leaves those servers inert on every reload
 path, including external agent forwarding, until the user reviews the new definitions.
 Previously trusted projects need this review before their project MCP servers restart.
+Project stdio MCP servers now launch in the enforcing project OS sandbox. If the sandbox is
+unavailable, they fail closed; they are not handed to an external agent to spawn. Project
+environment variables are applied after the sandbox starts, so a project-supplied loader or
+shell startup variable cannot run code in the unsandboxed launcher.
 
 ## Remaining blockers
 
@@ -37,16 +43,17 @@ Previously trusted projects need this review before their project MCP servers re
    approval. User input that can activate those grants needs provenance from a trusted input
    surface or a fresh main-owned confirmation of the concrete privileged action.
 3. **Broader renderer data access and side effects.** The renderer still has many read and
-   low-friction write APIs. Audit those against a capability inventory, including remote
-   browsing, file access, external integrations, and denial of service. Native dialogs on a
-   selected set of sinks do not replace that inventory.
-4. **Executable content behind trusted project MCP configuration.** The configuration pin
-   blocks changed command strings, arguments, environment and working directory. A command
-   can still execute a script inside the project, such as `node server.js`; a renderer XSS
-   can edit that script without changing `.mcp.json`. Project stdio servers still start
-   outside the project sandbox. Contain them in the project OS sandbox and deny launch
-   where containment is unavailable, or pin and verify executable content at the spawn
-   boundary. Apply the same rule to project servers forwarded to external agents.
+   low-friction write APIs. In particular, the visible browser's public-web session accepts
+   renderer-created webviews and arbitrary HTTP(S) navigations, so an XSS can use it as a
+   network egress path despite native confirmation on system-browser links. Audit that
+   session and the remaining file, browser, integration and denial-of-service APIs against
+   a capability inventory. Native dialogs on selected sinks do not replace that boundary.
+4. **User-level executable integrations reachable through a workspace.** User/global MCP
+   definitions still launch outside the project sandbox. A user definition may explicitly
+   point at a script in a renderer-writable workspace, or select that workspace as its
+   working directory. The project-source sandbox rule does not cover that case. Inventory
+   those launch paths and either move them into an enforcing sandbox or require a trusted
+   decision about the executable content at spawn time.
 
 ## Acceptance criteria for closing the blockers
 
@@ -60,6 +67,12 @@ Previously trusted projects need this review before their project MCP servers re
   including Markdown body and grant scope.
 - Inject JavaScript with existing remembered grants. It cannot turn a forged renderer
   message into unsandboxed or externally published work without fresh trusted provenance.
+- A renderer-supplied external URL, including a window-open or navigation attempt, reaches
+  the system browser only after the user confirms its exact URL in an OS dialog. Denial and
+  invalid URLs do not open it.
+- A trusted project MCP stdio server whose script changes after config approval cannot write
+  outside its project or use network access. With the OS sandbox unavailable, it does not
+  launch; no project stdio definition reaches an external agent for a direct spawn.
 - Run the security-focused unit tests, a focused Electron screenshot spec, an on-device native
   dialog check, and the full `pnpm run check` gate. Record platform-specific failures and
   independent security review before marking the PR ready.

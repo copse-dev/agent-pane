@@ -32,6 +32,10 @@ import { getPluginService } from '../services/plugins/plugin-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { confirmNativeAction } from '../services/native-human-confirmation.ts'
+import {
+  externalLinkConfirmationDetail,
+  openExternalWithConsent,
+} from '../services/external-link-consent.ts'
 
 export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   ipcMain.handle('mcp:list', (event) => {
@@ -109,7 +113,19 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
     try {
       await signInMcpServer(serverUrl, {
         signal: controller.signal,
-        openExternal: (url) => shell.openExternal(url),
+        openExternal: async (url) => {
+          const opened = await openExternalWithConsent(
+            url,
+            (review) =>
+              confirmNativeAction(event.sender, {
+                title: 'Open MCP sign-in page?',
+                detail: externalLinkConfirmationDetail(review),
+                approveLabel: 'Open sign-in page',
+              }),
+            (reviewedHref) => shell.openExternal(reviewedHref),
+          )
+          if (!opened) throw new Error('MCP sign-in page was not confirmed')
+        },
       })
     } finally {
       if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)

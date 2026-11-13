@@ -18,7 +18,7 @@ import type {
 } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getWorkspaceRoot, resolvePathWithinRoot } from '../workspace.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import {
@@ -76,6 +76,8 @@ import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-de
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtime.ts'
 import { withWorktreeWriter } from '../worktree-writers.ts'
+import { SandboxedStdioClientTransport } from './sandboxed-stdio-transport.ts'
+import { projectMcpLauncher } from './project-mcp-launcher.ts'
 import {
   clearMcpToolPermissionTargets,
   migrateLegacyMcpToolGrants,
@@ -271,6 +273,7 @@ function agentPluginIdForMcpSource(source: string | undefined): string | undefin
 async function collectConfigs(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
+  projectWorkspace: string | null
   needsReview?: boolean
 }> {
   const workspace = getWorkspaceRoot()
@@ -311,16 +314,17 @@ async function collectConfigs(): Promise<{
     // with an existing app-level server (a colliding name simply uses the trusted one).
     const trustedNames = new Set(appActive.map((c) => c.name))
     const untrusted = projectConfigs.filter((c) => !trustedNames.has(c.name))
-    return { active: appActive, untrusted, needsReview }
+    return { active: appActive, untrusted, projectWorkspace: workspace, needsReview }
   }
 
   const active = mergeMcpConfigs([appActive, ...projectPerSource])
-  return { active, untrusted: [] }
+  return { active, untrusted: [], projectWorkspace: workspace }
 }
 
 async function collectE2eMcpFixtureConfig(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
+  projectWorkspace: string | null
   needsReview?: boolean
 } | null> {
   const configPath = copseUserMcpConfigPath()
@@ -332,6 +336,7 @@ async function collectE2eMcpFixtureConfig(): Promise<{
   return {
     active: await readConfigFile(configPath),
     untrusted: [],
+    projectWorkspace: null,
   }
 }
 
@@ -491,10 +496,11 @@ function markSignInRequired(serverName: string): void {
   for (const listener of statusListeners) listener(snapshot)
 }
 
-function createTransport(
+async function createTransport(
   cfg: McpServerConfig,
   authProvider: OAuthClientProvider | undefined,
-): CreatedTransport {
+  projectWorkspace: string | null,
+): Promise<CreatedTransport> {
   if (cfg.transport === 'http') {
     if (cfg.url === undefined) {
       throw new Error(`MCP server "${cfg.name}" uses http transport but has no url`)
@@ -514,6 +520,24 @@ function createTransport(
   }
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
+  }
+  if (classifyMcpOrigin(cfg.source) === 'project') {
+    // Use the root whose config and consent were read for this load. The active
+    // workspace can change while the parallel MCP connections are starting.
+    const root = projectWorkspace
+    if (!root) throw new Error('Project MCP server has no active workspace')
+    const cwd = await resolvePathWithinRoot(cfg.cwd ?? '.', root)
+    const launcher = projectMcpLauncher(cfg)
+    const transport = new SandboxedStdioClientTransport({
+      ...launcher,
+      cwd,
+      sandboxRoot: root,
+    })
+    let stderr = ''
+    transport.stderr.on('data', (chunk: Buffer | string) => {
+      stderr = appendFlatCapped(stderr, chunk.toString(), COMMAND_OUTPUT_MAX_BYTES)
+    })
+    return { transport, stderrOutput: () => stderr.trim() }
   }
   const cwd = cfg.cwd ?? getWorkspaceRoot() ?? undefined
   const transport = new StdioClientTransport({
@@ -744,6 +768,7 @@ async function connectServer(
   rawCfg: McpServerConfig,
   userDisabled: ReadonlySet<string>,
   generation: number,
+  projectWorkspace: string | null,
 ): Promise<McpServerStatus> {
   // Agent Plugins performs exactly the two portable placeholder expansions in
   // its adapter. Running the native env interpolator afterwards would violate
@@ -780,7 +805,7 @@ async function connectServer(
     // Inside the try: a config that names an unusable URL is this server's
     // error, not a rejection that stops every other server's status.
     authProvider = oauthProviderFor(cfg)
-    const created = createTransport(cfg, authProvider)
+    const created = await createTransport(cfg, authProvider, projectWorkspace)
     stderrOutput = created.stderrOutput
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     await connectMcpClient(
@@ -889,7 +914,8 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     }
     return
   }
-  const { active, untrusted, needsReview } = e2eMcpFixtureConfig ?? (await collectConfigs())
+  const { active, untrusted, needsReview, projectWorkspace } =
+    e2eMcpFixtureConfig ?? (await collectConfigs())
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && publishedBundled().length === 0) {
@@ -898,7 +924,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     return
   }
   const connected = await Promise.all(
-    active.map((cfg) => connectServer(registry, cfg, userDisabled, generation)),
+    active.map((cfg) => connectServer(registry, cfg, userDisabled, generation, projectWorkspace)),
   )
   // Project servers in an untrusted workspace are never spawned — they're reported as
   // `untrusted` so the UI can offer "trust this workspace" (issue #100).
@@ -911,17 +937,12 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
 }
 
 /**
- * The MCP servers an external ACP agent should be handed via `session/new`
- * (`mcpServers`), so it can mount the user's servers itself (issue #602,
- * tier 1). Applies the same gating as Copse's own connections — workspace
- * trust (collectConfigs), config `disabled`, the Settings toggle, and env
- * interpolation with the per-source allowlist — then keeps only transports an
- * external process can reach (stdio/http). Bundled in-process servers live
- * inside Copse and cannot be forwarded.
- *
- * The agent spawns stdio servers itself: interpolated `env` entries travel in
- * the session request, but inherited environment comes from the agent process
- * (which is scrubbed of Copse's provider keys), not from Copse.
+ * Legacy external-agent config list. The current ACP adapter does not directly
+ * forward any configured servers: it exposes their registered tools through
+ * Copse's gated bridge. Keep project stdio absent here as defense in depth so
+ * an adapter change cannot quietly restore uncontained project-script spawns.
+ * Workspace trust, config disablement and the per-source env allowlist still
+ * apply to the list.
  */
 export async function listForwardableMcpServers(projectId?: string): Promise<McpServerConfig[]> {
   // Mirror loadMcpServers: under agent-eval/e2e nothing may spawn or reach the
@@ -931,19 +952,27 @@ export async function listForwardableMcpServers(projectId?: string): Promise<Mcp
   }
   const { active } = await collectConfigs()
   const userDisabled = getUserDisabledServerNames()
-  return active
-    .filter(
-      (cfg) =>
-        cfg.name !== XCODEBUILD_MCP_SERVER_NAME ||
-        (projectId !== undefined && isAppleDevelopmentProjectEnrolled(projectId)),
-    )
-    .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
-    .filter((cfg) => cfg.transport === 'stdio' || cfg.transport === 'http')
-    .map((cfg) =>
-      agentPluginIdForMcpSource(cfg.source) === undefined
-        ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
-        : cfg,
-    )
+  return (
+    active
+      .filter(
+        (cfg) =>
+          cfg.name !== XCODEBUILD_MCP_SERVER_NAME ||
+          (projectId !== undefined && isAppleDevelopmentProjectEnrolled(projectId)),
+      )
+      .filter((cfg) => !isMcpServerEffectivelyDisabled(cfg, userDisabled))
+      // External agents spawn forwarded stdio servers themselves, outside this
+      // registry's sandbox. Project scripts are mutable after config consent.
+      .filter(
+        (cfg) =>
+          cfg.transport === 'http' ||
+          (cfg.transport === 'stdio' && classifyMcpOrigin(cfg.source) !== 'project'),
+      )
+      .map((cfg) =>
+        agentPluginIdForMcpSource(cfg.source) === undefined
+          ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
+          : cfg,
+      )
+  )
 }
 
 function untrustedStatus(

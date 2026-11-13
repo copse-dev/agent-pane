@@ -47,7 +47,7 @@ describe('project MCP consent', () => {
     assert.equal(isProjectMcpConfigApproved(reviewed), false)
   })
 
-  it('keeps changed project definitions out of external agent sessions', async () => {
+  it('never forwards project stdio to external agents and still pins reviewed HTTP definitions', async () => {
     storageSet(APPROVALS_KEY, [])
     const root = await mkdtemp(join(tmpdir(), 'copse-project-mcp-consent-'))
     const configPath = join(root, '.mcp.json')
@@ -58,19 +58,29 @@ describe('project MCP consent', () => {
     const projectServers = async (): Promise<string[]> =>
       (await listForwardableMcpServers())
         .filter((config) => config.source === configPath)
-        .map((config) => config.command ?? '')
+        .map((config) => config.name)
     try {
       await writeFile(
         configPath,
-        JSON.stringify({ mcpServers: { project: { command: '/bin/echo' } } }),
+        JSON.stringify({
+          mcpServers: {
+            project: { command: '/bin/echo' },
+            remote: { url: 'https://example.invalid/mcp' },
+          },
+        }),
       )
       assert.deepEqual(await projectServers(), [])
       const reviewed = await readProjectMcpConsent(root)
       await approveProjectMcpConfig(reviewed)
-      assert.deepEqual(await projectServers(), ['/bin/echo'])
+      assert.deepEqual(await projectServers(), ['remote'])
       await writeFile(
         configPath,
-        JSON.stringify({ mcpServers: { project: { command: '/bin/sh' } } }),
+        JSON.stringify({
+          mcpServers: {
+            project: { command: '/bin/sh' },
+            remote: { url: 'https://example.invalid/mcp' },
+          },
+        }),
       )
       assert.deepEqual(await projectServers(), [])
     } finally {

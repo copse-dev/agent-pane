@@ -19,9 +19,13 @@ The renderer is not a trusted witness to a human click. For desktop approval pro
 separate OS-owned confirmation before accepting an approval or remembered grant. Main also asks
 for OS confirmation before renderer-initiated changes to security settings, project roots,
 workspace trust, tool grants, plugins, MCP servers, automations, unsandboxed app/Xcode actions,
-and GitHub PR writes. Native denial, cancellation, missing windows, and dialog errors fail closed.
+GitHub PR writes, and renderer-supplied system-browser links. Native denial, cancellation,
+missing windows, and dialog errors fail closed.
 Project MCP server definitions are pinned to the exact configuration the user reviewed;
 changes leave those servers inert until a new OS confirmation.
+Project stdio servers start inside the enforcing project sandbox and fail closed if it is
+unavailable. Their configured environment is applied after the sandbox starts. External
+agents do not receive those stdio definitions for direct launch.
 
 This is partial containment, not a claim that arbitrary JavaScript in the main renderer is safe.
 An already-open integrated terminal still accepts `terminal:write` from its owning renderer;
