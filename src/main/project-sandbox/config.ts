@@ -1169,8 +1169,15 @@ function grantableStateDirs(stateDirs: readonly string[]): string[] {
   const chatStoreRoot = stateDirs.length > 0 ? getChatStoreRootSync() : undefined
   if (!chatStoreRoot) return []
   return stateDirs.flatMap((dir) => {
-    const canonical = canonicalizeReadTarget(dir)
-    return canonical !== chatStoreRoot && coversPath(chatStoreRoot, canonical) ? [canonical] : []
+    try {
+      const canonical = canonicalizeReadTarget(dir)
+      return canonical !== chatStoreRoot && coversPath(chatStoreRoot, canonical) ? [canonical] : []
+    } catch {
+      // The agent id contributes to this path but is not fully validated.
+      // A malformed or dangling state-dir alias must lose its carve-out rather
+      // than aborting the entire agent sandbox.
+      return []
+    }
   })
 }
 

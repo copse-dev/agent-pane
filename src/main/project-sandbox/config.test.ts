@@ -1717,6 +1717,13 @@ describe('chat-store sandbox reads', () => {
       const aliased = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [viaAlias] }).filesystem
       assert.ok(aliased?.allowWrite.includes(stateDir))
       assert.equal(aliased?.allowWrite.includes(viaAlias), false)
+
+      // A malformed agent state path loses only its carve-out. It must not
+      // abort construction of the agent's otherwise valid sandbox.
+      const dangling = join(profile, 'dangling-state')
+      symlinkSync(join(profile, 'missing-state'), dangling)
+      const malformed = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [dangling] }).filesystem
+      assert.equal(malformed?.allowWrite.includes(dangling), false)
     } finally {
       if (previous === undefined) delete process.env['COPSE_DIR']
       else process.env['COPSE_DIR'] = previous

@@ -846,7 +846,9 @@ command, reads the directory itself. `cd` alone, `cd -`, and relative targets st
 `cd` forward, so `cd ~/.ssh && cat id_rsa` is refused like `cat ~/.ssh/id_rsa`.
 
 This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
-access is still outside the project and requires the same narrowly reasoned permission.
+access is still outside the project and requires the same narrowly reasoned permission. After
+approval, the command reads the path on the host because no OS sandbox exists to confine that read
+or prevent it from following links beyond an approved directory.
 
 The in-memory grant disappears on restart. The decision record does not: an answer appends a
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was

@@ -14,7 +14,8 @@ import {
 } from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
 import { readOutsideProjectGrantTargets } from './read-outside-project.ts'
-import { standingCanonicalReadTargets } from './read-outside-grant.ts'
+import { safeCanonicalReadTarget, standingCanonicalReadTargets } from './read-outside-grant.ts'
+import { isGuardedYoloActive } from './guarded-yolo.ts'
 import { getActiveRunThread } from '../active-run-identity.ts'
 import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 
@@ -125,10 +126,21 @@ export function shellReadGrantTargets(
   // A standing grant pins each target's identity and destination. Use that
   // canonical destination in the per-spawn overlay, so ordinary symlinked
   // paths work without allowing a link swapped after the gate to widen reads.
+  // Guarded YOLO has no ledger entry, but the permission gate already resolved
+  // and rejected sensitive destinations for this command. Canonicalize again
+  // immediately before spawning so an ordinary system link remains usable
+  // without widening to a credential or broad filesystem root.
   // One-command approvals have no pinned identity and keep the conservative
   // link refusal in readAllowedSandboxOverlay.
   const threadId = getActiveRunThread()
-  return targets.map((target) => standingCanonicalReadTargets(threadId, [target])?.[0] ?? target)
+  return targets.map((target) => {
+    const standing = standingCanonicalReadTargets(threadId, [target])?.[0]
+    if (standing !== undefined) return standing
+    if (threadId !== null && isGuardedYoloActive(threadId)) {
+      return safeCanonicalReadTarget(target) ?? target
+    }
+    return target
+  })
 }
 
 /**

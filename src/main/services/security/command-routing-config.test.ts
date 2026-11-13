@@ -15,6 +15,7 @@ import { currentAgentRoots } from '../execution-root.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
+import { activateGuardedYoloForRun, armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 import {
@@ -165,6 +166,44 @@ describe('identity-pinned read routing', () => {
       assert.deepEqual(targets(), [link])
     } finally {
       clearReadOutsideProjectGrants()
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('passes a safe symlink destination to the sandbox in Guarded YOLO', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-yolo-read-route-')))
+    const root = join(base, 'project')
+    const destination = join(base, 'notes.txt')
+    const link = join(base, 'notes-link.txt')
+    mkdirSync(root)
+    writeFileSync(destination, 'notes')
+    symlinkSync(destination, link)
+    const context: ThreadExecutionContext = {
+      projectId: 'yolo-read-route',
+      threadId: 'yolo-read-route',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      armGuardedYolo(context.threadId)
+      assert.equal(activateGuardedYoloForRun(context.threadId), true)
+      const targets = runWithActiveRunIdentity(context.threadId, () =>
+        runWithThreadExecutionContext(context, () =>
+          shellReadGrantTargets('cat ' + link, currentAgentRoots(), root),
+        ),
+      )
+      assert.deepEqual(targets, [destination])
+    } finally {
+      disableGuardedYolo(context.threadId)
       setProjectSandboxEnabled(false)
       mock.restoreAll()
       restore()
