@@ -321,6 +321,95 @@ describe('AutomationService', () => {
     assert.equal(created.length, 1)
   })
 
+  it('keeps unattended grants bound to the frozen first-run prompt across schedule edits', async () => {
+    const service = createAutomationService({
+      now: () => 100,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Review',
+      cron: '* * * * *',
+      prompt: 'Original prompt.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+    const run = await service.runNow('project-a', schedule.id)
+    const provenance = {
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+      triggeredAt: run.triggeredAt,
+    }
+    const claim = (threadId: string, prompt: string, model: string): Promise<boolean> =>
+      service.claimRunGrant('project-a', threadId, provenance, prompt, model)
+    assert.match(service.list('project-a')[0]?.lastRunPromptDigest ?? '', /^[a-f0-9]{64}$/)
+    assert.equal(await claim(run.threadId, 'Changed prompt.', 'gpt-5.4'), false)
+    assert.equal(await claim(run.threadId, 'Original prompt.', 'another-model'), false)
+    assert.equal(await claim('another-thread', 'Original prompt.', 'gpt-5.4'), false)
+    assert.equal(
+      await service.claimRunGrant(
+        'project-a',
+        run.threadId,
+        { ...provenance, triggeredAt: run.triggeredAt + 1 },
+        'Original prompt.',
+        'gpt-5.4',
+      ),
+      false,
+    )
+
+    await service.upsert('project-a', {
+      id: schedule.id,
+      name: 'Edited review',
+      cron: '* * * * *',
+      prompt: 'Changed prompt.',
+      model: 'another-model',
+      enabled: true,
+    })
+    assert.equal(await claim(run.threadId, 'Changed prompt.', 'another-model'), false)
+    assert.equal(await claim(run.threadId, 'Original prompt.', 'gpt-5.4'), true)
+    assert.equal(await claim(run.threadId, 'Original prompt.', 'gpt-5.4'), false)
+
+    const stored = service.list('project-a')[0]
+    assert.ok(stored)
+    const { lastRunPromptDigest: _oldDigest, ...legacy } = stored
+    storageSet(STORAGE_KEY, [{ ...legacy, lastRunGrantClaimed: false }])
+    assert.equal(await claim(run.threadId, 'Original prompt.', 'gpt-5.4'), false)
+  })
+
+  it('does not let a concurrent schedule edit reset a consumed run grant', async () => {
+    const service = createAutomationService({
+      now: () => 100,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    const input: AutomationScheduleInput = {
+      name: 'Review',
+      cron: '* * * * *',
+      prompt: 'Original prompt.',
+      model: 'gpt-5.4',
+      enabled: true,
+    }
+    const schedule = await service.upsert('project-a', input)
+    const run = await service.runNow('project-a', schedule.id)
+    const provenance = {
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+      triggeredAt: run.triggeredAt,
+    }
+    const claim = (): Promise<boolean> =>
+      service.claimRunGrant('project-a', run.threadId, provenance, input.prompt, input.model)
+    const firstClaim = claim()
+    const edit = service.upsert('project-a', { ...input, id: schedule.id, name: 'Edited review' })
+    assert.equal(await firstClaim, true)
+    await edit
+    assert.equal(service.list('project-a')[0]?.lastRunGrantClaimed, true)
+    assert.equal(await claim(), false)
+  })
+
   it('stores unique opt-in permissions and can add one from a running schedule', async () => {
     let now = 10
     const created: Thread[] = []
@@ -657,6 +746,8 @@ describe('AutomationService', () => {
         updatedAt: 2,
         lastRunAt: 1,
         lastCreatedThreadId: event.threadId,
+        lastRunPromptDigest: service.list('project-a')[0]?.lastRunPromptDigest,
+        lastRunGrantClaimed: false,
       },
     ])
   })

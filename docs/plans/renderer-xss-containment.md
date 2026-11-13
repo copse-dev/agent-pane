@@ -109,6 +109,19 @@ ordinary human workflow after the attempted misuse.
 - Main-owned automation and agent continuations keep their recorded provenance and
   existing budgets. They cannot be relabelled as human messages through renderer IPC.
 
+### Scheduled-run grants
+
+- The main process records the exact prompt and model of each created automation run.
+  Its schedule-scoped MCP and GitHub grants apply only during that run's first turn
+  when the actual model input matches that record and contains no added instructions,
+  attachments, thread plan, or earlier unrelated messages.
+- A later message to the same automation thread, a forged `automationRun` marker,
+  an edited pending prompt, or a concurrent schedule edit cannot reuse unattended
+  grants. Main consumes a durable one-time claim before the first turn starts, so
+  even a failed or empty first run cannot grant a second turn. The normal approval
+  path remains available for a person continuing the
+  thread. Existing runs without the new record fail closed for schedule grants.
+
 ### User-level MCP definitions that reach a workspace
 
 - A user/global stdio definition whose command, working directory, loader variables,

@@ -17,6 +17,7 @@ import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { isDeferralModeActive } from './security/deferral-mode.ts'
+import { hasAutomationGrantScope } from './security/automation-grant-scope.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -58,6 +59,7 @@ function dependencies(
     loadPlan: async () => null,
     prepareExecutionContext: async () => context,
     isScheduledAutomationRun: () => false,
+    claimScheduledRunGrant: () => Promise.resolve(false),
     transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
@@ -125,14 +127,23 @@ describe('AgentDispatcher', () => {
       automation: { scheduleId: 'schedule-1', scheduleName: 'Review', triggeredAt: 1 },
     }
     const activeDuringRun: boolean[] = []
+    const grantDuringRun: boolean[] = []
+    const grantAfterRun: boolean[] = []
     const dispatcher = new AgentDispatcher(
       host,
       registry,
       dependencies({
         prepareExecutionContext: async () => automationContext,
         isScheduledAutomationRun: () => true,
+        claimScheduledRunGrant: (_context, prompt, model) =>
+          Promise.resolve(prompt === 'scheduled prompt' && model === 'gpt-5.4'),
+        transcriptLength: async () => 1,
         run: async (_threadId, userContent, messages) => {
           activeDuringRun.push(isDeferralModeActive(context.threadId))
+          grantDuringRun.push(hasAutomationGrantScope())
+          if (hasAutomationGrantScope()) {
+            setImmediate(() => grantAfterRun.push(hasAutomationGrantScope()))
+          }
           return {
             usage: { inputTokens: 0, outputTokens: 0 },
             messages: [
@@ -150,6 +161,7 @@ describe('AgentDispatcher', () => {
         payload: {
           userContent: 'scheduled prompt',
           automationRun: true,
+          model: 'gpt-5.4',
           invokedSkills: [],
           priorTodos: [],
         },
@@ -168,7 +180,117 @@ describe('AgentDispatcher', () => {
       }),
     )
     assert.deepEqual(activeDuringRun, [true, false, false])
+    assert.deepEqual(grantDuringRun, [true, false, false])
+    await settle()
+    assert.deepEqual(grantAfterRun, [false])
     assert.equal(isDeferralModeActive(context.threadId), false)
+  })
+
+  it('does not claim unattended grants for attachments, added instructions or earlier messages', async () => {
+    const automationContext: ThreadExecutionContext = {
+      ...context,
+      automation: { scheduleId: 'schedule-1', scheduleName: 'Review', triggeredAt: 1 },
+    }
+    const cases: Array<{
+      label: string
+      payload: AgentDispatchRequest['payload']
+      transcriptLength: number
+      plan?: StoredThreadPlan
+    }> = [
+      {
+        label: 'attachment',
+        payload: {
+          userContent: [
+            { type: 'text', text: 'scheduled prompt' },
+            { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
+          ],
+          automationRun: true,
+          model: 'gpt-5.4',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+        transcriptLength: 1,
+      },
+      {
+        label: 'working brief',
+        payload: {
+          userContent: 'scheduled prompt',
+          automationRun: true,
+          model: 'gpt-5.4',
+          workingBrief: 'Publish the result externally.',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+        transcriptLength: 1,
+      },
+      {
+        label: 'earlier transcript message',
+        payload: {
+          userContent: 'scheduled prompt',
+          automationRun: true,
+          model: 'gpt-5.4',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+        transcriptLength: 2,
+      },
+      {
+        label: 'injected thread plan',
+        payload: {
+          userContent: 'scheduled prompt',
+          automationRun: true,
+          model: 'gpt-5.4',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+        transcriptLength: 1,
+        plan: {
+          meta: {
+            planId: 'injected-plan',
+            threadId: context.threadId,
+            title: 'Publish',
+            status: 'draft',
+            currentRevision: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          body: 'Publish externally.',
+          contentHash: 'hash',
+          comments: [],
+          approval: null,
+          completion: null,
+        },
+      },
+    ]
+    for (const { label, payload, transcriptLength, plan } of cases) {
+      let claims = 0
+      let grantDuringRun = true
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          prepareExecutionContext: async () => automationContext,
+          loadPlan: async () => plan ?? null,
+          isScheduledAutomationRun: () => true,
+          transcriptLength: async () => transcriptLength,
+          claimScheduledRunGrant: () => {
+            claims += 1
+            return Promise.resolve(true)
+          },
+          run: async (_threadId, userContent, messages) => {
+            grantDuringRun = hasAutomationGrantScope()
+            return {
+              usage: { inputTokens: 0, outputTokens: 0 },
+              messages: [...messages, { role: 'user', content: userContent }],
+            }
+          },
+        }),
+      )
+      await dispatcher.dispatch(request({ payload }))
+      assert.equal(claims, 0, label)
+      assert.equal(grantDuringRun, false, label)
+      assert.equal(isDeferralModeActive(context.threadId), false, label)
+    }
   })
 
   it('reserves the primary-turn slot for workers until execution and cleanup settle', async () => {
