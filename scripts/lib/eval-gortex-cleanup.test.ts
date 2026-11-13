@@ -82,12 +82,16 @@ describe('eval Gortex service cleanup', () => {
   it('keeps PID identity stable through running/sleeping and scheduler-flag transitions', async () => {
     const f = fixture()
     const start = 'Fri Nov 13 21:21:29 2026'
-    let reads = 0
+    const states = new Map<number, string[]>()
     const inspect = f.boundary.inspect
     f.boundary.inspect = (pid): Identity | null => {
       const identity = inspect(pid)
       if (!identity) return null
-      const sample = parsePsIdentity(`${start} ${++reads % 2 ? 'R+' : 'Ss'}`)
+      const observed = states.get(pid) ?? []
+      const state = observed.length === 0 ? 'R+' : 'Ss'
+      observed.push(state)
+      states.set(pid, observed)
+      const sample = parsePsIdentity(`${start} ${state}`)
       return { ...identity, started: sample.started }
     }
     assert.deepEqual(parsePsIdentity(`${start} R`), { started: start, state: 'R' })
@@ -97,6 +101,8 @@ describe('eval Gortex service cleanup', () => {
     await cleanupEvalGortex(f.profile, f.boundary)
     assert.deepEqual(f.signals, [12, 11])
     assert.deepEqual([...f.processes.keys()], [13])
+    assert.deepEqual(states.get(12), ['R+', 'Ss'])
+    assert.deepEqual(states.get(11), ['R+', 'Ss'])
   })
 
   it('stops profile clients before the detached daemon and leaves the shared-executable daily process alive', async () => {
