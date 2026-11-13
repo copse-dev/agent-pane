@@ -238,6 +238,7 @@ export async function runShellOnce(
             startedAt,
             output: outputAcc.toString(),
             timeoutMs: Math.max(1, timeout_ms - (Date.now() - startedAt)),
+            completionWakeArmed: yieldOptions?.onCompletion !== undefined,
             onCancelled: ({ id }) => {
               void reportEnd('cancelled', { backgroundTaskId: id })
             },

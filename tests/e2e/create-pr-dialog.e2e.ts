@@ -149,7 +149,14 @@ describe('create PR dialog', function () {
     }
     await expect(card).toHaveAttribute('data-status', 'done')
     await expect($('.follow-up-suggestions')).not.toBeDisplayed()
-    await saveAppScreenshot('create-pr-completed.png')
+    await saveAppScreenshot('create-pr-completed.png', undefined, async () => {
+      // Tool completion precedes smoothed prose and the disclosure's natural
+      // collapse. Capture the visible completion state, not an intermediate card.
+      await expect(
+        $('.message-text a[href="https://github.com/copse-mock/demo/pull/1001"]'),
+      ).toBeDisplayed()
+      await expect($('.tool-card[data-tool-id^="create-pr-"]')).not.toHaveAttribute('open')
+    })
     await assertNoErrorToasts('create PR from the composer')
   })
 })

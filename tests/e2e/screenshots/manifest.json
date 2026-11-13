@@ -697,6 +697,10 @@
       "sha256": "ebb58468a0e1758d8d28c72a7566a6218be33ff2fdcfbfbb76436543f81fc15c",
       "bytes": 26176
     },
+    "automation-active-acp-busy.png": {
+      "sha256": "ca83c013ffa838d3454e6d0486abab21a55f99468695fce38b9e8c0fc96f0540",
+      "bytes": 324302
+    },
     "automation-active-acp-held.png": {
       "sha256": "b3e5c71350262b9782e141d564c763625028ea2ab39ab65568fb1370edc4e58e",
       "bytes": 343458
@@ -712,6 +716,10 @@
     "automation-attention-group.png": {
       "sha256": "c61f238152f474ac08522638b3b242da81b550a5f1b3233a3f1e5f0e6a6520d4",
       "bytes": 15233
+    },
+    "automation-background-server-admitted.png": {
+      "sha256": "40e6275cbe1c9af3824cf35383986ed7ebb6b728536fb05776de73b5ac9e9710",
+      "bytes": 325943
     },
     "automation-branch-ci-edit.png": {
       "sha256": "3030122e62a6dbda36910e6f319d9a9c3feebac43b41804172092688fe658890",
