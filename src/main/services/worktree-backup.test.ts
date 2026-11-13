@@ -1,4 +1,15 @@
-import { describe, beforeEach, afterEach } from 'node:test'
+import { configureThreadStore } from '@copse/thread-store/environment.ts'
+let isolatedBackupStore = ''
+before(async () => {
+  isolatedBackupStore = await mkdtemp(join(tmpdir(), 'copse-backup-store-'))
+  configureThreadStore({ workspaceRoot: () => isolatedBackupStore })
+})
+after(async () => {
+  configureThreadStore()
+  if (isolatedBackupStore) await rm(isolatedBackupStore, { recursive: true, force: true })
+})
+
+import { before, after, describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, readFile, readdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -10,9 +21,11 @@ import {
   restoreWorktreeBackup,
 } from './github/git-service.ts'
 import {
+  clearSessionBackupsForTest,
   ensureSessionBackup,
   ensureWorktreeRecoverable,
   getSessionBackup,
+  getRestorableSessionBackup,
   resetSessionBackup,
   restoreSessionBackup,
 } from './worktree-backup.ts'
@@ -318,7 +331,11 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
 
     // A new turn resets the restore point; the next ensure snapshots afresh.
     resetSessionBackup(TEST_THREAD_OWNER)
-    assert.equal(getSessionBackup(), null)
+    assert.equal(
+      getSessionBackup(),
+      first,
+      'a read-only follow-up must keep the previous restore point',
+    )
     const third = await ensureSessionBackup(root)
     assert.ok(third)
     assert.notEqual(third, first)
@@ -338,6 +355,29 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
       await writeFile(join(root, 'dirty.txt'), 'work\n', 'utf-8')
       assert.equal(await ensureWorktreeRecoverable(root), true)
       assert.ok(getSessionBackup(), 'a backup should have been taken')
+    },
+  )
+
+  ownedIt('rechecks new user work after an earlier clean approval in the same turn', async () => {
+    assert.equal(await ensureWorktreeRecoverable(root), true)
+    assert.equal(getSessionBackup(), null)
+    await writeFile(join(root, 'new-user-draft.txt'), 'manual work during the turn\n', 'utf8')
+    assert.equal(await ensureWorktreeRecoverable(root), true)
+    assert.ok(getSessionBackup()?.paths.includes('new-user-draft.txt'))
+    await writeFile(join(root, 'new-user-draft.txt'), 'later agent edit\n', 'utf8')
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(
+      await readFile(join(root, 'new-user-draft.txt'), 'utf8'),
+      'manual work during the turn\n',
+    )
+  })
+
+  ownedIt(
+    'does not reuse a clean approval when Git can no longer verify recoverability',
+    async () => {
+      assert.equal(await ensureWorktreeRecoverable(root), true)
+      setGitAvailableForTest(false)
+      assert.equal(await ensureWorktreeRecoverable(root), false)
     },
   )
 
@@ -364,6 +404,163 @@ describe('ensureSessionBackup / resetSessionBackup', () => {
       assert.equal(await readFile(join(root, 'dirty.txt'), 'utf-8'), 'user work\n')
     },
   )
+
+  ownedIt('loads the same checkout restore point after process state is lost', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user checkpoint\n')
+    const backup = await ensureSessionBackup(root)
+    assert.ok(backup)
+    await writeFile(join(root, 'dirty.txt'), 'agent edit\n')
+    clearSessionBackupsForTest()
+    assert.deepEqual(getSessionBackup(), backup)
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'user checkpoint\n')
+  })
+
+  ownedIt('never restores a stored checkpoint into another checkout', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user checkpoint\n')
+    assert.ok(await ensureSessionBackup(root))
+    clearSessionBackupsForTest()
+    assert.equal(getSessionBackup(TEST_THREAD_OWNER, join(root, 'other')), null)
+    assert.equal(await restoreSessionBackup(TEST_THREAD_OWNER, join(root, 'other')), false)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'user checkpoint\n')
+  })
+
+  ownedIt(
+    'retires a pruned restore point after restart without touching current work',
+    async () => {
+      await writeFile(join(root, 'dirty.txt'), 'user draft\n')
+      const backup = await ensureSessionBackup(root)
+      assert.ok(backup)
+      const head = git(root, ['rev-parse', 'HEAD']).trim()
+      for (let index = 1; index <= 11; index++)
+        git(root, ['update-ref', `refs/copse/backups/${String(backup.createdAt + index)}`, head])
+      await pruneWorktreeBackups(10, root)
+      await writeFile(join(root, 'dirty.txt'), 'current work\n')
+      clearSessionBackupsForTest()
+      assert.equal(await getRestorableSessionBackup(), null)
+      assert.equal(await restoreSessionBackup(), false)
+      clearSessionBackupsForTest()
+      assert.equal(getSessionBackup(), null, 'expired binding must stay retired after restart')
+      assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'current work\n')
+    },
+  )
+
+  for (const restart of [false, true]) {
+    ownedIt(
+      `retires a point behind a new commit${restart ? ' after restart' : ' after it was offered'}`,
+      async () => {
+        await writeFile(join(root, 'dirty.txt'), 'user draft\n')
+        assert.ok(await ensureSessionBackup(root))
+        assert.ok(await getRestorableSessionBackup())
+        await writeFile(join(root, 'dirty.txt'), 'committed repair\n')
+        git(root, ['add', '-A'])
+        git(root, ['commit', '-m', 'keep repair'])
+        const index = git(root, ['ls-files', '--stage'])
+        if (restart) clearSessionBackupsForTest()
+        assert.equal(await restoreSessionBackup(), false)
+        assert.equal(await getRestorableSessionBackup(), null)
+        clearSessionBackupsForTest()
+        assert.equal(getSessionBackup(), null)
+        assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'committed repair\n')
+        assert.equal(git(root, ['ls-files', '--stage']), index)
+      },
+    )
+  }
+
+  ownedIt(
+    'keeps an index-only point at HEAD but retires it after checking out its parent',
+    async () => {
+      await writeFile(join(root, 'tracked.txt'), 'baseline\n')
+      git(root, ['add', '-A'])
+      git(root, ['commit', '-m', 'tracked baseline'])
+      await writeFile(join(root, 'tracked.txt'), 'staged user work\n')
+      git(root, ['add', 'tracked.txt'])
+      await writeFile(join(root, 'tracked.txt'), 'baseline\n')
+      const index = git(root, ['ls-files', '--stage'])
+      const backup = await ensureSessionBackup(root)
+      assert.ok(backup)
+      assert.equal(git(root, ['rev-parse', backup.ref]), git(root, ['rev-parse', 'HEAD']))
+      clearSessionBackupsForTest()
+      assert.deepEqual(await getRestorableSessionBackup(), backup)
+      await writeFile(join(root, 'tracked.txt'), 'agent edit\n')
+      assert.equal(await restoreSessionBackup(), true)
+      assert.equal(await readFile(join(root, 'tracked.txt'), 'utf8'), 'baseline\n')
+      assert.equal(git(root, ['ls-files', '--stage']), index)
+      git(root, ['reset', '--soft', 'HEAD^'])
+      assert.equal(await getRestorableSessionBackup(), null)
+    },
+  )
+
+  ownedIt('restores an unborn checkout until its first real commit', async () => {
+    git(root, ['update-ref', '-d', 'HEAD'])
+    await writeFile(join(root, 'dirty.txt'), 'first user draft\n')
+    const backup = await ensureSessionBackup(root)
+    assert.ok(backup)
+    clearSessionBackupsForTest()
+    assert.deepEqual(await getRestorableSessionBackup(), backup)
+    await writeFile(join(root, 'dirty.txt'), 'agent edit\n')
+    assert.equal(await restoreSessionBackup(), true)
+    assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'first user draft\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'first real commit'])
+    assert.equal(await getRestorableSessionBackup(), null)
+  })
+
+  ownedIt('preserves its binding when Git is temporarily unavailable', async () => {
+    await writeFile(join(root, 'dirty.txt'), 'user draft\n')
+    const backup = await ensureSessionBackup(root)
+    assert.ok(backup)
+    clearSessionBackupsForTest()
+    setGitAvailableForTest(false)
+    assert.equal(await getRestorableSessionBackup(), null)
+    assert.equal(await restoreSessionBackup(), false)
+    setGitAvailableForTest(true)
+    clearSessionBackupsForTest()
+    assert.deepEqual(await getRestorableSessionBackup(), backup)
+  })
+
+  ownedIt(
+    'refuses restore when its safety snapshot fails, preserving files and index',
+    async () => {
+      await writeFile(join(root, 'dirty.txt'), 'user draft\n')
+      const backup = await ensureSessionBackup(root)
+      assert.ok(backup)
+      await writeFile(join(root, 'dirty.txt'), 'current agent work\n')
+      git(root, ['add', 'dirty.txt'])
+      await writeFile(join(root, 'new.txt'), 'new user work\n')
+      await writeFile(join(root, '.gitattributes'), 'dirty.txt filter=fail-snapshot\n')
+      git(root, ['config', 'filter.fail-snapshot.clean', 'false'])
+      git(root, ['config', 'filter.fail-snapshot.required', 'true'])
+      const index = git(root, ['ls-files', '--stage'])
+      assert.equal(await restoreSessionBackup(), false)
+      assert.equal(await readFile(join(root, 'dirty.txt'), 'utf8'), 'current agent work\n')
+      assert.equal(await readFile(join(root, 'new.txt'), 'utf8'), 'new user work\n')
+      assert.equal(git(root, ['ls-files', '--stage']), index)
+      assert.deepEqual(await getRestorableSessionBackup(), backup)
+    },
+  )
+
+  ownedIt('preserves an index-only binding while HEAD cannot be resolved', async () => {
+    await writeFile(join(root, 'tracked.txt'), 'baseline\n')
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'tracked baseline'])
+    await writeFile(join(root, 'tracked.txt'), 'staged work\n')
+    git(root, ['add', 'tracked.txt'])
+    await writeFile(join(root, 'tracked.txt'), 'baseline\n')
+    const backup = await ensureSessionBackup(root)
+    assert.ok(backup)
+    const branchPath = join(root, '.git', git(root, ['symbolic-ref', 'HEAD']).trim())
+    const branch = await readFile(branchPath, 'utf8')
+    await writeFile(branchPath, 'unreadable commit id\n')
+    try {
+      assert.equal(await getRestorableSessionBackup(), null)
+      assert.equal(await restoreSessionBackup(), false)
+    } finally {
+      await writeFile(branchPath, branch)
+    }
+    clearSessionBackupsForTest()
+    assert.deepEqual(await getRestorableSessionBackup(), backup)
+  })
 
   ownedIt('restoreSessionBackup returns false when there is no backup', async () => {
     assert.equal(getSessionBackup(), null)
