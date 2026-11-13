@@ -527,7 +527,10 @@ revisiting this document, not silently diverging in an implementation PR.
     remove any leading model-authored Copse Reviewer report, cap both request
     and durable task to 2,000 characters, and omit a duplicate request.
     A manual retry reapplies the existing user-text privacy filter to both
-    briefs, because history recovered from the transcript can contain raw text.
+    briefs, because the transcript can contain raw text. It selects the latest
+    human-origin transcript request, never a machine-origin message or unmarked
+    provider-history nudge. If no authoritative human request is available, omit
+    the current-request brief rather than treating a model nudge as user intent.
     It preserves the ordinary redaction failure notice and fallback behavior.
     The `copse.post-turn-review` plugin may offer host-registered specialist
     checks to its primary reviewer. A specialist definition owns its model,

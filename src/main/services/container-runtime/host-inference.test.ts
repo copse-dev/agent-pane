@@ -265,11 +265,13 @@ describe('run-scoped host inference', () => {
     assert.equal(calls, 1)
     assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 2)
   })
-  it('reports actual usage separately from content-free reservation estimates', async (t) => {
-    const log = t.mock.method(console, 'info', () => {})
+  it('reports actual usage on stderr without contaminating CLI result output', async (t) => {
+    const stdout = t.mock.method(console, 'info', () => {})
+    const log = t.mock.method(console, 'error', () => {})
     const f = fixture(t, echo, { tokenCeiling: 110 })
     await collect(f.provider)
     await assert.rejects(collect(f.provider), /token budget/)
+    assert.equal(stdout.mock.calls.length, 0, 'Accounting must not mix with stdout JSON results')
     const events = log.mock.calls
       .filter((call) => call.arguments[0] === '[host-inference-accounting]')
       .map((call) =>

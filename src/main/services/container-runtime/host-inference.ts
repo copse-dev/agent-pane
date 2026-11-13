@@ -142,7 +142,7 @@ export class HostInference {
       const admitted = this.used + reservation < this.options.tokenCeiling
       // Content-free accounting: serialized byte estimates are not tokenizer counts.
       // Input alone is reserved; the remaining allowance caps provider output.
-      console.info('[host-inference-accounting]', {
+      console.error('[host-inference-accounting]', {
         session: this.accountingId,
         at: new Date().toISOString(),
         requestId,
@@ -180,7 +180,7 @@ export class HostInference {
             retainedReservation = 0
           }
           this.used += chunk.inputTokens + chunk.outputTokens
-          console.info('[host-inference-accounting]', {
+          console.error('[host-inference-accounting]', {
             session: this.accountingId,
             at: new Date().toISOString(),
             requestId,
@@ -209,7 +209,7 @@ export class HostInference {
       }
     } finally {
       if (accountingRequestId !== null)
-        console.info('[host-inference-accounting]', {
+        console.error('[host-inference-accounting]', {
           session: this.accountingId,
           at: new Date().toISOString(),
           requestId: accountingRequestId,

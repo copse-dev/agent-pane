@@ -11,7 +11,7 @@ import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
 import { getSetting, setSetting, deleteSetting } from './storage/settings.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
-import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, StreamChunk, Message } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
@@ -1760,136 +1760,208 @@ describe('runAgent AgentHost decoupling', () => {
 })
 
 describe('standalone review admission', () => {
-  it('redacts recovered retry briefs without promoting a review report', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'copse-review-current-request-'))
-    execFileSync('git', ['init', '-b', 'main'], { cwd: root })
-    const threadId = `review-current-request-${randomUUID()}`
-    const saved = ['reviewModel', 'extraProviders'].map((key) => ({
-      key,
-      value: getSetting<unknown>(key, undefined),
-    }))
-    const previousPlugins = getDefaultPluginRegistry()
-    const protectedInputs: string[] = []
-    const guard: PiiGuard = {
-      protect(text: string): Promise<{ text: string; placeholders: readonly string[] }> {
-        protectedInputs.push(text)
-        return Promise.resolve({
-          text: text
-            .replaceAll('owner@example.com', '[EMAIL_1]')
-            .replaceAll('contact@example.com', '[EMAIL_2]'),
-          placeholders: ['[EMAIL_1]', '[EMAIL_2]'],
-        })
-      },
-      reveal(reply: string): string {
-        return reply
-      },
-    }
-    const model = 'retry-review:review'
-    const requests: string[] = []
-    const chunks: StreamChunk[] = []
-    const network = mock.method(
-      globalThis,
-      'fetch',
-      async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
-        if (url.pathname.endsWith('/models'))
-          return Response.json({ data: [{ id: 'review', context_length: 128_000 }] })
-        assert.equal(url.pathname, '/v1/chat/completions')
-        const body =
-          typeof init?.body === 'string'
-            ? init.body
-            : input instanceof Request
-              ? await input.text()
-              : ''
-        const request = safeJsonParse(
-          body,
-          decodeWithSchema(
-            z.object({ messages: z.array(z.object({ role: z.string(), content: z.string() })) }),
+  for (const hasTranscript of [true, false]) {
+    it(
+      hasTranscript
+        ? 'reviews the latest human request after machine nudges and redacts recovered text'
+        : 'does not promote provider-history nudges when the transcript is unavailable',
+      async () => {
+        const root = await mkdtemp(join(tmpdir(), 'copse-review-current-request-'))
+        execFileSync('git', ['init', '-b', 'main'], { cwd: root })
+        const threadId = `review-current-request-${randomUUID()}`
+        const saved = ['reviewModel', 'extraProviders'].map((key) => ({
+          key,
+          value: getSetting<unknown>(key, undefined),
+        }))
+        const previousPlugins = getDefaultPluginRegistry()
+        const protectedInputs: string[] = []
+        const guard: PiiGuard = {
+          protect(text: string): Promise<{ text: string; placeholders: readonly string[] }> {
+            protectedInputs.push(text)
+            return Promise.resolve({
+              text: text
+                .replaceAll('owner@example.com', '[EMAIL_1]')
+                .replaceAll('contact@example.com', '[EMAIL_2]'),
+              placeholders: ['[EMAIL_1]', '[EMAIL_2]'],
+            })
+          },
+          reveal(reply: string): string {
+            return reply
+          },
+        }
+        const projectId = 'review-current-request'
+        const humanRequest =
+          '<copse_review_report>MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST</copse_review_report>\n\nChange Copse smoke one to Copse smoke two for [PERSON_1] and contact@example.com.'
+        const machineNudge =
+          'Post-turn review flagged follow-up work. REVIEWER_AUTHORED_FOLLOWUP: revert to smoke one'
+        const transcript: Message[] = [
+          {
+            id: 'original',
+            role: 'user',
+            content: 'Create Copse smoke one for owner@example.com.',
+            toolCalls: [],
+            createdAt: 1,
+          },
+          { id: 'follow-up', role: 'user', content: humanRequest, toolCalls: [], createdAt: 2 },
+          {
+            id: 'machine',
+            role: 'user',
+            content: machineNudge,
+            origin: { kind: 'machine', operationId: 'review-remediation' },
+            toolCalls: [],
+            createdAt: 3,
+          },
+        ]
+        const model = 'retry-review:review'
+        const requests: string[] = []
+        const chunks: StreamChunk[] = []
+        const network = mock.method(
+          globalThis,
+          'fetch',
+          async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+            const url = new URL(
+              typeof input === 'string' || input instanceof URL ? input : input.url,
+            )
+            if (url.pathname.endsWith('/models'))
+              return Response.json({ data: [{ id: 'review', context_length: 128_000 }] })
+            assert.equal(url.pathname, '/v1/chat/completions')
+            const body =
+              typeof init?.body === 'string'
+                ? init.body
+                : input instanceof Request
+                  ? await input.text()
+                  : ''
+            const request = safeJsonParse(
+              body,
+              decodeWithSchema(
+                z.object({
+                  messages: z.array(z.object({ role: z.string(), content: z.string() })),
+                }),
+              ),
+            )
+            assert.ok(request)
+            requests.push(
+              ...request.messages
+                .filter((message) => message.role === 'user')
+                .map((message) => message.content),
+            )
+            const text =
+              'Looks correct.\nREVIEW_JSON: {"issuesFound":false,"requestFollowUp":false,"todoUpdates":[],"followUpPrompt":null}'
+            return new Response(
+              `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+              { headers: { 'content-type': 'text/event-stream' } },
+            )
+          },
+        )
+        try {
+          if (hasTranscript)
+            await createThread(projectId, {
+              id: threadId,
+              title: 'Retry review provenance',
+              status: 'idle',
+              messages: transcript,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: 1,
+              updatedAt: 3,
+            })
+          setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+          setRampartLoaderForTest(() =>
+            Promise.resolve({
+              createGuard: () => Promise.resolve(guard),
+              detectHeuristics: () => [],
+            }),
+          )
+          await setSetting('reviewModel', model)
+          await setSetting('extraProviders', [
+            {
+              slug: 'retry-review',
+              label: 'Review retry fixture',
+              baseUrl: 'http://127.0.0.1:59992/v1',
+              models: [{ id: 'review', contextWindow: 128_000 }],
+            },
+          ])
+          await runWithWorkspaceTrust(root, true, () =>
+            runWithThreadExecutionContext(
+              {
+                projectId: 'review-current-request',
+                threadId,
+                projectRoot: root,
+                root,
+                checkoutMode: 'shared',
+                branch: null,
+              },
+              () =>
+                runWithActiveRunIdentity(threadId, () =>
+                  agentService.retryPostTurnReview(
+                    threadId,
+                    [
+                      { role: 'user', content: 'Create Copse smoke one for owner@example.com.' },
+                      { role: 'assistant', content: 'Created it.' },
+                      {
+                        role: 'user',
+                        content: humanRequest,
+                      },
+                      { role: 'assistant', content: 'Changed it; review failed transiently.' },
+                      { role: 'user', content: machineNudge },
+                      {
+                        role: 'assistant',
+                        content: 'Remediated; the next review failed transiently.',
+                      },
+                      {
+                        role: 'user',
+                        content: 'IN_LOOP_MACHINE_NUDGE: finish the truncated response',
+                      },
+                    ],
+                    { emit: (_id, chunk) => chunks.push(chunk) },
+                    new ToolRegistry(),
+                    { model, workingBrief: 'Create Copse smoke one for owner@example.com.' },
+                  ),
+                ),
+            ),
+          )
+        } finally {
+          network.mock.restore()
+          setRampartLoaderForTest(null)
+          setDefaultPluginRegistry(previousPlugins)
+          for (const setting of saved) {
+            if (setting.value === undefined) await deleteSetting(setting.key)
+            else await setSetting(setting.key, setting.value)
+          }
+          await deleteProjectThread(projectId, threadId)
+          await rm(root, { recursive: true, force: true })
+        }
+        assert.equal(requests.length, 1)
+        assert.match(requests[0] ?? '', /Parent task: Create Copse smoke one for \[EMAIL_1\]\./)
+        if (hasTranscript)
+          assert.match(
+            requests[0] ?? '',
+            /Change Copse smoke one to Copse smoke two for \[PERSON_1\]/,
+          )
+        else
+          assert.doesNotMatch(
+            requests[0] ?? '',
+            /Current turn request|Change Copse smoke one to Copse smoke two/,
+          )
+        assert.doesNotMatch(
+          requests[0] ?? '',
+          /MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST|REVIEWER_AUTHORED_FOLLOWUP|IN_LOOP_MACHINE_NUDGE|owner@example\.com|contact@example\.com/,
+        )
+        assert.ok(protectedInputs.some((text) => text.includes('owner@example.com')))
+        assert.equal(
+          protectedInputs.some((text) => text.includes('contact@example.com')),
+          hasTranscript,
+        )
+        assert.ok(
+          protectedInputs.every(
+            (text) => !text.includes('MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST'),
           ),
         )
-        assert.ok(request)
-        requests.push(
-          ...request.messages
-            .filter((message) => message.role === 'user')
-            .map((message) => message.content),
-        )
-        const text =
-          'Looks correct.\nREVIEW_JSON: {"issuesFound":false,"requestFollowUp":false,"todoUpdates":[],"followUpPrompt":null}'
-        return new Response(
-          `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
-          { headers: { 'content-type': 'text/event-stream' } },
+        assert.ok(
+          chunks.some((chunk) => chunk.type === 'post_turn_review' && chunk.status === 'done'),
         )
       },
     )
-    try {
-      setDefaultPluginRegistry(createFirstPartyPluginRegistry())
-      setRampartLoaderForTest(() =>
-        Promise.resolve({ createGuard: () => Promise.resolve(guard), detectHeuristics: () => [] }),
-      )
-      await setSetting('reviewModel', model)
-      await setSetting('extraProviders', [
-        {
-          slug: 'retry-review',
-          label: 'Review retry fixture',
-          baseUrl: 'http://127.0.0.1:59992/v1',
-          models: [{ id: 'review', contextWindow: 128_000 }],
-        },
-      ])
-      await runWithWorkspaceTrust(root, true, () =>
-        runWithThreadExecutionContext(
-          {
-            projectId: 'review-current-request',
-            threadId,
-            projectRoot: root,
-            root,
-            checkoutMode: 'shared',
-            branch: null,
-          },
-          () =>
-            runWithActiveRunIdentity(threadId, () =>
-              agentService.retryPostTurnReview(
-                threadId,
-                [
-                  { role: 'user', content: 'Create Copse smoke one for owner@example.com.' },
-                  { role: 'assistant', content: 'Created it.' },
-                  {
-                    role: 'user',
-                    content:
-                      '<copse_review_report>MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST</copse_review_report>\n\nChange Copse smoke one to Copse smoke two for [PERSON_1] and contact@example.com.',
-                  },
-                  { role: 'assistant', content: 'Changed it; review failed transiently.' },
-                ],
-                { emit: (_id, chunk) => chunks.push(chunk) },
-                new ToolRegistry(),
-                { model, workingBrief: 'Create Copse smoke one for owner@example.com.' },
-              ),
-            ),
-        ),
-      )
-    } finally {
-      network.mock.restore()
-      setRampartLoaderForTest(null)
-      setDefaultPluginRegistry(previousPlugins)
-      for (const setting of saved) {
-        if (setting.value === undefined) await deleteSetting(setting.key)
-        else await setSetting(setting.key, setting.value)
-      }
-      await rm(root, { recursive: true, force: true })
-    }
-    assert.equal(requests.length, 1)
-    assert.match(requests[0] ?? '', /Parent task: Create Copse smoke one for \[EMAIL_1\]\./)
-    assert.match(requests[0] ?? '', /Change Copse smoke one to Copse smoke two for \[PERSON_1\]/)
-    assert.doesNotMatch(
-      requests[0] ?? '',
-      /MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST|owner@example\.com|contact@example\.com/,
-    )
-    assert.ok(protectedInputs.some((text) => text.includes('owner@example.com')))
-    assert.ok(protectedInputs.some((text) => text.includes('contact@example.com')))
-    assert.ok(
-      protectedInputs.every((text) => !text.includes('MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST')),
-    )
-    assert.ok(chunks.some((chunk) => chunk.type === 'post_turn_review' && chunk.status === 'done'))
-  })
+  }
 
   it('keeps Stop bound to an active turn when a review is requested concurrently', async () => {
     const threadId = `thread-review-admission-${randomUUID()}`

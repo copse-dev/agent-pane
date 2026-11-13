@@ -86,6 +86,7 @@ import {
   appendContextCompaction,
   getThreadMeta,
   getLatestThreadPlan,
+  loadThreadMessages,
   updateMeta,
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
@@ -3311,9 +3312,15 @@ export async function retryPostTurnReview(
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model, threadId)
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
-    const latestUser = priorMessages.findLast((message) => message.role === 'user')
-    // History recovered from the visible transcript can contain the original
-    // user text. Apply the same privacy boundary as a normal submitted turn.
+    // Provider history also contains unmarked in-loop and remediation nudges.
+    // Only the transcript preserves the provenance of the human's request.
+    const owner = getThreadExecutionContext()
+    const transcript = owner ? await loadThreadMessages(owner.projectId, threadId) : []
+    const latestUser = transcript.findLast(
+      (message) => message.role === 'user' && message.origin === undefined,
+    )
+    // The transcript stores original user text. Apply the same privacy boundary
+    // as a normal submitted turn before passing either brief to the reviewer.
     const [goalRedaction, requestRedaction] = await Promise.all([
       redactUserContent(threadId, parentGoal),
       redactUserContent(

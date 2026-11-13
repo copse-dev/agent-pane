@@ -150,8 +150,9 @@ session provider is already configured; Finish must not replace it with Balanced
 
 ### Inference accounting
 
-Host diagnostics prefixed `[host-inference-accounting]` identify each session and
-request without recording prompt text, schemas, images or provider state. Admission
+Host stderr diagnostics prefixed `[host-inference-accounting]` identify each session
+and request without recording prompt text, schemas, images or provider state. They
+keep CLI result stdout free of diagnostic records. Admission
 records contain cumulative usage before the request, the estimated input reservation,
 remaining output cap, serialized message bytes by role, schema bytes and image-data
 bytes. Byte counts are estimates, not tokenizer measurements. Usage records contain
