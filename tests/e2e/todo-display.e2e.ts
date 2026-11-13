@@ -25,6 +25,7 @@ async function clickThreadByTitle(title: string): Promise<void> {
 }
 
 describe('todo plan display', () => {
+  let planThreadTitle: string
   let noPlanThreadTitle: string
   let allCancelledThreadTitle: string
   let workspaceParent = ''
@@ -34,7 +35,9 @@ describe('todo plan display', () => {
     resetUserData()
     const workspace = createTodoWorkspace()
     workspaceParent = workspace.parent
-    ;({ noPlanThreadTitle, allCancelledThreadTitle } = seedTodoPlanFixtures(workspace.root))
+    ;({ planThreadTitle, noPlanThreadTitle, allCancelledThreadTitle } = seedTodoPlanFixtures(
+      workspace.root,
+    ))
     seedE2eThreePaneLayout()
     await browser.reloadSession()
   })
@@ -45,6 +48,7 @@ describe('todo plan display', () => {
   })
 
   it('shows inline todo panel with statuses (rendered as the copse.todos plugin panel)', async () => {
+    await expect($('.chat-row.selected .chat-title')).toHaveText(planThreadTitle)
     // P4: the plan panel is now a level-2 declarative plugin contribution from
     // `copse.todos`. The renderer feeds `thread.todos` (still the durable
     // history state, decision 17) into `createPluginPanelEl`, so the DOM shape

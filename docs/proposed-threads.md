@@ -62,9 +62,10 @@ thing on the next turn.
 
 Three states, all of them in the transcript:
 
-- **Standing offer.** Open by default. The title, the summary, the rationale, a
-  chip saying the work gets its own checkout, a chip listing the files, the
-  prompt behind a disclosure, and two buttons: _Start this thread_ and _Not now_.
+- **Standing offer.** Open by default. The title in the header (no eyebrow label
+  above it), the summary, the rationale, a quiet line saying the work gets its
+  own checkout, a line listing the files, the prompt behind a disclosure, and two
+  buttons on the kit's default size: _Start this thread_ and _Not now_.
 - **Started.** Collapsed to one quiet line with a check and _Open thread_. The
   link lives in the header, not the body: a settled card is collapsed, and "take
   me to that work" must not be behind a disclosure. If the thread it made has
@@ -72,8 +73,9 @@ Three states, all of them in the transcript:
 - **Dismissed.** Collapsed to one quiet line. Expanding it offers _Bring it
   back_, because "not now" is usually about timing rather than about the idea.
 
-Only the standing offer keeps the accent rail; settled cards drop to plain border
-and no fill, because they are history rather than an ask.
+Only the standing offer keeps the accent rail and the raised fill, with no outline
+around them; settled cards drop to a plain grey rail and no fill, because they are
+history rather than an ask.
 
 ## Starting one
 
@@ -88,6 +90,14 @@ Order matters: the thread is created first and its in-flight autosave is awaited
 before the checkout IPC needs it. A failed checkout leaves an empty thread
 — no user message, no dispatch, and the offer still standing on the card that
 made it.
+
+The new thread starts in the background: the user stays on the thread that
+offered it. So its approval prompts surface over that offering thread too, named
+by an origin line (_From the thread “…”_), as a side chat's do over its parent.
+On any other thread they wait behind the bell on the proposed thread's own
+sidebar row. Left there unseen, a coding agent's bridged tool call outlives its
+MCP client's timeout (300 s for Codex), and the agent gives up before the user
+ever sees the question.
 
 ### When isolation is not available
 

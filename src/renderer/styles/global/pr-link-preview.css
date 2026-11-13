@@ -28,7 +28,7 @@
 .pr-link-preview-draft {
   margin-left: auto;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 1px 6px;
   font-size: var(--font-size-xs);
 }

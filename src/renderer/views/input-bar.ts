@@ -13,7 +13,7 @@ import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import {
   beginThreadSubmission,
   endThreadSubmission,
@@ -49,7 +49,8 @@ import {
   type ThreadRefAttachment,
   type VideoRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
-import { mountComposerEditor } from './composer-editor.ts'
+import { createChatComposer } from './chat-composer.ts'
+import { mountRemoteComposer, type ChatTransport } from './remote-composer.ts'
 import {
   registerPromptAttachments,
   type PromptArchiveAttachment,
@@ -119,7 +120,11 @@ import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeProjectThreadOf,
+  getActiveThreadOwner,
+  sameProjectThreadBesidesDraft,
+} from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
@@ -130,10 +135,18 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
+import {
+  formatRecordingClock,
+  subscribeActiveRecordings,
+  type ActiveRecording,
+} from '../recording/active-recordings.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
-interface MountInputBarOptions {
+export interface MountInputBarOptions {
+  /** A replica submits to its owning desktop instead of running a local queue. */
+  transport?: ChatTransport
   /**
    * Dock the portrait panel tabs to the chat/panel seam instead of making them
    * part of the floating composer card. Tests that mount the input in isolation
@@ -189,26 +202,12 @@ export function mountInputBar(
   openModelPicker: () => void
   unmount: () => void
 } {
+  if (opts.transport) return mountRemoteComposer(root, store, api, opts.transport)
   const chips = el('div', { class: 'attachment-chips' })
-  const composer = mountComposerEditor()
-  composer.setPlaceholder('Message…')
-  const submitBtn = el(
-    'button',
-    { class: 'submit-btn', type: 'button', 'data-tooltip-placement': 'top' },
-    'Send',
-  )
-  const stopBtn = el(
-    'button',
-    {
-      class: 'stop-btn',
-      type: 'button',
-      hidden: '',
-      'aria-label': 'Stop agent',
-      'data-tooltip': 'Stop the running agent',
-      'data-tooltip-placement': 'top',
-    },
-    'Stop',
-  )
+  // Running pane recordings. A separate row from `chips`, which is cleared on
+  // send and thread switch: a recording outlives both until it is stopped.
+  const recordingChips = el('div', { class: 'attachment-chips recording-chips' })
+  const { composer, submitBtn, stopBtn } = createChatComposer()
   // Hidden native file picker driven by the paperclip button — gives an
   // explicit "browse" affordance alongside drag-and-drop and @-mentions.
   const fileInput = el('input', {
@@ -661,6 +660,11 @@ export function mountInputBar(
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
+  // Deliberately still `threads_changed`, not a selection of the active thread:
+  // `refresh()` refetches the provider catalog for the thread's model, and the
+  // turn-start route pin (`turn_parameters`) changes that model but takes the
+  // lighter `thread_model_resolved` → `sync()` path. A selection would refetch
+  // the catalog on every auto-routed turn and relabel the picker.
   store.on('threads_changed', () => {
     modelPicker.refresh()
     void refreshAutomaticCheckoutPreview()
@@ -797,6 +801,7 @@ export function mountInputBar(
   // Directly above the draft, below the suggestions: attachments are part of
   // the message being composed, not chrome for the whole composer.
   root.insertBefore(chips, inputRow)
+  root.insertBefore(recordingChips, chips)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
@@ -1760,7 +1765,14 @@ export function mountInputBar(
 
   let estimateTimer: ReturnType<typeof setTimeout> | null = null
   let estimateSeq = 0
+  /** The request awaiting main's reply; superseded once `estimateSeq` moves on. */
+  let estimateInFlight: number | null = null
   let estimateEnabled = true
+
+  /** The wheel is busy while an estimate is scheduled or its reply is still due. */
+  function syncEstimateBusy(): void {
+    contextWheel.setEstimating(estimateTimer !== null || estimateInFlight === estimateSeq)
+  }
 
   function stopContextEstimates(): void {
     estimateEnabled = false
@@ -1769,6 +1781,7 @@ export function mountInputBar(
       clearTimeout(estimateTimer)
       estimateTimer = null
     }
+    syncEstimateBusy()
   }
 
   /** Skills and agents as one `/name` namespace; skills win a collision. */
@@ -1802,6 +1815,14 @@ export function mountInputBar(
   }
 
   async function runContextEstimate(): Promise<void> {
+    try {
+      await requestContextEstimate()
+    } finally {
+      syncEstimateBusy()
+    }
+  }
+
+  async function requestContextEstimate(): Promise<void> {
     if (!estimateEnabled) return
     // The external agent owns its system prompt, tools, skills, and cache. A
     // Copse-native estimate would describe the wrong prompt; wait for ACP's
@@ -1833,10 +1854,13 @@ export function mountInputBar(
     const estimatedModel = footerChatModel()
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
+    estimateInFlight = seq
     try {
       breakdown = await api.agent.estimateContext(projectId, id, payload)
     } catch {
       return
+    } finally {
+      if (estimateInFlight === seq) estimateInFlight = null
     }
     // Drop results that arrived after a newer request or a thread switch.
     if (seq !== estimateSeq || getActiveThreadId() !== id) return
@@ -1852,6 +1876,7 @@ export function mountInputBar(
       estimateTimer = null
       void runContextEstimate()
     }, delay)
+    syncEstimateBusy()
   }
 
   submitBtn.addEventListener('click', () => {
@@ -2031,7 +2056,7 @@ export function mountInputBar(
   refreshClientActions = clientActionOffers.refresh
   composer.el.addEventListener('input', refreshClientActions)
   const stopClientActions = [
-    store.on('threads_changed', refreshClientActions),
+    store.select(activeProjectThreadOf, refreshClientActions, sameProjectThreadBesidesDraft),
     store.on('thread_status_changed', refreshClientActions),
   ]
 
@@ -2786,6 +2811,52 @@ export function mountInputBar(
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
+  let recordingClockTimer: number | null = null
+  let recordingClocks: { clock: HTMLElement; startedAt: number }[] = []
+  function renderRecordingChips(recordings: readonly ActiveRecording[]): void {
+    recordingClocks = []
+    recordingChips.replaceChildren(
+      ...recordings.map((recording) => {
+        const clock = el('span', { class: 'recording-chip-clock' })
+        recordingClocks.push({ clock, startedAt: recording.startedAt })
+        const stop = el(
+          'button',
+          { type: 'button', 'aria-label': `Stop recording ${recording.label}` },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
+        stop.addEventListener('click', () => {
+          recording.stop()
+        })
+        const chip = el(
+          'span',
+          {
+            class: 'attachment-chip recording-chip',
+            title: `${recording.label} — becomes a video attachment when you stop`,
+          },
+          el('span', { class: 'recording-dot', 'aria-hidden': 'true' }),
+          el('span', { class: 'attachment-chip-label' }, `Recording ${recording.label}`),
+          clock,
+          stop,
+        )
+        return chip
+      }),
+    )
+    tickRecordingClocks()
+    if (recordings.length > 0 && recordingClockTimer === null) {
+      recordingClockTimer = window.setInterval(tickRecordingClocks, 500)
+    } else if (recordings.length === 0 && recordingClockTimer !== null) {
+      window.clearInterval(recordingClockTimer)
+      recordingClockTimer = null
+    }
+  }
+  function tickRecordingClocks(): void {
+    const now = performance.now()
+    for (const { clock, startedAt } of recordingClocks) {
+      clock.textContent = formatRecordingClock(now - startedAt)
+    }
+  }
+  const unsubscribeRecordings = subscribeActiveRecordings(renderRecordingChips)
+
   attachBtn.addEventListener('click', () => {
     fileInput.click()
   })
@@ -2884,7 +2955,7 @@ export function mountInputBar(
     refreshSkillsCache()
     scheduleContextEstimate(0)
   }
-  const unsubWorkspace = store.on('workspace_changed', onSkillsChanged)
+  const unsubWorkspace = selectActiveWorkspace(store, onSkillsChanged)
   window.addEventListener('copse:skills-changed', onSkillsChanged)
 
   const skillPicker = initSkillPicker({
@@ -2915,6 +2986,14 @@ export function mountInputBar(
   })
 
   const unsubs = [
+    store.select(
+      (state) =>
+        state.activeThreadId !== null &&
+        state.pendingSubmissionThreadIds.includes(state.activeThreadId),
+      () => {
+        updateState()
+      },
+    ),
     // Main fires this after `initSkillsRegistry` (including the background
     // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
     // are visible to context estimates and to a slash picker that is already
@@ -2979,18 +3058,34 @@ export function mountInputBar(
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
-    store.on('threads_changed', () => {
-      syncComposerThread()
-      executionMode.refresh()
-      footerOverflow.update()
-      guardedYolo.refresh()
-      containerRun.refresh()
-      hideBranchMismatch()
-      hideDirtyWarning()
-      updateState()
-      updateFooter()
-      updateQueueIndicator()
-    }),
+    // A switch loads the new thread's composer and re-reads its container run.
+    // Only on the owner: the run's own progress writes its card into this
+    // thread, and re-reading the run on that write would race the live update.
+    store.select(
+      (s) => [s.activeProjectId, s.activeThreadId] as const,
+      () => {
+        syncComposerThread()
+        containerRun.refresh()
+      },
+      sameItems,
+    ),
+    // The active thread's own updates (model, mode, worktree, queue, status)
+    // and a switch repaint the footer. Other threads' updates and this thread's
+    // draft autosave do not.
+    store.select(
+      activeProjectThreadOf,
+      () => {
+        executionMode.refresh()
+        footerOverflow.update()
+        guardedYolo.refresh()
+        hideBranchMismatch()
+        hideDirtyWarning()
+        updateState()
+        updateFooter()
+        updateQueueIndicator()
+      },
+      sameProjectThreadBesidesDraft,
+    ),
     store.on('usage_updated', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),
@@ -3008,7 +3103,7 @@ export function mountInputBar(
       // Model / subagent changes alter the context window and tool set.
       scheduleContextEstimate(0)
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {
@@ -3100,6 +3195,8 @@ export function mountInputBar(
       })
       unbindDrop()
       unregisterAttachments()
+      unsubscribeRecordings()
+      if (recordingClockTimer !== null) window.clearInterval(recordingClockTimer)
       imageDescriptionSeq++
       descriptionPicker?.destroy()
       modelPicker.destroy()

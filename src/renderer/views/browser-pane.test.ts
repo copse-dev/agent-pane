@@ -2,7 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { createThread, setThreadTitle, switchThread } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
@@ -875,6 +876,114 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('keeps a background canvas deferred through thread metadata, and shows it on a bare selection', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      threads: [makeThread({ id: 'current-thread' }), makeThread({ id: 'background-thread' })],
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Background Dashboard',
+        owner: { projectId: 'project-1', threadId: 'background-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Background</h1>',
+      })
+
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      setThreadTitle(store, 'current-thread', 'Renamed')
+      setThreadTitle(store, 'background-thread', 'Renamed too')
+      store.emit('threads_changed')
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      // No event: the selection alone flushes the deferred canvas.
+      store.setState({ activeThreadId: 'background-thread' })
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Background Dashboard',
+      )
+      assert.ok(viewer.querySelector('.browser-tab-panel.is-active .browser-webview'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('opens a deferred canvas once setState alone moves to its project and thread', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Other Project Dashboard',
+        owner: { projectId: 'project-2', threadId: 'other-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Other</h1>',
+      })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      // No threads_changed or any other event: the scope selection alone flushes.
+      store.setState({ activeProjectId: 'project-2', activeThreadId: 'other-thread' })
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Other Project Dashboard',
+      )
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
   it('refreshes the open artefact tab in place instead of stacking duplicates', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
@@ -1291,13 +1400,15 @@ describe('browser pane requested URLs', () => {
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
       const shareTextItem = items[0]
       const shareScreenshotItem = items[1]
-      const downloadCanvasItem = items[2]
-      const exportPdfItem = items[3]
-      const openExternalItem = items[4]
-      const inspectorItem = items[5]
+      const recordItem = items[2]
+      const downloadCanvasItem = items[3]
+      const exportPdfItem = items[4]
+      const openExternalItem = items[5]
+      const inspectorItem = items[6]
       assert.ok(
         shareTextItem &&
           shareScreenshotItem &&
+          recordItem &&
           downloadCanvasItem &&
           exportPdfItem &&
           openExternalItem &&
@@ -1305,6 +1416,7 @@ describe('browser pane requested URLs', () => {
       )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(recordItem.textContent, 'Record this tab')
       assert.equal(downloadCanvasItem.textContent, 'Download page')
       assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)

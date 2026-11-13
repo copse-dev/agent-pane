@@ -32,6 +32,28 @@ design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap
 [#2718](https://github.com/copse-dev/agent-pane/issues/2718) until five completed changes demonstrate
 the convention. These records do not establish or change branch-review requirements.
 
+### Coordinating two workers
+
+Give each worker one outcome, its owned paths, acceptance examples and a shared brief location.
+Keep the brief in the project and use `update_todos` for each chat's saved plan. A verifier should
+report failures to the repair owner rather than silently editing the same files. Assign one
+controller to the GUI and serialize native suites; record each runtime's checkout, profile,
+ports and owned processes in the task evidence before launch.
+
+Use `list_threads` with `project_id`, a narrow `query`, and `include_state: true` to retrieve
+saved briefs, plans, recorded checkout metadata and native commit/PR receipts in one bounded
+response. State pages default to 10 results and accept at most 20; use `offset` to continue.
+State titles are capped at 240 characters with an explicit truncation flag; mentioned PR links
+and other unneeded catalog fields are omitted. Truncation and omitted counts are explicit.
+Ordinary catalog searches retain their existing pagination. This uses the existing
+conversation-read consent and grants no sending access.
+
+The state is saved metadata, not a live resource lock or a verification verdict. Confirm actual
+checkout ownership before writing. An idle chat or completed todo does not establish acceptance;
+check the exact commit, test result and outstanding gaps. Native production receipts identify
+what the thread created; a mentioned PR link is not a production receipt. Read detailed evidence
+only when the compact state leaves a specific question unanswered.
+
 ## Runtime and standard scripts
 
 For a removable-drive toolchain, see [portable development](portable-development.md).
@@ -317,6 +339,19 @@ suite is mid-run (same timeout as [launching Copse](#launching-copse-from-a-cops
 run it through `run_background` with `wake_on_completion`, not a foreground call, and read its
 result against [`host-environment-test-noise.md`](host-environment-test-noise.md) before treating
 every non-zero exit as a regression.
+
+When a command needs `run_shell`'s outside-sandbox approval path, use an explicit
+total deadline with a short foreground wait, for example
+`{"command":"pnpm run check","timeout_ms":1800000,"yield_after_ms":1000}`.
+The same approved process keeps running under the background supervisor; the
+original deadline is not extended. Send the yielding call alone: the runner does
+not infer dependencies or defer later tools batched alongside it. A still-running
+receipt means end the turn and
+wait for the completion wake before dependent edits or a validation claim. Inspect
+the task's retained logs and exit status when woken; do not launch the command again.
+This requires Background tasks to be enabled and honors its explicit Always ask or
+Blocked policy by refusing the yield before startup. An ordinary finite foreground
+call remains available. See [the permission contract](shell-permissions.md#bounded-foreground-yielding).
 
 ### Remote validation
 

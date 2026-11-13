@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
@@ -17,7 +17,13 @@ import {
 } from '@shared/store/transcript-stream.test-support.ts'
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
-import { appendMessage, createThread, getProjectThread, updateMeta } from './thread-store.ts'
+import {
+  appendMessage,
+  createThread,
+  getProjectThread,
+  threadDirectoryPath,
+  updateMeta,
+} from './thread-store.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { TurnTranscriptWriter } from './turn-transcript-writer.ts'
 
@@ -182,6 +188,52 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
   })
 
+  for (const retryId of ['call_0', 'retry_1']) {
+    it(`persists a performed retry ${retryId} without a stale deferred marker`, async () => {
+      const write = (id: string): StreamChunk => ({
+        type: 'tool_call',
+        toolCall: { id, name: 'write_file', args: { path: 'packages/api/first.ts' } },
+      })
+      let chunks: StreamChunk[] = [
+        write('call_0'),
+        {
+          type: 'tool_result',
+          toolCallId: 'call_0',
+          result: 'Edit deferred.',
+          isError: false,
+          deferred: true,
+        },
+        { type: 'done' },
+      ]
+      const turn = harness(() => chunks)
+      await dispatch(turn)
+      const spine = join(threadDirectoryPath(PROJECT, THREAD), 'events.jsonl')
+      assert.match(readFileSync(spine, 'utf8'), /"deferred"\s*:\s*true/)
+      assert.equal((await stored()).messages.at(-1)?.toolCalls[0]?.deferred, true)
+
+      // The first result is already durable. The next turn replaces that
+      // message's full spine line when a provider reuses the id.
+      chunks = [
+        write(retryId),
+        { type: 'tool_result', toolCallId: retryId, result: 'File written.', isError: false },
+        { type: 'done' },
+      ]
+      await dispatch(turn)
+      const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+      const applied = calls.find((call) => call.result === 'File written.')
+      assert.ok(applied)
+      assert.equal(applied.status, 'done')
+      assert.equal(Object.hasOwn(applied, 'deferred'), false)
+      const raw = readFileSync(spine, 'utf8')
+      assert.doesNotMatch(raw, /"deferred"\s*:\s*false/)
+      if (retryId === 'call_0') assert.doesNotMatch(raw, /"deferred"\s*:/)
+      else {
+        assert.equal(calls[0]?.deferred, true)
+        assert.match(raw, /"deferred"\s*:\s*true/)
+      }
+    })
+  }
+
   it('stamps every chunk so an open window draws the same messages it wrote', async () => {
     const window = createStore({
       threads: [threadWith(THREAD, [humanPrompt('u1', 'What does the plan say?')])],
@@ -219,6 +271,21 @@ describe('TurnTranscriptWriter', () => {
       ['u1', 'msg-1'],
     )
     assert.equal(thread.messages.at(1)?.toolCalls.at(0)?.status, 'done')
+  })
+
+  it('preserves accepted output and interrupted status when quit cancels a still-seeding turn', async () => {
+    const turn = harness(() => [])
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    transcript.emit({ type: 'text', text: 'Saved checkpoint.' })
+    const drained = turn.writer.interruptForShutdown()
+    transcript.emit({ type: 'text', text: 'Late output must not complete the turn.' })
+    transcript.emit({ type: 'done', stopReason: 'cancelled' })
+    transcript.end()
+    await drained
+    const thread = await stored()
+    assert.equal(thread.status, 'running', 'restart must detect an interrupted turn')
+    assert.equal(thread.messages.at(-1)?.content, 'Saved checkpoint.')
+    assert.throws(() => turn.writer.begin(PROJECT, 'late-thread'), /closing/)
   })
 
   it('labels a user Stop the way the window does, on disk and on the wire', async () => {
@@ -340,6 +407,23 @@ describe('TurnTranscriptWriter', () => {
 
     assert.deepEqual(await stored(), before)
     assert.deepEqual(deliveries, [])
+  })
+
+  it('distinguishes cold disk attachment from an empty live runtime seed', async () => {
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'disk')
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'runtime')
+    assert.deepEqual(snapshots.at(-1)?.checkpoint, { stream: null, pendingTurn: null })
+    transcript.end()
+    await turn.writer.settled(THREAD)
   })
 
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {

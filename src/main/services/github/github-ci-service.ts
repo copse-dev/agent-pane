@@ -126,8 +126,11 @@ export function deriveOverallState(
     // genuinely has no CI" when checks are merely pending. (#521)
     return opts.checksPending ? 'pending' : 'no_checks'
   }
-  if (checks.some((check) => check.bucket === 'pending')) return 'pending'
-  if (checks.some((check) => check.bucket === 'fail')) return 'failure'
+  if (opts.checksPending || checks.some((check) => check.bucket === 'pending')) return 'pending'
+  if (checks.some((check) => check.bucket === 'fail' || check.bucket === 'cancel')) return 'failure'
+  // An unfamiliar GitHub state is not evidence that CI passed. Keep watching
+  // until it resolves or the existing durable-watch deadline expires.
+  if (checks.some((check) => check.bucket === 'unknown')) return 'pending'
   return 'success'
 }
 
@@ -165,8 +168,7 @@ export function pickLatestRunForHead(
 ): GhWorkflowRun | null {
   if (runs.length === 0) return null
   if (headSha) {
-    const match = runs.find((run) => run.headSha === headSha)
-    if (match) return match
+    return runs.find((run) => run.headSha === headSha) ?? null
   }
   return runs[0] ?? null
 }
@@ -188,7 +190,13 @@ async function loadOpenPr(
   ]
   const result = await runGh(args, { cwd })
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
+    const message = result.stderr.trim() || result.stdout.trim() || 'gh pr view failed'
+    if (prNumber === undefined && /no pull requests found for branch/i.test(message)) {
+      throw new Error(
+        `${message}\nThis tool reads open-PR checks. Use gh_run_list for branch/main workflow runs, pin commit to the tip SHA, and use gh_run_view for failure logs. CI status remains unknown until workflow evidence is read.`,
+      )
+    }
+    throw new Error(message)
   }
   const pr = parseGhJson(result.stdout, decodeWithSchema(ghPrViewSchema))
   if (!pr || pr.state !== 'OPEN') return null

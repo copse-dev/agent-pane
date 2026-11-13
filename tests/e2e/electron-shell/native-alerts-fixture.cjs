@@ -87,6 +87,10 @@ function install(dir) {
       win.close()
       return { destroyed: win.isDestroyed(), visible: !win.isDestroyed() && win.isVisible() }
     },
+    activate: () => {
+      app.emit('activate')
+      return {}
+    },
     'window-state': () => {
       const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed())
       if (!win) throw new Error('no window')

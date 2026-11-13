@@ -20,6 +20,7 @@ import {
   syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
+import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
 import {
   COMPUTER_USE_PLUGIN_ID,
   COMPUTER_USE_TOOL_NAMES,
@@ -35,6 +36,7 @@ import {
 } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
+import { agentInputSchemaProblem } from './tool-input-schema.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -50,8 +52,29 @@ import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-developm
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
 import { installInMemorySecretCipher } from './storage/secret-cipher.test-support.ts'
+import { normalizeOpenAIToolSchema } from '@copse/llm/normalize-tool-schema.ts'
 
 installInMemorySecretCipher()
+
+it('exports object parameter envelopes for native tools sent to compatible local servers', () => {
+  const registry = createRegistry()
+  const tools = registry.toLLMTools()
+  const invalid = tools
+    .filter((tool) => normalizeOpenAIToolSchema(tool.parameters)['type'] !== 'object')
+    .map((tool) => tool.name)
+  assert.deepEqual(invalid, [], 'a single invalid schema prevents every tool from being used')
+  registry.validateArgs('isolated_copse', { action: 'start' })
+  registry.validateArgs('isolated_copse', { action: 'screenshot' })
+  registry.validateArgs('isolated_copse', { action: 'click', x: 10, y: 20, button: 1 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'click', x: 10 })
+  })
+  // A field only another action takes is dropped; a key no action takes is refused.
+  registry.validateArgs('isolated_copse', { action: 'start', x: 10 })
+  assert.throws(() => {
+    registry.validateArgs('isolated_copse', { action: 'start', foo: 10 })
+  })
+})
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -468,7 +491,29 @@ describe('syncCiInvestigatorTools', () => {
   const registered = (registry: ToolRegistry): boolean[] =>
     CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
 
-  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+  it('keeps basic workflow reads available independently of the investigator plugin', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    for (const enabled of [false, true, false]) {
+      if (enabled) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+      else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+      syncCiInvestigatorTools(registry)
+      assert.equal(registry.has('gh_run_list'), true)
+      assert.equal(registry.has('gh_run_view'), true)
+      assert.equal(registry.has('investigate_ci'), enabled)
+    }
+    setGhAvailableForTest(false)
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+    assert.equal(registry.has('gh_run_list'), false)
+    assert.equal(registry.has('gh_run_view'), false)
+    assert.equal(registry.has('investigate_ci'), false)
+  })
+
+  it('registers the investigator only with the plugin on and gh usable', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -477,29 +522,29 @@ describe('syncCiInvestigatorTools', () => {
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
-    // gh probe answers: all three appear.
+    // gh probe answers: the investigator appears.
     setGhAvailableForTest(true)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
     // Idempotent while enabled.
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
 
-    // Plugin off drops all three even though gh is still usable.
+    // Plugin off drops the investigator even though gh is still usable.
     plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
 
     // Re-enable, then gh goes away: the tools follow gh too.
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [true, true, true])
+    assert.deepEqual(registered(registry), [true])
     setGhAvailableForTest(false)
     syncCiInvestigatorTools(registry)
-    assert.deepEqual(registered(registry), [false, false, false])
+    assert.deepEqual(registered(registry), [false])
   })
 })
 
@@ -605,6 +650,72 @@ describe('ACP bridge exposure decisions', () => {
     assert.ok(BRIDGE_TOOL_NAMES.includes('read_skill'), 'skill reads use an explicit run binding')
     for (const name of nativeOnly) {
       assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
+    }
+  })
+
+  it('offers every core and first-party plugin tool to agents, natively and over MCP (#4142)', async () => {
+    // Everything first-party on at once: every plugin, every setting- and
+    // credential-gated tool, and the paths that register only on a Mac.
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    await setSetting('modelClassifierEnabled', true)
+    await setSetting('orchestrationStrategyEnabled', true)
+    await setSetting('browserToolsEnabled', true)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'tavily-fixture')
+    setApiKey('openai', 'test-key')
+    setGhAvailableForTest(true)
+    setSkillsForTest([
+      {
+        name: 'demo-skill',
+        description: 'A skill, so read_skill registers',
+        source: 'project',
+        skillRoot: '/skills/demo-skill',
+        skillPath: '/skills/demo-skill/SKILL.md',
+        userInvocable: true,
+        disableModelInvocation: false,
+        paths: [],
+        externalLinks: [],
+        missingReferences: [],
+      },
+    ])
+    try {
+      // Registering refuses a first-party schema no agent could list, so a
+      // union-shaped tool fails right here, wherever it would be registered.
+      const registry = createRegistry()
+      syncComputerUseTools(registry, 'darwin')
+      syncAppleDevelopmentTools(registry, 'darwin')
+      registerSkillTools(registry)
+      const registered = registry.names().sort()
+
+      const pluginToolNames = plugins.all().flatMap((plugin) => plugin.contributions.toolNames)
+      assert.deepEqual(
+        pluginToolNames.filter((name) => !registry.has(name)),
+        [],
+        'every first-party plugin tool is registered, so this test covers its schema',
+      )
+      for (const name of [...BRIDGE_TOOL_NAMES, 'device_hub', 'isolated_copse']) {
+        assert.ok(registry.has(name), `${name} is covered`)
+      }
+
+      const mcp = registry.toMcpTools()
+      assert.deepEqual(mcp.map((tool) => tool.name).sort(), registered, 'none left out over MCP')
+      const native = registry.toLLMTools()
+      assert.deepEqual(native.map((tool) => tool.name).sort(), registered, 'none left out natively')
+      const rejected = [
+        ...mcp
+          .filter((tool) => agentInputSchemaProblem(tool.inputSchema) !== null)
+          .map((t) => `mcp:${t.name}`),
+        ...native
+          .filter((tool) => agentInputSchemaProblem(tool.parameters) !== null)
+          .map((t) => t.name),
+      ]
+      assert.deepEqual(rejected, [], 'every tool needs a top-level object input schema')
+    } finally {
+      await setSetting('browserToolsEnabled', BROWSER_TOOLS_DEFAULT_ENABLED)
+      await setSetting('webSearchProvider', 'none')
+      deleteApiKey('tavily')
+      setSkillsForTest([])
     }
   })
 

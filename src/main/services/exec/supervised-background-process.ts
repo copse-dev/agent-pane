@@ -28,6 +28,11 @@ function activeSupervisor(): TaskSupervisor | null {
   return scopedSupervisor.getStore() ?? supervisor
 }
 
+/** Whether an existing command can receive a durable, cancellable background handle. */
+export function hasBackgroundProcessSupervisor(): boolean {
+  return activeSupervisor() !== null
+}
+
 export function runWithBackgroundProcessSupervisor<T>(next: TaskSupervisor, fn: () => T): T {
   return scopedSupervisor.run(next, fn)
 }
@@ -85,9 +90,12 @@ export async function startSupervisedBackgroundProcess(
 
 export async function adoptSupervisedBackgroundProcess(
   opts: AdoptBackgroundProcessOptions,
+  shouldCancelAdoption?: () => boolean,
 ): Promise<BackgroundProcessInfo> {
-  return superviseBackgroundProcess(opts, (onCompletion) =>
-    Promise.resolve(adoptBackgroundProcess({ ...opts, onCompletion })),
+  return superviseBackgroundProcess(
+    opts,
+    (onCompletion) => Promise.resolve(adoptBackgroundProcess({ ...opts, onCompletion })),
+    shouldCancelAdoption,
   )
 }
 
@@ -96,6 +104,7 @@ async function superviseBackgroundProcess(
   start: (
     onCompletion: NonNullable<StartBackgroundProcessOptions['onCompletion']>,
   ) => Promise<BackgroundProcessInfo>,
+  shouldCancelAdoption?: () => boolean,
 ): Promise<BackgroundProcessInfo> {
   const installedSupervisor = activeSupervisor()
   if (!installedSupervisor) throw new Error('Background process supervisor is unavailable')
@@ -103,8 +112,9 @@ async function superviseBackgroundProcess(
   let completion: BackgroundProcessCompletion | null = null
   let supervisedTaskId: string | null = null
   let settled = false
+  let acceptingCompletion = false
   const settle = async (): Promise<void> => {
-    if (settled || !completion || !supervisedTaskId) return
+    if (settled || !completion || !supervisedTaskId || !acceptingCompletion) return
     settled = true
     taskIdsByProcess.delete(processKey(opts.owner, completion.info.id))
     const succeeded = completion.info.exitCode === 0 && !completion.info.timedOut
@@ -157,6 +167,14 @@ async function superviseBackgroundProcess(
     )
     supervisedTaskId = task.taskId
     taskIdsByProcess.set(processKey(opts.owner, info.id), task.taskId)
+    // Stop may have killed the process while this record was being written.
+    // Fence cancellation before releasing a buffered completion to the task.
+    if (shouldCancelAdoption?.()) {
+      await installedSupervisor.cancel(opts.owner.projectId, task.taskId)
+      stopBackgroundProcess(info.id, opts.owner)
+      return info
+    }
+    acceptingCompletion = true
     void settle().catch((error: unknown) => {
       console.warn('[supervised-background-process] completion failed:', error)
     })

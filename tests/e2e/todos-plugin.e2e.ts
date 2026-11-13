@@ -48,8 +48,8 @@ describe('copse.todos plan panel (P4)', function () {
     await panel.waitForExist({ timeout: 30_000 })
 
     assert.equal(await panel.getAttribute('data-panel-kind'), 'list')
-    // `.plugin-panel-header` applies `text-transform: uppercase`; `getText()`
-    // returns the *rendered* text, so compare case-insensitively.
+    // `getText()` returns the *rendered* text; compare case-insensitively so a
+    // header restyle does not read as a title change.
     const title = (await panel.$('.plugin-panel-title').getText()).toLowerCase()
     assert.equal(title, 'to-dos')
     await expect(panel.$('.plugin-panel-summary')).toHaveText('1/5 done')

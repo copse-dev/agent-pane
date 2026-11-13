@@ -30,7 +30,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Commit-signing grants            | macOS-only isolated system signer access to an approved key/socket. Socket access is granted automatically by default and cached for the project/identity until restart; an Always ask override on git_commit asks every time and never remembers. Private-key-file consent is one commit only. Git, hooks and the agent receive no direct key/socket access.                                            |
 | Web/browser grants               | Named origins; temporary scoped or persistent remembered grants. Hard URL/network denials and preview CSP remain enforced.                                                                                                                                                                                                                                                                               |
 | MCP/custom grants                | Exact tools; MCP identity includes origin, source, server and name. Custom requiresApproval tools cannot remember consent. Neither grant establishes a project OS sandbox for the handler/server.                                                                                                                                                                                                        |
-| Automation grants                | Exact schedule-owned MCP tools or eligible project-repository GitHub actions. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                                                        |
+| Automation grants                | Exact schedule-owned MCP tools, eligible project-repository GitHub actions, or reviewed preparation plans. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                           |
 | Guarded YOLO                     | Session-only, thread-scoped; routine shell scope prompts waived subject to the harm gate. Keeps containment where applicable, permits external routing and retains hard denials/one-time confirmations.                                                                                                                                                                                                  |
 | Environment setup                | Suggests values for the auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package registries from prompts a person approved in the active project. Applies only what the user ticks, through the same settings; adds no grant path. See [Environment setup](#environment-setup).                                                                                         |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
@@ -85,13 +85,16 @@ outside-project path grant. A file or directory alias into another thread still 
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
 
 `list_threads` searches conversation titles and summaries and returns paths for the existing
-read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
-approval. Reading never grants sending. Both grants are persisted in main-owned settings,
+read tools. Under the same read grant, `include_state` also returns saved briefs, plans,
+recorded checkout data and native production receipts. `send_thread_prompt` asks a separate
+**Send prompts to your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
+
+The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt; revoked prompts are held, including after restart. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
 
 The experimental interactive-client API requires its default-off plugin and desktop pairing.
 Viewing and submitting decisions are separate session-only grants across all projects. A client
@@ -131,6 +134,41 @@ question, with the full request behind Show details. Disabling it resets the
 override to the default. An existing Always allow override remains valid, while
 Blocked continues to deny. Each configured classifier's provider-host approval
 remains a separate gate.
+
+## Bounded foreground yielding
+
+`run_shell` supports `yield_after_ms` for a bounded command that needs its ordinary
+shell approval path but should not hold a model turn open. The value is a foreground
+wait, at least 1,000ms and less than `timeout_ms`; the total deadline still defaults
+to 30,000ms and cannot exceed 1,800,000ms. For example, a long approved build can use
+`timeout_ms: 1800000, yield_after_ms: 1000`.
+
+An early exit returns its ordinary foreground result. Otherwise Copse adopts the
+same process into its existing thread-owned background supervisor, retaining its
+containment, logs, command card, worktree-writer lease and remaining deadline. A
+running receipt is not a successful command result: the model must send the
+yielding call alone, end its turn,
+wait for the completion wake, then inspect the retained logs and exit status before
+dependent work or a success claim. Completion uses the existing turn-tree budget,
+stale-epoch checks and operation-id deduplication. It never replays the command.
+The Background tasks rail can cancel it; Stop during startup or handoff and app
+quit also terminate the owned process. Failed adoption terminates the command
+instead of leaving an untracked writer.
+
+This is an asynchronous invocation contract, not a dependency barrier between
+tools. The runner does not infer that a later call in the same response depends
+on the command, and does not defer that call. Dependent edits must be requested
+after the completion wake, rather than batched alongside the yielding command.
+
+This option grants no additional shell, filesystem, network or port authority.
+Background tasks must be enabled and supervision plus an owning turn and completion
+handler must be available before the command starts. An explicit Always ask or
+Blocked setting on `run_background` refuses yielding before execution. Use an
+ordinary foreground call with a finite deadline, or invoke the background tool
+through its own approval path. Ordinary foreground calls retain their behavior.
+Eligibility is checked again after approval or workspace preparation and before
+each start, including an approved outside-sandbox retry, so a background setting
+changed while approval was pending cannot reuse the earlier decision.
 
 ## Approval audit evidence
 
@@ -175,7 +213,7 @@ in that mode. Always allow does not bypass the restrictions below.
 | `run_shell`                                                                                             | Shell policy, harm/scope analysis, execution-target routing and sandbox escalation. Unattended guests use the contained-effects policy.                                                                                      | No          |
 | `run_background`                                                                                        | Shell rules plus supervised lifetime/ownership; loopback binding needs separate scoped permission.                                                                                                                           | No          |
 | `preflight_worktree`                                                                                    | Enforcing OS sandbox required; network blocked, project/caches read-only, private disposable scratch. No unsandboxed fallback.                                                                                               | Yes         |
-| `prepare_worktree`                                                                                      | Fresh approval of exact plan/fingerprint; scoped project/cache writes and setup network policy. No reusable arbitrary-command grant or unsandboxed fallback.                                                                 | No          |
+| `prepare_worktree`                                                                                      | Exact plan/fingerprint approval or matching schedule-owned preparation grant; scoped project/cache writes and setup network policy. No reusable arbitrary-command grant or unsandboxed fallback.                             | No          |
 | `gh_pr_list`, `gh_pr_view`, `gh_pr_files`, `gh_run_list`, `gh_run_view`                                 | GitHub read authority and tool availability; explicitly excluded from unattended guests.                                                                                                                                     | No          |
 | `gh_api_read`                                                                                           | Copse-built `gh api` argv: REST GET or one GraphQL `query`; no flags, headers, hosts or URLs; 256 KiB output, 10 pages, 60 s. See [Host-side read tools](#host-side-read-tools).                                             | No          |
 | `git_fetch`                                                                                             | Origin-only fetch of named branches / `refs/pull/<n>/head` into `refs/remotes/origin/*` through the host scratch repository. See [Host-side read tools](#host-side-read-tools).                                              | No          |
@@ -258,6 +296,13 @@ Implementation and limits: [thread-in-container](plans/thread-in-container.md),
 [contained shell effects](../packages/shell-guard/src/container-effects.ts).
 
 ## Platform matrix
+
+Listing configured Git remotes (`git remote`, `git remote -v`, or `--verbose`) is a local read and
+starts inside an active project sandbox. Other remote operations retain their existing external
+classification. A recognized slash-delimited `sed` address/substitution filter treats its script
+as text, including words such as "signature". External read/write/execute commands and execution
+flags are never filter shapes; unknown grammar retains the conservative policy. These shapes
+still prompt when the OS sandbox is unavailable.
 
 This matrix describes standard shell policy. Explicit trusted-command grants, per-tool overrides,
 Guarded YOLO and attested unattended containers have the separate rules above.
@@ -623,7 +668,8 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 When the command is bounded opaque local execution — its only reasons are a project script or
 executable, with no network, outside-path, destructive or install signal — the advanced prompt
-also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
+also offers a ten-retry, two-hour outside-sandbox grant. Its label explains exact-command
+scope, Stop revocation and the risk of changed scripts. Ticking it leases that
 exact command line, byte for byte, to the current human turn tree in this thread and execution
 root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
 Any other command, a changed command, another turn tree or another thread asks again. The same
@@ -654,6 +700,37 @@ the parsed command, after wrapper unwrapping, never from raw text: `grep -rn "gi
 in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
+
+### Background tasks
+
+Background starts use the same approved command routing as `run_shell`. A command approved for
+outside execution, or covered by an eligible trusted-command grant, runs outside the sandbox in
+standard mode too. Trusted-command routing follows `run_background`'s own per-tool setting in the
+permission gate and the runner alike: Always ask on `run_shell` alone changes neither where a
+background task runs nor how the gate records and, under Guarded YOLO, screens it. An eligible
+outside-read command instead receives the same per-spawn read overlay as `run_shell`; its named
+paths become readable without granting writes or network. Separately approved loopback binding
+composes with that read overlay. Foreground and background installs share package-firewall
+preparation and JavaScript lifecycle-script suppression under the existing safe-install setting; a
+missing proxy launcher refuses the install before spawning.
+
+Background starts accept `expects_sandbox_block` for ambiguous commands. The escape always asks
+afresh and authorizes that one attempt; declining runs contained and suppresses a second retry
+request for that attempt. Fully local commands ignore the hint, while hard-external commands
+retain their ordinary gate.
+
+A failed contained background task with per-attempt runner violations or a bounded denial
+signature can be retried explicitly: `action: start`, the exact same command and `retry_of` set
+to the failed task id. The agent must inspect partial effects first. This always requires fresh
+one-shot outside consent, including in Guarded YOLO; forgeable output cannot approve an escape.
+Neither prompt offers an “Always allow” trusted-command grant, a replay lease or a standing read
+grant, so a command that prints a denial signature cannot turn one approval into later unprompted
+escapes.
+The owner, command, execution root and failed status are rechecked after approval. Only one
+retry may claim an original attempt, and the retry gets a new task id and its own completion
+lifecycle. Running, successful, cancelled, timed-out, already outside, remote and adopted tasks
+are ineligible. Background failures never restart automatically and add no continuation wake.
+The foreground denial cache and replay leases do not apply to background retries.
 
 ## Host-side read tools
 
@@ -776,29 +853,41 @@ On macOS, Settings → Permissions → Commit signing has an **Allow signed comm
 toggle, on by default. After a trusted sandboxed socket probe receives an OS
 permission denial, Copse uses the system SSH signer, one configured public key and
 the exact agent socket, without asking. The grant for that project and identity is
-cached until app restart; a changed config, key, signer binary or socket re-runs the
+cached until app restart; a changed config, key, helper binary or socket re-runs the
 probe and re-grants, still without asking. Setting the git_commit tool to Always ask
 in Tool Permissions forces a fresh approval for every signing helper use instead, and
 never remembers it. Turning the setting off blocks further brokered ssh-agent
 signing. Config supplied by the repository never grants authority on its own.
 
-The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
-fixed arguments selecting that public key and the `git` signing namespace. Git and
-its hooks receive a single-use commit-signing endpoint; they cannot talk to ssh-agent
-directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
+The socket is available only to separately sandboxed system helpers: `/usr/bin/ssh-add -L`
+checks for the configured public identity before staging, and `/usr/bin/ssh-keygen`
+signs with fixed arguments selecting that key and the `git` namespace. Both executables
+are pinned by their contents. The identity list is bounded and never sent to the agent.
+Git and its hooks receive a single-use commit-signing endpoint; they cannot talk to
+ssh-agent directly. On this ssh-agent path, the configured private key remains unreadable. The helper and key are
 pinned through command-line config, so changing Git config during approval cannot
 replace the approved executable. The broker accepts bounded commit objects, not
 commands or arbitrary SSH authentication requests.
 
-With the ssh-agent setting off, a configured SSH key file has a separate one-commit
-consent path on macOS. Before staging or running hooks, the approval names the commit,
+With the ssh-agent setting off, or when the configured identity is unavailable from
+ssh-agent, a configured SSH key file has a separate one-commit consent path on macOS.
+This also covers a missing agent socket or public-key file. Agent communication errors
+and malformed or truncated identity lists fail closed without requesting private-key
+access. If the identity list lacks an inline public key, Copse instead reports how to
+load the key; there is no configured file for private-key consent.
+Before staging or running hooks, the approval names the commit,
 resolved private-key path, system signer and project. Copse reads no private-key
 contents until approval. This approval is never remembered: only the isolated system
 signer gains read access to the exact file. Git, hooks and the agent receive no key
 access. File identity is checked across approval and before and after each signer
 invocation. No private-key copy is written. A missing `.pub` file does not prevent signing. Passphrase-protected
 keys require the existing ssh-agent path; Copse does not collect their passphrases.
+When a configured public identity is available, the approved private key must match it.
 Rejecting or failing never triggers an unsigned or unsandboxed retry.
+
+Signer failures retain bounded diagnostics, including a missing key or unavailable
+agent socket, instead of hiding the cause behind a generic commit error. Signature
+output is never included in failure messages.
 
 This is the commit step of a PR workflow. The Create PR dialog pushes already committed
 changes; it does not commit, read signing keys or grant future signing access. PR
@@ -813,6 +902,17 @@ pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
 processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
+
+Task retries authorize the exact displayed command in one project, chat, human task,
+execution root and containment mode. The contained option allows ten additional runs
+within 15 minutes; the separately selected outside-sandbox option allows ten within two
+hours. Stop revokes the chat's retries immediately, including saved answers to abandoned
+approval requests. Cancellation also revokes them, except send-now interruption, which
+can continue the same task. A new human task cannot reuse the
+previous task's answer. Restart forgets these memory-only grants; expiry or exhaustion
+requires approval again. Ordinary completion preserves retries for the same task.
+Outside-sandbox scripts still use normal account access, and changing a script's contents
+can change what the same command does. These are not all-command session grants.
 
 Prompt prose explains the effect, execution boundary, and duration of the grant outside the
 detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,
@@ -887,11 +987,34 @@ See [the project preparation plan](plans/project-worktree-preparation.md) for th
 Copse's own native setup uses that same declaration. Readiness covers dependencies and declared
 checks; it does not claim that builds or tests pass.
 
-Preparation always asks once, displaying the selected project, exact package install, every declared
-setup command, and its network/write scope. Project-defined setup is labelled executable repository
+Preparation displays the selected project, exact package install, every declared setup command,
+and its network/write scope. A verified recurring automation run offers “Remember for this automation”
+checked by default. Approving with it checked saves a schedule/project-owned grant for the exact
+preparation content fingerprint, relative project directory, and offline/network mode. The same
+inputs in a new worktree reuse that grant; changed inputs or network mode require approval again.
+Unchecking remembers nothing, rejection creates no grant, and an explicit Always ask or Blocked
+policy takes precedence. The automation editor lists saved preparation grants so they can be revoked.
+
+Before the first unattended run, the editor's **Review worktree setup** action previews the current
+plan for the selected local project and a contained relative folder. The main process computes its
+commands, content fingerprint, writes and offline/network scope without executing setup. **Use this
+setup** selects that exact permission; **Save automation** persists it. Cancelling the review or
+closing the editor grants nothing. New selections are recomputed at save, so changed inputs or an
+explicit Always ask/Blocked policy require review or a policy change before saving. Reviewing again
+replaces an earlier selection for the same folder and network scope. Editing an existing schedule
+does not require reviewing unchanged saved permissions again; stale grants remain visible and
+removable, and cannot match changed setup at runtime. There is no receipt expiry or generic setup
+allow switch. When saved preparation grants exist, **Review another setup** and its hint distinguish
+the proposal fields from the saved permissions below. Changing those fields alone does not alter
+the saved folder or network scope. The first unattended turn defers approvals instead of displaying a
+remember checkbox;
+the editor therefore provides the setup path in advance. A later human turn can also approve and
+remember the exact plan through the ordinary prompt.
+
+Ordinary threads continue to require one-time approval. Project-defined setup is labelled executable repository
 code. The fingerprint from preflight is required in the tool call and is checked before approval and
-again before each step; changed inputs require a new approval. Grants cannot be remembered or reused
-for arbitrary commands. Automatic JavaScript installs use frozen lockfiles, the package firewall, and
+again before each step; changed inputs require a new approval. Remembered automation preparation
+grants cannot authorize arbitrary commands. Automatic JavaScript installs use frozen lockfiles, the package firewall, and
 manager-specific lifecycle disabling. Custom steps retain their explicitly approved semantics.
 
 Both tools require an enforcing OS sandbox and have no unsandboxed fallback. Preflight probes and
@@ -1185,8 +1308,10 @@ Copse GitHub grants cover the current project repository only. Passing an explic
 `repo` keeps the normal per-call prompt. Shell commands, file changes, web/browser origins,
 sensitive-data reveals, ACP agent permission kinds, and model-spend approvals are deliberately not
 eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
-tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
-behavior.
+tool to the owning schedule. That “Remember for this automation” box starts unchecked, so approving
+alone grants nothing beyond the current call; only an exact preparation plan's offer starts checked
+(see [Worktree preparation capability](#worktree-preparation-capability)). Ordinary threads retain
+their existing global MCP “always allow” behavior.
 
 The first turn of a verified schedule-created thread runs in deferral mode. A
 prompt without a schedule grant records a pending request and returns a
@@ -1233,15 +1358,35 @@ main process ([design and validation record](plans/sandboxed-artifact-image-down
   with its alt text. There is no unsandboxed retry; only transient failures offer Retry, and a
   retry re-authorizes and fetches a fresh signed URL.
 
+An explicit click on a Cursor artifact link uses a separate, user-initiated Save flow. Main checks
+the chat's durable current link and its bounded, main-recorded recent Cursor agent IDs before
+asking the provider for a signed URL. It accepts only the exact configured HTTPS download origin,
+rechecks up to three redirects, and reads at most 32 MiB within 30 seconds. Any file type can be
+saved through the main-owned file dialog; the bearer URL stays out of the renderer and browser
+history. Unlike automatic image hydration, this explicit download fetch runs in main after the
+click and does not claim the per-job ASRT containment described above. Cached OpenAI artifacts
+use the same Save dialog after checking the owning project and chat.
+
 ## Implementation map
 
-Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
-`TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
-heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
-when every destination file is inside the workspace. This redirect does not widen the sandbox's
-writable roots or change the approval policy. When `COPSE_DIR` is reached through a symlink,
-Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS seatbelt otherwise
-rejects traversal through the home-directory link before its target allow can apply.
+Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
+patch commands even when every destination file is inside the workspace. This redirect does not
+widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
+through a symlink, Copse canonicalizes the scratch directory before setting `$TMPDIR`; macOS
+seatbelt otherwise rejects traversal through the home-directory link before its target allow can
+apply.
+
+ASRT bakes its own `TMPDIR` into every wrapped command, after the spawn env, from the wrapping
+process's `CLAUDE_CODE_TMPDIR` (else `/tmp/claude`). `withSandboxWrapTmpDir` (`tmp-env.ts`) sets
+that variable in Copse's `process.env` only while a wrap is in flight and restores the user's own
+value when it settles; concurrent wraps for one directory share it, and a wrap for another waits.
+It is never left set: an unsandboxed Claude Code that inherited it would keep its `claude-<uid>`
+files in the scratch directory every contained command can write. `envForRendererChildProcess`
+and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
+it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
+ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
@@ -1366,3 +1511,5 @@ needed, deletes it, and reports absence only after a successful host inventory.
 Deletion asks on every invocation, including with a stored Device Hub allow,
 and cannot be remembered through the approval dialog. Stored blocks, read-only
 runs and toolGate hooks still win. Other Device Hub actions retain their policy.
+
+Saved local port-binding consent can be revoked under Context → Permissions → Project → Local port binding. Revocation applies to future task starts for that project; stop any already-running background task separately in Process manager. Other projects keep their own consent.

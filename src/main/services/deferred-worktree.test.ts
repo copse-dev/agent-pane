@@ -101,6 +101,7 @@ function fixture(
     retire: async () => undefined,
     serialize: async (_key, task) => task(),
     warmupModel: async () => undefined,
+    preflightModel: async () => undefined,
     ...overrides,
   }
   return { dependencies, getThread: () => thread, allocations, checkouts }

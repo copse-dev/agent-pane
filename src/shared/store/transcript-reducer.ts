@@ -15,6 +15,7 @@ import {
   addMessageVisualEvidence,
   addToolCall,
   updateToolCall,
+  findToolCall,
   findToolCallOwner,
   setMessageContent,
   setThreadStatus,
@@ -417,6 +418,10 @@ export function createTranscriptReducer(
         // message that holds the call, which is not always the one streaming.
         const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId) ?? st.msgId
         if (ownerId) {
+          // A result replaces the outcome, including when a provider reuses an
+          // id for a retry. An omitted marker means this result was not deferred.
+          const call = findToolCall(store, ownerId, chunk.toolCallId)
+          if (call && chunk.deferred !== true) delete call.deferred
           updateToolCall(store, ownerId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
@@ -425,6 +430,7 @@ export function createTranscriptReducer(
             ...(chunk.appendedReminderLengths
               ? { appendedReminderLengths: chunk.appendedReminderLengths }
               : {}),
+            ...(chunk.deferred ? { deferred: chunk.deferred } : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
           hooks.toolResult?.(threadId, ownerId, chunk)
