@@ -41,6 +41,10 @@ catalogue prices or context limits may be stale, and tool-initiated spending is 
 Reservations can stop a run before its actual usage reaches the limit. There is no
 daily/schedule aggregate or allowance top-up. ACP, remote/plugin agents, other providers,
 container/isolated-desktop runs and detached worker threads are refused for a budgeted run.
+Creating or prompting subthreads is refused before ownership or queued work is written;
+the shared cross-thread prompt transport refuses sends from an allowance scope. Restored
+subthread deliveries recheck the parent's durable allowance before dispatch. Reading or listing
+existing children still uses the ordinary conversation-access grant.
 Native helper providers constructed before the run are checked when called. Event automations
 do not yet expose this control. Legacy schedules remain unchanged.
 

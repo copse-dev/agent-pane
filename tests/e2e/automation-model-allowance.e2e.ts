@@ -7,6 +7,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
 const PROJECT_ID = 'e2e-model-allowance'
 
@@ -36,7 +37,10 @@ describe('automation model allowance editor', function () {
     writeFileSync(join(projectRoot, 'README.md'), 'Model allowance fixture\n')
     git('add', 'README.md')
     git('commit', '-qm', 'seed')
-    seedEmptyProject(projectRoot, PROJECT_ID, { model: 'claude-haiku-4-5' })
+    seedEmptyProject(projectRoot, PROJECT_ID, {
+      model: 'claude-haiku-4-5',
+      subagentsEnabled: false,
+    })
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: projectRoot, name: 'Allowance fixture' }],
       activeProjectId: PROJECT_ID,
@@ -194,5 +198,81 @@ describe('automation model allowance editor', function () {
     } finally {
       writeFileSync(path, original)
     }
+  })
+
+  it('refuses a detached child before approval or queued work is created', async () => {
+    const before = await browser.execute(
+      async (projectId: string) => (await window.api.threads.loadProject(projectId)).length,
+      PROJECT_ID,
+    )
+    const dialog = await openSchedule()
+    await dialog.$('.automation-name-input').setValue('Limited delegation')
+    await dialog.$('.automation-prompt-input').setValue('Delegate a bounded task.')
+    await dialog.$('.automation-model-allowance-input').setValue('10')
+    await dialog.$('.automation-save-btn').click()
+    await expect(dialog.$('.automation-form')).not.toBeDisplayed()
+    const scenario = await installMockScenario(
+      {
+        title: 'Limited delegation',
+        turns: [
+          {
+            user: 'Delegate a bounded task.',
+            responses: [
+              {
+                toolCalls: [
+                  {
+                    name: 'subthreads',
+                    args: {
+                      action: 'start',
+                      key: 'child',
+                      title: 'Unexpected child',
+                      prompt: 'Do detached work.',
+                    },
+                  },
+                ],
+              },
+              {
+                expectToolResults: [{ name: 'subthreads', includes: 'separate worker threads' }],
+                text: 'The allowance keeps this work in the current run.',
+              },
+            ],
+          },
+        ],
+      },
+      null,
+    )
+    await dialog.$('.automation-run-btn').click()
+    await expect(dialog.$('.automation-status')).toHaveText(expect.stringContaining('Started'))
+    await dialog.$('[aria-label="Close automations"]').click()
+    await scenario.waitForComplete()
+    await scenario.assertComplete()
+    const threads = await browser.execute(
+      async (projectId: string) => window.api.threads.loadProject(projectId),
+      PROJECT_ID,
+    )
+    assert.equal(threads.length, before + 1, 'only the budgeted parent run may be created')
+    assert.equal(
+      threads.some((thread) => thread.title === 'Unexpected child'),
+      false,
+    )
+    const parent = threads.find((thread) => thread.title === 'Limited delegation')
+    assert.ok(parent)
+    // Starting another run preserves the selected previous run. Open the new
+    // parent explicitly before asserting its reply and refusal card.
+    await $(`.chat-row[data-thread-id="${parent.id}"]`).click()
+    await expectAssistantReply('The allowance keeps this work in the current run.')
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+    const rollup = $('.tool-card-rollup[data-status="error"]')
+    if ((await rollup.isExisting()) && !(await rollup.getProperty('open'))) {
+      await rollup.$('summary.tool-card-header').click()
+    }
+    const card = $('.tool-card[data-tool-id][data-status="error"]')
+    await card.waitForDisplayed()
+    if (!(await card.getProperty('open'))) await card.$('summary.tool-card-header').click()
+    await expect(card).toHaveText(expect.stringContaining('separate worker threads'))
+    await saveElementScreenshot(
+      '.tool-card[data-tool-id][data-status="error"]',
+      'automation-model-allowance-delegation.png',
+    )
   })
 })

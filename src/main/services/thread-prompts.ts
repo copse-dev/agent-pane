@@ -11,6 +11,8 @@ import { hasThreadAccess, revokeThreadAccess } from './security/thread-access.ts
 import { getSetting } from './storage/settings.ts'
 import { getThreadMeta } from './thread-store.ts'
 import type { SettingsValues } from '@shared/settings-contract.ts'
+import { currentThreadExecutionContext } from './thread-execution-context-store.ts'
+import { rejectAutomationBudgetDelegation } from './automations/automation-budget.ts'
 
 /** Main's record that `parentId` created `childId` here, and still holds orchestration. */
 function holdsSubthreadAuthority(projectId: string, parentId: string, childId: string): boolean {
@@ -69,6 +71,7 @@ export async function dispatchSubthreadPrompt(
   childId: string,
   start: () => Promise<void>,
 ): Promise<void> {
+  await rejectAutomationBudgetDelegation({ projectId, threadId: parentId })
   const live = await subthreadPairIsLive(projectId, parentId, childId)
   if (!live || !holdsSubthreadAuthority(projectId, parentId, childId)) {
     throw new SubthreadPromptHeldError(childId)
@@ -82,10 +85,14 @@ type Send = (
 ) => Promise<ThreadPromptResult>
 let send: Send | null = null
 
-export function sendThreadPrompt(
+export async function sendThreadPrompt(
   command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>,
   signal?: AbortSignal,
 ): Promise<ThreadPromptResult> {
+  const context = currentThreadExecutionContext()
+  await rejectAutomationBudgetDelegation(
+    context?.threadId === command.sourceThreadId ? context : undefined,
+  )
   return (
     send?.(command, signal) ??
     Promise.resolve({ ok: false, error: 'Open the desktop window to send a prompt.' })

@@ -78,6 +78,19 @@ export async function rejectExternalAutomationBudget(
   }
 }
 
+/** Detached queues cannot carry a run's allowance through IPC or a restart. */
+export async function rejectAutomationBudgetDelegation(owner?: {
+  projectId: string
+  threadId: string
+}): Promise<void> {
+  if (
+    scope.getStore() ||
+    (owner && (await readBudget(budgetPath(owner.projectId, owner.threadId))) !== null)
+  ) {
+    throw new Error('An automation model allowance does not support separate worker threads yet')
+  }
+}
+
 /** Routes hosted outside the native provider cannot enforce this allowance. */
 export function assertAutomationBudgetModel(model: string): void {
   if (!scope.getStore()) return
