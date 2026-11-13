@@ -1413,6 +1413,18 @@
       "sha256": "1a6170275b3dbe9c7bb3d5824d5ea2bfb41a180e4f63ec47d60e2c12e78be7ca",
       "bytes": 121995
     },
+    "composer-observer-bordered.png": {
+      "sha256": "84eaf2098862be335abc77b689a2f39c18c991a48fd257d76130d5e8082e9ba5",
+      "bytes": 326418
+    },
+    "composer-observer-borderless.png": {
+      "sha256": "1abd984edbea24533bd1bd585df612dbc12b99f1f0382e9a777790af5fb4c27e",
+      "bytes": 325624
+    },
+    "composer-observer-content-grown.png": {
+      "sha256": "7468721de6ae9dff53e21125e6b4722a3a31c4cbde74ba33284f2c4f639b3aa7",
+      "bytes": 331619
+    },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
       "bytes": 293691
