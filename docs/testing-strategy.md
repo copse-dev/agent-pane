@@ -704,6 +704,24 @@ ship while the stack lands; that risk is explicitly accepted by opting in.
 
 ## Where each tier runs: `main` and `release`
 
+For focused macOS kernel evidence on a same-repository PR, add `ci-macos-sandbox`.
+The existing CI workflow runs `macOS Seatbelt contract` on the standard GitHub-hosted
+`macos-26` Apple Silicon runner, checks out the exact PR head with read-only credentials,
+and runs `pnpm test -- src/main/project-sandbox/node-toolchain-sandbox.test.ts toolchain-read-guard`.
+It uses the production ASRT wrapper and filesystem overlay, a byte-for-byte copy of the current
+Node executable, an isolated `COPSE_DIR`, and synthetic credential/home fixtures. Allowed reads
+and execution, credential/sibling and symlink-alias denial, and read-only enforcement must pass
+as real child-process syscalls; profile strings alone are not this evidence. A missing or failed
+sandbox fails the job. The job requests 14-day retention for its environment record and TAP log;
+repository policy can shorten it.
+
+The label opts in only this focused job; ordinary full CI and any additional device or visual
+acceptance still apply. Requested native checks must succeed before `CI Passed` can pass, including
+on a draft or a plan with no e2e shards. Source pushes rerun it while the label remains; unrelated
+label events do not repeat it. Remove the label after reviewing the final-head evidence. This is
+a standard hosted runner, without signing, model, release or repository-write credentials; no
+self-hosted fleet, larger runner or additional service is provisioned.
+
 `main` uses GitHub's merge queue. Queue checks execute the synthetic candidate
 against `merge_group.base_sha`, including all commits in that candidate. The
 oracle still selects focused e2e coverage when confidence permits it; queue
