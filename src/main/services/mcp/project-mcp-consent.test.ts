@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
@@ -68,6 +68,14 @@ describe('project MCP consent', () => {
             remote: { url: 'https://example.invalid/mcp' },
           },
         }),
+      )
+      await writeFile(
+        join(root, 'mcp.json'),
+        JSON.stringify({ mcpServers: { user: { command: '/bin/echo' } } }),
+      )
+      assert.equal(
+        (await listForwardableMcpServers()).find((config) => config.name === 'user')?.cwd,
+        homedir(),
       )
       assert.deepEqual(await projectServers(), [])
       const reviewed = await readProjectMcpConsent(root)

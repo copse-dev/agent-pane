@@ -539,13 +539,18 @@ async function createTransport(
     })
     return { transport, stderrOutput: () => stderr.trim() }
   }
-  const cwd = cfg.cwd ?? getWorkspaceRoot() ?? undefined
+  // A user or plugin definition is trusted as configuration, but its script
+  // may be relative to the working directory. The selected project is writable
+  // by the renderer/agent, so silently using it would let a project replace
+  // code that this otherwise unsandboxed server executes on a later reload.
+  // Explicit cwd remains the owner's opt-in; an omitted cwd is app-owned.
+  const cwd = cfg.cwd ?? homedir()
   const transport = new StdioClientTransport({
     command: cfg.command,
     args: cfg.args ?? [],
     env: { ...envForRendererChildProcess(), ...(cfg.env ?? {}) },
     stderr: 'pipe',
-    ...(cwd ? { cwd } : {}),
+    cwd,
   })
   let stderr = ''
   transport.stderr?.on('data', (chunk: Buffer | string) => {
@@ -967,11 +972,17 @@ export async function listForwardableMcpServers(projectId?: string): Promise<Mcp
           cfg.transport === 'http' ||
           (cfg.transport === 'stdio' && classifyMcpOrigin(cfg.source) !== 'project'),
       )
-      .map((cfg) =>
-        agentPluginIdForMcpSource(cfg.source) === undefined
-          ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
-          : cfg,
-      )
+      .map((cfg) => {
+        const resolved =
+          agentPluginIdForMcpSource(cfg.source) === undefined
+            ? interpolateServerConfig(cfg, process.env, envAllowlistFor(cfg))
+            : cfg
+        // Keep the legacy forwarding list from reintroducing project cwd
+        // inheritance if an external-agent adapter later handles stdio itself.
+        return resolved.transport === 'stdio'
+          ? { ...resolved, cwd: resolved.cwd ?? homedir() }
+          : resolved
+      })
   )
 }
 
