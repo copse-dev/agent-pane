@@ -38,8 +38,8 @@
       "bytes": 338380
     },
     "acp-auth-error.png": {
-      "sha256": "6993f20ec85e47771cd24b7f14fe665665ac7a2c704e95dfe1075a11e5f6af6d",
-      "bytes": 176994
+      "sha256": "c79b4261cda785b040c52e708caca06fdabd2ea4c377aab61360f6ed0235d9d1",
+      "bytes": 178980
     },
     "acp-auto-install-approval.png": {
       "sha256": "34d3d109daaf6129847e347c05726bfb92e5e0aa76bf98b32f6cd390d01510ae",
@@ -1298,12 +1298,12 @@
       "bytes": 15593
     },
     "claude-org-check-auth-error.png": {
-      "sha256": "b9bf6e2b1051c711a6a524c3ea3ec1de65ede564b3af9e4a0b452ec729845bb0",
-      "bytes": 293358
+      "sha256": "f95ea8ae77780618fe087039afcca6a1f5ef2426846149160fc1d9a4aa0a3d46",
+      "bytes": 295255
     },
     "claude-sign-in.png": {
-      "sha256": "b4ad973c94ae2cc5888034cbc04796e930651a9689557133afbc88d4c70e4388",
-      "bytes": 91375
+      "sha256": "48920480ce695d4c39ddd04c04dd61f19941bf68489b90670ef1728bafddbe8c",
+      "bytes": 95105
     },
     "close-confirm-working-thread.png": {
       "sha256": "23fcb9362a0676b68fffaa2eaf41aaa66624549289e52b7d280e782d7f5af68c",
@@ -3130,8 +3130,8 @@
       "bytes": 13732
     },
     "plain-language-agent-error-banner.png": {
-      "sha256": "31e01fff13c8250f0746aed7b36ca170c016731f7949d46dbd8c3aea4bba24df",
-      "bytes": 226955
+      "sha256": "4b60e015522eaf3d0d95c8c2a58e8909c7d97fa32bcd77013b82382301ca8e40",
+      "bytes": 228401
     },
     "plain-language-install-approval.png": {
       "sha256": "d571c39ec84a48b2199a5a889429898c74724317d15c4b0fc1067fbdb68128be",
