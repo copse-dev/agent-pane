@@ -188,6 +188,34 @@ test('a machine turn prompt takes the id main stamped', () => {
   )
 })
 
+for (const hidden of [false, true]) {
+  test(`a ${hidden ? 'hidden' : 'visible'} machine turn clears an earlier interruption`, () => {
+    const interrupted = threadWith('t1', [humanPrompt('u1', 'Check the project.')])
+    interrupted.status = 'idle'
+    interrupted.interruptedTurnAt = 20
+    const store = createStore({ threads: [interrupted], activeThreadId: 't1' })
+    const reducer = createTranscriptReducer(store)
+
+    reducer.apply('t1', {
+      type: 'machine_turn_start',
+      ...(hidden ? { hidden: true } : {}),
+      content: 'The user accepted a.txt.',
+      origin: { kind: 'machine', operationId: 'accept-1' },
+    })
+    assert.equal(getThreadById(store, 't1')?.status, 'running')
+    assert.equal(getThreadById(store, 't1')?.interruptedTurnAt, undefined)
+    assert.equal(
+      messagesOf(store).filter((message) => message.role === 'user').length,
+      hidden ? 1 : 2,
+    )
+
+    reducer.apply('t1', { type: 'text', text: 'The accepted change is verified.' })
+    reducer.apply('t1', { type: 'done' })
+    assert.equal(getThreadById(store, 't1')?.status, 'idle')
+    assert.equal(getThreadById(store, 't1')?.interruptedTurnAt, undefined)
+  })
+}
+
 test('an internal machine notification starts a turn without adding a chat prompt', () => {
   const store = seeded()
   let started = 0
