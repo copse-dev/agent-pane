@@ -24431,6 +24431,7 @@ var init_transcript_state = __esm({
   "src/shared/store/transcript-state.ts"() {
     TRANSCRIPT_META_KEYS = [
       "status",
+      "interruptedTurnAt",
       "usage",
       "updatedAt",
       "todos",

@@ -485,7 +485,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Y7CJOLTR.js";
+} from "./chunk-IJILXUUF.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -10625,6 +10625,30 @@ var init_inline_artefact = __esm({
   }
 });
 
+// src/shared/threads/explicit-agent.ts
+function explicitAgentForMessage(messages, messageIndex) {
+  if (messages[messageIndex]?.role !== "assistant") return void 0;
+  let agent2;
+  for (let index = messageIndex; index >= 0; index--) {
+    const message2 = messages[index];
+    if (!message2 || message2.role === "user") break;
+    for (const call of message2.toolCalls) {
+      if (agent2 !== void 0 || call.name !== "task" || // ACP can use the same name; its title/kind/identity metadata belongs
+      // to the external parent, not a host-synthesized explicit invocation.
+      call.title !== void 0 || call.kind !== void 0 || call.programmaticName !== void 0 || !isRecord(call.args) || typeof call.args["subagent_type"] !== "string" || call.args["subagent_type"].length === 0) {
+        return void 0;
+      }
+      agent2 = call.args["subagent_type"];
+    }
+  }
+  return agent2;
+}
+var init_explicit_agent = __esm({
+  "src/shared/threads/explicit-agent.ts"() {
+    init_unknown_value();
+  }
+});
+
 // src/renderer/controller/model-selection.ts
 function commitThreadModelSelection(store2, api2, threadId, by, from2, to) {
   if (from2 === to) return;
@@ -10680,6 +10704,9 @@ function turnRecoveryForMessage(thread, failedMessageId) {
   const failedIndex = thread.messages.length - 1;
   const failed = thread.messages[failedIndex];
   if (!failed || failed.id !== failedMessageId) return null;
+  if (explicitAgentForMessage(thread.messages, failedIndex) !== void 0) {
+    return null;
+  }
   if (thread.interruptedTurnAt !== void 0 && failed.createdAt <= thread.interruptedTurnAt && (failed.role === "user" || failed.role === "assistant") && failed.turnOutcome === void 0) {
     return { interruptedByRestart: true };
   }
@@ -10723,6 +10750,7 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
 }
 var init_turn_recovery2 = __esm({
   "src/renderer/controller/turn-recovery.ts"() {
+    init_explicit_agent();
     init_thread_helpers();
     init_model_selection();
     init_message_queue();
@@ -88575,6 +88603,11 @@ function createTranscriptReducer(store2, hooks = {}) {
     const st = get2(threadId);
     switch (chunk.type) {
       case "machine_turn_start": {
+        patchThreadAnywhere(store2, threadId, (thread) => {
+          if (thread.interruptedTurnAt === void 0) return thread;
+          const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
+          return rest;
+        });
         hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
         if (chunk.hidden) break;
@@ -89244,9 +89277,11 @@ function startAgentController(store2, api2) {
               ...transcriptMeta(thread),
               // A cold read can arrive while a queued dispatch awaits its grant,
               // or after that dispatch has been denied and restored as held.
-              // Preserve that local status decision. A real runtime snapshot is
+              // Preserve that local status/interruption decision against an
+              // old running read. A completed disk snapshot may carry a main
+              // turn's removal of the old interruption. A runtime snapshot is
               // authoritative even before its first chunk creates a checkpoint.
-              ...source === "disk" && (current2.interruptedTurnAt !== void 0 || hasPendingDispatch(store2, thread.id) || current2.status === "idle" && thread.status === "running" && (current2.pendingMessages?.length ?? 0) > 0) ? { status: current2.status } : {},
+              ...source === "disk" && (current2.interruptedTurnAt !== void 0 && thread.status === "running" || hasPendingDispatch(store2, thread.id) || current2.status === "idle" && thread.status === "running" && (current2.pendingMessages?.length ?? 0) > 0) ? { status: current2.status, interruptedTurnAt: current2.interruptedTurnAt } : {},
               messages: mergeRuntimeMessages(current2.messages, thread.messages)
             };
           });
