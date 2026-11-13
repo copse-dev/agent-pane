@@ -13,6 +13,7 @@ let projectRoot = ''
 
 async function checkViewport(width: number, height: number, label: string): Promise<void> {
   const reply = `${label} viewport checked.`
+  const previousImageCount = (await $$('.tool-result-preview-image').getElements()).length
   const scenario = await prepareMockTurn(`Check the ${label.toLowerCase()} layout.`, [
     { toolCalls: [{ name: 'browser_resize', args: { width, height, viewId: 'tab-1' } }] },
     {
@@ -25,40 +26,46 @@ async function checkViewport(width: number, height: number, label: string): Prom
       toolCalls: [{ name: 'browser_screenshot', args: { viewId: 'tab-1' } }],
       expectToolResults: [{ name: 'browser_snapshot', includes: `${label} layout` }],
     },
-    { text: reply, expectToolResults: [{ name: 'browser_screenshot' }] },
+    { text: reply, expectToolResults: [{ name: 'browser_screenshot', includes: 'Captured a ' }] },
   ])
   await $('.submit-btn').click()
   await expectAssistantReply(reply)
   await waitForAgentIdle(20_000)
   await scenario.assertComplete()
+  await browser.waitUntil(
+    async () =>
+      (await $$('.tool-result-preview-image').getElements()).length === previousImageCount + 1,
+    { timeout: 10_000, timeoutMsg: `${label} screenshot did not add a fresh image` },
+  )
   const images = await $$('.tool-result-preview-image').getElements()
-  const image = images.at(-1)
+  const image = images.at(previousImageCount)
   assert.ok(image)
   await image.scrollIntoView()
   await image.waitForDisplayed({ timeout: 15_000 })
   await browser.waitUntil(
     () =>
-      browser.execute(() => {
+      browser.execute((index) => {
         const images = document.querySelectorAll<HTMLImageElement>('.tool-result-preview-image')
-        const last = images.item(images.length - 1)
-        return last.complete && last.naturalWidth > 0
-      }),
+        const image = images.item(index)
+        return image.complete && image.naturalWidth > 0
+      }, previousImageCount),
     { timeout: 10_000, timeoutMsg: 'viewport screenshot did not decode' },
   )
-  const imageSize = await browser.execute(() => {
+  const imageSize = await browser.execute((index) => {
     const images = document.querySelectorAll<HTMLImageElement>('.tool-result-preview-image')
-    const last = images.item(images.length - 1)
-    return { width: last.naturalWidth, height: last.naturalHeight }
-  })
+    const image = images.item(index)
+    return { width: image.naturalWidth, height: image.naturalHeight }
+  }, previousImageCount)
   assert.ok(imageSize.width > 0 && imageSize.height > 0)
-  assert.ok(Math.abs(imageSize.width / imageSize.height - width / height) < 0.005)
+  assert.ok(
+    Math.abs(imageSize.width / imageSize.height - width / height) < 0.005,
+    JSON.stringify({ expected: { width, height }, imageSize }),
+  )
   await expect($('#approval-dialog')).not.toBeDisplayed()
-  const messageId = await browser.execute(() => {
+  const messageId = await browser.execute((index) => {
     const images = document.querySelectorAll<HTMLImageElement>('.tool-result-preview-image')
-    return images.item(images.length - 1).closest<HTMLElement>('[data-message-id]')?.dataset[
-      'messageId'
-    ]
-  })
+    return images.item(index).closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
+  }, previousImageCount)
   assert.ok(messageId)
   const framed = await frameInTranscript([
     `[data-message-id=${JSON.stringify(messageId)}] > .tool-result-images`,

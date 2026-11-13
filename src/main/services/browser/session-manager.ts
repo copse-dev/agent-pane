@@ -78,8 +78,8 @@ async function waitForBrowserOperation(
 
 /**
  * Preview captures temporarily change zoom, while responsive checks change
- * the viewport. Serialize both on each tab so neither overwrites the other's
- * layout or restores a zoom belonging to an overlapping operation.
+ * the viewport. Serialize captures and resizes on each tab so a screenshot
+ * cannot observe another operation's temporary layout.
  */
 const tabOperations = new WeakMap<PreviewContents, Promise<unknown>>()
 
@@ -110,6 +110,65 @@ interface ViewportWindow {
   setContentSize: BrowserWindow['setContentSize']
   getContentSize: BrowserWindow['getContentSize']
   webContents: PreviewContents
+}
+
+async function captureScreenshotDataUrl(
+  wc: PreviewContents,
+  timeoutMessage = 'Preview capture timed out',
+): Promise<string> {
+  const response = await waitForBrowserOperation(
+    wc.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    }),
+    timeoutMessage,
+  )
+  const data = expectString(expectRecord(response, 'browser screenshot')['data'], 'screenshot PNG')
+  return `data:image/png;base64,${data}`
+}
+
+/** Capture the current viewport with a fresh frame, including on hidden Linux tabs. */
+export function captureBrowserScreenshotDataUrl(
+  window: Pick<ViewportWindow, 'webContents' | 'getContentSize'>,
+): Promise<string> {
+  const wc = window.webContents
+  return queueTabOperation(wc, async () => {
+    let attachedHere = false
+    try {
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach('1.3')
+        attachedHere = true
+      }
+      const [width, height] = window.getContentSize()
+      const viewport = browserViewportSchema.parse({ width, height })
+      const zoom = wc.getZoomFactor()
+      // A preceding preview restores zoom before its renderer has applied it.
+      // Wait for that layout without changing the screenshot's zoom or bounds.
+      await waitForBrowserOperation(
+        wc.executeJavaScript(
+          `(async () => {
+            const deadline = performance.now() + 5000;
+            while (Math.abs(window.innerWidth - ${String(viewport.width / zoom)}) > 1 || Math.abs(window.innerHeight - ${String(viewport.height / zoom)}) > 1) {
+              if (performance.now() >= deadline) throw new Error('Browser screenshot layout did not reach the renderer');
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          })()`,
+          false,
+        ),
+        'Browser screenshot layout timed out',
+      )
+      return await captureScreenshotDataUrl(wc, 'Browser screenshot timed out')
+    } finally {
+      if (attachedHere) {
+        try {
+          wc.debugger.detach()
+        } catch {
+          /* The tab may have closed. */
+        }
+      }
+    }
+  })
 }
 
 /** Apply and measure native viewport bounds without racing preview zoom. */
@@ -168,15 +227,7 @@ async function captureAtPreviewZoom(
     // Page.captureScreenshot requests a fresh compositor frame. capturePage()
     // can return the same cached pre-zoom (or blank) surface twice, even after
     // the DOM reports the new viewport. This works in native and headless mode.
-    const response: unknown = await waitForBrowserOperation(
-      wc.debugger.sendCommand('Page.captureScreenshot', {
-        format: 'png',
-        fromSurface: true,
-        captureBeyondViewport: false,
-      }),
-    )
-    const data = expectString(expectRecord(response, 'preview screenshot')['data'], 'preview PNG')
-    const image = decodeImage(`data:image/png;base64,${data}`)
+    const image = decodeImage(await captureScreenshotDataUrl(wc))
     if (image.isEmpty()) return null
     const { width: imageWidth } = image.getSize()
     const scaled =
@@ -396,7 +447,8 @@ export class BrowserSessionManager {
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const image = await tab.window.webContents.capturePage()
+    const { nativeImage } = await import('electron')
+    const image = nativeImage.createFromDataURL(await captureBrowserScreenshotDataUrl(tab.window))
     if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
     const { width, height } = image.getSize()
     return {
