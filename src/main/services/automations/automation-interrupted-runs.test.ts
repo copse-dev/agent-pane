@@ -107,6 +107,7 @@ describe('interrupted automations in a project that stays closed', () => {
       },
       () => 'a-different-project',
       isActive,
+      isActive,
     )
     await service.sync()
     return {
@@ -270,6 +271,40 @@ describe('interrupted automations in a project that stays closed', () => {
     })
   }
 
+  for (const liveness of ['live', 'absent', 'unknown', 'unavailable', 'failed'] as const) {
+    it(`checks ${liveness} ownership before admitting a run after an idle prompt`, async () => {
+      const { scheduleId, old, evidence } = await interrupted('unlimited')
+      await updateMetaOrThrow(PROJECT, old.id, { status: 'idle' })
+      let active = liveness === 'live'
+      const restarted = await boot(
+        liveness === 'unavailable'
+          ? undefined
+          : (): boolean | null => {
+              if (liveness === 'failed') throw new Error('Owner unavailable')
+              return liveness === 'unknown' ? null : active
+            },
+      )
+      const path = join(root, 'workspace', PROJECT, old.id, 'meta.json')
+      const before = await readFile(path)
+      const event = await restarted.service.runNow(PROJECT, scheduleId)
+      if (active) {
+        assert.equal(event.coalescedReason, 'busy')
+        assert.equal(restarted.dispatches.length, 0)
+        active = false
+        const next = await restarted.service.runNow(PROJECT, scheduleId)
+        assert.equal(next.disposition, 'started')
+        assert.notEqual(next.threadId, old.id)
+        await restarted.settled(next.threadId)
+      } else {
+        assert.equal(event.disposition, 'started')
+        await restarted.settled(event.threadId)
+      }
+      assert.equal(restarted.dispatches.length, 1)
+      assert.deepEqual(await readFile(path), before)
+      await preserved(evidence)
+    })
+  }
+
   it('preserves an unsent scheduled draft despite proof that no turn has started', async () => {
     const { scheduleId, old, evidence } = await interrupted('unlimited')
     await updateMetaOrThrow(PROJECT, old.id, {
@@ -416,6 +451,21 @@ describe('interrupted automations in a project that stays closed', () => {
     await service.sync()
     enabled = true
     runId = 2
+    await updateMetaOrThrow(PROJECT, old.id, { status: 'idle' })
+    service.start(
+      () => {},
+      () => true,
+      () => true,
+    )
+    await service.poll()
+    await supervisor.waitForIdle()
+    assert.equal(created.length, 0, 'idle metadata cannot admit another event while work is live')
+    await preserved(evidence)
+    service.start(
+      () => {},
+      () => false,
+    )
+    await updateMetaOrThrow(PROJECT, old.id, { status: 'running' })
 
     await service.poll()
     await supervisor.waitForIdle()

@@ -697,6 +697,10 @@
       "sha256": "ebb58468a0e1758d8d28c72a7566a6218be33ff2fdcfbfbb76436543f81fc15c",
       "bytes": 26176
     },
+    "automation-active-acp-busy.png": {
+      "sha256": "ca83c013ffa838d3454e6d0486abab21a55f99468695fce38b9e8c0fc96f0540",
+      "bytes": 324302
+    },
     "automation-active-acp-held.png": {
       "sha256": "b3e5c71350262b9782e141d564c763625028ea2ab39ab65568fb1370edc4e58e",
       "bytes": 343458
@@ -712,6 +716,10 @@
     "automation-attention-group.png": {
       "sha256": "c61f238152f474ac08522638b3b242da81b550a5f1b3233a3f1e5f0e6a6520d4",
       "bytes": 15233
+    },
+    "automation-background-server-admitted.png": {
+      "sha256": "40e6275cbe1c9af3824cf35383986ed7ebb6b728536fb05776de73b5ac9e9710",
+      "bytes": 325943
     },
     "automation-branch-ci-edit.png": {
       "sha256": "3030122e62a6dbda36910e6f319d9a9c3feebac43b41804172092688fe658890",
@@ -969,9 +977,25 @@
       "sha256": "af80a22c66b28f2a4234864aab7a0958c0571b70bc7007751e36c015b49b3dad",
       "bytes": 55617
     },
+    "branch-checkout-late-error.png": {
+      "sha256": "12288e2b0c27384eb85a6598d5710f6c457b2d26c4b00f32eee147ad525c0552",
+      "bytes": 99033
+    },
+    "branch-checkout-late-success.png": {
+      "sha256": "d4652490fe511f02fda18ef94cb39ef442de6239af81ce9fe3d58b713996d058",
+      "bytes": 99017
+    },
     "branch-ci-status-evidence.png": {
       "sha256": "7856473097339ef6bd4820d86e3d2e72336e96314ce8420a43f74d57965877f1",
       "bytes": 88769
+    },
+    "branch-continuation-other-draft.png": {
+      "sha256": "356d8fca72fa53a566324a3e2ff541766d53c49c4ee1c72387403d692c186982",
+      "bytes": 88766
+    },
+    "branch-continuation-other-warning.png": {
+      "sha256": "12288e2b0c27384eb85a6598d5710f6c457b2d26c4b00f32eee147ad525c0552",
+      "bytes": 99033
     },
     "bridged-thread-proposals.png": {
       "sha256": "3b264fa1cd26bd7a3f25b47db0cde2f1af8b38f5440bdf087af3d5b189ed319f",
@@ -2446,8 +2470,8 @@
       "bytes": 286514
     },
     "local-model-worktree-isolation.png": {
-      "sha256": "83828a0af4689389e43352ab27e67cc27ebf2c661a3b27fd39a6f6fed49579a9",
-      "bytes": 292878
+      "sha256": "dee989fc698ecc915e3804cb68b5bdc5a9871e761453b9bec28eb7dc03d0c2bc",
+      "bytes": 304933
     },
     "long-prompt-scroll-submit.png": {
       "sha256": "cf818b2678260cf9b76f6f89e5c28aa3cd098b658553a2a5e55080a0399c8991",
