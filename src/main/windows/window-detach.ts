@@ -11,7 +11,11 @@
  * launching Copse again loads a fresh renderer, which reads the transcript back
  * from disk.
  *
- * Elsewhere closing the last window still quits (after the usual confirmation);
+ * While Mobile Companion is enabled, closing on any platform retains the hidden
+ * renderer: it still owns human submissions, the queue and remote read relays.
+ * Explicit Quit still stops the app; a sleeping host cannot serve phones.
+ *
+ * Otherwise, elsewhere closing the last window still quits (after the usual confirmation);
  * those platforms have no equivalent of the Dock to come back through.
  *
  * On attachment, main supplies transcript/reducer checkpoints and replays
@@ -25,27 +29,42 @@ export interface DetachDecisionInput {
   quitting: boolean
   /** Turns running in this process right now. */
   runningTurns: number
+  /** Mobile chat still needs the primary renderer for submissions, queues and reads. */
+  mobileCompanionEnabled?: boolean
 }
 
 /** Whether a close of the primary window should detach it rather than close it. */
 export function shouldDetachOnClose(input: DetachDecisionInput): boolean {
-  return input.platform === 'darwin' && !input.quitting && input.runningTurns > 0
+  return (
+    !input.quitting &&
+    (input.mobileCompanionEnabled === true ||
+      (input.platform === 'darwin' && input.runningTurns > 0))
+  )
 }
 
 type DetachableWindow = Pick<
   BrowserWindow,
   'hide' | 'show' | 'focus' | 'isDestroyed' | 'isMinimized' | 'restore'
 > & {
-  webContents: Pick<BrowserWindow['webContents'], 'loadURL'>
+  webContents: Pick<BrowserWindow['webContents'], 'loadURL' | 'setBackgroundThrottling'>
 }
 
-const detachedWindows = new WeakSet<object>()
+const detachedWindows = new WeakMap<object, { keepRenderer: boolean }>()
 
 /** Hide the window and unload its renderer; the runtime keeps going. */
-export function detachWindow(win: DetachableWindow): void {
+export function detachWindow(
+  win: DetachableWindow,
+  options: { keepRenderer: boolean } = { keepRenderer: false },
+): void {
   if (win.isDestroyed() || detachedWindows.has(win)) return
-  detachedWindows.add(win)
+  detachedWindows.set(win, options)
   win.hide()
+  if (options.keepRenderer) {
+    // Mobile submissions and live snapshots use this renderer. Keep its timers
+    // responsive while hidden; there is still exactly one queue/transcript owner.
+    win.webContents.setBackgroundThrottling(false)
+    return
+  }
   // Navigating away runs the page's own unload path (`pagehide` flushes the
   // autosave) and frees the renderer, as closing would.
   void win.webContents.loadURL('about:blank')
@@ -65,7 +84,10 @@ export function reattachWindow(
   options: { show: boolean } = { show: true },
 ): void {
   if (win.isDestroyed()) return
-  if (detachedWindows.delete(win)) {
+  const detached = detachedWindows.get(win)
+  detachedWindows.delete(win)
+  if (detached?.keepRenderer) win.webContents.setBackgroundThrottling(true)
+  if (detached && !detached.keepRenderer) {
     loadRenderer().catch((error: unknown) => {
       console.error('[window] could not reload the window after it was detached:', error)
     })

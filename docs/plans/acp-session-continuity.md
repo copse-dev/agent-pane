@@ -477,3 +477,9 @@ ACP-agent role. It supersedes the session-store/resume portions of
 [`acp-client-support.md`](acp-client-support.md). SSH transport remains owned by
 [`acp-over-ssh.md`](acp-over-ssh.md), and protocol-v2 migration remains owned by
 [`../acp-v2-readiness.md`](../acp-v2-readiness.md).
+
+## Turns from another provider
+
+A reused agent session knows only the prompts it received. Switching to another provider and back must deliver the intervening user requests and partial progress before forwarding the new prompt, including an explicit retry. The pool keeps a hashed transcript-prefix checkpoint, carries it across an in-process resume/load, and sends only the tail beginning at the first unknown user turn. Ordinary consecutive ACP turns do not replay their own answers. If history was edited or trimmed, or no checkpoint is available, the existing bounded transcript is supplied conservatively. This is prompt context, not tool-call replay or an automatic continuation. A genuinely fresh session still receives the full available transcript.
+
+Only a settled, non-cancelled prompt advances the in-memory transcript checkpoint. Stop can interrupt model/config selection before dispatch; cancellation and transport failure retain the previous confirmed prefix so recovery conservatively resends the available context.

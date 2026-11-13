@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   createThread,
@@ -399,18 +399,20 @@ export function mountThreadPlanControl(
       renderComments()
     })
   })
-  const unsub = store.on('threads_changed', () => {
-    refreshIndicator()
-    if (
-      owner &&
-      (owner.projectId !== store.getState().activeProjectId ||
-        owner.threadId !== store.getState().activeThreadId)
-    ) {
-      generation++
-      owner = null
-      dialog.close()
-    }
-  })
+  // The indicator and an open dialog both belong to the active thread: follow
+  // its owner, not every rename or other thread's update.
+  const unsub = store.select(
+    (s) => [s.activeProjectId, s.activeThreadId] as const,
+    ([projectId, threadId]) => {
+      refreshIndicator()
+      if (owner && (owner.projectId !== projectId || owner.threadId !== threadId)) {
+        generation++
+        owner = null
+        dialog.close()
+      }
+    },
+    sameItems,
+  )
   const unsubStatus = store.on('thread_status_changed', (threadId) => {
     if (
       store.getState().activeThreadId === threadId &&

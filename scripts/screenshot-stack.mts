@@ -123,6 +123,14 @@ interface Repository {
   repo: string
 }
 
+function sourceCiRunUrl(value: unknown, input: Repository): string | null {
+  if (typeof value !== 'string') return null
+  const prefix = `https://github.com/${input.owner}/${input.repo}/actions/runs/`
+  if (!value.startsWith(prefix)) return null
+  const id = value.slice(prefix.length)
+  return /^[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id)) ? value : null
+}
+
 interface Input extends Repository {
   number: number
 }
@@ -282,6 +290,57 @@ export async function selectScreenshotStackCompletion(
   return connected(open, affected)
 }
 
+/**
+ * Recover coalesced triggers from a successful-run watermark, never from the
+ * surviving event alone. Issue updates retain closed PR numbers and declaration
+ * removals; live PR updated_at also covers head changes. Status changes need a
+ * separate read because publishing evidence does not update the PR timestamp.
+ * No watermark, manual and scheduled runs repair everything. Selection grants
+ * no approval: reconciliation still validates live heads and status creators.
+ */
+export async function selectScreenshotStackRepairs(
+  github: StackGitHub,
+  repository: Repository,
+  open: unknown[],
+  eventName: string,
+  payload: unknown,
+  since: unknown,
+  changedIssues: unknown[],
+): Promise<number[]> {
+  const cutoff = timestamp(since)
+  if (cutoff === undefined || (eventName !== 'pull_request_target' && eventName !== 'workflow_run'))
+    return selectScreenshotStackPulls(open, 'schedule', {})
+
+  const affected = new Set<number>()
+  if (eventName === 'pull_request_target') {
+    for (const number of selectScreenshotStackPulls(open, eventName, payload)) affected.add(number)
+  } else {
+    for (const number of completionPulls(open, payload)) affected.add(number)
+  }
+  for (const issue of changedIssues) {
+    if (!field(issue, 'pull_request')) continue
+    const number = numberOf(field(issue, 'number'))
+    if (number !== undefined) affected.add(number)
+  }
+  for (const pr of open) {
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined) continue
+    const updated = timestamp(field(pr, 'updated_at'))
+    if (updated === undefined || updated >= cutoff) affected.add(number)
+    // Include malformed declarations so an old authorization cannot survive.
+    const body = field(pr, 'body')
+    if (typeof body !== 'string' || !body.includes(PREFIX)) continue
+    const sha = field(field(pr, 'head'), 'sha')
+    if (
+      typeof sha !== 'string' ||
+      !SHA.test(sha) ||
+      (await evidenceChangedSince(github, repository, sha, cutoff))
+    )
+      affected.add(number)
+  }
+  return connected(open, affected)
+}
+
 async function statuses(
   github: StackGitHub,
   input: Input,
@@ -398,6 +457,7 @@ export async function verifyScreenshotStack(
   tipHead: string
   lower: boolean
   approved: boolean
+  coverageSourceRunUrl: string | null
 } | null> {
   const get = async (number: number): Promise<unknown> =>
     (await github.rest.pulls.get({ owner: input.owner, repo: input.repo, pull_number: number }))
@@ -461,6 +521,11 @@ export async function verifyScreenshotStack(
   const coverage = latest.get(STACK_COVERAGE)
   const decision = latest.get(STACK_DECISION)
   const review = latest.get('Screenshot review')
+  const coverageSourceRunUrl =
+    successful(coverage) &&
+    field(coverage, 'description') === `Stack coverage ${declaration.digest}`
+      ? sourceCiRunUrl(field(coverage, 'target_url'), input)
+      : null
   const reviewDescription = field(review, 'description')
   const approved =
     successful(review) &&
@@ -469,7 +534,8 @@ export async function verifyScreenshotStack(
     successful(decision) &&
     field(decision, 'description') === `Stack decision ${declaration.digest}` &&
     successful(coverage) &&
-    field(coverage, 'description') === `Stack coverage ${declaration.digest}`
+    field(coverage, 'description') === `Stack coverage ${declaration.digest}` &&
+    coverageSourceRunUrl !== null
   // Re-read every member after comparisons/status reads to reject racing pushes.
   for (const member of [...declaration.members, { number: declaration.tip, sha: tipHead }]) {
     const live = await get(member.number)
@@ -482,7 +548,7 @@ export async function verifyScreenshotStack(
       throw new StackValidationError('Screenshot stack changed during validation')
     }
   }
-  return { declaration, head, tipHead, lower, approved }
+  return { declaration, head, tipHead, lower, approved, coverageSourceRunUrl }
 }
 
 // Called only by the successful CI publisher, using a bounded artifact generated
@@ -492,7 +558,11 @@ export async function attestScreenshotStack(
   input: Input,
   expectedHead: string,
   manifestText: string,
+  sourceRunUrl: string,
 ): Promise<{ base: string; needsReview: boolean }> {
+  if (!sourceCiRunUrl(sourceRunUrl, input)) {
+    throw new StackValidationError('Invalid screenshot stack source CI run URL')
+  }
   const manifest = safeJsonParse(manifestText, (value) => {
     const declaration = field(value, 'declaration')
     const head = field(value, 'head')
@@ -526,6 +596,7 @@ export async function attestScreenshotStack(
     context: STACK_COVERAGE,
     state: 'success',
     description: `Stack coverage ${stack.declaration.digest}`,
+    target_url: sourceRunUrl,
   })
   const latest = await statuses(github, input, expectedHead)
   const review = latest.get('Screenshot review')
@@ -545,6 +616,7 @@ export async function attestScreenshotStack(
       context: 'Screenshot review',
       state: 'pending',
       description: 'Combined stack needs explicit screenshot review',
+      target_url: sourceRunUrl,
     })
   return { base: manifest.base, needsReview }
 }
@@ -595,6 +667,7 @@ export async function reconcileScreenshotStack(
       stack.approved
         ? `Stack deferred to approved tip #${String(declaration.tip)} at ${stack.tipHead.slice(0, 12)}`
         : `Stack waiting for covered screenshot approval on tip #${String(declaration.tip)}`,
+      stack.approved && stack.coverageSourceRunUrl ? stack.coverageSourceRunUrl : undefined,
     )
   } catch (error) {
     const reason =
@@ -604,13 +677,18 @@ export async function reconcileScreenshotStack(
     await write('error', `Stack blocked: ${reason}`.slice(0, 140))
   }
   return review
-  async function write(state: 'pending' | 'success' | 'error', description: string): Promise<void> {
+  async function write(
+    state: 'pending' | 'success' | 'error',
+    description: string,
+    targetUrl = `https://github.com/${input.owner}/${input.repo}/pull/${String(input.number)}`,
+  ): Promise<void> {
     review = { head, state, description }
     const current = latest.get('Screenshot review')
     if (
       field(field(current, 'creator'), 'id') === BOT &&
       field(current, 'state') === state &&
-      field(current, 'description') === description
+      field(current, 'description') === description &&
+      field(current, 'target_url') === targetUrl
     )
       return
     await github.rest.repos.createCommitStatus({
@@ -620,7 +698,7 @@ export async function reconcileScreenshotStack(
       context: 'Screenshot review',
       state,
       description,
-      target_url: `https://github.com/${input.owner}/${input.repo}/pull/${String(input.number)}`,
+      target_url: targetUrl,
     })
   }
 }

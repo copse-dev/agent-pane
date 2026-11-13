@@ -124,7 +124,6 @@ describe('automation checks without project transcript allocation', () => {
         releasePreviousRun: () => {
           throw new Error('A busy run must retain its checkout')
         },
-        getActiveProjectId: () => PROJECT,
       })
       const schedule = await service.upsert(PROJECT, {
         name: 'Health check',
@@ -194,9 +193,9 @@ describe('automation checks without project transcript allocation', () => {
     const reuse = createAutomationWorktreeReuse({
       projectRoot: () => '/repo',
       isLive: () => false,
-      disposeSession: (id) => {
+      withIdleSession: async (id, operation) => {
         disposed.push(id)
-        return Promise.resolve()
+        return { status: 'released', value: await operation() }
       },
       canAdopt: () => Promise.resolve(true),
       adopt: () =>

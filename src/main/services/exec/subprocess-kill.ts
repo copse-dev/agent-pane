@@ -55,7 +55,8 @@ function treeStillRunning(proc: ChildProcess): boolean {
 /**
  * Send SIGTERM, then SIGKILL the whole process group after a grace period if the
  * child has not exited. Returns a cleanup function that cancels the pending SIGKILL
- * (call it once the process actually closes so the timer never leaks).
+ * after the whole group exits. A closed leader alone must not cancel escalation
+ * for a surviving group member.
  */
 export function terminateProcessTree(
   proc: ChildProcess,
@@ -69,6 +70,18 @@ export function terminateProcessTree(
       )
     })
   }
+  return terminateLocalProcessTree(proc, graceMs)
+}
+
+/**
+ * {@link terminateProcessTree} for this machine only: a registered remote
+ * process group is left registered, for a caller that kills it itself and must
+ * be able to retry when that kill fails.
+ */
+export function terminateLocalProcessTree(
+  proc: ChildProcess,
+  graceMs = SUBPROCESS_KILL_GRACE_MS,
+): () => void {
   signalProcessTree(proc, 'SIGTERM')
 
   // Not unref'd: the timer must fire to guarantee escalation, and the caller always
@@ -79,7 +92,7 @@ export function terminateProcessTree(
   }, graceMs)
 
   return () => {
-    if (killTimer) {
+    if (killTimer && !treeStillRunning(proc)) {
       clearTimeout(killTimer)
       killTimer = undefined
     }

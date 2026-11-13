@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   skillMarkdownBody,
   buildSkillsCatalogBlock,
+  buildSkillsCatalogWithMetadata,
   buildInvokedSkillsBlock,
   buildSkillsToolsPromptLine,
 } from './skill-prompt.ts'
@@ -49,6 +50,42 @@ description: Demo
 })
 
 describe('buildSkillsCatalogBlock', () => {
+  it('measures the same catalog silently, including UTF-8 user entries and empty catalogs', (t) => {
+    const previous = process.env['COPSE_DEBUG_PROMPT_CACHE']
+    t.after(() => {
+      if (previous === undefined) delete process.env['COPSE_DEBUG_PROMPT_CACHE']
+      else process.env['COPSE_DEBUG_PROMPT_CACHE'] = previous
+    })
+    const logged: unknown[][] = []
+    t.mock.method(console, 'error', (...args: unknown[]) => logged.push(args))
+    setSkillsForTest([
+      { ...demoSkill, name: 'private-skill', description: '秘密 🔐', source: 'user' },
+      demoSkill,
+    ])
+    delete process.env['COPSE_DEBUG_PROMPT_CACHE']
+    const baseline = buildSkillsCatalogWithMetadata(['read_skill'])
+    assert.equal(baseline.footprint, undefined)
+    process.env['COPSE_DEBUG_PROMPT_CACHE'] = '1'
+    const measured = buildSkillsCatalogWithMetadata(['read_skill'])
+    assert.equal(measured.block, baseline.block)
+    assert.equal(buildSkillsCatalogBlock(['read_skill']), baseline.block)
+    assert.ok(measured.footprint)
+    assert.equal(measured.footprint.advertisedSkills, 2)
+    assert.equal(measured.footprint.userSkills, 1)
+    assert.equal(measured.footprint.utf8Bytes, Buffer.byteLength(baseline.block))
+    assert.equal(measured.footprint.approximateTokens, Math.ceil(baseline.block.length / 4))
+    const userEntry = baseline.block
+      .split('\n')
+      .find((line) => line.startsWith('<agent_skill') && line.includes('source="user"'))
+    assert.ok(userEntry)
+    assert.equal(measured.footprint.userEntryUtf8Bytes, Buffer.byteLength(userEntry))
+    assert.doesNotMatch(JSON.stringify(measured.footprint), /private-skill|秘密|\/tmp\/skills/)
+    const empty = buildSkillsCatalogWithMetadata([])
+    assert.equal(empty.block, '')
+    assert.equal(empty.footprint?.utf8Bytes, 0)
+    assert.equal(empty.footprint.advertisedSkills, 0)
+    assert.deepEqual(logged, [], 'assembly and previews must never emit dispatch records')
+  })
   it('filters explicit required tools using the current toolset', () => {
     setSkillsForTest([{ ...demoSkill, requirements: { tools: ['special_tool'] } }])
     assert.equal(buildSkillsCatalogBlock(['read_skill']), '')

@@ -169,6 +169,91 @@ describe('classifier HTTP adapters', () => {
     assert.equal(result.metadata?.['derivedFields'], undefined)
   })
 
+  it('reads a Strands Decider server’s answers without deriving anything', async () => {
+    // Shaped as strands-decider v0.3.0 writes it (`prompting.to_answer`, `server.py`):
+    // values rounded to four places, the checkpoint's name without its owner, and
+    // `latency_ms` beside the answers.
+    const request: ClassifierRequest = {
+      state: 'The parcel arrived at reception.',
+      questions: {
+        status: {
+          type: 'choice',
+          instructions: 'Delivery status?',
+          options: { delivered: 'Signed for', lost: null, pending: null },
+        },
+        arrived: { type: 'boolean', instructions: 'Has it arrived?' },
+        certainty: { type: 'score', instructions: 'How certain?', levels: ['low', 'mid', 'high'] },
+      },
+    }
+    const result = await classifyHttp(profile('strands-decider'), request, {
+      apiKey: 'unused-key',
+      fetchImpl: async (url, init) => {
+        assert.equal(url, 'http://127.0.0.1:8011/v1/systemone')
+        assert.equal(new Headers(init?.headers).get('Authorization'), null)
+        if (typeof init?.body !== 'string') assert.fail('expected JSON body')
+        assert.deepEqual(safeJsonParse(init.body), {
+          model: 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
+          state: request.state,
+          questions: {
+            status: {
+              type: 'choice',
+              instructions: 'Delivery status?',
+              criteria: { delivered: 'Signed for', lost: null, pending: null },
+            },
+            arrived: { type: 'noul', instructions: 'Has it arrived?' },
+            certainty: {
+              type: 'score',
+              instructions: 'How certain?',
+              criteria: ['low', 'mid', 'high'],
+            },
+          },
+        })
+        return Response.json({
+          model: 'strands-decider-2B-qwen3.5-v1-2610',
+          answers: {
+            status: {
+              type: 'choice',
+              choice: 'delivered',
+              probabilities: { delivered: 0.8213, lost: 0.0412, pending: 0.1374 },
+              confidence: 0.732,
+            },
+            arrived: { type: 'noul', noul: 0.9312 },
+            certainty: {
+              type: 'score',
+              score: 1.6692,
+              legend: { '0': 'low', '1': 'mid', '2': 'high' },
+              probabilities: { '0': 0.0521, '1': 0.2266, '2': 0.7213 },
+              confidence: 0.6112,
+            },
+          },
+          usage: { input_tokens: 212, output_tokens: 0 },
+          latency_ms: 183.41,
+        })
+      },
+    })
+    assert.equal(result.requestedModel, 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610')
+    assert.equal(result.model, 'strands-decider-2B-qwen3.5-v1-2610')
+    assert.deepEqual(result.answers, {
+      status: {
+        type: 'choice',
+        choice: 'delivered',
+        probabilities: { delivered: 0.8213, lost: 0.0412, pending: 0.1374 },
+        confidence: 0.732,
+      },
+      arrived: { type: 'boolean', probability: 0.9312 },
+      certainty: {
+        type: 'score',
+        score: 1.6692,
+        levels: ['low', 'mid', 'high'],
+        probabilities: { '0': 0.0521, '1': 0.2266, '2': 0.7213 },
+        confidence: 0.6112,
+      },
+    })
+    assert.deepEqual(result.usage, { inputTokens: 212, outputTokens: 0 })
+    assert.equal(result.metadata?.['providerLatencyMs'], 183.41)
+    assert.equal(result.metadata['derivedFields'], undefined)
+  })
+
   it('derives fields that self-hosted systemone servers omit, and says so', async () => {
     // Shaped like metask-jev (no model, no choice), Jobe (score without score or
     // legend) and JevK5 (score without legend), with their extra fields.

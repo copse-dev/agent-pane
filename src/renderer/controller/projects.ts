@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { transcriptMeta } from '@shared/store/transcript-state.ts'
 import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
@@ -21,6 +22,8 @@ import {
   saveNavigation,
   saveProjects,
   serializedSet,
+  acceptRuntimeThreadMeta,
+  invalidateProjectThreadLoads,
 } from './persistence.ts'
 import type { RendererStorageKey } from '@shared/storage-keys.ts'
 import { resumePendingQueues } from './message-queue.ts'
@@ -257,6 +260,44 @@ export function attentionThreadId(store: AppStore, threadId: string): string {
   return threadId
 }
 
+/**
+ * The thread whose `propose_thread` offer started `threadId`, while both are
+ * listed in the active project; otherwise null. Accepting an offer starts the
+ * new thread in the background and leaves the user on the offering thread
+ * (#4112), so that is where the new thread's prompts can reach them. Unlike a
+ * side chat, a proposed thread keeps its own sidebar row, so this never
+ * redirects its attention bell. Only the active project is searched: the
+ * offering thread can only host a prompt while it is the one on screen.
+ */
+export function proposingThreadId(store: AppStore, threadId: string): string | null {
+  const threads = store.getState().threads
+  const proposerId = threads.find((t) => t.id === threadId)?.proposedBy?.threadId
+  return proposerId !== undefined &&
+    proposerId !== threadId &&
+    threads.some((t) => t.id === proposerId)
+    ? proposerId
+    : null
+}
+
+/**
+ * Everything {@link attentionThreadId} and {@link proposingThreadId} read from
+ * the active project's threads, as one comparable key: each thread's side-chat
+ * parent and proposer. A prompt's showability changes only when this, or the
+ * active thread, does; renames and turns leave it alone.
+ */
+export const threadRelationsKey = (() => {
+  let lastThreads: readonly Thread[] | null = null
+  let lastKey = ''
+  return (threads: readonly Thread[]): string => {
+    if (threads === lastThreads) return lastKey
+    lastThreads = threads
+    lastKey = threads
+      .map((t) => `${t.id}<${t.sideChat?.parentThreadId ?? ''}<${t.proposedBy?.threadId ?? ''}`)
+      .join('\n')
+    return lastKey
+  }
+})()
+
 /** An archive completed after the user switched to another project. */
 export function archiveCachedSidebarThread(
   projectId: string,
@@ -365,6 +406,52 @@ export function attachProjectThreadCache(store: AppStore): () => void {
   })
 }
 
+/** Refresh main-owned checkout state after cleanup without replacing local edits. */
+export async function refreshProjectThreadWorktrees(
+  store: AppStore,
+  api: ApiClient,
+  projectId: string,
+): Promise<void> {
+  invalidateProjectThreadLoads(api, projectId)
+  let revision: number
+  let loaded: Thread[]
+  do {
+    revision = projectThreadLoadRevision(api, projectId)
+    loaded = await api.threads.loadProject(projectId)
+  } while (
+    isListedProject(store, projectId) &&
+    revision !== projectThreadLoadRevision(api, projectId)
+  )
+  if (!isListedProject(store, projectId)) return
+  const byId = new Map(loaded.map((thread) => [thread.id, thread]))
+  function refreshed<T extends { id: string; worktree?: Thread['worktree'] }>(thread: T): T {
+    const latest = byId.get(thread.id)
+    if (!latest || JSON.stringify(latest.worktree) === JSON.stringify(thread.worktree))
+      return thread
+    const next = { ...thread }
+    if (latest.worktree) next.worktree = latest.worktree
+    else delete next.worktree
+    return next
+  }
+  const runtime = (thread: Thread): Thread => {
+    const next = refreshed(thread)
+    if (next !== thread) acceptRuntimeThreadMeta(projectId, next, transcriptMeta(thread))
+    return next
+  }
+  const state = store.getState()
+  const threads = state.activeProjectId === projectId ? state.threads.map(runtime) : state.threads
+  const backgroundThreads = state.backgroundThreads.map((entry) => {
+    if (entry.projectId !== projectId) return entry
+    const thread = runtime(entry.thread)
+    return thread === entry.thread ? entry : { ...entry, thread }
+  })
+  store.setState({ threads, backgroundThreads })
+  const cached = threadCache.get(projectId)
+  if (state.activeProjectId === projectId) cacheThreads(projectId, threads)
+  else if (cached) threadCache.set(projectId, cached.map(refreshed))
+  store.emit('sidebar_threads_loaded')
+}
+
 /** Main guards root commits; dependent IPC waits for the latest selection. */
 async function setWorkspaceForSelection(
   api: ApiClient,
@@ -433,7 +520,6 @@ function abortProjectActivation(
     store.setState({ expandedProjectId: revertExpanded })
   }
   store.emit('projects_changed')
-  store.emit('workspace_changed')
 }
 
 /** Strip the `missing` flag from a project once its folder opens again. */
@@ -525,7 +611,6 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
       filesPaneOpen: false,
     })
     store.emit('projects_changed')
-    store.emit('workspace_changed')
     store.emit('threads_changed')
     return
   }
@@ -564,6 +649,9 @@ function applyProjectSelection(
   // keep persisting, and fold any carried threads of the incoming project back
   // into its list (#1841).
   if (outgoingId && outgoingId !== id) {
+    // The composer stayed editable while an uncached destination loaded.
+    // Capture its final text while the outgoing thread still owns the store.
+    if (store.getState().activeProjectId === outgoingId) store.emit('composer_draft_flush')
     // `outgoingThreads` was captured when activation began so the initial
     // persistence flush has a stable input. The agent can keep streaming while
     // workspace.set/loadProject are in flight, though, and those chunks replace
@@ -619,7 +707,6 @@ function applyProjectSelection(
   // Publish selection before persistence or workspace services finish. Cached
   // transcripts render now; workspace-dependent IPC waits in the preload.
   store.emit('projects_changed')
-  store.emit('workspace_changed')
   store.emit('threads_changed')
   residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId)
   endApply({ threads: merged.length })
@@ -665,8 +752,8 @@ async function finishActivate(
   // (see cancelPendingSwitch). From here until the switch applies, the store
   // still names the outgoing project, so hold persisted navigation on `id`:
   // otherwise an autosave flush puts the outgoing project back, and the
-  // project-scoped reads that refresh on `workspace_changed` (the roadmap pane)
-  // list the previous project's data.
+  // project-scoped reads that refresh when the workspace is selected (the
+  // roadmap pane) list the previous project's data.
   if (pendingSwitch?.gen === gen) {
     pendingSwitch.dispatched = true
     holdNavigation(id)
@@ -798,6 +885,9 @@ function activate(
   sshHost: string | undefined,
   pendingThreadId: string | null,
 ): void {
+  // Publish the editor's draft before taking the outgoing persistence/cache
+  // snapshot. A later composer switch may only find a carried running thread.
+  if (store.getState().activeProjectId !== id) store.emit('composer_draft_flush')
   const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState()
   // Already on this project — a click on it is a decision to stay, so any switch
   // still running to a different one is cancelled rather than left to land.
@@ -969,6 +1059,17 @@ export function switchProject(
   activate(store, api, id, proj.path, proj.sshHost, pendingThreadId)
 }
 
+/**
+ * Switch to project `id` and settle once that switch is over: applied, or
+ * cancelled or superseded by another selection. Rejects when activation fails.
+ * Check `activeProjectId` afterwards to tell an applied switch from the rest.
+ */
+export function switchProjectAndWait(store: AppStore, api: ApiClient, id: string): Promise<void> {
+  const proj = store.getState().projects.find((p) => p.id === id)
+  if (!proj) return Promise.resolve()
+  return activateAndWait(store, api, id, proj.path, proj.sshHost)
+}
+
 /** Activate the existing project through the normal workspace/trust path for a phone submission. */
 export async function activateMobileProject(
   store: AppStore,
@@ -1099,6 +1200,8 @@ async function quarantineAndRestoreNext(
     await restoreProject(store, api, next.id)
     return
   }
+  // Sent before the write that publishes it, as in restoreProject.
+  const persisted = saveProjects(api, store.getState().projects, null, null)
   store.setState({
     activeProjectId: null,
     expandedProjectId: null,
@@ -1106,8 +1209,7 @@ async function quarantineAndRestoreNext(
     threads: [],
     activeThreadId: null,
   })
-  await saveProjects(api, store.getState().projects, null, null)
-  store.emit('workspace_changed')
+  await persisted
   store.emit('threads_changed')
 }
 
@@ -1149,32 +1251,37 @@ export async function restoreProject(
   cacheThreads(id, merged)
   residentThreads.remember(id, merged, revision)
   activeListRevision = { projectId: id, revision }
+  const activeThreadId =
+    preferredThreadId && merged.some((thread) => thread.id === preferredThreadId)
+      ? preferredThreadId
+      : (merged[0]?.id ?? null)
+  // Opening succeeded — lift any prior quarantine on this project (#997).
+  const projects = projectsWithMissingCleared(store.getState().projects, id)
+  // Send navigation before publishing the selection. Views that select the
+  // workspace read project stores as soon as `setState` lands, and preload holds
+  // those reads behind a navigation write only once it is in flight; sent after,
+  // a read could resolve against the project this window is leaving.
+  //
+  // Recording where we landed must not decide whether we render it. Letting
+  // this write reject once skipped publishing, so a single refused IPC left a
+  // window with its chrome up and no workspace in it. Persistence is
+  // recoverable (the next save re-sends it); a blank window is not.
+  const persisted = saveProjects(api, projects, id, activeThreadId).catch((error: unknown) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error)
+  })
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
     workspaceRoot: proj.path,
     threads: merged,
-    activeThreadId:
-      preferredThreadId && merged.some((thread) => thread.id === preferredThreadId)
-        ? preferredThreadId
-        : (merged[0]?.id ?? null),
-    // Opening succeeded — lift any prior quarantine on this project (#997).
-    projects: projectsWithMissingCleared(store.getState().projects, id),
+    activeThreadId,
+    projects,
   })
-  const activeThreadId = store.getState().activeThreadId
   if (activeThreadId) markThreadRead(store, activeThreadId)
-  // Recording where we landed must not decide whether we render it. The project
-  // is already in the store by this point; letting this write reject took the
-  // three emits below with it, so a single refused IPC left a window with its
-  // chrome up and no workspace in it — the pane never heard `workspace_changed`.
-  // Persistence is recoverable (the next save re-sends it); a blank window is not.
-  await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error: unknown) => {
-    console.warn(`[projects] could not persist the restored project ${id}:`, error)
-  })
+  await persisted
   if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
   store.emit('projects_changed')
-  store.emit('workspace_changed')
   store.emit('threads_changed')
   void resumePendingQueues(store, api)
 }

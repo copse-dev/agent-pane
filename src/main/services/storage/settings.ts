@@ -179,7 +179,9 @@ export function isApiKeyReadable(provider: KeyProvider): boolean | null {
   if (getExplicitSettingsProfile()) return hasApiKey(provider) ? true : null
   const raw = cached.get(`apiKey.${provider}`)
   return resolveKeyReadability(provider, isStoredKey(raw) ? raw : null, {
-    encryptionAvailable: isSecretEncryptionAvailable(),
+    get encryptionAvailable() {
+      return isSecretEncryptionAvailable()
+    },
     readKey: () => getApiKey(provider),
   })
 }

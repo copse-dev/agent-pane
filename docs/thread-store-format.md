@@ -157,6 +157,10 @@ Source files remain authoritative; deleting this cache is safe.
   [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`, and the
   legacy thread-level `reviewReport` used by reports written before per-turn
   anchoring. New Copse Reviewer reports live on their owning message spine line.
+  Project navigation flushes the outgoing composer's text into its owning thread
+  before taking the metadata/cache snapshot, and again at the live handoff if the
+  destination took time to load. This preserves edits made inside the normal
+  draft debounce window without submitting the draft or rewriting its transcript.
   When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
   Archiving also removes the thread's dedicated worktree after checking for
@@ -164,6 +168,21 @@ Source files remain authoritative; deleting this cache is safe.
   discard confirmation; cancellation keeps the chat and checkout. The branch
   is retained, and `worktree.retiredAt` records that the checkout can be rebuilt.
   Shared project checkouts are never removed by archiving.
+  The whole `worktree` value is main-owned: renderer `threads:create` and
+  `threads:update-meta` payloads cannot allocate, replace or clear it. This keeps
+  delayed completion snapshots and autosaves from reviving a checkout after
+  cleanup. Native allocation, rename, restore, adoption and explicit clearing
+  still write through the trusted store API. No on-disk field is added.
+  Passive native Git and filesystem reads, file-watch registration, owner-scoped
+  file-link resolution, automatic app-capability detection, app history polling
+  and automatic follow-up suggestions do not invoke that restoring execution
+  lifecycle. They report unavailable/false/empty for a released checkout without
+  falling back to the shared project. The file tree gives recovery guidance
+  rather than representing an unavailable checkout as an empty live folder.
+  Nested repository projects read their own canonical checkout subdirectory;
+  an absent or escaped subdirectory never falls back to the repository root.
+  Explicit execution/restore operations can still recreate it and clear the
+  marker through main's lifecycle API.
   Optional `prRefs` are cached references, not ownership. `prProductions` records
   successful non-noop native PR creation (`pr`, `eventId`, `source: "pr-create"`,
   `createdAt`); `commitProductions` records native commit creation (`repository`,
@@ -272,6 +291,7 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "status": "done" | "error",
       "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
+      "deferred": true, // optional: the host held the call back without running it
       "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
                         "exitCode": 0 }, // optional: run_shell/run_background lifecycle
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",

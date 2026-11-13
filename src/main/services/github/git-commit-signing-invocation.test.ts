@@ -4,6 +4,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createServer } from 'node:net'
 import { setSetting } from '../storage/settings.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -206,6 +207,197 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     git('add', 'change.txt')
     await commit()
     assert.equal(prompts, 2, 'Always ask never remembers the helper grant')
+  })
+
+  it('keeps a relative configured private key inside the workspace unreadable to hooks', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { repo, secrets, git, commit } = setup
+    const key = join(repo, 'commit-key')
+    await writeFile(key, await readFile(join(secrets, 'key')), { mode: 0o600 })
+    await writeFile(`${key}.pub`, await readFile(join(secrets, 'key.pub')))
+    git('config', 'user.signingKey', './commit-key.pub')
+    const hooks = join(repo, 'hooks')
+    await mkdir(hooks)
+    await writeFile(
+      join(hooks, 'pre-commit'),
+      '#!/bin/sh\ncat commit-key > leaked-key 2>/dev/null\nexit 0\n',
+      { mode: 0o700 },
+    )
+    git('config', 'core.hooksPath', hooks)
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    await commit()
+    assert.equal(prompts, 0)
+    assert.equal((await readFile(join(repo, 'leaked-key'))).length, 0)
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+  })
+
+  it('reports a missing agent key without retrying unsigned or reading the private key', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { secrets, git, commit } = setup
+    const publicKey = await readFile(join(secrets, 'key.pub'), 'utf8')
+    git('config', 'user.signingKey', `key::${publicKey.trim()}`)
+    execFileSync('/usr/bin/ssh-add', ['-D'], { stdio: 'ignore' })
+    const before = git('rev-parse', 'HEAD')
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    await assert.rejects(commit, /not loaded in ssh-agent/)
+    assert.equal(git('rev-parse', 'HEAD'), before, 'a signing failure must not create a commit')
+    assert.equal(prompts, 0, 'an agent failure must not request private-key access')
+    execFileSync('/usr/bin/ssh-add', [join(secrets, 'key')], { stdio: 'ignore' })
+    await commit()
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+    assert.equal(prompts, 0)
+  })
+
+  it('offers one-commit private-key consent before staging when the default-on agent has no key', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { repo, secrets, git, commit } = setup
+    git('config', 'user.signingKey', join(secrets, 'key.pub'))
+    execFileSync('/usr/bin/ssh-add', ['-D'], { stdio: 'ignore' })
+    git('restore', '--staged', 'change.txt')
+    const hooks = join(repo, 'hooks')
+    await mkdir(hooks)
+    await writeFile(
+      join(hooks, 'pre-commit'),
+      `#!/bin/sh\ntouch hook-ran\ncat '${join(secrets, 'key')}' > leaked-key 2>/dev/null\nexit 0\n`,
+      { mode: 0o700 },
+    )
+    git('config', 'core.hooksPath', hooks)
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.title, 'Allow reading this Git signing key?')
+      assert.equal(request.allowRemember, false)
+      assert.equal(git('diff', '--cached'), '')
+      assert.equal(existsSync(join(repo, 'hook-ran')), false)
+      return { approved: prompts > 1, remember: true }
+    })
+    await assert.rejects(() => commit(true), /User rejected reading the SSH signing key/)
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+    await commit(true)
+    assert.equal(prompts, 2)
+    assert.equal((await readFile(join(repo, 'leaked-key'))).length, 0)
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+    const publicKey = await readFile(join(secrets, 'key.pub'), 'utf8')
+    const allowed = join(secrets, 'allowed-signers')
+    await writeFile(allowed, `sign@example.invalid ${publicKey}`)
+    git('-c', `gpg.ssh.allowedSignersFile=${allowed}`, 'verify-commit', 'HEAD')
+  })
+
+  it('offers private-key consent with the default on when no agent or public file is available', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { secrets, git, commit } = setup
+    delete process.env['SSH_AUTH_SOCK']
+    await rm(join(secrets, 'key.pub'))
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.title, 'Allow reading this Git signing key?')
+      return { approved: true, remember: false }
+    })
+    await commit()
+    assert.equal(prompts, 1)
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+  })
+
+  it('does not replace the configured public identity with a different private key', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { secrets, git, commit } = setup
+    git('config', 'user.signingKey', '../secrets/key.pub')
+    execFileSync('/usr/bin/ssh-add', ['-D'], { stdio: 'ignore' })
+    const other = join(secrets, 'other')
+    execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', other])
+    await writeFile(join(secrets, 'key.pub'), await readFile(`${other}.pub`))
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    await assert.rejects(commit, /does not match the configured SSH public key/)
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+  })
+
+  it('preserves an agent refusal after the key passed preflight without retrying unsigned', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { secrets, git, commit } = setup
+    const publicKey = await readFile(join(secrets, 'key.pub'), 'utf8')
+    const blob = Buffer.from(publicKey.trim().split(' ')[1] ?? '', 'base64')
+    const identities = Buffer.alloc(4 + 1 + 4 + 4 + blob.length + 4)
+    identities.writeUInt32BE(identities.length - 4, 0)
+    identities[4] = 12 // SSH_AGENT_IDENTITIES_ANSWER
+    identities.writeUInt32BE(1, 5)
+    identities.writeUInt32BE(blob.length, 9)
+    blob.copy(identities, 13)
+    const socket = join(secrets, 'refusing-agent.sock')
+    const server = createServer((peer) => {
+      let buffer = Buffer.alloc(0)
+      peer.on('error', () => {})
+      peer.on('data', (data: Buffer) => {
+        buffer = Buffer.concat([buffer, data])
+        while (buffer.length >= 4 && buffer.length >= 4 + buffer.readUInt32BE(0)) {
+          const length = 4 + buffer.readUInt32BE(0)
+          // List the expected identity, then refuse the actual signing request.
+          peer.write(buffer[4] === 11 ? identities : Buffer.from([0, 0, 0, 1, 5]))
+          buffer = buffer.subarray(length)
+        }
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(socket, resolve))
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve()
+          })
+        }),
+    )
+    process.env['SSH_AUTH_SOCK'] = socket
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    await assert.rejects(commit, /No unsigned retry was attempted\.[\s\S]*agent refused operation/)
+    assert.equal(prompts, 0)
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+  })
+
+  it('does not turn an agent communication error into private-key consent', async (t) => {
+    const setup = await fixture(t)
+    if (!setup) return
+    const { secrets, git, commit } = setup
+    const socket = join(secrets, 'broken-agent.sock')
+    const server = createServer((peer) => {
+      peer.on('error', () => {})
+      peer.on('data', () => peer.end(Buffer.from([0, 0, 0, 1, 5])))
+    })
+    await new Promise<void>((resolve) => server.listen(socket, resolve))
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve()
+          })
+        }),
+    )
+    process.env['SSH_AUTH_SOCK'] = socket
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: false, remember: false }
+    })
+    await assert.rejects(commit, /Cannot inspect SSH signing identities/)
+    assert.equal(prompts, 0)
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
   })
 
   it('declines before hooks or a signed/unsigned commit when Always ask is set, and does not remember rejection', async (t) => {

@@ -21,6 +21,16 @@ import { z } from 'zod'
 import { setSetting } from './storage/settings.ts'
 import { copseToolPermissionId } from './security/tool-permissions.ts'
 import { recoverTextToolCalls } from '@copse/agent/parse-text-tool-calls.ts'
+import type { ToolCall } from '@shared/types'
+import {
+  isReviewerInputCall,
+  reviewerInputRequestsForCall,
+} from '@shared/threads/reviewer-input.ts'
+import { askUserTool } from '../tools/ask-user-tool.ts'
+import { runWithActiveRunIdentity } from './active-run-identity.ts'
+import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
+import { objectEnvelopeOf } from './tool-input-schema.ts'
+import { setElectronAppRuntime } from './electron-app-runtime.ts'
 
 describe('ToolRegistry', () => {
   it('registers and executes a tool', async () => {
@@ -138,6 +148,12 @@ describe('ToolRegistry', () => {
           msg: z.string().transform((value) => `${value}!`),
           target: z.string(),
         }),
+        // A transform has no JSON Schema, so a real tool advertises its input.
+        rawParameters: {
+          type: 'object',
+          properties: { msg: { type: 'string' }, target: { type: 'string' } },
+          required: ['msg', 'target'],
+        },
         execute: async ({ msg, target }) => `${msg}:${target}`,
       })
 
@@ -198,6 +214,102 @@ describe('ToolRegistry', () => {
       appendedReminderLengths: ['<system-reminder>\nnote\n</system-reminder>'.length],
     })
     setPermissionGateForTests(null)
+  })
+
+  it('preserves unattended questions when a toolGate note is appended (H2)', async () => {
+    const threadId = 'hooked-unattended-questions'
+    setPermissionGateForTests(async (check) => {
+      check.injectContext = '<system-reminder>\nRetain the review note.\n</system-reminder>'
+      return true
+    })
+    beginDeferralMode(threadId)
+    try {
+      const registry = new ToolRegistry()
+      registry.register(askUserTool)
+      const args = {
+        questions: [{ question: 'Which channel?' }, { question: 'Who signs off?' }],
+      }
+      const executed = await runWithActiveRunIdentity(threadId, () =>
+        registry.executeNormalized('ask_user', args, new AbortController().signal),
+      )
+      assert.match(executed.result, /<system-reminder>\nRetain the review note\./)
+      assert.equal(executed.appendedReminderLengths?.length, 1)
+      const call: ToolCall = {
+        id: 'saved-ask',
+        name: 'ask_user',
+        status: 'done',
+        args,
+        ...executed,
+      }
+      assert.equal(isReviewerInputCall(call), true)
+      assert.deepEqual(
+        reviewerInputRequestsForCall(call, 'saved-message').map(({ id, question }) => ({
+          id,
+          question,
+        })),
+        [
+          { id: 'saved-ask:question:0', question: 'Which channel?' },
+          { id: 'saved-ask:question:1', question: 'Who signs off?' },
+        ],
+      )
+    } finally {
+      endDeferralMode(threadId)
+      setPermissionGateForTests(null)
+    }
+  })
+
+  it('saves the questions and choices actually executed after hook rewrites (H1/H2)', async () => {
+    const threadId = 'rewritten-unattended-questions'
+    const original = { questions: [{ question: 'Which channel?', options: ['Stable'] }] }
+    const rewritten = [
+      {
+        question: 'Which release channel?',
+        options: ['Stable', 'Preview'],
+        recommendedOption: 'Preview',
+        recommendationReason: 'The hook requires a short trial.',
+      },
+      { question: 'Who signs off?', options: ['Maintainer'] },
+    ]
+    setPermissionGateForTests(async (check) => {
+      if (check.args === null || typeof check.args !== 'object' || Array.isArray(check.args)) {
+        throw new Error('expected object tool arguments')
+      }
+      Object.assign(check.args, { questions: rewritten })
+      check.injectContext = '<system-reminder>\nRetain the review note.\n</system-reminder>'
+      return true
+    })
+    beginDeferralMode(threadId)
+    try {
+      const registry = new ToolRegistry()
+      registry.register(askUserTool)
+      const executed = await runWithActiveRunIdentity(threadId, () =>
+        registry.executeNormalized('ask_user', original, new AbortController().signal),
+      )
+      const call: ToolCall = {
+        id: 'rewritten-ask',
+        name: 'ask_user',
+        status: 'done',
+        args: original,
+        ...executed,
+      }
+      assert.deepEqual(original.questions, [{ question: 'Which channel?', options: ['Stable'] }])
+      assert.deepEqual(
+        reviewerInputRequestsForCall(call, 'saved-message').map(
+          ({ question, options, recommendation }) => ({ question, options, recommendation }),
+        ),
+        [
+          {
+            question: 'Which release channel?',
+            options: ['Stable', 'Preview'],
+            recommendation: 'Preview — The hook requires a short trial.',
+          },
+          { question: 'Who signs off?', options: ['Maintainer'], recommendation: undefined },
+        ],
+      )
+    } finally {
+      endDeferralMode(threadId)
+      setPermissionGateForTests(null)
+    }
   })
 
   it('leaves the result untouched when no context is injected (H2)', async () => {
@@ -270,6 +382,11 @@ describe('ToolRegistry', () => {
             .max(200)
             .transform((value) => value + 1),
         }),
+        rawParameters: {
+          type: 'object',
+          properties: { max_results: { type: 'number', maximum: 200 } },
+          required: ['max_results'],
+        },
         execute: async ({ max_results }) => `value=${String(max_results)}`,
       })
       const result = await reg.executeNormalized(
@@ -879,6 +996,154 @@ describe('ToolRegistry', () => {
       /command not found: frobnicate/,
     )
     setPermissionGateForTests(null)
+  })
+})
+
+describe('ToolRegistry input schemas agents can list (#4142)', () => {
+  const unionParameters = z.union([
+    z.object({ action: z.literal('start') }),
+    z.object({ action: z.literal('click'), x: z.number() }),
+  ])
+  const echo = async (): Promise<string> => 'ok'
+
+  /** Capture console.warn for the duration of `run`. */
+  function warningsDuring(run: () => void): string[] {
+    const warnings: string[] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args.map(String).join(' '))
+    }
+    try {
+      run()
+    } finally {
+      console.warn = original
+    }
+    return warnings
+  }
+
+  afterEach(() => {
+    setElectronAppRuntime(null)
+  })
+
+  it('refuses a first-party tool whose parameters are a union', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({
+        name: 'union_tool',
+        description: 'one shape per action',
+        parameters: unionParameters,
+        execute: echo,
+      })
+    }, /Tool "union_tool" can't be offered to agents: its input schema is not a top-level object/)
+    assert.equal(reg.has('union_tool'), false)
+  })
+
+  it('refuses a first-party tool whose parameters are not an object', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({ name: 'bare', description: 'a string', parameters: z.string(), execute: echo })
+    }, /Tool "bare" can't be offered to agents/)
+  })
+
+  it('refuses first-party rawParameters with a top-level combinator', () => {
+    const reg = new ToolRegistry()
+    assert.throws(() => {
+      reg.register({
+        name: 'raw_union',
+        description: 'hand-written union',
+        parameters: unionParameters,
+        rawParameters: { type: 'object', anyOf: [] },
+        execute: echo,
+      })
+    }, /its input schema has a top-level "anyOf"/)
+  })
+
+  it('accepts a union that advertises a flat object envelope', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'enveloped',
+      description: 'one shape per action',
+      parameters: unionParameters,
+      rawParameters: objectEnvelopeOf(unionParameters),
+      execute: echo,
+    })
+    assert.deepEqual(
+      reg.toMcpTools().map((tool) => tool.name),
+      ['enveloped'],
+    )
+    // The envelope is only what agents see: calls are still validated per shape.
+    reg.validateArgs('enveloped', { action: 'click', x: 1 })
+    assert.throws(() => {
+      reg.validateArgs('enveloped', { action: 'click' })
+    })
+  })
+
+  it('keeps an untrusted schema registered but out of both exports, warning once', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'mcp__srv__union',
+      description: 'from an MCP server',
+      parameters: z.unknown(),
+      rawParameters: { type: 'object', properties: {}, oneOf: [] },
+      untrustedSchema: true,
+      execute: echo,
+    })
+    reg.register({
+      name: 'read_file',
+      description: 'read',
+      parameters: z.object({ path: z.string() }),
+      execute: echo,
+    })
+    assert.equal(reg.has('mcp__srv__union'), true)
+    const warnings = warningsDuring(() => {
+      for (let turn = 0; turn < 3; turn++) {
+        assert.deepEqual(
+          reg.toMcpTools().map((tool) => tool.name),
+          ['read_file'],
+        )
+        assert.deepEqual(
+          reg.toLLMTools().map((tool) => tool.name),
+          ['read_file'],
+        )
+      }
+    })
+    assert.deepEqual(warnings, [
+      '[tools] Not offering "mcp__srv__union" to models (draft-2020-12): its input schema has a top-level "oneOf"',
+      '[tools] Not offering "mcp__srv__union" to models (openapi-3.0): its input schema has a top-level "oneOf"',
+    ])
+  })
+
+  it('leaves a schema zod cannot convert out of the native export too, not the whole turn', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'unconvertible',
+      description: 'untrusted and odd',
+      parameters: z.object({ when: z.date() }),
+      untrustedSchema: true,
+      execute: echo,
+    })
+    const warnings = warningsDuring(() => {
+      assert.deepEqual(reg.toLLMTools(), [])
+      assert.deepEqual(reg.toMcpTools(), [])
+    })
+    assert.equal(warnings.length, 2)
+    assert.match(warnings[0] ?? '', /can't be converted to JSON Schema/)
+  })
+
+  it('in a packaged build, registers a bad first-party tool but offers it to no model', () => {
+    setElectronAppRuntime({ userDataPath: '/unused', version: '0.0.0', isPackaged: true })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'union_tool',
+      description: 'one shape per action',
+      parameters: unionParameters,
+      execute: echo,
+    })
+    assert.equal(reg.has('union_tool'), true)
+    warningsDuring(() => {
+      assert.deepEqual(reg.toMcpTools(), [])
+      assert.deepEqual(reg.toLLMTools(), [])
+    })
   })
 })
 

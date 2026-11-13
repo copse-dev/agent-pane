@@ -60,6 +60,34 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   because a registered tool may depend on native turn state or have effects the
   bridge cannot represent. An inventory test fails when a new tool has no ACP
   exposure decision, so additions cannot be silently forgotten.
+- **Offered, listed, kept.** Offering the bridge in `session/new` does not give
+  the agent its tools. The agent has them only once it lists them (`tools/list`,
+  #4144), and even a listing is not proof. Claude Code accepts the listing,
+  then drops every tool of an MCP server if one input schema has no
+  `type: "object"` at the top level or has a top-level `anyOf`/`oneOf`/`allOf`
+  (#4142). Copse guards each step:
+  - **Schemas.** Every tool's model-facing schema goes through
+    `modelFacingInputSchema` (`tool-input-schema.ts`), for both the bridge
+    (`toMcpTools`) and Copse's own providers (`toLLMTools`).
+    `ToolRegistry.register` refuses a first-party tool whose schema fails that
+    check, except in a packaged build, so a `z.union` tool fails its first test.
+    A union of object shapes advertises a flat envelope from `objectEnvelopeOf`
+    as its `rawParameters`, and its zod schema still validates each shape.
+    MCP, user-plugin and custom tools carry `untrustedSchema`: they are never
+    refused, but the exports leave a bad one out with a warning.
+  - **Mounting.** If the agent never lists the tools within a short window
+    after its session opens, the thread says once that Copse's tools aren't
+    available to it, and the prompt stops steering it to them.
+  - **Dropping.** If the agent's own runtime later refuses a listed tool as
+    `No such tool available`, the thread says so once. Copse acts only on a
+    failed call that the adapter itself named as that Copse tool, and only
+    when Claude Code's stated reason says the server lacks the tool. A
+    transient reason, such as "still connecting", doesn't count. The next
+    prompt tells the agent to ignore earlier steering to Copse's tools, and the
+    reason is logged.
+  - **Guidance.** The turn's Copse guidance (canonical `turnStart`) is built
+    after the mount is known. It names only the bridge tools the agent actually
+    has: listed, and not dropped since.
 - **How a tool call gets its name differs per agent**, and no agent fills in
   every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
   flag from #1659):
@@ -538,6 +566,20 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
   there), `~/Library/Keychains`. It never gets the rest of the home directory:
   no `~/.ssh`, cloud credentials or other projects.
+- **A sandboxed Claude agent can read its Keychain login but not renew it.**
+  The Keychain grant is read-only, and `security` writes the login keychain
+  through a temporary file in that directory, so saving a renewed token fails
+  with `EPERM` (exit 161). When the stored access token has expired, Claude
+  renews it, can't save it, and keeps using the expired one. On a machine whose
+  managed settings set `forceLoginOrgUUID`, the start-up organization check then
+  fails with "Unable to verify organization for the current authentication
+  token" and the agent exits with code 1 (#4147). Claude prints the same
+  message when the check's single, unretried request to Anthropic fails on the
+  network, so Copse reports it as a sign-in Claude couldn't verify: usually
+  expired (with the Keychain cause only for a sandboxed agent on macOS), or a
+  network failure worth one retry. It offers `claude auth login`, since signing
+  in from a terminal saves a fresh token, and the note it leaves for the next
+  turn does not claim a re-run must fail.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

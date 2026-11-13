@@ -1,7 +1,7 @@
 # Classifier providers and evals
 
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
-to add a Decision Index model, Kev, SemIf, Featherless/Simple Jev, or a compatible custom connection. Saving a
+to add a Decision Index model, Kev, Strands Decider, SemIf, Featherless/Simple Jev, or a compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
 answer and duration. These profiles are available for safety screening, background questions, the
 `ask_classifier` tool and
@@ -221,19 +221,21 @@ with `protocol: "systemone"` and a `baseUrl` ending in `/v1`. Start the server, 
 with its example profile. Model names and ports below are the projects' documented defaults
 (checked 2026-09-25); adjust the profile if you start a server differently.
 
-| Classifier    | Start the server                                                                                                                                                               | Example profile                                          | Notes                                                                                                                                                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Kev           | `uv sync --extra serve`, then `uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009`                                                                  | [`kev.json`](../benchmarks/classifiers/kev.json)         | Pass `--port 8009`; the code defaults to 8008. Binds 127.0.0.1. Verified 2026-09-25 on MLX (M1 Max): batches concurrent requests.                                                                                             |
-| Winnow-12B    | `python3 scripts/serve.py` in EldanRing/winnow-inference                                                                                                                       | [`winnow.json`](../benchmarks/classifiers/winnow.json)   | Port 8091; 2–64 options. llama.cpp with Metal or CUDA.                                                                                                                                                                        |
-| reflex 4B     | `uv sync --no-sources`, then `uv run --no-sync reflex-serve --stable --device mps --dtype float16 --port 8008` on a Mac                                                        | [`reflex.json`](../benchmarks/classifiers/reflex.json)   | Up to 26 options. Use `main`: the `stable` tag's code has no MPS path, and `--stable` on `main` reads the same configuration. Verified 2026-09-25.                                                                            |
-| decider-4b    | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json) | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
-| metask-jev-4b | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
+| Classifier         | Start the server                                                                                                                                                               | Example profile                                                          | Notes                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kev                | `uv sync --extra serve`, then `uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009`                                                                  | [`kev.json`](../benchmarks/classifiers/kev.json)                         | Pass `--port 8009`; the code defaults to 8008. Binds 127.0.0.1. Verified 2026-09-25 on MLX (M1 Max): batches concurrent requests.                                                                                             |
+| Winnow-12B         | `python3 scripts/serve.py` in EldanRing/winnow-inference                                                                                                                       | [`winnow.json`](../benchmarks/classifiers/winnow.json)                   | Port 8091; 2–64 options. llama.cpp with Metal or CUDA.                                                                                                                                                                        |
+| reflex 4B          | `uv sync --no-sources`, then `uv run --no-sync reflex-serve --stable --device mps --dtype float16 --port 8008` on a Mac                                                        | [`reflex.json`](../benchmarks/classifiers/reflex.json)                   | Up to 26 options. Use `main`: the `stable` tag's code has no MPS path, and `--stable` on `main` reads the same configuration. Verified 2026-09-25.                                                                            |
+| decider-4b         | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json)                 | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
+| metask-jev-4b      | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)                   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
+| Strands Decider 2B | `uv sync` in strands-labs/strands-decider at `v0.3.0`, then `uv run strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8011`                        | [`strands-decider.json`](../benchmarks/classifiers/strands-decider.json) | Pass `--port 8011`; the server defaults to 8000. Binds 127.0.0.1 and picks CUDA, then MPS, then CPU. Sends every field the hosted API sends. See [Strands Decider](#strands-decider) for its limits. Not yet run from Copse.  |
 
-Kev and Winnow can also be set up and started from a persistent cache at pinned revisions:
+Kev, Winnow and Strands Decider can also be set up and started from a persistent cache at pinned revisions:
 
 ```bash
 COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- kev
 COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- winnow
+COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- strands-decider
 ```
 
 **Settings → Classifiers** does the same from the app (see below for what it checks and how it fails). Opening it probes the loopback ports of the
@@ -241,7 +243,7 @@ servers below (a TCP connect, no request) and lists each as not installed, insta
 running; a running one gets **Add connection**, which saves the preset profile. **Download and run**
 asks first, naming the size, source repository and required tools, then sets the server up in the
 same cache at the same pinned revision, starts it on loopback, and saves its connection when it
-accepts connections. It needs `git` plus `uv` (Kev) or `python3` (Winnow) on `PATH`, and the button
+accepts connections. It needs `git` plus `uv` (Kev, Strands Decider) or `python3` (Winnow) on `PATH`, and the button
 stays disabled and names the missing tool otherwise. Copse stops servers it started when it quits and
 leaves ones started elsewhere alone; **Cancel** stops an install or load in progress. Nothing is
 downloaded or started until you confirm, and the connection is not chosen for safety screening
@@ -264,21 +266,23 @@ already in the environment is offered as **Set up**; the key's value is never sh
   waiting on credentials nobody can see. **Cancel** ends an install without an error.
 - **Stop** stops a server Copse started. **Uninstall** (offered only for a stopped, installed
   server, after a confirmation) deletes that server's checkout, environment and model files from the
-  cache, plus Kev's Hugging Face weights; the shared uv package cache and the saved connection
+  cache, plus Kev's or Strands Decider's Hugging Face weights; the shared uv package cache and the saved connection
   stay, and it refuses while the server runs or the port is in use.
 
 Validation: `local-classifier-install.test.ts` runs the real manager and cache preparation with fake
 `git` and `python3` executables on `PATH` (`tests/helpers/fake-classifier-tools.ts`) and a real HTTP
 "server"; `settings-classifiers-install.e2e.ts` drives the same flow through the Electron app.
-Neither downloads anything. No real Kev or Winnow download has been run from an agent session: the
-sandbox could not reach the Kev repository or Hugging Face (2026-10-07), so real-weights behaviour
-(model load time, `--run` argument handling, memory) is verified only by the earlier manual runs
-above.
+Neither downloads anything. No real Kev, Winnow or Strands Decider download has been run from an
+agent session: the sandbox could not reach the Kev repository or Hugging Face (2026-10-07, and again
+for Strands Decider on 2026-11-10), so real-weights behaviour (model load time, `--run` argument
+handling, memory) is verified only by the earlier manual runs above, and for Strands Decider not at
+all.
 
 The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
-about 12.5 GB text-only). Every later run reuses the cache and downloads nothing. The checkout,
+about 12.5 GB text-only, Strands Decider about 5 GB). Every later run reuses the cache and downloads nothing. The checkout,
 virtual environment or native build, uv package cache (`UV_CACHE_DIR`), Hugging Face cache
-(`HF_HOME`) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
+(`HF_HOME` and `HF_HUB_CACHE`, so a value of your own does not move the weights out of reach of
+**Uninstall**) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
 `~/.copse/cache/classifiers` (or `$COPSE_DIR/cache/classifiers`). Point it at a large volume when
 the internal disk is short. `--setup-only` prepares the cache without starting the server.
 
@@ -296,6 +300,34 @@ than rejecting the answer, and lists each one in the result's `metadata.derivedF
 
 Fields that are present are still validated in full, and the distribution must still cover exactly
 the offered options.
+
+### Strands Decider
+
+[Strands Decider](https://github.com/strands-labs/strands-decider) (Apache-2.0) serves the
+`/v1/systemone` format from a 1.9-billion-parameter model: a LoRA adapter and readout head on
+`Qwen/Qwen3.5-2B-Base`. **Strands Decider 2B (local)** is a preset, and **Download and run** sets
+up release `v0.3.0` (commit `87d0fd57`). That release commits no lockfile, so setup resolves its
+Python dependencies with `uv sync --exclude-newer 2026-11-06T00:00:00Z`, as PyPI stood the day after
+the release, and the server runs from that lock with `uv run --frozen`. Unlike Kev's committed lock,
+this is a date bound rather than a hash list chosen in advance. The adapter checkpoint loads from the Hub repository's
+`main`, which a later release in the same month replaces; the base loads at the revision the
+checkpoint records. On a Mac the server uses MPS. The project's MLX device is faster but needs its
+`mlx` extra and `--device mlx`, which the catalog does not set up.
+
+The adapter accepts its answers unchanged: the values are rounded to four places, and `model` names
+the checkpoint without its `StrandsAgents/` owner. What it refuses:
+
+- **Long input.** A state and question over its 4,096-token window is refused (HTTP 422), so a
+  long terminal snapshot gets no verdict and the user is asked.
+- **Score levels.** It takes 2–10 levels, as `ask_classifier` does; the eval runner and package API
+  allow up to 50, which it refuses. It reports each level in `legend` trimmed of surrounding
+  spaces, so a level such as `" low"` fails as an invalid score scale.
+
+Its compatibility with Copse was checked by reading `v0.3.0`'s `schema.py`, `prompting.py` and
+`server.py` (2026-11-10), not by running it. No accuracy figure for Copse's questions exists yet.
+Run `pnpm run eval:classifier --config benchmarks/classifiers/strands-decider.json` against a
+running server, or the [shell-scope benchmark](../benchmarks/shell-scope/README.md), before choosing
+it for safety screening.
 
 ## Run an eval
 

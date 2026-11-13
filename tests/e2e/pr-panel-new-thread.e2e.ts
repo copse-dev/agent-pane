@@ -1,4 +1,6 @@
-import { mkdirSync } from 'node:fs'
+import assert from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
@@ -82,6 +84,50 @@ describe('PR panel new thread (mock gh)', () => {
     await expect(await $('.chat-row.selected .chat-title').getElement()).toHaveText(
       expect.stringMatching(/^PR #42:/),
     )
+    // Capture a deliberate editing position after the draft and checkout have
+    // loaded. Initial focus/hydration can otherwise leave a real caret at either
+    // end; selecting the endpoint changes neither the draft nor its history.
+    const caret = await browser.execute(() => {
+      const composer = document.querySelector('.prompt-input')
+      if (!(composer instanceof HTMLElement)) throw new Error('PR draft composer is missing')
+      const selection = document.getSelection()
+      if (!selection) throw new Error('Composer selection is unavailable')
+      const prefixAt = (node: Node | null, offset: number): string | null => {
+        if (!node || !composer.contains(node)) return null
+        const prefix = document.createRange()
+        prefix.selectNodeContents(composer)
+        prefix.setEnd(node, offset)
+        return prefix.toString()
+      }
+      const beforeText = composer.textContent
+      const beforePrefix = prefixAt(selection.focusNode, selection.focusOffset)
+      composer.focus()
+      const range = document.createRange()
+      range.selectNodeContents(composer)
+      range.collapse(false)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return {
+        beforeText,
+        text: composer.textContent,
+        beforePrefix,
+        prefix: prefixAt(selection.focusNode, selection.focusOffset),
+        collapsed: selection.isCollapsed,
+        focused: document.activeElement === composer,
+      }
+    })
+    assert.equal(caret.text, caret.beforeText)
+    assert.equal(caret.prefix, caret.text)
+    assert.equal(caret.collapsed, true)
+    assert.equal(caret.focused, true)
+    const artifactRoot = join(process.cwd(), 'tests/e2e/artifacts/pr-panel-new-thread')
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(join(artifactRoot, 'caret.json'), JSON.stringify(caret, null, 2) + '\n')
+    // This is an editable draft; no user prompt or automation has started.
+    await expect($('.chat-row.selected')).not.toHaveElementClass('is-running')
+    await expect($('.chat-row.selected .chat-running-status')).not.toExist()
+    await expect($('.messages-list .msg-user')).not.toExist()
+    await expect($('.stop-btn')).not.toBeDisplayed()
 
     await saveElementScreenshot('#app', 'pr-panel-new-thread-composer.png')
   })

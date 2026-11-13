@@ -66,6 +66,7 @@ function setup(
   messages: (id?: string) => Message[]
   gitBranchChanged: number[]
   finishedAlerts: Array<{ threadId: string; title: string }>
+  attachCalls: Array<[projectId: string, threadIds: string[]]>
   showDiff: (
     projectId: string,
     threadId: string,
@@ -102,6 +103,7 @@ function setup(
   const messageDone: string[] = []
   const gitBranchChanged: number[] = []
   const finishedAlerts: Array<{ threadId: string; title: string }> = []
+  const attachCalls: Array<[projectId: string, threadIds: string[]]> = []
   store.on('message_done', (id) => messageDone.push(id))
   store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
@@ -116,6 +118,9 @@ function setup(
           return () => {}
         },
         run: async (): Promise<void> => {},
+        attachTranscripts: async (projectId: string, threadIds: string[]): Promise<void> => {
+          attachCalls.push([projectId, threadIds])
+        },
         onChunk: (h: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void) => {
           chunkHandler = h
           return (): void => {}
@@ -239,6 +244,7 @@ function setup(
     messages,
     gitBranchChanged,
     finishedAlerts,
+    attachCalls,
     showDiff,
     queueDiffs,
   }
@@ -319,6 +325,23 @@ test('a queue-only diff update does not open Changes or construct an editor surf
   assert.equal(store.getState().filesPaneOpen, false)
   assert.equal(store.getState().rightPanelMode, 'browser')
   assert.deepEqual(store.getState().stagedDiffs, [{ path: 'a.ts', language: 'typescript' }])
+})
+
+test('a workspace switch from setState alone attaches the new project transcripts', () => {
+  const { store, attachCalls } = setup()
+  assert.deepEqual(attachCalls, [['project-1', ['t1']]])
+
+  store.setState({
+    activeProjectId: 'project-2',
+    workspaceRoot: '/repo/two',
+    threads: [thread('p2-a'), thread('p2-b')],
+    activeThreadId: 'p2-a',
+  })
+
+  assert.deepEqual(attachCalls, [
+    ['project-1', ['t1']],
+    ['project-2', ['p2-a', 'p2-b']],
+  ])
 })
 
 test('text chunks create one assistant message and accumulate tokens', () => {
@@ -1266,12 +1289,65 @@ test('a disk attachment cannot resurrect a run already marked interrupted by rec
   const recovered = { ...thread('t1'), status: 'idle' as const, interruptedTurnAt: 20 }
   const { store, snapshot, unsub } = setup([recovered])
   snapshot({
+    source: 'disk',
     projectId: 'project-1',
     thread: thread('t1'),
     checkpoint: { stream: null, pendingTurn: null },
   })
   assert.equal(requireThread(store, 't1').status, 'idle')
   assert.equal(requireThread(store, 't1').interruptedTurnAt, 20)
+  unsub()
+})
+
+for (const status of ['idle', 'error'] as const) {
+  test(`a disk attachment adopts a newer ${status} completion beside an existing held queue`, () => {
+    const initial: Thread = {
+      ...thread('t1'),
+      pendingMessages: [
+        {
+          messageId: 'held',
+          createdAt: 1,
+          autoDispatch: false,
+          payload: { content: 'Wait for review' },
+        },
+      ],
+    }
+    const { store, snapshot, unsub } = setup([initial])
+    snapshot({
+      source: 'disk',
+      projectId: 'project-1',
+      thread: { ...initial, status, usage: { inputTokens: 75, outputTokens: 20 } },
+      checkpoint: { stream: null, pendingTurn: null },
+    })
+    const restored = requireThread(store, 't1')
+    assert.equal(restored.status, status)
+    assert.deepEqual(restored.usage, { inputTokens: 75, outputTokens: 20 })
+    assert.deepEqual(restored.pendingMessages, initial.pendingMessages)
+    unsub()
+  })
+}
+
+test('a live runtime seed supersedes a held idle status before its first stream chunk', () => {
+  const initial: Thread = {
+    ...thread('t1'),
+    status: 'idle',
+    pendingMessages: [
+      {
+        messageId: 'held',
+        createdAt: 1,
+        autoDispatch: false,
+        payload: { content: 'Wait for review' },
+      },
+    ],
+  }
+  const { store, snapshot, unsub } = setup([initial])
+  snapshot({
+    source: 'runtime',
+    projectId: 'project-1',
+    thread: { ...initial, status: 'running' },
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').status, 'running')
   unsub()
 })
 
@@ -1283,6 +1359,7 @@ test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint
   send({ type: 'text', text: 'missed while loading' }, 't1', { messageIds: [] })
   assert.equal(messages().length, 0)
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: structuredClone(requireThread(runtime, 't1')),
     checkpoint: reducer.checkpoint('t1'),
@@ -1298,6 +1375,7 @@ test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint
 test('a stamped chunk draws with the message ids main wrote', () => {
   const { send, messages, snapshot } = setup()
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1'),
     checkpoint: { stream: null, pendingTurn: null },
@@ -1330,6 +1408,7 @@ test('a turn seed preserves drained queue placement and window summaries', () =>
   const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
   store.setState({ threads: [thread('t1', [answer, prompt])] })
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1', [prompt, unlabeled]),
     checkpoint: { stream: null, pendingTurn: null },
@@ -1350,6 +1429,7 @@ test('a runtime prefix inserts missed messages before a local follow-up', () => 
   const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
   store.setState({ threads: [thread('t1', [prompt])] })
   snapshot({
+    source: 'runtime',
     projectId: 'project-1',
     thread: thread('t1', [answer]),
     checkpoint: { stream: null, pendingTurn: null },

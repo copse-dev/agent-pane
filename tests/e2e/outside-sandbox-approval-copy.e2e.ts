@@ -1,4 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -88,7 +91,7 @@ describe('outside-sandbox approval copy', () => {
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
     await expect(leaseOption).toHaveText(
-      'Allow retries outside the sandbox (up to 10, for 2 hours)',
+      'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
     )
     // Opt-in: leaving the sandbox again is never the default.
     await expect(leaseOption.$('.approval-turn-tree-input')).not.toBeChecked()
@@ -97,6 +100,57 @@ describe('outside-sandbox approval copy', () => {
     await dialog.$('.approval-reject').click()
     await waitForAgentIdle(30_000)
     await expectAssistantReply('I left the browser demo unrun.')
+    await scenario.assertComplete()
+  })
+
+  it('honours outside consent for a background command without enabling Guarded YOLO', async () => {
+    const fixture = join(tmpdir(), 'copse-e2e-background-outside-approval')
+    const target = join(fixture, 'approved.txt')
+    mkdirSync(fixture, { recursive: true })
+    rmSync(target, { force: true })
+    const command = `printf approved-background > '${target.replaceAll("'", "'\\''")}'`
+    try {
+      const scenario = await prepareMockToolTurn(
+        'Run this background command with the access I approve.',
+        { name: 'run_background', args: { action: 'start', command, timeout_ms: 10_000 } },
+        'The approved background command completed.',
+      )
+      await submitComposer()
+      const dialog = await $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await expect(dialog.$('.approval-heading')).toHaveText('Run outside sandbox?')
+      await expect(dialog.$('.approval-body')).toHaveText(command)
+      await saveElementScreenshot('#approval-dialog', 'background-command-outside-approval.png')
+      await dialog.$('.approval-approve').click()
+      await waitForAgentIdle(30_000)
+      await expectAssistantReply('The approved background command completed.')
+      expect(readFileSync(target, 'utf8')).toBe('approved-background')
+      await scenario.assertComplete()
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('shows a fresh background escape request and keeps a declined attempt contained', async () => {
+    const command = 'node scripts/run-demo.mts --spec tests/demo/remote-acp-first-run.demo.ts'
+    const scenario = await prepareMockToolTurn(
+      'Start the background demo with the access I approve.',
+      { name: 'run_background', args: { action: 'start', command, expects_sandbox_block: true } },
+      'I kept the background attempt inside the sandbox.',
+    )
+    await submitComposer()
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
+    await expect(dialog.$('.approval-body')).toHaveText(command)
+    await expect(dialog.$('.approval-footer')).toHaveText(
+      expect.stringContaining("agent's expectation, not a confirmed sandbox block"),
+    )
+    await expect(dialog.$('.approval-turn-tree')).not.toBeDisplayed()
+    await saveElementScreenshot('#approval-dialog', 'background-expected-block-approval.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('I kept the background attempt inside the sandbox.')
     await scenario.assertComplete()
   })
 })

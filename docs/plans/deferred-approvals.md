@@ -199,6 +199,14 @@ the agent report the dependency and continue work within existing permissions.
 Human review and replay still depend on D2; approval alone is not evidence that
 the action ran.
 
+`ask_user` follows that unattended mode too: it returns immediately without an
+answer, preserving the executed questions in its completed tool result, including
+questions or choices changed by a supported `toolGate` hook. The saved-result
+payload is schema-validated; recorded hook notes remain separate. Context and the
+inline question card use the existing saved-question answer flow. A later answer
+is an ordinary human follow-up, not a permission grant or a replay of an action.
+Interactive questions retain their existing wait and cancellation behavior.
+
 Exit gate: a scheduled automation that hits an escalation completes its other work and
 presents a review queue, instead of pausing the thread.
 

@@ -187,8 +187,8 @@ export function markNavigationRestored(restored: MainWindowNavigation): void {
  * project-scoped reads (`roadmap:list` and the rest of the project store) resolve
  * their directory from, and the switch repaints without awaiting its final
  * navigation write. So the outgoing project, written mid-switch, was what those
- * reads saw on `workspace_changed`: the roadmap listed the previous project's
- * notes. While held, a write naming any other project is dropped, which keeps
+ * reads saw when the switch selected the workspace: the roadmap listed the
+ * previous project's notes. While held, a write naming any other project is dropped, which keeps
  * the persisted selection on the target from dispatch onwards.
  */
 let navigationHeldFor: string | null = null
@@ -681,10 +681,12 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
   return serializedSet(api, KEY_PROJECT_GROUPS, groups)
 }
 
-const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
+// A controller may hold a narrowed ApiClient view; the same object still owns
+// its read revision, without adding another lifecycle registry.
+const threadLoadRevisions = new WeakMap<object, Map<string, number>>()
 
 /** Revision shared by in-flight reads and resident project snapshots. */
-export function projectThreadLoadRevision(api: ApiClient, projectId: string): number {
+export function projectThreadLoadRevision(api: object, projectId: string): number {
   return threadLoadRevisions.get(api)?.get(projectId) ?? 0
 }
 
@@ -914,6 +916,22 @@ let activeAutosave: Autosave | null = null
  */
 export function awaitPendingThreadPersistence(): Promise<void> {
   return activeAutosave?.whenIdle() ?? Promise.resolve()
+}
+
+/**
+ * Run `task` once a thread the current write introduced exists in main.
+ *
+ * A store selection fires inside the writer's `setState`, before the writer's
+ * own `threads_changed` starts autosave's immediate `threads:create`; main
+ * rejects thread-scoped reads until that create lands ("not persisted yet").
+ * Waiting a microtask lets the emit start the create, which
+ * `awaitPendingThreadPersistence` then waits for. (`afterThreadWrites` would
+ * run at once there: nothing is queued yet.)
+ */
+export function afterPendingThreadPersistence(task: () => void): void {
+  queueMicrotask(() => {
+    void awaitPendingThreadPersistence().then(task)
+  })
 }
 
 // Autosave: maps store mutations onto event-level thread-store writes.

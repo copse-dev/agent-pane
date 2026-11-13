@@ -1,4 +1,5 @@
 import { attachMobileChat } from './controller/mobile-chat.ts'
+import { attachRemotePublisher } from './controller/remote-publisher.ts'
 import './styles/tokens.css'
 // Shared markdown styling lives in the renderer package; agent-pane maps its
 // theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
@@ -15,9 +16,8 @@ import { nextThreadId, prevThreadId, switchThread } from '@shared/store/thread-h
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
-import { mountConversation } from './views/conversation.ts'
+import { mountChatSurface } from './views/chat-surface.ts'
 import { mountFileTree } from './views/file-tree.ts'
-import { mountInputBar } from './views/input-bar.ts'
 import { mountContextPanel } from './views/context-panel.ts'
 import { mountRightPanelLayout } from './views/right-panel-layout.ts'
 import { mountTerminalsPane } from './views/terminals-pane.ts'
@@ -132,6 +132,7 @@ import {
   openCanvasArtefact,
   showCanvasArtefact,
 } from './controller/panels.ts'
+import { selectActiveWorkspace } from './controller/active-workspace.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import {
   getArtefactContent,
@@ -393,6 +394,7 @@ async function boot(): Promise<void> {
     startAgentController(store, api)
     attachAutosave(store, api)
     attachMobileChat(store, api, mobileReady)
+    attachRemotePublisher(store, api)
     attachBestValueDefaultResolver(store, api)
     attachProviderInvalidationWarning(store, api, {
       warn: showConfirmDialog,
@@ -557,7 +559,7 @@ async function boot(): Promise<void> {
     // Mount the panel immediately rather than waiting for restoreProject() to
     // finish — a large project's thread load (or a slow SSH connect) can take a
     // while, and every mounted pane already renders its own empty/loading state
-    // and updates reactively once workspace_changed/threads_changed fire below.
+    // and updates reactively once the restore below selects the workspace.
     ensureLayout()
     perfMark('renderer:layout-mounted')
     const endRestore = perfBegin('renderer:restore-project')
@@ -575,7 +577,7 @@ async function boot(): Promise<void> {
   } else {
     endBoot({ projects: 0 })
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)
-    const unsubWelcome = store.on('workspace_changed', () => {
+    const unsubWelcome = selectActiveWorkspace(store, () => {
       unsubWelcome()
       unmountWelcome()
       ensureLayout()
@@ -657,13 +659,12 @@ function mountFullLayout(): void {
   const monacoReady = loadMonaco()
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
-  const inputBar = mountInputBar(inputRoot, store, api, {
+  const conversationRoot = requireElement('conversation')
+  const inputBar = mountChatSurface(conversationRoot, inputRoot, store, api, {
     portraitPanelHost: requireElement('pane-chat'),
   })
   handleStopShortcut = inputBar.handleStopShortcut
   focusThreadModelPicker = inputBar.openModelPicker
-  const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
