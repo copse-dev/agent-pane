@@ -67,7 +67,13 @@ export function createHeadlessAutomationRun(
     pending = pending.then(async () => {
       const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
       if (!message) return
-      await appendMessage(projectId, threadId, message)
+      // The v1 spine stores only terminal calls. Preserve this message's ID
+      // and position, prose and settled siblings while its other calls stay
+      // in memory; a later result replaces the same saved message in place.
+      await appendMessage(projectId, threadId, {
+        ...message,
+        toolCalls: message.toolCalls.filter((call) => call.status !== 'running'),
+      })
     })
   }
 

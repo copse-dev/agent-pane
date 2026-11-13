@@ -25,6 +25,7 @@ import {
   writeSeedConfig,
 } from './helpers/seed-config.ts'
 import { parkPointer, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { observeAutomationGitCapture } from './helpers/automation-git-capture-observation.ts'
 
 const A = 'e2e-mcp-project-a'
 const B = 'e2e-mcp-project-b'
@@ -432,7 +433,25 @@ describe('MCP project navigation during automation', function () {
       )
       await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
       await parkPointer()
+      await observeAutomationGitCapture(
+        'before-capture',
+        shot,
+        'tests/e2e/mcp-project-navigation.e2e.ts',
+        [
+          { projectId: A, threadId: idA },
+          { projectId: B, threadId: idB },
+        ],
+      )
       await saveAppScreenshot(shot)
+      await observeAutomationGitCapture(
+        'after-capture',
+        shot,
+        'tests/e2e/mcp-project-navigation.e2e.ts',
+        [
+          { projectId: A, threadId: idA },
+          { projectId: B, threadId: idB },
+        ],
+      )
       await restoreBranch()
     }
   })
