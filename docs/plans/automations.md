@@ -90,7 +90,17 @@ that dispatch, they execute the same first-message checkout transaction with an 
 and never dispatches tools against the shared project checkout. Main remains the sole
 transcript writer for the headless turn. After persistence settles, a completion notification
 refreshes the authoritative transcript and status in any renderer that opened the project
-mid-turn; the renderer never re-dispatches that completion. This does not provide
+mid-turn, including a running copy carried away when another project was selected.
+That refresh replaces partial headless history with main's completed history while
+keeping the current unsent draft (including a human-cleared draft) and queued
+follow-ups. A draft cleared while the transcript read is pending stays cleared;
+an older metadata snapshot cannot restore it. Its matching cached sidebar row also
+settles, so both the project and workspace Automation indicators stop showing it
+as running without navigation. Unrelated cached rows are not replaced.
+Project, task occurrence, original turn
+epoch and metadata-read revisions fence the refresh; newer human turns and removed
+projects or threads are left alone. It neither navigates nor re-dispatches the completion.
+This does not provide
 a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
 Main admission, cleanup and checkout reuse share the renderer's prior-run metadata

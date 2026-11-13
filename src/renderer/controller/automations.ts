@@ -23,8 +23,9 @@ import {
 import type { ApiClient } from '../../preload/api.d.ts'
 import { dispatchAgentRun, startAutomationTurnTree } from './message-queue.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
-import { projectThreadLoadRevision } from './persistence.ts'
+import { acceptRuntimeThreadMeta, projectThreadLoadRevision } from './persistence.ts'
 import { isAutomationPendingStart } from './sidebar-thread.ts'
+import { refreshCachedSidebarThread } from './projects.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
@@ -281,32 +282,64 @@ export function attachAutomationController(
     }
   }
 
+  function completionThread(event: AutomationTriggerEvent): Thread | undefined {
+    const state = store.getState()
+    if (!state.projects.some((project) => project.id === event.projectId)) return undefined
+    if (state.activeProjectId === event.projectId) {
+      return state.threads.find((thread) => thread.id === event.threadId)
+    }
+    return state.backgroundThreads.find(
+      (entry) => entry.projectId === event.projectId && entry.thread.id === event.threadId,
+    )?.thread
+  }
+
+  function matchesOccurrence(thread: Thread, event: AutomationTriggerEvent): boolean {
+    return (
+      thread.automation?.scheduleId === event.scheduleId &&
+      thread.automation.triggeredAt === event.triggeredAt
+    )
+  }
+
   async function receiveTrigger(event: AutomationTriggerEvent): Promise<void> {
-    if (store.getState().activeProjectId !== event.projectId) return
+    if (!event.headlessSettled && store.getState().activeProjectId !== event.projectId) return
+    const observed = event.headlessSettled ? completionThread(event) : undefined
+    if (event.headlessSettled && !observed) return
     // A human submission mints a fresh root-turn epoch even when its message
     // reaches disk before these reads finish. Capture before either await;
     // message membership alone cannot distinguish that newer execution.
-    const observedEpoch = getThreadById(store, event.threadId)?.currentEpoch
+    const observedEpoch = observed?.currentEpoch
     for (;;) {
       const revision = projectThreadLoadRevision(api, event.projectId)
       const loaded = await api.threads.loadProject(event.projectId)
-      if (store.getState().activeProjectId !== event.projectId) return
       const created = loaded.find((thread) => thread.id === event.threadId)
       if (!created) return
       if (event.headlessSettled) {
-        if (created.status === 'running' || created.currentEpoch !== observedEpoch) return
-        if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return
+        if (
+          created.status === 'running' ||
+          created.currentEpoch !== observedEpoch ||
+          !matchesOccurrence(created, event)
+        )
+          return
+        const beforeMessages = completionThread(event)
+        if (
+          !beforeMessages ||
+          beforeMessages.currentEpoch !== observedEpoch ||
+          !matchesOccurrence(beforeMessages, event)
+        )
+          return
         const messages = await api.threads.loadMessages(event.projectId, event.threadId)
-        if (store.getState().activeProjectId !== event.projectId) return
         // Only this exact automation occurrence owns the persisted replacement.
         // A delayed notification must not replace a different task's state.
-        if (created.automation?.triggeredAt !== event.triggeredAt) return
-        const current = getThreadById(store, event.threadId)
-        if (current?.currentEpoch !== observedEpoch) return
-        if (current && current.automation?.triggeredAt !== event.triggeredAt) return
+        const current = completionThread(event)
+        if (
+          !current ||
+          current.currentEpoch !== observedEpoch ||
+          !matchesOccurrence(current, event)
+        )
+          return
         const persistedIds = new Set(messages.map((message) => message.id))
         if (
-          current?.messages.some(
+          current.messages.some(
             (message) => message.role === 'user' && !persistedIds.has(message.id),
           )
         ) {
@@ -316,21 +349,48 @@ export function attachAutomationController(
         // Cleanup/archive may change main-owned checkout state without starting
         // another turn. Retry only these reads, keeping the original epoch fence.
         if (projectThreadLoadRevision(api, event.projectId) !== revision) continue
-        store.setState({
-          threads: sortThreadsNewestFirst([
-            {
-              ...created,
-              draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? '',
-              messages,
-              messagesLoaded: true,
-            },
-            ...store.getState().threads.filter((thread) => thread.id !== created.id),
-          ]),
-        })
-        store.emit('thread_status_changed', created.id, created.status)
+        // Main owns the completed history, including tool payloads that arrived
+        // after this running copy was carried away. Keep only unsent human work.
+        const refreshed: Thread = {
+          ...created,
+          messages,
+          messagesLoaded: true,
+        }
+        // Absence is a human-cleared draft too. A metadata snapshot from before
+        // the transcript read must not restore text the user just removed.
+        if (current.draftPrompt !== undefined) refreshed.draftPrompt = current.draftPrompt
+        else delete refreshed.draftPrompt
+        if (current.pendingMessages !== undefined)
+          refreshed.pendingMessages = current.pendingMessages
+        else delete refreshed.pendingMessages
+        if (current.queuePaused !== undefined) refreshed.queuePaused = current.queuePaused
+        else delete refreshed.queuePaused
+        acceptRuntimeThreadMeta(event.projectId, created)
+        const state = store.getState()
+        if (state.activeProjectId === event.projectId) {
+          store.setState({
+            threads: sortThreadsNewestFirst([
+              refreshed,
+              ...state.threads.filter((thread) => thread.id !== created.id),
+            ]),
+          })
+          store.emit('thread_status_changed', created.id, created.status)
+        } else {
+          refreshCachedSidebarThread(event.projectId, refreshed)
+          store.setState({
+            backgroundThreads: state.backgroundThreads.map((entry) =>
+              entry.projectId === event.projectId && entry.thread.id === created.id
+                ? { ...entry, thread: refreshed }
+                : entry,
+            ),
+          })
+        }
+        // Offscreen state needs a repaint, not an active-thread completion:
+        // another project may have an unrelated row with the same thread id.
         store.emit('threads_changed')
         return
       }
+      if (store.getState().activeProjectId !== event.projectId) return
       if (!store.getState().threads.some((thread) => thread.id === created.id)) {
         store.setState({
           threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
