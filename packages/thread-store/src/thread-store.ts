@@ -35,6 +35,7 @@ import {
   type RefResolver,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
+import { withImmutableMessageProse } from './immutable-message-prose.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
@@ -2168,8 +2169,10 @@ async function appendMessageUnqueued(
   canCommit?: () => boolean,
 ): Promise<boolean> {
   const dir = threadDir(projectId, threadId)
+  const knownIds = await knownMessageIdsFor(dir)
   await fsPromises.mkdir(dir, { recursive: true })
-  const { line, files } = explodeMessage(message, sha256)
+  const exploded = explodeMessage(message, sha256)
+  const { line, files } = knownIds.has(message.id) ? withImmutableMessageProse(exploded) : exploded
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
     contents: file.contents,
@@ -2185,7 +2188,6 @@ async function appendMessageUnqueued(
   // in-memory run owner before beginning the visible commit.
   if (canCommit && !canCommit()) return false
   const raw = serializeSpineLine(line)
-  const knownIds = await knownMessageIdsFor(dir)
   // `knownMessageIdsFor` can await a disk read. Recheck immediately before the
   // user-visible spine commit so a local dispatch accepted in that interval
   // keeps sole ownership of the thread.
