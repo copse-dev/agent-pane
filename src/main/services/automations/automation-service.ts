@@ -426,7 +426,8 @@ export interface AutomationServiceDependencies {
 export type DispatchHeadlessTurn = (
   request: AgentDispatchRequest,
   host: AgentHost<StreamChunk>,
-) => Promise<void>
+  claim: () => Promise<boolean>,
+) => Promise<boolean> | Promise<void>
 
 export function createAutomationService(
   dependencies: AutomationServiceDependencies,
@@ -785,7 +786,7 @@ export function createAutomationService(
           return
         await run.appendUserMessage(prompt)
         await updateMetaOrThrow(projectId, threadId, { status: 'running', draftPrompt: '' })
-        await dispatch(
+        const accepted = await dispatch(
           {
             projectId,
             threadId,
@@ -802,7 +803,10 @@ export function createAutomationService(
             },
           },
           run.host,
+          () => service.claimRunGrant(projectId, threadId, automation, prompt, model),
         )
+        if (accepted === false)
+          throw new Error('The scheduled first-turn grant is no longer available')
         await run.flush()
         const current = await getThreadMeta(projectId, threadId)
         if (

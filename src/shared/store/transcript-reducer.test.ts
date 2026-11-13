@@ -226,6 +226,28 @@ test('an internal machine notification starts a turn without adding a chat promp
   )
 })
 
+test('protected human entry replaces only its optimistic prompt with reviewed text', () => {
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.attachments = [{ kind: 'file', label: 'stale.txt', content: 'pre-review bytes' }]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    content: [
+      { type: 'text', text: 'Reviewed exact prompt' },
+      { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
+    ],
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, 'Reviewed exact prompt')
+  assert.deepEqual(messagesOf(store)[0]?.images, ['data:image/png;base64,AA=='])
+  assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store).length, 1)
+  assert.equal(getThreadById(store, 't1')?.status, 'running')
+})
+
 test('a user Stop is labelled by the hook, and an already-labelled outcome is kept', () => {
   const store = seeded()
   const reducer = createTranscriptReducer(store, { userAbort: () => 'send_now' })

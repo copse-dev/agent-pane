@@ -2133,19 +2133,24 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
  * and metadata before its rebuildable catalog failed; retrying must not replace
  * messages or runtime metadata main appended since that partial success.
  */
-export function createThread(projectId: string, thread: Thread): Promise<void> {
+export function createThreadWithResult(projectId: string, thread: Thread): Promise<boolean> {
   return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, thread.id)
     if (readMeta(dir) !== null) {
       refreshCatalogLine(projectId, thread.id)
-      return
+      return false
     }
     if (existsSync(join(dir, META_FILE))) {
       throw new Error('Cannot create a thread over unreadable existing metadata')
     }
     writeThread(projectId, thread)
     upsertCatalogEntry(projectId, thread)
+    return true
   })
+}
+
+export async function createThread(projectId: string, thread: Thread): Promise<void> {
+  await createThreadWithResult(projectId, thread)
 }
 
 /**

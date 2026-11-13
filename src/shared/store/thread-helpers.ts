@@ -734,6 +734,25 @@ export function setMessageContent(store: AppStore, messageId: string, content: s
   store.emit('message_token', messageId, content)
 }
 
+/** Replace the canonical user prompt that a protected entry window reviewed. */
+export function setMessagePromptContent(
+  store: AppStore,
+  messageId: string,
+  content: string,
+  images: string[] | undefined,
+): void {
+  updateMessage(store, messageId, (message) => {
+    message.content = content
+    if (images === undefined) delete message.images
+    else message.images = images
+    // Attachment chips describe the pre-review composer expansion. The
+    // protected reviewer may edit or remove that expansion, so keeping them
+    // would claim model context that was not sent.
+    delete message.attachments
+  })
+  store.emit('message_token', messageId, content)
+}
+
 export function addMessageCanvasArtefact(
   store: AppStore,
   messageId: string,

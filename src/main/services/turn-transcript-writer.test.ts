@@ -92,7 +92,6 @@ function harness(
     loadPlan: async () => null,
     prepareExecutionContext: async () => context,
     isScheduledAutomationRun: () => false,
-    claimScheduledRunGrant: () => Promise.resolve(false),
     transcriptLength: async () => 0,
     run: async (threadId, userContent, priorMessages, host) => {
       for (const chunk of chunks()) host.emit(threadId, chunk)

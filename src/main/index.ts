@@ -57,8 +57,9 @@ import {
   shouldDetachOnClose,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
-import type { LLMMessage, StreamChunk } from '@shared/types'
+import type { LLMMessage, ProtectedPromptContextEntry, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import {
   assertPrimaryMainWindow,
   beginMainWindowQuit,
@@ -172,6 +173,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
+import { recoverAgentHistory } from './services/history-recovery.ts'
 import { suggestThreadFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
@@ -181,6 +183,7 @@ import {
   closeThreadStoreIndexes,
   getProjectThread,
   getThreadMeta,
+  getLatestThreadPlan,
   loadAgentHistory,
   saveAgentHistory,
   updateMeta,
@@ -189,7 +192,17 @@ import { TurnTranscriptWriter } from './services/turn-transcript-writer.ts'
 import { getContainerRunService } from './services/container-runtime/container-run-service.ts'
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
-import { AgentDispatcher } from './services/agent-dispatcher.ts'
+import { AgentDispatcher, type AgentDispatchPayload } from './services/agent-dispatcher.ts'
+import {
+  protectedPromptMessageMatches,
+  protectedPromptStoredContext,
+  ProtectedPromptReviewService,
+  withProtectedPromptText,
+} from './windows/protected-prompt-review.ts'
+import {
+  consumeProtectedPromptMessageAppend,
+  hasProtectedPromptMessageAppend,
+} from './services/protected-prompt-receipts.ts'
 import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -213,6 +226,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  protectedHumanTurnDisplaySchema,
   subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
@@ -303,6 +317,78 @@ setSecretCipher(
   }),
 )
 const taskSupervisor = getTaskSupervisor()
+const protectedPromptReview = new ProtectedPromptReviewService(ipcMain)
+
+/** Shape of the exact renderer handoff a schedule may run without a person present. */
+function frozenScheduledFirstTurn(
+  payload: AgentDispatchPayload,
+): { userContent: string; model: string } | null {
+  if (
+    payload.automationRun !== true ||
+    typeof payload.userContent !== 'string' ||
+    payload.model === undefined ||
+    payload.invokedSkills.length !== 0 ||
+    payload.priorTodos.length !== 0 ||
+    payload.invokedAgent !== undefined ||
+    payload.executionMode !== undefined ||
+    payload.workingBrief !== undefined ||
+    payload.reviewContext !== undefined ||
+    payload.reasoning !== undefined ||
+    payload.longTaskWake !== undefined ||
+    (payload.continuationBudgetUsed ?? 0) !== 0
+  )
+    return null
+  return { userContent: payload.userContent, model: payload.model }
+}
+
+/** Renderer-supplied controls that affect what the model sees or how its turn runs. */
+function protectedPromptContext(
+  payload: AgentDispatchPayload,
+  inputs: { history: LLMMessage[]; plan: StoredThreadPlan | null },
+): ProtectedPromptContextEntry[] {
+  const context: ProtectedPromptContextEntry[] = []
+  const add = (label: string, value: string | undefined): void => {
+    if (value !== undefined) context.push({ label, value })
+  }
+  add('Execution mode', payload.executionMode)
+  add(
+    'Invoked skills',
+    payload.invokedSkills.length > 0 ? payload.invokedSkills.join('\n') : undefined,
+  )
+  add('Invoked agent', payload.invokedAgent)
+  add(
+    'Prior task checklist',
+    payload.priorTodos.length > 0 ? JSON.stringify(payload.priorTodos, null, 2) : undefined,
+  )
+  add('Working brief', payload.workingBrief)
+  add('Reasoning level', payload.reasoning)
+  add('Turn tree', payload.turnTreeId)
+  add(
+    'Continuation budget already used',
+    payload.continuationBudgetUsed !== undefined
+      ? String(payload.continuationBudgetUsed)
+      : undefined,
+  )
+  add('Review context', payload.reviewContext)
+  context.push(...protectedPromptStoredContext(inputs.history, inputs.plan))
+  return context
+}
+
+/** Freeze every mutable stored inference input before the protected window is shown. */
+async function freezeProtectedInputs(
+  projectId: string,
+  threadId: string,
+  messages: Parameters<typeof recoverAgentHistory>[0],
+): Promise<{ history: LLMMessage[]; plan: StoredThreadPlan | null }> {
+  const [persistedHistory, plan] = await Promise.all([
+    loadAgentHistory(projectId, threadId),
+    getLatestThreadPlan(projectId, threadId),
+  ])
+  return {
+    history: persistedHistory.length > 0 ? persistedHistory : recoverAgentHistory(messages),
+    plan,
+  }
+}
 
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
 // terminal makes every later write fail with EIO; unowned, that failure becomes
@@ -877,7 +963,7 @@ app
       (event) => {
         if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
       },
-      (request, host) => agentDispatcher.dispatch(request, host),
+      (request, host, claim) => agentDispatcher.dispatchScheduled(request, claim, host),
       // The project the receiving window shows; once it is gone nothing would
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
@@ -1062,23 +1148,175 @@ app
         threadIdArg: unknown,
         rawPrompt: string,
         delegationArg?: unknown,
+        displayArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
-        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // This hint has no inference authority. A stale or malformed renderer
+        // snapshot may forfeit bubble reconciliation, but must not block a
+        // separately reviewed prompt from reaching the dispatcher.
+        const parsedDisplay = protectedHumanTurnDisplaySchema.safeParse(displayArg)
+        const display = parsedDisplay.success ? parsedDisplay.data : undefined
+        const displaySnapshot = display?.snapshot
+        const payload = parseAgentRunPayload(rawPrompt)
+        const request = { projectId, threadId, payload }
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
-        await (delegation
-          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
-              agentDispatcher.dispatch(request),
+        if (delegation) {
+          const thread = await getProjectThread(projectId, threadId)
+          const optimistic =
+            thread &&
+            display?.messageId &&
+            displaySnapshot &&
+            hasProtectedPromptMessageAppend(event.sender.id, projectId, threadId, display.messageId)
+              ? thread.messages.find(
+                  (message) =>
+                    message.id === display.messageId &&
+                    message.role === 'user' &&
+                    protectedPromptMessageMatches(message, displaySnapshot, payload.userContent),
+                )
+              : undefined
+          const protectedInputs = await freezeProtectedInputs(
+            projectId,
+            threadId,
+            thread?.messages ?? [],
+          )
+          const submission = await protectedPromptReview.review(win, {
+            projectId,
+            threadId,
+            content: payload.userContent,
+            ...(payload.model !== undefined ? { model: payload.model } : {}),
+            ...(optimistic?.attachments !== undefined
+              ? { attachments: optimistic.attachments }
+              : {}),
+            context: protectedPromptContext(payload, protectedInputs),
+            kind: 'human',
+          })
+          if (!submission) return 'cancelled'
+          const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
+          await dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+            agentDispatcher.dispatch({
+              ...request,
+              payload: { ...payload, userContent: reviewedContent },
+              protectedHistory: protectedInputs.history,
+              protectedPlan: protectedInputs.plan,
+              protectedHumanStart: {
+                content: reviewedContent,
+                ...(optimistic
+                  ? {
+                      claimMessageId: (): string | undefined =>
+                        consumeProtectedPromptMessageAppend(
+                          event.sender.id,
+                          projectId,
+                          threadId,
+                          optimistic.id,
+                        )
+                          ? optimistic.id
+                          : undefined,
+                    }
+                  : {}),
+              },
+            }),
+          )
+        } else {
+          const scheduled =
+            payload.automationRun === true &&
+            (await agentDispatcher.dispatchScheduled(request, async () => {
+              const frozen = frozenScheduledFirstTurn(payload)
+              if (!frozen) return false
+              const [thread, plan, meta] = await Promise.all([
+                getProjectThread(projectId, threadId),
+                getLatestThreadPlan(projectId, threadId),
+                getThreadMeta(projectId, threadId),
+              ])
+              if (
+                !thread ||
+                thread.messages.length !== 1 ||
+                thread.messages[0]?.role !== 'user' ||
+                thread.messages[0].content !== frozen.userContent ||
+                plan !== null ||
+                !meta?.automation ||
+                !getAutomationService().ownsRunThread(projectId, threadId, meta.automation)
+              )
+                return false
+              return getAutomationService().claimRunGrant(
+                projectId,
+                threadId,
+                meta.automation,
+                frozen.userContent,
+                frozen.model,
+              )
+            }))
+          if (!scheduled) {
+            const thread = await getProjectThread(projectId, threadId)
+            const optimistic =
+              thread &&
+              display?.messageId &&
+              displaySnapshot &&
+              hasProtectedPromptMessageAppend(
+                event.sender.id,
+                projectId,
+                threadId,
+                display.messageId,
+              )
+                ? thread.messages.find(
+                    (message) =>
+                      message.id === display.messageId &&
+                      message.role === 'user' &&
+                      protectedPromptMessageMatches(message, displaySnapshot, payload.userContent),
+                  )
+                : undefined
+            const protectedInputs = await freezeProtectedInputs(
+              projectId,
+              threadId,
+              thread?.messages ?? [],
             )
-          : agentDispatcher.dispatch(request))
+            const submission = await protectedPromptReview.review(win, {
+              projectId,
+              threadId,
+              content: payload.userContent,
+              ...(payload.model !== undefined ? { model: payload.model } : {}),
+              ...(optimistic?.attachments !== undefined
+                ? { attachments: optimistic.attachments }
+                : {}),
+              context: protectedPromptContext(payload, protectedInputs),
+              kind: 'human',
+            })
+            if (!submission) return 'cancelled'
+            const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
+            const { automationRun: _automationRun, ...ordinaryPayload } = payload
+            await agentDispatcher.dispatch({
+              projectId,
+              threadId,
+              payload: { ...ordinaryPayload, userContent: reviewedContent },
+              protectedHistory: protectedInputs.history,
+              protectedPlan: protectedInputs.plan,
+              protectedHumanStart: {
+                content: reviewedContent,
+                ...(optimistic
+                  ? {
+                      claimMessageId: (): string | undefined =>
+                        consumeProtectedPromptMessageAppend(
+                          event.sender.id,
+                          projectId,
+                          threadId,
+                          optimistic.id,
+                        )
+                          ? optimistic.id
+                          : undefined,
+                    }
+                  : {}),
+              },
+            })
+          }
+        }
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
+        return undefined
       },
     )
 
@@ -1086,13 +1324,37 @@ app
       assertMainFrameSender(event, win)
       assertPrimaryMainWindow(event.sender)
       const request = parseIpcArgs(machineAgentRunSchema, [requestArg])
+      const payload = parseAgentRunPayload(request.payload)
+      const thread = await getProjectThread(request.projectId, request.threadId)
+      const protectedInputs = await freezeProtectedInputs(
+        request.projectId,
+        request.threadId,
+        thread?.messages ?? [],
+      )
+      const submission = await protectedPromptReview.review(win, {
+        projectId: request.projectId,
+        threadId: request.threadId,
+        content: payload.userContent,
+        ...(payload.model !== undefined ? { model: payload.model } : {}),
+        ...(request.display.attachments !== undefined
+          ? { attachments: request.display.attachments }
+          : {}),
+        context: protectedPromptContext(payload, protectedInputs),
+        kind: 'machine',
+      })
+      if (!submission) return 'cancelled'
       const result = await agentDispatcher.dispatchMachine({
         projectId: request.projectId,
         threadId: request.threadId,
         operationId: request.operationId,
         turnTreeId: request.turnTreeId,
-        payload: parseAgentRunPayload(request.payload),
-        display: request.display,
+        payload: {
+          ...payload,
+          userContent: withProtectedPromptText(payload.userContent, submission.text),
+        },
+        protectedHistory: protectedInputs.history,
+        protectedPlan: protectedInputs.plan,
+        display: { ...request.display, content: submission.text },
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(

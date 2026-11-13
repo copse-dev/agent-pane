@@ -8,6 +8,7 @@ import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { MachineAgentRunRequest } from '@shared/types/machine-dispatch.ts'
+import type { ProtectedHumanTurnDisplay } from '@shared/types'
 import type { SubthreadRunDelegation } from '@shared/thread-prompt.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
@@ -281,15 +282,64 @@ export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z
   parentThreadId: zThreadId,
 })
 
-export const mainWindowNavigationSchema = z.object({
-  activeProjectId: zProjectId.nullable(),
-  activeThreadId: zThreadId.nullable(),
-})
-
 const imageDataUrlSchema = z
   .string()
   .max(12 * 1024 * 1024)
   .regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/)
+
+const protectedDisplayAttachmentSchema = z.strictObject({
+  kind: z.enum(['paste', 'file', 'thread', 'shell', 'video', 'archive']),
+  label: z.string(),
+  content: z.string().optional(),
+  path: z.string().optional(),
+})
+
+/** Untrusted hint used only to reconcile an optimistic user bubble after review. */
+const protectedHumanTurnDisplayInputSchema = z
+  .strictObject({
+    messageId: z.string().min(1).max(200).optional(),
+    snapshot: z
+      .strictObject({
+        content: z.string(),
+        attachments: z.array(protectedDisplayAttachmentSchema).optional(),
+      })
+      .optional(),
+  })
+  .optional()
+
+export const protectedHumanTurnDisplaySchema: z.ZodType<ProtectedHumanTurnDisplay | undefined> =
+  protectedHumanTurnDisplayInputSchema.transform(
+    (display): ProtectedHumanTurnDisplay | undefined =>
+      display
+        ? {
+            ...(display.messageId !== undefined ? { messageId: display.messageId } : {}),
+            ...(display.snapshot
+              ? {
+                  snapshot: {
+                    content: display.snapshot.content,
+                    ...(display.snapshot.attachments !== undefined
+                      ? {
+                          attachments: display.snapshot.attachments.map((attachment) => ({
+                            kind: attachment.kind,
+                            label: attachment.label,
+                            ...(attachment.content !== undefined
+                              ? { content: attachment.content }
+                              : {}),
+                            ...(attachment.path !== undefined ? { path: attachment.path } : {}),
+                          })),
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+          }
+        : undefined,
+  )
+
+export const mainWindowNavigationSchema = z.object({
+  activeProjectId: zProjectId.nullable(),
+  activeThreadId: zThreadId.nullable(),
+})
 
 export const describeImagesSchema = z.tuple([
   zProjectId,

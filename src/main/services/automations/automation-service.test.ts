@@ -2297,10 +2297,12 @@ describe('AutomationService', () => {
     } {
       const dispatchCalls: AgentDispatchRequest[] = []
       const events: AutomationTriggerEvent[] = []
-      const dispatch: DispatchHeadlessTurn = async (request, host) => {
+      const dispatch: DispatchHeadlessTurn = async (request, host, claim) => {
+        if (!(await claim())) return false
         dispatchCalls.push(request)
         await beforeDone?.(request, host)
         host.emit(request.threadId, { type: 'done' } satisfies StreamChunk)
+        return true
       }
       // `createProjectThread` is the real on-disk writer here (the same
       // function production wires up), so the headless turn's own direct
@@ -2352,6 +2354,7 @@ describe('AutomationService', () => {
       assert.equal(dispatchCalls[0].payload.userContent, 'Check project health.')
       assert.equal(dispatchCalls[0].payload.model, 'gpt-5.4')
       assert.equal(dispatchCalls[0].payload.automationRun, true)
+      assert.equal(service.list('project-a')[0]?.lastRunGrantClaimed, true)
 
       const meta = await getThreadMeta('project-a', event.threadId)
       assert.equal(meta?.status, 'idle')

@@ -1,7 +1,13 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Message, QueuedUserMessage, Thread, UserContent } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  UserContent,
+} from '@shared/types'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import {
@@ -225,6 +231,27 @@ export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
+/** Snapshot an optimistic bubble for display-only reconciliation in main. */
+function protectedHumanTurnDisplay(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): ProtectedHumanTurnDisplay | undefined {
+  const message = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId && candidate.role === 'user',
+  )
+  if (!message) return undefined
+  return {
+    messageId,
+    snapshot: {
+      content: message.content,
+      ...(message.attachments !== undefined
+        ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+        : {}),
+    },
+  }
+}
+
 /**
  * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
  * message already in the transcript: if the main process turns the run away
@@ -258,8 +285,15 @@ export function dispatchAgentRun(
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
   const run = afterThreadWrites(projectId, threadId, async () => {
     const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    const display = queued
+      ? protectedHumanTurnDisplay(store, threadId, queued.messageId)
+      : undefined
     if (!queued || parentThreadId === undefined) {
-      await api.agent.run(projectId, threadId, runPayload)
+      const result = await api.agent.run(projectId, threadId, runPayload, undefined, display)
+      if (result === 'cancelled') {
+        if (queued) holdCancelledProtectedPrompt(store, threadId, queued)
+        else setThreadStatus(store, threadId, 'idle')
+      }
       return
     }
     // The pre-check holds an already-revoked prompt without a round trip to the
@@ -270,7 +304,14 @@ export function dispatchAgentRun(
       .catch(() => false)
     if (authorized) {
       try {
-        await api.agent.run(projectId, threadId, runPayload, { parentThreadId })
+        const result = await api.agent.run(
+          projectId,
+          threadId,
+          runPayload,
+          { parentThreadId },
+          display,
+        )
+        if (result === 'cancelled') holdCancelledProtectedPrompt(store, threadId, queued)
         return
       } catch (err) {
         if (!isSubthreadPromptHeldError(err)) throw err
@@ -351,6 +392,28 @@ function requeueBusyMessage(
   // `done` drains the queue. If that `done` got here first the thread is already
   // idle and nothing else will drain it.
   if (getThreadById(store, threadId)?.status === 'idle') drainMessageQueue(store, api, threadId)
+}
+
+/** A cancelled protected review returns the optimistic bubble as an explicit hold. */
+function holdCancelledProtectedPrompt(
+  store: AppStore,
+  threadId: string,
+  item: QueuedUserMessage,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => {
+    const pending = thread.pendingMessages ?? []
+    const held = pending.some((entry) => entry.messageId === item.messageId)
+      ? pending
+      : [{ ...item, autoDispatch: false as const }, ...pending]
+    const refunded =
+      isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0
+        ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 }
+        : {}
+    return { ...thread, ...refunded, status: 'idle', pendingMessages: held, updatedAt: Date.now() }
+  })
+  syncAgentActivity(store, threadId, false)
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
 }
 
 export function enqueueUserMessage(

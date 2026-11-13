@@ -381,7 +381,8 @@ export interface ApiClient {
       threadId: string,
       prompt: string,
       delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
-    ) => Promise<void>
+      display?: import('@shared/types').ProtectedHumanTurnDisplay,
+    ) => Promise<unknown>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,

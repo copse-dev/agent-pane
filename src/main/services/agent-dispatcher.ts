@@ -68,6 +68,8 @@ export interface AgentDispatchPayload {
   reviewContext?: string
   /** Set by the long-horizon task wake; never parsed from a renderer payload. */
   longTaskWake?: true
+  /** Main-only proof that the exact frozen first schedule turn consumed its grant. */
+  scheduledRunGrantClaimed?: true
 }
 
 /** Opens the main-owned transcript of one dispatched turn. */
@@ -79,6 +81,16 @@ export interface AgentDispatchRequest {
   projectId: string
   threadId: string
   payload: AgentDispatchPayload
+  /** Main-owned canonical prompt emitted before provider execution. */
+  protectedHumanStart?: {
+    content: UserContent
+    /** Consume display reconciliation only after this dispatcher owns the thread. */
+    claimMessageId?: () => string | undefined
+  }
+  /** Exact main-owned provider history frozen before protected review. */
+  protectedHistory?: LLMMessage[]
+  /** Exact main-owned plan state frozen before protected review, including null. */
+  protectedPlan?: StoredThreadPlan | null
 }
 
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
@@ -136,11 +148,6 @@ export interface AgentDispatcherDependencies {
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
   isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
-  claimScheduledRunGrant: (
-    context: ThreadExecutionContext,
-    prompt: string,
-    model: string,
-  ) => Promise<boolean>
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -176,16 +183,6 @@ const defaultDependencies: AgentDispatcherDependencies = {
   isScheduledAutomationRun: (context) =>
     context.automation !== undefined &&
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
-  claimScheduledRunGrant: (context, prompt, model) =>
-    context.automation !== undefined
-      ? getAutomationService().claimRunGrant(
-          context.projectId,
-          context.threadId,
-          context.automation,
-          prompt,
-          model,
-        )
-      : Promise.resolve(false),
   transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
@@ -302,6 +299,14 @@ export class AgentDispatcher {
     key: string,
     host: AgentHost<StreamChunk>,
   ): Promise<void> {
+    if (request.protectedHumanStart) {
+      const messageId = request.protectedHumanStart.claimMessageId?.()
+      host.emit(request.threadId, {
+        type: 'protected_human_turn_start',
+        content: request.protectedHumanStart.content,
+        ...(messageId !== undefined ? { messageId } : {}),
+      })
+    }
     const epochWrite = this.observeRendererEpoch(key, request)
     this.epochWrites.set(key, epochWrite)
     try {
@@ -310,6 +315,37 @@ export class AgentDispatcher {
       if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
     }
     await this.execute(request, key, host)
+  }
+
+  /**
+   * Dispatch an exact schedule turn only after its one-use grant is consumed
+   * while this dispatcher owns the thread. A rejected claim emits no chunk and
+   * opens no transcript, so the caller can fall back to protected human review.
+   */
+  async dispatchScheduled(
+    request: AgentDispatchRequest,
+    claim: () => Promise<boolean>,
+    host: AgentHost<StreamChunk> = this.host,
+  ): Promise<boolean> {
+    const key = dispatchKey(request.projectId, request.threadId)
+    return this.dispatchExclusively(
+      request,
+      key,
+      async (host) => {
+        if (!(await claim())) return false
+        await this.dispatchAccepted(
+          {
+            ...request,
+            payload: { ...request.payload, scheduledRunGrantClaimed: true },
+          },
+          key,
+          host,
+        )
+        return true
+      },
+      host,
+      'on-first-chunk',
+    )
   }
 
   async dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
@@ -754,14 +790,20 @@ export class AgentDispatcher {
     // is saved. Rebuild against the now-persisted transcript at dispatch, rather
     // than treating that earlier empty projection as authoritative forever.
     if (this.histories.get(key)?.length === 0) this.histories.delete(key)
-    const priorMessages = await this.history(projectId, threadId)
+    const priorMessages =
+      request.protectedHistory !== undefined
+        ? this.useProtectedHistory(key, request.protectedHistory)
+        : await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,
       threadId,
       host,
     )
     if (!executionContext) return undefined
-    const plan = await this.dependencies.loadPlan(projectId, threadId)
+    const plan =
+      request.protectedPlan !== undefined
+        ? request.protectedPlan
+        : await this.dependencies.loadPlan(projectId, threadId)
     perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
@@ -830,11 +872,7 @@ export class AgentDispatcher {
         (message) => message.role === 'user' && message.content === payload.userContent,
       ) &&
       this.dependencies.isScheduledAutomationRun(executionContext) &&
-      (await this.dependencies.claimScheduledRunGrant(
-        executionContext,
-        payload.userContent,
-        payload.model,
-      ))
+      payload.scheduledRunGrantClaimed === true
     if (verifiedScheduledFirstTurn) beginDeferralMode(threadId)
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
@@ -880,5 +918,10 @@ export class AgentDispatcher {
       this.histories.delete(key)
       throw error
     }
+  }
+
+  private useProtectedHistory(key: string, frozenHistory: LLMMessage[]): LLMMessage[] {
+    this.histories.set(key, frozenHistory)
+    return frozenHistory
   }
 }
