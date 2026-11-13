@@ -1,7 +1,7 @@
 import {
   dompurifyBackend,
   init_sanitize_dompurify
-} from "./chunk-D55J6ZRP.js";
+} from "./chunk-X6JZSFJR.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-WYJRFZZW.js";
+} from "./chunk-TYQO7O5R.js";
 import {
   clear,
   el,
@@ -22230,6 +22230,15 @@ function splitServiceTierUsage(usage) {
   }
   return { standard: remaining, tiers };
 }
+function legacyAcpCachedTokens(model, usage) {
+  if (parseModelSelection(model).namespace !== "acp") return null;
+  const cached2 = nonNegative(usage.cacheReadTokens) + nonNegative(usage.cacheCreationTokens);
+  return cached2 > usage.inputTokens ? cached2 : null;
+}
+function repairLegacyAcpTotalInputTokens(model, usage) {
+  const cached2 = legacyAcpCachedTokens(model, usage);
+  return cached2 === null ? usage : { ...usage, inputTokens: cached2 };
+}
 var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
@@ -27100,7 +27109,14 @@ function shellCommandsFromToolCalls(toolCalls) {
   }
   return commands;
 }
+function deferredCallLabel(tc) {
+  const patchFiles = copseToolCallName(tc) === "apply_patch" ? getApplyPatchFiles(tc) : [];
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`;
+  const path = getToolEditPath(tc);
+  return path ? `Deferred ${path}` : "Deferred edit";
+}
 function getToolCallLabel(tc) {
+  if (tc.deferred === true) return deferredCallLabel(tc);
   const tense = tenseFromStatus(tc.status);
   const mcpTitle = tc.title && (parseMcp(tc.title) || normalizeCopseToolName(tc.title) !== tc.title && !/\s/.test(tc.title)) ? tc.title : void 0;
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
@@ -27196,11 +27212,14 @@ function aggregateToolStatus(toolCalls) {
 function bucketKey(groupKey, isError) {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey;
 }
+function displayGroupKey(tc) {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+}
 function buildGroupedDisplayItems(toolCalls) {
   if (toolCalls.length === 0) return [];
   const groupMembers = /* @__PURE__ */ new Map();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) continue;
     const key = bucketKey(groupKey, tc.status === "error");
     const members2 = groupMembers.get(key) ?? [];
@@ -27210,7 +27229,7 @@ function buildGroupedDisplayItems(toolCalls) {
   const result = [];
   const emittedGroups = /* @__PURE__ */ new Set();
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind);
+    const groupKey = displayGroupKey(tc);
     if (!groupKey) {
       result.push({ type: "individual", toolCall: tc, label: getToolCallLabel(tc) });
       continue;
@@ -27681,6 +27700,19 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/shared/thread-prompt.ts
+function isSubthreadPromptHeldError(reason) {
+  if (reason instanceof Error && reason.name === SUBTHREAD_PROMPT_HELD_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${SUBTHREAD_PROMPT_HELD_ERROR_NAME}:`);
+}
+var SUBTHREAD_PROMPT_HELD_ERROR_NAME;
+var init_thread_prompt = __esm({
+  "src/shared/thread-prompt.ts"() {
+    init_errors4();
+    SUBTHREAD_PROMPT_HELD_ERROR_NAME = "SubthreadPromptHeldError";
+  }
+});
+
 // src/renderer/controller/send-now-aborts.ts
 function markSendNowAbort(threadId) {
   sendNowThreads.add(threadId);
@@ -27796,11 +27828,23 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store, threadId);
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model));
-  const run = afterThreadWrites(
-    projectId,
-    threadId,
-    () => api.agent.run(projectId, threadId, runPayload)
-  );
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
+    if (!queued || parentThreadId === void 0) {
+      await api.agent.run(projectId, threadId, runPayload);
+      return;
+    }
+    const authorized = await api.threadPrompts?.canDispatch(projectId, parentThreadId, threadId).catch(() => false);
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId });
+        return;
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err;
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued);
+  });
   if (!queued) {
     void run;
     return;
@@ -27814,6 +27858,22 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
       drainMessageQueue(store, api, threadId);
     }
   });
+}
+function subthreadParentOf(item) {
+  const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
+}
+function holdRevokedSubthreadPrompt(store, threadId, item) {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: "idle",
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
+    updatedAt: Date.now()
+  }));
+  syncAgentActivity(store, threadId, false);
+  store.emit("message_queued", threadId, item.messageId);
+  store.emit("threads_changed");
 }
 function requeueBusyMessage(store, api, threadId, item) {
   patchThreadAnywhere(store, threadId, (t2) => {
@@ -27860,9 +27920,14 @@ function drainMessageQueue(store, api, threadId) {
   let used = thread.continuationUsed ?? 0;
   let next;
   const heldByBudget = [];
+  const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
     if (isMachineContinuation(item)) {
+      if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId);
+        continue;
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId);
         continue;
@@ -27874,14 +27939,15 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const budgetHeld = new Set(heldByBudget);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
-      (item) => budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false } : item
+      (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
@@ -28009,6 +28075,14 @@ function removeQueuedMessage(store, threadId, messageId) {
   store.emit("threads_changed");
 }
 function sendQueuedMessageNow(store, api, threadId, messageId) {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId
+  );
+  if (!item) return;
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId);
+  else prioritizeQueuedMessage(store, api, threadId, messageId);
+}
+function prioritizeQueuedMessage(store, api, threadId, messageId) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
   const pending = thread?.pendingMessages ?? [];
   const target = pending.find((p2) => p2.messageId === messageId);
@@ -28046,7 +28120,7 @@ function enqueueHookMessage(store, api, threadId, input2) {
   };
   enqueueUserMessage(store, threadId, item);
   if (stale) return;
-  if (input2.sendNow) sendQueuedMessageNow(store, api, threadId, messageId);
+  if (input2.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId);
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
@@ -28064,16 +28138,16 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
-        return rest;
+        return { ...rest, epoch };
       }),
       updatedAt: Date.now()
     };
   });
   store.setState({ threads });
   store.emit("threads_changed");
-  sendQueuedMessageNow(store, api, threadId, messageId);
+  prioritizeQueuedMessage(store, api, threadId, messageId);
 }
-var pendingDispatches;
+var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -28084,9 +28158,11 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_thread_prompt();
     init_send_now_aborts();
     init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
+    SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
 });
 
@@ -29188,7 +29264,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-PRYAKWO4.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -29471,6 +29547,11 @@ var init_thread_hydration = __esm({
 function describeAutomationFailure(code) {
   return DESCRIPTIONS[code];
 }
+function classifyAutomationCheckoutFailure(message) {
+  if (message.includes("The selected coding agent is not enabled.") || message.includes("cannot start because its configured command is missing or not executable."))
+    return "no-model";
+  return "worktree-failed";
+}
 function classifyAutomationFailureMessage(message) {
   if (/\b(401|unauthori[sz]ed|authentication|sign[- ]?in (expired|required)|invalid api key|api key (was )?(rejected|invalid))/i.test(
     message
@@ -29500,7 +29581,7 @@ var init_automation_failure = __esm({
       },
       "no-model": {
         title: "Model unavailable",
-        remedy: "The automation\u2019s model is not configured or no longer exists. Pick another model in the automation.",
+        remedy: "Check the model or coding agent in Settings \u2192 General \u2192 Models & agents, or pick another model in the automation.",
         action: "open-automations",
         actionLabel: "Edit automation"
       },
@@ -29671,7 +29752,7 @@ function attachAutomationController(store, api) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
         const message = startFailureDetail(error62);
-        const code = checkoutStarted ? "worktree-failed" : classifyAutomationFailureMessage(message);
+        const code = checkoutStarted ? classifyAutomationCheckoutFailure(message) : classifyAutomationFailureMessage(message);
         markAutomationStartFailed(store, threadId, { code, message });
         api.automations.reportStartFailure(projectId, threadId, { code, message }).catch((reportError) => {
           console.error("[automations] Could not report a start failure:", reportError);
@@ -30067,6 +30148,20 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "strands-decider",
+        label: "Strands Decider 2B (local)",
+        // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+        model: "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          // Not the server's default 8000, which a stray dev server would be mistaken for.
+          baseUrl: "http://127.0.0.1:8011/v1",
           auth: "none"
         }
       },
@@ -32432,10 +32527,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 18.7,
+          value: 18.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "QwQ-32B-Preview": [
@@ -32492,6 +32587,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'agnes-2-5-pro-beta', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "agnes-2-5-pro-theta": [
+        {
+          value: 24,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'agnes-2-5-pro-theta', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "agnes-3-0-flash": [
@@ -32794,6 +32897,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 7.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-4-5-haiku-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-4-5-sonnet": [
@@ -32902,10 +33011,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49,
+          value: 49.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-high": [
@@ -32916,10 +33025,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 47,
+          value: 47.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-low": [
@@ -32930,10 +33039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 38.5,
+          value: 38.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-medium": [
@@ -32944,10 +33053,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -32958,10 +33067,50 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49.7,
+          value: 50,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2": [
+        {
+          value: 64.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-high": [
+        {
+          value: 61.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-low": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-medium": [
+        {
+          value: 56.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-xhigh": [
+        {
+          value: 62.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-4-5": [
@@ -32980,10 +33129,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 36.2,
+          value: 36.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-high": [
@@ -32994,10 +33143,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 29.6,
+          value: 29.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-low": [
@@ -33036,10 +33185,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 34.3,
+          value: 34.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-instant": [
@@ -33172,6 +33321,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5": [
@@ -33182,10 +33337,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 58.4,
+          value: 59.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-high": [
@@ -33196,10 +33351,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.7,
+          value: 51.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-low": [
@@ -33210,10 +33365,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-medium": [
@@ -33224,10 +33379,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 48.1,
+          value: 48.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-xhigh": [
@@ -33238,10 +33393,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 57,
+          value: 57.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-high": [
@@ -33364,10 +33519,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 54.2,
+          value: 54.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-high": [
@@ -33378,10 +33533,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 41.1,
+          value: 41.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-low": [
@@ -33392,10 +33547,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 25.3,
+          value: 25.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-medium": [
@@ -33406,10 +33561,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.3,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-xhigh": [
@@ -33420,10 +33575,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 49.6,
+          value: 49.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-high": [
@@ -33928,18 +34083,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 32.5,
+          value: 32.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-high": [
         {
-          value: 28.5,
+          value: 28.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-non-reasoning": [
@@ -34104,6 +34259,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-non-reasoning', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 12.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -34748,6 +34909,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-1-flash-lite-preview', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -34890,10 +35057,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30.5,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-low": [
@@ -34904,10 +35071,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 22.3,
+          value: 22.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-medium": [
@@ -34918,10 +35085,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30,
+          value: 30.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-flash": [
@@ -34996,26 +35163,26 @@ var init_model_intellect_generated = __esm({
       ],
       "gemini-4-carbon": [
         {
-          value: 59.4,
+          value: 60,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-low": [
         {
-          value: 53.7,
+          value: 54.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-medium": [
         {
-          value: 57.7,
+          value: 58.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemma-3-1b": [
@@ -35184,6 +35351,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 4.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-31b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -36302,6 +36475,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 32.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -36554,6 +36733,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 23.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5.6-sol": [
@@ -36580,10 +36765,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 54.5,
+          value: 54.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-high": [
@@ -36594,10 +36779,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 50.2,
+          value: 50.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-low": [
@@ -36608,10 +36793,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-medium": [
@@ -36622,10 +36807,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 46.1,
+          value: 46.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-xhigh": [
@@ -36636,10 +36821,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 52.3,
+          value: 52.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra": [
@@ -36650,10 +36835,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 51,
+          value: 51.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-high": [
@@ -36664,10 +36849,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 42.3,
+          value: 42.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-low": [
@@ -36678,10 +36863,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.2,
+          value: 29.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-medium": [
@@ -36692,10 +36877,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 38.1,
+          value: 38.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-non-reasoning": [
@@ -36706,10 +36891,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 30.4,
+          value: 30.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-xhigh": [
@@ -36720,10 +36905,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 45,
+          value: 45.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra": [
@@ -36762,10 +36947,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-medium": [
@@ -36776,10 +36961,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.5,
+          value: 51.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -36812,10 +36997,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 27.8,
+          value: 27.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-high": [
@@ -36854,10 +37039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 18.3,
+          value: 18.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-non-reasoning": [
@@ -36882,10 +37067,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 23.3,
+          value: 23.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol": [
@@ -36894,6 +37079,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol-high": [
@@ -36948,6 +37139,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-oss-120b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-oss-120b-low": [
@@ -37464,6 +37661,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 31,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-6-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7": [
@@ -37474,10 +37677,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35.3,
+          value: 35.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-high": [
@@ -37488,10 +37691,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35,
+          value: 35.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-low": [
@@ -37502,10 +37705,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.9,
+          value: 31.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-fast": [
@@ -37752,6 +37955,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "inkling-2-small": [
+        {
+          value: 30.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling-2-small', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "inkling-small": [
         {
           value: 41.2,
@@ -37960,6 +38171,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0-0803', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "k-exaone-non-reasoning": [
@@ -38252,10 +38469,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 46,
+          value: 46.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "kimi-k3-low": [
@@ -38534,10 +38751,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.5,
+          value: 29.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ling-flash-2-0": [
@@ -39320,10 +39537,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 28.9,
+          value: 29.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ministral-3-14b": [
@@ -39460,10 +39677,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 26,
+          value: 26.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-large-4-medium": [
@@ -39536,6 +39753,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 4.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-medium-3-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-saba": [
@@ -39760,6 +39983,22 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "muse-ember": [
+        {
+          value: 36,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-ember-xhigh": [
+        {
+          value: 34.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "muse-glimmer": [
         {
           value: 35.1,
@@ -39830,10 +40069,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 36.4,
+          value: 36.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-spark-1-3-xhigh": [
@@ -39852,10 +40091,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 24.7,
+          value: 24.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder": [
@@ -39866,10 +40105,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 43.3,
+          value: 43.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder-full": [
@@ -39880,10 +40119,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 49.7,
+          value: 50.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-wonder-high": [
+        {
+          value: 40.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nanbeige4-1-3b": [
@@ -40004,6 +40251,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'north-mini-code', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nova-2-0-lite": [
@@ -41562,10 +41815,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 33.6,
+          value: 33.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "qwen3-8-max-0803": [
@@ -42324,6 +42577,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
           asOf: "2026-10-29"
+        }
+      ],
+      "tencent-hy4": [
+        {
+          value: 34.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'tencent-hy4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "tiny-aya-global": [
@@ -68459,13 +68720,13 @@ function assessCloudAdvisorPair(executorIntellect, advisorIntellect) {
     return {
       ok: true,
       level: "info",
-      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). expect a second opinion rather than stronger guidance.`
+      reason: `Advisor and executor are at the same intellect (${formatIntellect(advisorIntellect)}). Expect a second opinion rather than stronger guidance.`
     };
   }
   return {
     ok: true,
     level: "warn",
-    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
+    reason: `Advisor is weaker than the executor (intellect ${formatIntellect(advisorIntellect)} vs ${formatIntellect(executorIntellect)}). Its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`
   };
 }
 function validateAdvisorPair(executorModel, advisorModel) {
@@ -68475,7 +68736,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: false,
       native,
       level: "warn",
-      reason: "Advisor and executor are the same model. pick a stronger advisor to get any lift. The advisor tool stays hidden while they match."
+      reason: "Advisor and executor are the same model. Pick a stronger advisor to get any lift; the advisor tool stays hidden while they match."
     };
   }
   if (native) {
@@ -68491,7 +68752,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
       ok: true,
       native,
       level: "info",
-      reason: "One side of this pairing is chosen dynamically, so the model is picked when the advisor actually runs. the strength comparison happens then."
+      reason: "One side of this pairing is chosen when the advisor runs, so the strength comparison happens then."
     };
   }
   if (isAcpModel(advisorModel)) {
@@ -68511,14 +68772,14 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "good",
-        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor. the setup this strategy is designed for."
+        reason: "Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor, the setup this strategy is designed for."
       };
     }
     return {
       ok: true,
       native,
       level: band === "low" ? "warn" : "info",
-      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. a stronger advisor gives more lift.`
+      reason: `On-device executor with a cloud advisor at intellect ${formatIntellect(advisor.intellect)} of ${formatIntellect(topAnnotatedIntellect())}. A stronger advisor gives more lift.`
     };
   }
   if (advisor.kind === "cloud" && executor.kind === "cloud") {
@@ -68539,7 +68800,7 @@ function validateAdvisorPair(executorModel, advisorModel) {
           ok: true,
           native,
           level: "info",
-          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). modest lift; a frontier cloud advisor gives more.`
+          reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B). Modest lift; a frontier cloud advisor gives more.`
         };
       }
       const hidden = advisor.paramsB < executor.paramsB;
@@ -68547,21 +68808,21 @@ function validateAdvisorPair(executorModel, advisorModel) {
         ok: true,
         native,
         level: "warn",
-        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B). Pick a bigger model to get any lift.${hidden ? " The advisor tool is hidden for this pairing." : ""}`
       };
     }
     return {
       ok: true,
       native,
       level: "warn",
-      reason: "A local advisor is unlikely to out-think the executor. this strategy expects a larger (ideally frontier cloud) advisor."
+      reason: "A local advisor is unlikely to out-think the executor. This strategy expects a larger (ideally frontier cloud) advisor."
     };
   }
   return {
     ok: true,
     native,
     level: "info",
-    reason: "Client-side pairing. any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
+    reason: "Client-side pairing: any configured executor/advisor combination works. Neither model has a strength rating, so no strength comparison is possible."
   };
 }
 var NATIVE_ADVISOR_COMPAT, INTELLECT_PARITY;
@@ -70065,18 +70326,16 @@ var init_permissions_markup = __esm({
     ).join("")}
                 </select>
                 <span class="field-hint">
-                  Matches a fixed list of command shapes exactly, never a model's judgement, and
-                  never anything it doesn't recognise. Reads cover local queries plus
-                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
-                  already has configured; a URL never qualifies. Higher levels add local commits,
-                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
-                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
-                  and anything containing <code>$(\u2026)</code> always ask. Only applies in a trusted
-                  project with the setting above turned on, and only while the project sandbox is
-                  running. Without a sandbox, Windows, or if the sandbox failed to start, every
-                  recognised shape still asks. At the two write levels
-                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks; the project sandbox contains those.
+                  Only exact command shapes, never a model's judgement. Reads include
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote the project
+                  already has; a URL never counts. Higher levels add local commits, then
+                  <code>git push</code> and <code>gh pr create</code>. Force pushes, branch
+                  deletes, installs, <code>npx</code>, project scripts and anything with
+                  <code>$(\u2026)</code> always ask. It applies only in a trusted project with the
+                  setting above on, and only while the project sandbox is running. Without a
+                  sandbox, on Windows, or if it failed to start, every shape asks. At the write levels,
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run the
+                  project's git hooks inside the project sandbox.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -70192,11 +70451,10 @@ var init_permissions_markup = __esm({
                 Skip approval for deletes, renames, and new folders in an isolated worktree
               </label>
               <p class="field-hint">
-                A thread on an isolated worktree edits its own checkout on its own branch, your
-                files and branch are never touched, so it applies these straight away instead of
-                asking. Threads on the shared checkout keep asking. Copse still asks if the file
-                changed underneath it or its work could not be backed up. Turn off to review every
-                one.
+                A thread on an isolated worktree edits its own checkout and branch, never yours,
+                so it applies these without asking. Threads on the shared checkout still ask, and
+                so does any thread when the file changed underneath it or its work could not be
+                backed up. Turn off to review every one.
               </p>
             </fieldset>
 
@@ -70279,15 +70537,13 @@ var init_permissions_markup = __esm({
                 Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                On by default. Copse's system SSH signer uses your configured key through
-                ssh-agent to sign commits without asking each time. A changed key, signer or
-                socket is re-verified before it's used again. Git hooks keep their project
-                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
-                in Tool Permissions to confirm every signing helper use. Turning this off
-                prevents further ssh-agent signing. With this off, a configured private key file
-                can be read and used only after a separate approval for each commit. Key contents
-                are never sent to the agent. Custom signing programs run with ordinary project
-                access. Scoped signing is macOS only.
+                On by default: Copse's system SSH signer signs commits with your key through
+                ssh-agent without asking, and re-checks a changed key, signer or socket before
+                using it again. Git hooks keep their sandbox, with no ssh-agent access. To confirm
+                each signature, set git_commit to Always ask in Tool Permissions. Off: no further
+                ssh-agent signing, and a configured key file signs only after a separate approval
+                for each commit. Key contents are never sent to the agent, and custom signing
+                programs run with ordinary project access. Scoped signing is macOS only.
               </p>
             </fieldset>
 
@@ -70298,12 +70554,11 @@ var init_permissions_markup = __esm({
                 Fetch each project's default branch in the background
               </label>
               <p class="field-hint">
-                Copse fetches the latest default branch from origin hourly and when a thread
-                starts, so new threads begin from current upstream code. It updates only the
-                stored copy of origin's branch; your checkout and branches are never changed. The
-                fetch uses your own Git credentials but ignores the project's Git configuration.
-                Turn off to keep Copse from contacting origin; threads then start from whatever
-                you last fetched yourself.
+                Copse fetches origin's default branch hourly and when a thread starts, so new
+                threads begin from current code. It updates only its stored copy of origin's branch;
+                your checkout and branches are never changed. The fetch uses your Git credentials
+                but ignores the project's Git configuration. Turn off to stop contacting origin;
+                threads then start from your last fetch.
               </p>
             </fieldset>
           </section>
@@ -70922,10 +71177,10 @@ var init_experimental_markup = __esm({
                 Create a worktree only when the agent needs to write
               </label>
               <p class="field-hint">
-                Applies across Copse to new threads using automatic checkout. Eligible agents
-                start by reading your checkout without changing it, then get an isolated worktree
-                before writing. Explicit worktree choices and agents installed on this device still create one up front.
-                Projects with worktrees disabled and existing threads keep their checkout behavior.
+                Applies across Copse to new threads using automatic checkout: eligible agents read
+                your checkout first and get an isolated worktree before writing. Explicit worktree
+                choices and agents installed on this device still create one up front. Existing
+                threads, and projects with worktrees off, keep their checkout.
               </p>
             </fieldset>
 
@@ -70937,12 +71192,12 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts and brings its commits back for
-                you to apply. Built-in models infer on the desktop; their keys and sign-in tokens stay there. When the run
-                installs dependencies (on by default, per run), it can reach the npm registry, GitHub and
-                Electron's download hosts. Needs Apple container or Docker; the first run builds the worker image.
-                External coding agents run in the container with their selected API key, or, if you opt in
-                per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout without prompts and brings its commits back for
+                you to apply. Built-in models still infer on the desktop, so their keys and sign-in
+                tokens stay there. Installing dependencies (on by default, per run) lets it reach
+                the npm registry, GitHub and Electron's download hosts. Needs Apple container or
+                Docker; the first run builds the worker image. External coding agents use their
+                selected API key, or your Codex or Gemini sign-in copied in if you opt in per run.
               </p>
             </fieldset>
 
@@ -70954,8 +71209,8 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Breaks a task into a living plan with explicit steps and acceptance criteria before
-                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
-                run while a plan is active, and a step's "done" is the agent's own report, not a
+                the agent starts. While a plan is active, coding agents and container, remote or
+                plugin-hosted agents can't run, and a step's "done" is the agent's word, not a
                 verified check.
               </p>
             </fieldset>
@@ -70980,10 +71235,9 @@ var init_experimental_markup = __esm({
                 Let the agent hand implementation steps to a cheaper model
               </label>
               <p class="field-hint">
-                The opposite of the advisor: your chat model plans the work and passes each step,
-                with the context it needs, to a cheaper and faster model that does the editing.
-                Every step comes back with a report and a summary of what changed, so the chat
-                model can review it before moving on.
+                The opposite of the advisor: your chat model plans, then hands each step and its
+                context to a cheaper, faster model that edits. Each step returns a report and a
+                summary of changes for the chat model to review.
               </p>
               <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
               <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
@@ -74460,6 +74714,8 @@ export {
   sideChatsOf,
   withoutSideChats,
   init_side_chat2 as init_side_chat,
+  repairLegacyAcpTotalInputTokens,
+  init_model_usage,
   beginThreadSubmission,
   endThreadSubmission,
   isThreadSubmitting,
@@ -74636,6 +74892,7 @@ export {
   startHumanTurnTree,
   foldBackContinuationUsed,
   refreshAgentRunPayload,
+  hasPendingDispatch,
   dispatchAgentRun,
   enqueueUserMessage,
   updateQueuedMessageModel,
@@ -74738,10 +74995,13 @@ export {
   announcementCatalog,
   useAnnouncementCatalog,
   init_announcement_catalog,
+  prProductionSchema,
+  commitProductionSchema,
   prRelationKey,
   threadPrRelationships,
   ThreadPrRelationshipIndex,
-  init_thread_pr_relations2 as init_thread_pr_relations,
+  init_thread_pr_relations,
+  init_thread_pr_relations2,
   mergeThreadLinks,
   collectThreadLinks,
   backlinksFor,
