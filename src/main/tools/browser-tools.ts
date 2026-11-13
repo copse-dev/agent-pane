@@ -7,6 +7,7 @@ import { createBrowserCaptureHandle } from '../services/visual-evidence/capture-
 import { staticPreviewEntryUrl } from '../services/browser/static-preview-server.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
+import { browserFormFieldsSchema } from '../services/browser/browser-form.ts'
 import { presentVisualEvidenceTool } from './visual-evidence-tools.ts'
 
 export const browserNavigateTool = defineTool({
@@ -117,13 +118,31 @@ export const browserClickTool = defineTool({
 export const browserTypeTool = defineTool({
   name: 'browser_type',
   provenance: 'external',
-  description: 'Type text into an input/textarea identified by its snapshot ref.',
-  parameters: z.object({
-    ref: z.string().describe('Element ref from a snapshot, e.g. e5'),
-    text: z.string().describe('Text to enter'),
-    viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
-  }),
-  async execute({ ref, text, viewId }) {
+  description:
+    'Enter text by snapshot ref. For a form, pass fields to fill up to 20 inputs, textareas or selects in one call, then inspect before submitting. This saves a separate tool call per field. Use either fields or the existing ref/text pair. A changed control stops the batch and reports which fields were already entered; do not replay those fields.',
+  parameters: z
+    .object({
+      ref: z.string().optional().describe('Single element ref from a snapshot, e.g. e5'),
+      text: z.string().optional().describe('Text for the single ref'),
+      fields: browserFormFieldsSchema
+        .optional()
+        .describe(
+          'Form fields from one current snapshot; select fields use the exact option value.',
+        ),
+      viewId: z.string().optional().describe('Target tab id (defaults to the last used tab)'),
+    })
+    .superRefine(({ ref, text, fields }, context) => {
+      if (
+        fields !== undefined
+          ? ref !== undefined || text !== undefined
+          : ref === undefined || text === undefined
+      )
+        context.addIssue({ code: 'custom', message: 'Pass either fields or both ref and text.' })
+    }),
+  async execute({ ref, text, fields, viewId }, signal) {
+    if (fields !== undefined) return getBrowserSession().typeFields(fields, viewId, signal)
+    if (ref === undefined || text === undefined)
+      throw new Error('Pass either fields or both ref and text.')
     return getBrowserSession().type(ref, text, viewId)
   },
 })

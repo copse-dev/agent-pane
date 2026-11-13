@@ -6,7 +6,10 @@ import type {
   UserContent,
 } from '@shared/types'
 import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
+import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { getProjectThread, loadAgentHistory, saveAgentHistory } from './thread-store.ts'
+import { buildAgentReportHistory } from './agents/custom-agent-strategy.ts'
 
 /**
  * Seeding a forked thread's provider-format history (`agent-history.json`).
@@ -35,10 +38,17 @@ import { getProjectThread, loadAgentHistory, saveAgentHistory } from './thread-s
 
 /** Tool results the loop pushes as one `tool` message per step. */
 function toolResultsOf(message: Message): ToolResult[] {
-  return message.toolCalls.map((toolCall) => ({
-    toolCallId: toolCall.id,
-    result: toolCall.result ?? '',
-  }))
+  return message.toolCalls.map((toolCall) => {
+    const agentName =
+      toolCall.name === 'task' && isRecord(toolCall.args)
+        ? toolCall.args['subagent_type']
+        : undefined
+    const result = toolCall.result ?? ''
+    return {
+      toolCallId: toolCall.id,
+      result: typeof agentName === 'string' ? buildAgentReportHistory(agentName, result) : result,
+    }
+  })
 }
 
 function userContentOf(message: Message): UserContent {
@@ -69,14 +79,24 @@ function userContentOf(message: Message): UserContent {
  */
 export function rebuildAgentHistory(messages: readonly Message[]): LLMMessage[] {
   const history: LLMMessage[] = []
-  for (const message of messages) {
+  for (const [index, message] of messages.entries()) {
     if (message.role === 'error') continue
     if (message.role === 'user') {
       history.push({ role: 'user', content: userContentOf(message) })
       continue
     }
     const text = message.content.trim()
-    if (text) history.push({ role: 'assistant', content: message.content })
+    // A partial fork or missing sidecar must preserve the same provenance as
+    // the explicit worker's normal checkpoint, including its visible report.
+    const agentName = explicitAgentForMessage(messages, index)
+    if (text)
+      history.push({
+        role: 'assistant',
+        content:
+          typeof agentName === 'string'
+            ? buildAgentReportHistory(agentName, message.content)
+            : message.content,
+      })
     const toolCalls = message.toolCalls
     if (toolCalls.length === 0) continue
     history.push({

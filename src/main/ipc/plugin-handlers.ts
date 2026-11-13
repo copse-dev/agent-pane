@@ -21,11 +21,13 @@ import {
   syncPiiTools,
   syncRoadmapPlanTools,
   syncReviewerInputTools,
+  syncProjectContextTools,
 } from '../services/registry-bootstrap.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
@@ -187,6 +189,9 @@ export function registerPluginHandlers(win: BrowserWindow, registry: ToolRegistr
     }
     if (id === REVIEWER_INPUT_PLUGIN_ID) {
       syncReviewerInputTools(registry)
+    }
+    if (id === PROJECT_CONTEXT_PLUGIN_ID) {
+      syncProjectContextTools(registry)
     }
     // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
     if (id === ADVISOR_STRATEGY_PLUGIN_ID) {

@@ -6,7 +6,7 @@
 // state a real run would).
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -224,6 +224,97 @@ describe('dry-run — summarizeInterpretation', () => {
 })
 
 describe('dry-run — dryRunHook end-to-end', () => {
+  for (const checkout of [false, true]) {
+    it(`runs a project-relative Copse command from the ${checkout ? 'checkout' : 'shared'} execution root`, async () => {
+      const project = mkdtempSync(join(tmpdir(), 'copse-hook-cwd-'))
+      tmpDirs.push(project)
+      const root = checkout ? join(project, 'thread-checkout') : project
+      mkdirSync(join(project, '.copse'), { recursive: true })
+      mkdirSync(join(root, 'scripts'), { recursive: true })
+      writeFileSync(
+        join(root, 'scripts/cwd.cjs'),
+        "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify({note:process.cwd()})))",
+      )
+      const source = join(project, '.copse/hooks.json')
+      const command = 'node scripts/cwd.cjs'
+      writeFileSync(
+        source,
+        JSON.stringify({
+          version: 1,
+          hooks: { beforeSubmitPrompt: [{ command, sandbox: false }] },
+        }),
+      )
+      const result = await dryRunHook(
+        {
+          family: 'copse',
+          event: 'beforeSubmitPrompt',
+          command,
+          source,
+          scope: 'project',
+          sandbox: false,
+        },
+        root,
+      )
+      assert.equal(result.ran, true)
+      assert.equal(result.exitCode, 0, result.stderr ?? '')
+      assert.equal(result.parseOk, true)
+      assert.equal(result.stdout?.trim(), JSON.stringify({ note: realpathSync(root) }))
+    })
+  }
+
+  it('refuses a project hook without a project root instead of spawning from its config directory', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'copse-hook-no-project-'))
+    tmpDirs.push(project)
+    const config = join(project, '.copse')
+    mkdirSync(config)
+    writeFileSync(
+      join(config, 'marker.cjs'),
+      "require('node:fs').writeFileSync('ran.txt','ran');process.stdout.write('{}')",
+    )
+    const result = await dryRunHook(
+      {
+        family: 'copse',
+        event: 'beforeSubmitPrompt',
+        command: 'node marker.cjs',
+        source: join(config, 'hooks.json'),
+        scope: 'project',
+        sandbox: false,
+      },
+      null,
+    )
+    assert.equal(result.ran, false)
+    assert.match(result.error ?? '', /open.*project/i)
+    assert.equal(existsSync(join(config, 'ran.txt')), false)
+  })
+
+  for (const hasProject of [false, true]) {
+    it(`keeps user-hook paths relative to their config ${hasProject ? 'with' : 'without'} an active project`, async () => {
+      const home = mkdtempSync(join(tmpdir(), 'copse-user-hook-cwd-'))
+      tmpDirs.push(home)
+      const config = join(home, '.copse')
+      mkdirSync(config)
+      writeFileSync(
+        join(config, 'cwd.cjs'),
+        "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify({note:process.cwd()})))",
+      )
+      const other = join(home, 'other-project')
+      mkdirSync(other)
+      const result = await dryRunHook(
+        {
+          family: 'copse',
+          event: 'beforeSubmitPrompt',
+          command: 'node cwd.cjs',
+          source: join(config, 'hooks.json'),
+          scope: 'user',
+          sandbox: false,
+        },
+        hasProject ? other : null,
+      )
+      assert.equal(result.exitCode, 0, result.stderr ?? '')
+      assert.equal(result.stdout?.trim(), JSON.stringify({ note: realpathSync(config) }))
+    })
+  }
+
   it('spawns the hook and captures stdin/stdout/exit/duration', async () => {
     // `cat` echoes the marshalled stdin back on stdout — so the captured stdout
     // must parse to the synthetic tool-gate payload we fed the hook.
@@ -286,7 +377,7 @@ describe('dry-run — dryRunHook end-to-end', () => {
   })
 
   it('surfaces a hook decision as the outcome summary', async () => {
-    const { source } = seedCursorHook(
+    const { root, source } = seedCursorHook(
       `printf '%s' '{"permission":"deny","agentMessage":"blocked by dry-run"}'`,
     )
     const res = await dryRunHook(
@@ -297,7 +388,7 @@ describe('dry-run — dryRunHook end-to-end', () => {
         source,
         scope: 'project',
       },
-      null,
+      root,
     )
     assert.equal(res.ran, true)
     assert.equal(res.parseOk, true)
@@ -335,7 +426,7 @@ describe('dry-run — dryRunHook end-to-end', () => {
         source,
         scope: 'project',
       },
-      null,
+      root,
     )
     assert.equal(res.ran, true)
     assert.equal(res.exitCode, 3)
