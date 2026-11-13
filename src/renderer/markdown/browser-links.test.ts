@@ -95,6 +95,34 @@ describe('markdown browser links', () => {
     assert.ok(root.classList.contains('browser-links-scope'))
   })
 
+  it('opens a workspace preview link inside Copse when the system browser is selected', async () => {
+    const href = 'http://localhost:4321/index.html'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">Preview</a>`
+    const store = createStore({
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+      openLinksInBuiltInBrowser: false,
+    })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: { downloadArtifact: async () => undefined },
+      shell: {
+        openExternal: async () => {
+          throw new Error('Workspace previews open inside Copse')
+        },
+      },
+    })
+    qsRequired(root, 'a').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    unbind()
+    assert.deepEqual(requested, [href])
+    assert.equal(store.getState().rightPanelMode, 'browser')
+  })
+
   it('opens remote agent launch notice links in the browser panel', () => {
     const href = 'https://cursor.com/agents/bc-f048baf8-bbc6-4def-b722-4f12008284be'
     const root = document.createElement('div')

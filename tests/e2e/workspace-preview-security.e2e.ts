@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WebviewTag } from 'electron'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
   seedE2eViewport,
@@ -146,5 +146,38 @@ describe('workspace preview security', () => {
       return webview?.getURL()
     })
     expect(guestAddress).toBe(originalAddress)
+  })
+
+  it('explains why a workspace preview cannot open in the default browser', async () => {
+    const menu = await $('.browser-tab-panel.is-active .browser-menu-btn').getElement()
+    await menu.click()
+    const items = await $$('.browser-tab-panel.is-active .browser-menu-item').getElements()
+    const external = items[5]
+    expect(external).toBeDefined()
+    if (!external) throw new Error('Open in default browser menu item missing')
+    await expect(external).toHaveText('Open in default browser')
+    await expect(external).toBeEnabled()
+    await external.click()
+    const toast = await $('.toast=Workspace previews can only open inside Copse.').getElement()
+    await toast.waitForDisplayed({ timeout: 5_000 })
+    const address = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
+    const previewAddress = await address.getValue()
+    expect(previewAddress).toMatch(/^http:\/\/localhost:\d+\//)
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (input) input.value = 'http://localhost:4321/index.html'
+    })
+    try {
+      await saveAppScreenshot('workspace-preview-external-explained.png', E2E_THREE_PANE_VIEWPORT)
+    } finally {
+      await browser.execute((url) => {
+        const input = document.querySelector<HTMLInputElement>(
+          '.browser-tab-panel.is-active .browser-url-input',
+        )
+        if (input) input.value = url
+      }, previewAddress)
+    }
   })
 })

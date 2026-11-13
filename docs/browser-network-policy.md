@@ -22,9 +22,15 @@ Tab persistence, pop-outs and agent preview promotion preserve that scope too.
 
 Copse-owned static prototypes send a CSP from their preview server. It allows
 resources from the page's own origin, inline scripts/styles and embedded data/blob
-images, but denies external origins, frames, workers, plugins and base URL changes.
+images, but denies external origins, frames, service workers, plugins and base URL changes.
 A network approval does not relax this prototype CSP: bundle assets locally.
 The prototype's loopback IP aliases retain its same-origin navigation restriction.
+Each workspace preview listener also requires a random capability header, injected only
+into a Copse browser partition authorized for that preview. Raw loopback clients and the
+system browser cannot read it. The listener checks Host, Origin and fetch metadata to
+reject rebinding and cross-origin requests, and excludes secret-named files and Git
+metadata. Copse clears existing service workers before granting a preview origin so a
+previous page cannot intercept the newly authorized content.
 
 Ordinary HTTP(S) pages retain only the CSP supplied by their server. Pages opened
 in the visible, user-controlled browser load public-web documents and subresources

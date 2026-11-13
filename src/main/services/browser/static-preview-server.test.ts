@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { request } from 'node:http'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -115,11 +116,35 @@ describe('static browser preview server', () => {
     const preview = await getStaticPreviewServer(root)
     const port = new URL(preview.url).port
 
-    const rebound = await previewFetch(preview.url, {
-      headers: { Host: `attacker.example:${port}`, Origin: `http://attacker.example:${port}` },
+    // Node fetch overwrites Host. A raw HTTP request proves the Host allowlist
+    // blocks DNS rebinding even without an Origin header.
+    const capability = previewCapabilityForUrl(preview.url)
+    assert.ok(capability)
+    const rebound = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const client = request(
+        preview.url,
+        {
+          headers: {
+            Host: `attacker.example:${port}`,
+            [PREVIEW_CAPABILITY_HEADER]: capability,
+            'Sec-Fetch-Site': 'same-origin',
+          },
+        },
+        (response) => {
+          let body = ''
+          response.setEncoding('utf8')
+          response.on('data', (chunk: string) => {
+            body += chunk
+          })
+          response.once('end', () => resolve({ status: response.statusCode ?? 0, body }))
+          response.once('error', reject)
+        },
+      )
+      client.once('error', reject)
+      client.end()
     })
     assert.equal(rebound.status, 403)
-    assert.equal(await rebound.text(), 'Forbidden')
+    assert.equal(rebound.body, 'Forbidden')
 
     const crossOrigin = await previewFetch(preview.url, {
       headers: { Origin: 'https://attacker.example' },
