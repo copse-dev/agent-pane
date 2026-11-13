@@ -1,4 +1,5 @@
 import { ipcMain, shell, type BrowserWindow } from 'electron'
+import { isStaticPreviewUrl } from '../services/browser/static-preview-server.ts'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs, zMcpServerName } from './ipc-guards.ts'
 import {
@@ -74,7 +75,10 @@ export function registerMcpHandlers(win: BrowserWindow, registry: ToolRegistry):
     try {
       await signInMcpServer(serverUrl, {
         signal: controller.signal,
-        openExternal: (url) => shell.openExternal(url),
+        openExternal: (url) => {
+          if (isStaticPreviewUrl(url)) throw new Error('Workspace previews open inside Copse')
+          return shell.openExternal(url)
+        },
       })
     } finally {
       if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)

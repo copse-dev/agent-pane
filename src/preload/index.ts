@@ -1909,8 +1909,6 @@ const api: ApiClient = {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
-    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('shell:open-workspace-file-in-browser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),

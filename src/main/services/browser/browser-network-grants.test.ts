@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   browserAllowedOrigins,
   browserSessionOrigins,
+  currentBrowserScope,
   grantBrowserOrigin,
 } from './browser-network-grants.ts'
 import {
@@ -13,6 +14,7 @@ import {
   isBrowserSessionPartition,
 } from '@shared/browser-session.ts'
 import { setSetting } from '../storage/settings.ts'
+import { runWithWorkspaceRoot } from '../workspace.ts'
 
 it('isolates temporary browser grants and profiles by project and task', async () => {
   await setSetting('webAllowedOrigins', [])
@@ -31,4 +33,16 @@ it('isolates temporary browser grants and profiles by project and task', async (
     isBrowserSessionPartition(browserSessionPartition(BROWSER_SESSION_PARTITION, first)),
     true,
   )
+})
+
+it('isolates headless browser profiles by their explicit workspace roots', () => {
+  const first = runWithWorkspaceRoot('/tmp/headless-preview-a', currentBrowserScope)
+  const second = runWithWorkspaceRoot('/tmp/headless-preview-b', currentBrowserScope)
+  assert.notEqual(first, '')
+  assert.notEqual(first, second)
+  assert.equal(
+    isBrowserSessionPartition(browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, first)),
+    true,
+  )
+  assert.equal(currentBrowserScope(), '')
 })

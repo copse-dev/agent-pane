@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { resolve as resolvePath } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve as resolvePath } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -11,6 +13,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { SecretCipher } from '../storage/secret-cipher.ts'
+import {
+  getStaticPreviewServer,
+  shutdownStaticPreviewServers,
+} from '../browser/static-preview-server.ts'
 import { asProtocolTransport } from './streamable-http-transport.ts'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
@@ -103,6 +109,7 @@ interface FakeAuthServer {
   /** Access tokens the MCP endpoint currently accepts. */
   validTokens: Set<string>
   registrationStatus: number
+  authorizationEndpoint: string | null
   /** Never answer registration, as a server that has stopped responding. */
   hangRegistration: boolean
   /** The `application_type` each registration request declared. */
@@ -153,6 +160,7 @@ async function startFakeAuthServer(): Promise<FakeAuthServer> {
     registrations: 0,
     validTokens: new Set(),
     registrationStatus: 201,
+    authorizationEndpoint: null,
     hangRegistration: false,
     registeredApplicationTypes: [],
     refreshAccepted: true,
@@ -183,7 +191,7 @@ async function startFakeAuthServer(): Promise<FakeAuthServer> {
       if (url.pathname === '/.well-known/oauth-authorization-server') {
         json(response, 200, {
           issuer: state.base,
-          authorization_endpoint: `${state.base}/authorize`,
+          authorization_endpoint: state.authorizationEndpoint ?? `${state.base}/authorize`,
           token_endpoint: `${state.base}/token`,
           registration_endpoint: `${state.base}/register`,
           response_types_supported: ['code'],
@@ -382,6 +390,34 @@ describe('MCP OAuth sign-in', () => {
     assert.doesNotMatch(persisted, /access-1|refresh-1/)
 
     assert.deepEqual(await listToolsWith(server.mcpUrl, store), ['whoami'])
+  })
+
+  it('refuses an authorization callback targeting an active workspace preview', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-mcp-preview-authorization-'))
+    try {
+      await writeFile(join(root, 'index.html'), '<h1>Untrusted preview</h1>')
+      const preview = await getStaticPreviewServer(root)
+      server.authorizationEndpoint = preview.url
+      const { store } = memoryStore()
+      const controller = new AbortController()
+      const opened: string[] = []
+      await assert.rejects(
+        signInMcpServer(server.mcpUrl, {
+          ...offline(server),
+          store,
+          signal: controller.signal,
+          openExternal: async (url) => {
+            opened.push(url)
+            controller.abort()
+          },
+        }),
+        /authorization URL Copse will not open/,
+      )
+      assert.deepEqual(opened, [])
+    } finally {
+      await shutdownStaticPreviewServers()
+      await rm(root, { recursive: true })
+    }
   })
 
   it('reuses the registered client and loopback port on a later sign-in', async () => {

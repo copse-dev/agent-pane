@@ -74,7 +74,16 @@ export function bindBrowserLinkClicks(
   // own handling regardless of this setting.
   const openPlainLink = (href: string): void => {
     if (!store.getState().openLinksInBuiltInBrowser && api?.shell) {
-      void api.shell.openExternal(href)
+      void api.shell.openExternal(href).catch((error: unknown) => {
+        // Main keeps workspace preview URLs out of the system browser because
+        // that browser has no preview capability. Open the link in this chat's
+        // browser partition instead, even when the external-link setting is off.
+        if (String(error).includes('Workspace previews open inside Copse')) {
+          openBrowserUrl(store, href)
+          return
+        }
+        showErrorToast('Could not open link', error)
+      })
       return
     }
     openBrowserUrl(store, href)

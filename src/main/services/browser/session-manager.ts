@@ -1,4 +1,8 @@
-import { BROWSER_SESSION_PARTITION, browserSessionPartition } from '@shared/browser-session.ts'
+import {
+  BROWSER_AGENT_SESSION_PARTITION,
+  BROWSER_SESSION_PARTITION,
+  browserSessionPartition,
+} from '@shared/browser-session.ts'
 import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
@@ -6,6 +10,7 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { previewCapabilityForUrl } from './static-preview-server.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -164,6 +169,8 @@ interface Tab {
 export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(scope?: string): Session
+  authorizePreview(partition: string, url: string): Promise<void>
+  hasPreview(partition: string, url: string): boolean
   showUrl(url: string, partition: string): void
   /** Promote an already-rendered canvas artefact tab to the front. */
   showArtefact(identity: CanvasArtefactIdentity): void
@@ -328,8 +335,25 @@ export class BrowserSessionManager {
     return { viewId: tab.id, title: wc.getTitle(), url: wc.getURL() }
   }
 
-  showUrl(url: string): void {
-    requirePlatform().showUrl(url, browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope))
+  /** A trusted workspace preview is granted before its first network request. */
+  async preview(url: string): Promise<NavigateResult> {
+    if (!this.scope) throw new Error('Workspace preview requires a scoped browser task')
+    await requirePlatform().authorizePreview(
+      browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope),
+      url,
+    )
+    return this.navigate(url)
+  }
+
+  async showUrl(url: string): Promise<void> {
+    const agentPartition = browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope)
+    const visiblePartition = browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope)
+    if (previewCapabilityForUrl(url)) {
+      if (!requirePlatform().hasPreview(agentPartition, url))
+        throw new Error('Workspace preview is not open in this browser task')
+      await requirePlatform().authorizePreview(visiblePartition, url)
+    }
+    requirePlatform().showUrl(url, visiblePartition)
   }
 
   showArtefact(identity: CanvasArtefactIdentity): void {

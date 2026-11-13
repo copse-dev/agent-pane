@@ -1,10 +1,13 @@
 import { createReadStream, watch, type FSWatcher } from 'node:fs'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { embeddedIpv4, normalizeHostname } from '@copse/llm/credential-url.ts'
+import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
+export const PREVIEW_CAPABILITY_HEADER = 'X-Copse-Preview-Capability'
 
 /**
  * Workspace HTML/JS is untrusted (the agent can write it). Allow local preview
@@ -18,6 +21,7 @@ const PREVIEW_CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self'",
+  'worker-src blob:',
   "form-action 'none'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -47,6 +51,8 @@ interface PreviewServerEntry {
   root: string
   server: Server
   url: string
+  /** Never returned to a page; main grants it to the browser session. */
+  capability: string
   /** Recursive watch on `root`, so an edit to a served file reaches the pane. */
   watcher: FSWatcher | null
   /** Armed reload for this origin, coalescing a burst of writes into one. */
@@ -78,6 +84,24 @@ export interface StaticPreviewServer {
 
 const servers = new Map<string, PreviewServerEntry>()
 
+/** Exact loopback origin eligible for an authenticated preview request. */
+function previewEntryForRequest(url: string): PreviewServerEntry | null {
+  if (!URL.canParse(url)) return null
+  const parsed = new URL(url)
+  if (
+    parsed.protocol !== 'http:' ||
+    (parsed.hostname !== 'localhost' && parsed.hostname !== LOOPBACK_HOST)
+  )
+    return null
+  parsed.hostname = 'localhost'
+  return [...servers.values()].find((entry) => new URL(entry.url).origin === parsed.origin) ?? null
+}
+
+/** Main-process-only credential for an active preview origin. */
+export function previewCapabilityForUrl(url: string): string | null {
+  return previewEntryForRequest(url)?.capability ?? null
+}
+
 /** Whether this URL belongs to a Copse-owned static prototype server. */
 export function isStaticPreviewUrl(url: string): boolean {
   if (!URL.canParse(url)) return false
@@ -102,6 +126,14 @@ function isInsideRoot(root: string, candidate: string): boolean {
   return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
 }
 
+function isPrivatePreviewPath(root: string, path: string): boolean {
+  const inside = relative(root, path)
+  return (
+    inside.split(sep).some((segment) => segment.startsWith('.')) ||
+    (inside !== '' && sensitiveTargetReason(inside, inside) !== null)
+  )
+}
+
 async function resolveRequestFile(root: string, requestUrl: string): Promise<string | null> {
   let pathname: string
   try {
@@ -112,13 +144,13 @@ async function resolveRequestFile(root: string, requestUrl: string): Promise<str
   if (pathname.includes('\0')) return null
 
   const candidate = resolve(root, `.${pathname}`)
-  if (!isInsideRoot(root, candidate)) return null
+  if (!isInsideRoot(root, candidate) || isPrivatePreviewPath(root, candidate)) return null
 
   try {
     const candidateStat = await stat(candidate)
     const file = candidateStat.isDirectory() ? join(candidate, 'index.html') : candidate
     const canonical = await realpath(file)
-    if (!isInsideRoot(root, canonical)) return null
+    if (!isInsideRoot(root, canonical) || isPrivatePreviewPath(root, canonical)) return null
     return (await stat(canonical)).isFile() ? canonical : null
   } catch {
     return null
@@ -131,9 +163,40 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
   if (!rootStat.isDirectory()) throw new Error('The preview root is not a directory.')
 
   const served = new Set<string>()
+  const capability = randomBytes(32).toString('base64url')
+  const capabilityBytes = Buffer.from(capability)
+  let listeningPort = 0
   const server = createServer((request, response) => {
+    // Browsers can load scripts and other no-cors resources without an Origin
+    // header. Keep those responses inside this origin, including error pages.
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
+    response.setHeader('X-Content-Type-Options', 'nosniff')
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end()
+      return
+    }
+    // A DNS-rebound page keeps its attacker-controlled Host while connecting to
+    // 127.0.0.1. Accept only the two loopback names Copse advertises and uses.
+    const host = request.headers.host?.toLowerCase()
+    const suppliedCapability = request.headers[PREVIEW_CAPABILITY_HEADER.toLowerCase()]
+    const suppliedBytes =
+      typeof suppliedCapability === 'string' ? Buffer.from(suppliedCapability) : null
+    const authorized =
+      suppliedBytes !== null &&
+      suppliedBytes.length === capabilityBytes.length &&
+      timingSafeEqual(suppliedBytes, capabilityBytes)
+    if (
+      !host ||
+      ![`localhost:${String(listeningPort)}`, `127.0.0.1:${String(listeningPort)}`].includes(
+        host,
+      ) ||
+      !authorized ||
+      (request.headers.origin !== undefined && request.headers.origin !== `http://${host}`) ||
+      (request.headers['sec-fetch-site'] !== undefined &&
+        request.headers['sec-fetch-site'] !== 'same-origin' &&
+        request.headers['sec-fetch-site'] !== 'none')
+    ) {
+      response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden')
       return
     }
     void resolveRequestFile(canonicalRoot, request.url ?? '/').then(
@@ -148,7 +211,6 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
           'Content-Security-Policy': PREVIEW_CONTENT_SECURITY_POLICY,
           'Content-Type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
           'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
           'X-Frame-Options': 'DENY',
         })
         if (request.method === 'HEAD') {
@@ -183,11 +245,13 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
       resolvePort(address.port)
     })
   })
+  listeningPort = port
   server.unref()
   const entry: PreviewServerEntry = {
     root: canonicalRoot,
     server,
     url: `http://localhost:${String(port)}/`,
+    capability,
     served,
     roots: new Set([resolve(canonicalRoot)]),
     watcher: null,

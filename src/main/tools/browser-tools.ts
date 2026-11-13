@@ -40,8 +40,8 @@ export const browserPreviewTool = defineTool({
     if (!root) throw new Error('No workspace open.')
     const url = await staticPreviewEntryUrl(root, path ?? '/')
     const session = getBrowserSession()
-    const result = await session.navigate(url)
-    session.showUrl(result.url)
+    const result = await session.preview(url)
+    await session.showUrl(result.url)
     return `Opened ${result.viewId} in the visible Browser panel: ${result.title || '(untitled)'}\n${result.url}`
   },
 })
@@ -195,8 +195,7 @@ export const browserShowTool = defineTool({
         `${url} is not open in the agent browser — navigate to it with browser_navigate first`,
       )
     }
-    session.showUrl(url)
-    return `Opened ${url} in the visible Browser panel.`
+    return session.showUrl(url).then(() => `Opened ${url} in the visible Browser panel.`)
   },
 })
 
