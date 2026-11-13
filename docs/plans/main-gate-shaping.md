@@ -350,7 +350,7 @@ to `full`, never a reason to drop specs. The rule changes what a LOW-confidence 
 
 The release-validation change implements the immediate enforcement slice:
 release-branch and `v*` tag pushes force full unit/e2e plans, and a separate
-`Full release validation` aggregate requires all eight shards and full-tier
+`Full release validation` aggregate requires all nine shards and full-tier
 prerequisites. Packaging verifies CI workflow provenance for the exact commit;
 publication revalidates the pinned run attempt. `RELEASE_VALIDATION.json` is
 checksummed and published with the binaries, retaining the evidence beyond

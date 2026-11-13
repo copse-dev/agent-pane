@@ -2747,5 +2747,5 @@ jobs:
           set -euo pipefail
           test "$MODE" = full
           test "$UNIT_MODE" = full
-          test "$SHARDS" = 8
+          test "$SHARDS" = 9
           jq -e 'length == 7 and all(.[]; .result == "success")' <<< "$RESULTS"
