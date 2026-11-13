@@ -20,6 +20,7 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { perfCount, perfEnabled, perfMark, perfRecord, type PerfRecord } from './perf-trace.ts'
+import { isTrustedAppFrame } from '../../windows/app-frames.ts'
 
 /**
  * The listener shape `ipcMain.handle` accepts. `unknown[]` rather than Electron's
@@ -86,7 +87,8 @@ export function installIpcPerfTracing(): void {
  */
 export function installRendererPerfChannel(): void {
   if (!perfEnabled()) return
-  ipcMain.on('perf:record', (_event, raw: unknown) => {
+  ipcMain.on('perf:record', (event, raw: unknown) => {
+    if (!isTrustedAppFrame(event.senderFrame)) return
     const record = decodePerfRecord(raw)
     if (record !== null) perfRecord(record)
   })

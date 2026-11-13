@@ -237,7 +237,8 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     }
     return result
   })
-  ipcMain.handle('settings:available-providers', async () => {
+  ipcMain.handle('settings:available-providers', async (event) => {
+    assertMainFrameSender(event, win)
     const available: Record<string, boolean> = {
       anthropic: await isProviderKeyUsable('anthropic'),
       openai: await isProviderKeyUsable('openai'),
@@ -302,7 +303,10 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
       throw err
     }
   })
-  ipcMain.handle('models:best-value-default', () => resolveBestValueChatModel())
+  ipcMain.handle('models:best-value-default', (event) => {
+    assertMainFrameSender(event, win)
+    return resolveBestValueChatModel()
+  })
   ipcMain.handle(
     'models:invalidations',
     (event, rawThreadModel: unknown, rawFreshLocal: unknown) => {
@@ -327,12 +331,19 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
   )
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
-  ipcMain.handle('models:resolve-dynamic', (_event, rawValue: unknown) => {
+  ipcMain.handle('models:resolve-dynamic', (event, rawValue: unknown) => {
+    assertMainFrameSender(event, win)
     const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
     return resolveDynamicModelId(value)
   })
-  ipcMain.handle('settings:extra-providers', () => getResolvedExtraProviders())
-  ipcMain.handle('settings:model-pricing', () => resolveModelPricing())
+  ipcMain.handle('settings:extra-providers', (event) => {
+    assertMainFrameSender(event, win)
+    return getResolvedExtraProviders()
+  })
+  ipcMain.handle('settings:model-pricing', (event) => {
+    assertMainFrameSender(event, win)
+    return resolveModelPricing()
+  })
   ipcMain.handle('settings:save-extra-provider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
@@ -383,7 +394,8 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
     return refreshHuggingFaceModels(apiKey)
   })
-  ipcMain.handle('app-icon:apply', () => {
+  ipcMain.handle('app-icon:apply', (event) => {
+    assertMainFrameSender(event, win)
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })

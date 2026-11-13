@@ -9,6 +9,7 @@ import {
 } from '@shared/browser-session.ts'
 import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
+import { configureBrowserPermissions } from './browser-permissions.ts'
 import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origin-policy.ts'
 
 import { browserAllowedOrigins } from '../services/browser/browser-network-grants.ts'
@@ -21,27 +22,6 @@ import {
 
 const browserSessions = new Map<string, Electron.Session>()
 const documents = new Map<number, string>()
-
-// The in-app browser loads arbitrary, agent-chosen external pages, so it is
-// untrusted. Default-deny the powerful web-platform permissions a hostile page
-// could abuse (camera/mic, geolocation, device access, clipboard reads, …).
-// Anything not listed here (e.g. fullscreen) keeps Chromium's default handling.
-// Note: denying `clipboard-read` only blocks guest-page JS from reading the
-// clipboard — main-process Copy Link / Copy Image (browser-context-menu) still
-// writes via Electron's clipboard APIs.
-const DENIED_BROWSER_PERMISSIONS = new Set<string>([
-  'media',
-  'geolocation',
-  'notifications',
-  'midi',
-  'midiSysex',
-  'pointerLock',
-  'openExternal',
-  'hid',
-  'serial',
-  'usb',
-  'clipboard-read',
-])
 
 function configureBrowserSession(
   sess: Electron.Session,
@@ -80,10 +60,7 @@ function configureBrowserSession(
     }
     callback({ cancel: !allowed })
   })
-  sess.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(!DENIED_BROWSER_PERMISSIONS.has(permission))
-  })
-  sess.setPermissionCheckHandler((_wc, permission) => !DENIED_BROWSER_PERMISSIONS.has(permission))
+  configureBrowserPermissions(sess)
 }
 
 /** Configure before a guest is created, so its first request is already protected. */

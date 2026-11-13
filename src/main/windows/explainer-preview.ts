@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { htmlDataUrl } from '@shared/canvas/artefact.ts'
+import { configureBrowserPermissions } from './browser-permissions.ts'
 
 const EXPLAINER_PREVIEW_PARTITION = 'explainer-preview'
 
@@ -26,6 +27,9 @@ export async function captureExplainerFrames(
       partition: EXPLAINER_PREVIEW_PARTITION,
     },
   })
+  // Generated drawing code is confined to a worker, but this entire preview
+  // session must also fail closed if the document ever requests a web capability.
+  configureBrowserPermissions(window.webContents.session)
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => {
     event.preventDefault()

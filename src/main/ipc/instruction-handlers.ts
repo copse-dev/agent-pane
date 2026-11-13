@@ -15,13 +15,15 @@ export function registerInstructionHandlers(win: BrowserWindow): void {
   // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
   // declare `sandbox: false` at the consent moment. Read-only display parsing —
   // trust-independent by design (the whole point is showing this BEFORE trust).
-  ipcMain.handle('hooks:unsandboxed-project-hooks', async () => {
+  ipcMain.handle('hooks:unsandboxed-project-hooks', async (event) => {
+    assertMainFrameSender(event, win)
     const root = getWorkspaceRoot()
     if (!root) return []
     return listUnsandboxedProjectHooks(root)
   })
-  ipcMain.handle('instructions:list', async (event) =>
-    (
+  ipcMain.handle('instructions:list', async (event) => {
+    assertMainFrameSender(event, win)
+    return (
       await loadProjectInstructionSources({
         useLatestNestedActivation: true,
         refreshNestedDiscovery: true,
@@ -49,8 +51,8 @@ export function registerInstructionHandlers(win: BrowserWindow): void {
         ...(duplicateOf !== undefined ? { duplicateOf } : {}),
         ...(discoveryTruncated ? { discoveryTruncated } : {}),
       }),
-    ),
-  )
+    )
+  })
   /**
    * Read one instruction file for display (Settings → Sources opens it in the
    * shared preview dialog). Narrow and fail-closed: the path must still be a
@@ -68,7 +70,8 @@ export function registerInstructionHandlers(win: BrowserWindow): void {
     if (!source) throw new IpcValidationError('Not a discovered instruction file')
     return source.content
   })
-  ipcMain.handle('cursor-rules:list', async () => {
+  ipcMain.handle('cursor-rules:list', async (event) => {
+    assertMainFrameSender(event, win)
     const root = getWorkspaceRoot()
     if (!root) return []
     return toCursorRuleSummaries(await discoverCursorRules(root))

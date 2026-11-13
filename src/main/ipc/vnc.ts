@@ -19,6 +19,7 @@ import {
 } from '../services/vnc/vnc-username-store.ts'
 import {
   assertMainFrameSender,
+  isMainFrameSender,
   parseIpcArgs,
   vncDiscoveryHostSchema,
   vncTargetSchema,
@@ -186,14 +187,26 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
   })
 
   const onStart = (event: Electron.IpcMainEvent, rawId: unknown): void => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
-    service.start(id, event.sender.id)
+    if (!isMainFrameSender(event, win)) return
+    const id = vncConnectionIdSchema.safeParse(rawId)
+    if (!id.success) return
+    // One-way IPC cannot reject to its caller. A stale connection id must not
+    // turn a renderer message into an uncaught main-process exception.
+    try {
+      service.start(id.data, event.sender.id)
+    } catch {
+      return
+    }
   }
   const onSend = (event: Electron.IpcMainEvent, rawId: unknown, rawBytes: unknown): void => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
-    service.send(id, event.sender.id, parseClientBytes(rawBytes))
+    if (!isMainFrameSender(event, win)) return
+    const id = vncConnectionIdSchema.safeParse(rawId)
+    if (!id.success) return
+    try {
+      service.send(id.data, event.sender.id, parseClientBytes(rawBytes))
+    } catch {
+      return
+    }
   }
   ipcMain.on('vnc:start', onStart)
   ipcMain.on('vnc:send', onSend)

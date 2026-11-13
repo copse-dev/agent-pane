@@ -7,12 +7,13 @@ import type {
 } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { isWindowMainFrameSender } from '../../ipc/ipc-guards.ts'
+import { parseDecodeResponse } from './decode-response.ts'
 import {
   VIDEO_DECODE_READY_CHANNEL,
   VIDEO_DECODE_REQUEST_CHANNEL,
   VIDEO_DECODE_RESULT_CHANNEL,
   type DecodeFramesRequest,
-  type DecodeFramesResponse,
   type DecodeFramesResult,
 } from '@shared/video/decode-contract.ts'
 
@@ -78,19 +79,18 @@ function settleAll(error: Error): void {
 function attachListeners(): void {
   if (listenersAttached) return
   listenersAttached = true
-  requirePlatform().ipcMain.on(
-    VIDEO_DECODE_RESULT_CHANNEL,
-    (event, response: DecodeFramesResponse) => {
-      // Only the decoder window may answer; anything else is ignored outright.
-      if (!decoderWindow || event.sender !== decoderWindow.webContents) return
-      const entry = pending.get(response.requestId)
-      if (!entry) return
-      pending.delete(response.requestId)
-      clearTimeout(entry.timer)
-      if (response.ok) entry.resolve(response)
-      else entry.reject(new Error(response.error))
-    },
-  )
+  requirePlatform().ipcMain.on(VIDEO_DECODE_RESULT_CHANNEL, (event, raw: unknown) => {
+    // Only the decoder window may answer; anything else is ignored outright.
+    if (!isWindowMainFrameSender(event, decoderWindow)) return
+    const response = parseDecodeResponse(raw)
+    if (!response) return
+    const entry = pending.get(response.requestId)
+    if (!entry) return
+    pending.delete(response.requestId)
+    clearTimeout(entry.timer)
+    if (response.ok) entry.resolve(response)
+    else entry.reject(new Error(response.error))
+  })
 }
 
 function scheduleIdleShutdown(): void {
@@ -127,7 +127,7 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
     decoderPlatform.attachWebContentsLockdown(win.webContents)
 
     const onReady = (event: IpcMainEvent): void => {
-      if (event.sender !== win.webContents) return
+      if (!isWindowMainFrameSender(event, win)) return
       decoderPlatform.ipcMain.removeListener(VIDEO_DECODE_READY_CHANNEL, onReady)
       decoderWindow = win
       resolve(win)

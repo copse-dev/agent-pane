@@ -20,6 +20,14 @@ Interactive and agent browser profiles remain separate. Existing tabs keep their
 original owner when the selected task changes; popup tabs inherit that owner.
 Tab persistence, pop-outs and agent preview promotion preserve that scope too.
 
+Both browser profiles use an explicit, currently empty web-platform permission
+allowlist for permission checks and requests. Unknown/new names are denied along
+with camera/microphone, display capture, filesystem, clipboard, location, device,
+notification and fullscreen permissions. Origin approval grants network access,
+not these capabilities. Host-owned copy/paste, screenshots and exports remain
+available through Copse's controls. Guest-page Copy buttons or fullscreen requests
+may be refused; additional allowances require a supported workflow and coverage.
+
 Copse-owned static prototypes send a CSP from their preview server. It allows
 resources from the page's own origin, inline scripts/styles and embedded data/blob
 images, but denies external origins, frames, workers, plugins and base URL changes.

@@ -135,4 +135,12 @@ if (process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE) {
   require('./acp-registry-fixture.cjs').install(process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE)
 }
 
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_BROWSER_PERMISSIONS) {
+  require('./browser-permissions-fixture.cjs').install(process.env.COPSE_E2E_BROWSER_PERMISSIONS)
+}
+
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_IPC_SENDERS) {
+  require('./ipc-sender-fixture.cjs').install(process.env.COPSE_E2E_IPC_SENDERS)
+}
+
 require('../../../dist/main/index.js')
