@@ -1130,6 +1130,70 @@ describe('ToolRegistry input schemas agents can list (#4142)', () => {
     assert.match(warnings[0] ?? '', /can't be converted to JSON Schema/)
   })
 
+  it('filters invalid schemas from the originating scoped catalog while ordinary tools stay live', () => {
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'mcp__a__read',
+      description: 'originating project',
+      parameters: z.object({}),
+      execute: echo,
+    })
+    const originating = reg.createToolScope('mcp__')
+    reg.unregister('mcp__a__read')
+    reg.register({
+      name: 'mcp__b__read',
+      description: 'visible project',
+      parameters: z.object({}),
+      execute: echo,
+    })
+    reg.register({
+      name: 'read_file',
+      description: 'ordinary tool added after admission',
+      parameters: z.object({ path: z.string() }),
+      execute: echo,
+    })
+    const warnings = warningsDuring(() => {
+      originating(() => {
+        reg.register({
+          name: 'mcp__a__invalid',
+          description: 'untrusted originating schema',
+          parameters: z.unknown(),
+          rawParameters: { type: 'object', oneOf: [] },
+          untrustedSchema: true,
+          execute: echo,
+        })
+        assert.equal(reg.has('mcp__a__invalid'), true)
+        assert.equal(reg.has('mcp__b__read'), false)
+        for (let listing = 0; listing < 2; listing++) {
+          assert.deepEqual(
+            reg
+              .toMcpTools()
+              .map((tool) => tool.name)
+              .sort(),
+            ['mcp__a__read', 'read_file'],
+          )
+          assert.deepEqual(
+            reg
+              .toLLMTools()
+              .map((tool) => tool.name)
+              .sort(),
+            ['mcp__a__read', 'read_file'],
+          )
+        }
+      })
+    })
+    assert.equal(warnings.length, 2, 'each dialect warns once across repeated scoped listings')
+    assert.ok(warnings.every((warning) => warning.includes('mcp__a__invalid')))
+    assert.equal(reg.has('mcp__a__invalid'), false, 'scoped registration must not leak to B')
+    assert.deepEqual(
+      reg
+        .toMcpTools()
+        .map((tool) => tool.name)
+        .sort(),
+      ['mcp__b__read', 'read_file'],
+    )
+  })
+
   it('in a packaged build, registers a bad first-party tool but offers it to no model', () => {
     setElectronAppRuntime({ userDataPath: '/unused', version: '0.0.0', isPackaged: true })
     const reg = new ToolRegistry()

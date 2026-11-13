@@ -1748,6 +1748,58 @@ describe('startAcpNativeBridge', () => {
     assert.equal(await bridge.whenToolsListed(0), true)
   })
 
+  it('records the originating scoped catalog and refreshed unbound ordinary tools', async () => {
+    const registry = testRegistry([])
+    registry.register({
+      name: 'mcp__a__read',
+      description: 'originating project',
+      parameters: z.object({}),
+      execute: () => 'A',
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-scoped-listing',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-scoped-listing', '/worktrees/a'))
+    for (const init of initialized()) await rpc(bridge, init)
+    const scoped = await rpc(bridge, LIST_TOOLS)
+    const scopedNames = recordArrayOrEmpty(rpcResult(scoped)['tools']).map((tool) => tool['name'])
+    assert.deepEqual([...scopedNames].sort(), ['mcp__a__read', 'run_shell', 'staged_diffs'])
+    assert.equal(bridge.toolsListed(), true)
+    assert.deepEqual(bridge.listedToolNames(), scopedNames)
+
+    registry.unregister('mcp__a__read')
+    registry.register({
+      name: 'mcp__b__read',
+      description: 'new visible project',
+      parameters: z.object({}),
+      execute: () => 'B',
+    })
+    const afterNavigation = await rpc(bridge, LIST_TOOLS)
+    assert.deepEqual(
+      recordArrayOrEmpty(rpcResult(afterNavigation)['tools']).map((tool) => tool['name']),
+      scopedNames,
+    )
+    assert.deepEqual(bridge.listedToolNames(), scopedNames)
+
+    bridge.setExecutionContext(null)
+    registry.register({
+      name: 'read_file',
+      description: 'ordinary tool added between turns',
+      parameters: z.object({ path: z.string() }),
+      execute: () => 'read',
+    })
+    const unbound = await rpc(bridge, LIST_TOOLS)
+    const unboundNames = recordArrayOrEmpty(rpcResult(unbound)['tools']).map((tool) => tool['name'])
+    assert.deepEqual([...unboundNames].sort(), [
+      'mcp__a__read',
+      'read_file',
+      'run_shell',
+      'staged_diffs',
+    ])
+    assert.deepEqual(bridge.listedToolNames(), unboundNames)
+  })
+
   it('stops waiting for a listing when the wait is aborted', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
