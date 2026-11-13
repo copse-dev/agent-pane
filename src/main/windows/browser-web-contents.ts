@@ -60,7 +60,7 @@ function configureBrowserSession(
     }
     callback({ cancel: !allowed })
   })
-  configureBrowserPermissions(sess, originAccess === 'public-web' ? 'interactive' : 'restricted')
+  configureBrowserPermissions(sess)
 }
 
 /** Configure before a guest is created, so its first request is already protected. */

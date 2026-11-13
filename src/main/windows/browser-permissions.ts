@@ -1,47 +1,18 @@
 import type { Session } from 'electron'
 
-export type BrowserPermissionProfile = 'interactive' | 'restricted'
-
-// The visible browser retains two gesture-gated browser affordances. Agent
-// automation and hidden previews remain deny-all. Keep this list explicit: a
-// new Chromium permission must never inherit access by omission.
-const INTERACTIVE_BROWSER_PERMISSIONS: ReadonlySet<string> = new Set([
-  'clipboard-sanitized-write',
-  'fullscreen',
-])
-
-export function isBrowserPermissionAllowed(
-  permission: string,
-  profile: BrowserPermissionProfile,
-): boolean {
-  return profile === 'interactive' && INTERACTIVE_BROWSER_PERMISSIONS.has(permission)
-}
-
-async function hasTransientUserActivation(webContents: Electron.WebContents): Promise<boolean> {
-  if (webContents.isDestroyed()) return false
-  try {
-    return (
-      (await webContents.executeJavaScript('navigator.userActivation.isActive', false)) === true
-    )
-  } catch {
-    return false
-  }
+export function isBrowserPermissionAllowed(_permission: string): boolean {
+  return false
 }
 
 /** Install before creating guests; checks and requests must use the same policy. */
 export function configureBrowserPermissions(
   sess: Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>,
-  profile: BrowserPermissionProfile = 'restricted',
 ): void {
-  sess.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (!isBrowserPermissionAllowed(permission, profile)) {
-      callback(false)
-      return
-    }
-    void hasTransientUserActivation(webContents).then(callback)
+  sess.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(isBrowserPermissionAllowed(permission))
   })
-  // Never turn a gesture-scoped affordance into a durable origin permission.
-  // Chromium asks the request handler after a denied check; that path verifies
-  // the guest's live transient activation immediately before granting access.
+  // A request grant can be cached by Chromium even when later checks return
+  // false. Keep page capabilities denied and expose copy/capture through
+  // Copse-owned controls instead of trying to emulate a one-shot grant.
   sess.setPermissionCheckHandler(() => false)
 }

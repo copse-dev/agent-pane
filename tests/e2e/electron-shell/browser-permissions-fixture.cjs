@@ -8,7 +8,6 @@ const { app, BrowserWindow, Menu, webContents, clipboard } = require('electron')
 
 function install(dir) {
   fs.mkdirSync(dir, { recursive: true })
-  const permissionRequests = []
   const record = (event) =>
     fs.appendFileSync(path.join(dir, 'events.jsonl'), `${JSON.stringify(event)}\n`)
   app.on('session-created', (sess) => {
@@ -30,7 +29,6 @@ function install(dir) {
                   url: details.requestingUrl,
                   mediaTypes: details.mediaTypes,
                 }
-                permissionRequests.push(observation)
                 record(observation)
                 callback(allowed)
               },
@@ -87,7 +85,6 @@ function install(dir) {
             })()`,
             false,
           )
-          const requestCountBeforeClick = permissionRequests.length
           const owner = BrowserWindow.fromWebContents(wc.hostWebContents)
           owner?.show()
           owner?.focus()
@@ -97,29 +94,6 @@ function install(dir) {
           wc.sendInputEvent({ type: 'mouseMove', x, y })
           wc.sendInputEvent({ type: 'mouseDown', button: 'left', x, y, clickCount: 1 })
           wc.sendInputEvent({ type: 'mouseUp', button: 'left', x, y, clickCount: 1 })
-          if (permission === 'clipboard-sanitized-write') {
-            // macOS automation can leave the OS clipboard promise unresolved,
-            // but the real click must still reach and pass the production
-            // request callback. Never substitute the earlier permission check.
-            const deadline = Date.now() + 4000
-            while (
-              !permissionRequests
-                .slice(requestCountBeforeClick)
-                .some(
-                  (event) =>
-                    event.permission === permission &&
-                    event.contentsType === wc.getType() &&
-                    event.allowed,
-                )
-            ) {
-              if (Date.now() >= deadline) {
-                throw new Error('clipboard write did not reach an allowed request callback')
-              }
-              await new Promise((resolve) => setTimeout(resolve, 25))
-            }
-            results[permission] = 'requested'
-            continue
-          }
           results[permission] = await wc.executeJavaScript(
             `new Promise((resolve, reject) => {
               const started = Date.now();

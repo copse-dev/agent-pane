@@ -22,11 +22,10 @@ Tab persistence, pop-outs and agent preview promotion preserve that scope too.
 
 Both browser profiles fail closed on web-platform permission checks. Unknown/new
 names are denied along with camera/microphone, display capture, filesystem,
-clipboard reads, location, device and notification access. The visible
-user-controlled browser additionally allows requests for sanitized clipboard
-writes and fullscreen only while its live guest has transient user activation;
-the grant is never exposed as a durable origin permission. Agent profiles and
-hidden previews remain deny-all. Origin approval grants network access, not these
+clipboard access, fullscreen, location, device and notification access. This
+also applies to the visible user-controlled browser: Chromium can retain an
+allowed permission request beyond the initiating gesture, so Copse does not
+attempt a one-shot page grant. Origin approval grants network access, not these
 capabilities.
 Host-owned copy/paste, screenshots and exports remain available through Copse's
 controls.

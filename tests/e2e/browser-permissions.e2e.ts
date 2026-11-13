@@ -274,7 +274,7 @@ describe('browser guest permission policy', function () {
   it('denies page capabilities in the interactive browser while host copy and capture work', async () => {
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     await navigateActiveBrowserTab(`${origin}/permissions`)
-    await expectPermissionPolicy('webview', new Set(['clipboard-sanitized-write', 'fullscreen']))
+    await expectPermissionPolicy('webview')
     writeFileSync(join(fixtureDir, 'copy-link'), '')
     await browser.waitUntil(
       () =>
