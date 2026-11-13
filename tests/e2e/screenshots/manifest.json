@@ -6281,6 +6281,10 @@
       "sha256": "acfef38c735e24709e50c6a52f67ae70f822f2b75399751b0de21387c8844b4a",
       "bytes": 299200
     },
+    "workspace-preview-external-explained.png": {
+      "sha256": "0aaf71337a38302d7204e7b7ba78b9605e224207844b1ed11bbb764757b107be",
+      "bytes": 265498
+    },
     "workspace-preview-protected.png": {
       "sha256": "2638991ca6381cd29449a45d013e746466beb405916d531d3fab8be7f9b32e25",
       "bytes": 249381
