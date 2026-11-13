@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { areAnimatedExplainersEnabled } from '@copse/agent/canvas-settings.ts'
 import { readPluginSettingValue } from '../plugins/plugin-settings-read.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -7,8 +8,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import * as fs from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import type {
   McpServerConfig,
@@ -19,6 +21,7 @@ import type {
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import {
@@ -73,6 +76,8 @@ import { prepareAgentPluginMcpConfigs } from '../plugins/agent-plugin-mcp-runtim
 import { withWorktreeWriter } from '../worktree-writers.ts'
 import {
   clearMcpToolPermissionTargets,
+  createMcpPermissionScope,
+  runWithLiveMcpPermissionTargets,
   migrateLegacyMcpToolGrants,
   registerMcpToolPermissionTarget,
   resolveToolPermission,
@@ -104,6 +109,7 @@ export function setMcpServerUserEnabled(name: string, enabled: boolean): Promise
 interface ActiveServer {
   config: McpServerConfig
   client: Client
+  revoked: boolean
 }
 
 interface McpToolMeta {
@@ -124,36 +130,113 @@ interface CreatedTransport {
   stderrOutput: () => string
 }
 
-const activeServers: ActiveServer[] = []
-// Remote servers this load was allowed to connect, by name, as connected
-// (interpolated). Sign-in only ever targets one of these: never an untrusted
-// project server or one the user turned off.
-const signInTargets = new Map<string, McpServerConfig>()
-const toolMeta = new Map<string, McpToolMeta>()
-let serverStatuses: McpServerStatus[] = []
-// Bumped on every (re)load/teardown/shutdown. An in-flight connect that finishes
-// after a newer load started is "stale": it must close its client and avoid
-// mutating the shared registry/state, or it orphans a child process and
-// re-registers tools the newer teardown already cleared.
-let loadGeneration = 0
-// Bumped whenever the bundled in-process servers are reconnected: by a plugin
-// toggle's resync, a full load, teardown and shutdown. A bundled connect started
-// under an older value is superseded and must not register tools or publish its
-// status — otherwise a quick enable→disable leaves the canvas tool registered.
-let bundledGeneration = 0
-// Full reloads, bundled-only resyncs and shutdown all mutate the same client
-// list and tool registry around awaited closes. Run those lifecycle boundaries
-// one at a time so a client connected by one operation cannot be swept out of
-// tracking by another operation's post-await cleanup.
-let lifecycleTail: Promise<void> = Promise.resolve()
+interface McpConnectionSet {
+  workspace: string | null
+  servers: ActiveServer[]
+  signInTargets: Map<string, McpServerConfig>
+  toolMeta: Map<string, McpToolMeta>
+  statuses: McpServerStatus[]
+  loadGeneration: number
+  bundledGeneration: number
+  owners: number
+  retired: boolean
+  revoked: boolean
+  disconnect: AbortController
+  connectSignal?: AbortSignal
+  lifecycleTail: Promise<void>
+}
 
-function serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
-  const result = lifecycleTail.then(operation)
-  lifecycleTail = result.then(
+interface McpBinding {
+  set: McpConnectionSet
+  tools: <T>(operation: () => T) => T
+  permissions: <T>(operation: () => T) => T
+  owners: number
+}
+
+/** An admitted turn's external tools and exact originating permission identities. */
+export interface McpToolScope {
+  run: <T>(operation: () => T) => T
+  retain: () => McpToolScope
+  release: () => Promise<void>
+}
+
+/** Match persisted project aliases to the selected, canonical workspace root. */
+function mcpWorkspaceIdentity(workspace: string | null): string | null {
+  if (workspace === null) return null
+  const absolute = resolve(workspace)
+  try {
+    return realpathSync.native(absolute)
+  } catch {
+    // A missing/offline project still has a distinct lexical identity, as in
+    // workspace trust. Never substitute the currently selected project.
+    return absolute
+  }
+}
+
+function createConnectionSet(workspace: string | null): McpConnectionSet {
+  return {
+    workspace: mcpWorkspaceIdentity(workspace),
+    servers: [],
+    signInTargets: new Map(),
+    toolMeta: new Map(),
+    statuses: [],
+    loadGeneration: 0,
+    bundledGeneration: 0,
+    owners: 0,
+    retired: false,
+    revoked: false,
+    disconnect: new AbortController(),
+    lifecycleTail: Promise.resolve(),
+  }
+}
+
+const connectionScope = new AsyncLocalStorage<McpBinding | undefined>()
+const loadingSet = new AsyncLocalStorage<McpConnectionSet>()
+let visibleSet = createConnectionSet(null)
+const connectionSets = new Set([visibleSet])
+let discoveryStarted = false
+
+function mcpState(): McpConnectionSet {
+  return loadingSet.getStore() ?? visibleSet
+}
+
+function connectionDiscoverySignal(state: McpConnectionSet): AbortSignal {
+  return state.connectSignal
+    ? AbortSignal.any([state.disconnect.signal, state.connectSignal])
+    : state.disconnect.signal
+}
+
+// Only visible replacements/resyncs share the live tool and permission maps.
+// Independent offscreen sets must not hold this queue during network discovery
+// or retirement: a ready visible project can admit turns while they initialize.
+let visibleLifecycleTail: Promise<void> = Promise.resolve()
+
+function serializeVisibleLifecycle<T>(operation: () => T | Promise<T>): Promise<T> {
+  const result = visibleLifecycleTail.then(operation)
+  visibleLifecycleTail = result.then(
     () => undefined,
     () => undefined,
   )
   return result
+}
+
+function serializeConnectionLifecycle<T>(
+  state: McpConnectionSet,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const result = state.lifecycleTail.then(operation)
+  state.lifecycleTail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
+
+function disposeConnectionSet(state: McpConnectionSet): Promise<void> {
+  // Cancel discovery now; wait only for this set's cleanup before closing its
+  // tracked clients. A concurrent admission can never publish after disposal.
+  revokeConnectionSet(state)
+  return serializeConnectionLifecycle(state, () => closeConnectionSet(state))
 }
 
 /**
@@ -162,20 +245,20 @@ function serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
  * header). Undefined for anything else.
  */
 export function getMcpSignInTarget(name: string): McpServerConfig | undefined {
-  return signInTargets.get(name)
+  return mcpState().signInTargets.get(name)
 }
 
 export function getMcpServerStatuses(): McpServerStatus[] {
-  return serverStatuses.map((s) => ({ ...s }))
+  return mcpState().statuses.map((s) => ({ ...s }))
 }
 
 export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
-  return toolMeta.get(toolName)
+  return mcpState().toolMeta.get(toolName)
 }
 
 /** External MCP tools that can meaningfully be granted to an automation. */
 export function listMcpPermissionCandidates(): McpPermissionCandidate[] {
-  return [...toolMeta.entries()]
+  return [...mcpState().toolMeta.entries()]
     .filter(([, meta]) => meta.bundled !== true)
     .map(([toolName, meta]) => ({
       toolName,
@@ -261,7 +344,7 @@ async function collectConfigs(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
 }> {
-  const workspace = getWorkspaceRoot()
+  const workspace = mcpState().workspace
   const projectSources = workspace ? projectMcpSourcePaths(workspace) : []
   const userSources = userMcpSourcePaths()
 
@@ -278,7 +361,7 @@ async function collectConfigs(): Promise<{
   // over the curated catalog on name collisions, so a user can override a curated
   // definition in their own mcp.json.
   const userMerged = mergeMcpConfigs([...userPerSource, cursorPluginMerged, agentPluginMerged])
-  const xcodeBuildMcp = getXcodeBuildMcpConfig()
+  const xcodeBuildMcp = getXcodeBuildMcpConfig(workspace, getThreadExecutionContext()?.projectId)
   // The bundled first-party definition owns its reserved server name. A
   // workspace or user config cannot shadow the executable Copse reviewed.
   const appActive = mergeMcpConfigs([
@@ -410,11 +493,28 @@ export async function connectMcpClient(
   transport: Transport,
   ms: number,
   label: string,
+  signal?: AbortSignal,
 ): Promise<void> {
+  // SDK initialize failure starts an unawaited Client.close(). Stdio.close()
+  // forgets its child before awaiting exit, so a second close otherwise returns
+  // early. Share the first transport close through the actual process exit.
+  const connectedTransport = asProtocolTransport(transport)
+  let closing: Promise<void> | undefined
+  const closeTransport = (): Promise<void> => {
+    closing ??= Promise.resolve().then(() => transport.close())
+    return closing
+  }
+  connectedTransport.close = closeTransport
   try {
-    await withTimeout(client.connect(transport), ms, label)
+    await withTimeout(
+      client.connect(connectedTransport, signal ? { signal } : undefined),
+      ms,
+      label,
+    )
   } catch (err) {
-    await client.close().catch(() => {})
+    const cleanup = await Promise.allSettled([client.close(), closeTransport()])
+    const failed = cleanup.find((result) => result.status === 'rejected')
+    if (failed) console.error('[MCP] Connection cleanup failed:', errorMessage(failed.reason))
     throw err
   }
 }
@@ -457,17 +557,18 @@ export function onMcpStatusesChanged(listener: (statuses: McpServerStatus[]) => 
  * was refused). Report it as needing sign-in so Settings offers Sign in.
  */
 function markSignInRequired(serverName: string): void {
-  const index = serverStatuses.findIndex(
+  const index = mcpState().statuses.findIndex(
     (status) => status.name === serverName && status.auth !== 'required',
   )
-  const current = serverStatuses[index]
+  const current = mcpState().statuses[index]
   if (current === undefined) return
-  serverStatuses = serverStatuses.with(index, {
+  mcpState().statuses = mcpState().statuses.with(index, {
     ...current,
     state: 'error',
     error: 'Sign-in required',
     auth: 'required',
   })
+  if (mcpState() !== visibleSet) return
   const snapshot = getMcpServerStatuses()
   for (const listener of statusListeners) listener(snapshot)
 }
@@ -496,7 +597,7 @@ function createTransport(
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
   }
-  const cwd = cfg.cwd ?? getWorkspaceRoot() ?? undefined
+  const cwd = cfg.cwd ?? mcpState().workspace ?? undefined
   const transport = new StdioClientTransport({
     command: cfg.command,
     args: cfg.args ?? [],
@@ -538,9 +639,12 @@ async function registerClientTools(
   registry: ToolRegistry,
   client: Client,
   server: Omit<McpPermissionTarget, 'toolName'>,
+  connection: ActiveServer,
 ): Promise<string[]> {
-  const { tools } = await client.listTools()
-  return registerListedTools(registry, client, server, tools, false)
+  const { tools } = await client.listTools(undefined, {
+    signal: connectionDiscoverySignal(mcpState()),
+  })
+  return registerListedTools(registry, client, server, tools, false, connection)
 }
 
 type ListedTools = Awaited<ReturnType<Client['listTools']>>['tools']
@@ -552,7 +656,9 @@ function registerListedTools(
   server: Omit<McpPermissionTarget, 'toolName'>,
   tools: ListedTools,
   bundled: boolean,
+  connection: ActiveServer,
 ): string[] {
+  const state = mcpState()
   const toolNames: string[] = []
   for (const tool of tools) {
     const fullName = mcpToolName(server.serverName, tool.name)
@@ -577,7 +683,7 @@ function registerListedTools(
       }
       meta.annotations = annotations
     }
-    toolMeta.set(fullName, meta)
+    mcpState().toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,
       description: `[MCP:${server.serverName}] ${tool.description ?? ''}`.trim(),
@@ -588,6 +694,10 @@ function registerListedTools(
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       untrustedSchema: true,
       async execute(args, signal) {
+        signal.throwIfAborted()
+        if (state.revoked || connection.revoked) {
+          throw new Error(`MCP server "${server.serverName}" was disconnected or reconfigured.`)
+        }
         const preparedArgs =
           server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
@@ -607,11 +717,14 @@ function registerListedTools(
                 arguments: isRecord(preparedArgs) ? preparedArgs : {},
               },
               undefined,
-              { signal, ...(timeout === undefined ? {} : { timeout }) },
+              {
+                signal: AbortSignal.any([signal, state.disconnect.signal]),
+                ...(timeout === undefined ? {} : { timeout }),
+              },
             ),
           )
         } catch (error) {
-          if (signInTargets.has(server.serverName) && isMcpSignInRequiredError(error)) {
+          if (state.signInTargets.has(server.serverName) && isMcpSignInRequiredError(error)) {
             markSignInRequired(server.serverName)
             throw new Error(
               `MCP server "${server.serverName}" needs you to sign in again (Settings → MCP servers).`,
@@ -658,25 +771,38 @@ function registerListedTools(
  */
 async function connectBundledServers(
   registry: ToolRegistry,
-  isCurrent: () => boolean,
+  generationCurrent: () => boolean,
 ): Promise<McpServerStatus[]> {
   if (!getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
+  const isCurrent = (): boolean =>
+    generationCurrent() &&
+    !mcpState().revoked &&
+    getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
   const bundled = await createBundledMcpServers({
     animatedExplainersEnabled: areAnimatedExplainersEnabled(readPluginSettingValue),
+    signal: connectionDiscoverySignal(mcpState()),
   })
   const statuses: McpServerStatus[] = []
   for (const [index, { name, client }] of bundled.entries()) {
     let tracked = false
     try {
-      const listed = isCurrent() ? (await client.listTools()).tools : null
+      const listed = isCurrent()
+        ? (await client.listTools(undefined, { signal: connectionDiscoverySignal(mcpState()) }))
+            .tools
+        : null
       // Superseded while starting or listing: close this and every later client
       // without touching the registry. Servers this call already registered stay
-      // in activeServers, where the newer reconnect removes them.
+      // in mcpState().servers, where the newer reconnect removes them.
       if (listed === null || !isCurrent()) {
         await Promise.allSettled(bundled.slice(index).map((b) => b.client.close()))
         return []
       }
-      activeServers.push({ config: { name, transport: 'in-process' }, client })
+      const connection: ActiveServer = {
+        config: { name, transport: 'in-process' },
+        client,
+        revoked: false,
+      }
+      mcpState().servers.push(connection)
       tracked = true
       const tools = registerListedTools(
         registry,
@@ -684,6 +810,7 @@ async function connectBundledServers(
         { serverName: name, origin: 'built-in' },
         listed,
         true,
+        connection,
       )
       statuses.push({
         name,
@@ -726,6 +853,7 @@ async function connectServer(
   userDisabled: ReadonlySet<string>,
   generation: number,
 ): Promise<McpServerStatus> {
+  const state = mcpState()
   // Agent Plugins performs exactly the two portable placeholder expansions in
   // its adapter. Running the native env interpolator afterwards would violate
   // §9.2 by expanding arbitrary `${VAR}` strings.
@@ -753,7 +881,7 @@ async function connectServer(
   }
 
   if (cfg.transport === 'http' && cfg.url !== undefined && !hasAuthorizationHeader(cfg)) {
-    signInTargets.set(cfg.name, cfg)
+    mcpState().signInTargets.set(cfg.name, cfg)
   }
   let authProvider: OAuthClientProvider | undefined
   let stderrOutput = (): string => ''
@@ -769,22 +897,29 @@ async function connectServer(
       created.transport,
       CONNECT_TIMEOUT_MS,
       `Connecting to "${cfg.name}"`,
+      connectionDiscoverySignal(state),
     )
 
     // A newer load/teardown superseded us while connecting — close this client
     // instead of pushing it (and its child process) into the live set.
-    if (generation !== loadGeneration) {
+    if (generation !== mcpState().loadGeneration) {
       await client.close().catch(() => {})
       return { ...base, state: 'error', error: 'superseded by a newer reload' }
     }
-    activeServers.push({ config: cfg, client })
+    const connection: ActiveServer = { config: cfg, client, revoked: false }
+    mcpState().servers.push(connection)
 
-    const toolNames = await registerClientTools(registry, client, {
-      serverName: cfg.name,
-      origin: base.origin,
-      ...(base.source === undefined ? {} : { source: base.source }),
-      ...(base.originDetail === undefined ? {} : { originDetail: base.originDetail }),
-    })
+    const toolNames = await registerClientTools(
+      registry,
+      client,
+      {
+        serverName: cfg.name,
+        origin: base.origin,
+        ...(base.source === undefined ? {} : { source: base.source }),
+        ...(base.originDetail === undefined ? {} : { originDetail: base.originDetail }),
+      },
+      connection,
+    )
 
     console.log(
       `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
@@ -811,32 +946,203 @@ async function connectServer(
   }
 }
 
-async function teardown(registry: ToolRegistry): Promise<void> {
-  // Invalidate any in-flight load so its connects close themselves rather than
-  // re-registering into the set we are clearing.
-  loadGeneration++
-  bundledGeneration++
-  for (const name of registry.names()) {
-    if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
+function runInBinding<T>(binding: McpBinding, operation: () => T): T {
+  return loadingSet.run(binding.set, () =>
+    connectionScope.run(binding, () => binding.tools(() => binding.permissions(operation))),
+  )
+}
+
+function runInVisibleSet<T>(registry: ToolRegistry, operation: () => T): T {
+  return loadingSet.run(visibleSet, () =>
+    connectionScope.run(undefined, () =>
+      registry.runWithLiveTools(() => runWithLiveMcpPermissionTargets(operation)),
+    ),
+  )
+}
+
+function revokeConnectionSet(state: McpConnectionSet): void {
+  if (state.revoked) return
+  state.revoked = true
+  state.loadGeneration++
+  state.bundledGeneration++
+  state.disconnect.abort(new Error('MCP connections were disconnected or reconfigured.'))
+}
+
+async function closeConnectionSet(state: McpConnectionSet): Promise<void> {
+  revokeConnectionSet(state)
+  const servers = state.servers.splice(0)
+  for (const server of servers) server.revoked = true
+  const closed = await Promise.allSettled(servers.map((server) => server.client.close()))
+  for (const result of closed) {
+    if (result.status === 'rejected') {
+      console.error('[MCP] Failed to close a disconnected server:', errorMessage(result.reason))
+    }
   }
-  toolMeta.clear()
-  signInTargets.clear()
-  clearMcpToolPermissionTargets()
-  await Promise.allSettled(activeServers.map((s) => s.client.close()))
-  activeServers.length = 0
+  connectionSets.delete(state)
+}
+
+function leaseBinding(binding: McpBinding): McpToolScope {
+  binding.set.owners++
+  binding.owners++
+  let released = false
+  return {
+    run: <T>(operation: () => T): T => {
+      if (released) throw new Error('The owning MCP turn has ended.')
+      return runInBinding(binding, operation)
+    },
+    retain: (): McpToolScope => {
+      if (released) throw new Error('The owning MCP turn has ended.')
+      return leaseBinding(binding)
+    },
+    release: (): Promise<void> => {
+      if (released) return Promise.resolve()
+      released = true
+      binding.set.owners--
+      binding.owners--
+      if (!binding.set.retired || binding.set.owners !== 0) return Promise.resolve()
+      return serializeConnectionLifecycle(binding.set, async () => {
+        if (binding.set.retired && binding.set.owners === 0) {
+          await closeConnectionSet(binding.set)
+        }
+      })
+    },
+  }
+}
+
+/** Capture explicitly: bridge HTTP requests do not inherit their owning turn's ALS. */
+export function captureMcpToolScope(workspace?: string | null): McpToolScope | null {
+  const binding = connectionScope.getStore()
+  return binding &&
+    binding.owners > 0 &&
+    !binding.set.revoked &&
+    (workspace === undefined || binding.set.workspace === mcpWorkspaceIdentity(workspace))
+    ? leaseBinding(binding)
+    : null
+}
+
+/**
+ * A turn owns one originating external tool surface through all of its calls.
+ * An offscreen turn loads its own project's config/cwd instead of borrowing the
+ * window's current project. Only navigation retires connections; settings and
+ * trust changes still invalidate every retained connection.
+ */
+export function acquireMcpToolScope(
+  registry: ToolRegistry,
+  workspace = getThreadExecutionContext()?.projectRoot ?? getWorkspaceRoot(),
+  signal?: AbortSignal,
+): Promise<McpToolScope> {
+  signal?.throwIfAborted()
+  workspace = mcpWorkspaceIdentity(workspace)
+  const current = connectionScope.getStore()
+  if (
+    current &&
+    current.owners > 0 &&
+    current.set.workspace === workspace &&
+    !current.set.revoked
+  ) {
+    return Promise.resolve(leaseBinding(current))
+  }
+  if (discoveryStarted && ![...connectionSets].some((state) => !state.revoked))
+    return Promise.reject(new Error('MCP connections are shut down.'))
+  // Reserve admission before queueing, just like visible reloads. Explicit
+  // shutdown/config revocation must reach it before it can reuse or initialize
+  // any connection; ordinary navigation preserves retired turn reservations.
+  const state = createConnectionSet(workspace)
+  state.retired = true
+  if (signal) state.connectSignal = signal
+  connectionSets.add(state)
+  const canReuseVisible =
+    !discoveryStarted || (visibleSet.workspace === workspace && !visibleSet.revoked)
+  const checkAdmission = (): void => {
+    signal?.throwIfAborted()
+    if (connectionSetIsRevoked(state))
+      throw new Error('MCP connections were disconnected or reconfigured before this turn started.')
+  }
+  const pending = (async (): Promise<McpToolScope> => {
+    try {
+      if (canReuseVisible) {
+        const scope = await serializeVisibleLifecycle(() => {
+          checkAdmission()
+          if (discoveryStarted && (visibleSet.workspace !== workspace || visibleSet.revoked))
+            return null
+          connectionSets.delete(state)
+          return runInVisibleSet(registry, () =>
+            leaseBinding({
+              set: visibleSet,
+              tools: registry.createToolScope(MCP_TOOL_PREFIX),
+              permissions: createMcpPermissionScope(),
+              owners: 0,
+            }),
+          )
+        })
+        if (scope) return scope
+      }
+      const binding: McpBinding = {
+        set: state,
+        tools: registry.createToolScope(MCP_TOOL_PREFIX, false),
+        permissions: createMcpPermissionScope(false),
+        owners: 0,
+      }
+      return await serializeConnectionLifecycle(state, async () => {
+        checkAdmission()
+        try {
+          await runInBinding(binding, () => loadConnectionSet(registry))
+          checkAdmission()
+          delete state.connectSignal
+          return leaseBinding(binding)
+        } catch (error) {
+          await closeConnectionSet(state)
+          throw error
+        }
+      })
+    } catch (error) {
+      await disposeConnectionSet(state)
+      throw error
+    }
+  })()
+  if (!signal) return pending
+  return new Promise((resolve, reject) => {
+    const abortError = (): Error =>
+      signal.reason instanceof Error ? signal.reason : new Error('MCP turn cancelled')
+    const onAbort = (): void => {
+      reject(abortError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+    pending.then(
+      (scope) => {
+        signal.removeEventListener('abort', onAbort)
+        if (!signal.aborted) resolve(scope)
+        else {
+          void scope.release().catch((error: unknown) => {
+            console.error('[MCP] Cancelled turn release failed:', errorMessage(error))
+          })
+          reject(abortError())
+        }
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error instanceof Error ? error : new Error(errorMessage(error)))
+      },
+    )
+  })
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
-  const generation = ++loadGeneration
-  const bundledRun = ++bundledGeneration
+  await requestVisibleConnections(registry, false)
+}
+
+async function loadConnectionSet(registry: ToolRegistry): Promise<void> {
+  const generation = ++mcpState().loadGeneration
+  const bundledRun = ++mcpState().bundledGeneration
   const bundledCurrent = (): boolean =>
-    generation === loadGeneration && bundledRun === bundledGeneration
+    generation === mcpState().loadGeneration && bundledRun === mcpState().bundledGeneration
   // A plugin toggle can reconnect the bundled servers while this load is still
   // connecting configured ones; publish the toggle's bundled statuses then.
   const publishedBundled = (): McpServerStatus[] =>
-    bundledRun === bundledGeneration
+    bundledRun === mcpState().bundledGeneration
       ? bundledStatuses
-      : serverStatuses.filter((status) => status.transport === 'in-process')
+      : mcpState().statuses.filter((status) => status.transport === 'in-process')
   // E2e profiles are isolated from real user state. When a spec writes the
   // supported user-data mcp.json surface, load only that file; otherwise retain
   // the ordinary in-process bundled-server coverage and skip configured servers.
@@ -854,6 +1160,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // above still applies, so a run whose profile leaves the plugin off connects
   // nothing at all.
   const bundledStatuses = e2eMcpFixture ? [] : await connectBundledServers(registry, bundledCurrent)
+  mcpState().connectSignal?.throwIfAborted()
   // Skip *configured* MCP server connections under agent-eval and e2e. e2e mocks
   // the LLM and must not reach the network — a curated HTTP server (e.g. the MDN
   // server at https://mcp.mdn.mozilla.net/) would block the awaited startup
@@ -864,17 +1171,18 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     process.env['COPSE_AGENT_EVAL'] === '1' ||
     (process.env['COPSE_E2E'] === '1' && !e2eMcpFixture)
   ) {
-    if (generation === loadGeneration) {
-      serverStatuses = publishedBundled()
+    if (generation === mcpState().loadGeneration) {
+      mcpState().statuses = publishedBundled()
       await migrateLegacyMcpToolGrants()
     }
     return
   }
   const { active, untrusted } = e2eMcpFixtureConfig ?? (await collectConfigs())
-  if (generation !== loadGeneration) return // superseded while reading config
+  mcpState().connectSignal?.throwIfAborted()
+  if (generation !== mcpState().loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
   if (active.length === 0 && untrusted.length === 0 && publishedBundled().length === 0) {
-    serverStatuses = []
+    mcpState().statuses = []
     await migrateLegacyMcpToolGrants()
     return
   }
@@ -885,8 +1193,8 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // `untrusted` so the UI can offer "trust this workspace" (issue #100).
   const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
   // Only publish statuses if a newer load hasn't started in the meantime.
-  if (generation === loadGeneration) {
-    serverStatuses = [...publishedBundled(), ...connected, ...untrustedStatuses]
+  if (generation === mcpState().loadGeneration) {
+    mcpState().statuses = [...publishedBundled(), ...connected, ...untrustedStatuses]
     await migrateLegacyMcpToolGrants()
   }
 }
@@ -952,13 +1260,70 @@ export async function setWorkspaceTrustAndReload(
   return reloadMcpServers(registry)
 }
 
-/** Tear down all MCP clients/tools and reconnect from current config. */
-export function reloadMcpServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
-  return serializeLifecycle(async () => {
-    await teardown(registry)
-    await loadMcpServers(registry)
+function requestVisibleConnections(
+  registry: ToolRegistry,
+  preserveTurns: boolean,
+): Promise<McpServerStatus[]> {
+  discoveryStarted = true
+  // Track the requested set before queueing. Quit/revocation can then cancel
+  // initialization even when this operation has not reached the queue head.
+  const next = createConnectionSet(getWorkspaceRoot())
+  const previousSets = [...connectionSets]
+  for (const state of previousSets) {
+    if (!preserveTurns || (state.owners === 0 && !state.retired)) revokeConnectionSet(state)
+  }
+  connectionSets.add(next)
+  return serializeVisibleLifecycle(() =>
+    replaceVisibleConnections(registry, next, preserveTurns, previousSets),
+  )
+}
+
+async function replaceVisibleConnections(
+  registry: ToolRegistry,
+  next: McpConnectionSet,
+  preserveTurns: boolean,
+  previousSets: McpConnectionSet[],
+): Promise<McpServerStatus[]> {
+  // A newer navigation may supersede this replacement, but cannot undo an
+  // explicit disconnect that was already requested for these older clients.
+  if (!preserveTurns) await Promise.all(previousSets.map(disposeConnectionSet))
+  if (connectionSetIsRevoked(next)) {
+    connectionSets.delete(next)
+    return visibleSet.statuses.map((status) => ({ ...status }))
+  }
+  const previous = visibleSet
+  previous.retired = true
+  if (preserveTurns && previous.owners === 0) {
+    await disposeConnectionSet(previous)
+  }
+  if (connectionSetIsRevoked(next)) {
+    connectionSets.delete(next)
+    return visibleSet.statuses.map((status) => ({ ...status }))
+  }
+  visibleSet = next
+  return runInVisibleSet(registry, async () => {
+    for (const name of registry.names()) {
+      if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
+    }
+    clearMcpToolPermissionTargets()
+    await loadConnectionSet(registry)
     return getMcpServerStatuses()
   })
+}
+
+/** Another request can revoke this shared set while its predecessor closes. */
+function connectionSetIsRevoked(state: McpConnectionSet): boolean {
+  return state.revoked
+}
+
+/** Explicit reconnect/config/trust changes revoke even previously admitted turns. */
+export function reloadMcpServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  return requestVisibleConnections(registry, false)
+}
+
+/** Project navigation keeps unfinished turns on their originating connections. */
+export function reloadMcpServersForWorkspace(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  return requestVisibleConnections(registry, true)
 }
 
 /**
@@ -968,26 +1333,32 @@ export function reloadMcpServers(registry: ToolRegistry): Promise<McpServerStatu
  * {@link reloadMcpServers} would close and reconnect every one of them.
  */
 async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
-  const run = ++bundledGeneration
-  const bundled = activeServers.filter((server) => server.config.transport === 'in-process')
+  const run = ++mcpState().bundledGeneration
+  const bundled = mcpState().servers.filter((server) => server.config.transport === 'in-process')
   const bundledNames = new Set(bundled.map((server) => server.config.name))
-  for (const [toolName, meta] of toolMeta) {
+  for (const [toolName, meta] of mcpState().toolMeta) {
     if (meta.bundled !== true || !bundledNames.has(meta.server)) continue
     registry.unregister(toolName)
-    toolMeta.delete(toolName)
+    mcpState().toolMeta.delete(toolName)
   }
   // Untrack exactly the clients snapshotted above, before awaiting their close,
   // so anything another load registers meanwhile is never swept up here.
   for (const server of bundled) {
-    const index = activeServers.indexOf(server)
-    if (index !== -1) activeServers.splice(index, 1)
+    const index = mcpState().servers.indexOf(server)
+    if (index !== -1) mcpState().servers.splice(index, 1)
   }
+  for (const server of bundled) server.revoked = true
   await Promise.allSettled(bundled.map((server) => server.client.close()))
-  const bundledStatuses = await connectBundledServers(registry, () => run === bundledGeneration)
+  const bundledStatuses = await connectBundledServers(
+    registry,
+    () => run === mcpState().bundledGeneration,
+  )
   // A newer toggle took over while this one connected; it publishes instead.
-  if (run !== bundledGeneration) return getMcpServerStatuses()
-  const configuredStatuses = serverStatuses.filter((status) => status.transport !== 'in-process')
-  serverStatuses = [...bundledStatuses, ...configuredStatuses]
+  if (run !== mcpState().bundledGeneration) return getMcpServerStatuses()
+  const configuredStatuses = mcpState().statuses.filter(
+    (status) => status.transport !== 'in-process',
+  )
+  mcpState().statuses = [...bundledStatuses, ...configuredStatuses]
   return getMcpServerStatuses()
 }
 
@@ -1007,18 +1378,37 @@ export async function reloadMcpServersForPluginToggle(
   pluginId: string,
 ): Promise<McpServerStatus[] | null> {
   if (pluginId !== MCP_UI_CANVAS_PLUGIN_ID) return null
-  return serializeLifecycle(() => resyncBundledServers(registry))
+  // Revocation does not wait behind a different server's initialize request.
+  // Only client flags change here; registry/list mutation stays serialized.
+  const closing = Promise.allSettled(
+    [...connectionSets].flatMap((state) =>
+      state.servers
+        .filter((server) => server.config.transport === 'in-process')
+        .map((server) => {
+          server.revoked = true
+          return server.client.close()
+        }),
+    ),
+  )
+  return serializeVisibleLifecycle(async () => {
+    for (const result of await closing) {
+      if (result.status === 'rejected') {
+        console.error('[MCP] Bundled server disconnect failed:', errorMessage(result.reason))
+      }
+    }
+    if (visibleSet.revoked) return visibleSet.statuses.map((status) => ({ ...status }))
+    return runInVisibleSet(registry, () => resyncBundledServers(registry))
+  })
 }
 
 export function shutdownMcpServers(): Promise<void> {
-  return serializeLifecycle(async () => {
-    loadGeneration++ // invalidate any in-flight load
-    bundledGeneration++
-    await Promise.allSettled(activeServers.map((s) => s.client.close()))
-    activeServers.length = 0
-    toolMeta.clear()
-    clearMcpToolPermissionTargets()
-    serverStatuses = []
+  for (const state of connectionSets) revokeConnectionSet(state)
+  return serializeVisibleLifecycle(async () => {
+    await Promise.all([...connectionSets].map(disposeConnectionSet))
+    visibleSet.toolMeta.clear()
+    visibleSet.signInTargets.clear()
+    runWithLiveMcpPermissionTargets(clearMcpToolPermissionTargets)
+    visibleSet.statuses = []
   })
 }
 

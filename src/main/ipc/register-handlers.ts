@@ -72,7 +72,7 @@ import { createPluginBrowserPanelService } from '../services/plugins/plugin-brow
 import { setPluginBrowserService } from '../services/plugins/plugin-browser-service.ts'
 
 import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
-import { reloadMcpServers } from '../services/mcp/mcp-registry.ts'
+import { reloadMcpServersForWorkspace } from '../services/mcp/mcp-registry.ts'
 import { getFocusedMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 
 import { getGuardedYoloState, onGuardedYoloChanged } from '../services/security/guarded-yolo.ts'
@@ -169,7 +169,7 @@ export function registerAllHandlers(
     (appPids) => readOwnedProcessRows(primaryWebContentsId, appPids),
   )
   const reloadMcpForWorkspace = (): void => {
-    void reloadMcpServers(registry)
+    void reloadMcpServersForWorkspace(registry)
       .then((statuses) => {
         broadcastToAppWindows('mcp:status-changed', statuses)
       })

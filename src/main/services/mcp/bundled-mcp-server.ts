@@ -82,6 +82,7 @@ export interface BundledMcpServer {
 
 interface BundledMcpOptions {
   animatedExplainersEnabled?: boolean
+  signal?: AbortSignal
 }
 
 function buildCanvasServer(options: BundledMcpOptions): { name: string; server: McpServer } {
@@ -245,7 +246,8 @@ const BUNDLED_SERVER_FACTORIES: ReadonlyArray<
  * Instantiate the bundled servers and connect each to its own in-memory client.
  * The caller (MCP registry) lists/registers the client's tools and owns closing
  * the client. Returns [] on any wiring failure so a bundled-server bug can't take
- * down the rest of MCP loading.
+ * down the rest of MCP loading. Cancellation closes all partial wiring before
+ * returning; the caller retains the admission signal and its cancellation reason.
  */
 export async function createBundledMcpServers(
   options: BundledMcpOptions = {},
@@ -256,13 +258,21 @@ export async function createBundledMcpServers(
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     try {
+      options.signal?.throwIfAborted()
       await server.connect(serverTransport)
-      await client.connect(clientTransport)
+      await client.connect(clientTransport, options.signal ? { signal: options.signal } : undefined)
+      options.signal?.throwIfAborted()
       out.push({ name, server, client })
     } catch (err) {
       console.error('[MCP] Failed to start bundled server:', err)
       await client.close().catch(() => {})
       await server.close().catch(() => {})
+      if (options.signal?.aborted) {
+        await Promise.allSettled(
+          out.flatMap((entry) => [entry.client.close(), entry.server.close()]),
+        )
+        return []
+      }
     }
   }
   return out
