@@ -3449,6 +3449,10 @@
       "sha256": "45d278df556354446d3c45b18711c5f95e98ae83075fd71fdf90c24a9db9783f",
       "bytes": 25254
     },
+    "project-context-retrieval.png": {
+      "sha256": "af3fe34a1cdde7952e3bce0765811284b63ad1f8d645483adc739f3e8299358d",
+      "bytes": 179373
+    },
     "project-port-grant-asks-again.png": {
       "sha256": "d9d51d36917f96728cd70a824cd45a2690b7f4d781cf7ce62337fcfc62298286",
       "bytes": 327066
@@ -4318,8 +4322,8 @@
       "bytes": 257834
     },
     "settings-composition-packs.png": {
-      "sha256": "b1450a9db0e00ff624046830732ef9a8655dc27aab399f190e14d103d81a252e",
-      "bytes": 294934
+      "sha256": "d55eda9150402abcc4977997637052305da8cf5a94233c24f952cf6fd3ed0733",
+      "bytes": 307380
     },
     "settings-composition-source-folders.png": {
       "sha256": "f58e7748a5aea96b8e6338649b0e7cf6d45d378cf935c63f489a636fb8f56e5b",
@@ -4680,6 +4684,10 @@
     "settings-production-targets.png": {
       "sha256": "9561fec511cffe48995e09c9c7ca1f24f7a672aeabaaa6f30656b5c76c37acaf",
       "bytes": 42085
+    },
+    "settings-project-context-plugin.png": {
+      "sha256": "b88da633413a3713511bcc538db0dadd0d236d97b42f444c8d95e7b670269934",
+      "bytes": 37717
     },
     "settings-provider-host-approval.png": {
       "sha256": "54e07175ba61344755238e5260319bfca6065dd6e863a57a4bbf815865901464",
