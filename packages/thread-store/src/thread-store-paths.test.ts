@@ -18,6 +18,8 @@ import type { Message, Thread } from './thread-types.ts'
 import { explodeThread, foldThread, idPathSegment, type FileToWrite } from './fold.ts'
 import {
   SPINE_SCHEMA_VERSION,
+  isContentRef,
+  parseSpine,
   serializeSpineLine,
   type SpineHookRunLine,
   type ThreadMeta,
@@ -232,7 +234,7 @@ describe('thread-store paths', () => {
     assert.deepEqual(loaded?.messages, messages)
   })
 
-  it('keeps plain message and subagent paths stable while tool blobs use their message slot', async () => {
+  it('keeps plain message and subagent paths stable while tool payloads use immutable slot blobs', async () => {
     await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'a1-tc', 'sub1')]))
     const files = filesUnder(join(workspace, 'proj', 't1')).sort()
     for (const expected of [
@@ -241,16 +243,16 @@ describe('thread-store paths', () => {
       join('blobs', 'a1.acp-content.json'),
       join('blobs', 'a1-img-0.dataurl'),
       join('blobs', 'a1-attachment-0.txt'),
-      join('blobs', 'a1.tool-0.result.txt'),
-      join('blobs', 'a1.tool-0.args.json'),
-      join('blobs', 'a1.tool-0-img-0.dataurl'),
-      join('blobs', 'a1.tool-0.acp-content.json'),
       join('subagents', 'sub1', 'events.jsonl'),
       join('subagents', 'sub1', 'messages', 'a1.md'),
     ]) {
       assert.ok(files.includes(expected), `missing ${expected}`)
     }
     const spine = readFileSync(join(workspace, 'proj', 't1', 'events.jsonl'), 'utf8')
+    const toolFiles = files.filter((file) => file.startsWith(join('blobs', 'a1.tool-0') + sep))
+    assert.equal(toolFiles.length, 4)
+    for (const file of toolFiles)
+      assert.match(file.split(sep).join('/'), /^blobs\/a1\.tool-0\/[a-f0-9]{64}\.[\w.-]+$/)
     assert.ok(!spine.includes('"id":"sub1","kind"'), 'plain subagent ids add no spine field')
   })
 
@@ -260,19 +262,23 @@ describe('thread-store paths', () => {
     await saveProjectThread('proj', original)
     const dir = join(workspace, 'proj', 't1')
     // Rewrite to the shape an older build left for a newline-bearing id.
-    for (const suffix of ['.result.txt', '.args.json', '-img-0.dataurl', '.acp-content.json']) {
-      renameSync(
-        join(dir, 'blobs', `a1.tool-0${suffix}`),
-        join(dir, 'blobs', `${legacyId}${suffix}`),
-      )
-    }
     const spinePath = join(dir, 'events.jsonl')
-    writeFileSync(
-      spinePath,
-      readFileSync(spinePath, 'utf8')
-        .replaceAll('a1.tool-0', JSON.stringify(legacyId).slice(1, -1))
-        .replaceAll('legacyid', JSON.stringify(legacyId).slice(1, -1)),
-    )
+    let raw = readFileSync(spinePath, 'utf8')
+    const tool = parseSpine(raw)[0]?.toolCalls[0]
+    assert.ok(tool)
+    assert.ok(isContentRef(tool.args))
+    for (const [ref, suffix] of [
+      [tool.result?.ref, '.result.txt'],
+      [tool.args.ref, '.args.json'],
+      [tool.images?.[0]?.dataUrl.ref, '-img-0.dataurl'],
+      [tool.content?.ref, '.acp-content.json'],
+    ] as const) {
+      assert.ok(ref)
+      const legacyRef = `blobs/${legacyId}${suffix}`
+      renameSync(join(dir, ref), join(dir, legacyRef))
+      raw = raw.replaceAll(JSON.stringify(ref), JSON.stringify(legacyRef))
+    }
+    writeFileSync(spinePath, raw.replaceAll(JSON.stringify('legacyid'), JSON.stringify(legacyId)))
     const [loaded] = await loadProjectThreads('proj')
     const toolCall = loaded?.messages[0]?.toolCalls[0]
     assert.ok(toolCall)
@@ -282,7 +288,11 @@ describe('thread-store paths', () => {
 
   it('refuses a tool-result leaf symlink even when its external bytes match the spine hash', async () => {
     await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub1')]))
-    const blob = join(workspace, 'proj', 't1', 'blobs', 'a1.tool-0.result.txt')
+    const dir = join(workspace, 'proj', 't1')
+    const ref = parseSpine(readFileSync(join(dir, 'events.jsonl'), 'utf8'))[0]?.toolCalls[0]?.result
+      ?.ref
+    assert.ok(ref)
+    const blob = join(dir, ref)
     const external = join(outside, 'private.txt')
     const body = readFileSync(blob, 'utf8')
     writeFileSync(external, body)

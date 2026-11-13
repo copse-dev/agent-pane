@@ -85,10 +85,10 @@ Source files remain authoritative; deleting this cache is safe.
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
-    blobs/<messageId>.tool-<n>.result.txt        # verbatim result of the message's n-th tool call
-    blobs/<messageId>.tool-<n>.args.json         # oversized tool args (when spilled from spine)
-    blobs/<messageId>.tool-<n>.acp-content.json  # ACP tool-call display content (optional)
-    blobs/<messageId>.tool-<n>-img-<k>.dataurl   # image returned by the tool (optional)
+    blobs/<messageId>.tool-<n>/<hash>.result.txt       # immutable tool result
+    blobs/<messageId>.tool-<n>/<hash>.args.json        # oversized tool args
+    blobs/<messageId>.tool-<n>/<hash>.acp-content.json # ACP display content (optional)
+    blobs/<messageId>.tool-<n>/<hash>.img-<k>.dataurl   # returned tool image (optional)
     blobs/decision-<id>.detail.json  # optional decision extras (e.g. YOLO commands)
     blobs/<messageId>-img-<n>.dataurl  # decoded image data URL
     blobs/evidence/<sha256>.dataurl    # published visual-evidence PNG data URL (deduped)
@@ -291,10 +291,10 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
-      "args": { … } | { "ref": "blobs/<messageId>.tool-<n>.args.json", "sha256": "…" },
+      "args": { … } | { "ref": "blobs/<messageId>.tool-<n>/<hash>.args.json", "sha256": "…" },
       // inline when JSON ≤ ~2 KiB; otherwise spilled like results
       "status": "done" | "error",
-      "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
+      "result": { "ref": "blobs/<messageId>.tool-<n>/<hash>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
       "deferred": true, // optional: the host held the call back without running it
       "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
@@ -307,19 +307,38 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
 }
 ```
 
-Tool-call blobs are named from the owning message id and the call's 0-based
-position `<n>` in that message's `toolCalls`, never from the tool-call `id`.
+Tool-call blobs are named from the owning message id, the call's 0-based
+position `<n>` in that message's `toolCalls`, and the payload's SHA-256, never
+from the tool-call `id`. The payload hash is also the spine ref's `sha256`.
+Changing output, arguments, display content or images writes new immutable
+files before committing the replacement spine line. A failed spine commit
+therefore leaves its earlier tool payloads readable, including when an earlier
+sibling is added before an already-saved call or the same call receives a patch.
 Tool-call ids come from remote providers and ACP agents: they repeat across
 messages (`call_0`, Kimi's `functions.read:0`, a per-response counter), so an
 id-named blob was overwritten by the next call that reused the id and the
 earlier message then failed its hash check; and they can contain `/`, `..`, or
 (on NTFS) `:`, which escaped or misnamed the file. Readers do not derive these
 names: `result`, `content`, and `images` follow the ref stored on the spine, and
-spilled `args` are recognised by matching either the current name or the legacy
-`blobs/<toolCallId>.args.json`. Threads written before this change therefore
-load unchanged, and their next whole-thread rewrite moves them to the new names
-(pruning the old ones). Every ref the store writes or prefetches must resolve
-inside the thread directory; one that would escape it is not followed.
+spilled `args` are recognised by matching the exact slot and hash-qualified name,
+the previous `blobs/<messageId>.tool-<n>.args.json` name, or the legacy
+`blobs/<toolCallId>.args.json` name. Existing threads load unchanged; no migration
+or schema version change is required. A whole-thread rewrite writes current
+names and prunes unreferenced payloads; incremental writes can leave harmless
+unreferenced older blobs until then.
+
+**Downgrading after writing hash-qualified args refs is unsafe.** Older builds
+can treat a spilled args ref as the arguments themselves. A whole-thread rewrite
+by such a build inlines that ref object and prunes the referenced args file.
+After upgrading again, the current reader recognises the ref but its payload is
+gone, so the thread can fail to load. Upgrading alone cannot recover deleted
+payloads. Back up the complete Copse profile, including `workspace/`, before
+opening it with an older build, and export needed conversations with a current
+reader before downgrading. Recover an already-pruned payload from a backup made
+before the downgrade.
+
+Every ref written or prefetched must resolve inside the thread directory; one
+that would escape it is not followed.
 
 `commandPhase` is the last stage a `run_shell` or `run_background` command
 reached (#3956): `queued`, `awaiting_approval`, `starting`, `running`, or a
@@ -392,7 +411,7 @@ compatibility. The round-trip is 1:1:
 A finalized message may be written again with the same id when a late ACP tool
 update supplies its arguments, response, or terminal status (including an update
 that arrives between turns). The writer replaces that message's spine line in
-place without reordering history, and rewrites its referenced result blob before
+place without reordering history, and writes immutable tool payloads before
 the spine commit. In-progress tools are not re-finalized because v1 deliberately
 persists only terminal `done` / `error` tool states.
 
@@ -551,7 +570,7 @@ Control-plane approvals (user, classifier, hook, system — including Guarded YO
 append a unified `decision` line. Redacted fields live on the spine; optional
 structured extras (YOLO command text) go to `blobs/decision-<id>.detail.json`.
 Tool argv lives on the tool call (inline under ~2 KiB, else the spilled
-`blobs/<messageId>.tool-<n>.args.json` its spine `args` ref names).
+`blobs/<messageId>.tool-<n>/<hash>.args.json` its spine `args` ref names).
 See [`decision-log-format.md`](./decision-log-format.md).
 
 Legacy `permission_decision` lines remain parseable for older threads.
