@@ -18,7 +18,12 @@ import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { agentsMdPlugin } from '@copse/agent/plugins/agents-md-plugin.ts'
 import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
-import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  setDefaultPluginRegistry,
+  getDefaultPluginRegistry,
+} from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setRampartLoaderForTest, type PiiGuard } from './security/pii-redactor.ts'
 import {
   setPluginToolRuntimeController,
   type PluginToolRuntimeController,
@@ -1755,7 +1760,7 @@ describe('runAgent AgentHost decoupling', () => {
 })
 
 describe('standalone review admission', () => {
-  it('retries against the latest redacted request without promoting a review report', async () => {
+  it('redacts recovered retry briefs without promoting a review report', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-review-current-request-'))
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
     const threadId = `review-current-request-${randomUUID()}`
@@ -1763,6 +1768,22 @@ describe('standalone review admission', () => {
       key,
       value: getSetting<unknown>(key, undefined),
     }))
+    const previousPlugins = getDefaultPluginRegistry()
+    const protectedInputs: string[] = []
+    const guard: PiiGuard = {
+      protect(text: string): Promise<{ text: string; placeholders: readonly string[] }> {
+        protectedInputs.push(text)
+        return Promise.resolve({
+          text: text
+            .replaceAll('owner@example.com', '[EMAIL_1]')
+            .replaceAll('contact@example.com', '[EMAIL_2]'),
+          placeholders: ['[EMAIL_1]', '[EMAIL_2]'],
+        })
+      },
+      reveal(reply: string): string {
+        return reply
+      },
+    }
     const model = 'retry-review:review'
     const requests: string[] = []
     const chunks: StreamChunk[] = []
@@ -1801,6 +1822,10 @@ describe('standalone review admission', () => {
       },
     )
     try {
+      setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+      setRampartLoaderForTest(() =>
+        Promise.resolve({ createGuard: () => Promise.resolve(guard), detectHeuristics: () => [] }),
+      )
       await setSetting('reviewModel', model)
       await setSetting('extraProviders', [
         {
@@ -1825,24 +1850,26 @@ describe('standalone review admission', () => {
               agentService.retryPostTurnReview(
                 threadId,
                 [
-                  { role: 'user', content: 'Create Copse smoke one.' },
+                  { role: 'user', content: 'Create Copse smoke one for owner@example.com.' },
                   { role: 'assistant', content: 'Created it.' },
                   {
                     role: 'user',
                     content:
-                      '<copse_review_report>MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST</copse_review_report>\n\nChange Copse smoke one to Copse smoke two for [PERSON_1].',
+                      '<copse_review_report>MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST</copse_review_report>\n\nChange Copse smoke one to Copse smoke two for [PERSON_1] and contact@example.com.',
                   },
                   { role: 'assistant', content: 'Changed it; review failed transiently.' },
                 ],
                 { emit: (_id, chunk) => chunks.push(chunk) },
                 new ToolRegistry(),
-                { model, workingBrief: 'Create Copse smoke one.' },
+                { model, workingBrief: 'Create Copse smoke one for owner@example.com.' },
               ),
             ),
         ),
       )
     } finally {
       network.mock.restore()
+      setRampartLoaderForTest(null)
+      setDefaultPluginRegistry(previousPlugins)
       for (const setting of saved) {
         if (setting.value === undefined) await deleteSetting(setting.key)
         else await setSetting(setting.key, setting.value)
@@ -1850,9 +1877,17 @@ describe('standalone review admission', () => {
       await rm(root, { recursive: true, force: true })
     }
     assert.equal(requests.length, 1)
-    assert.match(requests[0] ?? '', /Parent task: Create Copse smoke one\./)
+    assert.match(requests[0] ?? '', /Parent task: Create Copse smoke one for \[EMAIL_1\]\./)
     assert.match(requests[0] ?? '', /Change Copse smoke one to Copse smoke two for \[PERSON_1\]/)
-    assert.doesNotMatch(requests[0] ?? '', /MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST/)
+    assert.doesNotMatch(
+      requests[0] ?? '',
+      /MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST|owner@example\.com|contact@example\.com/,
+    )
+    assert.ok(protectedInputs.some((text) => text.includes('owner@example.com')))
+    assert.ok(protectedInputs.some((text) => text.includes('contact@example.com')))
+    assert.ok(
+      protectedInputs.every((text) => !text.includes('MODEL_REPORT_MUST_NOT_BECOME_USER_REQUEST')),
+    )
     assert.ok(chunks.some((chunk) => chunk.type === 'post_turn_review' && chunk.status === 'done'))
   })
 

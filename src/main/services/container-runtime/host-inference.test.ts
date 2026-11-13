@@ -1,4 +1,5 @@
 import { describe, it, afterEach, type TestContext } from 'node:test'
+import { z } from 'zod'
 import assert from 'node:assert/strict'
 import { PassThrough } from 'node:stream'
 import { EventEmitter, once } from 'node:events'
@@ -263,6 +264,55 @@ describe('run-scoped host inference', () => {
     await assert.rejects(collect(f.provider), /token budget/)
     assert.equal(calls, 1)
     assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 2)
+  })
+  it('reports actual usage separately from content-free reservation estimates', async (t) => {
+    const log = t.mock.method(console, 'info', () => {})
+    const f = fixture(t, echo, { tokenCeiling: 110 })
+    await collect(f.provider)
+    await assert.rejects(collect(f.provider), /token budget/)
+    const events = log.mock.calls
+      .filter((call) => call.arguments[0] === '[host-inference-accounting]')
+      .map((call) =>
+        z
+          .object({
+            event: z.string(),
+            requestId: z.number(),
+            usedBefore: z.number().optional(),
+            usedAfter: z.number().optional(),
+            inputTokens: z.number().optional(),
+            outputTokens: z.number().optional(),
+            inputReservation: z.number().optional(),
+            maxOutputTokens: z.number().optional(),
+            toolSchemaBytes: z.number().optional(),
+            imageDataBytes: z.number().optional(),
+          })
+          .parse(call.arguments[1]),
+      )
+      .filter((event) => event.event !== 'settled')
+    assert.equal(events.length, 3)
+    const first = events[0]
+    const refusal = events[2]
+    assert.ok(first && refusal)
+    assert.equal(first.event, 'admitted')
+    assert.equal(first.usedBefore, 0)
+    assert.equal(first.maxOutputTokens, f.maxima[0])
+    assert.equal(first.imageDataBytes, 0)
+    assert.ok((first.toolSchemaBytes ?? 0) > 0)
+    assert.deepEqual(events[1], {
+      event: 'usage',
+      requestId: 1,
+      inputTokens: 80,
+      outputTokens: 20,
+      usedAfter: 100,
+    })
+    assert.equal(refusal.event, 'refused')
+    assert.equal(refusal.requestId, 2)
+    assert.equal(refusal.usedBefore, 100)
+    assert.equal(refusal.maxOutputTokens, 0)
+    assert.doesNotMatch(
+      JSON.stringify(log.mock.calls.map((call) => call.arguments)),
+      /Hello|README|read_file/,
+    )
   })
   it('passes the full remaining budget after input reservation and reported usage', async (t) => {
     const f = fixture(t, echo, { tokenCeiling: 30000 })

@@ -3312,13 +3312,24 @@ export async function retryPostTurnReview(
     const provider = await buildProvider(model, threadId)
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
     const latestUser = priorMessages.findLast((message) => message.role === 'user')
+    // History recovered from the visible transcript can contain the original
+    // user text. Apply the same privacy boundary as a normal submitted turn.
+    const [goalRedaction, requestRedaction] = await Promise.all([
+      redactUserContent(threadId, parentGoal),
+      redactUserContent(
+        threadId,
+        latestUser ? promptTextForSubmit(withoutReviewContext(latestUser.content)) : '',
+      ),
+    ])
+    controller.signal.throwIfAborted()
+    for (const notice of new Set([goalRedaction.notice, requestRedaction.notice])) {
+      if (notice) sendChunk({ type: 'text', text: notice })
+    }
     const reviewRoute = await buildReviewRoute()
     const reviewUsageModel = reviewRoute?.usageModel ?? model
     const review = await runPostTurnReview({
-      parentGoal,
-      currentRequest: latestUser
-        ? promptTextForSubmit(withoutReviewContext(latestUser.content))
-        : '',
+      parentGoal: promptTextForSubmit(goalRedaction.content),
+      currentRequest: promptTextForSubmit(requestRedaction.content),
       provider: reviewRoute?.provider ?? provider,
       registry,
       contextWindow: reviewRoute?.contextWindow ?? contextWindow,
