@@ -3,7 +3,7 @@ import { afterEach, describe, it } from 'node:test'
 import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cleanupEvalGortex } from './eval-gortex-cleanup.mts'
+import { cleanupEvalGortex, parsePsIdentity } from './eval-gortex-cleanup.mts'
 
 const profiles: string[] = []
 afterEach(() => {
@@ -79,6 +79,26 @@ function fixture(): {
 }
 
 describe('eval Gortex service cleanup', () => {
+  it('keeps PID identity stable through running/sleeping and scheduler-flag transitions', async () => {
+    const f = fixture()
+    const start = 'Fri Nov 13 21:21:29 2026'
+    let reads = 0
+    const inspect = f.boundary.inspect
+    f.boundary.inspect = (pid): Identity | null => {
+      const identity = inspect(pid)
+      if (!identity) return null
+      const sample = parsePsIdentity(`${start} ${++reads % 2 ? 'R+' : 'Ss'}`)
+      return { ...identity, started: sample.started }
+    }
+    assert.deepEqual(parsePsIdentity(`${start} R`), { started: start, state: 'R' })
+    assert.deepEqual(parsePsIdentity(`${start} S+`), { started: start, state: 'S+' })
+    assert.equal(parsePsIdentity(`${start} Z`).state, 'Z')
+    assert.throws(() => parsePsIdentity(''), /Incomplete/)
+    await cleanupEvalGortex(f.profile, f.boundary)
+    assert.deepEqual(f.signals, [12, 11])
+    assert.deepEqual([...f.processes.keys()], [13])
+  })
+
   it('stops profile clients before the detached daemon and leaves the shared-executable daily process alive', async () => {
     const f = fixture()
     await cleanupEvalGortex(f.profile, f.boundary)

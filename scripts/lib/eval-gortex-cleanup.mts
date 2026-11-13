@@ -36,6 +36,13 @@ function readPidfile(home: string): number | null {
   }
 }
 
+/** Keep mutable scheduler flags out of the stable identity used before signalling. */
+export function parsePsIdentity(output: string): { started: string; state: string } {
+  const match = /^(.*\S)\s+(\S+)$/.exec(output.trim())
+  if (!match?.[1] || !match[2]) throw new Error('Incomplete process start/status')
+  return { started: match[1].trim(), state: match[2] }
+}
+
 function inspectProcess(pid: number): ProcessIdentity | null {
   try {
     process.kill(pid, 0)
@@ -45,8 +52,10 @@ function inspectProcess(pid: number): ProcessIdentity | null {
   }
   // Capture environments only transiently. Never include them in diagnostics.
   try {
-    const started = command('ps', ['-p', String(pid), '-o', 'lstart=,stat=']).trim()
-    if (!started || /\sZ\S*$/.test(started)) return null
+    const { started, state } = parsePsIdentity(
+      command('ps', ['-p', String(pid), '-o', 'lstart=,stat=']),
+    )
+    if (state.startsWith('Z')) return null
     let home: string | undefined
     let executable: string
     let files: string[]
