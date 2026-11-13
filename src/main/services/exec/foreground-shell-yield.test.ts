@@ -11,6 +11,7 @@ import {
   stopAllBackgroundProcesses,
 } from './background-process.ts'
 import {
+  hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
   stopSupervisedBackgroundProcess,
 } from './supervised-background-process.ts'
@@ -152,9 +153,11 @@ describe('explicit foreground shell yield', () => {
       },
     })
     assert.ok(result.backgroundId)
+    assert.equal(hasBackgroundCompletionWake(OWNER), true)
     assert.equal(await stopSupervisedBackgroundProcess(result.backgroundId, OWNER), true)
     await waitUntil(() => listBackgroundProcessPids().length === 0)
     assert.equal(completions, 0)
+    assert.equal(hasBackgroundCompletionWake(OWNER), false)
     assert.equal(existsSync(join(root, 'finished.txt')), false)
     assert.equal(supervisor.list(OWNER.projectId)[0]?.state, 'cancelled')
   })

@@ -30,7 +30,10 @@ import { runWithThreadResourceStateLookup } from '../thread-resource-fence.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { installBackgroundProcessSupervisor } from '../exec/supervised-background-process.ts'
+import {
+  hasBackgroundCompletionWake,
+  installBackgroundProcessSupervisor,
+} from '../exec/supervised-background-process.ts'
 import { stopAllBackgroundProcesses } from '../exec/background-process.ts'
 import {
   setBackgroundCompletionWakeHandler,
@@ -1205,12 +1208,20 @@ describe('startAcpNativeBridge', () => {
         },
       })
       assert.match(contentText(result) ?? '', /Completion wake is armed/)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        true,
+      )
       // Release the real child only after the foreground turn has ended.
       currentBridge.setExecutionContext(null)
       writeFileSync(join(root, 'release'), '')
       const deadline = Date.now() + 5_000
       while (wakes.length === 0 && Date.now() < deadline) await delay(20)
       assert.equal(wakes.length, 1)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        false,
+      )
       const wake = at(wakes, 0)
       assert.equal(wake.turnTreeId, 'background-human-epoch')
       assert.deepEqual(wake.owner, { projectId: 'project-1', threadId: 'background-thread' })

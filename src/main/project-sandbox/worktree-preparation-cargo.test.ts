@@ -12,7 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { it } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -65,15 +65,19 @@ it(
     }
     // This path is embedded in the fixture's file:// Git dependency URI. The
     // conservative Cargo planner rejects local-looking dependency strings that
-    // contain "path" or "workspace", so mkdtemp's alphabetic suffix can make
-    // this otherwise valid fixture fail by chance. UUID hex digits cannot.
+    // contain "path" or "workspace", so both the ambient temp root and the
+    // generated directory name must make that invariant explicit.
+    const fixtureRoot = realpathSync('/tmp')
+    assert.doesNotMatch(fixtureRoot, /path|workspace/i)
     const fixtureParent = join(
-      tmpdir(),
+      fixtureRoot,
       `cargo-preparation-test-${randomUUID().replaceAll('-', '')}`,
     )
+    assert.doesNotMatch(fixtureParent, /path|workspace/i)
     assert.match(fixtureParent, /cargo-preparation-test-[a-f0-9]{32}$/)
     mkdirSync(fixtureParent)
     const parent = realpathSync(fixtureParent)
+    assert.doesNotMatch(parent, /path|workspace/i)
     const root = join(parent, 'project')
     const dependency = join(root, 'fixture-dependency')
     const marker = join(parent, 'build-script-ran')

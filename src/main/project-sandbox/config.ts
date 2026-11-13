@@ -1092,6 +1092,14 @@ export function acpAgentSandboxOverlay(
      */
     readonlyCheckout?: boolean
     /**
+     * Chat-store directories the agent may read, resolved for its thread in
+     * the main process (`chatReadRootsForThread`). Absent means none: the
+     * overlay is often built in the session-host worker, which has no active
+     * run, and the ambient no-run answer is the whole store, so an agent never
+     * falls back to it.
+     */
+    chatReadRoots?: readonly string[]
+    /**
      * Directories Copse created for this agent's own state, such as the
      * thread-scoped `CLAUDE_CONFIG_DIR`. They sit in the chat store, which is
      * otherwise read-only to the agent, so grant them read and write and keep
@@ -1107,10 +1115,15 @@ export function acpAgentSandboxOverlay(
 function acpAgentSandboxOverlayWithCheckoutWrites(
   workspaceRoot: string,
   sandbox: AcpAgentSandboxConfig,
-  opts: { allowLocalhost?: boolean; stateDirs?: readonly string[] } | undefined,
+  opts:
+    | { allowLocalhost?: boolean; chatReadRoots?: readonly string[]; stateDirs?: readonly string[] }
+    | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
-  const base = workspaceSandboxOverlay(workspaceRoot, { chatStoreCarveOuts: stateDirs })
+  const base = workspaceSandboxOverlay(workspaceRoot, {
+    chatReadRoots: opts?.chatReadRoots ?? [],
+    chatStoreCarveOuts: stateDirs,
+  })
   const fs = base.filesystem
   if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   const home = homedir()
@@ -1285,9 +1298,25 @@ export function readAllowedSandboxOverlay(
   }
 }
 
+/** Whether `path` is the chat store itself or lies beneath it. */
+function isChatStorePath(chatStoreRoot: string, path: string): boolean {
+  if (!isAbsolute(path)) return false
+  const rel = relative(chatStoreRoot, path)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
 export function workspaceSandboxOverlay(
   workspaceRoot: string,
   opts?: {
+    /**
+     * Chat-store directories to mount read-only, used instead of resolving the
+     * ambient run's (see `threadChatReadRoots`). A process spawned outside its
+     * turn's async chain, such as an ACP agent in its session host, has no run
+     * to resolve, so its spawner resolves the roots in the main process and
+     * passes them here. Entries outside the chat store are dropped: this
+     * narrows the chat-store mount and can never widen the sandbox.
+     */
+    chatReadRoots?: readonly string[]
     /** Paths inside the chat store that keep their own grants, not its read-only mount. */
     chatStoreCarveOuts?: readonly string[]
   },
@@ -1324,7 +1353,11 @@ export function workspaceSandboxOverlay(
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
   const chatStoreRoot = getChatStoreRootSync()
-  const chatStores = chatStoreRoot ? threadChatReadRoots(chatStoreRoot) : []
+  const chatStores = !chatStoreRoot
+    ? []
+    : opts?.chatReadRoots
+      ? opts.chatReadRoots.filter((path) => isChatStorePath(chatStoreRoot, path))
+      : threadChatReadRoots(chatStoreRoot)
   // Linux read binds shadow writable descendants. The store contains scratch
   // and may also contain the active checkout; those retain their own grants.
   const chatStoreRead = chatStores.flatMap((chatStore) =>

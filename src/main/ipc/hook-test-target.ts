@@ -5,8 +5,9 @@ import type { HookSummary, HookTestRequest } from '@shared/types/hooks.ts'
  *
  * The renderer only names a hook; it never supplies what gets spawned. The
  * returned request is rebuilt from the discovered {@link HookSummary}, so the
- * command, the config file whose directory becomes the cwd, and the sandbox
- * escape all come from discovery — a renderer-sent `sandbox: false` is ignored.
+ * command, source/scope, and sandbox escape all come from discovery — a
+ * renderer-sent `sandbox: false` is ignored. Main resolves process cwd from
+ * that scope and the asking window's pinned project root.
  * Returns `undefined` when no discovered hook matches.
  */
 export function resolveHookTestTarget(
