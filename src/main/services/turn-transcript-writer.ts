@@ -47,7 +47,7 @@ export interface TurnTranscriptWriterDependencies {
   forward: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void
   snapshot?: (snapshot: TranscriptSnapshot) => void
   loadThread: (projectId: string, threadId: string) => Promise<Thread | null>
-  appendMessage: (projectId: string, threadId: string, message: Message) => Promise<void>
+  appendMessage: (projectId: string, threadId: string, message: Message) => Promise<unknown>
   placeMessageAfter: (
     projectId: string,
     threadId: string,
@@ -507,6 +507,7 @@ export class TurnTranscriptWriter {
       session,
       this.deps
         .appendMessage(session.projectId, session.threadId, snapshot)
+        .then(() => undefined)
         .catch((error: unknown) => {
           if (session.written.get(messageId) === json) session.written.delete(messageId)
           this.deps.onError?.(error)

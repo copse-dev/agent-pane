@@ -18,8 +18,12 @@ import {
 } from './thread-store.ts'
 import {
   applyThreadHistoryEdit,
+  applyThreadHistoryEditAfterNativeReview,
+  describeThreadHistoryEdit,
+  describeThreadHistoryUndo,
   loadThreadHistorySnapshot,
   undoThreadHistoryEdit,
+  undoThreadHistoryEditAfterNativeReview,
   type ThreadHistoryEditRuntime,
 } from './thread-history-edit.ts'
 
@@ -125,6 +129,109 @@ describe('thread history editing', () => {
     assert.equal(result.canUndo, true)
     assert.equal(forgets, 1)
     assert.equal(locked, false)
+  })
+
+  it('shows exact before/after provider history and denial leaves accepted prompts unchanged', async () => {
+    await saveAgentHistory('project', 'thread', [
+      { role: 'user', content: 'Use PostgreSQL' },
+      { role: 'assistant', content: 'I will use PostgreSQL.' },
+      { role: 'user', content: 'Actually use SQLite' },
+      { role: 'assistant', content: 'Switching to SQLite.' },
+    ])
+    const snapshot = await loadThreadHistorySnapshot('project', 'thread')
+    const request = {
+      expectedRevision: snapshot.revision,
+      messages: snapshot.messages.map((item) => ({
+        id: item.id,
+        content: item.id === 'u1' ? 'Forged replacement' : item.content,
+        included: item.id !== 'u2',
+      })),
+    }
+    const description = await describeThreadHistoryEdit('project', 'thread', request)
+    assert.match(description.title, /Editable history/)
+    assert.equal(description.approveLabel, 'Apply history edit')
+    assert.match(description.detail, /Current provider history:/)
+    assert.match(description.detail, /Actually use SQLite/)
+    assert.match(description.detail, /Proposed provider history:/)
+    assert.match(description.detail, /Forged replacement/)
+
+    let reviewed = 0
+    await assert.rejects(
+      applyThreadHistoryEditAfterNativeReview(
+        'project',
+        'thread',
+        request,
+        runtime,
+        async (review) => {
+          reviewed++
+          assert.deepEqual(review, description)
+          return false
+        },
+      ),
+      /History edit was cancelled/,
+    )
+    assert.equal(reviewed, 1)
+    assert.deepEqual(
+      (await getProjectThread('project', 'thread'))?.messages.map((item) => item.content),
+      thread('thread').messages.map((item) => item.content),
+    )
+    assert.deepEqual(await loadAgentHistory('project', 'thread'), [
+      { role: 'user', content: 'Use PostgreSQL' },
+      { role: 'assistant', content: 'I will use PostgreSQL.' },
+      { role: 'user', content: 'Actually use SQLite' },
+      { role: 'assistant', content: 'Switching to SQLite.' },
+    ])
+  })
+
+  it('requires a second native review before undo restores provider history', async () => {
+    await saveAgentHistory('project', 'thread', [
+      { role: 'user', content: 'Use PostgreSQL' },
+      { role: 'assistant', content: 'I will use PostgreSQL.' },
+      { role: 'user', content: 'Actually use SQLite' },
+      { role: 'assistant', content: 'Switching to SQLite.' },
+    ])
+    const snapshot = await loadThreadHistorySnapshot('project', 'thread')
+    const request = {
+      expectedRevision: snapshot.revision,
+      messages: snapshot.messages.map((item) => ({
+        id: item.id,
+        content: item.content,
+        included: item.id !== 'u2',
+      })),
+    }
+    const edited = await applyThreadHistoryEdit('project', 'thread', request, runtime)
+    const description = await describeThreadHistoryUndo('project', 'thread', edited.revision)
+    assert.equal(description.approveLabel, 'Restore previous history')
+    assert.match(description.detail, /Current provider history:/)
+    assert.match(description.detail, /Proposed provider history:/)
+    assert.match(description.detail, /Actually use SQLite/)
+
+    await assert.rejects(
+      undoThreadHistoryEditAfterNativeReview(
+        'project',
+        'thread',
+        edited.revision,
+        runtime,
+        async () => false,
+      ),
+      /History undo was cancelled/,
+    )
+    assert.equal(
+      (await getProjectThread('project', 'thread'))?.messages.some((m) => m.id === 'u2'),
+      false,
+    )
+
+    const restored = await undoThreadHistoryEditAfterNativeReview(
+      'project',
+      'thread',
+      edited.revision,
+      runtime,
+      async () => true,
+    )
+    assert.equal(
+      restored.thread.messages.some((message) => message.id === 'u2'),
+      true,
+    )
   })
 
   it('rejects a stale editor without changing either history', async () => {

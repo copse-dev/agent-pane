@@ -81,7 +81,13 @@ revisiting this document, not silently diverging in an implementation PR.
    path exists for async hooks; late results are therefore safe by construction.
    **Human native-parent steering (#658)** is a separate, explicit action on a
    held plain-text human message. It never admits hook/machine output. The host
-   binds admission to the specific primary native loop nonce, applies the normal
+   binds admission to the specific primary native loop nonce. Main freezes the saved
+   unaccepted user identity and queue revision for isolated protected review; metadata
+   markers never establish human authority. Denial or a closed/stopped run leaves the
+   note held. At delivery, the same revision must win against retirement in the project
+   write queue, saving canonical reviewed text and terminal acceptance before provider
+   history. No fallback identity is allocated. Blocking-hook context is applied only
+   after that acceptance, so a retired or edited note cannot inject context. The host applies the normal
    blocking submit hooks and redaction, and checkpoints history before acknowledging
    insertion at the next step boundary. It does not interrupt tools or approvals,
    create a turn, reset limits, or grant a continuation. The mailbox closes before
@@ -141,6 +147,12 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   Deleting a queued item first holds it against draining and flushes metadata,
+   then awaits main's atomic retirement of the saved queued user-message ID.
+   Failure leaves the note held and visible. Successful deletion survives stale
+   metadata/full saves and appends; retry after interrupted metadata cleanup is
+   idempotent. This does not edit accepted provider history or grant a new turn,
+   append receipt, epoch or budget. See [queued-message deletion](../thread-store-format.md#queued-message-deletion-type-queued_message_deleted).
    An ACP agent can resume itself after its prompt returned (a background-task notification
    re-enters the model; the adapter tags the turn `_claude/origin: task-notification`), so Copse
    never dispatched that turn. The update pump (`startAcpUpdatePump`) treats agent work arriving

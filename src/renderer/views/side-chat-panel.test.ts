@@ -289,8 +289,13 @@ test('the mounted pane shows a requested side chat beside the main thread, sends
     ...base,
     threads: {
       ...base.threads,
-      fork: (...args: [string, string, string, string?]): Promise<ForkedHistoryResult> => {
-        forks.push(args.map(String))
+      fork: (
+        projectId: string,
+        source: string,
+        target: Thread,
+        through?: string,
+      ): Promise<ForkedHistoryResult> => {
+        forks.push([projectId, source, target.id, String(through)])
         return Promise.resolve({ source: 'rebuilt', messageCount: 2 })
       },
     },

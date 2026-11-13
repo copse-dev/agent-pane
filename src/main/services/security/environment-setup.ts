@@ -350,6 +350,22 @@ export async function applyEnvironmentSetup(
   return { applied: applied.map((value) => value.change), undoId }
 }
 
+/** Resolve issued suggestion IDs to main-owned values before trusted confirmation. */
+export function previewEnvironmentSetupApply(
+  projectId: string | null,
+  reviewId: string,
+  suggestionIds: readonly string[],
+): EnvironmentSetupChange[] {
+  const review = projectId === null ? undefined : pending.get(projectId)
+  if (!review || review.reviewId !== reviewId) {
+    throw new Error('This review has expired. Open it again to see current suggestions.')
+  }
+  return [...new Set(suggestionIds)].flatMap((id) => {
+    const draft = review.suggestions.get(id)
+    return draft && !draft.declined ? [changeOf(draft)] : []
+  })
+}
+
 export async function undoEnvironmentSetup(undoId: string): Promise<EnvironmentSetupChange[]> {
   const applied = undoable.get(undoId)
   if (!applied) return []

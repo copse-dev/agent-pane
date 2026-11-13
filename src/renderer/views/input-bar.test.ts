@@ -112,7 +112,6 @@ function createApi(options: {
         run: options.onRun ?? (async (): Promise<void> => {}),
         describeImages: options.onDescribeImages ?? base['agent'].describeImages,
         estimateContext: options.estimateContext ?? base['agent'].estimateContext,
-        clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
           (async (): Promise<PreparedThreadCheckout> => ({

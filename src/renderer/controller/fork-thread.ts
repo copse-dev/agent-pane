@@ -33,9 +33,9 @@ function hasAttachments(thread: Thread): boolean {
  * Fork `sourceThreadId` into a new thread and make it active. Returns `null`
  * when there is nothing to fork (unknown thread, or a slice with no messages).
  *
- * The new thread is inserted the way `createThread` does — prepended and
- * selected, with the per-thread file/diff viewer reset — so autosave sees a new
- * id and flushes its `threads:create` immediately, before the fork IPC runs.
+ * Main creates the fresh thread and provider sidecar together before the
+ * renderer inserts it. Autosave's later `threads:create` is therefore an
+ * idempotent no-op; critically, the fork IPC can never name an existing target.
  */
 export async function forkThread(
   store: AppStore,
@@ -54,6 +54,19 @@ export async function forkThread(
   })
   if (!forked) return null
 
+  const projectId = store.getState().activeProjectId
+  let history: ForkedHistoryResult | null = null
+  if (projectId) {
+    try {
+      history = await api.threads.fork(projectId, sourceThreadId, forked, options.throughMessageId)
+    } catch (error) {
+      // Do not fall back to renderer creation: copied accepted prompts must not
+      // become fresh optimistic messages with new dispatch receipts.
+      console.error('[fork] failed to create forked thread history:', error)
+      return null
+    }
+  }
+
   store.emit('composer_draft_flush')
   store.setState({
     threads: [forked, ...store.getState().threads],
@@ -64,17 +77,6 @@ export async function forkThread(
   })
   store.emit('threads_changed')
 
-  const projectId = store.getState().activeProjectId
-  if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false }
-
-  let history: ForkedHistoryResult | null = null
-  try {
-    history = await api.threads.fork(projectId, sourceThreadId, forked.id, options.throughMessageId)
-  } catch (error) {
-    // The fork itself is already usable — only its inherited model context is
-    // missing, which the caller surfaces. Never leave the user without a thread.
-    console.error('[fork] failed to seed forked thread history:', error)
-  }
   return {
     threadId: forked.id,
     history,

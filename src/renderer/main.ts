@@ -110,6 +110,8 @@ import {
   markNavigationRestored,
   suspendNavigationWrites,
 } from './controller/persistence.ts'
+import { deleteThreadAfterNativeReview } from './controller/delete-thread.ts'
+import { ipcErrorMessage } from './ipc-error-message.ts'
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
@@ -875,18 +877,13 @@ async function confirmDeleteThread(): Promise<void> {
   ) {
     return
   }
-  void api.agent.clearHistory(activeProjectId, activeThreadId)
-  const index = threads.findIndex((t) => t.id === activeThreadId)
-  const remaining = threads.filter((t) => t.id !== activeThreadId)
-  const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
-  store.setState({
-    threads: remaining,
-    activeThreadId: newActive,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: [],
-  })
-  store.emit('threads_changed')
+  try {
+    await deleteThreadAfterNativeReview(store, api, activeProjectId, activeThreadId)
+  } catch (error) {
+    if (!ipcErrorMessage(error, 'Deletion failed').toLowerCase().includes('cancelled')) {
+      showErrorToast('Could not delete conversation', error)
+    }
+  }
 }
 
 function switchToPrevThread(): void {

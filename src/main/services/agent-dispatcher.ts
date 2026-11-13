@@ -47,6 +47,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { perfMark } from './diagnostics/perf-trace.ts'
 import { getAutomationService } from './automations/automation-service.ts'
 import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
+import { runWithAutomationGrantScope } from './security/automation-grant-scope.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
@@ -67,6 +68,8 @@ export interface AgentDispatchPayload {
   reviewContext?: string
   /** Set by the long-horizon task wake; never parsed from a renderer payload. */
   longTaskWake?: true
+  /** Main-only proof that the exact frozen first schedule turn consumed its grant. */
+  scheduledRunGrantClaimed?: true
 }
 
 /** Opens the main-owned transcript of one dispatched turn. */
@@ -78,6 +81,16 @@ export interface AgentDispatchRequest {
   projectId: string
   threadId: string
   payload: AgentDispatchPayload
+  /** Main-owned canonical prompt emitted before provider execution. */
+  protectedHumanStart?: {
+    content: UserContent
+    /** Persist acceptance and claim display reconciliation after this dispatcher owns the thread. */
+    acceptMessageId: () => Promise<string>
+  }
+  /** Exact main-owned provider history frozen before protected review. */
+  protectedHistory?: LLMMessage[]
+  /** Exact main-owned plan state frozen before protected review, including null. */
+  protectedPlan?: StoredThreadPlan | null
 }
 
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
@@ -295,7 +308,16 @@ export class AgentDispatcher {
     request: AgentDispatchRequest,
     key: string,
     host: AgentHost<StreamChunk>,
+    preparedExecutionContext?: ThreadExecutionContext,
   ): Promise<void> {
+    if (request.protectedHumanStart) {
+      const messageId = await request.protectedHumanStart.acceptMessageId()
+      host.emit(request.threadId, {
+        type: 'protected_human_turn_start',
+        content: request.protectedHumanStart.content,
+        messageId,
+      })
+    }
     const epochWrite = this.observeRendererEpoch(key, request)
     this.epochWrites.set(key, epochWrite)
     try {
@@ -303,7 +325,45 @@ export class AgentDispatcher {
     } finally {
       if (this.epochWrites.get(key) === epochWrite) this.epochWrites.delete(key)
     }
-    await this.execute(request, key, host)
+    await this.execute(request, key, host, preparedExecutionContext)
+  }
+
+  /**
+   * Dispatch an exact schedule turn only after its one-use grant is consumed
+   * while this dispatcher owns the thread. A rejected claim emits no chunk and
+   * opens no transcript, so the caller can fall back to protected human review.
+   */
+  async dispatchScheduled(
+    request: AgentDispatchRequest,
+    claim: () => Promise<boolean>,
+    host: AgentHost<StreamChunk> = this.host,
+  ): Promise<boolean> {
+    const key = dispatchKey(request.projectId, request.threadId)
+    return this.dispatchExclusively(
+      request,
+      key,
+      async (host) => {
+        const executionContext = await this.dependencies.prepareExecutionContext(
+          request.projectId,
+          request.threadId,
+          host,
+        )
+        if (executionContext?.checkoutMode !== 'worktree') return false
+        if (!(await claim())) return false
+        await this.dispatchAccepted(
+          {
+            ...request,
+            payload: { ...request.payload, scheduledRunGrantClaimed: true },
+          },
+          key,
+          host,
+          executionContext,
+        )
+        return true
+      },
+      host,
+      'on-first-chunk',
+    )
   }
 
   async dispatchMachine(request: MachineAgentDispatchRequest): Promise<MachineDispatchResult> {
@@ -742,20 +802,25 @@ export class AgentDispatcher {
     request: AgentDispatchRequest,
     key: string,
     host: AgentHost<StreamChunk>,
+    preparedExecutionContext?: ThreadExecutionContext,
   ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
     // Context estimates can cache an empty history before the outgoing prompt
     // is saved. Rebuild against the now-persisted transcript at dispatch, rather
     // than treating that earlier empty projection as authoritative forever.
     if (this.histories.get(key)?.length === 0) this.histories.delete(key)
-    const priorMessages = await this.history(projectId, threadId)
-    const executionContext = await this.dependencies.prepareExecutionContext(
-      projectId,
-      threadId,
-      host,
-    )
+    const priorMessages =
+      request.protectedHistory !== undefined
+        ? this.useProtectedHistory(key, request.protectedHistory)
+        : await this.history(projectId, threadId)
+    const executionContext =
+      preparedExecutionContext ??
+      (await this.dependencies.prepareExecutionContext(projectId, threadId, host))
     if (!executionContext) return undefined
-    const plan = await this.dependencies.loadPlan(projectId, threadId)
+    const plan =
+      request.protectedPlan !== undefined
+        ? request.protectedPlan
+        : await this.dependencies.loadPlan(projectId, threadId)
     perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
@@ -801,11 +866,33 @@ export class AgentDispatcher {
     // The first turn of a schedule-created thread runs without a person waiting
     // at the approval dialog. Keep the normal interactive path for later turns
     // the user sends to that same thread.
-    const deferApprovals =
+    const scheduledTranscriptLength =
+      payload.automationRun === true
+        ? await this.dependencies.transcriptLength(projectId, threadId).catch(() => Infinity)
+        : Infinity
+    const verifiedScheduledFirstTurn =
       payload.automationRun === true &&
-      !priorMessages.some((message) => message.role === 'assistant' || message.role === 'tool') &&
-      this.dependencies.isScheduledAutomationRun(executionContext)
-    if (deferApprovals) beginDeferralMode(threadId)
+      scheduledTranscriptLength === 1 &&
+      plan === null &&
+      typeof payload.userContent === 'string' &&
+      payload.model !== undefined &&
+      payload.invokedSkills.length === 0 &&
+      payload.priorTodos.length === 0 &&
+      payload.invokedAgent === undefined &&
+      payload.executionMode === undefined &&
+      payload.workingBrief === undefined &&
+      payload.reviewContext === undefined &&
+      payload.reasoning === undefined &&
+      payload.longTaskWake === undefined &&
+      (payload.continuationBudgetUsed ?? 0) === 0 &&
+      priorMessages.length <= 1 &&
+      priorMessages.every(
+        (message) => message.role === 'user' && message.content === payload.userContent,
+      ) &&
+      executionContext.checkoutMode === 'worktree' &&
+      this.dependencies.isScheduledAutomationRun(executionContext) &&
+      payload.scheduledRunGrantClaimed === true
+    if (verifiedScheduledFirstTurn) beginDeferralMode(threadId)
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
@@ -815,21 +902,24 @@ export class AgentDispatcher {
                 run: (owner, execute) =>
                   this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
               },
-              () =>
-                this.dependencies.run(
-                  threadId,
-                  payload.userContent,
-                  priorMessages,
-                  host,
-                  this.registry,
-                  options,
-                ),
+              () => {
+                const invoke = (): ReturnType<AgentDispatcherDependencies['run']> =>
+                  this.dependencies.run(
+                    threadId,
+                    payload.userContent,
+                    priorMessages,
+                    host,
+                    this.registry,
+                    options,
+                  )
+                return verifiedScheduledFirstTurn ? runWithAutomationGrantScope(invoke) : invoke()
+              },
             ),
           ),
         ),
       )
     } finally {
-      if (deferApprovals) endDeferralMode(threadId)
+      if (verifiedScheduledFirstTurn) endDeferralMode(threadId)
       stopCheckoutForwarding?.()
       if (executionContext.deferredWorktree) releaseUpgradedThreadExecutionContext(executionContext)
       // Drain before the commit below so no checkpoint can land on top of the
@@ -847,5 +937,10 @@ export class AgentDispatcher {
       this.histories.delete(key)
       throw error
     }
+  }
+
+  private useProtectedHistory(key: string, frozenHistory: LLMMessage[]): LLMMessage[] {
+    this.histories.set(key, frozenHistory)
+    return frozenHistory
   }
 }

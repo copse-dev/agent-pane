@@ -18,6 +18,7 @@ import {
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import {
+  acceptReviewedUserMessage,
   appendMessage,
   placeMessageAfter,
   createThread,
@@ -165,12 +166,9 @@ describe('TurnTranscriptWriter', () => {
 
   it('places a pre-saved steering note after the step that finished before its application', async () => {
     const { writer } = harness(() => [])
-    const transcript = writer.begin(PROJECT, THREAD)
-    await writer.attach(PROJECT, [THREAD])
-    transcript.emit({ type: 'text', text: 'Reading the files.' })
     // The renderer durably queues the note while the main-owned assistant is
     // still streaming and has not reached its first persistence boundary.
-    await appendMessage(PROJECT, THREAD, humanPrompt('note', 'Keep the API.'))
+    await appendMessage(PROJECT, THREAD, humanPrompt('note', 'Unreviewed original'))
     await updateMeta(PROJECT, THREAD, {
       pendingMessages: [
         {
@@ -182,11 +180,18 @@ describe('TurnTranscriptWriter', () => {
         },
       ],
     })
+    const transcript = writer.begin(PROJECT, THREAD)
+    await writer.attach(PROJECT, [THREAD])
+    transcript.emit({ type: 'text', text: 'Reading the files.' })
     transcript.emit({ type: 'steering_applied', messageId: 'note', text: 'Keep the API.' })
     transcript.emit({ type: 'text', text: 'The API is unchanged.' })
     transcript.emit({ type: 'done' })
     transcript.end()
     await writer.settled(THREAD)
+    assert.equal(
+      (await stored()).messages.find((message) => message.id === 'note')?.content,
+      'Keep the API.',
+    )
     assert.deepEqual(
       (await stored()).messages.map((message) => [message.id, message.role]),
       [
@@ -247,6 +252,30 @@ describe('TurnTranscriptWriter', () => {
       'usage from both calls',
     )
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
+  })
+
+  it('persists the accepted main identity when protected review cannot reuse a bubble', async () => {
+    const turn = harness(() => [{ type: 'done' }])
+    let acceptedId = ''
+    await turn.dispatcher.dispatch({
+      projectId: PROJECT,
+      threadId: THREAD,
+      payload: { userContent: 'Reviewed exact prompt', invokedSkills: [], priorTodos: [] },
+      protectedHumanStart: {
+        content: 'Reviewed exact prompt',
+        acceptMessageId: async () => {
+          acceptedId = await acceptReviewedUserMessage(PROJECT, THREAD)
+          return acceptedId
+        },
+      },
+    })
+    await turn.writer.settled(THREAD)
+
+    assert.match(acceptedId, /^[0-9a-f-]{36}$/)
+    const accepted = (await stored()).messages.find((message) => message.id === acceptedId)
+    assert.ok(accepted)
+    assert.equal(accepted.role, 'user')
+    assert.equal(accepted.content, 'Reviewed exact prompt')
   })
 
   for (const retryId of ['call_0', 'retry_1']) {

@@ -113,7 +113,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
-    sourceSha256: '17a68f9014690da1c32f6e8369f3cd4553d83444f7096d9f2f70c1b8042316e3',
+    sourceSha256: 'f30a414089427ffb02b9592a4a6d14eebaf08ba01cd971b3f34228ddf595d144',
     filenames: ['queued-actions-row-hover-dark.png', 'queued-actions-row-hover-light.png'],
   },
   'tests/e2e/scroll-to-bottom.e2e.ts': {

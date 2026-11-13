@@ -33,9 +33,11 @@ import {
   appendStreamStat,
   recordModelSelection,
   appendMessage,
+  deleteQueuedMessage,
   appendImportedRemoteAgentRunResult,
   updateMeta,
   updateMetaOrThrow,
+  updateMetaIfUnchanged,
   getThreadMeta,
   recordThreadAgentLink,
   attachThreadPrUrl,
@@ -134,6 +136,229 @@ describe('thread-store', () => {
     if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
     rmSync(root, { recursive: true, force: true })
+  })
+
+  function queuedThread(): Thread {
+    return thread('queued-delete', {
+      status: 'running',
+      messages: [
+        userMsg('accepted', 'original prompt'),
+        userMsg('queued', 'delete this'),
+        userMsg('later', 'keep later'),
+      ],
+      pendingMessages: [
+        { messageId: 'queued', payload: { content: 'delete this' }, createdAt: 11 },
+        { messageId: 'later', payload: { content: 'keep later' }, createdAt: 12 },
+      ],
+    })
+  }
+
+  async function persistQueuedThread(original: Thread): Promise<void> {
+    const queuedIds = new Set(['queued', 'later'])
+    await createThread('p', {
+      ...original,
+      messages: original.messages.filter((message) => !queuedIds.has(message.id)),
+    })
+    for (const message of original.messages) {
+      if (queuedIds.has(message.id))
+        await appendMessage('p', original.id, message, { source: 'renderer' })
+    }
+  }
+
+  it('durably deletes only a queued user message and preserves provider history and raw records', async () => {
+    const original = queuedThread()
+    await persistQueuedThread(original)
+    await saveAgentHistory('p', original.id, [{ role: 'user', content: 'original prompt' }])
+    const dir = join(root, 'p', original.id)
+    const events = join(dir, 'events.jsonl')
+    const unknown =
+      '{ "v": 99, "type": "future_record", "id": "future", "detail": "preserve bytes" }'
+    writeFileSync(events, readFileSync(events, 'utf8') + unknown + '\n')
+    const history = readFileSync(join(dir, 'agent-history.json'), 'utf8')
+    await Promise.all([
+      deleteQueuedMessage('p', original.id, 'queued'),
+      appendMessage('p', original.id, assistantMsg('reply', 'original response', 'tool result')),
+    ])
+    assert.deepEqual(
+      (await loadThreadMessages('p', original.id)).map((message) => message.id),
+      ['accepted', 'later', 'reply'],
+    )
+    assert.deepEqual(
+      (await getThreadMeta('p', original.id))?.pendingMessages?.map((item) => item.messageId),
+      ['later'],
+    )
+    assert.equal(readFileSync(join(dir, 'agent-history.json'), 'utf8'), history)
+    const raw = readFileSync(events, 'utf8')
+    assert.ok(raw.includes(unknown + '\n'))
+    assert.equal(
+      parseSpineEntries(raw).filter((entry) => entry.line?.type === 'queued_message_deleted')
+        .length,
+      1,
+    )
+    const deleted = parseSpineEntries(raw).find(
+      (entry) => entry.line?.type === 'queued_message_deleted',
+    )
+    assert.ok(deleted)
+    assert.equal(deleted.raw.includes('delete this'), false)
+  })
+
+  it('blocks stale append, metadata and full saves from restoring a deleted queued ID', async () => {
+    const original = queuedThread()
+    await persistQueuedThread(original)
+    await deleteQueuedMessage('p', original.id, 'queued')
+    await assert.rejects(
+      appendMessage('p', original.id, userMsg('queued', 'replacement forgery')),
+      /deleted queued message/,
+    )
+    assert.equal(
+      readFileSync(join(root, 'p', original.id, 'messages/queued.md'), 'utf8').includes(
+        'replacement forgery',
+      ),
+      false,
+    )
+    assert.ok(original.pendingMessages)
+    await updateMeta('p', original.id, { pendingMessages: original.pendingMessages })
+    await updateMetaOrThrow('p', original.id, { pendingMessages: original.pendingMessages })
+    const expected = await getThreadMeta('p', original.id)
+    assert.ok(expected)
+    assert.equal(
+      await updateMetaIfUnchanged(
+        'p',
+        original.id,
+        expected,
+        { pendingMessages: original.pendingMessages },
+        () => true,
+      ),
+      true,
+    )
+    await saveProjectThread('p', original)
+    await saveProjectThreads('p', [original])
+    assert.deepEqual(
+      (await loadThreadMessages('p', original.id)).map((message) => message.id),
+      ['accepted', 'later'],
+    )
+    assert.deepEqual(
+      (await loadProjectThreadMetas('p'))[0]?.pendingMessages?.map((item) => item.messageId),
+      ['later'],
+    )
+    await assert.rejects(
+      appendMessage('p', original.id, userMsg('queued', 'stale append after save')),
+      /deleted queued message/,
+    )
+  })
+
+  it('refuses a stale full save when retirement storage cannot be read', async () => {
+    const original = queuedThread()
+    await persistQueuedThread(original)
+    await deleteQueuedMessage('p', original.id, 'queued')
+    const events = join(root, 'p', original.id, 'events.jsonl')
+    const before = readFileSync(events, 'utf8')
+    const realOpen = fs.openSync
+    const open = mock.method(fs, 'openSync', (...args: Parameters<typeof realOpen>) => {
+      if (String(args[0]) === events) throw new Error('unreadable retirement storage')
+      return realOpen(...args)
+    })
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(saveProjectThread('p', original), /unreadable retirement storage/)
+    } finally {
+      open.mock.restore()
+      syncBuiltinESMExports()
+    }
+    assert.equal(readFileSync(events, 'utf8'), before)
+    assert.deepEqual(
+      (await loadThreadMessages('p', original.id)).map((message) => message.id),
+      ['accepted', 'later'],
+    )
+  })
+
+  it('refuses non-queued and assistant deletion without changing the spine', async () => {
+    const original = queuedThread()
+    original.messages.push(assistantMsg('assistant', 'keep reply', 'result'))
+    original.pendingMessages?.push({
+      messageId: 'assistant',
+      payload: { content: 'forged' },
+      createdAt: 13,
+    })
+    await persistQueuedThread(original)
+    const events = join(root, 'p', original.id, 'events.jsonl')
+    const before = readFileSync(events, 'utf8')
+    await assert.rejects(deleteQueuedMessage('p', original.id, 'accepted'), /accepted user message/)
+    await assert.rejects(deleteQueuedMessage('p', original.id, 'assistant'), /Only a saved queued/)
+    assert.equal(readFileSync(events, 'utf8'), before)
+  })
+
+  it('keeps the queued message intact when the atomic deletion cannot commit', async () => {
+    const original = queuedThread()
+    await persistQueuedThread(original)
+    const events = join(root, 'p', original.id, 'events.jsonl')
+    const before = readFileSync(events, 'utf8')
+    const realRename = fsPromises.rename
+    const rename = mock.method(
+      fsPromises,
+      'rename',
+      async (from: Parameters<typeof realRename>[0], to: Parameters<typeof realRename>[1]) => {
+        if (String(to) === events) throw new Error('simulated deletion write failure')
+        return realRename(from, to)
+      },
+    )
+    try {
+      await assert.rejects(
+        deleteQueuedMessage('p', original.id, 'queued'),
+        /simulated deletion write failure/,
+      )
+    } finally {
+      rename.mock.restore()
+    }
+    assert.equal(readFileSync(events, 'utf8'), before)
+    assert.equal((await getThreadMeta('p', original.id))?.pendingMessages?.length, 2)
+  })
+
+  it('filters a committed deletion after meta failure and completes an idempotent retry', async () => {
+    const original = queuedThread()
+    await persistQueuedThread(original)
+    // Build the metadata projection before the interrupted deletion.
+    await loadProjectThreadMetas('p')
+    const metaPath = join(root, 'p', original.id, 'meta.json')
+    const realRename = fs.renameSync
+    const rename = mock.method(
+      fs,
+      'renameSync',
+      (from: Parameters<typeof realRename>[0], to: Parameters<typeof realRename>[1]) => {
+        if (String(to) === metaPath) throw new Error('simulated metadata failure')
+        realRename(from, to)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(
+        deleteQueuedMessage('p', original.id, 'queued'),
+        /simulated metadata failure/,
+      )
+    } finally {
+      rename.mock.restore()
+      syncBuiltinESMExports()
+    }
+    assert.ok(readFileSync(metaPath, 'utf8').includes('delete this'))
+    assert.deepEqual(
+      (await getThreadMeta('p', original.id))?.pendingMessages?.map((item) => item.messageId),
+      ['later'],
+    )
+    assert.deepEqual(
+      (await loadProjectThreadMetas('p'))[0]?.pendingMessages?.map((item) => item.messageId),
+      ['later'],
+    )
+    await assert.rejects(
+      appendMessage('p', original.id, userMsg('queued', 'late append')),
+      /deleted queued message/,
+    )
+    await deleteQueuedMessage('p', original.id, 'queued')
+    await deleteQueuedMessage('p', original.id, 'queued')
+    assert.equal(readFileSync(metaPath, 'utf8').includes('delete this'), false)
+    const entries = parseSpineEntries(
+      readFileSync(join(root, 'p', original.id, 'events.jsonl'), 'utf8'),
+    )
+    assert.equal(entries.filter((entry) => entry.line?.type === 'queued_message_deleted').length, 1)
   })
 
   it('measures retained thread files without following symlinks or counting other threads', async () => {

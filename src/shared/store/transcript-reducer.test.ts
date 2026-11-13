@@ -84,7 +84,7 @@ for (const order of [
 ]) {
   test(`steering leaves later pending notes behind the completed boundary: ${order.join(', ')}`, () => {
     const messages: Message[] = order.map((id) => ({
-      ...humanPrompt(id, id === 'note' ? 'Keep the API.' : id),
+      ...humanPrompt(id, id === 'note' ? 'Unreviewed original' : id),
       role: id === 'step' ? 'assistant' : 'user',
     }))
     const store = createStore({
@@ -106,6 +106,10 @@ for (const order of [
     assert.deepEqual(
       messagesOf(store).map((message) => message.id),
       ['u1', 'step', 'note', 'later'],
+    )
+    assert.equal(
+      messagesOf(store).find((message) => message.id === 'note')?.content,
+      'Keep the API.',
     )
     assert.deepEqual(
       getThreadById(store, 't1')?.pendingMessages?.map((item) => item.messageId),
@@ -317,6 +321,56 @@ test('an internal machine notification starts a turn without adding a chat promp
   assert.deepEqual(
     messagesOf(main).map((message) => message.role),
     ['user', 'assistant'],
+  )
+})
+
+test('protected human entry replaces only its optimistic prompt with reviewed text', () => {
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.attachments = [{ kind: 'file', label: 'stale.txt', content: 'pre-review bytes' }]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    content: [
+      { type: 'text', text: 'Reviewed exact prompt' },
+      { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
+    ],
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, 'Reviewed exact prompt')
+  assert.deepEqual(messagesOf(store)[0]?.images, ['data:image/png;base64,AA=='])
+  assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store).length, 1)
+  assert.equal(getThreadById(store, 't1')?.status, 'running')
+})
+
+test('protected human entry keeps the accepted main identity when no optimistic prompt remains', () => {
+  const store = seeded()
+  const original = messagesOf(store)[0]
+  assert.ok(original)
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'accepted-after-retirement',
+    content: 'Reviewed exact prompt',
+  })
+
+  assert.deepEqual(
+    messagesOf(store).map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+    })),
+    [
+      { id: original.id, role: original.role, content: original.content },
+      {
+        id: 'accepted-after-retirement',
+        role: 'user',
+        content: 'Reviewed exact prompt',
+      },
+    ],
   )
 })
 

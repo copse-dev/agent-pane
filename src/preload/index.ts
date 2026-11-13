@@ -374,8 +374,8 @@ const api: ApiClient = {
     },
   },
   agent: {
-    run: (projectId, threadId, prompt, delegation) =>
-      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation),
+    run: (projectId, threadId, prompt, delegation, display) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt, delegation, display),
     runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
@@ -419,8 +419,6 @@ const api: ApiClient = {
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
-    clearHistory: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('agent:clear-history', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refresh-model-context'),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggest-title', text),
     suggestTerminalTitle: (text: string) =>
@@ -1028,6 +1026,8 @@ const api: ApiClient = {
       threadId: string,
       message: import('@shared/types').Message,
     ) => ipcRenderer.invoke('threads:append-message', projectId, threadId, message),
+    deleteQueuedMessage: (projectId: string, threadId: string, messageId: string) =>
+      ipcRenderer.invoke('threads:delete-queued-message', projectId, threadId, messageId),
     annotateMessage: (
       projectId: string,
       threadId: string,
@@ -1053,16 +1053,10 @@ const api: ApiClient = {
     fork: (
       projectId: string,
       sourceThreadId: string,
-      targetThreadId: string,
+      targetThread: import('@shared/types').Thread,
       throughMessageId?: string,
     ) =>
-      ipcRenderer.invoke(
-        'threads:fork',
-        projectId,
-        sourceThreadId,
-        targetThreadId,
-        throughMessageId,
-      ),
+      ipcRenderer.invoke('threads:fork', projectId, sourceThreadId, targetThread, throughMessageId),
     backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
       ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
     pendingApprovals: (projectId: string, threadId: string) =>

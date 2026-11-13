@@ -14,6 +14,7 @@ import {
   parsePortKillArgs,
   parseAcpAuthStatusArgs,
   projectIsActiveForSender,
+  protectedHumanTurnDisplaySchema,
   vncDiscoveryHostSchema,
   vncTargetSchema,
   zHttpUrl,
@@ -48,6 +49,23 @@ describe('project-scoped artifact IPC', () => {
     assert.equal(projectIsActiveForSender('project-1', 'project-1'), true)
     assert.equal(projectIsActiveForSender('project-1', 'project-2'), false)
     assert.equal(projectIsActiveForSender(null, 'project-1'), false)
+  })
+})
+
+describe('protected human display hints', () => {
+  it('does not impose composer attachment-count limits on display-only metadata', () => {
+    const attachments = Array.from({ length: 12 }, (_, index) => ({
+      kind: 'file' as const,
+      label: `file-${String(index)}.txt`,
+      content: 'display snapshot',
+    }))
+    const parsed = protectedHumanTurnDisplaySchema.safeParse({
+      messageId: 'optimistic',
+      snapshot: { content: 'visible prompt', attachments },
+    })
+
+    assert.equal(parsed.success, true)
+    assert.deepEqual(parsed.data?.snapshot?.attachments, attachments)
   })
 })
 

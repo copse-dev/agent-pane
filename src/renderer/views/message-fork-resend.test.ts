@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { ForkedHistoryResult } from '@shared/types'
+import type { ForkedHistoryResult, Thread } from '@shared/types'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
@@ -35,8 +35,8 @@ function fakeApi(): { api: ApiClient; runs: Array<[string, string]>; forks: Fork
     },
     threads: {
       ...base.threads,
-      fork: (projectId: string, source: string, target: string, through?: string) => {
-        forks.push([projectId, source, target, through])
+      fork: (projectId: string, source: string, target: Thread, through?: string) => {
+        forks.push([projectId, source, target.id, through])
         const result: ForkedHistoryResult = { source: 'copied', messageCount: 2 }
         return Promise.resolve(result)
       },

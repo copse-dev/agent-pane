@@ -8,12 +8,19 @@
  *
  * `worktree` belongs to main's checkout lifecycle. Renderer copies of prepare,
  * rename or completion results cannot allocate or revive a checkout through
- * create/autosave. Explicit native restore/adopt/clear operations write directly.
+ * create/autosave. Its policy choice, deferred allocation marker and resolved
+ * branch are equally main-owned: renderer values must not steer a pending
+ * automation back into the shared project checkout. Explicit native
+ * restore/adopt/clear operations write directly.
  */
 const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'remoteAgentLink',
   'cursorAgentIds',
   'worktree',
+  'worktreeChoice',
+  'deferredWorktree',
+  'gitBranch',
+  'automation',
 ]
 
 /** `payload` without the fields only main may write. */

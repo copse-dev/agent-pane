@@ -33,7 +33,7 @@ export interface WorkerCheckoutDependencies {
   retire: typeof retireThreadWorktree
   save: typeof saveProjectThread
   update: typeof updateMetaOrThrow
-  append: typeof appendMessage
+  append: (...args: Parameters<typeof appendMessage>) => Promise<unknown>
   detachedHooksEnabled: () => boolean
   withDispatchSlot: typeof withIsolatedWorkerDispatchSlot
   branch: typeof getCurrentBranchName

@@ -926,6 +926,21 @@ export function flushPendingThreadPersistence(): Promise<void> {
 }
 
 /**
+ * Record a deletion that main already confirmed and completed directly.
+ * The following `threads_changed` reconcile must not issue a second delete or
+ * reopen the native confirmation for the same absent thread.
+ */
+export function acknowledgeThreadDeletion(projectId: string, threadId: string): void {
+  persistedMeta.get(projectId)?.delete(threadId)
+  const creations = unconfirmedCreates.get(projectId)
+  creations?.delete(threadId)
+  if (creations?.size === 0) unconfirmedCreates.delete(projectId)
+  const uncertainties = uncertainThreadWrites.get(projectId)
+  uncertainties?.delete(threadId)
+  if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId)
+}
+
+/**
  * Run `task` once a thread the current write introduced exists in main.
  *
  * A store selection fires inside the writer's `setState`, before the writer's

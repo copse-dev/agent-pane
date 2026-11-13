@@ -106,6 +106,10 @@ export class AppRunService {
         showSimulatorDesktop(id, { control: true, owner })
       })
   }
+  /** Main-owned checkout path to show before renderer-triggered host execution. */
+  async confirmationRoot(owner: AppRunOwner): Promise<string> {
+    return this.resolveRoot(owner)
+  }
   async detect(owner: AppRunOwner): Promise<boolean> {
     try {
       const root = await this.inspectRoot(owner)

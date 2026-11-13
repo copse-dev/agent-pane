@@ -258,3 +258,71 @@ describe('held queued message (component)', () => {
     )
   })
 })
+
+describe('durable queued deletion (component)', () => {
+  it('shows pending deletion without release actions, then removes only after acknowledgement', async () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const messageId = addMessage(store, threadId, 'user', 'delete this queued note')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'delete this queued note' },
+      createdAt: 1,
+    })
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    api.threads.deleteQueuedMessage = (): Promise<void> => gate
+    const button = document.querySelector<HTMLButtonElement>('.queued-delete')
+    assert.ok(button)
+    button.click()
+    assert.match(document.querySelector('.conversation-queued')?.textContent ?? '', /Deleting…/)
+    assert.equal(document.querySelector('.conversation-queued .queued-release'), null)
+    assert.equal(document.querySelector('.conversation-queued .queued-send-now'), null)
+    assert.equal(
+      store.getState().threads[0]?.messages.some((message) => message.id === messageId),
+      true,
+    )
+    release()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(document.querySelector('.conversation-queued .msg-queued'), null)
+    assert.equal(
+      store.getState().threads[0]?.messages.some((message) => message.id === messageId),
+      false,
+    )
+  })
+
+  it('keeps a failed deletion visibly held and offers explicit retry', async () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const messageId = addMessage(store, threadId, 'user', 'keep on failure')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'keep on failure' },
+      createdAt: 1,
+    })
+    api.threads.deleteQueuedMessage = (): Promise<void> =>
+      Promise.reject(new Error('disk unavailable'))
+    const button = document.querySelector<HTMLButtonElement>('.queued-delete')
+    assert.ok(button)
+    button.click()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.match(
+      document.querySelector('.conversation-queued')?.textContent ?? '',
+      /keep on failure/,
+    )
+    assert.ok(document.querySelector('.conversation-queued .msg-held .queued-delete'))
+    assert.equal(store.getState().threads[0]?.pendingMessages?.[0]?.autoDispatch, false)
+    assert.match(document.body.textContent, /Could not delete queued message/)
+    assert.equal(api.runs.length, 0)
+  })
+})

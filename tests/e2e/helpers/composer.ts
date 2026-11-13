@@ -40,6 +40,18 @@ export async function composerText(): Promise<string> {
 
 /** Submit a fixture prompt, accepting the real dirty-checkout warning if needed. */
 export async function submitComposer(): Promise<void> {
+  const handlesBefore = await browser.getWindowHandles()
+  const mainHandle = handlesBefore[0]
+  if (!mainHandle) throw new Error('Main window handle is missing')
+  const browserDemo = await browser.execute(
+    () => document.documentElement.dataset['demoScenario'] !== undefined,
+  )
+  const dispatchesImmediately = await browser.execute(async () => {
+    const activeThreadId =
+      document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+    if (!activeThreadId) return true
+    return !(await window.api.agent.runningThreadIds()).includes(activeThreadId)
+  })
   await $('.submit-btn').click()
   let confirmedDirtyCheckout = false
   await browser.waitUntil(
@@ -53,4 +65,34 @@ export async function submitComposer(): Promise<void> {
     },
     { timeout: 30_000, interval: 100, timeoutMsg: 'The composer prompt did not submit' },
   )
+  // Human prompts that dispatch now cross the real isolated entry surface.
+  // Queued prompts open it later when their active turn finishes, so leave
+  // those queued for the owning spec to observe.
+  // The browser demo's supported API is an in-renderer mock: it has no main
+  // process or native windows, and its composer call has already dispatched
+  // the selected trace by this point. Electron E2E must cross the real
+  // protected surface before the owning spec observes a turn.
+  if (dispatchesImmediately && !browserDemo) {
+    await browser.waitUntil(
+      async () => (await browser.getWindowHandles()).length > handlesBefore.length,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'Protected prompt window did not open after composer submit',
+      },
+    )
+    const protectedHandle = (await browser.getWindowHandles()).find(
+      (handle) => !handlesBefore.includes(handle),
+    )
+    if (!protectedHandle) throw new Error('Protected prompt window handle is missing')
+    await browser.switchToWindow(protectedHandle)
+    await $('#protected-prompt-send').click()
+    await browser.waitUntil(
+      async () => !(await browser.getWindowHandles()).includes(protectedHandle),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'Protected prompt window did not close after sending',
+      },
+    )
+    await browser.switchToWindow(mainHandle)
+  }
 }

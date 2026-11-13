@@ -314,3 +314,29 @@ describe('rebuildSpinePreservingNonMessageLines (decision 6 full-save round-trip
     assert.deepEqual(preservedRefs, [])
   })
 })
+
+it('queued deletion records round-trip without becoming transcript messages', () => {
+  const line = { v: 1, type: 'queued_message_deleted', id: 'queued', recordedAt: 10 } as const
+  const raw = serializeSpineLine(line)
+  assert.deepEqual(parseSpineLine(raw), line)
+  assert.deepEqual(parseSpine(raw), [])
+  for (const invalid of [
+    { ...line, id: '' },
+    { ...line, recordedAt: -1 },
+    { ...line, v: 0 },
+    { ...line, id: 3 },
+  ]) {
+    assert.equal(parseSpineLine(JSON.stringify(invalid)), null)
+  }
+})
+
+it('validates main-owned user lifecycle records without folding them as model messages', () => {
+  for (const state of ['unaccepted', 'accepted'] as const) {
+    const line = { v: 1, type: 'user_message_lifecycle', id: 'user', state, recordedAt: 1 } as const
+    const raw = serializeSpineLine(line)
+    assert.deepEqual(parseSpineLine(raw), line)
+    assert.deepEqual(parseSpine(raw), [])
+    assert.equal(parseSpineLine(JSON.stringify({ ...line, state: 'renderer-approved' })), null)
+    assert.equal(parseSpineLine(JSON.stringify({ ...line, recordedAt: -1 })), null)
+  }
+})

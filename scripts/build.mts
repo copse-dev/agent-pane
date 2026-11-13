@@ -257,6 +257,11 @@ if (!isDemo) {
     entryPoints: ['src/preload/video-decoder.ts'],
     outfile: 'dist/preload/video-decoder.js',
   })
+  await bundle({
+    ...nodeOpts,
+    entryPoints: ['src/preload/protected-prompt.ts'],
+    outfile: 'dist/preload/protected-prompt.js',
+  })
 }
 const browserOpts = {
   bundle: true,
@@ -305,6 +310,12 @@ await bundle({
 // bundle rather than riding along in app.js (see main/services/video/). The
 // demo build has no main process to open that window, so it skips this.
 if (!isDemo) {
+  await bundle({
+    ...browserOpts,
+    entryPoints: ['src/renderer/protected-prompt.ts'],
+    outfile: `${rendererOutDir}/protected-prompt.js`,
+  })
+  copyFileSync('src/renderer/protected-prompt.html', `${rendererOutDir}/protected-prompt.html`)
   await bundle({
     ...browserOpts,
     entryPoints: ['src/renderer/video/decoder.ts'],

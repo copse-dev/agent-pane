@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import { mkdtempSync, mkdirSync, rmSync, appendFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, promises as fsPromises } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseSpineEntries } from '@copse/thread-store/spine-schema.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { configureThreadStore } from '@copse/thread-store/environment.ts'
@@ -10,6 +12,11 @@ import type { QueuedUserMessage } from '@shared/types'
 import {
   closeThreadStoreIndexes,
   saveProjectThread,
+  appendMessage,
+  appendHookRun,
+  freezeQueuedUserMessage,
+  acceptReviewedQueuedUserMessage,
+  deleteQueuedMessage,
   getThreadMeta,
   getProjectThread,
   updateMeta,
@@ -22,9 +29,18 @@ import {
   bindNativeSteering,
   steerNativeParent,
   prepareNativeSteeringNote,
+  type PreparedNativeSteeringNote,
+  type NativeSteeringApproval,
 } from './native-steering.ts'
 
-const prepare = async (text: string): Promise<LLMMessage[]> => [{ role: 'user', content: text }]
+const review = async (note: { text: string }): Promise<NativeSteeringApproval> => ({
+  text: note.text,
+  claim: () => true,
+})
+
+const prepare = async (text: string): Promise<PreparedNativeSteeringNote> => ({
+  apply: () => [{ role: 'user', content: text }],
+})
 
 describe('native human steering boundary and durability', () => {
   let root: string
@@ -34,7 +50,7 @@ describe('native human steering boundary and durability', () => {
     root = mkdtempSync(join(tmpdir(), 'copse-steering-'))
     configureThreadStore({ workspaceRoot: () => root })
     controller = new AbortController()
-    session = new NativeSteeringSession('p', 't', 'human-epoch', controller.signal)
+    session = new NativeSteeringSession('p', 't', 'human-epoch', 'test-model', controller.signal)
     await saveProjectThread('p', {
       id: 't',
       title: 'Steering',
@@ -54,6 +70,12 @@ describe('native human steering boundary and durability', () => {
     rmSync(root, { recursive: true, force: true })
   })
   async function queue(id: string, overrides: Partial<QueuedUserMessage> = {}): Promise<void> {
+    await appendMessage(
+      'p',
+      't',
+      { id, role: 'user', content: `Note ${id}`, toolCalls: [], createdAt: 2 },
+      { source: 'renderer' },
+    )
     const meta = await getThreadMeta('p', 't')
     await updateMeta('p', 't', {
       pendingMessages: [
@@ -120,8 +142,8 @@ describe('native human steering boundary and durability', () => {
     })
     await started.promise
     await queue('correction')
-    const delivery = session.enqueue('correction')
-    assert.equal(session.enqueue('correction'), delivery)
+    const delivery = session.enqueue('correction', review)
+    assert.equal(session.enqueue('correction', review), delivery)
     assert.equal(requests.length, 1)
     release.resolve(undefined)
     await loop
@@ -138,7 +160,7 @@ describe('native human steering boundary and durability', () => {
 
   it('holds a note when Stop wins the boundary and does not change history', async () => {
     await queue('stop')
-    const delivery = session.enqueue('stop')
+    const delivery = session.enqueue('stop', review)
     controller.abort()
     await session.drain(
       [],
@@ -155,8 +177,8 @@ describe('native human steering boundary and durability', () => {
   it('settles all notes when completion wins admission', async () => {
     await queue('one')
     await queue('two')
-    const one = session.enqueue('one')
-    const two = session.enqueue('two')
+    const one = session.enqueue('one', review)
+    const two = session.enqueue('two', review)
     await session.close()
     assert.deepEqual(await Promise.all([one, two]), [{ state: 'held' }, { state: 'held' }])
     assert.deepEqual(await loadAgentHistory('p', 't'), [])
@@ -165,8 +187,8 @@ describe('native human steering boundary and durability', () => {
   it('applies concurrent admissions in FIFO order with a checkpoint for each note', async () => {
     await queue('one')
     await queue('two')
-    const one = session.enqueue('one')
-    const two = session.enqueue('two')
+    const one = session.enqueue('one', review)
+    const two = session.enqueue('two', review)
     const messages: LLMMessage[] = []
     const checkpoints: LLMMessage[][] = []
     await session.drain(
@@ -211,7 +233,7 @@ describe('native human steering boundary and durability', () => {
       adaptiveExtensions: false,
       onChunk: () => {},
       executeTool: async () => {
-        delivery = session.enqueue('capped')
+        delivery = session.enqueue('capped', review)
         return 'Read once'
       },
       beforeStep: () =>
@@ -234,30 +256,33 @@ describe('native human steering boundary and durability', () => {
   it('rejects a stale run nonce even when the replacement shares the human epoch', async () => {
     const unbind = bindNativeSteering(session)
     try {
-      assert.throws(() => steerNativeParent('p', 't', 'note', 'old-run'), /turn has ended/)
+      assert.throws(() => steerNativeParent('p', 't', 'note', 'old-run', review), /turn has ended/)
       assert.throws(
-        () => steerNativeParent('other', 't', 'note', session.runId),
+        () => steerNativeParent('other', 't', 'note', session.runId, review),
         /only during a native/,
       )
     } finally {
       unbind()
     }
-    assert.throws(() => steerNativeParent('p', 't', 'note', session.runId), /only during a native/)
+    assert.throws(
+      () => steerNativeParent('p', 't', 'note', session.runId, review),
+      /only during a native/,
+    )
   })
 
   it('rejects hook and unpersisted admission markers before recording acceptance', async () => {
     await queue('hook', { origin: { kind: 'hook', hookId: 'h', event: 'stop' } })
-    await assert.rejects(session.enqueue('hook'), /human-authored/)
+    await assert.rejects(session.enqueue('hook', review), /human-authored/)
     await queue('stale', { steeringRequested: 'old-run' })
-    await assert.rejects(session.enqueue('stale'), /human-authored/)
+    await assert.rejects(session.enqueue('stale', review), /human-authored/)
     assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
   })
 
   it('runs the production preparation gate before sending only redacted steering to the provider', async () => {
     await queue('blocked')
     await queue('redacted')
-    const blocked = assert.rejects(session.enqueue('blocked'), /Hook blocked/)
-    const delivered = session.enqueue('redacted')
+    const blocked = assert.rejects(session.enqueue('blocked', review), /Hook blocked/)
+    const delivered = session.enqueue('redacted', review)
     const messages: LLMMessage[] = []
     const preparation: string[] = []
     let requests = 0
@@ -319,7 +344,7 @@ describe('native human steering boundary and durability', () => {
     await queue('detached')
     const stale = (await getThreadMeta('p', 't'))?.pendingMessages
     assert.ok(stale)
-    const delivery = session.enqueue('detached')
+    const delivery = session.enqueue('detached', review)
     const messages: LLMMessage[] = []
     await session.drain(
       messages,
@@ -349,7 +374,7 @@ describe('native human steering boundary and durability', () => {
 
   it('does not acknowledge application when the awaited checkpoint fails', async () => {
     await queue('disk')
-    const delivery = assert.rejects(session.enqueue('disk'), /Disk full/)
+    const delivery = assert.rejects(session.enqueue('disk', review), /Disk full/)
     const messages: LLMMessage[] = []
     await assert.rejects(
       session.drain(
@@ -372,7 +397,7 @@ describe('native human steering boundary and durability', () => {
 
   it('keeps a completed receipt through full saves and deduplicates after restart', async () => {
     await queue('saved')
-    const delivery = session.enqueue('saved')
+    const delivery = session.enqueue('saved', review)
     const messages: LLMMessage[] = []
     await session.drain(
       messages,
@@ -384,10 +409,19 @@ describe('native human steering boundary and durability', () => {
     await session.close()
     const meta = await getThreadMeta('p', 't')
     assert.ok(meta)
-    await saveProjectThread('p', { ...meta, messages: [] })
+    await saveProjectThread('p', {
+      ...meta,
+      messages: (await getProjectThread('p', 't'))?.messages ?? [],
+    })
     closeThreadStoreIndexes()
-    session = new NativeSteeringSession('p', 't', 'new-epoch', new AbortController().signal)
-    assert.deepEqual(await session.enqueue('saved'), { state: 'applied' })
+    session = new NativeSteeringSession(
+      'p',
+      't',
+      'new-epoch',
+      'test-model',
+      new AbortController().signal,
+    )
+    assert.deepEqual(await session.enqueue('saved', review), { state: 'applied' })
     await session.drain(
       [],
       async () => assert.fail('No replay'),
@@ -401,14 +435,14 @@ describe('native human steering boundary and durability', () => {
   it('fails closed on a truncated receipt instead of silently replaying', async () => {
     await queue('bad')
     appendFileSync(join(root, 'p', 't', 'user-steering.jsonl'), '{truncated')
-    await assert.rejects(session.enqueue('bad'), /delivery receipts/)
+    await assert.rejects(session.enqueue('bad', review), /delivery receipts/)
   })
 
   it('saves ordinary metadata past a torn receipt while admission stays strict', async () => {
     await queue('delivered')
     const stale = (await getThreadMeta('p', 't'))?.pendingMessages
     assert.ok(stale)
-    const delivery = session.enqueue('delivered')
+    const delivery = session.enqueue('delivered', review)
     const messages: LLMMessage[] = []
     await session.drain(
       messages,
@@ -424,7 +458,7 @@ describe('native human steering boundary and durability', () => {
     await queue('held')
     await updateMeta('p', 't', { title: 'Held note survives' })
     assert.equal((await getThreadMeta('p', 't'))?.pendingMessages?.[0]?.messageId, 'held')
-    await assert.rejects(session.enqueue('held'), /delivery receipts/)
+    await assert.rejects(session.enqueue('held', review), /delivery receipts/)
   })
 
   it('does not treat an unreadable receipt file as an empty delivery history', async () => {
@@ -441,7 +475,7 @@ describe('native human steering boundary and durability', () => {
       provider: {
         async *stream(): AsyncGenerator<ProviderStreamChunk> {
           calls++
-          delivery = session.enqueue('late')
+          delivery = session.enqueue('late', review)
           yield { type: 'text', text: 'Finished.' }
           yield { type: 'done' }
         },
@@ -465,7 +499,7 @@ describe('native human steering boundary and durability', () => {
 
   it('retains saved insertion when Stop arrives during the awaited checkpoint', async () => {
     await queue('saving')
-    const delivery = session.enqueue('saving')
+    const delivery = session.enqueue('saving', review)
     const messages: LLMMessage[] = []
     let requests = 0
     let attempts = 0
@@ -504,7 +538,7 @@ describe('native human steering boundary and durability', () => {
 
   it('never retries a crash-ambiguous accepted note in a replacement run', async () => {
     await queue('uncertain')
-    const attempted = assert.rejects(session.enqueue('uncertain'), /checkpoint failed/)
+    const attempted = assert.rejects(session.enqueue('uncertain', review), /checkpoint failed/)
     await assert.rejects(
       session.drain(
         [],
@@ -517,8 +551,453 @@ describe('native human steering boundary and durability', () => {
     )
     await attempted
     await session.close()
-    session = new NativeSteeringSession('p', 't', 'new-epoch', new AbortController().signal)
-    await assert.rejects(session.enqueue('uncertain'), /earlier delivery attempt/)
+    session = new NativeSteeringSession(
+      'p',
+      't',
+      'new-epoch',
+      'test-model',
+      new AbortController().signal,
+    )
+    await assert.rejects(session.enqueue('uncertain', review), /earlier delivery attempt/)
+  })
+
+  it('does not admit a denied protected review or trust a later renderer payload', async () => {
+    await queue('denied')
+    let reviews = 0
+    const denied = session.enqueue('denied', async (note) => {
+      reviews++
+      assert.equal(note.text, 'Note denied')
+      assert.equal(note.runId, session.runId)
+      assert.match(note.revision, /^[a-f0-9]{64}$/)
+      return null
+    })
+    const messages: LLMMessage[] = []
+    await session.drain(
+      messages,
+      async () => assert.fail('No denied checkpoint'),
+      () => assert.fail(),
+      prepare,
+    )
+    assert.deepEqual(await denied, { state: 'held' })
+    assert.equal(reviews, 1)
+    assert.deepEqual(messages, [])
+    assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+    assert.equal((await getThreadMeta('p', 't'))?.pendingMessages?.[0]?.autoDispatch, false)
+    await deleteQueuedMessage('p', 't', 'denied')
+  })
+
+  it('durably accepts the exact protected text before checkpoint and delivers once', async () => {
+    await queue('reviewed')
+    const delivery = session.enqueue('reviewed', async (): Promise<NativeSteeringApproval> => ({
+      text: 'Protected correction',
+      claim: () => true,
+    }))
+    const messages: LLMMessage[] = []
+    let checkpoints = 0
+    await session.drain(
+      messages,
+      async () => {
+        checkpoints++
+        assert.equal(
+          (await getProjectThread('p', 't'))?.messages.find((m) => m.id === 'reviewed')?.content,
+          'Protected correction',
+        )
+        await assert.rejects(deleteQueuedMessage('p', 't', 'reviewed'), /accepted/)
+        await assert.rejects(
+          appendMessage(
+            'p',
+            't',
+            { id: 'reviewed', role: 'assistant', content: 'Forged', toolCalls: [], createdAt: 2 },
+            { source: 'renderer' },
+          ),
+          /accepted/,
+        )
+        await saveAgentHistory('p', 't', messages)
+      },
+      () => {},
+      prepare,
+    )
+    assert.deepEqual(await delivery, { state: 'applied' })
+    assert.deepEqual(
+      await session.enqueue('reviewed', async () => assert.fail('No second review')),
+      { state: 'applied' },
+    )
+    await session.drain(
+      messages,
+      async () => assert.fail('No second checkpoint'),
+      () => assert.fail(),
+      prepare,
+    )
+    assert.equal(checkpoints, 1)
+    assert.deepEqual(messages, [{ role: 'user', content: 'Protected correction' }])
+  })
+
+  for (const finish of ['stop', 'close'] as const) {
+    it(`keeps the note unaccepted when ${finish} wins an open review`, async () => {
+      await queue('late-review')
+      const opened = Promise.withResolvers<undefined>()
+      const response = Promise.withResolvers<NativeSteeringApproval>()
+      const delivery = session.enqueue('late-review', async (note) => {
+        note.signal.addEventListener(
+          'abort',
+          () => {
+            response.resolve({
+              text: 'Late approval',
+              claim: () => assert.fail('No claim after Stop'),
+            })
+          },
+          {
+            once: true,
+          },
+        )
+        opened.resolve(undefined)
+        return response.promise
+      })
+      await opened.promise
+      if (finish === 'stop') controller.abort()
+      else await session.close()
+      await session.drain(
+        [],
+        async () => assert.fail('No late checkpoint'),
+        () => assert.fail(),
+        prepare,
+      )
+      assert.deepEqual(await delivery, { state: 'held' })
+      assert.deepEqual(await loadAgentHistory('p', 't'), [])
+      await deleteQueuedMessage('p', 't', 'late-review')
+    })
+  }
+
+  for (const mutation of ['retire', 'body', 'queue'] as const) {
+    it(`rejects a frozen note after ${mutation} wins before acceptance`, async () => {
+      await queue('changed')
+      const ready = Promise.withResolvers<undefined>()
+      const delivery = session.enqueue('changed', async (): Promise<NativeSteeringApproval> => {
+        ready.resolve(undefined)
+        return {
+          text: 'Reviewed original',
+          claim: () => assert.fail('No claim for changed revision'),
+        }
+      })
+      await ready.promise
+      // drain waits for admission and runs the ordinary blocking preparation gate.
+      const messages: LLMMessage[] = []
+      await session.drain(
+        messages,
+        async () => assert.fail('No changed checkpoint'),
+        () => assert.fail(),
+        async (text) => {
+          if (mutation === 'retire') await deleteQueuedMessage('p', 't', 'changed')
+          if (mutation === 'body')
+            await appendMessage(
+              'p',
+              't',
+              { id: 'changed', role: 'user', content: 'Forged body', toolCalls: [], createdAt: 2 },
+              { source: 'renderer' },
+            )
+          if (mutation === 'queue')
+            await updateMeta('p', 't', {
+              pendingMessages: [
+                {
+                  messageId: 'changed',
+                  payload: { content: 'Forged queue' },
+                  createdAt: 2,
+                  autoDispatch: false,
+                  steeringRequested: session.runId,
+                },
+              ],
+            })
+          return {
+            apply: (): LLMMessage[] => assert.fail(`No hook context after ${mutation}: ${text}`),
+          }
+        },
+      )
+      assert.deepEqual(await delivery, { state: 'held' })
+      assert.deepEqual(messages, [])
+      assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+    })
+  }
+
+  it('preserves derived hook audit cards added during blocking preparation', async () => {
+    await queue('audited')
+    const delivery = session.enqueue('audited', review)
+    const messages: LLMMessage[] = []
+    await session.drain(
+      messages,
+      () => saveAgentHistory('p', 't', messages),
+      () => {},
+      async (text) => {
+        await appendHookRun('p', 't', {
+          v: 1,
+          type: 'hook_run',
+          id: 'audit',
+          hookId: 'steering-submit',
+          event: 'beforeSubmitPrompt',
+          executor: 'command',
+          startedAt: 3,
+          durationMs: 1,
+          exitCode: 0,
+          parseOk: true,
+          decision: {},
+          stdout: { ref: 'blobs/audit.stdout.txt', sha256: 'x' },
+          stderr: { ref: 'blobs/audit.stderr.txt', sha256: 'y' },
+        })
+        assert.equal(
+          (await getProjectThread('p', 't'))?.messages.find((m) => m.id === 'audited')?.hookCards
+            ?.length,
+          1,
+        )
+        return prepare(text)
+      },
+    )
+    assert.deepEqual(await delivery, { state: 'applied' })
+    const note = (await getProjectThread('p', 't'))?.messages.find((m) => m.id === 'audited')
+    assert.equal(note?.content, 'Note audited')
+    assert.equal(note.hookCards?.length, 1)
+    assert.deepEqual(await loadAgentHistory('p', 't'), [{ role: 'user', content: 'Note audited' }])
+  })
+
+  it('holds a note when its sender-bound append proof was revoked', async () => {
+    await queue('revoked')
+    const delivery = session.enqueue('revoked', async (): Promise<NativeSteeringApproval> => ({
+      text: 'Reviewed',
+      claim: () => false,
+    }))
+    await session.drain(
+      [],
+      async () => assert.fail('No revoked checkpoint'),
+      () => assert.fail(),
+      prepare,
+    )
+    assert.deepEqual(await delivery, { state: 'held' })
+    assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+    await deleteQueuedMessage('p', 't', 'revoked')
+  })
+
+  it('never treats forged queue metadata or an accepted identity as human authority', async () => {
+    await updateMeta('p', 't', {
+      pendingMessages: [
+        {
+          messageId: 'forged',
+          payload: { content: 'Injected' },
+          createdAt: 2,
+          autoDispatch: false,
+          steeringRequested: session.runId,
+        },
+      ],
+    })
+    await assert.rejects(
+      session.enqueue('forged', async () => assert.fail('No review for nonexistent identity')),
+      /unaccepted queued/,
+    )
+    await appendMessage('p', 't', {
+      id: 'forged',
+      role: 'user',
+      content: 'Injected',
+      toolCalls: [],
+      createdAt: 2,
+    })
+    await assert.rejects(freezeQueuedUserMessage('p', 't', 'forged'), /unaccepted queued/)
+    assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+  })
+
+  for (const fault of ['authority read', 'acceptance write', 'delivery receipt'] as const) {
+    it(`stops before the provider when the actual ${fault} fails`, async () => {
+      await queue('io-failure')
+      const delivery = assert.rejects(
+        session.enqueue('io-failure', async (): Promise<NativeSteeringApproval> => ({
+          text: 'Reviewed IO correction',
+          claim: () => true,
+        })),
+        /simulated steering IO failure/,
+      )
+      const messages: LLMMessage[] = []
+      const events = join(root, 'p', 't', 'events.jsonl')
+      const originalSpine = readFileSync(events, 'utf8')
+      const originalBody = readFileSync(join(root, 'p', 't', 'messages', 'io-failure.md'), 'utf8')
+      const receiptsPath = join(root, 'p', 't', 'user-steering.jsonl')
+      const realOpen = fsPromises.open
+      const realRename = fsPromises.rename
+      let restore = (): void => {}
+      let attempts = 0
+      try {
+        await assert.rejects(
+          runAgentLoop({
+            messages,
+            tools: [],
+            signal: controller.signal,
+            provider: {
+              async *stream(): AsyncGenerator<ProviderStreamChunk> {
+                yield assert.fail('No provider request from uncertain acceptance')
+              },
+            },
+            executeTool: async () => assert.fail('No tool'),
+            onChunk: () => {},
+            beforeStep: () =>
+              session.drain(
+                messages,
+                async () => assert.fail('No uncertain checkpoint'),
+                () => assert.fail(),
+                async (text) => {
+                  closeThreadStoreIndexes()
+                  if (fault === 'acceptance write') {
+                    const stub = mock.method(
+                      fsPromises,
+                      'rename',
+                      async (
+                        ...args: Parameters<typeof realRename>
+                      ): ReturnType<typeof realRename> => {
+                        if (String(args[1]) === events) {
+                          attempts++
+                          throw new Error('simulated steering IO failure')
+                        }
+                        return realRename(...args)
+                      },
+                    )
+                    restore = (): void => {
+                      stub.mock.restore()
+                    }
+                  } else {
+                    const path = fault === 'authority read' ? events : receiptsPath
+                    const stub = mock.method(
+                      fsPromises,
+                      'open',
+                      async (...args: Parameters<typeof realOpen>): ReturnType<typeof realOpen> => {
+                        if (String(args[0]) === path) {
+                          attempts++
+                          throw new Error('simulated steering IO failure')
+                        }
+                        return realOpen(...args)
+                      },
+                    )
+                    restore = (): void => {
+                      stub.mock.restore()
+                    }
+                  }
+                  return prepare(text)
+                },
+              ),
+          }),
+          /simulated steering IO failure/,
+        )
+        await delivery
+      } finally {
+        restore()
+      }
+      assert.ok(attempts > 0, 'exercise the real filesystem boundary')
+      assert.deepEqual(messages, [])
+      assert.deepEqual(await loadAgentHistory('p', 't'), [])
+      const accepted = parseSpineEntries(readFileSync(events, 'utf8')).some(
+        (entry) =>
+          entry.line?.type === 'user_message_lifecycle' &&
+          entry.line.id === 'io-failure' &&
+          entry.line.state === 'accepted',
+      )
+      assert.equal(accepted, fault === 'delivery receipt')
+      if (fault !== 'delivery receipt') {
+        closeThreadStoreIndexes()
+        const reloaded = await getProjectThread('p', 't')
+        assert.deepEqual(
+          {
+            spine: readFileSync(events, 'utf8'),
+            body: readFileSync(join(root, 'p', 't', 'messages', 'io-failure.md'), 'utf8'),
+            loaded: reloaded !== null,
+            content: reloaded?.messages.find((message) => message.id === 'io-failure')?.content,
+          },
+          { spine: originalSpine, body: originalBody, loaded: true, content: 'Note io-failure' },
+        )
+      }
+      assert.equal((await getThreadMeta('p', 't'))?.pendingMessages?.[0]?.autoDispatch, false)
+    })
+  }
+
+  it('preserves original body and spine when Stop wins after the real edited-body write', async () => {
+    await queue('body-stop')
+    const events = join(root, 'p', 't', 'events.jsonl')
+    const body = join(root, 'p', 't', 'messages', 'body-stop.md')
+    const originalSpine = readFileSync(events, 'utf8')
+    const originalBody = readFileSync(body, 'utf8')
+    const delivery = session.enqueue('body-stop', async (): Promise<NativeSteeringApproval> => ({
+      text: 'Edited protected body',
+      claim: () => true,
+    }))
+    const realRename = fsPromises.rename
+    let bodyWrites = 0
+    let restore = (): void => {}
+    const messages: LLMMessage[] = []
+    try {
+      await runAgentLoop({
+        messages,
+        tools: [],
+        signal: controller.signal,
+        provider: {
+          async *stream(): AsyncGenerator<ProviderStreamChunk> {
+            yield assert.fail('No provider after Stop')
+          },
+        },
+        executeTool: async () => assert.fail(),
+        onChunk: () => {},
+        beforeStep: () =>
+          session.drain(
+            messages,
+            async () => assert.fail('No stopped checkpoint'),
+            () => assert.fail(),
+            async (text) => {
+              const stub = mock.method(
+                fsPromises,
+                'rename',
+                async (...args: Parameters<typeof realRename>): ReturnType<typeof realRename> => {
+                  await realRename(...args)
+                  if (
+                    String(args[1]).startsWith(join(root, 'p', 't', 'messages') + '/') &&
+                    bodyWrites++ === 0
+                  )
+                    controller.abort()
+                },
+              )
+              restore = (): void => {
+                stub.mock.restore()
+              }
+              return prepare(text)
+            },
+          ),
+      })
+      assert.deepEqual(await delivery, { state: 'held' })
+    } finally {
+      restore()
+    }
+    assert.ok(bodyWrites > 0, 'Stop after the real body-file rename')
+    closeThreadStoreIndexes()
+    const reloaded = await getProjectThread('p', 't')
+    assert.deepEqual(
+      {
+        spine: readFileSync(events, 'utf8'),
+        body: readFileSync(body, 'utf8'),
+        loaded: reloaded !== null,
+        content: reloaded?.messages.find((m) => m.id === 'body-stop')?.content,
+      },
+      { spine: originalSpine, body: originalBody, loaded: true, content: 'Note body-stop' },
+    )
+    assert.deepEqual(messages, [])
+    assert.equal(reloaded?.pendingMessages?.[0]?.autoDispatch, false)
+  })
+
+  it('never turns a retired frozen identity into a fresh accepted ID', async () => {
+    await queue('retired')
+    const snapshot = await freezeQueuedUserMessage('p', 't', 'retired')
+    await deleteQueuedMessage('p', 't', 'retired')
+    assert.equal(
+      await acceptReviewedQueuedUserMessage(
+        'p',
+        't',
+        snapshot,
+        'Late',
+        () => true,
+        () => assert.fail('No retired claim'),
+      ),
+      false,
+    )
+    assert.deepEqual((await getProjectThread('p', 't'))?.messages, [])
   })
 
   it('bounds admissions independently of step and continuation allowances', async () => {
@@ -526,10 +1005,10 @@ describe('native human steering boundary and durability', () => {
     for (let i = 0; i < 16; i++) {
       const id = String(i)
       await queue(id)
-      pending.push(session.enqueue(id))
+      pending.push(session.enqueue(id, review))
     }
     await queue('overflow')
-    await assert.rejects(session.enqueue('overflow'), /16-note steering limit/)
+    await assert.rejects(session.enqueue('overflow', review), /16-note steering limit/)
     await session.close()
     assert.ok((await Promise.all(pending)).every((result) => result.state === 'held'))
     assert.equal((await getThreadMeta('p', 't'))?.continuationUsed, 5)

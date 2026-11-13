@@ -2759,6 +2759,7 @@ async function runAgentWithInlineCanvas(
                       runContext.projectId,
                       threadId,
                       turnTreeId,
+                      model,
                       controller.signal,
                     )
                   : null

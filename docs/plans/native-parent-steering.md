@@ -155,3 +155,28 @@ receipt implies that the held entry was already removed, and prevents duplicate
 steering. The live run nonce is excluded from saves and discarded when loading
 old metadata; a later ACP run cannot inherit steering eligibility.
 No claim of automatic crash recovery or provider-level exactly-once delivery is made.
+
+## Protected prompt compatibility
+
+Steering uses the same isolated main-owned prompt review as ordinary human submissions.
+Main freezes the saved unaccepted user message, queue revision and active native run;
+the protected window shows the exact note, target and model. Renderer metadata cannot
+establish authority. A declined review or Stop/completion leaves the note held without
+canonical acceptance. Late approval cannot revive the closed run.
+
+Before insertion, the project write queue validates that exact saved revision and commits
+canonical reviewed text with accepted lifecycle state under the existing message ID.
+The reviewed body is written to a fresh immutable revision file; the atomic spine
+replacement commits its reference and lifecycle together. Stop before that replacement or
+a failed replacement preserves the original body/spine and a readable thread, with only
+an unreferenced revision file left behind.
+Derived hook audit cards are excluded from the prompt revision and remain preserved;
+text, role, attachments and the saved queue payload must still match exactly.
+Retirement or edits that win first prevent delivery; acceptance that wins first prevents
+retirement and renderer role/body replacement. The store never substitutes a new identity.
+Blocking submit hooks and redaction run as before, but their history/context effects occur
+only after canonical acceptance. The provider-history checkpoint still precedes the applied
+receipt and the next provider request. Stop after the acceptance write begins may retain an
+accepted/checkpointed note without a subsequent request; failures remain fail-closed and
+crash-ambiguous notes are never automatically replayed. This does not claim provider-level
+exactly-once delivery.

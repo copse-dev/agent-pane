@@ -4,7 +4,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
-import { loadAgentHistory, saveAgentHistory, saveProjectThread } from './thread-store.ts'
+import {
+  createThreadWithResult,
+  createThreadWithAgentHistory,
+  getProjectThread,
+  loadAgentHistory,
+  saveAgentHistory,
+  saveProjectThread,
+} from './thread-store.ts'
 import { forkThreadHistory, rebuildAgentHistory } from './thread-fork.ts'
 
 function userMsg(id: string, content: string, images?: string[]): Message {
@@ -25,6 +32,13 @@ function thread(id: string, messages: Message[]): Thread {
     createdAt: 1,
     updatedAt: 1,
   }
+}
+
+function forkTarget(id: string, messages: Message[]): Thread {
+  return thread(
+    id,
+    messages.map((message) => ({ ...structuredClone(message), id: `${id}-${message.id}` })),
+  )
 }
 
 describe('rebuildAgentHistory', () => {
@@ -182,21 +196,26 @@ describe('forkThreadHistory', () => {
   })
 
   it('copies the sidecar verbatim when the whole thread is forked', async () => {
-    const result = await forkThreadHistory('proj', 'src', 'fork')
+    const result = await forkThreadHistory('proj', 'src', forkTarget('fork', sourceMessages))
 
     assert.deepEqual(result, { source: 'copied', messageCount: sourceHistory.length })
     assert.deepEqual(await loadAgentHistory('proj', 'fork'), sourceHistory)
   })
 
   it('treats a fork through the last message as a whole-thread fork', async () => {
-    const result = await forkThreadHistory('proj', 'src', 'fork', 'a2')
+    const result = await forkThreadHistory('proj', 'src', forkTarget('fork', sourceMessages), 'a2')
 
     assert.equal(result.source, 'copied')
     assert.deepEqual(await loadAgentHistory('proj', 'fork'), sourceHistory)
   })
 
   it('rebuilds history from the transcript when forking from an earlier message', async () => {
-    const result = await forkThreadHistory('proj', 'src', 'fork', 'a1')
+    const result = await forkThreadHistory(
+      'proj',
+      'src',
+      forkTarget('fork', sourceMessages.slice(0, 2)),
+      'a1',
+    )
 
     assert.deepEqual(result, { source: 'rebuilt', messageCount: 2 })
     assert.deepEqual(await loadAgentHistory('proj', 'fork'), [
@@ -206,40 +225,159 @@ describe('forkThreadHistory', () => {
   })
 
   it('leaves the source thread and its history untouched', async () => {
-    await forkThreadHistory('proj', 'src', 'fork', 'a1')
+    await forkThreadHistory('proj', 'src', forkTarget('fork', sourceMessages.slice(0, 2)), 'a1')
     assert.deepEqual(await loadAgentHistory('proj', 'src'), sourceHistory)
   })
 
   it('rebuilds a visible first prompt when its run has not committed history yet', async () => {
     await saveProjectThread('proj', thread('fresh', [userMsg('u1', 'Hi')]))
 
-    const result = await forkThreadHistory('proj', 'fresh', 'fork')
+    const result = await forkThreadHistory(
+      'proj',
+      'fresh',
+      forkTarget('fork', [userMsg('u1', 'Hi')]),
+    )
 
     assert.deepEqual(result, { source: 'rebuilt', messageCount: 1 })
     assert.deepEqual(await loadAgentHistory('proj', 'fork'), [{ role: 'user', content: 'Hi' }])
   })
 
-  it('writes no sidecar when neither provider history nor a transcript exists', async () => {
+  it('rejects a fork when there is no accepted transcript to copy', async () => {
     await saveProjectThread('proj', thread('fresh', []))
 
-    const result = await forkThreadHistory('proj', 'fresh', 'fork')
-
-    assert.deepEqual(result, { source: 'empty', messageCount: 0 })
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'fresh', thread('fork', [])),
+      /no accepted transcript/,
+    )
     assert.deepEqual(await loadAgentHistory('proj', 'fork'), [])
   })
 
   it('rejects a thread that does not belong to the project', async () => {
     await assert.rejects(
-      () => forkThreadHistory('other-proj', 'src', 'fork'),
+      () => forkThreadHistory('other-proj', 'src', forkTarget('fork', sourceMessages)),
       /does not belong to project/,
     )
   })
 
   it('rejects an unknown fork point rather than silently copying everything', async () => {
-    await assert.rejects(() => forkThreadHistory('proj', 'src', 'fork', 'nope'), /is not in thread/)
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'src', forkTarget('fork', sourceMessages), 'nope'),
+      /is not in thread/,
+    )
   })
 
   it('refuses to fork a thread onto itself', async () => {
-    await assert.rejects(() => forkThreadHistory('proj', 'src', 'src'), /onto itself/)
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'src', forkTarget('src', sourceMessages)),
+      /onto itself/,
+    )
+  })
+
+  it('cannot replace an existing target thread or its provider history', async () => {
+    const original: LLMMessage[] = [{ role: 'user', content: 'Accepted target context' }]
+    await saveProjectThread('proj', thread('target', [userMsg('accepted', 'Accepted target')]))
+    await saveAgentHistory('proj', 'target', original)
+
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'src', forkTarget('target', sourceMessages)),
+      /Fork target storage already exists/,
+    )
+
+    assert.deepEqual(await loadAgentHistory('proj', 'target'), original)
+  })
+
+  it('allows exactly one concurrent create for a fresh fork target', async () => {
+    const target = forkTarget('target', sourceMessages)
+    const results = await Promise.allSettled([
+      forkThreadHistory('proj', 'src', target),
+      forkThreadHistory('proj', 'src', target),
+    ])
+
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1)
+    assert.equal(results.filter((result) => result.status === 'rejected').length, 1)
+    assert.deepEqual(await loadAgentHistory('proj', 'target'), sourceHistory)
+  })
+
+  it('rejects renderer-authored messages that are not an exact accepted source copy', async () => {
+    const forged = forkTarget('forged', sourceMessages)
+    const first = forged.messages[0]
+    assert(first)
+    forged.messages[0] = { ...first, content: 'Attacker-authored replacement' }
+
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'src', forged),
+      /do not match the accepted source transcript/,
+    )
+    assert.deepEqual(await loadAgentHistory('proj', 'forged'), [])
+  })
+
+  it('does not copy an unaccepted renderer prompt into accepted fork history', async () => {
+    const pending = thread('pending', [userMsg('pending-user', 'Not reviewed')])
+    await createThreadWithResult('proj', pending, { source: 'renderer' })
+
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'pending', forkTarget('fork-pending', pending.messages)),
+      /only accepted user messages/,
+    )
+  })
+
+  it('rejects renderer creation that would mint multiple accepted user messages', async () => {
+    await assert.rejects(
+      () =>
+        createThreadWithResult(
+          'proj',
+          thread('synthetic', [userMsg('u1', 'One'), userMsg('u2', 'Two')]),
+          { source: 'renderer' },
+        ),
+      /only one unaccepted user message/,
+    )
+  })
+
+  it('rejects automation provenance on a renderer-requested fork target', async () => {
+    const target = forkTarget('automation-target', sourceMessages)
+    target.automation = { scheduleId: 'schedule', scheduleName: 'Nightly', triggeredAt: 1 }
+
+    await assert.rejects(
+      () => forkThreadHistory('proj', 'src', target),
+      /cannot claim automation provenance/,
+    )
+  })
+
+  it('rejects a stale source snapshot before creating the target', async () => {
+    const snapshot = await getProjectThread('proj', 'src')
+    assert(snapshot)
+    const changed = structuredClone(snapshot)
+    changed.title = 'Changed during fork'
+    await saveProjectThread('proj', changed)
+
+    await assert.rejects(
+      () =>
+        createThreadWithAgentHistory(
+          'proj',
+          forkTarget('stale-target', sourceMessages),
+          sourceHistory,
+          [snapshot],
+          { threadId: 'src', history: sourceHistory },
+        ),
+      /Fork source changed/,
+    )
+  })
+
+  it('rejects a provider sidecar that changed during fork creation', async () => {
+    const snapshot = await getProjectThread('proj', 'src')
+    assert(snapshot)
+    await saveAgentHistory('proj', 'src', [{ role: 'user', content: 'Changed history' }])
+
+    await assert.rejects(
+      () =>
+        createThreadWithAgentHistory(
+          'proj',
+          forkTarget('stale-history-target', sourceMessages),
+          sourceHistory,
+          [snapshot],
+          { threadId: 'src', history: sourceHistory },
+        ),
+      /provider history changed/,
+    )
   })
 })
