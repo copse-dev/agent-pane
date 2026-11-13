@@ -16,6 +16,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'native-readonly-workers'
 const MODEL = 'scripted-readonly-workers'
+const MODELS = [MODEL, 'scripted-worker-alpha', 'scripted-worker-beta']
 const requestSchema = z.object({
   messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
   tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
@@ -40,7 +41,7 @@ function answer(
       }
     : { content: text }
   response.end(
-    `data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`,
+    `data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }] })}\n\ndata: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 5 } })}\n\ndata: [DONE]\n\n`,
   )
 }
 
@@ -48,7 +49,7 @@ describe('native supervised read-only workers', function () {
   this.timeout(120_000)
   let root = ''
   let parentCalls = 0
-  let scenario: 'inspect' | 'cancel' | 'isolation' = 'inspect'
+  let scenario: 'inspect' | 'slash' | 'cancel' | 'isolation' = 'inspect'
   const closedWorkers = new Set<string>()
   const held = new Map<string, ServerResponse>()
   const workerCalls = new Map<string, number>()
@@ -69,15 +70,13 @@ describe('native supervised read-only workers', function () {
           JSON.stringify(
             request.url.includes('/api/')
               ? {
-                  models: [
-                    {
-                      key: MODEL,
-                      max_context_length: 128_000,
-                      loaded_instances: [{ config: { context_length: 128_000 } }],
-                    },
-                  ],
+                  models: MODELS.map((key) => ({
+                    key,
+                    max_context_length: 128_000,
+                    loaded_instances: [{ config: { context_length: 128_000 } }],
+                  })),
                 }
-              : { data: [{ id: MODEL, context_length: 128_000 }] },
+              : { data: MODELS.map((id) => ({ id, context_length: 128_000 })) },
           ),
         )
         return
@@ -115,6 +114,12 @@ describe('native supervised read-only workers', function () {
         const calls = (workerCalls.get(name) ?? 0) + 1
         workerCalls.set(name, calls)
         workerHistories.set(name, JSON.stringify(messages))
+        if (scenario === 'slash') {
+          if (calls === 1)
+            answer(response, '', { name: 'read_file', args: { path: 'evidence.txt' } })
+          else answer(response, 'alpha found the silver birch in evidence.txt.')
+          return
+        }
         if (scenario === 'cancel') {
           held.set(name, response)
           response.on('close', () => {
@@ -170,11 +175,12 @@ describe('native supervised read-only workers', function () {
           '---',
           `name: ${name}`,
           `description: Inspect ${name}.`,
-          'model: inherit',
+          `model: lmstudio:scripted-worker-${name}`,
           '---',
           `WORKER_${name.toUpperCase()}: Inspect and report.`,
         ].join('\n'),
       )
+    writeFileSync(join(root, 'evidence.txt'), 'The evidence is a silver birch.')
     writeFileSync(
       join(agents, 'isolated.md'),
       '---\nname: isolated\ndescription: Requires isolation\nisolation: worktree\n---\nWORKER_ISOLATED: Inspect and report.',
@@ -246,6 +252,40 @@ describe('native supervised read-only workers', function () {
     await expect(cards[1]).toHaveText(expect.stringContaining('beta'))
     await saveAppScreenshot('native-readonly-workers.png')
   })
+  it('relays an explicit worker without parent inference and persists each actual model’s usage', async () => {
+    scenario = 'slash'
+    parentCalls = 0
+    workerCalls.clear()
+    held.clear()
+    await setComposerValue('/alpha Read evidence.txt and report its finding.')
+    await $('.submit-btn').click()
+    await browser.waitUntil(
+      async () => (await $('.messages-list').getText()).includes('Agent alpha reports:'),
+      { timeout: 30_000 },
+    )
+    await waitForAgentIdle()
+    assert.equal(workerCalls.get('alpha'), 2)
+    assert.equal(parentCalls, 0)
+    assert.deepEqual(errors, [])
+    const threads = await browser.execute((id) => window.api.threads.loadProject(id), PROJECT_ID)
+    const usage = threads[0]?.usage
+    assert.ok(usage)
+    assert.equal(usage.inputTokens, 400)
+    assert.equal(usage.outputTokens, 40)
+    assert.equal(usage.subagentInputTokens, 300)
+    assert.equal(usage.subagentOutputTokens, 30)
+    assert.equal(usage.byModel?.[`lmstudio:${MODEL}`]?.inputTokens, 100)
+    assert.equal(usage.byModel['lmstudio:scripted-worker-alpha']?.inputTokens, 200)
+    assert.equal(usage.byModel['lmstudio:scripted-worker-beta']?.inputTokens, 100)
+    await $('.context-wheel').moveTo()
+    const popover = $('.context-wheel-popover')
+    await expect(popover).toBeDisplayed()
+    await expect(popover.$$('.footer-usage-popover-row.is-model')).toBeElementsArrayOfSize(3)
+    await expect(popover).toHaveText(expect.stringContaining('300 in / 30 out'))
+    await saveAppScreenshot('native-worker-model-usage.png')
+    await $('.messages-list').moveTo()
+  })
+
   it('stops both owned provider requests and settles worker cards', async () => {
     scenario = 'cancel'
     parentCalls = 0
@@ -293,9 +333,21 @@ describe('native supervised read-only workers', function () {
     await waitForAgentIdle()
     assert.deepEqual(workerCalls, before)
     assert.deepEqual(errors, [])
-    await expect($('.messages-list')).toHaveText(
-      expect.stringContaining('isolated agent did not start'),
-    )
+    await expect($('.messages-list')).toHaveText(expect.stringContaining('agent did not finish'))
+    const outcome = await browser.execute(async (id) => {
+      const thread = (await window.api.threads.loadProject(id))[0]
+      if (!thread) return null
+      const messages = await window.api.threads.loadMessages(id, thread.id)
+      const lastOutcome = messages.at(-1)?.turnOutcome
+      return {
+        status: lastOutcome?.status,
+        source: lastOutcome?.source,
+        calls: JSON.stringify(messages.at(-1)?.toolCalls),
+      }
+    }, PROJECT_ID)
+    assert.equal(outcome?.status, 'failed')
+    assert.equal(outcome.source, 'host')
+    assert.equal((await $$('[data-turn-recovery-card]')).length, 0, JSON.stringify(outcome))
     await saveAppScreenshot('native-worker-isolation-unavailable.png')
   })
 })
