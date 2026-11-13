@@ -725,6 +725,14 @@
       "sha256": "07f118ecd258812acbe53ae187e7526ec15fc42e4d82a9bb5e36b5533be277fc",
       "bytes": 238352
     },
+    "automation-completed-draft-manual.png": {
+      "sha256": "798833d6d8fdcfaa8b647892c7e7c826e733277c119eec75ac72eeda4bd071e2",
+      "bytes": 270647
+    },
+    "automation-completed-draft-next-run.png": {
+      "sha256": "11ebabbb80a2cc84cec1fee040c48bc9c0325a3e15a84fd8550328aff53750b2",
+      "bytes": 283838
+    },
     "automation-create-modal.png": {
       "sha256": "97bb6097b3c6631c66746efb39d59cd5a5c850fe9048bce5957e1e7bccafa176",
       "bytes": 290339
