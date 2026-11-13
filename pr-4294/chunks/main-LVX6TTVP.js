@@ -58449,7 +58449,9 @@ ${description}
     size: formatByteSize(a.sizeBytes)
   }));
   let mismatchBranch = null;
+  let branchWarningVersion = 0;
   let checkoutInProgress = false;
+  let checkoutWarningVersion = null;
   let dirtyWarningThreadId = null;
   let lastBreakdown = null;
   let breakdownModel = null;
@@ -58688,23 +58690,27 @@ ${description}
     clearStopPending();
   };
   document.addEventListener("keydown", disarmStopOnOtherKey, true);
-  function showBranchMismatch(branch) {
-    mismatchBranch = branch;
-    branchWarning.hidden = false;
-    branchWarningText.textContent = threadGitBranchMismatchMessage(branch);
-    branchWarningText.title = threadGitBranchMismatchMessage(branch);
+  function updateBranchMismatchActions() {
     checkoutBranchBtn.disabled = checkoutInProgress;
     checkoutBranchBtn.textContent = checkoutInProgress ? "Checking out..." : "Check out";
     continueBranchBtn.disabled = checkoutInProgress;
   }
+  function showBranchMismatch(branch) {
+    branchWarningVersion++;
+    mismatchBranch = branch;
+    branchWarning.hidden = false;
+    branchWarningText.textContent = threadGitBranchMismatchMessage(branch);
+    branchWarningText.title = threadGitBranchMismatchMessage(branch);
+    updateBranchMismatchActions();
+  }
   function hideBranchMismatch() {
+    branchWarningVersion++;
     mismatchBranch = null;
     checkoutInProgress = false;
+    checkoutWarningVersion = null;
     branchWarning.hidden = true;
     branchWarningText.title = "";
-    checkoutBranchBtn.disabled = false;
-    checkoutBranchBtn.textContent = "Check out";
-    continueBranchBtn.disabled = false;
+    updateBranchMismatchActions();
   }
   function showDirtyWarning(threadId) {
     dirtyWarningThreadId = threadId;
@@ -58977,12 +58983,24 @@ ${description}
     const branch = mismatchBranch;
     checkoutInProgress = true;
     showBranchMismatch(branch);
+    const warningVersion = branchWarningVersion;
+    checkoutWarningVersion = warningVersion;
+    const finishCheckout = () => {
+      if (checkoutWarningVersion !== warningVersion || store2.getState().activeProjectId !== activeProjectId || getActiveThreadId() !== activeThreadId || activeComposerThreadId !== activeThreadId)
+        return false;
+      checkoutWarningVersion = null;
+      checkoutInProgress = false;
+      updateBranchMismatchActions();
+      return branchWarningVersion === warningVersion;
+    };
     void api2.git.checkoutBranch(activeProjectId, activeThreadId, branch).then(() => {
-      hideBranchMismatch();
-      showToast(`Checked out ${branch}`);
+      if (finishCheckout()) {
+        hideBranchMismatch();
+        showToast(`Checked out ${branch}`);
+      }
       store2.emit("git_branch_changed");
     }).catch((error) => {
-      checkoutInProgress = false;
+      if (!finishCheckout()) return;
       showBranchMismatch(branch);
       showErrorToast(`Failed to check out ${branch}`, error);
     });
@@ -58993,13 +59011,18 @@ ${description}
     if (!id) return;
     const projectId = store2.getState().activeProjectId;
     if (!projectId) return;
+    const warningVersion = branchWarningVersion;
+    const draftKey = draftFingerprint(composer.expandedValue(), snapshotDraftAttachments());
+    const isCurrent = () => branchWarningVersion === warningVersion && store2.getState().activeProjectId === projectId && getActiveThreadId() === id && activeComposerThreadId === id && draftFingerprint(composer.expandedValue(), snapshotDraftAttachments()) === draftKey;
     void api2.git.branchStatus(projectId, id).then(({ currentBranch }) => {
+      if (!isCurrent()) return;
       if (syncThreadGitBranchIfChanged(store2, id, currentBranch)) {
         store2.emit("git_branch_changed");
       }
       hideBranchMismatch();
       void submit();
     }).catch((error) => {
+      if (!isCurrent()) return;
       showErrorToast("Failed to read the current branch", error);
     });
   });
@@ -59957,6 +59980,8 @@ ${reply}`);
       }, 0);
     },
     unmount() {
+      branchWarningVersion++;
+      checkoutWarningVersion = null;
       window.removeEventListener("beforeunload", stopContextEstimates);
       stopContextEstimates();
       draftAutosave.cancel();
