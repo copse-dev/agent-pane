@@ -40,8 +40,17 @@ Example `.copse/hooks.json`:
 }
 ```
 
-`command` is spawned with the directory of the declaring `hooks.json` as its working
-directory, so relative paths resolve against the config.
+Project hook commands run from the active thread's execution root: its checkout,
+or the project root for a shared thread. Relative paths resolve against that root,
+not `.copse/`; for example, `node scripts/check.mjs` loads the checkout's
+`scripts/check.mjs`. User hook commands keep the directory of their declaring
+`hooks.json` as their working directory.
+
+Sources **Test** runs outside an agent turn, using the asking window's project
+root for project-hook discovery, synthetic payloads and process cwd. Open a project
+before testing its project hooks. User hooks can still be tested without a project
+and retain their declaring-directory cwd. A test never applies the hook's outcome
+to a live agent turn.
 
 ## Canonical events
 

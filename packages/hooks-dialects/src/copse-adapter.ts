@@ -41,10 +41,11 @@ import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-
 import type { HookScope, HooksListResult, HookSummary } from './hooks-types.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
-import type {
-  DialectAdapter,
-  DialectDiscoverOpts,
-  DialectInterpretation,
+import {
+  resolveCommandHookCwd,
+  type DialectAdapter,
+  type DialectDiscoverOpts,
+  type DialectInterpretation,
 } from './dialect-adapter.ts'
 import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
@@ -524,7 +525,7 @@ function toCommandHook<E extends HookEventName>(
     dialect: 'copse',
     command: hook.command,
     onFailure: hook.onFailure,
-    cwd: hook.scope === 'project' ? (executionRoot ?? hook.cwd) : hook.cwd,
+    cwd: resolveCommandHookCwd(hook.scope, hook.cwd, executionRoot),
     ...(executionRoot ? { executionRoot } : {}),
     sandbox: hook.sandbox,
     async: hook.async,
