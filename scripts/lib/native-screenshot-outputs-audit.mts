@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '10f443f2ae81ad4b0bcfde95888dc0fa557116735119d349e6a9f553631151fd',
+    sourceSha256: '7d567b90f858f3a4c53f137f99a4c37f1800d01a2d6e3347b056f65bdc169101',
     filenames: [
       'acp-auth-error.png',
       'claude-org-check-auth-error.png',
