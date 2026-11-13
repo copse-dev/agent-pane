@@ -38,8 +38,10 @@ under the existing rules. No production branch rules change.
 - Run the aggregate with `always()` on **fixed GitHub-hosted capacity**, never
   `SELF_HOSTED_CHECKS`. The old #1669 stall was an always-running gate queued
   behind the self-hosted fleet.
-- Keep it to shell built-ins, with no checkout, install, network call, or token
-  permissions and a five-minute execution cap. Hosted queue time is not bounded
+- Keep cancellation/dependency decisions to shell built-ins, with no checkout,
+  install or network call, and a five-minute execution cap. The original gate
+  had no token permissions; the November metadata amendment below adds a final
+  read-only recheck only after those decisions pass. Hosted queue time is not bounded
   by that cap; a GitHub-wide runner outage remains outside this change.
 - Use a separate conditional step for whole-run cancellation. Status functions
   such as `cancelled()` are not supported in step environment expressions.
@@ -123,3 +125,71 @@ Local tests evaluate the actual YAML routing and execute the actual aggregate
 shell, including rejected skipped work and successful full/subset/skip controls.
 They cannot prove GitHub merge eligibility. A live authorized positive-control
 probe remains necessary before calling the Expected-check behavior repaired.
+
+## Exact-candidate native-suite reuse — 8 November 2026
+
+The metadata policy above is amended narrowly: title/body-only edits into protected
+`main` still dispatch CI and run fresh static, unit, build and browser verification.
+They may reuse a completed **full native suite** for the exact event candidate.
+`CI Passed` remains the same real aggregate; no status is copied and cancellation
+still fails. Ready, label, source, retarget, queue, release and fork events retain
+real verification. Screenshot stack declarations before or after the edit disable
+reuse, preserving their declaration-bound combined validation.
+
+The hosted, read-only `verification-reuse` job loads its verifier from the event's
+pinned protected base, before candidate code. The candidate workflow and verifier
+must match that base. Its key includes merge SHA, source head, base SHA/ref, draft,
+CI labels, runner policy and the hosted native image. Runtime markers are recorded
+before checkout or setup can execute candidate code. Self-hosted/unknown images do
+not qualify. Source, dependency, test and runtime configuration changes therefore
+need new real verification; changed CI policy cannot approve its own reuse.
+
+Only GitHub's completed Actions job/step records count. One successful full source
+run must contain the real nine native shard steps, immutable screenshot collection,
+precheck, unit, build, baseline and aggregate jobs. Artifacts, caches, PR text and
+commit statuses are not receipts. The bounded history must be complete; a newer
+failed/running attempt (including an older run ID), ambiguous or missing records,
+API failure, or evidence older than 24 hours falls back to real suites. Reused runs
+are never original evidence. Live PR identity and the run/attempt history are
+rechecked before returning the original run URL.
+
+Discovery is not final authority. After fresh work completes, `CI Passed` loads
+the same pinned-base policy again as its **last step**, after cancellation and
+dependency rejection. It must revalidate the **same original run/attempt URL**,
+current live identity, runtime image and complete history immediately before
+success. A retry can begin or fail while the fresh jobs run; an earlier read-only
+job would leave another queue delay before acceptance. Therefore this recheck runs
+inside the aggregate, with read-only contents/actions/pull-request permissions and
+no candidate checkout, install, write token or status copying. It uses runner-provided
+Node without downloaded actions, so action preparation cannot delay the initial
+cancellation/dependency rejection. This bounded control script is the sole exception
+to workflow Node setup: it executes no application code or packages and checks
+TypeScript-stripping support before any API read. An incompatible hosted Node fails
+closed. All application/build/test jobs still use the repository's `.nvmrc` version.
+Late invalidation,
+expiry or API uncertainty fails this metadata run: its native jobs were already
+skipped, so new real verification is required. Only an early discovery miss can
+fall back to native work within the same run. A later successful attempt cannot
+silently replace the originally selected receipt.
+
+The screenshot publisher makes no mutation for a reuse run. Original candidates,
+failed publication, pending reviews and manual holds remain attached to the source
+run, even when a late stack declaration invalidates the reused run. Authenticated
+reuse detection precedes all ordinary-parent publication outputs, including failed
+stack reporting. Fresh browser results are checked on every edit; their raw `screenshots-demo` artifact remains available, but metadata reuse does not create a new screenshot review or approve those new images. This first optimization does
+not reuse the externally resolved browser runtime.
+
+Examples: a validation-paragraph edit after an exact full success can omit the nine
+native jobs. The same edit after a base move, source push, runner-image change or
+failed retry runs them again. Removing or changing a stack declaration also runs
+real combined verification. The two historical metadata runs for #4276/#4279 each
+executed 469 native specs: this policy targets **938 redundant native executions**
+across that pair. Their 35,378 unit passes and 249 browser specs remain fresh work
+under this deliberately limited policy. These counts are historical opportunity,
+not a claim that those old runs were eligible receipts or were avoided in practice.
+
+Rollout is fail-closed: a base without this verifier performs real suites. The policy
+PR itself changes its trusted files and cannot reuse its own verification. A live
+premerge probe must identify its controlled base-allowlist substitution separately
+from the production protected-main policy; it cannot claim to change main's branch
+protection or establish a merge approval.
