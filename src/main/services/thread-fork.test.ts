@@ -64,6 +64,28 @@ describe('rebuildAgentHistory', () => {
     ])
   })
 
+  it('preserves the external parent reply after its own task dispatch', () => {
+    const history = rebuildAgentHistory([
+      userMsg('u1', 'Read it'),
+      assistantMsg('a1', '', [
+        {
+          id: 'external-worker',
+          name: 'task',
+          title: 'Read the file',
+          kind: 'think',
+          args: { subagent_type: 'Explore' },
+          status: 'done',
+          result: 'Worker report',
+        },
+      ]),
+      assistantMsg('a2', 'The parent checked the result.'),
+    ])
+    assert.equal(
+      history.findLast((message) => message.role === 'assistant')?.content,
+      'The parent checked the result.',
+    )
+  })
+
   it('splits an assistant turn into text, tool calls, and one tool-result message', () => {
     const history = rebuildAgentHistory([
       userMsg('u1', 'Read it'),

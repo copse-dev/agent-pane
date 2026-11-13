@@ -35,6 +35,22 @@ describe('explicitAgentForMessage', () => {
     )
   })
 
+  it('does not mistake an external task for an explicit native invocation', () => {
+    for (const metadata of [
+      { kind: 'think' as const },
+      { title: 'task' },
+      { programmaticName: 'task' },
+    ]) {
+      assert.equal(
+        explicitAgentForMessage(
+          [message('user'), message('assistant', [{ ...task, ...metadata }]), message('assistant')],
+          2,
+        ),
+        undefined,
+      )
+    }
+  })
+
   it('distinguishes parent delegation from a one-shot invocation', () => {
     assert.equal(
       explicitAgentForMessage(

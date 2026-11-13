@@ -19,6 +19,11 @@ export function explicitAgentForMessage(
       if (
         agent !== undefined ||
         call.name !== 'task' ||
+        // ACP can use the same name; its title/kind/identity metadata belongs
+        // to the external parent, not a host-synthesized explicit invocation.
+        call.title !== undefined ||
+        call.kind !== undefined ||
+        call.programmaticName !== undefined ||
         !isRecord(call.args) ||
         typeof call.args['subagent_type'] !== 'string' ||
         call.args['subagent_type'].length === 0

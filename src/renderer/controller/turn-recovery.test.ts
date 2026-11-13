@@ -152,6 +152,37 @@ describe('explicit failed-turn recovery', () => {
     assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), failedId), {})
   })
 
+  it('retains recovery after an external agent dispatched its own task', () => {
+    const { store, api, runs } = setup()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Read it')
+    const workerId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, workerId, {
+      id: 'external-worker',
+      name: 'task',
+      kind: 'think',
+      title: 'Read the file',
+      programmaticName: 'task',
+      args: { subagent_type: 'Explore', prompt: 'Read it' },
+      status: 'done',
+      result: 'Worker report',
+    })
+    const failedId = addFinishedAssistant(
+      store,
+      threadId,
+      'Parent failed after delegation',
+      outcome('failed', 'acp', 'acp:fixture'),
+    )
+    assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), failedId), {})
+    assert.equal(
+      recoverFailedTurn(store, api, 'project-1', threadId, failedId, 'current-model'),
+      true,
+    )
+    assert.equal(runs.length, 1)
+    assert.ok(runs[0])
+    assert.equal(parseAgentRunPayload(runs[0].payload).invokedAgent, undefined)
+  })
+
   for (const reason of ['max_steps', 'timeout'] as const) {
     it(`continues a ${reason} checkpoint with a new human allowance and the current model`, () => {
       const { store, api, runs, selections } = setup()
