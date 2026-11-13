@@ -1067,9 +1067,13 @@ printf '%s\\n' '${command}' >> "$PREPARE_CALLS"
           const enabled: unknown = runInNewContext(
             step.if.slice(3, -2).replace(/inputs\.(app-id|app-private-key)/g, "inputs['$1']"),
             {
-              steps: { prepare: { outputs: { ready } } },
+              steps: {
+                prepare: { outputs: { ready } },
+                'summary-identity': { outputs: { ready: 'true' } },
+              },
               inputs: { 'app-id': 'app', 'app-private-key': 'key', 'post-summary': 'true' },
               always: () => true,
+              cancelled: () => false,
             },
           )
           assert.equal(enabled, ready === 'true', `${name}: ${step.uses ?? 'run'}`)

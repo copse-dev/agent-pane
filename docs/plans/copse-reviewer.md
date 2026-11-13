@@ -1555,6 +1555,17 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   without broadening the model job read-context credential. Feedback-label events
   retain their existing App semantics; required CI aggregates are unchanged.
 
+  **Failed-review handoff.** As before deferred publication, a summary successfully
+  rendered before a review's nonzero exit remains publishable. Identity and upload
+  steps use explicit non-cancellation guards, validate a bounded regular file against
+  the authorized request and emit no artifact for an absent summary. Invalid files
+  fail closed. A failed producer with a valid artifact can feed the model-free
+  publisher; the review job remains failed. Canceled producers and canceled workflows
+  do not publish. No `continue-on-error` or App fallback masks a failed review.
+  Every reusable caller must grant the publisher's `actions: read` ceiling before
+  updating its pin, even when summaries are disabled; the model-context token remains
+  read-only in the protected Copse job.
+
 - **Limits.** The forge has no conditional update for a description, so an author's edit
   landing between the read and the write is lost, as is the earlier of two runs that write
   within the same round trip. A tool that

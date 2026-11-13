@@ -1,10 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { load } from 'js-yaml'
 import { z } from 'zod'
 
 const stepSchema = z.object({
+  if: z.string().optional(),
   id: z.string().optional(),
   uses: z.string().optional(),
   run: z.string().optional(),
@@ -12,6 +15,7 @@ const stepSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
 })
 const jobSchema = z.object({
+  if: z.string().optional(),
   needs: z.union([z.string(), z.array(z.string())]).optional(),
   permissions: z.record(z.string(), z.string()),
   outputs: z.record(z.string(), z.string()).optional(),
@@ -67,9 +71,77 @@ describe('full review summary publication boundary', () => {
 
   it('documents the reusable caller permission ceiling for immutable artifact attestation', () => {
     const guide = readFileSync('packages/review/ACTIONS.md', 'utf8')
+    assert.match(guide, /Every reusable caller must add `actions: read`/)
+    assert.match(guide, /including callers with `post-summary: false`/)
     assert.match(guide, /contents: read\n {6}actions: read\n {6}pull-requests: write/)
     const caller = readFileSync('.github/workflows/review-trigger.yml', 'utf8')
     assert.match(caller, /^ {6}actions: read$/m)
+  })
+
+  it('retains valid failed-review summaries without publishing canceled or missing producers', () => {
+    const publisher = workflow.jobs['publish-summary']
+    assert.ok(publisher?.if)
+    assert.match(publisher.if, /!cancelled\(\)/)
+    const expression = publisher.if.trim().slice(3, -2)
+    for (const variant of ['findings', 'copse-findings']) {
+      for (const result of ['success', 'failure', 'cancelled', 'skipped']) {
+        for (const artifact of ['', '12345']) {
+          for (const cancelled of [false, true]) {
+            const empty = { result: 'skipped', outputs: { 'summary-artifact-id': '' } }
+            const producer = { result, outputs: { 'summary-artifact-id': artifact } }
+            const enabled: unknown = runInNewContext(expression, {
+              cancelled: () => cancelled,
+              fromJSON: (text: string) =>
+                safeJsonParse(text, decodeWithSchema(z.array(z.string()))),
+              contains: (values: string[], value: string) => values.includes(value),
+              needs: {
+                authorize: { result: 'success' },
+                findings: variant === 'findings' ? producer : empty,
+                'copse-findings': variant === 'copse-findings' ? producer : empty,
+              },
+            })
+            assert.equal(
+              enabled,
+              !cancelled && artifact !== '' && ['success', 'failure'].includes(result),
+              JSON.stringify({ variant, result, artifact, cancelled }),
+            )
+          }
+        }
+      }
+    }
+  })
+
+  it('runs identity after review failure and uploads only a validated present summary', () => {
+    const action = z
+      .object({ runs: z.object({ steps: z.array(stepSchema) }) })
+      .parse(load(readFileSync('.github/actions/review-findings/action.yml', 'utf8')))
+    for (const id of ['summary-identity', 'summary-upload']) {
+      const step = action.runs.steps.find((entry) => entry.id === id)
+      assert.ok(step?.if)
+      assert.match(step.if, /!cancelled\(\)/)
+      for (const ready of ['true', 'false']) {
+        for (const summaryReady of ['true', 'false']) {
+          for (const cancelled of [false, true]) {
+            const enabled: unknown = runInNewContext(step.if.trim().slice(3, -2), {
+              success: () => false,
+              cancelled: () => cancelled,
+              inputs: { 'post-summary': 'true' },
+              steps: {
+                prepare: { outputs: { ready } },
+                'summary-identity': { outputs: { ready: summaryReady } },
+              },
+            })
+            assert.equal(
+              enabled,
+              !cancelled &&
+                ready === 'true' &&
+                (id === 'summary-identity' || summaryReady === 'true'),
+            )
+          }
+        }
+      }
+    }
+    assert.doesNotMatch(JSON.stringify(action), /continue-on-error/)
   })
 
   it('uploads only the rendered summary and retains the App token for findings', () => {

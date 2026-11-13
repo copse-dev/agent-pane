@@ -1,5 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { constants } from 'node:fs'
+import { lstat, open } from 'node:fs/promises'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { postSummary, type PostedSummary } from '../src/pr-summary.ts'
@@ -101,6 +103,44 @@ export function verifySummaryPayload(bytes: Uint8Array, expectedDigest: string):
     createHash('sha256').update(bytes).digest('hex') !== digest
   ) {
     throw new Error('Summary payload digest could not be verified')
+  }
+}
+
+/** Identify a completed host-written artifact, including after a failed review. */
+export async function summaryFileIdentity(
+  path: string,
+  trustedRequest: Request,
+): Promise<string | null> {
+  let info
+  try {
+    info = await lstat(path)
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
+    throw error
+  }
+  if (!info.isFile() || info.isSymbolicLink())
+    throw new Error('Summary artifact must be a regular file')
+  if (info.size > MAX_BYTES) throw new Error('Summary artifact is too large')
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const opened = await file.stat()
+    if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino) {
+      throw new Error('Summary artifact file changed before it could be identified')
+    }
+    if (opened.size > MAX_BYTES) throw new Error('Summary artifact is too large')
+    const buffer = Buffer.alloc(MAX_BYTES + 1)
+    let length = 0
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, null)
+      if (bytesRead === 0) break
+      length += bytesRead
+    }
+    if (length > MAX_BYTES) throw new Error('Summary artifact is too large')
+    const bytes = buffer.subarray(0, length)
+    decodeSummaryArtifact(bytes.toString('utf8'), trustedRequest)
+    return createHash('sha256').update(bytes).digest('hex')
+  } finally {
+    await file.close()
   }
 }
 

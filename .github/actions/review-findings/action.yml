@@ -201,19 +201,14 @@ runs:
 
     - name: Record rendered summary identity
       id: summary-identity
-      if: ${{ steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' }}
+      if: ${{ !cancelled() && steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' }}
       shell: bash
-      run: |
-        node --input-type=module -e '
-          import { readFileSync, appendFileSync } from "node:fs";
-          import { createHash } from "node:crypto";
-          const bytes = readFileSync(process.env.RUNNER_TEMP + "/copse-review-summary/summary.json");
-          if (bytes.length > 65536) throw new Error("Summary exceeds publication limit");
-          appendFileSync(process.env.GITHUB_OUTPUT, "sha256=" + createHash("sha256").update(bytes).digest("hex") + "\n");
-        '
+      env:
+        COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+      run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/summary-identity.mts"
     - uses: actions/upload-artifact@v7
       id: summary-upload
-      if: ${{ steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' }}
+      if: ${{ !cancelled() && steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' && steps['summary-identity'].outputs.ready == 'true' }}
       with:
         name: copse-review-summary-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/copse-review-summary/summary.json

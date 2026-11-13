@@ -1043,7 +1043,7 @@ describe('copse-review CLI', () => {
     )
     const calls: { url: string; method: string; body: string }[] = []
     let deferredBlock = ''
-    const execute = async (deferred = false): Promise<Captured> => {
+    const execute = async (deferred = false, failReview = false): Promise<Captured> => {
       let out = ''
       let err = ''
       const code = await main(
@@ -1052,9 +1052,7 @@ describe('copse-review CLI', () => {
           'main',
           '--head',
           'refs/pull/7/head',
-          '--foreign',
-          '--image',
-          'copse-review-test:never-built',
+          ...(failReview ? [] : ['--foreign', '--image', 'copse-review-test:never-built']),
           '--provider',
           'mock',
           '--mock-script',
@@ -1078,6 +1076,7 @@ describe('copse-review CLI', () => {
           },
           env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
           cwd: repo.root,
+          ...(failReview ? { backend: createEphemeralRunnerBackend() } : {}),
           ...(deferred
             ? {
                 deferSummary: async (block: string, head: string | null): Promise<void> => {
@@ -1088,6 +1087,9 @@ describe('copse-review CLI', () => {
             : {}),
           fetch: (url, init) => {
             calls.push({ url, method: init.method, body: init.body ?? '' })
+            if (failReview && init.method === 'POST' && url.endsWith('/reviews')) {
+              return Promise.resolve({ status: 503, text: async () => 'Review post unavailable' })
+            }
             const text =
               init.method === 'GET' && url.endsWith('/pulls/7')
                 ? JSON.stringify({ body: null, head: { sha: contributed } })
@@ -1126,6 +1128,15 @@ describe('copse-review CLI', () => {
     assert.match(deferred.err, /saved the summary for separate publication/)
     assert.doesNotMatch(deferred.err, /updated the summary in the description/)
     assert.ok(calls.some((call) => call.method === 'POST' && call.url.endsWith('/reviews')))
+    assert.ok(!calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/pulls/7')))
+    // A failed review post must keep its failure while retaining the rendered summary.
+    calls.length = 0
+    deferredBlock = ''
+    const failed = await execute(true, true)
+    assert.equal(failed.code, HEADLESS_EXIT.FAILURE, failed.err)
+    assert.match(failed.err, /the review could not be posted/)
+    assert.match(failed.err, /saved the summary for separate publication/)
+    assert.match(deferredBlock, /The review reported 1 issue/)
     assert.ok(!calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/pulls/7')))
   })
 

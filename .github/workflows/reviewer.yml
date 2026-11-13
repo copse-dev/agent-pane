@@ -302,7 +302,10 @@ jobs:
 
   publish-summary:
     needs: [authorize, findings, copse-findings]
-    if: ${{ always() && needs.authorize.result == 'success' && (needs.findings.result == 'success' || needs.copse-findings.result == 'success') && (needs.findings.outputs.summary-artifact-id != '' || needs.copse-findings.outputs.summary-artifact-id != '') }}
+    if: >-
+      ${{ !cancelled() && needs.authorize.result == 'success' &&
+      ((contains(fromJSON('["success","failure"]'), needs.findings.result) && needs.findings.outputs['summary-artifact-id'] != '') ||
+      (contains(fromJSON('["success","failure"]'), needs['copse-findings'].result) && needs['copse-findings'].outputs['summary-artifact-id'] != '')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # No model/App credentials or contributor checkout in this job.

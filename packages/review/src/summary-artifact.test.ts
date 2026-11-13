@@ -1,12 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   encodeSummaryArtifact,
   decodeSummaryArtifact,
   verifySummaryArtifactMetadata,
   publishSummaryArtifact,
   verifySummaryPayload,
+  summaryFileIdentity,
 } from '../ci/summary-artifact.mts'
 import { actionPublishingFetch } from '../ci/action-policy.mts'
 import { renderSummaryBlock } from './pr-summary.ts'
@@ -38,6 +42,59 @@ function restamp(value: string): string {
   lines[lines.length - 2] = digestLine(lines.slice(1, -2).map(bareLine))
   return lines.join('\n')
 }
+
+describe('summary file identity after review completion', () => {
+  it('returns no identity for an absent file and hashes the exact validated file bytes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'copse-summary-identity-'))
+    try {
+      const path = join(directory, 'summary.json')
+      assert.equal(await summaryFileIdentity(path, request), null)
+      await writeFile(path, text)
+      const identity = await summaryFileIdentity(path, request)
+      assert.equal(identity, createHash('sha256').update(text).digest('hex'))
+      assert.equal(
+        await summaryFileIdentity(join(directory, 'missing', 'summary.json'), request),
+        null,
+      )
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects symlinks, nonfiles and files larger than the byte boundary', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'copse-summary-identity-'))
+    try {
+      const path = join(directory, 'summary.json')
+      await writeFile(path, text)
+      const linked = join(directory, 'linked.json')
+      await symlink(path, linked)
+      await assert.rejects(summaryFileIdentity(linked, request), /regular file/)
+      const nonfile = join(directory, 'not-a-file')
+      await mkdir(nonfile)
+      await assert.rejects(summaryFileIdentity(nonfile, request), /regular file/)
+      await writeFile(path, Buffer.alloc(65537))
+      await assert.rejects(summaryFileIdentity(path, request), /too large/)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed on malformed data, mismatched targets and non-ENOENT filesystem errors', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'copse-summary-identity-'))
+    try {
+      const path = join(directory, 'summary.json')
+      await writeFile(path, '{}')
+      await assert.rejects(summaryFileIdentity(path, request), /Invalid summary artifact/)
+      await writeFile(path, text)
+      await assert.rejects(summaryFileIdentity(path, { ...request, pr: 43 }), /authorized request/)
+      await assert.rejects(summaryFileIdentity(join(path, 'child.json'), request), {
+        code: 'ENOTDIR',
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('summary artifact boundary', () => {
   it('checks the exact downloaded payload bytes against a required producer SHA256', () => {
