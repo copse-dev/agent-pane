@@ -84,6 +84,24 @@ describe('ACP agent that dropped the tools it listed', function () {
     )
     await send('say:Listed the files with my own shell.', 'Listed the files with my own shell.')
 
+    // The message list can contain the complete streamed reply before its
+    // final markdown paragraph has committed. Assert the rendered paragraph
+    // only after that specific node catches up.
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const replies = document.querySelectorAll('.messages-list .msg-assistant')
+          const last = replies[replies.length - 1]
+          const paragraphs = last?.querySelectorAll('.message-text p')
+          return (
+            paragraphs !== undefined &&
+            paragraphs.length > 0 &&
+            paragraphs[paragraphs.length - 1]?.textContent === 'Listed the files with my own shell.'
+          )
+        }),
+      { timeout: 5_000, timeoutMsg: 'the final reply paragraph was not fully rendered' },
+    )
+
     const replies = await browser.execute(() =>
       [...document.querySelectorAll('.messages-list .msg-assistant')].map((reply) =>
         [...reply.querySelectorAll('.message-text p')].map((p) => p.textContent),

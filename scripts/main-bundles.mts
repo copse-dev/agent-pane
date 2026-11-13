@@ -101,6 +101,13 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/acp/acp-session-host-worker.ts',
     outfile: 'dist/main/acp-session-host-worker.js',
   },
+  // Owns ASRT for one approved loopback-binding background task. ASRT's
+  // process-global proxy config must never widen an already-running contained
+  // command in Electron main.
+  {
+    entry: 'src/main/project-sandbox/port-binding-worker.ts',
+    outfile: 'dist/main/port-binding-worker.js',
+  },
   // Per-download host for remote artifact images
   // (docs/plans/sandboxed-artifact-image-downloads.md): owns its own ASRT
   // manager and egress proxy so a download never widens main's network scope.

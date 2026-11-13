@@ -125,6 +125,10 @@
       "sha256": "72344c3d448bc0090fe53f97e18ed4c068ec157ec12e634a10fd6e37548baff2",
       "bytes": 55076
     },
+    "acp-probe-failure-copy.png": {
+      "sha256": "764ae869c07b1bd2fbd57ef8a0605ebb8fae0cd6431dbafc89653a8b663fd243",
+      "bytes": 19017
+    },
     "acp-prompt-interruption-collapsed.png": {
       "sha256": "f20562aabfc33239d99c70045d2b6bfde16e4bd6b0f1a9101654e1bdf4c53c8c",
       "bytes": 182686

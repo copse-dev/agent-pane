@@ -561,8 +561,8 @@ export function createAcpAgentsSection(
           ].filter(Boolean)
           setInlineStatus(modelStatus, 'ok', `Detected ${bits.join(', ')}.`)
         })
-        .catch((err: unknown) => {
-          setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
+        .catch(() => {
+          setInlineStatus(modelStatus, 'error', 'Could not check this coding agent. Try again.')
         })
         .finally(() => {
           detectModels.disabled = !canDetectModels

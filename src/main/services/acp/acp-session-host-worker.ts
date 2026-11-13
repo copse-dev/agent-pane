@@ -105,6 +105,9 @@ async function initHostSandbox(): Promise<void> {
     },
     false,
   )
+  if (!SandboxManager.isSandboxingEnabled()) {
+    throw new Error('Workspace protection did not start for the agent session')
+  }
   setProjectSandboxEnabled(true)
 }
 

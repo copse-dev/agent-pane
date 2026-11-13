@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { buildSync } from 'esbuild'
 import { z } from 'zod'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
@@ -19,7 +21,8 @@ import {
   isAcpBridgeStartupFailure,
 } from './acp-bridge-mount.ts'
 import { ACP_SANDBOX_GITHUB_STEER } from './acp-network-denial-steer.ts'
-import { acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
+import { acquireAcpSession, acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
+import { acpSessionHostWorkerPath } from './acp-session-host.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -91,6 +94,49 @@ async function useFixtureAgent(flags: string[], sandboxed = false): Promise<void
       ...(sandboxed ? { sandbox: { allowedDomains: [] } } : {}),
     },
   ])
+}
+
+function bundleStubbedSessionHost(): void {
+  const outfile = acpSessionHostWorkerPath()
+  const stub = join(dirname(outfile), 'bridge-sandbox-runtime-stub.mjs')
+  mkdirSync(dirname(outfile), { recursive: true })
+  writeFileSync(
+    stub,
+    `let config = null
+export const SandboxManager = {
+  async initialize(next) { config = next },
+  getConfig() { return config },
+  updateConfig(next) { config = next },
+  isSandboxingEnabled() { return config !== null },
+  async wrapWithSandboxArgv(command, shell) { return { argv: [shell, '-c', command] } },
+  cleanupAfterCommand() {},
+  async reset() { config = null },
+}
+export function getApplySeccompBinaryPath() { return null }
+`,
+  )
+  buildSync({
+    entryPoints: [resolve('src/main/services/acp/acp-session-host-worker.ts')],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node24',
+    alias: {
+      '@shared': resolve('src/shared'),
+      '@anthropic-ai/sandbox-runtime': stub,
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js': stub,
+    },
+    external: [
+      'electron',
+      'shell-quote',
+      'node-pty',
+      'jsdom',
+      '@mozilla/readability',
+      'turndown',
+      'electron-updater',
+    ],
+  })
 }
 
 /** One turn; returns how it stopped and what the thread was shown. */
@@ -188,21 +234,45 @@ async function sandboxedRun<T>(threadId: string, fn: () => Promise<T>): Promise<
 
 describe('ACP native bridge mount (#4144)', () => {
   it(
+    'does not start an agent in main when its isolated sandbox host fails',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const marker = join(root, 'agent-started')
+      const script = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started'); setInterval(() => {}, 1000)`
+      const worker = acpSessionHostWorkerPath()
+      mkdirSync(dirname(worker), { recursive: true })
+      writeFileSync(
+        worker,
+        "process.send?.({ type: 'error', error: 'forced isolated host failure' })\n",
+      )
+      t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+      setProjectSandboxEnabled(true)
+      await assert.rejects(
+        acquireAcpSession({
+          threadId: 'isolated-host-failure',
+          config: {
+            command: process.execPath,
+            args: ['-e', script],
+            cwd: root,
+            sandbox: { allowedDomains: [] },
+          },
+        }),
+        /forced isolated host failure/,
+      )
+      assert.equal(existsSync(marker), false)
+    },
+  )
+
+  it(
     'withholds write-access instructions until a read-only session lists the bridge',
     {
       skip: process.platform === 'win32',
     },
     async (t) => {
-      // Inject at the OS containment boundary: the real deferred-checkout and
-      // bridge paths still run, while the fixture only echoes prompts/lists tools.
+      // Exercise the real isolated host path with ASRT stubbed in that process;
+      // no in-process fallback can conceal a missing worker in this test.
+      bundleStubbedSessionHost()
       t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
-      t.mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
-      t.mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
-        Promise.resolve({
-          argv: [process.execPath, MOCK_AGENT, '--mcp-http'],
-          env: { ...process.env },
-        }),
-      )
       setProjectSandboxEnabled(true)
       await useFixtureAgent(['--mcp-http'], true)
       const registry = registryWithOneBridgedTool()

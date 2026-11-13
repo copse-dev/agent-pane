@@ -1132,17 +1132,9 @@ async function spawnTransport(
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
-    try {
-      child = await spawnSandboxedAcpSessionHost(config)
-    } catch (err) {
-      // Preserve containment if the standalone host cannot start. This is the
-      // pre-phase-5 path: it widens the main process's ASRT network singleton,
-      // so the overlap gate remains necessary as a bounded fallback.
-      console.warn(
-        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
-      )
-      child = await spawnAcpAgentProcess(config)
-    }
+    // A host failure cannot fall back into main: that would give all existing
+    // contained commands the agent's public-domain allowlist for its lifetime.
+    child = await spawnSandboxedAcpSessionHost(config)
   } else {
     child = await spawnAcpAgentProcess(config)
   }

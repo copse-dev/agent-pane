@@ -232,12 +232,15 @@ long, no user-visible turn, egress needed to exactly one vendor.
 - Independently worth doing: stop `revalidateStaleAcpModels()` firing on every
   `workspace:set` for agents the user has never selected in a pane.
 
-Built as described, with one addition the plan did not anticipate: a **fallback**.
 `probeAcpAgentIsolated` (`acp-probe-host.ts`) spawns `acp-probe-worker.js`, which
-calls its own `SandboxManager.initialize` and returns one JSON line; if the helper
-cannot run, it degrades to the in-process `probeAcpAgent`. That path still widens
-the global scope — today's behaviour — but a probe that cannot run leaves the user
-with no model list at all, which is worse.
+calls its own `SandboxManager.initialize` and returns one JSON line. The original
+implementation fell back to the in-process `probeAcpAgent` when the helper
+failed. Phase 6 retains that fallback only when ASRT is inactive; a sandboxed
+probe fails rather than widening main's public-domain scope. Main now sends an
+explicit `sandboxRequired` bit alongside the validated sandbox config. The
+worker rejects a missing or malformed requested sandbox and aborts before
+spawning the agent when ASRT initialization fails. A worker-process regression
+injects that failure and verifies the agent did not start.
 
 Getting there needed the probe's import graph to be free of `node-pty` and
 `electron`, since the worker runs as a plain Node script and a native module in
@@ -256,12 +259,11 @@ Four leaf extractions did it, with no behaviour change:
 `acp-probe-worker.test.ts` bundles the worker and asserts it links neither native —
 the guard that keeps this property from silently regressing.
 
-Not verified in this environment: the _sandboxed_ probe path. The container has no
-`bwrap`, so ASRT cannot initialize and the worker exercises its documented
-degradation to an unsandboxed spawn. The handshake, JSON contract, timeout,
-failure reporting, and the built `dist/main/acp-probe-worker.js` artifact were all
-run end-to-end against a fake ACP agent; confinement itself still wants a check on
-macOS or a bwrap-capable Linux box.
+The handshake, JSON contract, timeout, failure reporting, and built
+`dist/main/acp-probe-worker.js` artifact were run end-to-end against a fake ACP
+agent. The sandbox initialization failure is covered by a worker-process
+regression. A successful sandboxed ACP probe still needs a separate real-runtime
+check on macOS or a bwrap-capable Linux box.
 
 ### Phase 5 — Long-lived ACP sessions (implemented)
 
@@ -281,16 +283,40 @@ whole session implementation:
   telemetry back to the main process, preserving per-turn denial audits;
 - the host and agent share a process group so normal session disposal kills the
   complete host/wrapper/agent tree; and
-- host initialization failure falls back to the former in-process sandboxed
-  spawn. That preserves confinement instead of silently treating an unsandboxed
-  agent as sandboxed, while retaining the labelled overlap prompt for this rare
-  degradation.
+- host initialization failure now fails the session start. Phase 6 removed the
+  original in-process sandboxed fallback because it widened main's allowlist
+  for already-running contained commands.
 
 `acp-session-host-worker.test.ts` bundles the worker with a controllable ASRT
 stub, drives a real stdio child through it, verifies denial forwarding, and
 asserts that the parent process acquires no network scope. The worker is listed
 in `scripts/main-bundles.mts`, so both development and production builds emit
 and syntax-check it.
+
+### Phase 6 — Approved loopback-binding background tasks (implemented)
+
+The overlap gate only checks a new command at start. An already-running contained
+background command still uses main's ASRT proxy and can make a network request
+later, after another task receives loopback-binding permission. That approval
+previously widened main's process-global allowlist for the binding task's full
+lifetime, giving the older command loopback egress without its own approval.
+
+Each approved binding task now runs in `port-binding-worker.ts`, a standalone
+ASRT owner. The worker applies the same workspace and optional named-read
+overlay plus loopback-only network policy, relays output and violation evidence,
+and stays in the task's process group for stop and timeout cleanup. Its startup
+fails closed if ASRT cannot initialize or reports sandboxing disabled; it never falls back to main's global
+scope. Ordinary contained background commands continue using main's deny-all
+policy. The worker is emitted by the shared standalone-bundle list.
+
+Sandboxed ACP probe and session startup also no longer falls back to an
+in-process launch when the helper fails. That fallback could give an
+already-running contained command the agent's public-domain allowlist. Probes
+without ASRT may still fall back in-process, since they acquire no ASRT scope.
+All three isolated hosts (binding task, ACP probe, ACP session) require
+`SandboxManager.isSandboxingEnabled()` after initialization before spawning. Main
+also checks this result; if false, it records an init failure and later commands
+follow the no-sandbox prompt path.
 
 **Per-thread network sandboxes are not recommended.** Every thread's shell policy
 is already deny-all and identical; threads differ in filesystem root, which
