@@ -1068,7 +1068,7 @@ printf '%s\\n' '${command}' >> "$PREPARE_CALLS"
             step.if.slice(3, -2).replace(/inputs\.(app-id|app-private-key)/g, "inputs['$1']"),
             {
               steps: { prepare: { outputs: { ready } } },
-              inputs: { 'app-id': 'app', 'app-private-key': 'key' },
+              inputs: { 'app-id': 'app', 'app-private-key': 'key', 'post-summary': 'true' },
               always: () => true,
             },
           )

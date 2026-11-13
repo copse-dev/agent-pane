@@ -1042,7 +1042,8 @@ describe('copse-review CLI', () => {
       }),
     )
     const calls: { url: string; method: string; body: string }[] = []
-    const result = await (async (): Promise<Captured> => {
+    let deferredBlock = ''
+    const execute = async (deferred = false): Promise<Captured> => {
       let out = ''
       let err = ''
       const code = await main(
@@ -1077,6 +1078,14 @@ describe('copse-review CLI', () => {
           },
           env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
           cwd: repo.root,
+          ...(deferred
+            ? {
+                deferSummary: async (block: string, head: string | null): Promise<void> => {
+                  assert.equal(head, contributed)
+                  deferredBlock = block
+                },
+              }
+            : {}),
           fetch: (url, init) => {
             calls.push({ url, method: init.method, body: init.body ?? '' })
             const text =
@@ -1090,7 +1099,8 @@ describe('copse-review CLI', () => {
         },
       )
       return { out, err, code }
-    })()
+    }
+    const result = await execute()
     // Not executed (no container), but the review and the summary are both posted.
     assert.equal(result.code, HEADLESS_EXIT.APPROVAL_REQUIRED, result.err)
     assert.match(result.err, /posted the review on copse-dev\/fixture#7/)
@@ -1108,6 +1118,15 @@ describe('copse-review CLI', () => {
     assert.match(body, /The review reported 1 issue\./)
     // The summary never reaches the review's own stdout report.
     assert.doesNotMatch(result.out, /copse-review-summary/)
+    // Actions retain the same evidence block without claiming an HTTP publication.
+    calls.length = 0
+    const deferred = await execute(true)
+    assert.equal(deferred.code, HEADLESS_EXIT.APPROVAL_REQUIRED, deferred.err)
+    assert.equal(deferredBlock, body.slice(body.indexOf('<!-- copse-review-summary -->')))
+    assert.match(deferred.err, /saved the summary for separate publication/)
+    assert.doesNotMatch(deferred.err, /updated the summary in the description/)
+    assert.ok(calls.some((call) => call.method === 'POST' && call.url.endsWith('/reviews')))
+    assert.ok(!calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/pulls/7')))
   })
 
   it('treats a blank forge token as unset and rejects a pull request number with junk', () => {

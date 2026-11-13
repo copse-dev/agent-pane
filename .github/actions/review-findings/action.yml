@@ -54,6 +54,16 @@ inputs:
   github-token:
     description: Caller workflow token for PR reads and fallback publishing
     required: true
+outputs:
+  summary-artifact-id:
+    description: Immutable rendered summary artifact ID
+    value: ${{ steps.summary-upload.outputs.artifact-id }}
+  summary-artifact-digest:
+    description: ZIP digest returned by the summary producer
+    value: ${{ steps.summary-upload.outputs.artifact-digest }}
+  summary-sha256:
+    description: Digest of the bounded summary payload
+    value: ${{ steps.summary-identity.outputs.sha256 }}
 runs:
   using: composite
   steps:
@@ -164,7 +174,10 @@ runs:
         base_sha=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).base)')
         pr_number=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).pr)')
         review_repo=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).repository)')
-        mkdir -p "$RUNNER_TEMP/copse-review-findings"
+        mkdir -p "$RUNNER_TEMP/copse-review-findings" "$RUNNER_TEMP/copse-review-summary"
+        if test "$REVIEW_POST_SUMMARY" = true; then
+          export COPSE_REVIEW_SUMMARY_OUTPUT="$RUNNER_TEMP/copse-review-summary/summary.json"
+        fi
         node "$COPSE_REVIEWER_ROOT/packages/review/ci/run-action.mts" \
           --foreign --head refs/remotes/copse/head --base "$base_sha" \
           --stage0-json "$RUNNER_TEMP/copse-review-ground/report.json" \
@@ -185,3 +198,24 @@ runs:
         path: ${{ runner.temp }}/copse-review-findings/
         retention-days: 30
         if-no-files-found: ignore
+
+    - name: Record rendered summary identity
+      id: summary-identity
+      if: ${{ steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' }}
+      shell: bash
+      run: |
+        node --input-type=module -e '
+          import { readFileSync, appendFileSync } from "node:fs";
+          import { createHash } from "node:crypto";
+          const bytes = readFileSync(process.env.RUNNER_TEMP + "/copse-review-summary/summary.json");
+          if (bytes.length > 65536) throw new Error("Summary exceeds publication limit");
+          appendFileSync(process.env.GITHUB_OUTPUT, "sha256=" + createHash("sha256").update(bytes).digest("hex") + "\n");
+        '
+    - uses: actions/upload-artifact@v7
+      id: summary-upload
+      if: ${{ steps.prepare.outputs.ready == 'true' && inputs['post-summary'] == 'true' }}
+      with:
+        name: copse-review-summary-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/copse-review-summary/summary.json
+        if-no-files-found: error
+        retention-days: 30
