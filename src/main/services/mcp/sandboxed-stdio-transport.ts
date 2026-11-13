@@ -56,7 +56,7 @@ export class SandboxedStdioClientTransport implements Transport {
   }
 
   async start(): Promise<void> {
-    if (this.started) throw new Error('Sandboxed stdio transport already started')
+    if (this.started) throw new Error('Server connection already started')
     this.started = true
     let resolveStart = (): void => undefined
     let rejectStart = (_error: Error): void => undefined
@@ -105,12 +105,12 @@ export class SandboxedStdioClientTransport implements Transport {
       },
     })
     await Promise.all([spawned, started])
-    if (this.closed) throw new Error('Sandboxed stdio transport closed during startup')
+    if (this.closed) throw new Error('Server connection closed during startup')
   }
 
   async send(message: JSONRPCMessage): Promise<void> {
     const child = this.child
-    if (!child?.stdin || this.closed) throw new Error('Sandboxed stdio transport is not connected')
+    if (!child?.stdin || this.closed) throw new Error('Server connection is not connected')
     const serialized = serializeMessage(message)
     if (child.stdin.write(serialized)) return
     await new Promise<void>((resolve, reject) => {
@@ -128,7 +128,7 @@ export class SandboxedStdioClientTransport implements Transport {
         reject(error)
       }
       const closed = (): void => {
-        failed(new Error('Sandboxed stdio transport closed'))
+        failed(new Error('Server connection closed'))
       }
       child.stdin?.once('error', failed)
       child.stdin?.once('drain', drained)
