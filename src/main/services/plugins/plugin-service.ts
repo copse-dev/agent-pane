@@ -39,6 +39,7 @@ import {
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
@@ -148,6 +149,7 @@ const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablem
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
+const PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.projectContextEnablement'
 const ENGINEERING_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.engineeringEnablement'
 
 /** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
@@ -352,6 +354,15 @@ function migrateReviewerInputEnablement(): void {
   disabled.add(REVIEWER_INPUT_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/** Upgraded profiles must opt into retrieval just like fresh installations. */
+function migrateProjectContextEnablement(): void {
+  if (storageGet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(PROJECT_CONTEXT_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -945,6 +956,7 @@ export function getPluginService(): PluginService {
   migrateAutomationsEnablement()
   migrateArtifactCheckpointEnablement()
   migrateReviewerInputEnablement()
+  migrateProjectContextEnablement()
   migrateEngineeringEnablement()
   migrateDarkFactoryEnablement()
   migrateComputerUseEnablement()

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { searchProjectContextTool, readProjectContextTool } from './project-context-tools.ts'
-import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
+import { activeRunStorage, runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -18,6 +18,7 @@ import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { createRegistry } from '../services/registry-bootstrap.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
@@ -210,6 +211,57 @@ describe('project context tools at the native boundary', () => {
     const output = await inTurn(() => search({ query: 'needle' }))
     assert.match(output, /permission was revoked/)
     assert.doesNotMatch(output, /PRIVATE/)
+  })
+
+  it('refuses a disabled experiment even through a retained tool reference', async () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(PROJECT_CONTEXT_PLUGIN_ID)
+    const output = await runWithDefaultPluginRegistry(plugins, () =>
+      inTurn(() => search({ query: 'needle', scope: 'thread' })),
+    )
+    assert.match(output, /Project context is disabled/)
+    assert.doesNotMatch(output, /needle/)
+  })
+
+  it('discards output if the project is removed, the caller changes or retrieval is disabled', async () => {
+    for (const change of ['project', 'caller', 'plugin']) {
+      const plugins = createFirstPartyPluginRegistry()
+      storageSet('projects', [{ id: 'p', path: '/first' }])
+      mock.method(ProjectContextReader.prototype, 'search', async () => {
+        if (change === 'project') storageSet('projects', [])
+        if (change === 'caller')
+          mock.method(activeRunStorage, 'getStore', () => ({
+            threadId: 'different',
+            model: null,
+            turnTreeId: null,
+          }))
+        if (change === 'plugin') plugins.disable(PROJECT_CONTEXT_PLUGIN_ID)
+        return 'PRIVATE RESPONSE'
+      })
+      const output = await runWithDefaultPluginRegistry(plugins, () =>
+        inTurn(() => search({ query: 'needle', scope: 'thread' })),
+      )
+      assert.match(output, /access changed/, change)
+      assert.doesNotMatch(output, /PRIVATE/, change)
+      mock.restoreAll()
+    }
+  })
+
+  it('does not scan a project removed while consent is pending', async () => {
+    const scan = mock.method(
+      ProjectContextReader.prototype,
+      'search',
+      async () => 'PRIVATE RESPONSE',
+    )
+    const output = await runWithApprovalHandler(
+      async () => {
+        storageSet('projects', [])
+        return { approved: true, remember: false }
+      },
+      () => inTurn(() => search({ query: 'needle', kinds: ['evidence'] })),
+    )
+    assert.match(output, /access changed/)
+    assert.equal(scan.mock.callCount(), 0)
   })
 
   it('discards memory output when the master plugin is disabled before delivery', async () => {

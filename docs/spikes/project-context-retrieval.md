@@ -1,7 +1,8 @@
 # Bounded project-context retrieval prototype
 
 Tracking: [#3358](https://github.com/copse-dev/agent-pane/issues/3358).
-Implementation starts from `95dd2bd701472f40adb2a18d68d23d5d82817da7`.
+Current-main integration starts from `9ca1d8e64e4bde7e0e40ecf5fa370dcdf84ac04c`, including
+the separate compact saved worker-state surface from #4292.
 
 ## Outcome and acceptance
 
@@ -10,13 +11,20 @@ read a selected source by its content revision. This slice adds no automatic att
 extraction, inference backfill, or provider call. It does not close the tracking issue.
 
 - Empty and non-Git projects work without configuration.
+- The experiment ships disabled. Settings → Customise → Project context enables both
+  native tools live; disabling it removes both schemas and discards in-flight retrieval.
+  Existing profiles receive a one-time disabled seed; subsequent user choices persist.
 - The calling turn supplies project identity, never a tool argument or the active window.
 - Fixed source bytes, request and limits produce the same ordering and excerpts.
 - Every result identifies a source file, content fingerprint, kind and authorship.
+- Source paths are relative to an explicitly named `workspace` or `knowledge` store;
+  responses do not expose the host profile's absolute path or username.
+- Provider tool IDs containing punctuation do not hide message bodies or tool results.
+- The current chat and declared follow-up parent take scan slots before unrelated chats.
 - Foreign IDs, path traversal, symlink descendants and unsupported/private files yield no content.
 - Responses and filesystem work have independent hard limits with visible omissions.
 - Existing conversation consent and the memory master switch remain authoritative,
-  including revocation before delivery.
+  including revocation before delivery. A removed project or changed caller also discards output.
 - A native Electron scenario proves search/read results reach the model boundary and
   their source metadata appears in the actual tool cards.
 
@@ -36,7 +44,8 @@ The default evidence scope is the current project, using the existing **Read you
 threads?** permission. `scope: "thread"` narrows evidence to the current conversation and
 its explicitly declared follow-up parent without prompting. A memory-only search/read
 does not acquire conversation consent. Memory results require `copse.okf-memories`.
-The tools are available in native read-only runs, through the ordinary registry and gates.
+After enabling `copse.project-context`, the tools are available in native read-only runs,
+through the ordinary registry and gates. The memory master switch remains independent.
 ACP exposure is deliberately deferred to avoid overlapping active bridge work.
 
 Results enter the existing external-content envelope. Historical approvals are data and
@@ -58,20 +67,26 @@ Existing knowledge-index deletion tombstones exclude leftover files, even after 
 healing. Missing indexes permit legacy notes; corrupt, inaccessible or oversized indexes
 fail closed for memories. The index is rechecked before publishing memory results.
 
-| Resource                            | Initial bound                                            |
-| ----------------------------------- | -------------------------------------------------------- |
-| Directory enumeration               | 4,096 entries; larger directories are omitted as a whole |
-| Thread scan                         | 64 directories in stable name order                      |
-| Evidence records                    | 512                                                      |
-| Memory files                        | 128 in stable name order                                 |
-| Individual content or metadata file | 256 KiB                                                  |
-| Thread spine                        | 1 MiB                                                    |
-| Existing knowledge index            | 1 MiB                                                    |
-| Aggregate bytes read per call       | 8 MiB, including consistency rereads                     |
-| Search page                         | Default 8 records, maximum 20                            |
-| Search excerpt                      | 700 characters plus ellipses                             |
-| Read page                           | At most 4,000 characters                                 |
-| Serialized JSON response            | 24,000 bytes, including metadata and paging              |
+Declared tool results accept message-slot flat filenames, slot/hash filenames and legacy
+tool-ID filenames. Each path must match its owning slot or tool ID, stay inside the thread,
+avoid symlinks and match the declared content hash. Tool IDs themselves are bounded strings,
+never path segments. `read_project_context` consumes IDs; relative source paths are citations,
+not permission to read arbitrary profile files.
+
+| Resource                            | Initial bound                                                   |
+| ----------------------------------- | --------------------------------------------------------------- |
+| Directory enumeration               | 4,096 entries; larger directories are omitted as a whole        |
+| Thread scan                         | 64 directories; caller and parent first, then stable name order |
+| Evidence records                    | 512                                                             |
+| Memory files                        | 128 in stable name order                                        |
+| Individual content or metadata file | 256 KiB                                                         |
+| Thread spine                        | 1 MiB                                                           |
+| Existing knowledge index            | 1 MiB                                                           |
+| Aggregate bytes read per call       | 8 MiB, including consistency rereads                            |
+| Search page                         | Default 8 records, maximum 20                                   |
+| Search excerpt                      | 700 characters plus ellipses                                    |
+| Read page                           | At most 4,000 characters                                        |
+| Serialized JSON response            | 24,000 bytes, including metadata and paging                     |
 
 The standard provenance envelope adds its fixed framing and tag escaping after this JSON
 limit. Existing host-added tool reminders are separate. Oversized or unavailable sources,

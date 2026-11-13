@@ -108,6 +108,7 @@ import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 import { reviewerInputPlugin } from './reviewer-input-plugin.ts'
+import { projectContextPlugin } from './project-context-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
 import { computerUsePlugin } from './computer-use-plugin.ts'
 import { claudeMdPlugin } from './claude-md-plugin.ts'
@@ -150,6 +151,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   darkFactoryPlugin,
   artifactCheckpointPlugin,
   reviewerInputPlugin,
+  projectContextPlugin,
   siteBuildingPlugin,
   pluginClientApiPlugin,
   engineeringPlugin,

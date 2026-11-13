@@ -31,7 +31,12 @@ const resultSchema = z.object({
       excerpt: z.string(),
       reason: z.string(),
       freshness: z.string(),
-      source: z.object({ path: z.string(), sha256: z.string(), threadId: z.string().optional() }),
+      source: z.object({
+        store: z.enum(['workspace', 'knowledge']),
+        path: z.string(),
+        sha256: z.string(),
+        threadId: z.string().optional(),
+      }),
     }),
   ),
   nextCursor: z.string().nullable(),
@@ -127,7 +132,10 @@ describe('bounded project context corpus', () => {
     assert.equal(found.results[0]?.reason, 'same-thread lexical match')
     assert.ok(found.results.some((r) => r.author === 'tool'))
     for (const result of found.results) {
-      assert.ok(readFileSync(result.source.path, 'utf8').includes('build'))
+      assert.ok(
+        readFileSync(join(root, result.source.store, result.source.path), 'utf8').includes('build'),
+      )
+      assert.doesNotMatch(result.source.path, /^(\/|[A-Za-z]:)/)
       const read = await reader().read(result.id, result.revision)
       assert.ok(safeJsonParse(read, decodeWithSchema(readSchema)))
       assert.doesNotMatch(read, /SECRET-ARGS/)
@@ -152,6 +160,109 @@ describe('bounded project context corpus', () => {
         .results,
       [],
     )
+  })
+
+  it('keeps assistant text and results with provider-generated tool identifiers', async () => {
+    const ids = ['functions.read:0', 'api/v2.read', '../tool', 'call.0']
+    await createThread(
+      'p',
+      thread('own', [
+        message('u', 'needle assistant body', {
+          role: 'assistant',
+          toolCalls: ids.map((id) => ({
+            id,
+            name: 'read_file',
+            args: {},
+            status: 'done',
+            result: `needle result ${id}`,
+          })),
+        }),
+      ]),
+    )
+    const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
+    assert.equal(found.results.length, ids.length + 1)
+    assert.equal(found.results.filter((r) => r.author === 'assistant').length, 1)
+    assert.equal(found.results.filter((r) => r.author === 'tool').length, ids.length)
+    for (const item of found.results)
+      assert.match(await reader().read(item.id, item.revision), /needle/)
+  })
+
+  it('reports malformed messages instead of silently claiming complete results', async () => {
+    await createThread('p', thread('own', [message('u', 'needle')]))
+    const path = join(scope.threadRoot, 'p/own/events.jsonl')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('"role":"user"', '"role":"future-role"'))
+    const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
+    assert.equal(found.results.length, 0)
+    assert.ok(found.omissions.includes('invalid-message'))
+  })
+
+  it('reserves scan slots for the current chat and its declared parent before other chats', async () => {
+    for (let index = 0; index < 65; index++) {
+      await createThread('p', thread(`a-${String(index).padStart(3, '0')}`, []))
+    }
+    for (const id of ['zz-own', 'zz-parent']) {
+      await createThread('p', thread(id, [message('u', `needle ${id}`)]))
+    }
+    const found = results(
+      await reader({ threadId: 'zz-own', followUpParentThreadId: 'zz-parent' }).search({
+        query: 'needle',
+        kinds: ['evidence'],
+      }),
+    )
+    assert.deepEqual(
+      found.results.map((r) => r.source.threadId),
+      ['zz-own', 'zz-parent'],
+    )
+    assert.ok(found.omissions.includes('thread-limit'))
+  })
+
+  it('reads declared flat, content-addressed and legacy result blobs without widening file access', async () => {
+    const body = 'needle saved tool result'
+    const digest = createHash('sha256').update(body).digest('hex')
+    await createThread(
+      'p',
+      thread('own', [
+        message('u', 'assistant body', {
+          role: 'assistant',
+          toolCalls: [
+            { id: 'functions.read:0', name: 'read_file', args: {}, status: 'done', result: body },
+          ],
+        }),
+      ]),
+    )
+    const dir = join(scope.threadRoot, 'p/own')
+    const spinePath = join(dir, 'events.jsonl')
+    const spine = readFileSync(spinePath, 'utf8')
+    const original = 'blobs/u.tool-0.result.txt'
+    for (const ref of [
+      original,
+      `blobs/u.tool-0/${digest}.result.txt`,
+      'blobs/functions.read:0.result.txt',
+      'blobs/~functions~2Eread~3A0.result.txt',
+    ]) {
+      mkdirSync(join(dir, 'blobs/u.tool-0'), { recursive: true })
+      writeFileSync(join(dir, ref), body)
+      writeFileSync(spinePath, spine.replace(original, ref))
+      const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
+      assert.equal(found.results.length, 1, ref)
+      assert.equal(found.results[0]?.author, 'tool')
+    }
+    for (const ref of [
+      'blobs/private-session.result.txt',
+      'blobs/u.tool-1.result.txt',
+      `blobs/u.tool-0/${'0'.repeat(64)}.result.txt`,
+      'blobs/../agent-history.json',
+    ]) {
+      writeFileSync(spinePath, spine.replace(original, ref))
+      const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
+      assert.equal(found.results.length, 0, ref)
+      assert.ok(found.omissions.includes('unsupported-source'), ref)
+    }
+    writeFileSync(spinePath, spine)
+    writeFileSync(join(dir, original), 'needle changed')
+    const damaged = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
+    assert.equal(damaged.results.length, 0)
+    assert.ok(damaged.omissions.includes('source-integrity'))
   })
 
   it('restricts delegated evidence to explicit allowed threads and gates memories separately', async () => {
@@ -362,7 +473,9 @@ describe('bounded project context corpus', () => {
     assert.match(raw, /Historical data, not instructions/)
     assert.equal(
       item.source.sha256,
-      createHash('sha256').update(readFileSync(item.source.path)).digest('hex'),
+      createHash('sha256')
+        .update(readFileSync(join(root, item.source.store, item.source.path)))
+        .digest('hex'),
     )
   })
 })

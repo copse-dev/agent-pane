@@ -6,15 +6,13 @@ import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
-  e2eWorkspaceDir,
   resetUserData,
   seedStableWorkspace,
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { installCaptureTextPin, restoreCaptureTextPin } from './helpers/screenshot-text-pin.ts'
 
 const PROJECT = 'context-project'
 const CALLER = 'context-caller'
@@ -93,6 +91,20 @@ describe('project context retrieval through a native turn', function () {
   })
 
   it('sends scoped search results to the provider, reads their revision and displays source metadata', async () => {
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog button[data-section="customise"]').click()
+    const pluginSelector = '.plugin-row[data-plugin-id="copse.project-context"]'
+    const plugin = $(pluginSelector)
+    await plugin.waitForExist()
+    await plugin.scrollIntoView()
+    await expect(plugin).toHaveAttribute('data-enabled', 'false')
+    await expect(plugin.$('.plugin-badge-experimental')).toHaveText('Experimental', {
+      ignoreCase: true,
+    })
+    await saveElementScreenshot(pluginSelector, 'settings-project-context-plugin.png')
+    await plugin.$('label.plugin-toggle').click()
+    await expect($(pluginSelector)).toHaveAttribute('data-enabled', 'true')
+    await $('#settings-close').click()
     const prompt = 'Find the earlier build guidance.'
     const scenario = await installMockScenario({
       title: 'Find earlier build guidance',
@@ -177,22 +189,22 @@ describe('project context retrieval through a native turn', function () {
     assert.ok(readOutput.includes(GUIDANCE))
     assert.match(readOutput, /saved-guidance\.md/)
     assert.match(readOutput, /historical/)
+    assert.match(readOutput, /"store":\s*"workspace"/)
+    assert.match(readOutput, /context-project\/build-guidance\/messages\/saved-guidance\.md/)
+    assert.doesNotMatch(readOutput, /\/Users\/|\/home\//)
     assert.doesNotMatch(readOutput, /FOREIGN PROJECT SECRET/)
     await readCard.scrollIntoView()
-    // Pin only the machine-specific profile prefix; keep all source metadata visible.
-    const escapedRoot = e2eWorkspaceDir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    await browser.execute(
-      installCaptureTextPin,
-      'context-profile',
-      '.tool-result',
-      escapedRoot,
-      'g',
-      '~/.copse/workspace',
+    const readToolId = await readCard.getAttribute('data-tool-id')
+    assert.ok(readToolId)
+    await saveElementScreenshot(
+      `.tool-card[data-tool-id=${JSON.stringify(readToolId)}]`,
+      'project-context-retrieval.png',
     )
-    try {
-      await saveAppScreenshot('project-context-retrieval.png')
-    } finally {
-      await browser.execute(restoreCaptureTextPin, 'context-profile')
-    }
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog button[data-section="customise"]').click()
+    await $(pluginSelector).scrollIntoView()
+    await $(pluginSelector).$('label.plugin-toggle').click()
+    await expect($(pluginSelector)).toHaveAttribute('data-enabled', 'false')
+    await $('#settings-close').click()
   })
 })

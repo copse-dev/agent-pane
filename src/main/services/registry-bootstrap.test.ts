@@ -18,6 +18,7 @@ import {
   syncReadTerminalTools,
   syncRoadmapPlanTools,
   syncReviewerInputTools,
+  syncProjectContextTools,
 } from './registry-bootstrap.ts'
 import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
 import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
@@ -39,6 +40,10 @@ import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
 import { agentInputSchemaProblem } from './tool-input-schema.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import {
+  PROJECT_CONTEXT_PLUGIN_ID,
+  PROJECT_CONTEXT_TOOL_NAMES,
+} from '@copse/agent/plugins/project-context-plugin.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
@@ -419,6 +424,33 @@ describe('syncReviewerInputTools', () => {
   })
 })
 
+describe('syncProjectContextTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('removes both native schemas when disabled and restores them live on opt-in', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(PROJECT_CONTEXT_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    const registry = createRegistry()
+    for (const name of PROJECT_CONTEXT_TOOL_NAMES) assert.equal(registry.has(name), false)
+    plugins.enable(PROJECT_CONTEXT_PLUGIN_ID)
+    syncProjectContextTools(registry)
+    syncProjectContextTools(registry)
+    for (const name of PROJECT_CONTEXT_TOOL_NAMES) assert.equal(registry.has(name), true)
+    plugins.disable(PROJECT_CONTEXT_PLUGIN_ID)
+    syncProjectContextTools(registry)
+    for (const name of PROJECT_CONTEXT_TOOL_NAMES) {
+      assert.equal(registry.has(name), false)
+      assert.equal(
+        registry.toLLMTools().some((tool) => tool.name === name),
+        false,
+      )
+    }
+  })
+})
+
 describe('syncImageGenerationTools', () => {
   afterEach(() => {
     deleteApiKey('openai')
@@ -734,6 +766,9 @@ describe('ACP bridge exposure decisions', () => {
       'recall',
       'update_todos',
       'roadmap_plan',
+      // Explicit opt-in prototype; ACP parity is a separate acceptance milestone.
+      'search_project_context',
+      'read_project_context',
     ])
     const undecided = plugins.flatMap((plugin) =>
       (plugin.manifest.tools?.native ?? [])
