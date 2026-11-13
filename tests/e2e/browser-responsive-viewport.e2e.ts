@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { frameInTranscript } from './helpers/sticky-prompt.ts'
 
@@ -64,7 +64,7 @@ async function checkViewport(width: number, height: number, label: string): Prom
     `[data-message-id=${JSON.stringify(messageId)}] > .tool-result-images`,
   ])
   assert.ok(framed.fits, JSON.stringify(framed))
-  await saveAppScreenshot(`browser-responsive-${label.toLowerCase()}.png`)
+  await saveAppViewportScreenshot(`browser-responsive-${label.toLowerCase()}.png`)
 }
 
 describe('responsive agent browser viewport', () => {
