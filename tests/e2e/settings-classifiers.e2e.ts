@@ -37,12 +37,13 @@ describe('classifier connections settings', () => {
       FASTINO_API_KEY: '',
       CELERIS_API_KEY: '',
       OPENROUTER_API_KEY: '',
+      PERPLEXITY_API_KEY: '',
       TYPESAFE_API_KEY: '',
       FEATHERLESS_API_KEY: '',
     })
     server = createServer((request, response) => {
       assert.equal(request.method, 'POST')
-      assert.equal(request.url, '/v1/systemone')
+      assert.ok(request.url === '/v1/systemone' || request.url === '/v1/decisions')
       requests += 1
       lastAuthorization = request.headers.authorization
       request.resume()
@@ -79,6 +80,7 @@ describe('classifier connections settings', () => {
       FASTINO_API_KEY: undefined,
       CELERIS_API_KEY: undefined,
       OPENROUTER_API_KEY: undefined,
+      PERPLEXITY_API_KEY: undefined,
       TYPESAFE_API_KEY: undefined,
       FEATHERLESS_API_KEY: undefined,
     })
@@ -100,16 +102,16 @@ describe('classifier connections settings', () => {
    * differ on every run. Show fixed stand-ins for the capture, then put the real values back.
    */
   async function saveClassifierScreenshot(selector: string, filename: string): Promise<void> {
-    await browser.execute(() => {
+    await browser.execute((fixtureUrl: string) => {
       for (const input of document.querySelectorAll<HTMLInputElement>('[name="classifierUrl"]')) {
         input.dataset['e2eReal'] = input.value
-        input.value = input.value.replace(/:\d+(?=\/)/, ':4000')
+        if (input.value === fixtureUrl) input.value = input.value.replace(/:\d+(?=\/)/, ':4000')
       }
       for (const code of document.querySelectorAll('#settings-classifiers-host .field-hint code')) {
         code.setAttribute('data-e2e-real', code.textContent)
         code.textContent = code.textContent.replace(/-[0-9a-f]{8}$/, '-00000000')
       }
-    })
+    }, baseUrl)
     // A caller that already pinned a latency owns that text. A second pin with
     // another replacement would rewrite it back and forth and hang the page.
     const callerPinned = await browser.execute(() => (window.e2eCaptureTextPins?.size ?? 0) > 0)
@@ -184,6 +186,51 @@ describe('classifier connections settings', () => {
     await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-agent-permission.png')
     await prompt.click()
     await expect(prompt).not.toBeSelected()
+    await $('#settings-close').click()
+    await $('#settings-dialog').waitForDisplayed({ reverse: true })
+  })
+
+  it('offers Decider v1.3 and Flash through the native Decisions API', async () => {
+    await openClassifiers()
+    const host = $('#settings-classifiers-host')
+    const initialRequests = requests
+    for (const { id, label, model, url, env } of [
+      {
+        id: 'perplexity-decider-direct',
+        label: 'Perplexity / Decider v1.3',
+        model: 'pplx-decider-v1.3',
+        url: 'https://api.perplexity.ai/v1',
+        env: 'PERPLEXITY_API_KEY',
+      },
+      {
+        id: 'perplexity-decider-flash',
+        label: 'Perplexity / Decider Flash v1.3',
+        model: 'pplx-decider-flash-v1.3',
+        url: 'https://api.perplexity.ai/v1',
+        env: 'PERPLEXITY_API_KEY',
+      },
+      {
+        id: 'perplexity-decider',
+        label: 'Perplexity / Decider v1.3 (OpenRouter)',
+        model: 'perplexity/pplx-decider-v1.3',
+        url: 'https://openrouter.ai/api/alpha',
+        env: 'OPENROUTER_API_KEY',
+      },
+    ]) {
+      await host.$('[name="classifierPreset"]').selectByAttribute('value', id)
+      await host.$('.classifier-create').click()
+      await expect(host.$('[name="classifierLabel"]')).toHaveValue(label)
+      await expect(host.$('[name="classifierModel"]')).toHaveValue(model)
+      await expect(host.$('[name="classifierUrl"]')).toHaveValue(url)
+      await toggleOptions()
+      await expect(host.$('[name="classifierProtocol"]')).toHaveValue('decisions')
+      await expect(host.$('[name="classifierAuth"]')).toHaveValue('bearer')
+      await expect(host.$('[name="classifierKeyEnv"]')).toHaveValue(env)
+      await expect(host.$('.classifier-test')).toBeDisabled()
+      await saveClassifierScreenshot('#settings-dialog', `settings-classifiers-${id}.png`)
+      await host.$('.classifier-add').click()
+    }
+    assert.equal(requests, initialRequests, 'choosing a preset must not call inference')
     await $('#settings-close').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true })
   })
@@ -560,5 +607,77 @@ describe('classifier connections settings', () => {
       },
     )
     assert.deepEqual(await browser.execute(async () => window.api.classifiers.list()), [])
+  })
+
+  it('uses Decider for Mac without a key and selects it instead of hosted classifiers', async () => {
+    const host = $('#settings-classifiers-host')
+    fail = false
+    const initialRequests = requests
+    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'perplexity-decider-local')
+    await host.$('.classifier-create').click()
+    const label = 'Perplexity / Decider for Mac (local)'
+    await expect(host.$('[name="classifierLabel"]')).toHaveValue(label)
+    await expect(host.$('[name="classifierModel"]')).toHaveValue('pplx-decider-flash-v1.2')
+    await expect(host.$('[name="classifierUrl"]')).toHaveValue('http://127.0.0.1:8080/v1')
+    await expect(host.$('.classifier-local-guide')).toHaveText(expect.stringContaining('Ready'))
+    await expect(host.$('.classifier-local-guide a')).toHaveAttribute(
+      'href',
+      'https://docs.perplexity.ai/docs/decisions/decider-for-mac',
+    )
+    await expect(host.$('.classifier-credentials')).not.toBeDisplayed()
+    await toggleOptions()
+    await expect(host.$('[name="classifierProtocol"]')).toHaveValue('decisions')
+    await expect(host.$('[name="classifierAuth"]')).toHaveValue('none')
+    await expect(host.$('[name="classifierKeyEnv"]')).not.toBeDisplayed()
+    await toggleOptions()
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-decider-local.png')
+    // Decider supports changing its port. Use the real HTTP fixture at that boundary.
+    await host.$('[name="classifierUrl"]').setValue(baseUrl)
+    await saveClassifier()
+    assert.equal(requests, initialRequests, 'saving the local preset must not call inference')
+    await clickAction('test')
+    await browser.waitUntil(
+      async () => /color: red/.test(await host.$('.classifier-status').getText()),
+      { timeout: 10_000 },
+    )
+    assert.equal(lastAuthorization, undefined)
+    assert.equal(requests, initialRequests + 1)
+    const [saved] = await browser.execute(async () => window.api.classifiers.list())
+    assert.ok(saved)
+    assert.equal(saved.hasKey, false)
+    const screening = host.$('[name="classifierScreening"]')
+    await screening.scrollIntoView({ block: 'center' })
+    await screening.selectByVisibleText(label)
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(async () => window.api.classifiers.screening())) ===
+        saved.profile.id,
+      { timeout: 10_000 },
+    )
+    const background = host.$('[name="classifierBackground"]')
+    await background.scrollIntoView({ block: 'center' })
+    await background.selectByVisibleText(label)
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(async () => window.api.classifiers.background())) ===
+        saved.profile.id,
+      { timeout: 10_000 },
+    )
+    assert.equal(
+      requests,
+      initialRequests + 1,
+      'selecting the local classifier must not call inference',
+    )
+    await saveClassifierScreenshot(
+      '#settings-dialog',
+      'settings-classifiers-decider-local-selected.png',
+    )
+    await clickAction('remove')
+    await browser.waitUntil(
+      async () => (await browser.execute(async () => window.api.classifiers.list())).length === 0,
+      { timeout: 10_000 },
+    )
+    assert.equal(await browser.execute(async () => window.api.classifiers.screening()), null)
+    assert.equal(await browser.execute(async () => window.api.classifiers.background()), null)
   })
 })

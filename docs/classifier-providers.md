@@ -63,7 +63,7 @@ key before applying the change. Save a replacement key or select a named environ
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
 Saved Copse profiles can use a hosted preset's variable (`LIQUID_API_KEY`, `TYPESAFE_API_KEY`,
-`FASTINO_API_KEY`, `CELERIS_API_KEY`, `OPENROUTER_API_KEY`, `FEATHERLESS_API_KEY`)
+`FASTINO_API_KEY`, `CELERIS_API_KEY`, `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, `FEATHERLESS_API_KEY`)
 only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESETS`. Custom saved profiles use a
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
@@ -77,19 +77,45 @@ models have these ready-to-edit presets. The three OpenRouter presets share its
 the other presets use the model provider's endpoint. A preset supplies a model ID and destination,
 not an API key. Saving and selecting one makes no inference request; **Test classifier** sends one.
 
-| Model                         | Connection                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| TypeSafe / Jev                | [TypeSafe SystemOne](https://docs.typesafe.ai/introduction/quickstart)                           |
-| Liquid / d1                   | [Liquid Decisions](https://docs.liquid.ai/)                                                      |
-| Fastino / GLiDE               | [Fastino SystemOne](https://fastino.ai/blog/introducing-glide-the-first-thinking-decision-model) |
-| Celeris-1 Decision            | [Celeris SystemOne](https://docs.celeris.ai/decisions)                                           |
-| Microsoft-Decision-1          | [OpenRouter Decisions](https://openrouter.ai/microsoft/microsoft-decision-1)                     |
-| Perplexity / Decider v1.1 27B | [OpenRouter Decisions](https://openrouter.ai/perplexity/pplx-decider-v1.1-27b)                   |
-| Inception / Mercury Decide    | [OpenRouter Decisions](https://openrouter.ai/inception/mercury-decide)                           |
+| Model                                  | Connection                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| TypeSafe / Jev                         | [TypeSafe SystemOne](https://docs.typesafe.ai/introduction/quickstart)                           |
+| Liquid / d1                            | [Liquid Decisions](https://docs.liquid.ai/)                                                      |
+| Fastino / GLiDE                        | [Fastino SystemOne](https://fastino.ai/blog/introducing-glide-the-first-thinking-decision-model) |
+| Celeris-1 Decision                     | [Celeris SystemOne](https://docs.celeris.ai/decisions)                                           |
+| Microsoft-Decision-1                   | [OpenRouter Decisions](https://openrouter.ai/microsoft/microsoft-decision-1)                     |
+| Perplexity / Decider v1.3 (OpenRouter) | [OpenRouter Decisions](https://openrouter.ai/perplexity/pplx-decider-v1.3)                       |
+| Perplexity / Decider v1.3              | [Perplexity Decisions](https://docs.perplexity.ai/docs/decisions/quickstart)                     |
+| Perplexity / Decider Flash v1.3        | [Perplexity Decisions](https://docs.perplexity.ai/docs/decisions/quickstart)                     |
+| Inception / Mercury Decide             | [OpenRouter Decisions](https://openrouter.ai/inception/mercury-decide)                           |
+
+The direct Perplexity presets use `PERPLEXITY_API_KEY` (or a saved classifier key) and
+`https://api.perplexity.ai/v1/decisions`. They support Copse's yes/no, choice and score
+questions; the release's `locate` extraction feature is not part of Copse's classifier
+contract. Existing saved Decider connections keep their model and endpoint; the v1.3
+defaults apply when adding a new connection.
 
 Microsoft Foundry also exposes [a native SystemOne endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision).
 It is deployment-specific and uses a different API-key header, so the ready-made
 Microsoft connection uses OpenRouter instead.
+
+## Decider for Mac
+
+To use local inference instead of a hosted classifier:
+
+1. Install [Decider for Mac](https://docs.perplexity.ai/docs/decisions/decider-for-mac) and wait
+   for its menu to show **Ready**. Perplexity documents Apple silicon, macOS 13+, 16 GB memory
+   and about 6 GB of disk space as requirements. Downloading the app and weights needs a network.
+2. In **Settings → Classifiers**, add **Perplexity / Decider for Mac (local)** and save.
+   The preset uses `pplx-decider-flash-v1.2`, the Decisions API at
+   `http://127.0.0.1:8080/v1`, and no authentication. If you changed the port in Decider's
+   menu, edit the Base URL to match. Copse adds `/decisions` to the Base URL.
+3. Click **Test classifier** to check the connection, then choose it under **Background questions**
+   or **Safety screening**. Saved profiles are also available to `ask_classifier` and evals.
+
+Decider must stay running. Copse connects to the app; it does not install, start, or stop it.
+This is the Mac app's Flash v1.2 model, independently of the hosted v1.3 presets. Classification
+requests go to the local endpoint without a key.
 
 ## Background questions
 
