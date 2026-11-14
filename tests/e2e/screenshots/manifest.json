@@ -461,6 +461,14 @@
       "sha256": "dee864c6178c79cd77aea2ca820198e01fb4a0c908627d33606a2fae86f7db13",
       "bytes": 108650
     },
+    "agent-eval-existing-branch.png": {
+      "sha256": "48d1da8f0a278871bf4c9c130e336a6755f098102a74ddb0a72fc5109cb3a7dc",
+      "bytes": 323959
+    },
+    "agent-eval-proposals-applied.png": {
+      "sha256": "4d4accf71bb116f0e89cf8b406aebc78c5707328a76c22850cf4d2d3cc664024",
+      "bytes": 347795
+    },
     "agent-execution-mode-active.png": {
       "sha256": "672020f2e44a133e2ce84e44e7bf25048426c7639b59a382776d38c21798ff95",
       "bytes": 261330
