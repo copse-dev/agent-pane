@@ -149,8 +149,11 @@ remain held for explicit release or editing. No steering receipt dispatches a tu
 
 History, queue metadata and the receipt are separate atomic writes. After a crash between them,
 an accepted note is ambiguous and must not be steered again under the same ID.
-The user can inspect the saved conversation and explicitly release/edit it as a
-new turn. Main settles delivered notes without a connected window. An applied
+Inspect the canonical saved note and provider history before deciding whether a
+new prompt with a new identity is needed. Accepted identities cannot be edited,
+deleted from the queue, or reused by Release; those actions are not recovery for
+an accepted but uncheckpointed note. Main settles delivered notes without a
+connected window. An applied
 receipt implies that the held entry was already removed, and prevents duplicate
 steering. The live run nonce is excluded from saves and discarded when loading
 old metadata; a later ACP run cannot inherit steering eligibility.
@@ -161,8 +164,15 @@ No claim of automatic crash recovery or provider-level exactly-once delivery is 
 Steering uses the same isolated main-owned prompt review as ordinary human submissions.
 Main freezes the saved unaccepted user message, queue revision and active native run;
 the protected window shows the exact note, target and model. Renderer metadata cannot
-establish authority. A declined review or Stop/completion leaves the note held without
-canonical acceptance. Late approval cannot revive the closed run.
+establish authority. Review is deliberately a blocking host wait: the current tool
+batch may finish while the window is open, but the next step waits for its decision.
+The whole protected review pauses idle and absolute hard deadlines through the
+run-owned host-wait registry (decision 13), then resumes the original budgets.
+Cancel closes review and retains the original held note. A declined review or
+Stop/completion before durable acceptance leaves the note held without canonical
+acceptance. Completion closes an open review and does not preserve unapproved edits;
+this bounded prototype does not automatically start a follow-up turn. Late
+approval cannot revive the closed run.
 
 Before insertion, the project write queue validates that exact saved revision and commits
 canonical reviewed text with accepted lifecycle state under the existing message ID.
@@ -176,7 +186,9 @@ Retirement or edits that win first prevent delivery; acceptance that wins first 
 retirement and renderer role/body replacement. The store never substitutes a new identity.
 Blocking submit hooks and redaction run as before, but their history/context effects occur
 only after canonical acceptance. The provider-history checkpoint still precedes the applied
-receipt and the next provider request. Stop after the acceptance write begins may retain an
-accepted/checkpointed note without a subsequent request; failures remain fail-closed and
+receipt and the next provider request. Once durable acceptance succeeds, finish the
+local checkpoint, applied receipt and queue removal even if Stop has arrived; the
+loop checks abort before its next provider request. Stop can therefore leave a saved,
+applied note without a subsequent request. Checkpoint/receipt failures remain fail-closed and
 crash-ambiguous notes are never automatically replayed. This does not claim provider-level
 exactly-once delivery.

@@ -340,6 +340,7 @@ describe('composer observes external submission completion', () => {
           source === 'phone'
             ? await acceptMobileChat(store, api, {
                 ...command,
+                messageId: 'external-submit-message',
                 threadId: active.id,
                 createThread: false,
               })

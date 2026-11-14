@@ -6,6 +6,8 @@ const QUEUED_GRANT_TTL_MS = 24 * 60 * 60 * 1000
 
 export interface MobilePromptGrant {
   id: string
+  /** Main-minted identity of the only transcript bubble this grant may accept. */
+  messageId: string
   senderId: number
   projectId: string
   threadId: string
@@ -79,6 +81,7 @@ export class MobilePromptGrants {
       projectId: string
       threadId: string
       content: UserContent
+      messageId: string | undefined
     },
   ): MobilePromptGrant | null {
     this.prune()
@@ -98,6 +101,7 @@ export class MobilePromptGrants {
       stored.grant.senderId !== expected.senderId ||
       stored.grant.projectId !== expected.projectId ||
       stored.grant.threadId !== expected.threadId ||
+      stored.grant.messageId !== expected.messageId ||
       !isDeepStrictEqual(stored.grant.content, expected.content)
     )
       return null
@@ -109,6 +113,7 @@ export class MobilePromptGrants {
     const grant = stored.grant
     return {
       id: grant.id,
+      messageId: grant.messageId,
       senderId: grant.senderId,
       projectId: grant.projectId,
       threadId: grant.threadId,
@@ -128,6 +133,17 @@ export class MobilePromptGrants {
 
   revoke(id: string): void {
     this.removeUnconsumed(id)
+  }
+
+  /** A durable queued-message deletion also retires its unconsumed phone authority. */
+  revokeMessage(projectId: string, threadId: string, messageId: string): void {
+    for (const [id, stored] of this.grants)
+      if (
+        stored.grant.projectId === projectId &&
+        stored.grant.threadId === threadId &&
+        stored.grant.messageId === messageId
+      )
+        this.removeUnconsumed(id)
   }
 
   revokeSender(senderId: number): void {

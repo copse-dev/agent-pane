@@ -74,6 +74,7 @@ export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
         error: 'The desktop is busy handling another phone message. Try again shortly.',
       }
     const id = randomUUID()
+    const messageId = randomUUID()
     const threadId = command.threadId ?? randomUUID()
     const createThread = command.threadId === null
     const [thread, history, plan] = createThread
@@ -102,6 +103,7 @@ export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
     mobilePromptGrants.mint(
       {
         id,
+        messageId,
         senderId: rendererSenderId,
         projectId: command.projectId,
         threadId,
@@ -143,6 +145,7 @@ export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
     const delivery: MobileChatCommand = {
       ...command,
       id,
+      messageId,
       threadId,
       createThread,
       ...(model !== undefined ? { model } : {}),

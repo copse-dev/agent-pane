@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { LLMMessage, QueuedUserMessage, UserContent } from '@shared/types'
 import type { UserSteeringReceipt } from '@copse/thread-store/user-steering.ts'
+import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import {
   appendUserSteeringReceipt,
   acceptReviewedQueuedUserMessage,
@@ -188,14 +189,16 @@ export class NativeSteeringSession {
       settle({ state: 'held' })
       return
     }
-    const approval = await review({
-      text: snapshot.message.content,
-      messageId,
-      runId: this.runId,
-      model: this.model,
-      revision: createHash('sha256').update(JSON.stringify(snapshot)).digest('hex'),
-      signal: AbortSignal.any([this.signal, this.reviewController.signal]),
-    })
+    const approval = await withRunDeadlinePaused(this.threadId, () =>
+      review({
+        text: snapshot.message.content,
+        messageId,
+        runId: this.runId,
+        model: this.model,
+        revision: createHash('sha256').update(JSON.stringify(snapshot)).digest('hex'),
+        signal: AbortSignal.any([this.signal, this.reviewController.signal]),
+      }),
+    )
     if (approval === null || this.stopped()) {
       settle({ state: 'held' })
       return
@@ -245,11 +248,8 @@ export class NativeSteeringSession {
           continue
         }
         await this.receipt(note.item.messageId, 'accepted')
-        if (this.stopped()) {
-          await this.receipt(note.item.messageId, 'held')
-          note.settle({ state: 'held' })
-          continue
-        }
+        // Acceptance is terminal. Finish the local checkpoint and queue removal
+        // even if Stop arrived; the loop checks abort before its next request.
         messages.push(...prepared.apply())
         // A receipt never claims durable application before provider history is saved.
         await commit()

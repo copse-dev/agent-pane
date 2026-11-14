@@ -47,6 +47,7 @@ function fixture(status: Thread['status'] = 'idle'): {
   }
   const command: MobileChatCommand = {
     id: randomUUID(),
+    messageId: randomUUID(),
     projectId: 'p',
     threadId: 't',
     createThread: false,
@@ -68,6 +69,7 @@ test('phone follow-ups queue behind the current turn without interrupting it', a
   assert.equal(store.getState().threads[0]?.pendingMessages?.[0]?.payload.content, command.text)
   assert.equal(store.getState().threads[0]?.pendingMessages?.[0]?.mobilePromptGrantId, command.id)
   assert.equal(store.getState().threads[0]?.messages[0]?.content, command.text)
+  assert.equal(store.getState().threads[0]?.messages[0]?.id, command.messageId)
   assert.equal(isThreadSubmitting(store, 't'), false)
 })
 

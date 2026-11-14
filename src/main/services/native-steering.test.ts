@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseSpineEntries } from '@copse/thread-store/spine-schema.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import { AgentRunDeadline } from '@copse/agent/agent-loop-limits.ts'
+import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { configureThreadStore } from '@copse/thread-store/environment.ts'
 import type { QueuedUserMessage } from '@shared/types'
@@ -23,6 +25,7 @@ import {
   saveAgentHistory,
   loadAgentHistory,
   loadUserSteeringReceipts,
+  appendUserSteeringReceipt,
 } from './thread-store.ts'
 import {
   NativeSteeringSession,
@@ -534,6 +537,99 @@ describe('native human steering boundary and durability', () => {
     assert.equal((await loadUserSteeringReceipts('p', 't')).at(-1)?.state, 'applied')
     assert.equal(requests, 0)
     assert.equal(attempts, 0)
+  })
+
+  it('excludes an open protected review from both run deadlines and resumes the original budget', async () => {
+    await queue('review-clock')
+    let now = 0
+    const deadline = new AgentRunDeadline(100, 200, now, () => now)
+    registerRunDeadline('t', deadline)
+    const entered = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<undefined>()
+    const delivery = session.enqueue('review-clock', async (note) => {
+      entered.resolve(undefined)
+      await answer.promise
+      return review(note)
+    })
+    const messages: LLMMessage[] = []
+    const draining = session.drain(
+      messages,
+      () => saveAgentHistory('p', 't', messages),
+      () => {},
+      prepare,
+    )
+    try {
+      await entered.promise
+      now = 10_000
+      assert.equal(deadline.isExpired(), false, 'human review spends neither idle nor hard budget')
+      answer.resolve(undefined)
+      await draining
+      assert.deepEqual(await delivery, { state: 'applied' })
+      assert.equal(deadline.isExpired(), false, 'review time stays excluded after resuming')
+      now += 201
+      assert.equal(deadline.isExpired(), true, 'ordinary run time remains bounded')
+    } finally {
+      answer.resolve(undefined)
+      await draining
+      clearRunDeadline('t', deadline)
+    }
+  })
+
+  it('finishes the local checkpoint when Stop arrives immediately after durable edited acceptance', async () => {
+    session = new NativeSteeringSession('p', 't', 'human-epoch', 'test-model', controller.signal, {
+      freeze: freezeQueuedUserMessage,
+      accept: async (...args): Promise<boolean> => {
+        const accepted = await acceptReviewedQueuedUserMessage(...args)
+        controller.abort()
+        return accepted
+      },
+      record: appendUserSteeringReceipt,
+      receipts: loadUserSteeringReceipts,
+    })
+    await queue('accepted-stop')
+    const delivery = session.enqueue(
+      'accepted-stop',
+      async (): Promise<NativeSteeringApproval> => ({
+        text: 'Approved correction before Stop',
+        claim: (): boolean => true,
+      }),
+    )
+    const messages: LLMMessage[] = []
+    let providerCalls = 0
+    await runAgentLoop({
+      messages,
+      tools: [],
+      signal: controller.signal,
+      provider: {
+        async *stream(): AsyncGenerator<ProviderStreamChunk> {
+          providerCalls++
+          yield { type: 'done' }
+        },
+      },
+      executeTool: async () => assert.fail('No tool after Stop'),
+      onChunk: () => {},
+      beforeStep: () =>
+        session.drain(
+          messages,
+          () => saveAgentHistory('p', 't', messages),
+          () => {},
+          prepare,
+        ),
+    })
+    assert.deepEqual(await delivery, { state: 'applied' })
+    assert.equal(providerCalls, 0)
+    assert.deepEqual(await loadAgentHistory('p', 't'), [
+      { role: 'user', content: 'Approved correction before Stop' },
+    ])
+    assert.deepEqual((await getProjectThread('p', 't'))?.pendingMessages, [])
+    assert.equal(
+      (await getProjectThread('p', 't'))?.messages.find((m) => m.id === 'accepted-stop')?.content,
+      'Approved correction before Stop',
+    )
+    assert.deepEqual(
+      (await loadUserSteeringReceipts('p', 't')).map((r) => r.state),
+      ['accepted', 'applied'],
+    )
   })
 
   it('never retries a crash-ambiguous accepted note in a replacement run', async () => {

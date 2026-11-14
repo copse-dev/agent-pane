@@ -183,6 +183,7 @@ import { suggestThreadFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
+  acceptExactReviewedUserMessage,
   acceptReviewedUserMessage,
   appendMessage,
   placeMessageAfter,
@@ -304,6 +305,8 @@ import { setContextEstimateRefreshSink } from './services/context-estimate-notif
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
 import { setPreviewStaleSink } from './services/browser/static-preview-server.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
+
+class MobilePromptAdmissionCancelledError extends Error {}
 
 // Settings encrypts API keys through whichever cipher is installed rather than
 // importing `safeStorage` itself, which is what keeps `createRegistry()` and
@@ -1191,6 +1194,7 @@ app
             projectId,
             threadId,
             content: payload.userContent,
+            messageId: display?.messageId,
           })
           // An expired, replayed or forged grant never falls through to the
           // ordinary renderer path. Holding the optimistic message lets the
@@ -1219,40 +1223,46 @@ app
                       protectedPromptMessageMatches(message, displaySnapshot, grant.content),
                   )
                 : undefined
-            await agentDispatcher.dispatch({
-              projectId,
-              threadId,
-              payload: {
-                userContent: grant.content,
-                invokedSkills: [],
-                priorTodos: [],
-                ...(grant.model !== undefined ? { model: grant.model } : {}),
-                turnTreeId: grant.id,
-                continuationBudgetUsed: 0,
-              },
-              protectedHistory,
-              protectedPlan: grant.plan,
-              protectedHumanStart: {
-                content: grant.content,
-                acceptMessageId: () =>
-                  acceptReviewedUserMessage(
-                    projectId,
-                    threadId,
-                    optimistic
-                      ? {
-                          messageId: optimistic.id,
-                          claim: (): boolean =>
-                            consumeProtectedPromptMessageAppend(
-                              senderId,
-                              projectId,
-                              threadId,
-                              optimistic.id,
-                            ),
-                        }
-                      : undefined,
-                  ),
-              },
-            })
+            // A phone grant is tied to a Main-minted transcript identity. If
+            // that bubble was deleted, replaced or never durably appended,
+            // inference must not recreate it under a fresh renderer ID.
+            if (!optimistic) return 'cancelled'
+            try {
+              await agentDispatcher.dispatch({
+                projectId,
+                threadId,
+                payload: {
+                  userContent: grant.content,
+                  invokedSkills: [],
+                  priorTodos: [],
+                  ...(grant.model !== undefined ? { model: grant.model } : {}),
+                  turnTreeId: grant.id,
+                  continuationBudgetUsed: 0,
+                },
+                protectedHistory,
+                protectedPlan: grant.plan,
+                protectedHumanStart: {
+                  content: grant.content,
+                  acceptMessageId: async (): Promise<string> => {
+                    const messageId = await acceptExactReviewedUserMessage(projectId, threadId, {
+                      message: optimistic,
+                      claim: (): boolean =>
+                        consumeProtectedPromptMessageAppend(
+                          senderId,
+                          projectId,
+                          threadId,
+                          optimistic.id,
+                        ),
+                    })
+                    if (messageId === null) throw new MobilePromptAdmissionCancelledError()
+                    return messageId
+                  },
+                },
+              })
+            } catch (error) {
+              if (error instanceof MobilePromptAdmissionCancelledError) return 'cancelled'
+              throw error
+            }
           } finally {
             mobilePromptGrants.releaseTarget(grant.id)
           }

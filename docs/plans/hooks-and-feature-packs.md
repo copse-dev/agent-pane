@@ -83,8 +83,14 @@ revisiting this document, not silently diverging in an implementation PR.
    held plain-text human message. It never admits hook/machine output. The host
    binds admission to the specific primary native loop nonce. Main freezes the saved
    unaccepted user identity and queue revision for isolated protected review; metadata
-   markers never establish human authority. Denial or a closed/stopped run leaves the
-   note held. At delivery, the same revision must win against retirement in the project
+   markers never establish human authority. Protected review is an explicit blocking
+   host wait: the current tool batch can finish, then the next boundary waits for
+   the decision. Its entire wait pauses both idle and hard deadlines (decision 13);
+   budgets resume afterward without resetting or granting steps/calls. Denial or
+   Stop/completion before durable acceptance leaves the note held. Once acceptance
+   wins, finish the local checkpoint, applied receipt and queue removal even if
+   Stop follows; the aborted loop still makes no next provider request. At delivery,
+   the same revision must win against retirement in the project
    write queue, saving canonical reviewed text and terminal acceptance before provider
    history. No fallback identity is allocated. Blocking-hook context is applied only
    after that acceptance, so a retired or edited note cannot inject context. The host applies the normal

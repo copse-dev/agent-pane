@@ -2625,6 +2625,46 @@ export function acceptReviewedQueuedUserMessage(
 }
 
 /**
+ * Accept an already-reviewed existing user identity under the same project queue
+ * as retirement. Unlike ordinary desktop review, this never mints a fallback ID.
+ * The caller supplies its Main-read prompt snapshot and one-use claim; only
+ * derived hook audit cards may change before this write wins the queue.
+ */
+export function acceptExactReviewedUserMessage(
+  projectId: string,
+  threadId: string,
+  optimistic: { message: Message; claim: () => boolean },
+): Promise<string | null> {
+  const { hookCards: _derivedAudit, ...snapshot } = structuredClone(optimistic.message)
+  const claim = optimistic.claim
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) throw new Error('Cannot accept a prompt for a missing thread')
+    const events = join(dir, EVENTS_FILE)
+    const entries = parseSpineEntries((await readOrNull(events, true)) ?? '')
+    if (entries.some((entry) => entry.line === null))
+      throw new Error('Reviewed user message source is incomplete')
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    const thread = await readThread(projectId, threadId, {}, true)
+    const message = thread?.messages.find((entry) => entry.id === snapshot.id)
+    if (
+      snapshot.role !== 'user' ||
+      message?.role !== 'user' ||
+      known.deleted.has(snapshot.id) ||
+      known.userStates.get(snapshot.id) !== 'unaccepted'
+    )
+      return null
+    const { hookCards: _currentAudit, ...current } = message
+    if (!isDeepStrictEqual(current, snapshot) || !claim()) return null
+    const line = userMessageLifecycleLine(snapshot.id, 'accepted')
+    entries.push({ raw: serializeSpineLine(line), line })
+    await atomicWriteFileAsync(events, serializeSpineEntries(entries))
+    invalidateKnownMessageIds(dir)
+    return snapshot.id
+  })
+}
+
+/**
  * Commit a schedule-owned first prompt only while its main-created run thread
  * is still pristine. A renderer append that wins the project queue makes this
  * fail closed; it can never become prior context for an unattended turn.
