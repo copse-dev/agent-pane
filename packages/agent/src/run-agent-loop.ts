@@ -215,6 +215,12 @@ export interface AgentLoopOptions {
   /** Explicit historical strategy selected by immutable benchmark profiles. */
   reasoningRunawayRecoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   /**
+   * What follows a stream that landed no text and no tool call. `nudge-v1` (the
+   * default) applies the `empty-turn` nudge; `replay-v1` re-sends the unchanged
+   * request, the behaviour immutable benchmark profiles were defined with.
+   */
+  emptyTurnRecoveryStrategy?: 'replay-v1' | 'nudge-v1'
+  /**
    * Optional per-stream cap for the single retry after a reasoning-runaway
    * nudge. Hosts may allow that bounded recovery more room to reach a tool call
    * while keeping the initial runaway detector tighter.
@@ -1941,6 +1947,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // Nothing from this stream will land in history and no other post-stream
     // outcome below claims it, so an unchanged retry would replay the request.
     const emptyTurn =
+      opts.emptyTurnRecoveryStrategy !== 'replay-v1' &&
       pendingToolCalls.length === 0 &&
       !assistantText.trim() &&
       !streamCappedAsRunaway &&

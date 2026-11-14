@@ -591,7 +591,10 @@ revisiting this document, not silently diverging in an implementation PR.
     the existing step and LLM-call caps and the run deadline still limit how many
     empty turns a run can take, and it creates no turn and consumes no
     `ContinuationGrant` (decision 5). The text-only finalize, forced and closeout
-    turns keep their existing empty-turn handling.
+    turns keep their existing empty-turn handling. `emptyTurnRecoveryStrategy:
+    'replay-v1'` keeps the old unchanged retry; the Terminal-Bench host passes it
+    for every profile, because each was defined before the nudge existed and its
+    pinned loop fingerprint must not move.
 
 ## Target architecture
 

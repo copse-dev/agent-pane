@@ -3432,6 +3432,27 @@ describe('runAgentLoop empty turns (#4294 dogfood)', () => {
     )
   })
 
+  it('replays the unchanged request under the replay-v1 strategy', async () => {
+    const { provider, requests } = recording([
+      reasoningOnly,
+      [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+    ])
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [READ_TOOL],
+      maxSteps: 5,
+      emptyTurnRecoveryStrategy: 'replay-v1',
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[1], requests[0])
+    assert.deepEqual(applied, [])
+  })
+
   it('leaves no empty-turn nudge in history when the call budget ends the run', async () => {
     const { provider, requests } = recording([[{ type: 'done', stopReason: 'stop' }]])
     const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
