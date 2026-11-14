@@ -1465,6 +1465,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
+      signInToClaude: () => resolved({ ok: false, error: 'Sign-in is unavailable in demo mode.' }),
       getPlanWorthIt: () =>
         resolved({
           worthIt: {

@@ -38,6 +38,19 @@ export function invalidatePlanUsageCache(): void {
   planUsageCache.clear()
 }
 
+/**
+ * Set once a guided `claude auth login` succeeds in this process. Only the
+ * `auth-errors` fixture reads it: that fixture stands in for Claude's credential
+ * store, whose rejected token a real sign-in replaces, so its Claude row recovers.
+ */
+let mockClaudeSignedIn = false
+
+/** A guided `claude auth login` stored fresh credentials: read with them next. */
+export function noteClaudeSignIn(): void {
+  mockClaudeSignedIn = true
+  invalidatePlanUsageCache()
+}
+
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
@@ -452,10 +465,14 @@ function mockSnapshot(): PlanUsageSnapshot {
 
 function mockAuthErrorSnapshot(): PlanUsageSnapshot {
   const checkedAt = new Date().toISOString()
+  // A guided sign-in replaced the rejected token: Claude reads as the healthy fixture's plan.
+  const signedInClaude = mockClaudeSignedIn
+    ? mockSnapshot().providers.find((provider) => provider.provider === 'claude')
+    : undefined
   return {
     checkedAt,
     providers: [
-      {
+      signedInClaude ?? {
         status: 'unavailable',
         provider: 'claude',
         reason:

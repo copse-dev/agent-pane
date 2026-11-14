@@ -144,6 +144,8 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     // it external only stops esbuild from warning about that, it does not
     // add the file to the bundle or change what the worker can do at runtime.
     external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
-    alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
+    alias: {
+      'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs',
+    },
   },
 ]
