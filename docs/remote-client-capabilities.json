@@ -355,6 +355,7 @@
       "terminal:set-active",
       "terminal:set-meta",
       "terminal:write",
+      "thread-prompts:activate-grant",
       "thread-prompts:can-dispatch",
       "thread-prompts:can-submit",
       "thread-prompts:reply",
