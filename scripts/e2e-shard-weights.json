@@ -1,5 +1,5 @@
 {
-  "source": "thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "automation-grant-scope provisional at its successful isolated local macOS run (3.2s) until its first successful CI run is measured, 2026-11-14; protected-prompt-entry provisional at its successful local macOS run (3s) until its first CI run is measured, 2026-11-13; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -51,6 +51,7 @@
     "tests/e2e/ask-user-dialog.e2e.ts": 20.4,
     "tests/e2e/automation-active-acp-worktree.e2e.ts": 7.9,
     "tests/e2e/automation-attention.e2e.ts": 13.5,
+    "tests/e2e/automation-grant-scope.e2e.ts": 3.2,
     "tests/e2e/automation-branch-ci.e2e.ts": 8.7,
     "tests/e2e/automation-dialog.e2e.ts": 12.6,
     "tests/e2e/automation-event-states.e2e.ts": 11,
@@ -247,6 +248,7 @@
     "tests/e2e/projects-remove-sidebar.e2e.ts": 5.9,
     "tests/e2e/projects-settings-full-width.e2e.ts": 6.1,
     "tests/e2e/proposed-thread-approval.e2e.ts": 13.1,
+    "tests/e2e/protected-prompt-entry.e2e.ts": 3,
     "tests/e2e/provider-handoff-recovery.e2e.ts": 18.5,
     "tests/e2e/provider-model-recovery.e2e.ts": 18.3,
     "tests/e2e/provider-settings-invalidation.e2e.ts": 12.2,

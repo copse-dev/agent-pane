@@ -276,6 +276,33 @@ test('protected human entry replaces only its optimistic prompt with reviewed te
   assert.equal(getThreadById(store, 't1')?.status, 'running')
 })
 
+test('protected human entry preserves a verified unchanged optimistic display', () => {
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = 'Compare \uFFFC with the proposal'
+  optimistic.images = ['data:image/png;base64,AA==']
+  optimistic.attachments = [{ kind: 'thread', label: 'Auth refactor plan' }]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    content: [
+      { type: 'text', text: 'Compare @Auth refactor plan with the proposal' },
+      { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
+    ],
+    preserveOptimisticDisplay: true,
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, 'Compare \uFFFC with the proposal')
+  assert.deepEqual(messagesOf(store)[0]?.images, ['data:image/png;base64,AA=='])
+  assert.deepEqual(messagesOf(store)[0]?.attachments, [
+    { kind: 'thread', label: 'Auth refactor plan' },
+  ])
+  assert.equal(messagesOf(store).length, 1)
+  assert.equal(getThreadById(store, 't1')?.status, 'running')
+})
+
 test('protected human entry keeps the accepted main identity when no optimistic prompt remains', () => {
   const store = seeded()
   const original = messagesOf(store)[0]

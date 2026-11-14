@@ -200,6 +200,7 @@ import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher, type AgentDispatchPayload } from './services/agent-dispatcher.ts'
 import {
   protectedPromptMessageMatches,
+  protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
   ProtectedPromptReviewService,
   withProtectedPromptText,
@@ -1240,6 +1241,7 @@ app
                 protectedPlan: grant.plan,
                 protectedHumanStart: {
                   content: grant.content,
+                  preserveOptimisticDisplay: true,
                   acceptMessageId: async (): Promise<string> => {
                     const messageId = await acceptExactReviewedUserMessage(projectId, threadId, {
                       message: optimistic,
@@ -1295,6 +1297,9 @@ app
           })
           if (!submission) return 'cancelled'
           const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
+          const preserveOptimisticDisplay =
+            optimistic !== undefined &&
+            protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
           await dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
             agentDispatcher.dispatch({
               ...request,
@@ -1303,6 +1308,7 @@ app
               protectedPlan: protectedInputs.plan,
               protectedHumanStart: {
                 content: reviewedContent,
+                ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
                 acceptMessageId: () =>
                   acceptReviewedUserMessage(
                     projectId,
@@ -1396,6 +1402,9 @@ app
             })
             if (!submission) return 'cancelled'
             const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
+            const preserveOptimisticDisplay =
+              optimistic !== undefined &&
+              protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
             const { automationRun: _automationRun, ...ordinaryPayload } = payload
             await agentDispatcher.dispatch({
               projectId,
@@ -1405,6 +1414,7 @@ app
               protectedPlan: protectedInputs.plan,
               protectedHumanStart: {
                 content: reviewedContent,
+                ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
                 acceptMessageId: () =>
                   acceptReviewedUserMessage(
                     projectId,

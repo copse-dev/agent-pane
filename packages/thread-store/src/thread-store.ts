@@ -99,7 +99,7 @@ import {
   threadStoreEnvironment,
 } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
-import { isNonNull } from '@copse/std/nullish.ts'
+import { isDefined, isNonNull } from '@copse/std/nullish.ts'
 import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
 import {
   planStateSchema,
@@ -3858,7 +3858,7 @@ export function assertAcceptedUserMessageIds(
       entries
         .filter((entry) => entry.line?.type === 'message' && entry.line.role === 'user')
         .map((entry) => entry.line?.id)
-        .filter((id): id is string => typeof id === 'string'),
+        .filter(isDefined),
     )
     for (const messageId of messageIds) {
       if (!storedUsers.has(messageId) || known.userStates.get(messageId) === 'unaccepted') {

@@ -698,6 +698,7 @@ describe('AgentDispatcher', () => {
       request({
         protectedHumanStart: {
           content: 'reviewed prompt',
+          preserveOptimisticDisplay: true,
           acceptMessageId: async () => {
             order.push('accept:start')
             await acceptance
@@ -724,6 +725,7 @@ describe('AgentDispatcher', () => {
         type: 'protected_human_turn_start',
         content: 'reviewed prompt',
         messageId: 'accepted-message',
+        preserveOptimisticDisplay: true,
       },
     ])
   })

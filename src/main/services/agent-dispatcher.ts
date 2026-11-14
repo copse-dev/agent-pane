@@ -84,6 +84,8 @@ export interface AgentDispatchRequest {
   /** Main-owned canonical prompt emitted before provider execution. */
   protectedHumanStart?: {
     content: UserContent
+    /** Keep a verified optimistic bubble when isolated review made no text edit. */
+    preserveOptimisticDisplay?: true
     /** Persist acceptance and claim display reconciliation after this dispatcher owns the thread. */
     acceptMessageId: () => Promise<string>
   }
@@ -306,6 +308,9 @@ export class AgentDispatcher {
         type: 'protected_human_turn_start',
         content: request.protectedHumanStart.content,
         messageId,
+        ...(request.protectedHumanStart.preserveOptimisticDisplay === true
+          ? { preserveOptimisticDisplay: true as const }
+          : {}),
       })
     }
     const epochWrite = this.observeRendererEpoch(key, request)
