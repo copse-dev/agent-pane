@@ -8,6 +8,7 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT = 'e2e-roadmap-plan-editor'
@@ -197,6 +198,7 @@ describe('roadmap document and linked planning prototype', () => {
     )
     if (await $('.composer-dirty-send-btn').isDisplayed())
       await $('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await expectAssistantReply(
       'Draft preservation passed; the integration test still needs verification.',
     )

@@ -6,6 +6,7 @@ import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-co
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const PROJECT = 'e2e-base-branch-project'
 const THREAD = 'e2e-base-branch-thread'
@@ -94,11 +95,12 @@ describe('a thread checkout accidentally on its base branch', () => {
     // Exercise the native dispatch boundary directly: composer checkout
     // preparation has its own earlier refusal and is not this error surface.
     await browser.execute(
-      async ({ project, thread, prompt }) => {
-        await window.api.agent.run(project, thread, prompt)
+      ({ project, thread, prompt }) => {
+        void window.api.agent.run(project, thread, prompt)
       },
       { project: PROJECT, thread: THREAD, prompt: PROMPT },
     )
+    await acceptProtectedPrompt()
     const text = $('.msg-assistant .message-text')
     await expect(text).toHaveText(expect.stringContaining('checkout is on its base branch'))
     await expect(text).toHaveText(
