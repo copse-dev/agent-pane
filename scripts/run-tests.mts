@@ -239,8 +239,15 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
  * failure in this repo had to be read off a screenshot of the web UI. Print the
  * `dot` reporter instead (one character per test, failures re-listed in full at
  * the end), stream named failures through the review reporter, and keep the
- * machine-readable TAP in a file the job uploads. Live diagnostics survive a
- * runner interruption even when final report publication cannot run.
+ * machine-readable TAP in a file the job uploads. Diagnostics stream failure
+ * events Node has delivered to reporters without waiting for EOF. Node may
+ * buffer events from concurrent files, so no diagnostic after interruption
+ * does not establish that nothing failed.
+ *
+ * Node 24 can warn about eleven fixed TestsStream end listeners for these three
+ * CI reporters (also present with CI + --review-report before this was the
+ * default). This wiring does not grow with the test count. Keep the stock dot
+ * and TAP reporters rather than suppressing warnings or changing listener limits.
  */
 function reporterArgs(tapLog: string): string[] {
   if (reviewReport || process.env['CI'])

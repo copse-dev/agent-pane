@@ -81,7 +81,7 @@ export default async function* reviewTestReporter(
       const cause = errorTextSchema.safeParse(error?.cause)
       // A diagnostic describes this event, including parent/expected/cancelled
       // failures. It is not a unique assertion count or a complete inventory.
-      // Only entryPath is normalized; file/line/column refer to the raw bundle.
+      // Only entryPath is normalized; the other locations name the raw bundle.
       yield `\nCopse test failure event: ${JSON.stringify({
         entryPath: bounded(
           data.file
@@ -91,8 +91,8 @@ export default async function* reviewTestReporter(
             : undefined,
         ),
         file: bounded(data.file),
-        line: data.line,
-        column: data.column,
+        bundleLine: data.line,
+        bundleColumn: data.column,
         name: bounded(
           names.get(`${data.file ?? ''}:${String(data.testId)}`) ?? data.name ?? '(unnamed)',
         ),
