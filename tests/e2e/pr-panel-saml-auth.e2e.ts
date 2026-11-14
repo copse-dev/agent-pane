@@ -1,3 +1,4 @@
+import { openReviewPicker } from './helpers/review-pane.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
@@ -56,7 +57,7 @@ describe('PR organization SAML authorization', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPicker()
     const row = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await row.waitForDisplayed({ timeout: 20_000 })
     await row.click()

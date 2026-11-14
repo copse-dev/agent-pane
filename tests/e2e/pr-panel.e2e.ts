@@ -1,3 +1,4 @@
+import { openReviewPicker, openReviewPr, closeReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -33,8 +34,8 @@ describe('PR panel (mock gh)', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
-    await browser.pause(800)
+    await openReviewPr()
+    await openReviewPicker()
   }
 
   it('captures mock PR panel screenshots and DOM assertions', async function () {
@@ -84,6 +85,7 @@ describe('PR panel (mock gh)', () => {
     await saveElementScreenshot('#pane-files', 'pr-panel-filter-match.png')
 
     // A query matching nothing shows the empty state instead of any group.
+    await openReviewPicker()
     await filterInput.setValue('zzz-nonexistent-pr-999')
     await browser.waitUntil(
       async () =>
@@ -131,8 +133,10 @@ describe('PR panel (mock gh)', () => {
     ).toBeDisplayed()
 
     // A viewed PR remains visible when its lazy cross-repo group is collapsed.
+    await openReviewPicker()
     await $('.pr-list-title*=Polish footer branch status').click()
     await expect(await $('.pr-viewer-title')).toHaveText('Polish footer branch status')
+    await openReviewPicker()
     await $('.pr-other-toggle').click()
     const viewingRow = await $('.pr-list-row[data-pr-section="viewing"]')
     await expect(viewingRow).toBeDisplayed()
@@ -141,13 +145,16 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-viewer-description-fill')).toBeDisplayed()
     await expect(await $('#pr-viewer-host .panel-empty')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewing-collapsed-pr.png')
+    await openReviewPicker()
     await $('.pr-other-toggle').click()
     await expect(await $('.pr-list-row[data-pr-section="viewing"]')).not.toBeExisting()
+    await openReviewPicker()
     await $('.pr-list-row[data-pr-section="linked"]').click()
 
     // The expanded group uses the same single, readable filter-aware empty
     // state even when every loaded cross-repo PR is filtered out. The component
     // test covers the zero-loaded-PR edge case from the Copse review.
+    await openReviewPicker()
     await filterInput.setValue('zzz-nonexistent-pr-999')
     await browser.waitUntil(
       async () =>
@@ -173,6 +180,8 @@ describe('PR panel (mock gh)', () => {
       },
       { timeout: 15_000, timeoutMsg: 'expected auto-selected mock PR viewer' },
     )
+
+    await closeReviewPicker()
 
     // The PR title is a utility heading in a dense pane, not a page masthead:
     // Pliant 600 rather than the h1–h3 display face.
@@ -217,6 +226,7 @@ describe('PR panel (mock gh)', () => {
 
     // Binary images bypass Monaco and render the PR's base/head blobs side by
     // side. This is the path that previously decoded PNG bytes as UTF-8 text.
+    await openReviewPicker()
     await $('.pr-list-title*=Polish footer branch status').click()
     await expect(await $('.pr-viewer-title').getElement()).toHaveText('Polish footer branch status')
     await $('.pr-detail-section[data-section="files"]').click()
@@ -249,7 +259,7 @@ describe('PR panel (mock gh)', () => {
       async () =>
         await browser.execute(
           () =>
-            document.querySelector('[aria-label="Open pull requests"].active') != null &&
+            document.querySelector('[data-panel-control="changes"].active') != null &&
             document.querySelector('.pr-viewer-title')?.textContent === 'Add GitHub PR panel tab',
         ),
       { timeout: 10_000, timeoutMsg: 'expected chat PR link to open mock PR viewer' },

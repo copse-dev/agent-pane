@@ -110,7 +110,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
   })
 
   it('keeps diff colouring in the docked pane while the pop-out is open', async () => {
-    await $('.titlebar-btn[aria-label="Open changes"]').click()
+    await $('.titlebar-btn[aria-label="Open review"]').click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
 
@@ -126,7 +126,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
 
     // Pop the Changes pane out into its own window.
     const before = await browser.getWindowHandles()
-    await $('#git-changes-host .pane-popout-btn').click()
+    await $('.review-header .git-changes-header .pane-popout-btn').click()
     await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
       timeout: 15_000,
       timeoutMsg: 'expected a pop-out window',

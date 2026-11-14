@@ -130,7 +130,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
 
     // Pop the Changes pane out.
     const before = await browser.getWindowHandles()
-    await $('#git-changes-host .pane-popout-btn').click()
+    await $('.review-header .git-changes-header .pane-popout-btn').click()
     await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
       timeout: 15_000,
       timeoutMsg: 'expected a pop-out window',
@@ -235,7 +235,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     await browser.switchToWindow(mainHandle)
     const paneFiles = await $('#pane-files').getElement()
     if (await paneFiles.isDisplayed()) {
-      await $('.titlebar-btn[aria-label="Open changes"]').click()
+      await $('.titlebar-btn[aria-label="Open review"]').click()
       await browser.waitUntil(async () => !(await paneFiles.isDisplayed()), {
         timeout: 10_000,
         timeoutMsg: 'expected the main-window panel to close',

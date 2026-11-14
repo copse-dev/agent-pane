@@ -1,3 +1,4 @@
+import { openReviewPr, openReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -36,7 +37,8 @@ describe('PR panel gh unavailable (mock)', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
+    await openReviewPicker()
 
     await (await $('.git-changes-section-title*=Related PRs')).waitForDisplayed({ timeout: 10_000 })
     // Missing gh is a terminal state, not an in-flight CI lookup. Capture

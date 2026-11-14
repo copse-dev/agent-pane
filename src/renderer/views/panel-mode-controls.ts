@@ -98,19 +98,6 @@ function desktopIcon(): SVGSVGElement {
   return outlineIcon('desktop', ['M2 3h20v14H2V3Z', 'M8 21h8', 'M12 17v4'], 'titlebar-btn-icon')
 }
 
-function prsIcon(): SVGSVGElement {
-  return outlineIcon(
-    'prs',
-    [
-      'M9 6a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
-      'M6 9v12',
-      'M21 18a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
-      'M13 6h3a2 2 0 0 1 2 2v7',
-    ],
-    'titlebar-btn-icon',
-  )
-}
-
 function memoriesIcon(): SVGSVGElement {
   return outlineIcon(
     'memories',
@@ -162,16 +149,9 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
   {
     id: 'changes',
     mode: 'changes',
-    ariaLabel: 'Open changes',
-    label: 'Changes',
+    ariaLabel: 'Open review',
+    label: 'Review',
     icon: changesIcon,
-  },
-  {
-    id: 'prs',
-    mode: 'prs',
-    ariaLabel: 'Open pull requests',
-    label: 'PRs',
-    icon: prsIcon,
   },
   {
     id: 'memories',
@@ -208,6 +188,7 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
 
 /** Display name for a panel mode — the pop-out titlebar names its detached pane. */
 export function panelModeLabel(mode: RightPanelMode): string {
+  if (mode === 'prs') return 'Review'
   return PANEL_CONTROL_DEFS.find((def) => def.mode === mode)?.label ?? 'Panel'
 }
 
@@ -288,7 +269,9 @@ export function mountPanelModeControls(
     )
     if (isGated(def)) btn.setAttribute('data-experimental-hidden', '')
     btn.addEventListener('click', () => {
-      toggleRightPanelWithWorkspace(store, api, def.mode)
+      const mode =
+        def.id === 'changes' && store.getState().rightPanelMode === 'prs' ? 'prs' : def.mode
+      toggleRightPanelWithWorkspace(store, api, mode)
       syncPanelBtns()
     })
     buttons.set(def.id, btn)
@@ -357,7 +340,11 @@ export function mountPanelModeControls(
             def ? def.icon() : '',
             def?.label ?? btn.getAttribute('aria-label') ?? 'Panel',
           )
-          if (def && filesPaneOpen && rightPanelMode === def.mode) {
+          if (
+            def &&
+            filesPaneOpen &&
+            (rightPanelMode === def.mode || (def.id === 'changes' && rightPanelMode === 'prs'))
+          ) {
             item.classList.add('is-active')
           }
           item.addEventListener('click', () => {
@@ -480,7 +467,11 @@ export function mountPanelModeControls(
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id)
       if (!btn) continue
-      btn.classList.toggle('active', filesPaneOpen && rightPanelMode === def.mode)
+      btn.classList.toggle(
+        'active',
+        filesPaneOpen &&
+          (rightPanelMode === def.mode || (def.id === 'changes' && rightPanelMode === 'prs')),
+      )
     }
     syncOverflow?.()
   }
@@ -546,8 +537,8 @@ export function mountPanelModeControls(
       setTooltip(
         changesBtn,
         pending > 0
-          ? `Open changes — ${String(pending)} pending ${pending === 1 ? 'diff' : 'diffs'}`
-          : 'Open changes',
+          ? `Open review — ${String(pending)} pending ${pending === 1 ? 'diff' : 'diffs'}`
+          : 'Open review',
       )
     }
     syncOverflow?.()

@@ -235,7 +235,7 @@ describe('landing cupcake walkthrough', () => {
     )
     await expect($('#titlebar')).toBeDisplayed()
     await expect($('#pane-projects')).toBeDisplayed()
-    const changes = $('.titlebar-btn[aria-label="Open changes"]')
+    const changes = $('.titlebar-btn[aria-label="Open review"]')
     await changes.click()
     await expect(changes).toHaveElementClass('active')
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 20_000 })

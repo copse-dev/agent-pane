@@ -1,0 +1,102 @@
+.review-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: var(--pane-header-band-height);
+  border-bottom: 1px solid var(--border);
+}
+.review-subject-picker {
+  min-width: 0;
+  gap: var(--spacing-xs);
+  margin-right: auto;
+}
+.review-subject-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-header .review-tools {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  justify-content: flex-end;
+}
+.review-tools > .pane-header-title {
+  display: none;
+}
+.review-subject-choices {
+  position: fixed;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+}
+.review-subject-choices:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+.review-subject-choices .pr-list-host {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.review-local-choice {
+  width: 100%;
+  flex-shrink: 0;
+  text-align: left;
+  font: inherit;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+.review-local-choice[aria-current='true'] {
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.review-files-heading {
+  padding: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.review-local-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.is-review-pane {
+  container: review / inline-size;
+}
+
+@container review (max-width: 480px) {
+  .pane-files-body {
+    flex-direction: column;
+  }
+  #right-sidebar {
+    width: 100%;
+    max-height: 30%;
+    flex-shrink: 0;
+  }
+  #resizer-tree {
+    display: none;
+  }
+  .review-files-heading {
+    padding-bottom: 0;
+  }
+}
+
+.review-local-meta {
+  flex-shrink: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+}

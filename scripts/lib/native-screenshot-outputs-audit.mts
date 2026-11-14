@@ -40,11 +40,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
-    sourceSha256: '242dbcc494236a37f2452dfd721e6314d41a91bf1680e5a8d990ad3e0806b6e6',
+    sourceSha256: '07a051b7cbe250d79e34650ac7d89306775918fc92d5820180ac2cb035c6f01c',
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '091f450cc1519b580790f9f7292d7a705bea55e0fa9c65a0d0e99ad75a25d0ae',
+    sourceSha256: '240a52b0880ea99752298904df4adb0f5961829f4485ca2b9d8cb904c8517188',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -86,16 +86,15 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
   },
   'tests/e2e/pane-loading.e2e.ts': {
-    sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
+    sourceSha256: '556f58c7d5f64203c2caec57db81908e0e92bbfc4dd5aa224b45949ac5a918d0',
     filenames: [
       'pane-loading-changes.png',
       'pane-loading-memories.png',
-      'pane-loading-pull-requests.png',
       'pane-loading-roadmap.png',
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: 'ba67a5755045e4cb287caf6b99ec736641758ceeb0ebf0ea55870200d4caff23',
+    sourceSha256: '13623cc1a63b30f090ba91eb25cb2b04a4d3dbaf2af9b285fe1d4493741def1e',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -105,7 +104,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: 'bd40ca6d2e5af5f3b5caa8ab826973ef3b36342debedd0db2d0f9ad69b9585b3',
+    sourceSha256: '0864013a6c80c3c51c203dd5cae4bb2c8cbd8700eb396ef15670dce26d7d1c54',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {

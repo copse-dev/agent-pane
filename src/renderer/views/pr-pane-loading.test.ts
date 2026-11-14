@@ -122,7 +122,9 @@ describe('pr pane loading state', () => {
     assert.match(listText(listRoot), /Install GitHub CLI/)
 
     store.setState({ rightPanelMode: 'changes' })
-    assert.equal(watches.at(-1), false, 'leaving the pane stops the shared list watch')
+    assert.equal(watches.at(-1), true, 'local changes shares the review list watch')
+    store.setState({ rightPanelMode: 'explorer' })
+    assert.equal(watches.at(-1), false, 'leaving review stops the shared list watch')
   })
 
   it('shows a loading row instead of the "install gh" copy while status is in flight', async () => {

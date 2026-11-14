@@ -81,6 +81,32 @@ describe('panel mode controls: changes badge', () => {
     document.body.replaceChildren()
   })
 
+  it('uses one Review control for local changes and PRs, retaining the selected subject', () => {
+    const store = createStore({
+      workspaceRoot: '/widgets',
+      filesPaneOpen: true,
+      rightPanelMode: 'prs',
+    })
+    const controls = mountPanelModeControls(store, createFakeApi())
+    document.body.append(controls.element)
+    const review = controls.element.querySelector<HTMLButtonElement>(
+      '[data-panel-control="changes"]',
+    )
+    assert.ok(review)
+    assert.match(review.textContent, /Review/)
+    assert.equal(controls.element.querySelector('[data-panel-control="prs"]'), null)
+    assert.equal(review.classList.contains('active'), true)
+    review.click()
+    assert.equal(store.getState().filesPaneOpen, false)
+    assert.equal(store.getState().rightPanelMode, 'prs')
+    review.click()
+    assert.equal(store.getState().filesPaneOpen, true)
+    assert.equal(store.getState().rightPanelMode, 'prs')
+    store.setState({ rightPanelMode: 'changes' })
+    assert.equal(review.classList.contains('active'), true)
+    controls.destroy()
+  })
+
   it('repaints the pending-diff count from setState alone', () => {
     const store = createStore()
     const controls = mountPanelModeControls(store, createFakeApi())

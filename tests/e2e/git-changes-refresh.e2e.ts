@@ -50,7 +50,7 @@ describe('Changes background refresh', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    await $('.titlebar-btn[aria-label="Open changes"]').click()
+    await $('.titlebar-btn[aria-label="Open review"]').click()
     await expect($('#git-changes-host .git-changes-empty')).toHaveText('No changes')
   })
 
@@ -78,7 +78,7 @@ describe('Changes background refresh', function () {
     })
     unlinkSync(join(barrier, 'release'))
     unlinkSync(join(barrier, 'started'))
-    await $('#git-changes-host .git-changes-refresh-btn').click()
+    await $('.review-header .git-changes-header .git-changes-refresh-btn').click()
     await browser.waitUntil(() => existsSync(join(barrier, 'started')))
     await expect($('#git-changes-host .git-changes-empty')).toHaveText('No changes')
     await expect($('#git-changes-host .pane-loading')).not.toExist()

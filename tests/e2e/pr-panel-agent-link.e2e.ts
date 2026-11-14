@@ -1,3 +1,4 @@
+import { openReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -35,7 +36,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPicker()
     await browser.pause(800)
   }
 
@@ -56,6 +57,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     // Selecting the PR surfaces the "open agent thread" jump in the viewer meta.
     // This is the only intentional thread handoff for a Cursor agent run —
     // browser/chat navigation to cursor.com/agents stays on the web page.
+    await openReviewPicker()
     await $('.pr-list-row[data-pr-section="linked"]').click()
     const openThreadBtn = await $(
       '.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]',
@@ -70,6 +72,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     await openThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Agent PR chat')
 
+    await openReviewPicker()
     await $('.pr-list-title*=Tidy up workspace status polling').click()
     await expect($('.pr-viewer-title')).toHaveText('Tidy up workspace status polling')
     await expect($('.pr-thread-group')).not.toBeExisting()

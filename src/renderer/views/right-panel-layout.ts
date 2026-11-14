@@ -24,7 +24,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isVnc = mode === 'vnc'
 
     const sidebar = document.getElementById('right-sidebar')
-    if (sidebar) sidebar.hidden = isContext
+    if (sidebar) sidebar.hidden = isContext || isPrs
 
     const treeHost = document.getElementById('file-tree-host')
     const contextHost = document.getElementById('context-host')
@@ -68,7 +68,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (vncViewer) vncViewer.hidden = !isVnc
-    if (treeResizer) treeResizer.hidden = isContext || !store.getState().filesPaneOpen
+    if (treeResizer) treeResizer.hidden = isContext || isPrs || !store.getState().filesPaneOpen
   }
 
   /**
