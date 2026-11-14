@@ -58,7 +58,12 @@ test('steering separates the note from the tool step with matching main/window m
   const { main, window } = reduceBoth([
     { type: 'steering_ready', runId: 'run' },
     { type: 'text', text: 'Reading the files.' },
-    { type: 'steering_applied', messageId: 'correction', text: 'Keep the API.' },
+    {
+      type: 'steering_applied',
+      messageId: 'correction',
+      text: 'Keep the API.',
+      promptRepresentation: 'canonical-provider',
+    },
     { type: 'text', text: 'The API is unchanged.' },
     { type: 'steering_ready', runId: null },
     { type: 'done' },
@@ -77,16 +82,43 @@ test('steering separates the note from the tool step with matching main/window m
   assert.equal(messagesOf(main).at(-1)?.content, 'The API is unchanged.')
 })
 
+test('applied steering keeps exact reviewed bytes and Main-owned provenance', () => {
+  const exact = '  Keep literal \uFFFC here.  \n\n'
+  const { main, window } = reduceBoth([
+    {
+      type: 'steering_applied',
+      messageId: 'canonical-note',
+      text: exact,
+      promptRepresentation: 'canonical-provider',
+    },
+  ])
+
+  for (const store of [main, window]) {
+    const note = messagesOf(store).find((message) => message.id === 'canonical-note')
+    assert.equal(note?.content, exact)
+    assert.equal(note.attachments, undefined)
+    assert.equal(note.promptRepresentation, 'canonical-provider')
+  }
+})
+
 for (const order of [
   ['u1', 'step', 'note', 'later'],
   ['u1', 'note', 'step', 'later'],
   ['u1', 'step', 'later'],
 ]) {
   test(`steering leaves later pending notes behind the completed boundary: ${order.join(', ')}`, () => {
-    const messages: Message[] = order.map((id) => ({
-      ...humanPrompt(id, id === 'note' ? 'Unreviewed original' : id),
-      role: id === 'step' ? 'assistant' : 'user',
-    }))
+    const messages: Message[] = order.map((id) => {
+      const message: Message = {
+        ...humanPrompt(id, id === 'note' ? 'Unreviewed original' : id),
+        role: id === 'step' ? 'assistant' : 'user',
+      }
+      if (id === 'note') {
+        message.attachments = [
+          { kind: 'paste', label: 'stale optimistic paste', content: 'not reviewed' },
+        ]
+      }
+      return message
+    })
     const store = createStore({
       threads: [
         {
@@ -102,7 +134,12 @@ for (const order of [
       activeThreadId: 't1',
     })
     const reducer = createTranscriptReducer(store)
-    reducer.apply('t1', { type: 'steering_applied', messageId: 'note', text: 'Keep the API.' })
+    reducer.apply('t1', {
+      type: 'steering_applied',
+      messageId: 'note',
+      text: 'Keep the API.',
+      promptRepresentation: 'canonical-provider',
+    })
     assert.deepEqual(
       messagesOf(store).map((message) => message.id),
       ['u1', 'step', 'note', 'later'],
@@ -111,11 +148,21 @@ for (const order of [
       messagesOf(store).find((message) => message.id === 'note')?.content,
       'Keep the API.',
     )
+    assert.equal(
+      messagesOf(store).find((message) => message.id === 'note')?.promptRepresentation,
+      'canonical-provider',
+    )
+    assert.equal(messagesOf(store).find((message) => message.id === 'note')?.attachments, undefined)
     assert.deepEqual(
       getThreadById(store, 't1')?.pendingMessages?.map((item) => item.messageId),
       ['later'],
     )
-    reducer.apply('t1', { type: 'steering_applied', messageId: 'later', text: 'later' })
+    reducer.apply('t1', {
+      type: 'steering_applied',
+      messageId: 'later',
+      text: 'later',
+      promptRepresentation: 'canonical-provider',
+    })
     assert.deepEqual(
       messagesOf(store).map((message) => message.id),
       ['u1', 'step', 'note', 'later'],
@@ -375,6 +422,26 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   assert.equal(messagesOf(store)[0]?.promptRepresentation, undefined)
   assert.equal(messagesOf(store).length, 1)
   assert.equal(getThreadById(store, 't1')?.status, 'running')
+})
+
+test('protected human entry marks an exact text-only optimistic display canonical', () => {
+  const exact = '  Keep literal \uFFFC in the note.  \n\n'
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = exact
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
+    content: exact,
+    preserveOptimisticDisplay: true,
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, exact)
+  assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
 })
 
 test('protected human persistence keeps only the attachment snapshot verified by Main', () => {

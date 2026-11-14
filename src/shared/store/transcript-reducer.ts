@@ -250,11 +250,19 @@ export function createTranscriptReducer(
         if (!thread?.messages.some((message) => message.id === chunk.messageId)) {
           addMessage(store, threadId, 'user', chunk.text, undefined, undefined, {
             id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation,
           })
         } else {
           // Main's protected review may have edited the queued text. Reconcile
           // both main and window copies before the writer saves this boundary.
-          setMessagePromptContent(store, chunk.messageId, chunk.text, undefined)
+          setMessagePromptContent(
+            store,
+            chunk.messageId,
+            chunk.text,
+            undefined,
+            undefined,
+            chunk.promptRepresentation,
+          )
           store.emit('message_done', chunk.messageId)
         }
         patchThreadAnywhere(store, threadId, (current) => {
@@ -326,7 +334,19 @@ export function createTranscriptReducer(
             ? undefined
             : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
         if (existing) {
-          if (chunk.preserveOptimisticDisplay !== true) {
+          const optimisticImages = existing.images ?? []
+          const reviewedImages = images ?? []
+          const exactTextOnlyDisplay =
+            chunk.preserveOptimisticDisplay === true &&
+            existing.content === content &&
+            (existing.attachments?.length ?? 0) === 0 &&
+            optimisticImages.length === reviewedImages.length &&
+            optimisticImages.every((image, index) => image === reviewedImages[index])
+          if (chunk.preserveOptimisticDisplay !== true || exactTextOnlyDisplay) {
+            // Main has authenticated the reviewed representation. A byte-for-byte
+            // text-only optimistic bubble can safely inherit that provenance so a
+            // second live resend does not fall back to legacy placeholder cleanup.
+            // Chip-bearing bubbles keep their display form and remain unmarked.
             setMessagePromptContent(
               store,
               existing.id,
