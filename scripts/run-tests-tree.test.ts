@@ -15,6 +15,7 @@ async function fixture(run: (root: string) => Promise<void>): Promise<void> {
       'scripts/lib/test-filter.mts',
       'scripts/lib/module-relative-test-paths.mts',
       'scripts/lib/tracked-test-tree.mts',
+      'scripts/lib/review-test-reporter.mts',
     ])
       await copyFile(join(process.cwd(), file), join(root, file))
     await symlink(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir')
