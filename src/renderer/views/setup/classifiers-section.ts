@@ -626,6 +626,28 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       el('label', {}, 'Model ID', model),
       el('span', { class: 'field-hint' }, 'Profile ID for evals: ', el('code', {}, profile.id)),
     )
+    if (
+      profile.id === 'perplexity-decider-local' ||
+      profile.id.startsWith('perplexity-decider-local-')
+    ) {
+      form.prepend(
+        el(
+          'p',
+          { class: 'field-hint classifier-local-guide' },
+          'Start Decider for Mac and wait until it shows Ready. It runs Flash v1.2 locally on an Apple silicon Mac with at least 16 GB of memory. No API key is needed. ',
+          el(
+            'a',
+            {
+              href: 'https://docs.perplexity.ai/docs/decisions/decider-for-mac',
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            'Set up Decider for Mac',
+          ),
+          '. Save this connection, then select it for Background questions or Safety screening.',
+        ),
+      )
+    }
     const read = (name: string): string => controls.get(name)?.value.trim() ?? ''
     const advanced = el(
       'details',
