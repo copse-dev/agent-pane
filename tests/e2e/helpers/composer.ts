@@ -38,10 +38,47 @@ export async function composerText(): Promise<string> {
   })
 }
 
+/**
+ * Accept the isolated native review opened by a human-originated prompt.
+ *
+ * Callers must opt in at the exact UI action that is expected to dispatch a
+ * prompt. Keeping this explicit prevents unrelated security specs from
+ * silently approving a forged renderer request.
+ */
+export async function acceptProtectedPrompt(
+  mainHandleArg?: string,
+  handlesBeforeArg?: string[],
+): Promise<void> {
+  const mainHandle = mainHandleArg ?? (await browser.getWindowHandle())
+  const handlesBefore = handlesBeforeArg ?? [mainHandle]
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    {
+      timeout: 15_000,
+      timeoutMsg: 'Protected prompt window did not open',
+    },
+  )
+  const protectedHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!protectedHandle) throw new Error('Protected prompt window handle is missing')
+  await browser.switchToWindow(protectedHandle)
+  await $('#protected-prompt-send').click()
+  await browser.waitUntil(
+    async () => !(await browser.getWindowHandles()).includes(protectedHandle),
+    {
+      timeout: 15_000,
+      timeoutMsg: 'Protected prompt window did not close after sending',
+    },
+  )
+  await browser.switchToWindow(mainHandle)
+}
+
 /** Submit a fixture prompt, accepting the real dirty-checkout warning if needed. */
 export async function submitComposer(): Promise<void> {
   const handlesBefore = await browser.getWindowHandles()
-  const mainHandle = handlesBefore[0]
+  const mainHandle = await browser.getWindowHandle()
   if (!mainHandle) throw new Error('Main window handle is missing')
   const browserDemo = await browser.execute(
     () => document.documentElement.dataset['demoScenario'] !== undefined,
@@ -54,8 +91,16 @@ export async function submitComposer(): Promise<void> {
   })
   await $('.submit-btn').click()
   let confirmedDirtyCheckout = false
+  let confirmedCurrentBranch = false
   await browser.waitUntil(
     async () => {
+      const continueHere = $('.composer-branch-continue-btn')
+      if (!confirmedCurrentBranch && (await continueHere.isDisplayed())) {
+        confirmedCurrentBranch = true
+        await continueHere.click()
+        await continueHere.waitForDisplayed({ reverse: true })
+        await $('.submit-btn').click()
+      }
       const sendAnyway = $('.composer-dirty-send-btn')
       if (!confirmedDirtyCheckout && (await sendAnyway.isDisplayed())) {
         confirmedDirtyCheckout = true
@@ -73,26 +118,6 @@ export async function submitComposer(): Promise<void> {
   // the selected trace by this point. Electron E2E must cross the real
   // protected surface before the owning spec observes a turn.
   if (dispatchesImmediately && !browserDemo) {
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length > handlesBefore.length,
-      {
-        timeout: 15_000,
-        timeoutMsg: 'Protected prompt window did not open after composer submit',
-      },
-    )
-    const protectedHandle = (await browser.getWindowHandles()).find(
-      (handle) => !handlesBefore.includes(handle),
-    )
-    if (!protectedHandle) throw new Error('Protected prompt window handle is missing')
-    await browser.switchToWindow(protectedHandle)
-    await $('#protected-prompt-send').click()
-    await browser.waitUntil(
-      async () => !(await browser.getWindowHandles()).includes(protectedHandle),
-      {
-        timeout: 15_000,
-        timeoutMsg: 'Protected prompt window did not close after sending',
-      },
-    )
-    await browser.switchToWindow(mainHandle)
+    await acceptProtectedPrompt(mainHandle, handlesBefore)
   }
 }

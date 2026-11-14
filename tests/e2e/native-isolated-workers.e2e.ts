@@ -22,7 +22,7 @@ import {
   writeSeedConfig,
   e2eWorkspaceDir,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -353,7 +353,7 @@ describe('native isolated writable workers', function () {
     await setComposerValue(
       'Run alpha and beta as isolated writable workers. Each should edit same.txt independently.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(() => workerCalls.get('alpha') === 3 && workerCalls.get('beta') === 3, {
       timeout: 30_000,
       timeoutMsg: 'Both isolated workers should finish real native edits',
@@ -399,7 +399,7 @@ describe('native isolated writable workers', function () {
       await setComposerValue(
         'Run alpha and beta as isolated writable workers and wait for my stop.',
       )
-      await $('.submit-btn').click()
+      await submitComposer()
       await browser.waitUntil(
         () =>
           held.size === 2 &&
@@ -448,7 +448,7 @@ describe('native isolated writable workers', function () {
     await setComposerValue(
       'Run alpha in an isolated worker and prepare its worktree; wait for my stop.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')

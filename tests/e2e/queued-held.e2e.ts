@@ -12,7 +12,7 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
@@ -242,6 +242,7 @@ describe('held hook message in the queue', function () {
     )
     try {
       await $(`.project-entry[data-project-id="${projectId}"] .project-row`).click()
+      await acceptProtectedPrompt()
       await scenario.waitForHold('auth-review')
       await expect($(hookSelector).$('.message-queued-badge')).toHaveText('QUEUED')
       await setComposerValue(humanPrompt)
@@ -249,6 +250,7 @@ describe('held hook message in the queue', function () {
       const humanSelector = '.conversation-queued .msg-queued:not(.msg-hook-origin)'
       await expect($(humanSelector).$('.message-text')).toHaveText(humanPrompt)
       await $(humanSelector).$('.queued-send-now').click()
+      await acceptProtectedPrompt()
       await expectAssistantReply(reply)
       await expect($(hookSelector).$('.message-queued-badge')).toHaveText('HELD')
       await expect($(hookSelector).$('.message-text')).toHaveText(hookPrompt)

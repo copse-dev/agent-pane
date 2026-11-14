@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { isInitialThreadWorktreeBranchName } from '../../src/shared/git/worktree-policy.ts'
+import { submitComposer } from './helpers/composer.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -113,7 +115,7 @@ describe('thread worktree with submodules', () => {
       { name: 'init_submodules', args: {} },
       reply,
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await scenario.assertComplete()
 
@@ -123,6 +125,18 @@ describe('thread worktree with submodules', () => {
     )
     assert.match(readFileSync(join(worktree, 'vendor', 'lib', '.git'), 'utf8'), /worktrees/)
     assert.equal(git(root, ['branch', '--show-current']), 'main', 'project checkout untouched')
-    await saveAppScreenshot('thread-submodule-worktree-sent.png')
+    // The first title renames the anonymous branch after the turn settles;
+    // the header refresh is separately debounced. Capture the named checkout
+    // only when both real branch surfaces agree with Git.
+    await browser.waitUntil(
+      async () =>
+        !isInitialThreadWorktreeBranchName(git(worktree, ['branch', '--show-current']), THREAD),
+      { timeout: 15_000, timeoutMsg: 'The submodule checkout branch did not finish naming' },
+    )
+    const branch = git(worktree, ['branch', '--show-current'])
+    await saveAppScreenshot('thread-submodule-worktree-sent.png', undefined, async () => {
+      await expect($('.footer-branch-label')).toHaveText(branch)
+      await expect($('.workspace-branch')).toHaveText(branch)
+    })
   })
 })

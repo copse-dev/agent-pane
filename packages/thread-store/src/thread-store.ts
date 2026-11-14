@@ -2402,7 +2402,8 @@ async function appendMessageUnqueued(
   )
   await fsPromises.mkdir(dir, { recursive: true })
   const exploded = explodeMessage(message, sha256)
-  const { line, files } = existingEntries ? withImmutableMessageProse(exploded) : exploded
+  const { line, files } =
+    existingEntries === undefined ? exploded : withImmutableMessageProse(exploded)
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
     contents: file.contents,

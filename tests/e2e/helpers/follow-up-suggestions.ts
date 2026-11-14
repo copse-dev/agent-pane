@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { waitForAgentIdle } from '../helpers.ts'
-import { setComposerValue } from './composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './composer.ts'
 import { installMockScenario, type ScenarioHandle } from './mock-scenario.ts'
 
 export function seedCleanFeatureBranch(root: string): void {
@@ -87,13 +87,14 @@ export async function completeMockTurn(
     ],
   })
   await setComposerValue(prompt)
-  await $('.submit-btn').click()
   if (dirtySharedCheckout) {
+    await $('.submit-btn').click()
     const warning = $('.composer-dirty-warning')
     await warning.waitForDisplayed({ timeout: 10_000 })
     await warning.$('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await $('.messages-list .msg-user').waitForExist({ timeout: 10_000 })
-  }
+  } else await submitComposer()
 
   await waitForAgentIdle(20_000)
   await expect($('.msg-assistant .message-text')).toHaveText(

@@ -105,6 +105,33 @@
   overflow: auto;
   padding-inline: var(--spacing-md);
 }
+.remote-host #plan-review {
+  flex: none;
+  max-height: 30dvh;
+  margin: 0 var(--spacing-md);
+  padding: var(--spacing-md);
+  overflow: auto;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.remote-host #plan-review-status {
+  display: block;
+  margin-top: var(--spacing-xs);
+  color: var(--text-secondary);
+}
+.remote-host #plan-review-body {
+  margin: var(--spacing-sm) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-prose);
+}
+.remote-host #plan-review-comments blockquote {
+  margin: var(--spacing-sm) 0 0;
+  padding-left: var(--spacing-sm);
+  border-left: 2px solid var(--accent);
+  color: var(--text-secondary);
+}
 .remote-decision {
   padding: var(--spacing-md);
   border-left: 2px solid var(--accent);

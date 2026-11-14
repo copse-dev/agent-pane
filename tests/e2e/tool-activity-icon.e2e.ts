@@ -16,20 +16,14 @@ import {
   saveAppScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function submitToolPrompt(): Promise<void> {
-  await $('.submit-btn').click()
-  const warning = $('.composer-dirty-warning')
-  await browser.waitUntil(
-    async () => (await warning.isDisplayed()) || (await $('.tool-card').isExisting()),
-    { timeout: 15_000, timeoutMsg: 'neither the tool card nor the dirty-checkout prompt appeared' },
-  )
-  if (await warning.isDisplayed()) await warning.$('.composer-dirty-send-btn').click()
+  await submitComposer()
 }
 
 describe('tool activity icon', function () {

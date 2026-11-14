@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { installMockScenario, type ScenarioHandle } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-running-scroll-project'
@@ -77,7 +77,7 @@ describe('running thread switch scroll restoration', function () {
         })
         scenarios.push(scenario)
         await setComposerValue(user)
-        await $('.submit-btn').click()
+        await submitComposer()
         await scenario.waitForHold('running-scroll')
         await expect($('.chat-row.selected')).toHaveElementClass('is-running')
       }

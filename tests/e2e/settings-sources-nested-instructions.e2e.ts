@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
@@ -76,7 +77,7 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
       { toolCalls: [{ name: 'read_file', args: { path: 'packages/api/src/router.ts' } }] },
       { text: reply, expectToolResults: [{ name: 'read_file', includes: '/health' }] },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await waitForAgentIdle(30_000)
 

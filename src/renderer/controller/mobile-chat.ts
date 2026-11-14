@@ -14,6 +14,27 @@ import { awaitPendingThreadPersistence } from './persistence.ts'
 import { ensureThreadMessages, hydrationFailed } from './thread-hydration.ts'
 import { dispatchAgentRun, enqueueUserMessage, startHumanTurnTree } from './message-queue.ts'
 
+function isReservedMobileThread(
+  thread: ReturnType<typeof getThreadById>,
+  command: MobileChatCommand,
+): boolean {
+  return (
+    thread !== undefined &&
+    thread.title === 'New Thread' &&
+    thread.status === 'idle' &&
+    thread.model === command.model &&
+    thread.archivedAt === undefined &&
+    thread.messages.length === 0 &&
+    (thread.pendingMessages?.length ?? 0) === 0 &&
+    thread.worktree === undefined &&
+    thread.worktreeChoice === undefined &&
+    thread.deferredWorktree === undefined &&
+    thread.automation === undefined &&
+    thread.sideChat === undefined &&
+    thread.followUpOf === undefined
+  )
+}
+
 /** Human phone submissions use the desktop's checkout, transcript, queue and run controller. */
 export async function acceptMobileChat(
   store: AppStore,
@@ -31,7 +52,16 @@ export async function acceptMobileChat(
     if (Date.now() >= command.expiresAt) throw new Error('This send expired. Try again.')
     await activateMobileProject(store, api, command.projectId)
     checkCurrent()
-    const threadId = command.threadId ?? createThread(store)
+    const threadId = command.threadId
+    if (command.createThread) {
+      const reserved = getThreadById(store, threadId)
+      if (reserved !== undefined) {
+        if (!isReservedMobileThread(reserved, command))
+          throw new Error('The reserved phone conversation changed before it was opened.')
+      } else {
+        createThread(store, undefined, { id: threadId })
+      }
+    }
     const initial = getThreadById(store, threadId)
     if (!initial || initial.archivedAt !== undefined) throw new Error('Thread unavailable.')
     if (!beginThreadSubmission(store, threadId))
@@ -43,6 +73,8 @@ export async function acceptMobileChat(
     checkCurrent()
     if (hydrationFailed(threadId) || getThreadById(store, threadId)?.messagesLoaded === false)
       throw new Error('The desktop could not load the conversation. Try again.')
+    if (command.createThread && !isReservedMobileThread(getThreadById(store, threadId), command))
+      throw new Error('The reserved phone conversation changed before it was opened.')
     if (!initial.worktreeChoice && initial.messages.length === 0) {
       const prepared = await api.agent.prepareCheckout(
         command.projectId,
@@ -72,7 +104,13 @@ export async function acceptMobileChat(
       text,
       command.image ? [command.image] : undefined,
     )
-    const queued = { messageId, payload, createdAt: Date.now() }
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      mobilePromptGrantId: command.id,
+      ...(command.model !== undefined ? { model: command.model } : {}),
+    }
     const running = current.status === 'running'
     if (running) enqueueUserMessage(store, threadId, queued)
     else {

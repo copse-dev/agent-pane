@@ -382,6 +382,8 @@ export interface ApiClient {
       prompt: string,
       delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
       display?: import('@shared/types').ProtectedHumanTurnDisplay,
+      /** Opaque one-use authority minted by authenticated Mobile Companion input. */
+      mobilePromptGrantId?: string,
     ) => Promise<unknown>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (

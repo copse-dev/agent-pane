@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { submitComposer } from './helpers/composer.ts'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -42,7 +43,7 @@ describe('automatic Cargo preparation approval', () => {
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -59,6 +59,20 @@ function writeCheckoutHoldFilter(root: string, entered: string, release: string)
     `${shellQuote(scriptPath)} ${shellQuote(entered)} ${shellQuote(release)}`,
   ])
   git(root, ['config', 'filter.e2e-checkout-hold.required', 'true'])
+}
+
+async function acceptThreadPrompt(threadId: string, text: string): Promise<void> {
+  const main = await browser.getWindowHandle()
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 2, {
+    timeout: 15_000,
+  })
+  const child = (await browser.getWindowHandles()).find((handle) => handle !== main)
+  assert.ok(child)
+  await browser.switchToWindow(child)
+  await expect($('#protected-prompt-text')).toHaveValue(text)
+  await expect($('#protected-prompt-thread')).toHaveText(expect.stringContaining(` — ${threadId}`))
+  await browser.switchToWindow(main)
+  await acceptProtectedPrompt(main, [main])
 }
 
 describe('switching threads during first-message checkout', () => {
@@ -221,9 +235,8 @@ describe('switching threads during first-message checkout', () => {
     assert.equal(await $('.submit-btn').getText(), 'Send')
     await setComposerValue(OTHER_PROMPT)
     await $('.submit-btn').click()
+    await acceptThreadPrompt(OTHER, OTHER_PROMPT)
 
-    console.info('[checkout-switch] releasing the held checkout')
-    writeFileSync(checkoutHoldSentinel, '')
     await browser.waitUntil(
       async () =>
         browser.execute(
@@ -241,6 +254,9 @@ describe('switching threads during first-message checkout', () => {
     console.info('[checkout-switch] other prompt recorded')
     await setComposerValue(NEXT_DRAFT)
 
+    console.info('[checkout-switch] releasing the held checkout')
+    writeFileSync(checkoutHoldSentinel, '')
+    await acceptThreadPrompt(ORIGINAL, PROMPT)
     console.info('[checkout-switch] waiting for original reply')
     await browser.waitUntil(
       async () => {

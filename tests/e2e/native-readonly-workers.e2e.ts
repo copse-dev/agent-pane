@@ -8,7 +8,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -224,7 +224,7 @@ describe('native supervised read-only workers', function () {
     await setComposerValue(
       'Run alpha and beta as read-only workers on their independent inspections.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(async () => (await $$('.tool-card-subagent')).length === 2, {
       timeout: 30_000,
     })
@@ -258,7 +258,7 @@ describe('native supervised read-only workers', function () {
     workerCalls.clear()
     held.clear()
     await setComposerValue('/alpha Read evidence.txt and report its finding.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () => (await $('.messages-list').getText()).includes('Agent alpha reports:'),
       { timeout: 30_000 },
@@ -292,7 +292,7 @@ describe('native supervised read-only workers', function () {
     held.clear()
     workerCalls.clear()
     await setComposerValue('Run alpha and beta as read-only workers, then wait for my stop.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser
       .waitUntil(() => held.size === 2, {
         timeout: 30_000,
@@ -325,7 +325,7 @@ describe('native supervised read-only workers', function () {
     scenario = 'isolation'
     const before = new Map(workerCalls)
     await setComposerValue('/isolated Inspect the workspace.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () => (await $('.messages-list').getText()).includes('requires run_isolated_workers'),
       { timeout: 15_000 },

@@ -11,7 +11,7 @@ import {
   seedStableWorkspace,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, composerText, setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -135,6 +135,7 @@ describe('missing local coding agent before first send', function () {
     assert.equal(await composerText(), PROMPT)
     await expect($('.attachment-chip-label')).toHaveText('requirements.txt')
     await $('.composer-checkout-retry-btn').click()
+    await acceptProtectedPrompt()
     await browser.waitUntil(
       async () =>
         (await $('.messages-list').getText()).includes(

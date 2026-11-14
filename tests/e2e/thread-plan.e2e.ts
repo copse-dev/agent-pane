@@ -4,6 +4,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const PROJECT = 'e2e-thread-plan'
 const BODY =
@@ -221,6 +222,7 @@ describe('optional thread plan', () => {
     )
     if (await $('.composer-dirty-send-btn').isDisplayed())
       await $('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await expectAssistantReply(
       'Revision 3 includes the expired-token regression case and is ready for review.',
     )
@@ -294,6 +296,7 @@ describe('optional thread plan', () => {
     )
     if (await $('.composer-dirty-send-btn').isDisplayed())
       await $('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await expectAssistantReply(
       'The completion report records one met, one partial, and one unverified criterion.',
     )

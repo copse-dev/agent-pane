@@ -291,7 +291,14 @@ export function dispatchAgentRun(
       ? protectedHumanTurnDisplay(store, threadId, queued.messageId)
       : undefined
     if (!queued || parentThreadId === undefined) {
-      const result = await api.agent.run(projectId, threadId, runPayload, undefined, display)
+      const result = await api.agent.run(
+        projectId,
+        threadId,
+        runPayload,
+        undefined,
+        display,
+        queued?.mobilePromptGrantId,
+      )
       if (result === 'cancelled') {
         if (queued) holdCancelledProtectedPrompt(store, threadId, queued)
         else setThreadStatus(store, threadId, 'idle')
@@ -404,9 +411,17 @@ function holdCancelledProtectedPrompt(
 ): void {
   patchThreadAnywhere(store, threadId, (thread) => {
     const pending = thread.pendingMessages ?? []
+    // A cancelled mobile claim is expired, replayed or mismatched. Retain the
+    // prompt, but discard that authority so a later desktop send must open the
+    // ordinary protected review window.
+    const { mobilePromptGrantId: _mobilePromptGrantId, ...heldItem } = item
     const held = pending.some((entry) => entry.messageId === item.messageId)
-      ? pending
-      : [{ ...item, autoDispatch: false as const }, ...pending]
+      ? pending.map((entry) => {
+          if (entry.messageId !== item.messageId) return entry
+          const { mobilePromptGrantId: _grant, ...rest } = entry
+          return { ...rest, autoDispatch: false as const }
+        })
+      : [{ ...heldItem, autoDispatch: false as const }, ...pending]
     const refunded =
       isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0
         ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 }
@@ -657,17 +672,19 @@ export function updateQueuedMessageText(
       ? t
       : {
           ...t,
-          pendingMessages: (t.pendingMessages ?? []).map((p) =>
-            p.messageId !== messageId
-              ? p
-              : {
-                  ...p,
-                  payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
-                  // Editing a hook-originated message keeps `kind: 'hook'` but
-                  // flips `editedByUser` so the spine stays honest (decision 10).
-                  ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
-                },
-          ),
+          pendingMessages: (t.pendingMessages ?? []).map((p) => {
+            if (p.messageId !== messageId) return p
+            // Editing requires fresh desktop review. An authenticated phone grant
+            // authorizes only the exact text that crossed the HTTP boundary.
+            const { mobilePromptGrantId: _mobilePromptGrantId, ...editable } = p
+            return {
+              ...editable,
+              payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
+              // Editing a hook-originated message keeps `kind: 'hook'` but
+              // flips `editedByUser` so the spine stays honest (decision 10).
+              ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
+            }
+          }),
           updatedAt: Date.now(),
         },
   )

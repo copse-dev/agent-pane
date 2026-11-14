@@ -14,7 +14,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -284,7 +284,7 @@ describe('footer branch status for a detached thread worktree', function () {
       ],
     })
     await setComposerValue('Inspect the paused rebase.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('paused-rebase')
     await expect($('.chat-row.selected')).toHaveElementClass('is-running')
     await expect($('.footer-branch-status')).toHaveElementClass('is-detached')

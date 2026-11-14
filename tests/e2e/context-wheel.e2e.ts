@@ -6,7 +6,7 @@ import {
   seedEmptyProject,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import {
   E2E_SCREENSHOT_DIR,
@@ -120,7 +120,7 @@ describe('context wheel footer live mock', () => {
       ],
     })
     await setComposerValue(prompt)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('wheel-capture')
 
     const wheel = await $('.context-wheel').getElement()

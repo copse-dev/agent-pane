@@ -28,7 +28,7 @@ import {
   prepareMockTurn,
   expectAssistantReply,
 } from './helpers/mock-scenario.ts'
-import { submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -599,6 +599,7 @@ describe('interactive client live approvals', function () {
     const submissionId = randomUUID()
     try {
       assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+      await acceptProtectedPrompt()
       await followup.waitForHold('tab-submitted')
       await expect($('.prompt-input')).toHaveText('')
       await expect($('.prompt-input')).not.toHaveAttribute('data-next-step')

@@ -75,6 +75,12 @@ import type { ThreadAutoArchived } from '@shared/threads/auto-archive.ts'
 import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import type { ThreadDeletionRuntime } from '../services/thread-deletion.ts'
 import type { ThreadHistoryEditRuntime } from '../services/thread-history-edit.ts'
+import { mobilePromptGrants } from '../services/mobile/mobile-prompt-grants.ts'
+
+function assertMobilePromptTargetAvailable(projectId: string, threadId: string): void {
+  if (mobilePromptGrants.isTargetReserved(projectId, threadId))
+    throw new Error('A phone message is reserving this conversation. Try again shortly.')
+}
 
 /** What the thread handlers share with the rest of `registerAllHandlers`. */
 export interface ThreadHandlerDeps {
@@ -132,6 +138,7 @@ export function registerThreadHandlers(
         z.tuple([zProjectId, zThreadId, z.enum(['archive', 'keep', 'restore'])]),
         [projectId, threadId, decision],
       )
+      assertMobilePromptTargetAvailable(pid, tid)
       return autoArchive.decide(pid, tid, action)
     },
   )
@@ -294,12 +301,14 @@ export function registerThreadHandlers(
         ]),
         [projectId, threadId, discard, stop],
       )
+      assertMobilePromptTargetAvailable(pid, tid)
       return archiveStoredThread(pid, tid, discardChanges, stopProcesses, threadArchivingRuntime)
     },
   )
   ipcMain.handle('threads:delete', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    assertMobilePromptTargetAvailable(pid, tid)
     const thread = await getProjectThread(pid, tid)
     if (!thread) throw new Error('The thread is no longer available')
     const reviewedRevision = threadHistoryRevision(thread.messages)
@@ -318,6 +327,7 @@ export function registerThreadHandlers(
     if (!current || threadHistoryRevision(current.messages) !== reviewedRevision) {
       throw new Error('The thread changed while deletion was awaiting confirmation')
     }
+    assertMobilePromptTargetAvailable(pid, tid)
     // The schedule ledger outlives its run thread. Spend any still-unclaimed
     // unattended grant before freeing the thread id, so deletion cannot turn
     // that id into a reusable capability for a renderer-created replacement.
@@ -366,6 +376,7 @@ export function registerThreadHandlers(
       )
       const target = parseThreadValue(withoutMainOwnedThreadFields(targetPayload))
       if (target === null) throw new IpcValidationError('Invalid fork target payload')
+      assertMobilePromptTargetAvailable(pid, target.id)
       return forkThreadHistory(pid, sourceId, target, messageId)
     },
   )

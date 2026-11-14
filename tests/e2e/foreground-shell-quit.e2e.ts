@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
 import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -198,6 +198,7 @@ describe('quit during an owned foreground command', function () {
       ],
     })
     await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    await acceptProtectedPrompt()
     await recovered.waitForComplete()
     await recovered.assertComplete()
     await waitForAgentIdle(15_000)
