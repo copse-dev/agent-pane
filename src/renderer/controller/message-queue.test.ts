@@ -626,6 +626,33 @@ test('cancelling protected entry returns the optimistic prompt as held', async (
   assert.deepEqual(thread.pendingMessages, [{ ...item, autoDispatch: false }])
 })
 
+test('a rejected mobile grant is held without reusable authority', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  const item: QueuedUserMessage = {
+    messageId: 'phone-message',
+    payload: { content: 'Phone prompt' },
+    createdAt: 1,
+    mobilePromptGrantId: 'expired-grant',
+  }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  const thread = getThreadById(store, threadId)
+  assert.equal(thread?.status, 'idle')
+  assert.deepEqual(thread.pendingMessages, [
+    {
+      messageId: 'phone-message',
+      payload: { content: 'Phone prompt' },
+      createdAt: 1,
+      autoDispatch: false,
+    },
+  ])
+})
+
 test('resumePendingQueues drains idle threads with pending messages', async () => {
   const store = createProjectStore()
   const api = fakeApi()
@@ -690,12 +717,14 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
     messageId,
     payload: { content: 'original', invokedSkills: [] },
     createdAt: 1,
+    mobilePromptGrantId: 'phone-grant',
   })
 
   updateQueuedMessageText(store, threadId, messageId, 'edited prompt')
 
   const thread = getThread(store, threadId)
   assert.equal(thread.pendingMessages?.[0]?.payload.content, 'edited prompt')
+  assert.equal(thread.pendingMessages[0].mobilePromptGrantId, undefined)
   assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
 })
 

@@ -182,6 +182,8 @@ export interface CreateThreadOptions {
    * click does not navigate anywhere.
    */
   activate?: boolean
+  /** Main-reserved identity for a remotely requested new thread. */
+  id?: string
 }
 
 export function createThread(
@@ -190,7 +192,9 @@ export function createThread(
   options?: CreateThreadOptions,
 ): string {
   const activate = options?.activate ?? true
-  const id = randomUUID()
+  const id = options?.id ?? randomUUID()
+  if (store.getState().threads.some((thread) => thread.id === id))
+    throw new Error('Thread identity is already in use')
   const defaultModel = store.getState().settings?.model
   const threads = [
     {

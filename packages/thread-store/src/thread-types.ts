@@ -87,6 +87,12 @@ export interface QueuedUserMessage {
   payload: AgentRunPayload
   createdAt: number
   /**
+   * One-use main-process grant for a prompt entered through an authenticated
+   * Mobile Companion control session. Renderer state may carry this opaque id,
+   * but only main can mint it and it is bound to the exact target and content.
+   */
+  mobilePromptGrantId?: string
+  /**
    * Model selected for this prompt when it was queued. Human-authored queued
    * prompts keep this snapshot so a later footer-model change does not retarget
    * them. Hook-authored prompts omit it and follow the thread selection at drain

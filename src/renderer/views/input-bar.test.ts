@@ -338,7 +338,11 @@ describe('composer observes external submission completion', () => {
         }
         const result =
           source === 'phone'
-            ? await acceptMobileChat(store, api, { ...command, threadId: active.id })
+            ? await acceptMobileChat(store, api, {
+                ...command,
+                threadId: active.id,
+                createThread: false,
+              })
             : await acceptThreadPrompt(store, api, {
                 ...command,
                 sourceThreadId: 'another-thread',

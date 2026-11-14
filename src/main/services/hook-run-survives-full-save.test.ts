@@ -182,7 +182,9 @@ describe('hook_run survives full save (decision 6)', () => {
 
     const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
     assert.deepEqual(
-      parseSpineEntries(raw).map((e) => e.line?.id),
+      parseSpineEntries(raw)
+        .filter((entry) => entry.line?.type !== 'user_message_lifecycle')
+        .map((entry) => entry.line?.id),
       ['m1', 'h1', 'm2'],
     )
   })
@@ -195,7 +197,9 @@ describe('hook_run survives full save (decision 6)', () => {
 
     const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
     assert.deepEqual(
-      parseSpineEntries(raw).map((e) => e.line?.id),
+      parseSpineEntries(raw)
+        .filter((entry) => entry.line?.type !== 'user_message_lifecycle')
+        .map((entry) => entry.line?.id),
       ['m1', 'h1', 'm2'],
     )
     // Old readers still see messages only.

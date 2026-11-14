@@ -71,12 +71,15 @@ export async function performMobileAction(
   if (!stillAuthorized())
     return { status: 403, body: { error: 'Phone control was disabled on the desktop.' } }
   if (action.action === 'message') {
-    const result = await MOBILE_WRITE_DISPATCH.message({
-      projectId: action.projectId,
-      threadId: action.threadId,
-      text: action.text,
-      ...(action.image ? { image: action.image } : {}),
-    })
+    const result = await MOBILE_WRITE_DISPATCH.message(
+      {
+        projectId: action.projectId,
+        threadId: action.threadId,
+        text: action.text,
+        ...(action.image ? { image: action.image } : {}),
+      },
+      stillAuthorized,
+    )
     if (!result.ok) return { status: 409, body: { error: result.error } }
     recordDecision({
       projectId: action.projectId,

@@ -11,11 +11,11 @@ import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-jso
 import { parseDecisionLog } from '../../src/shared/threads/decision-log.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
-import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const projectId = 'e2e-mobile-control'
 const token = randomBytes(32).toString('hex')
@@ -94,6 +94,15 @@ function request(path: string, body?: object, bearer = token): z.infer<typeof re
 
 function action(sessionId: string, payload: object): Record<string, unknown> {
   return { sessionId, issuedAt: Date.now(), requestId: randomUUID(), projectId, ...payload }
+}
+
+function persistedProviderHistory(threadId: string): string {
+  const stored = readFixtureJsonObject(
+    join(copseDataRoot(), 'workspace', projectId, threadId, 'agent-history.json'),
+  )
+  const messages = stored['messages']
+  assert.ok(Array.isArray(messages), 'provider history persisted a message array')
+  return JSON.stringify(messages)
 }
 
 /** Whether the desktop transcript is scrolled to its live end. */
@@ -210,7 +219,6 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       started,
       'duplicate delivery returns the same chat',
     )
-    await acceptProtectedPrompt()
     await $('#ask-user-dialog').waitForDisplayed({ timeout: 30_000 })
     const waiting = request(`/api/thread/${projectId}/${threadId}`)
     const question = waiting.decisions?.find((decision) => decision.kind === 'question')
@@ -251,10 +259,17 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).error ?? '',
       /already changed/,
     )
-    await acceptProtectedPrompt()
     await waitForAgentIdle(60_000)
     await expectAssistantReply('Your phone started this chat and queued this follow-up.')
     await scenario.assertComplete()
+    // The follow-up was admitted while the first run was still waiting. Its
+    // provider request and final checkpoint must retain the answer/tool result
+    // and assistant completion appended after admission, not replace the
+    // sidecar with the earlier frozen prefix.
+    const queuedHistory = persistedProviderHistory(threadId)
+    assert.match(queuedHistory, /Focused tests/)
+    assert.match(queuedHistory, /The focused tests passed\./)
+    assert.match(queuedHistory, /Your phone started this chat and queued this follow-up\./)
     assert.match(
       request('/api/action', action(sessionId, { action: 'stop', threadId, runId: waiting.runId }))
         .error ?? '',
@@ -285,7 +300,6 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).ok,
       true,
     )
-    await acceptProtectedPrompt()
     await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     const approval = request(`/api/thread/${projectId}/${threadId}`).decisions?.find(
       (decision) => decision.kind === 'approval',
@@ -342,7 +356,6 @@ describe('Mobile Companion control over verified local HTTPS', function () {
         .ok,
       true,
     )
-    await acceptProtectedPrompt()
     await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     const once = request(`/api/thread/${projectId}/${threadId}`).decisions?.find(
       (decision) => decision.kind === 'approval',
@@ -397,7 +410,6 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       ).ok,
       true,
     )
-    await acceptProtectedPrompt()
     await stopScenario.waitForHold('phone-stop')
     const running = request(`/api/thread/${projectId}/${threadId}`)
     assert.ok(running.runId)
@@ -430,6 +442,11 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       })
       await waitForTranscriptScrollSettled(false)
     })
+    const beforeReload = persistedProviderHistory(threadId)
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    assert.equal(persistedProviderHistory(threadId), beforeReload)
+    assert.match(beforeReload, /The focused tests passed\./)
   })
 
   it('pairs through shared auth, retains phone credentials on restart, revokes them and cancels pending consent on stop', async () => {

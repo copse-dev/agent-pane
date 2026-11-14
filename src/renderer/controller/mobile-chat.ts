@@ -31,7 +31,9 @@ export async function acceptMobileChat(
     if (Date.now() >= command.expiresAt) throw new Error('This send expired. Try again.')
     await activateMobileProject(store, api, command.projectId)
     checkCurrent()
-    const threadId = command.threadId ?? createThread(store)
+    const threadId = command.createThread
+      ? createThread(store, undefined, { id: command.threadId })
+      : command.threadId
     const initial = getThreadById(store, threadId)
     if (!initial || initial.archivedAt !== undefined) throw new Error('Thread unavailable.')
     if (!beginThreadSubmission(store, threadId))
@@ -72,7 +74,13 @@ export async function acceptMobileChat(
       text,
       command.image ? [command.image] : undefined,
     )
-    const queued = { messageId, payload, createdAt: Date.now() }
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      mobilePromptGrantId: command.id,
+      ...(command.model !== undefined ? { model: command.model } : {}),
+    }
     const running = current.status === 'running'
     if (running) enqueueUserMessage(store, threadId, queued)
     else {

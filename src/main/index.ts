@@ -2,6 +2,10 @@ import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import {
+  extendMobilePromptHistory,
+  mobilePromptGrants,
+} from './services/mobile/mobile-prompt-grants.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
@@ -214,6 +218,7 @@ import { shutdownStaticPreviewServers } from './services/browser/static-preview-
 import { drainWriteQueue } from './services/storage/write-queue.ts'
 import {
   assertMainFrameSender,
+  IpcValidationError,
   estimateContextPayloadSchema,
   followUpContextSchema,
   retryReviewPayloadSchema,
@@ -1157,6 +1162,7 @@ app
         rawPrompt: string,
         delegationArg?: unknown,
         displayArg?: unknown,
+        mobilePromptGrantArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -1172,9 +1178,74 @@ app
         const displaySnapshot = display?.snapshot
         const payload = parseAgentRunPayload(rawPrompt)
         const request = { projectId, threadId, payload }
+        const mobilePromptGrantId = parseIpcArgs(z.uuid().optional(), [mobilePromptGrantArg])
         // A delegated prompt's authority is decided here, not by the renderer's
         // pre-check: a revoke can land between that check and this invoke.
-        if (delegation) {
+        if (mobilePromptGrantId !== undefined) {
+          if (delegation) throw new IpcValidationError('Mobile prompts cannot delegate a subthread')
+          const grant = mobilePromptGrants.consume(mobilePromptGrantId, {
+            senderId,
+            projectId,
+            threadId,
+            content: payload.userContent,
+          })
+          // An expired, replayed or forged grant never falls through to the
+          // ordinary renderer path. Holding the optimistic message lets the
+          // user explicitly resend it through protected desktop review.
+          if (!grant) return 'cancelled'
+          const [thread, currentHistory] = await Promise.all([
+            getProjectThread(projectId, threadId),
+            loadAgentHistory(projectId, threadId),
+          ])
+          const protectedHistory = extendMobilePromptHistory(grant.history, currentHistory)
+          if (!protectedHistory) return 'cancelled'
+          const optimistic =
+            thread &&
+            display?.messageId &&
+            displaySnapshot &&
+            hasProtectedPromptMessageAppend(senderId, projectId, threadId, display.messageId)
+              ? thread.messages.find(
+                  (message) =>
+                    message.id === display.messageId &&
+                    message.role === 'user' &&
+                    protectedPromptMessageMatches(message, displaySnapshot, grant.content),
+                )
+              : undefined
+          await agentDispatcher.dispatch({
+            projectId,
+            threadId,
+            payload: {
+              userContent: grant.content,
+              invokedSkills: [],
+              priorTodos: [],
+              ...(grant.model !== undefined ? { model: grant.model } : {}),
+              turnTreeId: grant.id,
+              continuationBudgetUsed: 0,
+            },
+            protectedHistory,
+            protectedPlan: null,
+            protectedHumanStart: {
+              content: grant.content,
+              acceptMessageId: () =>
+                acceptReviewedUserMessage(
+                  projectId,
+                  threadId,
+                  optimistic
+                    ? {
+                        messageId: optimistic.id,
+                        claim: (): boolean =>
+                          consumeProtectedPromptMessageAppend(
+                            senderId,
+                            projectId,
+                            threadId,
+                            optimistic.id,
+                          ),
+                      }
+                    : undefined,
+                ),
+            },
+          })
+        } else if (delegation) {
           const thread = await getProjectThread(projectId, threadId)
           const optimistic =
             thread &&
