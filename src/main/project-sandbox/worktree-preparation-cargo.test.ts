@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -12,7 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { it } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -63,7 +63,21 @@ it(
       t.skip('real Cargo fixture requires an installed direct Cargo toolchain')
       return
     }
-    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'cargo-preparation-test-')))
+    // This path is embedded in the fixture's file:// Git dependency URI. The
+    // conservative Cargo planner rejects local-looking dependency strings that
+    // contain "path" or "workspace", so both the ambient temp root and the
+    // generated directory name must make that invariant explicit.
+    const fixtureRoot = realpathSync('/tmp')
+    assert.doesNotMatch(fixtureRoot, /path|workspace/i)
+    const fixtureParent = join(
+      fixtureRoot,
+      `cargo-preparation-test-${randomUUID().replaceAll('-', '')}`,
+    )
+    assert.doesNotMatch(fixtureParent, /path|workspace/i)
+    assert.match(fixtureParent, /cargo-preparation-test-[a-f0-9]{32}$/)
+    mkdirSync(fixtureParent)
+    const parent = realpathSync(fixtureParent)
+    assert.doesNotMatch(parent, /path|workspace/i)
     const root = join(parent, 'project')
     const dependency = join(root, 'fixture-dependency')
     const marker = join(parent, 'build-script-ran')
@@ -206,7 +220,7 @@ it(
       )
       assert.equal(existsSync(marker), false)
       const before = await inspectWorktreePreparation(root, { env })
-      assert.equal(before.state, 'absent')
+      assert.equal(before.state, 'absent', `Cargo fixture ${parent}: ${before.remediation}`)
       const options = {
         env,
         planFingerprint: before.planFingerprint,
