@@ -16,6 +16,7 @@ import {
   threadWith,
 } from '@shared/store/transcript-stream.test-support.ts'
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
+import { recoverAgentHistory } from './history-recovery.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import {
   acceptReviewedUserMessage,
@@ -276,6 +277,40 @@ describe('TurnTranscriptWriter', () => {
     assert.ok(accepted)
     assert.equal(accepted.role, 'user')
     assert.equal(accepted.content, 'Reviewed exact prompt')
+  })
+
+  it('persists reviewed text while forwarding an unchanged optimistic display hint', async () => {
+    await appendMessage(PROJECT, THREAD, humanPrompt('u1', 'Unreviewed renderer text'))
+    const deliveries: Delivery[] = []
+    const turn = harness(
+      () => [{ type: 'done' }],
+      (delivery) => deliveries.push(delivery),
+    )
+    await turn.dispatcher.dispatch({
+      projectId: PROJECT,
+      threadId: THREAD,
+      payload: { userContent: 'Reviewed safe text', invokedSkills: [], priorTodos: [] },
+      protectedHumanStart: {
+        content: 'Reviewed safe text',
+        preserveOptimisticDisplay: true,
+        acceptMessageId: async () => 'u1',
+      },
+    })
+    await turn.writer.settled(THREAD)
+
+    const accepted = (await stored()).messages.find((message) => message.id === 'u1')
+    assert.ok(accepted)
+    assert.equal(accepted.content, 'Reviewed safe text')
+    assert.deepEqual(recoverAgentHistory([accepted, humanPrompt('pending', 'Continue')]), [
+      { role: 'user', content: 'Reviewed safe text' },
+    ])
+    const start = deliveries.find(({ chunk }) => chunk.type === 'protected_human_turn_start')
+    assert.deepEqual(start?.chunk, {
+      type: 'protected_human_turn_start',
+      content: 'Reviewed safe text',
+      messageId: 'u1',
+      preserveOptimisticDisplay: true,
+    })
   })
 
   for (const retryId of ['call_0', 'retry_1']) {

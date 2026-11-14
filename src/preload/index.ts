@@ -43,6 +43,8 @@ const api: ApiClient = {
     },
   },
   threadPrompts: {
+    activateGrant: (id, messageId) =>
+      ipcRenderer.invoke('thread-prompts:activate-grant', id, messageId),
     canDispatch: (projectId, parentId, childId) =>
       ipcRenderer.invoke('thread-prompts:can-dispatch', projectId, parentId, childId),
     canSubmit: (id) => ipcRenderer.invoke('thread-prompts:can-submit', id),

@@ -8,8 +8,8 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { waitForAgentIdle } from './helpers.ts'
 import { acceptProtectedPrompt } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT = 'e2e-roadmap-plan-editor'
 const BRIEF =

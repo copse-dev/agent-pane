@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -76,6 +77,7 @@ import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import type { ThreadDeletionRuntime } from '../services/thread-deletion.ts'
 import type { ThreadHistoryEditRuntime } from '../services/thread-history-edit.ts'
 import { mobilePromptGrants } from '../services/mobile/mobile-prompt-grants.ts'
+import { threadPromptDispatchGrants } from '../services/thread-prompt-dispatch-grants.ts'
 
 function assertMobilePromptTargetAvailable(projectId: string, threadId: string): void {
   if (mobilePromptGrants.isTargetReserved(projectId, threadId))
@@ -230,6 +232,28 @@ export function registerThreadHandlers(
       const parsed = parseMessageValue(payload)
       if (parsed === null) throw new IpcValidationError('Invalid message payload')
       const senderId = event.sender.id
+      const existing = (await getProjectThread(pid, tid))?.messages.find(
+        (candidate) => candidate.id === parsed.id,
+      )
+      if (
+        existing &&
+        !isDeepStrictEqual(
+          {
+            content: existing.content,
+            images: existing.images ?? [],
+            attachments: existing.attachments ?? [],
+          },
+          {
+            content: parsed.content,
+            images: parsed.images ?? [],
+            attachments: parsed.attachments ?? [],
+          },
+        )
+      ) {
+        revokeProtectedPromptMessageAppends(pid, tid, parsed.id)
+        mobilePromptGrants.revokeMessage(pid, tid, parsed.id)
+        threadPromptDispatchGrants.revokeMessage(pid, tid, parsed.id)
+      }
       await appendMessage(pid, tid, parsed, {
         source: 'renderer',
         onUnacceptedCreated: (messageId): void => {
@@ -249,6 +273,7 @@ export function registerThreadHandlers(
       return deleteQueuedMessage(pid, tid, mid, (): void => {
         revokeProtectedPromptMessageAppends(pid, tid, mid)
         mobilePromptGrants.revokeMessage(pid, tid, mid)
+        threadPromptDispatchGrants.revokeMessage(pid, tid, mid)
       })
     },
   )

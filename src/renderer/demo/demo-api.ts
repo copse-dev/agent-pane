@@ -589,6 +589,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     threadPrompts: {
       // Demo scenarios never dispatch native delegated work.
+      activateGrant: () => resolved('rejected' as const),
       canDispatch: () => resolved(false),
       canSubmit: () => resolved(true),
       onPrompt: () => () => {},

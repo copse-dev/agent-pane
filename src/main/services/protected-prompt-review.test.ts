@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   protectedPromptImageDataUrls,
   protectedPromptMessageMatches,
+  protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
   withProtectedPromptText,
 } from '../windows/protected-prompt-review.ts'
@@ -27,6 +28,18 @@ test('protected prompt edits preserve image bytes while replacing renderer text'
 test('protected prompt can send an image without adding unreviewed text', () => {
   const image = { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' }
   assert.deepEqual(withProtectedPromptText([image], ''), [image])
+})
+
+test('protected prompt preserves an optimistic display only when review text is unchanged', () => {
+  const content = [
+    { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' },
+    { type: 'text' as const, text: 'expanded thread reference' },
+  ]
+  assert.equal(
+    protectedPromptSubmissionIsUnchanged(content, { text: 'expanded thread reference' }),
+    true,
+  )
+  assert.equal(protectedPromptSubmissionIsUnchanged(content, { text: 'reviewed edit' }), false)
 })
 
 test('protected prompt exposes every model-facing image for isolated review', () => {

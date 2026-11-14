@@ -439,6 +439,65 @@ describe('AgentDispatcher', () => {
     assert.equal(hasAutomationGrantScope(), false)
   })
 
+  it('does not claim a delegated prompt in the shared project checkout', async () => {
+    let claims = 0
+    let runs = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        prepareExecutionContext: async () => context,
+        run: async () => {
+          runs += 1
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages: [] }
+        },
+      }),
+    )
+
+    const accepted = await dispatcher.dispatchProtectedWorktree('project-1', 'thread-1', () => {
+      claims += 1
+      return Promise.resolve(request())
+    })
+
+    assert.equal(accepted, false)
+    assert.equal(claims, 0)
+    assert.equal(runs, 0)
+  })
+
+  it('claims a delegated prompt only after reserving its isolated execution context', async () => {
+    let claims = 0
+    let runs = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        prepareExecutionContext: async () => ({
+          ...context,
+          root: '/workspace/.copse/worktrees/thread-1',
+          checkoutMode: 'worktree',
+        }),
+        run: async () => {
+          runs += 1
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages: [] }
+        },
+      }),
+    )
+
+    const accepted = await dispatcher.dispatchProtectedWorktree(
+      'project-1',
+      'thread-1',
+      async () => {
+        claims += 1
+        assert.equal(dispatcher.isActive('project-1', 'thread-1'), true)
+        return request()
+      },
+    )
+
+    assert.equal(accepted, true)
+    assert.equal(claims, 1)
+    assert.equal(runs, 1)
+  })
+
   it('reserves the primary-turn slot for workers until execution and cleanup settle', async () => {
     await assert.rejects(
       withIsolatedWorkerDispatchSlot(
@@ -746,6 +805,7 @@ describe('AgentDispatcher', () => {
       request({
         protectedHumanStart: {
           content: 'reviewed prompt',
+          preserveOptimisticDisplay: true,
           acceptMessageId: async () => {
             order.push('accept:start')
             await acceptance
@@ -772,6 +832,7 @@ describe('AgentDispatcher', () => {
         type: 'protected_human_turn_start',
         content: 'reviewed prompt',
         messageId: 'accepted-message',
+        preserveOptimisticDisplay: true,
       },
     ])
   })

@@ -326,7 +326,9 @@ export function createTranscriptReducer(
             ? undefined
             : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
         if (existing) {
-          setMessagePromptContent(store, existing.id, content, images)
+          if (chunk.preserveOptimisticDisplay !== true) {
+            setMessagePromptContent(store, existing.id, content, images)
+          }
           // User prompts do not receive the assistant stream's later
           // `message_done`, so finalize this canonical replacement now.
           store.emit('message_done', existing.id)

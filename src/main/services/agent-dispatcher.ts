@@ -84,6 +84,8 @@ export interface AgentDispatchRequest {
   /** Main-owned canonical prompt emitted before provider execution. */
   protectedHumanStart?: {
     content: UserContent
+    /** Keep a verified optimistic bubble when isolated review made no text edit. */
+    preserveOptimisticDisplay?: true
     /** Persist acceptance and claim display reconciliation after this dispatcher owns the thread. */
     acceptMessageId: () => Promise<string>
   }
@@ -316,6 +318,9 @@ export class AgentDispatcher {
         type: 'protected_human_turn_start',
         content: request.protectedHumanStart.content,
         messageId,
+        ...(request.protectedHumanStart.preserveOptimisticDisplay === true
+          ? { preserveOptimisticDisplay: true as const }
+          : {}),
       })
     }
     const epochWrite = this.observeRendererEpoch(key, request)
@@ -359,6 +364,45 @@ export class AgentDispatcher {
           host,
           executionContext,
         )
+        return true
+      },
+      host,
+      'on-first-chunk',
+    )
+  }
+
+  /**
+   * Start a delegated child turn only inside the child's validated isolated
+   * execution context. The Main-owned claim runs after the dispatch slot and
+   * worktree are secured, so a renderer cannot spend authority in a shared
+   * checkout or race another turn between validation and provider execution.
+   */
+  async dispatchProtectedWorktree(
+    projectId: string,
+    threadId: string,
+    claim: () => Promise<AgentDispatchRequest | null>,
+    host: AgentHost<StreamChunk> = this.host,
+  ): Promise<boolean> {
+    const placeholder: AgentDispatchRequest = {
+      projectId,
+      threadId,
+      payload: { userContent: '', invokedSkills: [], priorTodos: [] },
+    }
+    const key = dispatchKey(projectId, threadId)
+    return this.dispatchExclusively(
+      placeholder,
+      key,
+      async (deferringHost) => {
+        const executionContext = await this.dependencies.prepareExecutionContext(
+          projectId,
+          threadId,
+          deferringHost,
+        )
+        if (executionContext?.checkoutMode !== 'worktree') return false
+        const request = await claim()
+        if (!request || request.projectId !== projectId || request.threadId !== threadId)
+          return false
+        await this.dispatchAccepted(request, key, deferringHost, executionContext)
         return true
       },
       host,

@@ -45,6 +45,14 @@ function promptText(content: UserContent): string {
     .join('\n')
 }
 
+/** True only when isolated review returned the exact text it was seeded with. */
+export function protectedPromptSubmissionIsUnchanged(
+  content: UserContent,
+  submission: ProtectedPromptSubmission,
+): boolean {
+  return submission.text === promptText(content)
+}
+
 function imageCount(content: UserContent): number {
   return typeof content === 'string' ? 0 : content.filter((block) => block.type === 'image').length
 }

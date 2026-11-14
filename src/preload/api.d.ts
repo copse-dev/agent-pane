@@ -202,6 +202,7 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
+    activateGrant: (id: string, messageId: string) => Promise<'activated' | 'rejected'>
     canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
     canSubmit: (id: string) => Promise<boolean>
     revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>
@@ -372,9 +373,9 @@ export interface ApiClient {
   }
   agent: {
     /**
-     * Start a turn. With `delegation`, main starts it only while the parent
-     * still owns the child and holds orchestration, rechecked as it dispatches;
-     * otherwise it rejects with `SubthreadPromptHeldError` and runs nothing.
+     * Start a turn. A delegated machine prompt also carries Main's one-use,
+     * exact command grant. Main rechecks parent ownership at dispatch; missing
+     * or altered grants use protected human review instead.
      */
     run: (
       projectId: string,
