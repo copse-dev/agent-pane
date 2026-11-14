@@ -2,6 +2,7 @@ import { createThreadResource } from '../services/thread-resource-fence.ts'
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { runWithRendererPromptTarget } from '../services/renderer-prompt-target.ts'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { resolveThreadTerminalExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { z } from 'zod'
@@ -108,11 +109,19 @@ export function initTerminal(win: BrowserWindow): () => void {
         meta.executionTarget === 'local' ? { projectRoot, remoteTarget: false } : { projectRoot },
       )
       if (!permitted) throw new Error('Terminal access was not approved')
+      const execution = await resolveTerminalRoot(meta)
+      // Every integrated PTY is unsandboxed. A renderer compromise can call
+      // terminal:create directly, so the in-renderer Shells button is not consent.
+      const confirmed = await confirmNativeAction(event.sender, {
+        title: 'Open an unsandboxed terminal?',
+        detail: `Open a terminal in ${JSON.stringify(execution.root)}? Commands entered in this terminal run with the account's filesystem and network access outside the project sandbox.`,
+        approveLabel: 'Open terminal',
+      })
+      if (!confirmed) throw new Error('Terminal access was not confirmed')
       const create = async (): Promise<{
         sessionId: string
         checkoutMode: Awaited<ReturnType<typeof resolveTerminalRoot>>['checkoutMode']
       }> => {
-        const execution = await resolveTerminalRoot(meta)
         // Route to the renderer that asked, not to the window captured at init.
         // Every other terminal op is already keyed on `event.sender.id`; only the
         // output target was not, so a pane pop-out's shell wrote to the main window

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
@@ -134,7 +134,7 @@ describe('Attaching an archive to the chat', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const sentChip =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-archive'

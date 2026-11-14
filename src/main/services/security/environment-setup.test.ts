@@ -12,6 +12,7 @@ import {
   applyEnvironmentSetup,
   dismissEnvironmentSetup,
   environmentSetupStatus,
+  previewEnvironmentSetupApply,
   reviewEnvironmentSetup,
   undoEnvironmentSetup,
   type EnvironmentSetupProject,
@@ -151,6 +152,16 @@ describe('environment setup', () => {
     assert.equal(command.value, 'xcodebuild')
     assert.equal(command.checked, false)
     assert.equal(origin.checked, true)
+
+    assert.deepEqual(
+      previewEnvironmentSetupApply('proj', review.reviewId, [origin.id, 'not-an-id']),
+      [{ kind: 'web-origin', value: 'https://docs.example.com', label: origin.label }],
+    )
+    assert.ok(!getSetting<string[]>('webAllowedOrigins', []).includes('https://docs.example.com'))
+    assert.throws(
+      () => previewEnvironmentSetupApply('proj2', review.reviewId, [origin.id]),
+      /expired/,
+    )
 
     const result = await applyEnvironmentSetup('proj', review.reviewId, [origin.id, 'not-an-id'])
     assert.deepEqual(

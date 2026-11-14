@@ -8,6 +8,7 @@ import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { MachineAgentRunRequest } from '@shared/types/machine-dispatch.ts'
+import type { ProtectedHumanTurnDisplay } from '@shared/types'
 import type { SubthreadRunDelegation } from '@shared/thread-prompt.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
@@ -171,7 +172,7 @@ export const followUpContextSchema = z.object({
  * draft flag, nothing more. Every field reaches `gh pr create` as an argument,
  * so the shape is pinned and bounded rather than forwarded — and the target
  * (owner/repo) and branches (head/base) are not accepted at all. The channel
- * has no approval gate, so the main process resolves those from the thread's
+ * has a native approval gate, and the main process resolves those from the thread's
  * own checkout; a compromised renderer must not be able to point a create at a
  * different repository. The agent tool's wider `PrCreateRequest` stays on the
  * tool path, where explicit targets are the point.
@@ -277,19 +278,74 @@ export const machineAgentRunSchema: z.ZodType<MachineAgentRunRequest> =
   }))
 
 /** `agent:run`'s optional marker that the run is a parent's delegated subthread prompt. */
-export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z.strictObject({
-  parentThreadId: zThreadId,
-})
-
-export const mainWindowNavigationSchema = z.object({
-  activeProjectId: zProjectId.nullable(),
-  activeThreadId: zThreadId.nullable(),
-})
+export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z
+  .strictObject({
+    parentThreadId: zThreadId,
+    promptGrantId: z.uuid().optional(),
+  })
+  .transform(({ parentThreadId, promptGrantId }): SubthreadRunDelegation => ({
+    parentThreadId,
+    ...(promptGrantId !== undefined ? { promptGrantId } : {}),
+  }))
 
 const imageDataUrlSchema = z
   .string()
   .max(12 * 1024 * 1024)
   .regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/)
+
+const protectedDisplayAttachmentSchema = z.strictObject({
+  kind: z.enum(['paste', 'file', 'thread', 'shell', 'video', 'archive']),
+  label: z.string(),
+  content: z.string().optional(),
+  path: z.string().optional(),
+})
+
+/** Untrusted hint used only to reconcile an optimistic user bubble after review. */
+const protectedHumanTurnDisplayInputSchema = z
+  .strictObject({
+    messageId: z.string().min(1).max(200).optional(),
+    snapshot: z
+      .strictObject({
+        content: z.string(),
+        attachments: z.array(protectedDisplayAttachmentSchema).optional(),
+      })
+      .optional(),
+  })
+  .optional()
+
+export const protectedHumanTurnDisplaySchema: z.ZodType<ProtectedHumanTurnDisplay | undefined> =
+  protectedHumanTurnDisplayInputSchema.transform(
+    (display): ProtectedHumanTurnDisplay | undefined =>
+      display
+        ? {
+            ...(display.messageId !== undefined ? { messageId: display.messageId } : {}),
+            ...(display.snapshot
+              ? {
+                  snapshot: {
+                    content: display.snapshot.content,
+                    ...(display.snapshot.attachments !== undefined
+                      ? {
+                          attachments: display.snapshot.attachments.map((attachment) => ({
+                            kind: attachment.kind,
+                            label: attachment.label,
+                            ...(attachment.content !== undefined
+                              ? { content: attachment.content }
+                              : {}),
+                            ...(attachment.path !== undefined ? { path: attachment.path } : {}),
+                          })),
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+          }
+        : undefined,
+  )
+
+export const mainWindowNavigationSchema = z.object({
+  activeProjectId: zProjectId.nullable(),
+  activeThreadId: zThreadId.nullable(),
+})
 
 export const describeImagesSchema = z.tuple([
   zProjectId,

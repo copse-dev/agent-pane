@@ -182,6 +182,8 @@ export interface CreateThreadOptions {
    * click does not navigate anywhere.
    */
   activate?: boolean
+  /** Main-reserved identity for a remotely requested new thread. */
+  id?: string
 }
 
 export function createThread(
@@ -190,7 +192,9 @@ export function createThread(
   options?: CreateThreadOptions,
 ): string {
   const activate = options?.activate ?? true
-  const id = randomUUID()
+  const id = options?.id ?? randomUUID()
+  if (store.getState().threads.some((thread) => thread.id === id))
+    throw new Error('Thread identity is already in use')
   const defaultModel = store.getState().settings?.model
   const threads = [
     {
@@ -730,6 +734,25 @@ export function replaceAcpContentBlocks(
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
   updateMessage(store, messageId, (m) => {
     m.content = content
+  })
+  store.emit('message_token', messageId, content)
+}
+
+/** Replace the canonical user prompt that a protected entry window reviewed. */
+export function setMessagePromptContent(
+  store: AppStore,
+  messageId: string,
+  content: string,
+  images: string[] | undefined,
+): void {
+  updateMessage(store, messageId, (message) => {
+    message.content = content
+    if (images === undefined) delete message.images
+    else message.images = images
+    // Attachment chips describe the pre-review composer expansion. The
+    // protected reviewer may edit or remove that expansion, so keeping them
+    // would claim model context that was not sent.
+    delete message.attachments
   })
   store.emit('message_token', messageId, content)
 }

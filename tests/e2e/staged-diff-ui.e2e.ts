@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import {
   expectAssistantReply,
   installMockScenario,
@@ -48,7 +48,7 @@ async function writeProposedFile(
     ],
   })
   await setComposerValue(user)
-  await $('.submit-btn').click()
+  await submitComposer()
   await waitForAgentIdle(60_000)
   await expectAssistantReply(reply)
   if (acceptedReply === undefined) await scenario.assertComplete()

@@ -10,6 +10,7 @@ import {
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-browser-preview-project'
 let projectRoot = ''
@@ -141,7 +142,7 @@ describe('browser preview tool', () => {
       { name: 'browser_preview', args: {} },
       'The browser preview result is available above.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await expect($('.tool-card .tool-name')).toHaveText('Opened preview', { wait: 30_000 })
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
@@ -240,7 +241,7 @@ describe('browser preview tool', () => {
       { name: 'browser_preview', args: { path: 'dist/other/index.html' } },
       'Finish the build before previewing its output.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const failedTool = $('.tool-card[data-tool-id][data-status="error"]')
     await failedTool.waitForDisplayed({ timeout: 30_000 })
     if (!(await failedTool.getProperty('open'))) {

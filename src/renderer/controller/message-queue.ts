@@ -1,13 +1,20 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Message, QueuedUserMessage, Thread, UserContent } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  UserContent,
+} from '@shared/types'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import {
   addMessage,
   clearContextSnapshot,
   getThreadById,
+  getThreadProjectId,
   patchThreadAnywhere,
   setMessageContent,
   setQueuePaused,
@@ -24,7 +31,7 @@ import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
-import { afterThreadWrites } from './persistence.ts'
+import { afterThreadWrites, flushPendingThreadPersistence } from './persistence.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -225,6 +232,27 @@ export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
+/** Snapshot an optimistic bubble for display-only reconciliation in main. */
+function protectedHumanTurnDisplay(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): ProtectedHumanTurnDisplay | undefined {
+  const message = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId && candidate.role === 'user',
+  )
+  if (!message) return undefined
+  return {
+    messageId,
+    snapshot: {
+      content: message.content,
+      ...(message.attachments !== undefined
+        ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+        : {}),
+    },
+  }
+}
+
 /**
  * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
  * message already in the transcript: if the main process turns the run away
@@ -258,8 +286,22 @@ export function dispatchAgentRun(
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
   const run = afterThreadWrites(projectId, threadId, async () => {
     const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    const display = queued
+      ? protectedHumanTurnDisplay(store, threadId, queued.messageId)
+      : undefined
     if (!queued || parentThreadId === undefined) {
-      await api.agent.run(projectId, threadId, runPayload)
+      const result = await api.agent.run(
+        projectId,
+        threadId,
+        runPayload,
+        undefined,
+        display,
+        queued?.mobilePromptGrantId,
+      )
+      if (result === 'cancelled') {
+        if (queued) holdCancelledProtectedPrompt(store, threadId, queued)
+        else setThreadStatus(store, threadId, 'idle')
+      }
       return
     }
     // The pre-check holds an already-revoked prompt without a round trip to the
@@ -270,7 +312,19 @@ export function dispatchAgentRun(
       .catch(() => false)
     if (authorized) {
       try {
-        await api.agent.run(projectId, threadId, runPayload, { parentThreadId })
+        const result = await api.agent.run(
+          projectId,
+          threadId,
+          runPayload,
+          {
+            parentThreadId,
+            ...(queued.threadPromptGrantId !== undefined
+              ? { promptGrantId: queued.threadPromptGrantId }
+              : {}),
+          },
+          display,
+        )
+        if (result === 'cancelled') holdCancelledProtectedPrompt(store, threadId, queued)
         return
       } catch (err) {
         if (!isSubthreadPromptHeldError(err)) throw err
@@ -351,6 +405,44 @@ function requeueBusyMessage(
   // `done` drains the queue. If that `done` got here first the thread is already
   // idle and nothing else will drain it.
   if (getThreadById(store, threadId)?.status === 'idle') drainMessageQueue(store, api, threadId)
+}
+
+/** A cancelled protected review returns the optimistic bubble as an explicit hold. */
+function holdCancelledProtectedPrompt(
+  store: AppStore,
+  threadId: string,
+  item: QueuedUserMessage,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => {
+    const pending = thread.pendingMessages ?? []
+    // A cancelled mobile claim is expired, replayed or mismatched. Retain the
+    // prompt, but discard that authority so a later desktop send must open the
+    // ordinary protected review window.
+    const {
+      mobilePromptGrantId: _mobilePromptGrantId,
+      threadPromptGrantId: _threadPromptGrantId,
+      ...heldItem
+    } = item
+    const held = pending.some((entry) => entry.messageId === item.messageId)
+      ? pending.map((entry) => {
+          if (entry.messageId !== item.messageId) return entry
+          const {
+            mobilePromptGrantId: _mobileGrant,
+            threadPromptGrantId: _threadGrant,
+            ...rest
+          } = entry
+          return { ...rest, autoDispatch: false as const }
+        })
+      : [{ ...heldItem, autoDispatch: false as const }, ...pending]
+    const refunded =
+      isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0
+        ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 }
+        : {}
+    return { ...thread, ...refunded, status: 'idle', pendingMessages: held, updatedAt: Date.now() }
+  })
+  syncAgentActivity(store, threadId, false)
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
 }
 
 export function enqueueUserMessage(
@@ -592,17 +684,23 @@ export function updateQueuedMessageText(
       ? t
       : {
           ...t,
-          pendingMessages: (t.pendingMessages ?? []).map((p) =>
-            p.messageId !== messageId
-              ? p
-              : {
-                  ...p,
-                  payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
-                  // Editing a hook-originated message keeps `kind: 'hook'` but
-                  // flips `editedByUser` so the spine stays honest (decision 10).
-                  ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
-                },
-          ),
+          pendingMessages: (t.pendingMessages ?? []).map((p) => {
+            if (p.messageId !== messageId) return p
+            // Editing requires fresh desktop review. An authenticated phone grant
+            // authorizes only the exact text that crossed the HTTP boundary.
+            const {
+              mobilePromptGrantId: _mobilePromptGrantId,
+              threadPromptGrantId: _threadPromptGrantId,
+              ...editable
+            } = p
+            return {
+              ...editable,
+              payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
+              // Editing a hook-originated message keeps `kind: 'hook'` but
+              // flips `editedByUser` so the spine stays honest (decision 10).
+              ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
+            }
+          }),
           updatedAt: Date.now(),
         },
   )
@@ -625,6 +723,66 @@ export function updateQueuedMessageText(
  * editing pause, then abort the active run. The trailing `done` chunk triggers
  * the normal FIFO drain, which now dispatches this message first.
  */
+/** Apply a deletion result only to the project that started it. */
+function patchQueuedMessageOwner(
+  store: AppStore,
+  projectId: string,
+  threadId: string,
+  patch: (thread: Thread) => Thread,
+): void {
+  const state = store.getState()
+  if (state.activeProjectId === projectId) {
+    store.setState({
+      threads: state.threads.map((thread) => (thread.id === threadId ? patch(thread) : thread)),
+    })
+  } else {
+    store.setState({
+      backgroundThreads: state.backgroundThreads.map((entry) =>
+        entry.projectId === projectId && entry.thread.id === threadId
+          ? { ...entry, thread: patch(entry.thread) }
+          : entry,
+      ),
+    })
+  }
+  store.emit('threads_changed')
+}
+
+/** Hold against automatic draining, then await the durable deletion before hiding it. */
+export async function deleteQueuedMessage(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+): Promise<void> {
+  const projectId = getThreadProjectId(store, threadId)
+  const thread = getThreadById(store, threadId)
+  if (!projectId || !thread?.pendingMessages?.some((item) => item.messageId === messageId)) return
+  patchQueuedMessageOwner(store, projectId, threadId, (current) => ({
+    ...current,
+    pendingMessages: (current.pendingMessages ?? []).map((item) =>
+      item.messageId === messageId ? { ...item, autoDispatch: false } : item,
+    ),
+  }))
+  await flushPendingThreadPersistence()
+  await afterThreadWrites(projectId, threadId, () =>
+    api.threads.deleteQueuedMessage(projectId, threadId, messageId),
+  )
+  if (store.getState().activeProjectId === projectId) {
+    removeQueuedMessage(store, threadId, messageId)
+  } else {
+    patchQueuedMessageOwner(store, projectId, threadId, (current) => {
+      const { pendingMessages: _removed, ...rest } = current
+      const remaining =
+        current.pendingMessages?.filter((item) => item.messageId !== messageId) ?? []
+      return {
+        ...rest,
+        messages: current.messages.filter((message) => message.id !== messageId),
+        ...(remaining.length ? { pendingMessages: remaining } : {}),
+      }
+    })
+  }
+}
+
 /** Drop a queued follow-up from the FIFO list and remove its user bubble. */
 export function removeQueuedMessage(store: AppStore, threadId: string, messageId: string): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)

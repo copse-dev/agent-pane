@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
@@ -29,13 +30,19 @@ import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
   loadThreadMessages,
-  createThread,
+  createThreadWithResult,
   appendMessage,
+  deleteQueuedMessage,
+  getProjectThread,
   updateMeta,
   recordModelSelection,
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  recordProtectedPromptMessageAppend,
+  revokeProtectedPromptMessageAppends,
+} from '../services/protected-prompt-receipts.ts'
 import { deleteThreadResourcesAndStore } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread } from '../services/thread-archiving.ts'
@@ -56,16 +63,26 @@ import {
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import {
-  applyThreadHistoryEdit,
+  applyThreadHistoryEditAfterNativeReview,
   loadThreadHistorySnapshot,
-  undoThreadHistoryEdit,
+  threadHistoryRevision,
+  undoThreadHistoryEditAfterNativeReview,
 } from '../services/thread-history-edit.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
+import { getAutomationService } from '../services/automations/automation-service.ts'
 import { lookupThreadBacklinks } from '../services/thread-store.ts'
 import type { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import type { ThreadAutoArchived } from '@shared/threads/auto-archive.ts'
 import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import type { ThreadDeletionRuntime } from '../services/thread-deletion.ts'
 import type { ThreadHistoryEditRuntime } from '../services/thread-history-edit.ts'
+import { mobilePromptGrants } from '../services/mobile/mobile-prompt-grants.ts'
+import { threadPromptDispatchGrants } from '../services/thread-prompt-dispatch-grants.ts'
+
+function assertMobilePromptTargetAvailable(projectId: string, threadId: string): void {
+  if (mobilePromptGrants.isTargetReserved(projectId, threadId))
+    throw new Error('A phone message is reserving this conversation. Try again shortly.')
+}
 
 /** What the thread handlers share with the rest of `registerAllHandlers`. */
 export interface ThreadHandlerDeps {
@@ -123,6 +140,7 @@ export function registerThreadHandlers(
         z.tuple([zProjectId, zThreadId, z.enum(['archive', 'keep', 'restore'])]),
         [projectId, threadId, decision],
       )
+      assertMobilePromptTargetAvailable(pid, tid)
       return autoArchive.decide(pid, tid, action)
     },
   )
@@ -187,7 +205,7 @@ export function registerThreadHandlers(
       return true
     },
   )
-  ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
+  ipcMain.handle('threads:create', async (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
     const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [
       projectId,
@@ -195,11 +213,17 @@ export function registerThreadHandlers(
     ])
     const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
-    return createThread(id, parsed)
+    const senderId = event.sender.id
+    await createThreadWithResult(id, parsed, {
+      source: 'renderer',
+      onUnacceptedCreated: (messageId): void => {
+        recordProtectedPromptMessageAppend(senderId, id, parsed.id, messageId)
+      },
+    })
   })
   ipcMain.handle(
     'threads:append-message',
-    (event, projectId: unknown, threadId: unknown, message: unknown) => {
+    async (event, projectId: unknown, threadId: unknown, message: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
@@ -207,7 +231,50 @@ export function registerThreadHandlers(
       )
       const parsed = parseMessageValue(payload)
       if (parsed === null) throw new IpcValidationError('Invalid message payload')
-      return appendMessage(pid, tid, parsed)
+      const senderId = event.sender.id
+      const existing = (await getProjectThread(pid, tid))?.messages.find(
+        (candidate) => candidate.id === parsed.id,
+      )
+      if (
+        existing &&
+        !isDeepStrictEqual(
+          {
+            content: existing.content,
+            images: existing.images ?? [],
+            attachments: existing.attachments ?? [],
+          },
+          {
+            content: parsed.content,
+            images: parsed.images ?? [],
+            attachments: parsed.attachments ?? [],
+          },
+        )
+      ) {
+        revokeProtectedPromptMessageAppends(pid, tid, parsed.id)
+        mobilePromptGrants.revokeMessage(pid, tid, parsed.id)
+        threadPromptDispatchGrants.revokeMessage(pid, tid, parsed.id)
+      }
+      await appendMessage(pid, tid, parsed, {
+        source: 'renderer',
+        onUnacceptedCreated: (messageId): void => {
+          recordProtectedPromptMessageAppend(senderId, pid, tid, messageId)
+        },
+      })
+    },
+  )
+  ipcMain.handle(
+    'threads:delete-queued-message',
+    (event, projectId: unknown, threadId: unknown, messageId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, mid] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
+        [projectId, threadId, messageId],
+      )
+      return deleteQueuedMessage(pid, tid, mid, (): void => {
+        revokeProtectedPromptMessageAppends(pid, tid, mid)
+        mobilePromptGrants.revokeMessage(pid, tid, mid)
+        threadPromptDispatchGrants.revokeMessage(pid, tid, mid)
+      })
     },
   )
   ipcMain.handle(
@@ -260,12 +327,37 @@ export function registerThreadHandlers(
         ]),
         [projectId, threadId, discard, stop],
       )
+      assertMobilePromptTargetAvailable(pid, tid)
       return archiveStoredThread(pid, tid, discardChanges, stopProcesses, threadArchivingRuntime)
     },
   )
-  ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:delete', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    assertMobilePromptTargetAvailable(pid, tid)
+    const thread = await getProjectThread(pid, tid)
+    if (!thread) throw new Error('The thread is no longer available')
+    const reviewedRevision = threadHistoryRevision(thread.messages)
+    const confirmed = await confirmNativeAction(event.sender, {
+      title: `Delete “${thread.title}”?`,
+      detail: [
+        'This permanently deletes the saved conversation and its model history, and stops resources owned by the thread.',
+        `Project: ${pid}`,
+        `Thread: ${tid}`,
+        'A linked worktree is retired only when Copse can do so safely.',
+      ].join('\n\n'),
+      approveLabel: 'Delete conversation',
+    })
+    if (!confirmed) throw new Error('Thread deletion was cancelled')
+    const current = await getProjectThread(pid, tid)
+    if (!current || threadHistoryRevision(current.messages) !== reviewedRevision) {
+      throw new Error('The thread changed while deletion was awaiting confirmation')
+    }
+    assertMobilePromptTargetAvailable(pid, tid)
+    // The schedule ledger outlives its run thread. Spend any still-unclaimed
+    // unattended grant before freeing the thread id, so deletion cannot turn
+    // that id into a reusable capability for a renderer-created replacement.
+    await getAutomationService().retireRunGrant(pid, tid)
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
   // Active threads that link to a URL or another thread: an indexed read of
@@ -295,15 +387,23 @@ export function registerThreadHandlers(
       event,
       projectId: unknown,
       sourceThreadId: unknown,
-      targetThreadId: unknown,
+      targetThread: unknown,
       throughMessageId: unknown,
     ) => {
       assertMainFrameSender(event, win)
-      const [pid, sourceId, targetId, messageId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zThreadId, zNonEmptyString.max(256).optional()]),
-        [projectId, sourceThreadId, targetThreadId, throughMessageId],
+      const [pid, sourceId, targetPayload, messageId] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.record(z.string(), z.unknown()),
+          zNonEmptyString.max(256).optional(),
+        ]),
+        [projectId, sourceThreadId, targetThread, throughMessageId],
       )
-      return forkThreadHistory(pid, sourceId, targetId, messageId)
+      const target = parseThreadValue(withoutMainOwnedThreadFields(targetPayload))
+      if (target === null) throw new IpcValidationError('Invalid fork target payload')
+      assertMobilePromptTargetAvailable(pid, target.id)
+      return forkThreadHistory(pid, sourceId, target, messageId)
     },
   )
   ipcMain.handle('threads:history-snapshot', (event, projectId: unknown, threadId: unknown) => {
@@ -313,7 +413,7 @@ export function registerThreadHandlers(
   })
   ipcMain.handle(
     'threads:edit-history',
-    (event, projectId: unknown, threadId: unknown, request: unknown) => {
+    async (event, projectId: unknown, threadId: unknown, request: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
         z.tuple([
@@ -334,18 +434,30 @@ export function registerThreadHandlers(
         ]),
         [projectId, threadId, request],
       )
-      return applyThreadHistoryEdit(pid, tid, payload, threadHistoryEditRuntime)
+      return applyThreadHistoryEditAfterNativeReview(
+        pid,
+        tid,
+        payload,
+        threadHistoryEditRuntime,
+        (review) => confirmNativeAction(event.sender, review),
+      )
     },
   )
   ipcMain.handle(
     'threads:undo-history-edit',
-    (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
+    async (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, revision] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, z.string().length(64)]),
         [projectId, threadId, expectedRevision],
       )
-      return undoThreadHistoryEdit(pid, tid, revision, threadHistoryEditRuntime)
+      return undoThreadHistoryEditAfterNativeReview(
+        pid,
+        tid,
+        revision,
+        threadHistoryEditRuntime,
+        (review) => confirmNativeAction(event.sender, review),
+      )
     },
   )
   // The whole thread directory, zipped — the archive counterpart to the

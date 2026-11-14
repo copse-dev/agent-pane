@@ -164,6 +164,16 @@ test('a blank destination prepares its checkout before running', async () => {
 test('authorized isolated child starts without changing focus and consumes machine continuation budget', async () => {
   const { store, api, runs, command } = fixture()
   command.requireWorktree = true
+  command.authorizingAccess = 'orchestrate'
+  command.unattended = true
+  api.threadPrompts.activateGrant = (): Promise<'activated'> => Promise.resolve('activated')
+  api.threadPrompts.canDispatch = (): Promise<boolean> => Promise.resolve(true)
+  let delegation: unknown
+  api.agent.run = (projectId, threadId, _payload, value): Promise<void> => {
+    runs.push(`${projectId}/${threadId}`)
+    delegation = value
+    return new Promise(() => {})
+  }
   api.agent.prepareCheckout = async (): Promise<PreparedThreadCheckout> => ({
     choice: 'worktree',
     checkoutMode: 'worktree',
@@ -183,6 +193,77 @@ test('authorized isolated child starts without changing focus and consumes machi
   assert.equal(getThreadById(store, 'destination')?.worktree?.branch, 'child')
   assert.equal(getThreadById(store, 'destination')?.continuationUsed, 1)
   assert.equal(getThreadById(store, 'destination')?.messages[0]?.origin?.kind, 'machine')
+  assert.equal(
+    getThreadById(store, 'destination')?.pendingMessages?.[0]?.threadPromptGrantId,
+    undefined,
+  )
+  assert.deepEqual(delegation, {
+    parentThreadId: 'source',
+    promptGrantId: command.id,
+  })
+})
+
+test('continuing a paused or exhausted child carries no unattended grant', async () => {
+  for (const state of ['paused', 'exhausted'] as const) {
+    const { store, api, runs, command } = fixture()
+    const worktree = {
+      path: '/repo/child',
+      branch: 'child',
+      baseBranch: 'main',
+      baseCommit: 'abc',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    command.requireWorktree = true
+    command.authorizingAccess = 'orchestrate'
+    command.thread.worktree = worktree
+    store.setState({
+      threads: [
+        {
+          ...command.thread,
+          ...(state === 'paused' ? { queuePaused: true } : {}),
+          ...(state === 'exhausted' ? { continuationUsed: DEFAULT_CONTINUATION_BUDGET } : {}),
+        },
+      ],
+    })
+    api.threadPrompts.activateGrant = (): Promise<'activated'> =>
+      assert.fail('Existing child prompts must not activate unattended authority')
+
+    assert.deepEqual(await acceptThreadPrompt(store, api, command), { ok: true, queued: true })
+    assert.deepEqual(runs, [])
+    const pending = getThreadById(store, 'destination')?.pendingMessages?.[0]
+    assert.equal(pending?.threadPromptGrantId, undefined)
+    assert.equal(pending?.autoDispatch, state === 'exhausted' ? false : undefined, state)
+  }
+})
+
+test('continuing an idle isolated child enters Main review without a prompt grant', async () => {
+  const { store, api, runs, command } = fixture()
+  command.requireWorktree = true
+  command.authorizingAccess = 'orchestrate'
+  const worktree = {
+    path: '/repo/child',
+    branch: 'child',
+    baseBranch: 'main',
+    baseCommit: 'abc',
+    createdAt: 1,
+    seededFromDirtyProject: false,
+  }
+  command.thread.worktree = worktree
+  store.setState({ threads: [{ ...command.thread, worktree }] })
+  let delegation: unknown
+  api.threadPrompts.activateGrant = (): Promise<'activated'> =>
+    assert.fail('Existing child prompts must not activate unattended authority')
+  api.threadPrompts.canDispatch = (): Promise<boolean> => Promise.resolve(true)
+  api.agent.run = (projectId, threadId, _payload, value): Promise<void> => {
+    runs.push(`${projectId}/${threadId}`)
+    delegation = value
+    return new Promise(() => {})
+  }
+
+  assert.deepEqual(await acceptThreadPrompt(store, api, command), { ok: true, queued: false })
+  assert.deepEqual(runs, ['visible-project/destination'])
+  assert.deepEqual(delegation, { parentThreadId: 'source' })
 })
 
 test('expired main authorization after checkout prevents subthread dispatch', async () => {

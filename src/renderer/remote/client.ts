@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { DecisionAnswer } from './decisions.ts'
+import type { MobilePlanReview } from '../../shared/mobile-chat.ts'
 import { RemoteRequestError } from './transport.ts'
 import {
   remoteStateSchema,
@@ -11,7 +12,7 @@ import {
 
 type Transport = (path: string, options?: RequestInit) => Promise<unknown>
 type Action = { projectId: string; threadId: string } & (
-  | { action: 'message'; text: string }
+  | { action: 'message'; text: string; planReview?: MobilePlanReview }
   | { action: 'stop'; runId: string }
   | DecisionAnswer
 )

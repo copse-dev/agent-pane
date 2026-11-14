@@ -126,6 +126,7 @@ export async function sendCodeBlockRunResult(
       if (workingBriefChanged) setThreadWorkingBrief(store, threadId, workingBrief)
       return true
     }
+    if (machineResult === 'cancelled') return false
     addMessage(
       store,
       threadId,

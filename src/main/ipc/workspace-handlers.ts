@@ -1,13 +1,19 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
-import { mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
-import { setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
+import { readProjectMcpConsent, setWorkspaceTrustAndReload } from '../services/mcp/mcp-registry.ts'
+import {
+  approveProjectMcpConfig,
+  revokeProjectMcpConfig,
+} from '../services/mcp/project-mcp-consent.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
+import {
+  prepareProjectCreation,
+  ProjectCreationPathError,
+} from '../services/project-creation-path.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
@@ -29,6 +35,7 @@ import {
 } from '../services/workspace.ts'
 import { storageGet } from '../services/storage/storage.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import {
   assertMainFrameSender,
@@ -100,25 +107,19 @@ export function registerWorkspaceHandlers(
       assertMainFrameSender(event, win)
       const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
       const parentDir = parseIpcArgs(zPathString, [rawParent])
-      const projectPath = join(parentDir, name)
-      // Never escape the chosen parent (a crafted name like `..` must not climb).
-      if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
-        throw new IpcValidationError('Invalid project name')
-      }
-      let projectMissing = false
-      try {
-        const existing = await stat(projectPath)
-        if (!existing.isDirectory())
-          throw new IpcValidationError('Target exists and is not a folder')
-        const entries = await readdir(projectPath)
-        if (entries.length > 0)
-          throw new IpcValidationError('Folder already exists and is not empty')
-      } catch (err) {
-        // ENOENT means the folder does not exist yet — scaffolding proceeds below.
-        if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-        projectMissing = true
-      }
-      if (projectMissing) await mkdir(projectPath, { recursive: true })
+      const { projectPath, projectMissing } = await prepareProjectCreation({
+        parentDir,
+        name,
+        confirm: async (canonicalPath) =>
+          await confirmNativeAction(event.sender, {
+            title: 'Create project folder?',
+            detail: `Create and open ${JSON.stringify(canonicalPath)}? Copse will write starter files there and grant this project access to that folder.`,
+            approveLabel: 'Create project',
+          }),
+      }).catch((error: unknown) => {
+        if (error instanceof ProjectCreationPathError) throw new IpcValidationError(error.message)
+        throw error
+      })
       await scaffoldProject(projectPath, name, projectMissing)
       const root = await registerAllowedWorkspaceRoot(projectPath)
       return root
@@ -216,8 +217,22 @@ export function registerWorkspaceHandlers(
     const root = getWorkspaceRoot()
     if (!root) throw new IpcValidationError('No workspace open')
     if (typeof trusted !== 'boolean') throw new IpcValidationError('trusted must be a boolean')
-    // Spawning project MCP servers is the code-execution sink, so trusting a workspace
-    // is a privileged action — only the main frame may request it (issue #100).
+    if (trusted) {
+      const consent = await readProjectMcpConsent(root)
+      if (
+        !(await confirmNativeAction(event.sender, {
+          title: 'Trust this workspace?',
+          detail: `Trust ${root} and allow its project MCP servers to start? Project configuration can run commands with your account's access.\n\nProject MCP configuration:\n${JSON.stringify(consent.configs, null, 2)}`,
+          approveLabel: 'Trust workspace',
+        }))
+      )
+        throw new IpcValidationError('Workspace trust was not confirmed')
+      if (getWorkspaceRoot() !== root)
+        throw new IpcValidationError('Workspace changed during confirmation')
+      await approveProjectMcpConfig(consent)
+    } else {
+      await revokeProjectMcpConfig(root)
+    }
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses

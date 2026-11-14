@@ -12,6 +12,36 @@ model, or a classifier connection chosen for safety screening) is never an autho
 project sandbox is active. Explicit trusted-command grants and Guarded YOLO are separate policies;
 neither supplies OS containment when the sandbox is absent.
 
+## Renderer compromise boundary
+
+The renderer is not a trusted witness to a human click. For desktop approval prompts, its
+`approval:respond` message is a proposal; main retains the original request and requires a
+separate OS-owned confirmation before accepting an approval or remembered grant. Main also asks
+for OS confirmation before renderer-initiated changes to security settings, project roots,
+workspace trust, tool grants, plugins, MCP servers, automations, unsandboxed app/Xcode actions,
+GitHub PR writes, and renderer-supplied system-browser links. Native denial, cancellation,
+missing windows, and dialog errors fail closed.
+Project MCP server definitions are pinned to the exact configuration the user reviewed;
+changes leave those servers inert until a new OS confirmation.
+Project stdio servers start inside the enforcing project sandbox and fail closed if it is
+unavailable. Their configured environment is applied after the sandbox starts. External
+agents do not receive those stdio definitions for direct launch.
+User-level and plugin stdio definitions with no configured working directory start in the
+account's home directory; selecting a project does not silently make its mutable files the
+server's working directory. An explicit working directory or script path inside a project
+still needs a separate containment decision before it can be treated as safe from renderer
+compromise.
+
+This is partial containment, not a claim that arbitrary JavaScript in the main renderer is safe.
+An already-open integrated terminal still accepts `terminal:write` from its owning renderer;
+the owner check is the same `WebContents.id` that a renderer XSS controls. Also, renderer-authored
+chat messages can steer an agent into capabilities the user granted earlier without a new prompt.
+Closing those paths requires a trusted input surface isolated from untrusted chat/project content
+and main-owned authority for each sensitive action. See
+[`renderer-xss-containment.md`](plans/renderer-xss-containment.md) for the required boundary and
+validation criteria. Keep this patch in draft until those gaps are addressed or the deployment
+scope explicitly excludes them.
+
 ## Permission modes and grants
 
 Approval, containment, network authority and credential access are separate properties. The
@@ -101,7 +131,7 @@ Destination prompts enter the normal queue with machine provenance, consume the 
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
-The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt; revoked prompts are held, including after restart. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
+The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt. For only the exact first prompt of a newly created child, Main mints a one-use grant bound to the parent, child, prompt text and optimistic message id. It activates only after that message is durable in a validated isolated worktree, carries no renderer-mutable prompt controls, revalidates the worktree inside the dispatch slot, and reads current provider history only from the Main-owned sidecar there. Further child prompts require protected human review after any active child turn settles; the provider history and plan shown there are exactly what the reviewed prompt receives. Renderer-authored machine, status, pause and budget fields are not authority. Editing or deleting the initial message revokes its grant; a mismatched, replayed, missing or post-restart grant requires protected human review, while a revoked prompt is held. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
 
 The experimental interactive-client API requires its default-off plugin and desktop pairing.
 Viewing and submitting decisions are separate session-only grants across all projects. A client
@@ -792,6 +822,14 @@ message pointing at `run_shell git fetch`.
 `git_fetch`. That setting controls Copse's own unattended hourly/allocation fetches; `git_fetch` is
 an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
 Block to require approval or disable it).
+
+Unattended default-branch refresh uses a cache-only askpass lease: it reuses answers
+the person remembered in Copse, but never opens or waits for an authentication or
+host-trust dialog. Missing credentials leave the cached tip unchanged and report
+the failed refresh, with URL userinfo removed from the background warning.
+Existing configured helpers and SSH agents can still refresh it.
+Explicit `git_fetch` and foreground push keep their normal authentication path;
+the background-only interaction policy adds no network or shell approval grant.
 
 ## Read access outside the project
 

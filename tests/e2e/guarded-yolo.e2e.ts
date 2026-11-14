@@ -17,7 +17,7 @@ import {
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
@@ -85,7 +85,7 @@ describe('Guarded YOLO shell mode', function () {
       { delayMs: 3000, toolCalls: [{ name: 'run_shell', args: { command: 'cat /etc/hosts' } }] },
       { text: 'The host mappings are shown in the command output.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
@@ -104,7 +104,7 @@ describe('Guarded YOLO shell mode', function () {
       { delayMs: 1000, toolCalls: [{ name: 'run_shell', args: { command: 'pwd' } }] },
       { text: 'The working directory is shown in the command output.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
     await waitForAgentIdle()
     await expect(banner).toHaveAttribute('data-phase', 'active')
@@ -119,7 +119,7 @@ describe('Guarded YOLO shell mode', function () {
       { name: 'run_shell', args: { command: 'rm -rf tests/e2e/.bounded-delete-missing' } },
       'The directory removal was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -148,7 +148,7 @@ describe('Guarded YOLO shell mode', function () {
       { name: 'run_shell', args: { command: 'sudo apt-get install -y curl' } },
       'The install was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -192,7 +192,7 @@ describe('Guarded YOLO shell mode', function () {
     })
     const submitCommand = async (): Promise<void> => {
       await setComposerValue(prompt)
-      await $('.submit-btn').click()
+      await submitComposer()
       await $('#approval-dialog').waitForDisplayed({ timeout: 30_000 })
     }
 
@@ -234,7 +234,7 @@ describe('Guarded YOLO shell mode', function () {
       { name: 'run_shell', args: { command: 'rm -rf /' } },
       'The destructive command was blocked.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     // Idle can still describe the previous turn until the new tool is rendered.
     await browser.waitUntil(
       async () => {

@@ -118,6 +118,9 @@ describe('new project flow', () => {
 
     const projectName = 'hello-copse'
     const parent = makeParent(projectName)
+    // The supported flow accepts a prospective parent: native confirmation must
+    // happen before main creates either this directory or the project beneath it.
+    expect(existsSync(parent)).toBe(false)
     await $('.new-project-name').setValue(projectName)
     await $('.new-project-parent').setValue(parent)
 

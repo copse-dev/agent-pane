@@ -26,8 +26,8 @@ function fakeApi(result: ForkedHistoryResult | Error = { source: 'rebuilt', mess
     ...base,
     threads: {
       ...base.threads,
-      fork: (projectId: string, source: string, target: string, through?: string) => {
-        forks.push([projectId, source, target, through])
+      fork: (projectId: string, source: string, target: Thread, through?: string) => {
+        forks.push([projectId, source, target.id, through])
         return result instanceof Error ? Promise.reject(result) : Promise.resolve(result)
       },
     },
@@ -120,15 +120,18 @@ test('anchors on an earlier message when asked', async () => {
   assert.equal(forks[0]?.[3], first.id)
 })
 
-test('keeps the side chat when history seeding fails', async () => {
+test('does not insert a side chat when its atomic history create fails', async () => {
   const { store, parentId } = seed()
   const { api } = fakeApi(new Error('no sidecar'))
   const log = console.error
   console.error = (): void => {}
   try {
     const id = await startSideChat(store, api, parentId)
-    assert.ok(id)
-    assert.ok(store.getState().threads.some((t) => t.id === id))
+    assert.equal(id, null)
+    assert.equal(
+      store.getState().threads.some((t) => t.sideChat !== undefined),
+      false,
+    )
   } finally {
     console.error = log
   }
@@ -196,7 +199,7 @@ test('asking a side chat adds the question to it and runs it without touching th
   assert.deepEqual(runs, [id])
 })
 
-test('a question asked before the history seed lands waits for it before running', async () => {
+test('does not expose a side chat until its main-owned history seed lands', async () => {
   const { store, parentId } = seed()
   const base = createFakeApi()
   const order: string[] = []
@@ -221,17 +224,21 @@ test('a question asked before the history seed lands waits for it before running
       },
     },
   }
-  const opened = new Promise<string>((resolve) => store.on('side_chat_open_requested', resolve))
+  let opened = false
+  store.on('side_chat_open_requested', () => {
+    opened = true
+  })
   const started = startSideChat(store, api, parentId)
-  const id = await opened
-
-  assert.ok(sendSideChatMessage(store, api, id, 'Asked straight away'))
-  // The question shows at once, but its run waits for the parent's history.
-  assert.equal(thread(store, id).messages.length, 1)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(opened, false)
+  assert.equal(store.getState().threads.filter((candidate) => candidate.sideChat).length, 0)
   assert.deepEqual(order, [])
 
   finishSeed()
-  assert.equal(await started, id)
+  const id = await started
+  assert.ok(id)
+  assert.equal(opened, true)
+  assert.ok(sendSideChatMessage(store, api, id, 'Asked after opening'))
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(order, ['seeded', 'run'])
 })

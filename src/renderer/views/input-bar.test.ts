@@ -112,7 +112,6 @@ function createApi(options: {
         run: options.onRun ?? (async (): Promise<void> => {}),
         describeImages: options.onDescribeImages ?? base['agent'].describeImages,
         estimateContext: options.estimateContext ?? base['agent'].estimateContext,
-        clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
         prepareCheckout:
           options.onPrepareCheckout ??
           (async (): Promise<PreparedThreadCheckout> => ({
@@ -339,7 +338,12 @@ describe('composer observes external submission completion', () => {
         }
         const result =
           source === 'phone'
-            ? await acceptMobileChat(store, api, { ...command, threadId: active.id })
+            ? await acceptMobileChat(store, api, {
+                ...command,
+                messageId: 'external-submit-message',
+                threadId: active.id,
+                createThread: false,
+              })
             : await acceptThreadPrompt(store, api, {
                 ...command,
                 sourceThreadId: 'another-thread',

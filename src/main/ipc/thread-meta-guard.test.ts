@@ -25,6 +25,10 @@ describe('withoutMainOwnedThreadFields', () => {
       title: 'Renamed',
       remoteAgentLink: { provider: 'cursor', agentId: 'bc-attacker', createdAt: 1 },
       cursorAgentIds: ['bc-attacker'],
+      automation: { scheduleId: 'forged', scheduleName: 'Forged', triggeredAt: 1 },
+      worktreeChoice: 'shared',
+      deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      gitBranch: 'forged/shared',
     }
     assert.deepEqual(withoutMainOwnedThreadFields(forged), { title: 'Renamed' })
   })
@@ -34,10 +38,15 @@ describe('withoutMainOwnedThreadFields', () => {
       draft: 'x',
       remoteAgentLink: undefined,
       cursorAgentIds: undefined,
+      automation: undefined,
+      worktreeChoice: undefined,
+      deferredWorktree: undefined,
+      gitBranch: undefined,
     }
     const guarded = withoutMainOwnedThreadFields(patch)
     assert.equal(Object.hasOwn(guarded, 'remoteAgentLink'), false)
     assert.equal(Object.hasOwn(guarded, 'cursorAgentIds'), false)
+    assert.equal(Object.hasOwn(guarded, 'automation'), false)
     assert.deepEqual(guarded, { draft: 'x' })
   })
 

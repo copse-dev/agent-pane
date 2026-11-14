@@ -2,13 +2,21 @@ import type {
   ForkedHistoryResult,
   LLMMessage,
   Message,
+  Thread,
   ToolResult,
   UserContent,
 } from '@shared/types'
+import { isDeepStrictEqual } from 'node:util'
 import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
 import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
+import { buildForkedThread } from '@shared/store/fork-thread.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
-import { getProjectThread, loadAgentHistory, saveAgentHistory } from './thread-store.ts'
+import {
+  assertAcceptedUserMessageIds,
+  createThreadWithAgentHistory,
+  getProjectThread,
+  loadAgentHistory,
+} from './thread-store.ts'
 import { buildAgentReportHistory } from './agents/custom-agent-strategy.ts'
 
 /**
@@ -119,47 +127,170 @@ function sliceThrough(messages: readonly Message[], throughMessageId: string): M
   return messages.slice(0, cut + 1)
 }
 
+function settledMessages(thread: Thread): Message[] {
+  const queued = new Set((thread.pendingMessages ?? []).map((item) => item.messageId))
+  return thread.messages.filter((message) => !queued.has(message.id))
+}
+
+function selectedMessages(thread: Thread, throughMessageId?: string): Message[] | null {
+  const settled = settledMessages(thread)
+  if (throughMessageId === undefined) return settled
+  return sliceThrough(settled, throughMessageId)
+}
+
+function messageWithoutId(message: Message): Omit<Message, 'id'> {
+  const { id: _id, ...rest } = message
+  return rest
+}
+
+function assertFreshCopiedMessages(
+  target: Thread,
+  expected: readonly Message[],
+  sourceMessages: readonly Message[],
+): void {
+  if (target.pendingMessages !== undefined) {
+    throw new Error('A fork target cannot carry queued messages')
+  }
+  const sourceIds = new Set(sourceMessages.map((message) => message.id))
+  const targetIds = new Set<string>()
+  for (const message of target.messages) {
+    if (sourceIds.has(message.id) || targetIds.has(message.id)) {
+      throw new Error('A fork target must use fresh unique message ids')
+    }
+    targetIds.add(message.id)
+  }
+  if (!isDeepStrictEqual(target.messages.map(messageWithoutId), expected.map(messageWithoutId))) {
+    throw new Error('Fork target messages do not match the accepted source transcript')
+  }
+}
+
+async function assertCanonicalForkTarget(
+  projectId: string,
+  source: Thread,
+  target: Thread,
+  throughMessageId?: string,
+): Promise<{ historySource: Message[]; sourceSnapshots: Thread[] }> {
+  if (target.automation !== undefined) {
+    throw new Error('A fork target cannot claim automation provenance')
+  }
+  if (target.sideChat !== undefined) {
+    if (
+      source.sideChat !== undefined ||
+      target.sideChat.parentThreadId !== source.id ||
+      target.sideChat.anchorMessageId !== throughMessageId ||
+      target.messages.length !== 0
+    ) {
+      throw new Error('Side-chat target does not match its accepted parent anchor')
+    }
+    const selected = selectedMessages(source, throughMessageId)
+    if (!selected) throw new Error(`Message "${throughMessageId}" is not in thread "${source.id}"`)
+    await assertAcceptedUserMessageIds(
+      projectId,
+      source.id,
+      selected.filter((message) => message.role === 'user').map((message) => message.id),
+    )
+    return { historySource: selected, sourceSnapshots: [source] }
+  }
+
+  if (source.sideChat !== undefined) {
+    const parent = await getProjectThread(projectId, source.sideChat.parentThreadId)
+    if (!parent) throw new Error('The side chat parent is no longer available')
+    const parentMessages = selectedMessages(parent, source.sideChat.anchorMessageId)
+    const ownMessages = selectedMessages(source)
+    if (!parentMessages || !ownMessages) throw new Error('The promoted side chat is incomplete')
+    const prefix = buildForkedThread(parent, {
+      throughMessageId: source.sideChat.anchorMessageId,
+      excludeMessageIds: new Set((parent.pendingMessages ?? []).map((item) => item.messageId)),
+    })
+    const own = buildForkedThread(source, {
+      excludeMessageIds: new Set((source.pendingMessages ?? []).map((item) => item.messageId)),
+    })
+    const expected = [...(prefix?.messages ?? []), ...(own?.messages ?? [])]
+    const selected = [...parentMessages, ...ownMessages]
+    assertFreshCopiedMessages(target, expected, selected)
+    await assertAcceptedUserMessageIds(
+      projectId,
+      parent.id,
+      parentMessages.filter((message) => message.role === 'user').map((message) => message.id),
+    )
+    await assertAcceptedUserMessageIds(
+      projectId,
+      source.id,
+      ownMessages.filter((message) => message.role === 'user').map((message) => message.id),
+    )
+    return { historySource: ownMessages, sourceSnapshots: [parent, source] }
+  }
+
+  const selected = selectedMessages(source, throughMessageId)
+  if (!selected)
+    throw new Error(`Message "${throughMessageId ?? 'latest'}" is not in thread "${source.id}"`)
+  const expected = buildForkedThread(source, {
+    ...(throughMessageId !== undefined ? { throughMessageId } : {}),
+    excludeMessageIds: new Set((source.pendingMessages ?? []).map((item) => item.messageId)),
+  })
+  if (!expected) throw new Error('There is no accepted transcript to fork')
+  assertFreshCopiedMessages(target, expected.messages, selected)
+  await assertAcceptedUserMessageIds(
+    projectId,
+    source.id,
+    selected.filter((message) => message.role === 'user').map((message) => message.id),
+  )
+  return { historySource: selected, sourceSnapshots: [source] }
+}
+
 /**
- * Seed `targetThreadId`'s history from `sourceThreadId`. Both ids are trusted
- * main-process values resolved against the same project. `throughMessageId`
- * selects the partial-fork path; omitting it (or naming the source's last
- * message) copies the sidecar verbatim.
+ * Create a fresh fork and seed its provider history from `sourceThreadId` in
+ * one store write. The renderer supplies the already-built visible fork, but
+ * it cannot name an existing target: `createThreadWithAgentHistory` rejects
+ * every pre-existing id under the same per-project write queue.
+ * `throughMessageId` selects the partial-fork path; omitting it (or naming the
+ * source's last message) copies the sidecar verbatim.
  */
 export async function forkThreadHistory(
   projectId: string,
   sourceThreadId: string,
-  targetThreadId: string,
+  target: Thread,
   throughMessageId?: string,
 ): Promise<ForkedHistoryResult> {
-  if (sourceThreadId === targetThreadId) {
+  if (sourceThreadId === target.id) {
     throw new Error('Cannot fork a thread onto itself')
   }
   const source = await getProjectThread(projectId, sourceThreadId)
   if (!source)
     throw new Error(`Thread "${sourceThreadId}" does not belong to project "${projectId}"`)
+  const canonical = await assertCanonicalForkTarget(projectId, source, target, throughMessageId)
 
   const isWholeThread =
-    throughMessageId === undefined || source.messages.at(-1)?.id === throughMessageId
+    throughMessageId === undefined || settledMessages(source).at(-1)?.id === throughMessageId
+  let result: ForkedHistoryResult
+  let history: LLMMessage[]
   if (isWholeThread) {
-    const history = await loadAgentHistory(projectId, sourceThreadId)
+    history = await loadAgentHistory(projectId, sourceThreadId)
     if (history.length > 0) {
-      await saveAgentHistory(projectId, targetThreadId, history)
-      return { source: 'copied', messageCount: history.length }
+      result = { source: 'copied', messageCount: history.length }
+    } else {
+      // The provider snapshot is committed only when a run finishes. Forking a
+      // thread during its first run therefore has a visible prompt but no sidecar
+      // yet. Rebuild from that transcript so the fork's UI and model context agree.
+      history = rebuildAgentHistory(canonical.historySource)
+      result = {
+        source: history.length === 0 ? 'empty' : 'rebuilt',
+        messageCount: history.length,
+      }
     }
-
-    // The provider snapshot is committed only when a run finishes. Forking a
-    // thread during its first run therefore has a visible prompt but no sidecar
-    // yet. Rebuild from that transcript so the fork's UI and model context agree.
-    const rebuilt = rebuildAgentHistory(source.messages)
-    if (rebuilt.length === 0) return { source: 'empty', messageCount: 0 }
-    await saveAgentHistory(projectId, targetThreadId, rebuilt)
-    return { source: 'rebuilt', messageCount: rebuilt.length }
+  } else {
+    history = rebuildAgentHistory(canonical.historySource)
+    result = {
+      source: history.length === 0 ? 'empty' : 'rebuilt',
+      messageCount: history.length,
+    }
   }
-
-  const slice = sliceThrough(source.messages, throughMessageId)
-  if (!slice) throw new Error(`Message "${throughMessageId}" is not in thread "${sourceThreadId}"`)
-  const history = rebuildAgentHistory(slice)
-  if (history.length === 0) return { source: 'empty', messageCount: 0 }
-  await saveAgentHistory(projectId, targetThreadId, history)
-  return { source: 'rebuilt', messageCount: history.length }
+  await createThreadWithAgentHistory(
+    projectId,
+    target,
+    history,
+    canonical.sourceSnapshots,
+    result.source === 'copied' ? { threadId: sourceThreadId, history } : undefined,
+  )
+  return result
 }

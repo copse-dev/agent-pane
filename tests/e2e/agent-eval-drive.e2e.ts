@@ -10,6 +10,7 @@ import type { Thread } from '@shared/types'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { submitComposer } from './helpers/composer.ts'
 import {
   loadEvalScenario,
   resolvePromptAttachment,
@@ -591,7 +592,7 @@ describe('agent eval drive', () => {
 
     for (const prompt of prompts) {
       await typePrompt(prompt)
-      await $('.submit-btn').click()
+      await submitComposer()
       await waitForEvalAgentIdle(idleTimeout)
     }
     if (scenario.backgroundWake) {

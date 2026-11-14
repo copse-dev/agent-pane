@@ -11,6 +11,7 @@ import {
 } from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-transition-project'
 const THREAD_ID = 'e2e-worktree-terminal-transition-thread'
@@ -178,6 +179,7 @@ describe('terminal checkout transition', () => {
     }
     // The prompt can also arrive with the shell rather than ahead of it.
     if (await approvalDialogShowing()) await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     const tabs = await $$('.terminals-tab').getElements()
     const sharedTab = tabs[0]
     const worktreeTab = tabs[1]

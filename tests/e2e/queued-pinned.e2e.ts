@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedScrollStreamingFixture } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -63,13 +63,13 @@ describe('queued chats stay pinned to the bottom', function () {
 
     // Keep a normal request running while follow-ups are queued.
     await setComposerValue(FIRST_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('module-refactor')
 
     // Queue two follow-ups while the agent is busy.
     for (const [index, text] of QUEUED_PROMPTS.entries()) {
       await setComposerValue(text)
-      await $('.submit-btn').click()
+      await submitComposer()
       await browser.waitUntil(
         async () =>
           (await $$('.conversation-queued .msg-queued').getElements()).length === index + 1,
@@ -104,6 +104,8 @@ describe('queued chats stay pinned to the bottom', function () {
 
     await saveAppScreenshot('queued-pinned-scrolled-top.png')
     await scenario.release('module-refactor')
+    await acceptProtectedPrompt()
+    await acceptProtectedPrompt()
     // The agent can briefly read as idle after the first reply, before the
     // queued prompt dispatches. Wait for every scripted response to be served.
     await scenario.waitForComplete(60_000)

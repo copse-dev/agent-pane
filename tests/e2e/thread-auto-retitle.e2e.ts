@@ -1,7 +1,7 @@
 import { installMockScenario, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -78,7 +78,7 @@ describe('automatic thread re-titling', () => {
       ],
     })
     await setComposerValue('Explain the session repair.')
-    await $('.submit-btn').click()
+    await submitComposer()
     let observedTitles: string[] = []
     try {
       await browser.waitUntil(
@@ -122,7 +122,7 @@ describe('automatic thread re-titling', () => {
       await prepareMockTurn(`Review session detail ${String(turn)}.`, [
         { text: `Session detail ${String(turn)} has been reviewed.` },
       ])
-      await $('.submit-btn').click()
+      await submitComposer()
       await browser.waitUntil(async () =>
         browser.execute(
           (text) =>

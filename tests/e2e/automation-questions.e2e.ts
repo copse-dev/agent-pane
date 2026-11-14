@@ -14,6 +14,7 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import {
   pinTextForCapture,
   saveAppScreenshot,
@@ -296,6 +297,7 @@ describe('unattended automation questions', function () {
     await expect(panel.$('.reviewer-input-item').$('.reviewer-input-option=Preview')).toExist()
     await panel.$('.reviewer-input-item').$('.reviewer-input-option=Preview').click()
     await panel.$('.reviewer-input-item').$('.ui-btn-primary').click()
+    await acceptProtectedPrompt()
     const question = $('#ask-user-dialog')
     await question.waitForDisplayed()
     await expect(question).toHaveText(expect.stringContaining('Which team owns the preview?'))
