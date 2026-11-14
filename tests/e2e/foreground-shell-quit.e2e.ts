@@ -131,6 +131,12 @@ describe('quit during an owned foreground command', function () {
     assert.equal(owned.length, 2)
     assert.ok(owned.every(alive))
     assert.equal(existsSync(join(root, 'after-quit.txt')), false)
+    // Process heartbeats establish running work, not the asynchronous Git
+    // summary. Capture only after the composer reports all four fixture files.
+    await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+4')
+    await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
+    assert.ok(owned.every(alive), 'the readiness wait must preserve the running-process state')
+    assert.equal(existsSync(join(root, 'after-quit.txt')), false)
     await saveAppScreenshot('foreground-shell-before-quit.png')
     const mainPid = await browser.execute(
       async () =>

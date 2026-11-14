@@ -18,6 +18,16 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { BlockingHookOutcome, HookQueueMessage } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookSpawnResult } from './hook-spawn.ts'
+import type { HookScope } from './hooks-types.ts'
+
+/** Project commands follow the pinned checkout; user commands stay with their config. */
+export function resolveCommandHookCwd(
+  scope: HookScope,
+  declaringDirectory: string,
+  executionRoot?: string | null,
+): string {
+  return scope === 'project' ? (executionRoot ?? declaringDirectory) : declaringDirectory
+}
 
 /** Where hook discovery looks, and whether project-scoped configs may be honoured. */
 export interface DialectDiscoverOpts {

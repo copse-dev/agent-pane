@@ -253,15 +253,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
               ...transcriptMeta(thread),
               // A cold read can arrive while a queued dispatch awaits its grant,
               // or after that dispatch has been denied and restored as held.
-              // Preserve that local status decision. A real runtime snapshot is
+              // Preserve that local status/interruption decision against an
+              // old running read. A completed disk snapshot may carry a main
+              // turn's removal of the old interruption. A runtime snapshot is
               // authoritative even before its first chunk creates a checkpoint.
               ...(source === 'disk' &&
-              (current.interruptedTurnAt !== undefined ||
+              ((current.interruptedTurnAt !== undefined && thread.status === 'running') ||
                 hasPendingDispatch(store, thread.id) ||
                 (current.status === 'idle' &&
                   thread.status === 'running' &&
                   (current.pendingMessages?.length ?? 0) > 0))
-                ? { status: current.status }
+                ? { status: current.status, interruptedTurnAt: current.interruptedTurnAt }
                 : {}),
               messages: mergeRuntimeMessages(current.messages, thread.messages),
             }

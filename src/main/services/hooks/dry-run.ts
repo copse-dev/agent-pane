@@ -34,7 +34,11 @@ import { HOOK_EVENT_NAMES } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
-import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
+import {
+  resolveCommandHookCwd,
+  type DialectAdapter,
+  type DialectInterpretation,
+} from './dialect-adapter.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
 import { memberOf } from '@shared/member-of.ts'
 
@@ -429,6 +433,10 @@ export async function dryRunHook(
     }
   }
 
+  if (req.scope === 'project' && !projectRoot) {
+    return { ran: false, error: 'Open the hook’s project before testing this project hook.' }
+  }
+
   const hook: CommandHook = {
     id: req.command,
     event: plan.canonicalEvent,
@@ -439,7 +447,11 @@ export async function dryRunHook(
     // A dry run never applies failure resolution, so `onFailure` is irrelevant;
     // `open` keeps the reconstructed hook shape valid without implying a policy.
     onFailure: 'open',
-    cwd: req.source ? dirname(req.source) : process.cwd(),
+    cwd: resolveCommandHookCwd(
+      req.scope,
+      req.source ? dirname(req.source) : process.cwd(),
+      projectRoot,
+    ),
     // The workspace the payload names, so no adapter falls back to an ambient root.
     executionRoot: root,
     ...(req.sandbox !== undefined ? { sandbox: req.sandbox } : {}),
@@ -466,6 +478,8 @@ export async function dryRunHook(
 
   const spawn = await spawnHookProcess(hook.command, marshalled.request, {
     cwd: hook.cwd ?? process.cwd(),
+    // Sources discovers local config files and has no agent turn to own routing.
+    localOnly: true,
     timeoutMs: DRY_RUN_TIMEOUT_MS,
     ...(req.sandbox !== undefined ? { sandbox: req.sandbox } : {}),
   })

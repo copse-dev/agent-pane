@@ -1,9 +1,13 @@
-// Node test reporter selected by run-tests --review-report. Repository code still
-// runs only inside the review execution cell; the host consumes this as data.
+// Live CI diagnostics and an EOF-only complete inventory for review consumers.
 import { realpathSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { TEST_FAILURE_REPORT_PREFIX, testFailureReportSchema } from '@copse/review/test-failures.ts'
+
+const errorTextSchema = z.object({
+  message: z.string().optional().catch(undefined),
+  stack: z.string().optional().catch(undefined),
+})
 
 const eventSchema = z.object({
   type: z.string(),
@@ -12,12 +16,19 @@ const eventSchema = z.object({
     file: z.string().optional(),
     testId: z.number().optional(),
     parentId: z.number().optional(),
+    line: z.number().optional().catch(undefined),
+    column: z.number().optional().catch(undefined),
     skip: z.union([z.boolean(), z.string()]).optional(),
     todo: z.union([z.boolean(), z.string()]).optional(),
     details: z
       .object({
         type: z.string().optional(),
-        error: z.object({ failureType: z.string().optional() }).optional(),
+        error: errorTextSchema
+          .extend({
+            failureType: z.string().optional(),
+            cause: z.unknown().optional(),
+          })
+          .optional(),
       })
       .optional(),
     counts: z.object({ failed: z.number(), cancelled: z.number() }).optional(),
@@ -30,6 +41,10 @@ function canonicalPath(path: string): string {
   } catch {
     return resolve(path)
   }
+}
+
+function bounded(value: string | undefined, limit = 1024): string | undefined {
+  return value && value.length > limit ? `${value.slice(0, limit)} [truncated]` : value
 }
 
 export default async function* reviewTestReporter(
@@ -60,6 +75,41 @@ export default async function* reviewTestReporter(
         `${data.file}:${String(data.testId)}`,
         parent ? `${parent} > ${stableName}` : stableName,
       )
+    }
+    if (type === 'test:fail') {
+      const error = data.details?.error
+      const cause = errorTextSchema.safeParse(error?.cause)
+      // A diagnostic describes this event, including parent/expected/cancelled
+      // failures. It is not a unique assertion count or a complete inventory.
+      // Only entryPath is normalized; the other locations name the raw bundle.
+      yield `\nCopse test failure event: ${JSON.stringify({
+        entryPath: bounded(
+          data.file
+            ? relative(root, canonicalPath(data.file))
+                .replaceAll('\\', '/')
+                .replace(/\.mjs$/, '.ts')
+            : undefined,
+        ),
+        file: bounded(data.file),
+        bundleLine: data.line,
+        bundleColumn: data.column,
+        name: bounded(
+          names.get(`${data.file ?? ''}:${String(data.testId)}`) ?? data.name ?? '(unnamed)',
+        ),
+        failureType: bounded(error?.failureType ?? 'unknown'),
+        skip: typeof data.skip === 'string' ? bounded(data.skip) : (data.skip ?? false),
+        todo: typeof data.todo === 'string' ? bounded(data.todo) : (data.todo ?? false),
+        message: bounded(error?.message),
+        stack: bounded(error?.stack, 4096),
+        causeMessage: bounded(
+          cause.success
+            ? cause.data.message
+            : typeof error?.cause === 'string'
+              ? error.cause
+              : undefined,
+        ),
+        causeStack: bounded(cause.success ? cause.data.stack : undefined, 4096),
+      })}\n`
     }
     if (type === 'test:fail' && !data.skip && !data.todo) {
       if (data.details?.error?.failureType === 'subtestsFailed') continue

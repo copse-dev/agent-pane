@@ -31,8 +31,14 @@ Example `hooks.json`:
 }
 ```
 
-`command` is a shell command spawned with the directory of the `hooks.json` as its
-working directory, so relative paths resolve against the config. A hook may set
+Project hook commands run from the active thread's execution root: its checkout,
+or the project root for a shared thread. Relative paths resolve against that root;
+for example, `node scripts/check.mjs` loads the checkout's `scripts/check.mjs`.
+User hook commands keep the directory of their declaring `hooks.json` as their
+working directory. This matches [Cursor's project and user hook paths](https://cursor.com/docs/hooks#examples).
+Sources **Test** uses the asking window's local project root for project hooks and
+keeps user hooks configuration-relative; see [testing hooks](./copse-hooks.md#on-disk-layout).
+A hook may set
 `"failClosed": true` to make a crash / timeout / invalid JSON **block** the action
 instead of failing open (see Reliability and trust below).
 
@@ -260,7 +266,7 @@ Enabling Cursor hooks hands real, local execution authority to whoever authored 
 **Enabling `cursorHooksEnabled` and trusting a workspace grants that repo's
 `.cursor/hooks.json` arbitrary local code execution on every gated tool call.** Each
 matching hook `command` is spawned through a shell on the agent's hot path, with the
-directory of the `hooks.json` as its working directory. A trusted repo's hooks run with
+thread's execution root as its working directory. A trusted repo's hooks run with
 whatever authority the sandbox leaves them (see below).
 
 Concretely, "trusting a workspace" with hooks enabled also means:

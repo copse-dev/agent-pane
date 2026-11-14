@@ -15,6 +15,7 @@ it('publishes the completed coverage-phase report after nested runners finish', 
       'scripts/lib/test-filter.mts',
       'scripts/lib/module-relative-test-paths.mts',
       'scripts/lib/tracked-test-tree.mts',
+      'scripts/lib/review-test-reporter.mts',
     ]) {
       await copyFile(join(process.cwd(), file), join(fixture, file))
     }
@@ -47,13 +48,20 @@ it('completed outer coverage report', () => {
       assert.equal(result.status, 0, result.stderr)
     }
     delete env['NODE_TEST_CONTEXT']
-    for (const phase of ['--bundle-only', '--test-only']) {
+    for (const args of [['--bundle-only'], ['--test-only'], ['--test-only', '--review-report']]) {
       const result = spawnSync(
         process.execPath,
-        ['scripts/run-tests.mts', phase, 'src/outer.test.ts'],
+        ['scripts/run-tests.mts', ...args, 'src/outer.test.ts'],
         { cwd: fixture, env, encoding: 'utf8' },
       )
       assert.equal(result.status, 0, result.stdout + result.stderr)
+      if (args.includes('--test-only')) {
+        assert.equal(
+          result.stdout.split('\nCOPSE_TEST_FAILURES_V1 ').length - 1,
+          1,
+          'CI and review-report select the inventory reporter exactly once',
+        )
+      }
     }
     const tap = await readFile(join(fixture, 'unit-tests.tap'), 'utf8')
     assert.match(tap, /completed outer coverage report/)

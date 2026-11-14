@@ -466,6 +466,53 @@ describe('GitHub readers', () => {
 })
 
 describe('problems and delivery recovery', () => {
+  it('holds an issue delivery for an idle live owner, then admits it exactly once', async (t) => {
+    const w = await world(t)
+    const definition = await w.service.upsert('project-a', {
+      ...base,
+      maxLiveWorktrees: 'unlimited',
+      trigger: { kind: 'github-issue-labeled', label: 'needs-triage' },
+    })
+    w.threads.set('previous', {
+      id: 'previous',
+      title: 'Previous run',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: NOW - 1000,
+      updatedAt: NOW - 1000,
+      automation: {
+        scheduleId: definition.id,
+        scheduleName: definition.name,
+        triggeredAt: NOW - 1000,
+      },
+    })
+    let ownsAgentWork = true
+    w.service.start(
+      () => {},
+      () => true,
+      () => ownsAgentWork,
+    )
+    w.events = [labeled(600, 9)]
+    w.labelled = new Set([9])
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1, 'non-CI events must pass the live-owner authorization gate')
+    const held = await w.service.history('project-a', definition.id)
+    assert.equal(held.length, 1)
+    assert.equal(held[0]?.outcome, 'waiting')
+    assert.match(held[0].reason ?? '', /Waiting for a free run slot/)
+    ownsAgentWork = false
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 2, 'the busy event stays retryable')
+    assert.equal((await w.service.history('project-a', definition.id))[0]?.outcome, 'started')
+    w.settle()
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 2)
+  })
+
   it('records a polling failure on the automation and clears it when polling recovers', async (t) => {
     const w = await world(t)
     const definition = await w.service.upsert('project-a', {

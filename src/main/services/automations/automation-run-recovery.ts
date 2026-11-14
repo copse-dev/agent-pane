@@ -5,6 +5,22 @@ import { getThreadMeta, updateMetaIfUnchanged } from '../thread-store.ts'
 /** Null means the runtime cannot currently prove whether the run still owns its turn. */
 export type AutomationRunLiveness = (projectId: string, threadId: string) => boolean | null
 
+/** A returned prompt can leave an idle transcript while its agent still owns work. */
+export function automationRunBlocksAdmission(
+  projectId: string,
+  thread: Omit<Thread, 'messages'>,
+  ownsAgentWork: AutomationRunLiveness | undefined,
+): boolean {
+  if (automationRunBlock(thread) !== null) return true
+  try {
+    return ownsAgentWork?.(projectId, thread.id) === true
+  } catch {
+    // Unknown ownership alone does not turn ordinary settled history into a
+    // permanent blocker. Interrupted runs keep the conservative repair below.
+    return false
+  }
+}
+
 /**
  * Reconcile persisted running flags before an automation decides its run slot is busy.
  * A closed project has no renderer to perform the ordinary interrupted-turn repair.

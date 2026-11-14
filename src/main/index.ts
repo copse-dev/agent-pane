@@ -238,6 +238,7 @@ import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-rec
 import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
   cancelAllSupervisedBackgroundProcesses,
+  hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
 } from './services/exec/supervised-background-process.ts'
 import {
@@ -843,12 +844,15 @@ app
         },
       },
     )
+    const ownsAutomationAgentWork = (projectId: string, threadId: string): boolean =>
+      agentDispatcher.isActive(projectId, threadId) ||
+      listRunningThreadIds().includes(threadId) ||
+      hasActiveAcpTurn(threadId) ||
+      getContainerRunService().isActive(threadId) ||
+      hasBackgroundCompletionWake({ projectId, threadId })
     const isAutomationRunActive = (projectId: string, threadId: string): boolean | null => {
       if (
-        agentDispatcher.isActive(projectId, threadId) ||
-        listRunningThreadIds().includes(threadId) ||
-        hasActiveAcpTurn(threadId) ||
-        getContainerRunService().isActive(threadId) ||
+        ownsAutomationAgentWork(projectId, threadId) ||
         hasBackgroundProcessesForThread({ projectId, threadId })
       )
         return true
@@ -870,13 +874,18 @@ app
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
       isAutomationRunActive,
+      ownsAutomationAgentWork,
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
-    getBranchCiAutomationService().start((event) => {
-      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    }, isAutomationRunActive)
+    getBranchCiAutomationService().start(
+      (event) => {
+        if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+      },
+      isAutomationRunActive,
+      ownsAutomationAgentWork,
+    )
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
