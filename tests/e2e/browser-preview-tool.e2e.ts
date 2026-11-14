@@ -21,6 +21,7 @@ const FINAL_BOUNDARY_HOOKS = [
   'reasoning-runaway',
   'malformed-tool-call',
   'plan-verified-finalize',
+  'empty-turn',
 ].sort()
 
 // Idle and tool completion do not establish the final transcript crop. Keep

@@ -44,6 +44,7 @@ import {
   isContextOverflowStopReason,
   isMalformedToolCallStopReason,
   isRefusalStopReason,
+  isTruncationStopReason,
   MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS,
   MAX_MALFORMED_TOOL_CALLS_PER_RUN,
   REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
@@ -67,6 +68,7 @@ import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry
 import type { HookEmitResult } from './hooks/hook-registry.ts'
 import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
 import {
+  EMPTY_TURN_HOOK_ID,
   LOOP_NUDGE_HOOK_ID,
   MALFORMED_TOOL_CALL_HOOK_ID,
   PLAN_VERIFIED_FINALIZE_HOOK_ID,
@@ -142,6 +144,7 @@ interface StepBoundaryNudges {
   malformedToolCall: string | undefined
   artifactCheckpoint: string | undefined
   planVerifiedFinalize: string | undefined
+  emptyTurn: string | undefined
 }
 
 /** Pull one step-boundary hook's selected nudge text (its `injectContext`) by id. */
@@ -1289,6 +1292,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // Set after a step whose todo update closed the plan on checks; read once by
   // the `plan-verified-finalize` step-boundary hook (#1433, Fix 4).
   let planClosedSignal = false
+  // Selected after an empty turn, applied only once the next main-loop call is
+  // certain (past the step/call budget check), so no unanswered nudge is left in
+  // history when the budget ends the run instead.
+  let pendingEmptyTurnNudge: string | undefined
   // In explore mode the parent has no read_file; the explore-without-read
   // nudge then points at explore's verbatim excerpts instead (#1433, Fix 0).
   const readFileOffered = tools.some((t) => t.name === 'read_file')
@@ -1322,6 +1329,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       malformedToolCall: nudgeFrom(result, MALFORMED_TOOL_CALL_HOOK_ID),
       artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
       planVerifiedFinalize: nudgeFrom(result, PLAN_VERIFIED_FINALIZE_HOOK_ID),
+      emptyTurn: nudgeFrom(result, EMPTY_TURN_HOOK_ID),
     }
   }
   const applyArtifactCheckpointNudge = (text: string | undefined): boolean => {
@@ -1443,6 +1451,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
     }
     steps++
+    if (pendingEmptyTurnNudge !== undefined) {
+      messages.push({ role: 'user', content: pendingEmptyTurnNudge })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: EMPTY_TURN_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: pendingEmptyTurnNudge,
+      })
+      pendingEmptyTurnNudge = undefined
+    }
 
     repairToolUseToolResultPairing(messages)
 
@@ -1920,8 +1938,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     // below applies each with its own mechanism (a truncated turn continues; a
     // reasoning-runaway forces an answer, with the streak / give-up terminal
     // still owned by this loop).
+    // Nothing from this stream will land in history and no other post-stream
+    // outcome below claims it, so an unchanged retry would replay the request.
+    const emptyTurn =
+      pendingToolCalls.length === 0 &&
+      !assistantText.trim() &&
+      !streamCappedAsRunaway &&
+      !softBudgetCut &&
+      !isTruncationStopReason(stopReason) &&
+      !isMalformedToolCallStopReason(stopReason) &&
+      !isRefusalStopReason(stopReason) &&
+      !isContextOverflowStopReason(stopReason)
     const postNudges = await selectStepBoundaryNudges({
       phase: 'postStream',
+      ...(emptyTurn ? { emptyTurn } : {}),
       loopNudgeSent,
       forceTextAttempted,
       artifactCheckpointSent,
@@ -2174,7 +2204,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         continue
       }
-      // Empty turn (common when context is tight) — keep looping instead of exiting early.
+      // Empty turn (common when context is tight, or a thinking model's reply
+      // stayed in reasoning) — keep looping instead of exiting early, but say so,
+      // or the next request would be byte-identical to this one (#4294 dogfood).
+      pendingEmptyTurnNudge = postNudges.emptyTurn
       continue
     }
 

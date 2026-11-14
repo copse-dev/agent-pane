@@ -29,6 +29,7 @@ import type {
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 import {
+  EMPTY_TURN_NUDGE,
   EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   PLAN_VERIFIED_FINALIZE_NUDGE,
@@ -3358,5 +3359,96 @@ describe('goal-met guards (#1433 Fix 4)', () => {
       args: { path: 'a.ts', old_string: 'a', new_string: 'b' },
     })
     assert.equal(executed.filter((e) => e.includes('npm run check')).length, 2)
+  })
+})
+
+describe('runAgentLoop empty turns (#4294 dogfood)', () => {
+  const READ_TOOL = {
+    name: 'read_file',
+    description: 'read',
+    parameters: { type: 'object' },
+  }
+  /** A short thinking-model reply that never lands: reasoning only, then a clean stop. */
+  const reasoningOnly: ProviderStreamChunk[] = [
+    {
+      type: 'reasoning',
+      text: 'I should call git_diff next to see the change.',
+    },
+    { type: 'done', stopReason: 'stop' },
+  ]
+  const toolTurn = (id: string): ProviderStreamChunk[] => [
+    {
+      type: 'tool_call',
+      toolCall: { id, name: 'read_file', args: { path: 'index.html' } },
+    },
+    { type: 'done', stopReason: 'tool_calls' },
+  ]
+  function recording(turns: ProviderStreamChunk[][]): {
+    provider: LLMProvider
+    requests: string[]
+  } {
+    const requests: string[] = []
+    const provider: LLMProvider = {
+      async *stream(messages): AsyncGenerator<ProviderStreamChunk> {
+        requests.push(JSON.stringify(messages))
+        for (const c of turns[Math.min(requests.length, turns.length) - 1] ?? []) yield c
+      },
+    }
+    return { provider, requests }
+  }
+
+  it('never re-sends an identical request after a reasoning-only reply', async () => {
+    const { provider, requests } = recording([
+      toolTurn('a'),
+      toolTurn('b'),
+      reasoningOnly,
+      reasoningOnly,
+      [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+    ])
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages: [
+        { role: 'system', content: 'review' },
+        { role: 'user', content: 'review the diff' },
+      ],
+      tools: [READ_TOOL],
+      maxSteps: 10,
+      onChunk: () => {},
+      executeTool: async () => '<h1>Copse smoke one</h1>',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    for (let i = 1; i < requests.length; i++) {
+      assert.notEqual(
+        requests[i],
+        requests[i - 1],
+        `request ${String(i + 1)} repeats its predecessor`,
+      )
+    }
+    assert.equal(requests.length, 5)
+    assert.deepEqual(
+      applied.map((r) => r.hookId),
+      ['empty-turn', 'empty-turn'],
+    )
+  })
+
+  it('leaves no empty-turn nudge in history when the call budget ends the run', async () => {
+    const { provider, requests } = recording([[{ type: 'done', stopReason: 'stop' }]])
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const applied: AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [READ_TOOL],
+      maxSteps: 5,
+      maxLlmCalls: 2,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (r) => applied.push(r),
+    })
+    assert.equal(requests.length, 2)
+    const nudges = messages.filter((m) => m.role === 'user' && m.content === EMPTY_TURN_NUDGE)
+    assert.equal(nudges.length, 1, 'only the nudge the second call answered is in history')
+    assert.equal(applied.length, 1)
   })
 })
