@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   continuationBudgetHeldNote,
@@ -55,6 +56,54 @@ afterEach(() => {
 })
 
 describe('held queued message (component)', () => {
+  it('redraws an already running released row with the newly reviewed canonical prompt', () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const original = 'Preserve the lifecycle API draft.'
+    const reviewed = 'Keep the API stable after explicit follow-up.'
+    const messageId = addMessage(store, threadId, 'user', original)
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: original },
+      createdAt: 2,
+      autoDispatch: false,
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const release = host.querySelector<HTMLButtonElement>('.queued-release')
+    assert.ok(release)
+    release.click()
+    assert.equal(api.runs.length, 1)
+    assert.equal(host.querySelector('.conversation-queued .msg-queued'), null)
+    assert.equal(
+      host.querySelector('.messages-list .msg-user .message-text')?.textContent,
+      original,
+    )
+    // Main's start arrives after Release has already rendered the original
+    // ordinary row and marked the thread running. No status transition can
+    // provide an incidental redraw for the reviewed replacement.
+    setThreadStatus(store, threadId, 'running')
+    const reducer = createTranscriptReducer(store)
+    reducer.apply(threadId, {
+      type: 'protected_human_turn_start',
+      messageId,
+      content: reviewed,
+      promptRepresentation: 'canonical-provider',
+    })
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === threadId)?.messages[0]?.content,
+      reviewed,
+    )
+    assert.equal(
+      host.querySelector('.messages-list .msg-user .message-text')?.textContent,
+      reviewed,
+    )
+    assert.equal(host.querySelector('.transcript-attachment-chip'), null)
+    assert.equal(host.querySelector('.steering-pending'), null)
+  })
+
   it('renders a Held badge + Release action for a held hook message', () => {
     const store = createProjectStore()
     const api = fakeApi()

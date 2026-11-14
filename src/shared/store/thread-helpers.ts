@@ -752,11 +752,11 @@ export function setMessagePromptContent(
   attachments?: TranscriptAttachment[],
   promptRepresentation?: Message['promptRepresentation'],
 ): void {
-  const message = getThreadById(store, threadId)?.messages.find(
+  const existing = getThreadById(store, threadId)?.messages.find(
     (candidate) => candidate.id === messageId,
   )
-  if (!message) return
-  message.content = content
+  if (!existing) return
+  const message: Message = { ...existing, content }
   if (images === undefined) delete message.images
   else message.images = images
   // Attachment chips describe the pre-review composer expansion. Main passes
@@ -766,7 +766,17 @@ export function setMessagePromptContent(
   else message.attachments = attachments.map((attachment) => ({ ...attachment }))
   if (promptRepresentation === undefined) delete message.promptRepresentation
   else message.promptRepresentation = promptRepresentation
+  // A protected review replaces an already rendered user row. Unlike streamed
+  // assistant tokens, that row has no incremental token painter. Replace its
+  // identity so transcript reconciliation sees the change even while running.
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map((candidate) =>
+      candidate.id === messageId ? message : candidate,
+    ),
+  }))
   store.emit('message_token', messageId, content)
+  store.emit('threads_changed')
 }
 
 export function addMessageCanvasArtefact(
