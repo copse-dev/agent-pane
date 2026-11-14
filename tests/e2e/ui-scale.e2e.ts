@@ -1,6 +1,11 @@
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedConversationVisualHierarchyFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppViewportScreenshot,
@@ -119,12 +124,15 @@ async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
 }
 
 describe('interface scale (--ui-scale)', () => {
+  let ownedWorkspaceRoot: string | null = null
+
   before(async () => {
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
     resetUserData()
-    seedConversationVisualHierarchyFixture(process.cwd())
+    ownedWorkspaceRoot = seedStableWorkspace()
+    seedConversationVisualHierarchyFixture(ownedWorkspaceRoot)
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-result"]').waitForExist({
       timeout: 30_000,
@@ -133,6 +141,10 @@ describe('interface scale (--ui-scale)', () => {
 
   after(() => {
     resetUserData()
+    if (ownedWorkspaceRoot !== null) {
+      removeE2eTree(ownedWorkspaceRoot)
+      ownedWorkspaceRoot = null
+    }
   })
 
   it('defaults to 1 and scales tokens after saving Appearance', async () => {
