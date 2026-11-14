@@ -8,7 +8,7 @@ import { $, browser } from '@wdio/globals'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue, composerText } from './helpers/composer.ts'
+import { setComposerValue, composerText, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import {
@@ -67,7 +67,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
   it('preserves every chunk and accepts trusted typing while recording frame gaps', async function () {
     this.timeout(90_000)
     await setComposerValue('Inspect the fixture and explain your reasoning.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () =>
         browser.execute(() =>

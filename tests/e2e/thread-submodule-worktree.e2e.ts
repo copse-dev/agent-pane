@@ -16,6 +16,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT = 'e2e-submodule-worktree'
 const THREAD = 'e2e-submodule-worktree-thread'
@@ -113,7 +114,7 @@ describe('thread worktree with submodules', () => {
       { name: 'init_submodules', args: {} },
       reply,
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await scenario.assertComplete()
 

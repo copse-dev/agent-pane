@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
+import { submitComposer } from './helpers/composer.ts'
 import {
   resetUserData,
   seedStableWorkspace,
@@ -86,7 +87,7 @@ describe('transcript keeps unchanged rows across a new turn', () => {
     )
 
     const scenario = await prepareMockTurn(TRANSCRIPT_RECONCILE_PROMPT, [{ text: REPLY }])
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(REPLY)
     await scenario.waitForComplete()
     // Settled: the turn is over once the activity row is gone and the reply's

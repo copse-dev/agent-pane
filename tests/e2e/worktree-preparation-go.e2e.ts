@@ -7,6 +7,7 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'go-preparation-approval')
 describe('automatic Go preparation approval', () => {
@@ -34,7 +35,7 @@ describe('automatic Go preparation approval', () => {
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')
