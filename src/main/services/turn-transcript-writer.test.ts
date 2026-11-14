@@ -319,6 +319,7 @@ describe('TurnTranscriptWriter', () => {
     const accepted = (await stored()).messages.find((message) => message.id === 'u1')
     assert.ok(accepted)
     assert.equal(accepted.content, 'Reviewed safe text')
+    assert.equal(accepted.promptRepresentation, 'canonical-provider')
     assert.deepEqual(accepted.attachments, [
       {
         kind: 'paste',
@@ -336,6 +337,7 @@ describe('TurnTranscriptWriter', () => {
       type: 'protected_human_turn_start',
       content: 'Reviewed safe text',
       messageId: 'u1',
+      promptRepresentation: 'canonical-provider',
       preserveOptimisticDisplay: true,
       attachments: [
         {

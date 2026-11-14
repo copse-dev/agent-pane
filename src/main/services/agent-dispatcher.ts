@@ -321,6 +321,7 @@ export class AgentDispatcher {
         type: 'protected_human_turn_start',
         content: request.protectedHumanStart.content,
         messageId,
+        promptRepresentation: 'canonical-provider',
         ...(request.protectedHumanStart.preserveOptimisticDisplay === true
           ? { preserveOptimisticDisplay: true as const }
           : {}),

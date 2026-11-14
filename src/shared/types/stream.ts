@@ -97,6 +97,8 @@ export type StreamChunk =
       content: UserContent
       /** Main-owned accepted identity; may reconcile an optimistic renderer bubble. */
       messageId: string
+      /** Marks `content` as the exact provider-facing bytes accepted by Main. */
+      promptRepresentation: 'canonical-provider'
       /** Main verified the optimistic display and review left its model-facing text unchanged. */
       preserveOptimisticDisplay?: true
       /** Exact display snapshots Main verified before an unchanged protected review. */

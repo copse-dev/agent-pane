@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
+import { renderTextBlock, textBlockLabel } from '@copse/agent/build-text-with-attachments.ts'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import {
@@ -21,12 +22,20 @@ const TRANSCRIPT_SCREENSHOT = 'paste-attachment-transcript.png'
 const COMPOSER_PREVIEW_SCREENSHOT = 'paste-attachment-composer-preview.png'
 const TRANSCRIPT_PREVIEW_SCREENSHOT = 'paste-attachment-transcript-preview.png'
 const RESEND_SCREENSHOT = 'paste-attachment-protected-resend.png'
+const LITERAL_OBJECT_SCREENSHOT = 'paste-attachment-literal-object-replacement.png'
 
 const SHORT_PASTE = 'The editor points:\n\n- tighten the intro\n- fix the typos'
 // Starts with blank lines: the chip label must come from the first non-blank
 // line, not render as an empty preview (the original bug).
 const LONG_PASTE = `\n\nEditor feedback summary for the intro section\nThe opening repeats the product description twice. Keep the first explanation and remove the second. Shorten the final paragraph to one sentence that tells readers what to do next. Correct the spelling mistakes in the heading and button labels, and use the same name for the editor throughout the page.`
 const PASTE_PROMPT = `Summarize this feedback: \n\n\`\`\`\n// Editor feedback summary for the intro section\n${LONG_PASTE}\n\`\`\``
+const LITERAL_OBJECT_PASTE = `Copied document excerpt with an object replacement character
+This paragraph is intentionally long enough to become a composer attachment. It preserves the exact copied document bytes, including the literal \uFFFC character between these words: before \uFFFC after. The remaining prose keeps the attachment above the folding threshold so the native paste path creates a real chip.`
+const LITERAL_OBJECT_PROMPT = 'Inspect this copied document: '
+const LITERAL_OBJECT_PROVIDER_PROMPT = `${LITERAL_OBJECT_PROMPT}\n\n${renderTextBlock(
+  textBlockLabel(LITERAL_OBJECT_PASTE),
+  LITERAL_OBJECT_PASTE,
+)}`
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
@@ -293,5 +302,44 @@ describe('Pasting text into the composer', () => {
     await saveAppScreenshot(RESEND_SCREENSHOT)
     await waitForAgentIdle()
     await resendScenario.assertComplete()
+  })
+
+  it('keeps an authored object replacement character inside its reviewed paste after reload', async () => {
+    await setComposerValue(LITERAL_OBJECT_PROMPT)
+    await pasteIntoComposer(LITERAL_OBJECT_PASTE)
+    await expect($('.prompt-input .inline-paste-chip')).toBeDisplayed()
+
+    const scenario = await installMockScenario({
+      title: 'Inspect copied document',
+      turns: [
+        {
+          user: LITERAL_OBJECT_PROVIDER_PROMPT,
+          responses: [{ text: 'The copied document bytes stayed intact.' }],
+        },
+      ],
+    })
+    await submitComposer()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+
+    await browser.reloadSession()
+    await waitForWorkspace()
+    const rows = await $$('.messages-list .msg-user').getElements()
+    const row = rows.at(-1)
+    if (!row) throw new Error('no literal-character prompt after reload')
+    const visible = await row.$('.message-text').getText()
+    expect(visible).toContain(LITERAL_OBJECT_PROMPT.trim())
+    expect(visible).not.toContain('// Copied document excerpt')
+    expect(visible).not.toContain('before')
+    const chips = await row
+      .$$('.transcript-attachment-chip.transcript-attachment-paste')
+      .getElements()
+    expect(chips).toHaveLength(1)
+    const chip = chips[0]
+    if (!chip) throw new Error('no reviewed paste chip after reload')
+    await chip.click()
+    await expect($('.attachment-preview-text')).toHaveText(LITERAL_OBJECT_PASTE)
+    await $('.attachment-preview-close').click()
+    await saveAppScreenshot(LITERAL_OBJECT_SCREENSHOT)
   })
 })

@@ -660,6 +660,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
   content: string // accumulated text (appended during streaming)
+  /** Main accepted `content` as exact provider-facing bytes after protected review. */
+  promptRepresentation?: 'canonical-provider'
   /** Display-only attachment chips for user messages (see {@link TranscriptAttachment}). */
   attachments?: TranscriptAttachment[]
   /**

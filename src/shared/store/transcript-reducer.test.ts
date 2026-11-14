@@ -333,6 +333,7 @@ test('protected human entry replaces only its optimistic prompt with reviewed te
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: [
       { type: 'text', text: 'Reviewed exact prompt' },
       { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
@@ -342,6 +343,7 @@ test('protected human entry replaces only its optimistic prompt with reviewed te
   assert.equal(messagesOf(store)[0]?.content, 'Reviewed exact prompt')
   assert.deepEqual(messagesOf(store)[0]?.images, ['data:image/png;base64,AA=='])
   assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
   assert.equal(messagesOf(store).length, 1)
   assert.equal(getThreadById(store, 't1')?.status, 'running')
 })
@@ -357,6 +359,7 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: [
       { type: 'text', text: 'Compare @Auth refactor plan with the proposal' },
       { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
@@ -369,6 +372,7 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   assert.deepEqual(messagesOf(store)[0]?.attachments, [
     { kind: 'thread', label: 'Auth refactor plan' },
   ])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, undefined)
   assert.equal(messagesOf(store).length, 1)
   assert.equal(getThreadById(store, 't1')?.status, 'running')
 })
@@ -383,6 +387,7 @@ test('protected human persistence keeps only the attachment snapshot verified by
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: 'Compare the reviewed notes with the proposal',
     attachments: [
       {
@@ -405,6 +410,7 @@ test('protected human persistence keeps only the attachment snapshot verified by
       projection: 'canonical-block',
     },
   ])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
 })
 
 test('protected human entry keeps the accepted main identity when no optimistic prompt remains', () => {
@@ -415,6 +421,7 @@ test('protected human entry keeps the accepted main identity when no optimistic 
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'accepted-after-retirement',
+    promptRepresentation: 'canonical-provider',
     content: 'Reviewed exact prompt',
   })
 

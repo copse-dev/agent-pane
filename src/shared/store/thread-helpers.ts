@@ -495,6 +495,7 @@ export function addMessage(
     origin?: MessageOrigin
     startingCommit?: string
     dirty?: boolean
+    promptRepresentation?: Message['promptRepresentation']
     /** An id minted elsewhere — main's transcript writer — so both copies agree. */
     id?: string
   },
@@ -512,6 +513,9 @@ export function addMessage(
     ...(opts?.origin !== undefined ? { origin: opts.origin } : {}),
     ...(opts?.startingCommit !== undefined ? { startingCommit: opts.startingCommit } : {}),
     ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
+    ...(opts?.promptRepresentation !== undefined
+      ? { promptRepresentation: opts.promptRepresentation }
+      : {}),
     toolCalls: [],
     createdAt: Date.now(),
   }
@@ -745,6 +749,7 @@ export function setMessagePromptContent(
   content: string,
   images: string[] | undefined,
   attachments?: TranscriptAttachment[],
+  promptRepresentation?: Message['promptRepresentation'],
 ): void {
   updateMessage(store, messageId, (message) => {
     message.content = content
@@ -755,6 +760,8 @@ export function setMessagePromptContent(
     // omits them so the transcript cannot claim context that was not sent.
     if (attachments === undefined) delete message.attachments
     else message.attachments = attachments.map((attachment) => ({ ...attachment }))
+    if (promptRepresentation === undefined) delete message.promptRepresentation
+    else message.promptRepresentation = promptRepresentation
   })
   store.emit('message_token', messageId, content)
 }

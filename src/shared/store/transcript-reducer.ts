@@ -327,7 +327,14 @@ export function createTranscriptReducer(
             : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
         if (existing) {
           if (chunk.preserveOptimisticDisplay !== true) {
-            setMessagePromptContent(store, existing.id, content, images, chunk.attachments)
+            setMessagePromptContent(
+              store,
+              existing.id,
+              content,
+              images,
+              chunk.attachments,
+              chunk.promptRepresentation,
+            )
           }
           // User prompts do not receive the assistant stream's later
           // `message_done`, so finalize this canonical replacement now.
@@ -335,6 +342,7 @@ export function createTranscriptReducer(
         } else {
           addMessage(store, threadId, 'user', content, images, chunk.attachments, {
             id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation,
           })
         }
         break

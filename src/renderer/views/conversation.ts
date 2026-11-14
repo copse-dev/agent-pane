@@ -2192,6 +2192,7 @@ function appendMessageContent(
     contentBlocks?: AcpContentBlock[]
     reasoningBlocks?: AcpContentBlock[]
     attachments?: TranscriptAttachment[]
+    promptRepresentation?: Message['promptRepresentation']
   },
   api: ApiClient,
   workspaceRoot: string | null,
@@ -2217,7 +2218,7 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
-    renderUserTranscript(textEl, msg.content, msg.attachments, api)
+    renderUserTranscript(textEl, msg.content, msg.attachments, api, msg.promptRepresentation)
   } else if (msg.role === 'user') {
     setUserMarkdown(textEl, msg.content)
   } else {
@@ -2311,11 +2312,29 @@ interface UserTranscriptProjection {
   content: string
   inline?: TranscriptAttachment[]
   trailing?: TranscriptAttachment[]
+  slotMarker?: string
+}
+
+/**
+ * Canonical content may legitimately contain U+FFFC inside user-authored text
+ * or a reviewed paste snapshot. Pick a renderer-only marker that cannot occur
+ * in that content, so those literal characters never become attachment slots.
+ */
+function unusedProjectionSlotMarker(content: string): string {
+  const used = new Set(content)
+  for (let codePoint = 0xe000; codePoint <= 0xf8ff; codePoint++) {
+    const candidate = String.fromCodePoint(codePoint)
+    if (!used.has(candidate)) return candidate
+  }
+  let suffix = 0
+  while (content.includes(`\uE000copse-attachment-slot-${String(suffix)}\uF8FF`)) suffix++
+  return `\uE000copse-attachment-slot-${String(suffix)}\uF8FF`
 }
 
 function projectUserTranscriptContent(
   content: string,
   attachments: TranscriptAttachment[],
+  promptRepresentation: Message['promptRepresentation'],
 ): UserTranscriptProjection {
   let projected = content
   for (let index = attachments.length - 1; index >= 0; index--) {
@@ -2330,10 +2349,15 @@ function projectUserTranscriptContent(
     const suffix = `\n\n${block}`
     if (projected.endsWith(suffix)) projected = projected.slice(0, -suffix.length)
   }
-  // A protected-review projection is Main-owned. Existing placeholders mean
-  // this is still an optimistic/legacy display, whose current chip bindings
-  // must remain untouched even if authored text equals an attachment block.
-  if (projected.includes(CHIP_CHAR)) return { content: projected }
+  // Without Main-owned projection metadata, U+FFFC still means an optimistic
+  // or legacy composer slot. Once Main has granted projection metadata,
+  // canonical content may contain authored U+FFFC bytes and they stay literal.
+  const hasCanonicalRepresentation =
+    promptRepresentation === 'canonical-provider' ||
+    attachments.some((attachment) => attachment.projection !== undefined)
+  if (projected.includes(CHIP_CHAR) && !hasCanonicalRepresentation) {
+    return { content: projected }
+  }
 
   const candidates = attachments.flatMap((attachment, attachmentIndex) => {
     const token =
@@ -2358,12 +2382,21 @@ function projectUserTranscriptContent(
         ),
     )
     .sort((left, right) => left.start - right.start)
-  if (matches.length === 0) return { content: projected }
+  if (matches.length === 0) {
+    if (!hasCanonicalRepresentation) return { content: projected }
+    return {
+      content: projected,
+      inline: [],
+      trailing: attachments,
+      slotMarker: unusedProjectionSlotMarker(projected),
+    }
+  }
 
+  const slotMarker = unusedProjectionSlotMarker(projected)
   let cursor = 0
   let visible = ''
   for (const match of matches) {
-    visible += `${projected.slice(cursor, match.start)}${CHIP_CHAR}`
+    visible += `${projected.slice(cursor, match.start)}${slotMarker}`
     cursor = match.end
   }
   visible += projected.slice(cursor)
@@ -2372,6 +2405,7 @@ function projectUserTranscriptContent(
     content: visible,
     inline: matches.map((match) => match.attachment),
     trailing: attachments.filter((_attachment, index) => !matchedIndices.has(index)),
+    slotMarker,
   }
 }
 
@@ -2385,9 +2419,11 @@ function renderUserTranscript(
   content: string,
   attachments: TranscriptAttachment[],
   api: ApiClient,
+  promptRepresentation: Message['promptRepresentation'],
 ): void {
-  const projection = projectUserTranscriptContent(content, attachments)
+  const projection = projectUserTranscriptContent(content, attachments, promptRepresentation)
   const displayContent = projection.content
+  const slotMarker = projection.slotMarker ?? CHIP_CHAR
   // Positional composer attachments lead the array in the same order as the
   // placeholders. Anything after the final placeholder belongs in the trailing
   // row. This also keeps older messages compatible: their paste attachments
@@ -2398,7 +2434,7 @@ function renderUserTranscript(
     inline = projection.inline
     trailing = projection.trailing
   } else {
-    const inlineCount = countChipPlaceholders(displayContent)
+    const inlineCount = countChipPlaceholders(displayContent, slotMarker)
     const firstNonPositional = attachments.findIndex(
       (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
     )
@@ -2412,7 +2448,7 @@ function renderUserTranscript(
   // Restore each positional paste/thread chip at its placeholder. `firstChip`
   // is where this fold region starts in the message's attachment list.
   const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
-    const parts = text.split(CHIP_CHAR)
+    const parts = text.split(slotMarker)
     parts.forEach((part, i) => {
       if (part) sink.append(document.createTextNode(part))
       if (i < parts.length - 1) {
@@ -2432,11 +2468,11 @@ function renderUserTranscript(
   // regions gives each one its offset into the positional attachments.
   const fold = splitUserPromptForFold(displayContent)
   if (fold) {
-    const headChips = countChipPlaceholders(fold.head)
+    const headChips = countChipPlaceholders(fold.head, slotMarker)
     const firstChip: Record<UserPromptFoldRegion, number> = {
       head: 0,
       middle: headChips,
-      tail: headChips + countChipPlaceholders(fold.middle),
+      tail: headChips + countChipPlaceholders(fold.middle, slotMarker),
     }
     fillUserPromptFold(host, fold, (sink, text, region) => {
       paintRegion(sink, text, firstChip[region])
@@ -2454,8 +2490,8 @@ function renderUserTranscript(
   }
 }
 
-function countChipPlaceholders(text: string): number {
-  return text.split(CHIP_CHAR).length - 1
+function countChipPlaceholders(text: string, marker: string = CHIP_CHAR): number {
+  return text.split(marker).length - 1
 }
 
 /**

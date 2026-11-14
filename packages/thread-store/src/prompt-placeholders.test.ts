@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PASTE_PLACEHOLDER, stripPastePlaceholders } from './prompt-placeholders.ts'
+import {
+  PASTE_PLACEHOLDER,
+  replayPromptText,
+  stripPastePlaceholders,
+} from './prompt-placeholders.ts'
 
 describe('stripPastePlaceholders', () => {
   it('leaves a prompt without placeholders alone (beyond trimming)', () => {
@@ -26,5 +30,23 @@ describe('stripPastePlaceholders', () => {
 
   it('returns empty for a prompt that was nothing but a paste', () => {
     assert.equal(stripPastePlaceholders(PASTE_PLACEHOLDER), '')
+  })
+})
+
+describe('replayPromptText', () => {
+  it('preserves exact reviewed bytes, including literal placeholders and whitespace', () => {
+    const canonical = `  before ${PASTE_PLACEHOLDER} after  \n\n`
+    assert.equal(
+      replayPromptText(canonical, [{ projection: 'canonical-block' }], undefined),
+      canonical,
+    )
+    assert.equal(replayPromptText(canonical, [], 'canonical-provider'), canonical)
+  })
+
+  it('still cleans optimistic placeholders without Main-owned provenance', () => {
+    assert.equal(
+      replayPromptText(`Look at ${PASTE_PLACEHOLDER}  please`, [{}], undefined),
+      'Look at please',
+    )
   })
 })

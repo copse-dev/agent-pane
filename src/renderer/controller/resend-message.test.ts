@@ -198,16 +198,26 @@ test('resends canonical protected attachment bytes while reporting its omitted c
   const store = createProjectStore()
   const { api, runs } = fakeApi()
   const threadId = createThread(store)
-  const canonical = 'Review this\n\n```\n// pasted log\nexact bytes\n```'
-  addMessage(store, threadId, 'user', canonical, undefined, [
+  const pasteBytes = 'before ￼  after\nkept exactly'
+  const canonical = `  Review this  \n\n\`\`\`\n// pasted log\n${pasteBytes}\n\`\`\`\n`
+  addMessage(
+    store,
+    threadId,
+    'user',
+    canonical,
+    undefined,
+    [
+      {
+        kind: 'paste',
+        label: 'pasted log',
+        content: pasteBytes,
+        placement: 'inline',
+      },
+    ],
     {
-      kind: 'paste',
-      label: 'pasted log',
-      content: 'exact bytes',
-      placement: 'inline',
-      projection: 'canonical-block',
+      promptRepresentation: 'canonical-provider',
     },
-  ])
+  )
 
   const result = resendLastMessage(store, api, threadId)
 
@@ -216,6 +226,7 @@ test('resends canonical protected attachment bytes while reporting its omitted c
   const resent = getThread(store, threadId).messages.at(-1)
   assert.equal(resent?.attachments, undefined)
   assert.equal(resent?.content, canonical)
+  assert.equal(getThread(store, threadId).messages[0]?.attachments?.[0]?.content, pasteBytes)
 })
 
 test('does nothing when the thread has no prompt to repeat', () => {

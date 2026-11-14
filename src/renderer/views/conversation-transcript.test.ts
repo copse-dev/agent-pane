@@ -65,10 +65,13 @@ function drag(surface: Element): void {
 function mountWithUserMessage(
   content: string,
   attachments: Parameters<typeof addMessage>[5],
+  promptRepresentation?: 'canonical-provider',
 ): { store: ReturnType<typeof createStore>; threadId: string } {
   const store = createStore()
   const threadId = createThread(store)
-  addMessage(store, threadId, 'user', content, undefined, attachments)
+  addMessage(store, threadId, 'user', content, undefined, attachments, {
+    ...(promptRepresentation !== undefined ? { promptRepresentation } : {}),
+  })
   const host = document.createElement('div')
   document.body.append(host)
   mountConversation(host, store, fakeApi())
@@ -519,6 +522,71 @@ describe('user transcript attachment chips', () => {
       ),
       ['Thread context', 'Paste notes'],
     )
+  })
+
+  it('does not bind projected attachments to a literal object replacement character in a paste', () => {
+    patchPreviewDialog()
+    const pasteContent = `before ${CHIP_CHAR} after`
+    const block = renderTextBlock('Document excerpt', pasteContent)
+    const canonical = `@Thread context then\n\n${block}`
+    const { store, threadId } = mountWithUserMessage(canonical, [
+      {
+        kind: 'thread',
+        label: 'Thread context',
+        placement: 'inline',
+        projection: 'canonical-thread-label',
+      },
+      {
+        kind: 'paste',
+        label: 'Document excerpt',
+        content: pasteContent,
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.deepEqual(
+      Array.from(
+        text.querySelectorAll('.transcript-attachment-label'),
+        (label) => label.textContent,
+      ),
+      ['Thread context', 'Document excerpt'],
+    )
+    assert.doesNotMatch(text.textContent, /\/\/ Document excerpt/)
+    assert.doesNotMatch(text.textContent, /before/)
+    assert.doesNotMatch(text.textContent, new RegExp(CHIP_CHAR))
+
+    const paste = text.querySelector<HTMLElement>('.transcript-attachment-paste')
+    assert.ok(paste)
+    paste.click()
+    assert.equal(document.querySelector('.attachment-preview-text')?.textContent, pasteContent)
+    assert.equal(getThreadById(store, threadId)?.messages[0]?.content, canonical)
+  })
+
+  it('keeps literal object replacement characters canonical when no chip projection was granted', () => {
+    const pasteContent = `ambiguous ${CHIP_CHAR} bytes`
+    const block = renderTextBlock('Ambiguous excerpt', pasteContent)
+    const canonical = `Review this literal block:\n\n${block}\n\n${block}`
+    mountWithUserMessage(
+      canonical,
+      [
+        {
+          kind: 'paste',
+          label: 'Ambiguous excerpt',
+          content: pasteContent,
+          placement: 'inline',
+        },
+      ],
+      'canonical-provider',
+    )
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.match(text.textContent, new RegExp(CHIP_CHAR))
+    assert.match(text.textContent, /\/\/ Ambiguous excerpt/)
+    assert.equal(text.querySelectorAll('.transcript-attachment-chip').length, 1)
   })
 
   it('binds a unique reconstructed paste to its own snapshot beside an ambiguous paste', () => {

@@ -63,6 +63,7 @@ describe('withoutMainOwnedThreadFields', () => {
       id: 'request',
       role: 'user',
       content: 'visible',
+      promptRepresentation: 'canonical-provider',
       toolCalls: [],
       createdAt: 1,
       attachments: [
@@ -75,8 +76,9 @@ describe('withoutMainOwnedThreadFields', () => {
         },
       ],
     }
+    const { promptRepresentation: _promptRepresentation, ...rendererMessage } = message
     const expected = {
-      ...message,
+      ...rendererMessage,
       attachments: [
         {
           kind: 'paste',
@@ -97,6 +99,7 @@ describe('withoutMainOwnedThreadFields', () => {
       id: 'request',
       role: 'user',
       content: 'visible',
+      promptRepresentation: 'canonical-provider',
       toolCalls: [],
       createdAt: 1,
       attachments: [

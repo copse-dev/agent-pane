@@ -139,6 +139,8 @@ export interface SpineMessageLine {
   createdAt?: number
   /** The message content OKF file. Always present (body may be empty). */
   content: ContentRef
+  /** Main-owned proof that user content is exact protected provider input. */
+  promptRepresentation?: 'canonical-provider'
   reasoning?: ContentRef
   /** Non-text ACP assistant/reasoning blocks, stored out of line as JSON. */
   contentBlocks?: ContentRef
@@ -628,6 +630,7 @@ const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<
   SpineMessageLine,
   'canvasArtefacts' | 'visualEvidence'
 > = {
+  promptRepresentation: (value) => value === 'canonical-provider',
   contentBlocks: isContentRef,
   reasoningBlocks: isContentRef,
   // Only `title` is inspected; the rest of an artefact is passed through as the

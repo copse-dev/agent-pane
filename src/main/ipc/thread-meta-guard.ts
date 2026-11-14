@@ -29,11 +29,12 @@ const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
 export function withoutMainOwnedMessageFields(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  const { promptRepresentation: _promptRepresentation, ...withoutRepresentation } = payload
   const attachmentValue = payload['attachments']
-  if (!Array.isArray(attachmentValue)) return payload
+  if (!Array.isArray(attachmentValue)) return withoutRepresentation
   const attachments = expectArray(attachmentValue)
   return {
-    ...payload,
+    ...withoutRepresentation,
     attachments: attachments.map((attachment) => {
       if (!isRecord(attachment)) return attachment
       const { projection: _projection, ...rendererFields } = attachment
