@@ -202,10 +202,7 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
-    activateGrant: (
-      id: string,
-      messageId: string,
-    ) => Promise<'activated' | 'review' | 'rejected'>
+    activateGrant: (id: string, messageId: string) => Promise<'activated' | 'rejected'>
     canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
     canSubmit: (id: string) => Promise<boolean>
     revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>

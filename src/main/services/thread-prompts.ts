@@ -146,6 +146,7 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
       !command ||
       command.authorizingAccess !== 'orchestrate' ||
       command.requireWorktree !== true ||
+      command.unattended !== true ||
       canSubmit.get(id)?.() !== true
     ) {
       threadPromptDispatchGrants.revoke(id)
@@ -183,7 +184,7 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
         sourceThreadId: command.sourceThreadId,
         content: command.text,
       })
-      if (activation !== 'activated') {
+      if (activation === 'rejected') {
         threadPromptDispatchGrants.revoke(id)
         return activation
       }
@@ -216,7 +217,7 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
         !signal?.aborted &&
         (!command.authorizingAccess ||
           hasThreadAccess(command.sourceThreadId, command.authorizingAccess))
-      if (command.authorizingAccess === 'orchestrate') {
+      if (command.authorizingAccess === 'orchestrate' && command.unattended === true) {
         const payload: AgentDispatchPayload = {
           userContent: command.text,
           invokedSkills: [],

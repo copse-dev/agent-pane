@@ -75,6 +75,7 @@ jobs:
       github.event.workflow_run.head_repository.id == github.event.repository.id)
     permissions:
       contents: read
+      actions: read
       pull-requests: write
     uses: copse-dev/agent-pane/.github/workflows/reviewer.yml@REVIEWER_SHA
     with:
@@ -87,9 +88,17 @@ jobs:
 The `fromJSON` conversion passes the dispatch value as a number to the reusable
 workflow, rather than forwarding its string representation.
 
-The caller grants the maximum permissions available to the reusable workflow;
-its grounding job reduces that grant to `permissions: {}`. Only the findings
-job receives the model key. `model-api-key` is optional in the reusable interface
+The caller grants the maximum permissions available to the reusable workflow.
+**Every reusable caller must add `actions: read` before upgrading to this reviewer
+SHA, including callers with `post-summary: false`.** GitHub validates the called
+workflow's permission ceiling before evaluating its job conditions. The separate
+model-free publisher uses this permission to attest the exact immutable same-run
+artifact and ZIP digest; disabling summaries does not remove the ceiling requirement.
+
+The grounding job reduces its grant to `permissions: {}`. The protected Copse
+`copse-findings` job retains `pull-requests: read` for model context; the portable
+npm `findings` job keeps its existing `pull-requests: write` grant. Only findings
+jobs receive model credentials. `model-api-key` is optional in the reusable interface
 because Copse obtains its key from a protected environment; npm callers must pass it
 and authorization fails early when it is absent. Both the workflow and the reviewer
 source are pinned,

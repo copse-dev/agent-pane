@@ -32,6 +32,8 @@ jobs:
       github.event.workflow_run.head_repository.id == github.event.repository.id))
     permissions:
       contents: read
+      # Separate model-free publisher attests immutable same-run artifact metadata.
+      actions: read
       # Ceiling for the portable variant; the protected Copse job reduces this to read.
       pull-requests: write
     uses: ./.github/workflows/reviewer.yml

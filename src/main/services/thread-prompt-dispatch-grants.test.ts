@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Thread } from '@shared/types/thread.ts'
-import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import {
   ThreadPromptDispatchGrants,
   threadPromptGrantActivation,
@@ -114,22 +113,15 @@ test('revocation and sender teardown invalidate unspent grants', () => {
   assert.equal(grants.consume(input.id, claim), null)
 })
 
-test('only the first exact runnable queue item may activate unattended authority', () => {
+test('only the first exact queue item may activate new-child authority', () => {
   assert.equal(threadPromptGrantActivation(activationThread(), activationClaim), 'activated')
   assert.equal(
     threadPromptGrantActivation(activationThread({ status: 'running' }), activationClaim),
-    'review',
+    'activated',
   )
   assert.equal(
     threadPromptGrantActivation(activationThread({ queuePaused: true }), activationClaim),
-    'review',
-  )
-  assert.equal(
-    threadPromptGrantActivation(
-      activationThread({ continuationUsed: DEFAULT_CONTINUATION_BUDGET }),
-      activationClaim,
-    ),
-    'review',
+    'activated',
   )
 })
 

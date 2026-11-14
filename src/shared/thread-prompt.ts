@@ -12,6 +12,8 @@ export interface ThreadPromptCommand {
   requireWorktree?: boolean
   /** The main-owned grant that authorizes this submission. */
   authorizingAccess?: 'orchestrate'
+  /** Only a freshly created owned child may run its exact first prompt unattended. */
+  unattended?: true
 }
 
 export type ThreadPromptResult = { ok: true; queued: boolean } | { ok: false; error: string }

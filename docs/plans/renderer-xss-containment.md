@@ -73,14 +73,16 @@ shell startup variable cannot run code in the unsandboxed launcher.
    provenance. A scheduled first turn requires empty provider history and a validated isolated
    worktree before its one-use unattended grant is consumed; deleting a pending run retires that
    grant before the thread id is released.
-   Model-created subthread prompts use a separate Main-minted one-use grant bound to the exact
-   owned parent, child, prompt text and optimistic message id.
+   The exact first prompt of a newly created model-owned subthread uses a separate Main-minted
+   one-use grant bound to the exact owned parent, child, prompt text and optimistic message id.
    Main activates it only after that exact message is durable in a validated isolated worktree,
    then reserves the dispatch slot and revalidates the worktree before consuming it. The grant
    carries no renderer-mutable plan, todos, brief, model or execution controls; canonical provider
    history is re-read from the Main-only sidecar inside that exclusive slot. Renderer machine
-   provenance is display/queue metadata only; edits and deletion revoke the bound receipt/grant,
-   while changed, replayed, missing or post-restart grants fall back to protected human review.
+   provenance, status, pause and budget fields are display/queue metadata only; edits and deletion
+   revoke the bound receipt/grant, while later child prompts and changed, replayed, missing or
+   post-restart grants pass protected human review while holding the exclusive dispatch slot. The
+   provider history and plan shown in that review are therefore the exact context dispatched.
 
 3. **Broader renderer data access and side effects.** The renderer still has many read and
    low-friction write APIs. In particular, the visible browser's public-web session accepts

@@ -108,9 +108,9 @@ export async function acceptThreadPrompt(
       payload: { content: command.text },
       createdAt: Date.now(),
       origin,
-      ...(command.authorizingAccess === 'orchestrate' ? { threadPromptGrantId: command.id } : {}),
+      ...(command.unattended === true ? { threadPromptGrantId: command.id } : {}),
     })
-    if (command.authorizingAccess === 'orchestrate') {
+    if (command.unattended === true) {
       await flushPendingThreadPersistence()
       const activation = await api.threadPrompts.activateGrant(command.id, messageId)
       if (activation === 'rejected') {
@@ -119,17 +119,6 @@ export async function acceptThreadPrompt(
           ok: false,
           error: 'The isolated subthread prompt could not be activated safely.',
         }
-      }
-      if (activation === 'review') {
-        patchThreadAnywhere(store, threadId, (thread) => ({
-          ...thread,
-          pendingMessages: (thread.pendingMessages ?? []).map((item) => {
-            if (item.messageId !== messageId) return item
-            const { threadPromptGrantId: _grant, ...reviewed } = item
-            return reviewed
-          }),
-        }))
-        await flushPendingThreadPersistence()
       }
     }
     const queued = current.status === 'running' || current.queuePaused === true

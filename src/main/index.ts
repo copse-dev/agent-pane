@@ -1366,93 +1366,104 @@ app
             }
             threadPromptDispatchGrants.revoke(promptGrantId)
           }
-          const thread = await getProjectThread(projectId, threadId)
-          const optimistic =
-            thread &&
-            display?.messageId &&
-            displaySnapshot &&
-            hasProtectedPromptMessageAppend(senderId, projectId, threadId, display.messageId)
-              ? thread.messages.find(
-                  (message) =>
-                    message.id === display.messageId &&
-                    message.role === 'user' &&
-                    protectedPromptMessageMatches(message, displaySnapshot, payload.userContent),
-                )
-              : undefined
-          const protectedInputs = await freezeProtectedInputs(
-            projectId,
-            threadId,
-            thread?.messages ?? [],
-          )
-          const submission = await protectedPromptReview.review(win, {
-            projectId,
-            threadId,
-            content: payload.userContent,
-            ...(payload.model !== undefined ? { model: payload.model } : {}),
-            ...(optimistic?.attachments !== undefined
-              ? { attachments: optimistic.attachments }
-              : {}),
-            context: protectedPromptContext(payload, protectedInputs),
-            kind: 'human',
-          })
-          if (!submission) return 'cancelled'
-          const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
-          const preserveOptimisticDisplay =
-            optimistic !== undefined &&
-            protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
-          const dispatched = await agentDispatcher.dispatchProtectedWorktree(
-            projectId,
-            threadId,
-            async (): Promise<AgentDispatchRequest | null> => {
-              if (!(await canDispatchSubthread(projectId, delegation.parentThreadId, threadId)))
-                return null
-              const currentProtectedInputs = await freezeProtectedInputs(projectId, threadId, [])
-              return {
-                ...request,
-                payload: { ...payload, userContent: reviewedContent },
-                protectedHistory: currentProtectedInputs.history,
-                protectedPlan: currentProtectedInputs.plan,
-                protectedHumanStart: {
-                  content: reviewedContent,
-                  ...(preserveOptimisticDisplay
-                    ? { preserveOptimisticDisplay: true as const }
-                    : {}),
-                  acceptMessageId: async (): Promise<string> => {
-                    const messageId = await acceptAuthorizedReviewedUserMessage(
-                      projectId,
-                      threadId,
-                      {
-                        requireLiveThreadIds: [delegation.parentThreadId],
-                        authorize: (): boolean =>
-                          holdsSubthreadAuthorityNow(
-                            projectId,
-                            delegation.parentThreadId,
-                            threadId,
+          try {
+            const dispatched = await agentDispatcher.dispatchProtectedWorktree(
+              projectId,
+              threadId,
+              async (): Promise<AgentDispatchRequest | null> => {
+                if (!(await canDispatchSubthread(projectId, delegation.parentThreadId, threadId)))
+                  return null
+                const thread = await getProjectThread(projectId, threadId)
+                const optimistic =
+                  thread &&
+                  display?.messageId &&
+                  displaySnapshot &&
+                  hasProtectedPromptMessageAppend(senderId, projectId, threadId, display.messageId)
+                    ? thread.messages.find(
+                        (message) =>
+                          message.id === display.messageId &&
+                          message.role === 'user' &&
+                          protectedPromptMessageMatches(
+                            message,
+                            displaySnapshot,
+                            payload.userContent,
                           ),
-                        ...(optimistic
-                          ? {
-                              optimistic: {
-                                messageId: optimistic.id,
-                                claim: (): boolean =>
-                                  consumeProtectedPromptMessageAppend(
-                                    senderId,
-                                    projectId,
-                                    threadId,
-                                    optimistic.id,
-                                  ),
-                              },
-                            }
-                          : {}),
-                      },
-                    )
-                    if (messageId === null) throw new SubthreadPromptHeldError(threadId)
-                    return messageId
+                      )
+                    : undefined
+                const protectedInputs = await freezeProtectedInputs(
+                  projectId,
+                  threadId,
+                  thread?.messages ?? [],
+                )
+                const submission = await protectedPromptReview.review(win, {
+                  projectId,
+                  threadId,
+                  content: payload.userContent,
+                  ...(payload.model !== undefined ? { model: payload.model } : {}),
+                  ...(optimistic?.attachments !== undefined
+                    ? { attachments: optimistic.attachments }
+                    : {}),
+                  context: protectedPromptContext(payload, protectedInputs),
+                  kind: 'human',
+                })
+                if (!submission) throw new ProtectedPromptAdmissionCancelledError()
+                const reviewedContent = withProtectedPromptText(
+                  payload.userContent,
+                  submission.text,
+                )
+                const preserveOptimisticDisplay =
+                  optimistic !== undefined &&
+                  protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
+                return {
+                  ...request,
+                  payload: { ...payload, userContent: reviewedContent },
+                  protectedHistory: protectedInputs.history,
+                  protectedPlan: protectedInputs.plan,
+                  protectedHumanStart: {
+                    content: reviewedContent,
+                    ...(preserveOptimisticDisplay
+                      ? { preserveOptimisticDisplay: true as const }
+                      : {}),
+                    acceptMessageId: async (): Promise<string> => {
+                      const messageId = await acceptAuthorizedReviewedUserMessage(
+                        projectId,
+                        threadId,
+                        {
+                          requireLiveThreadIds: [delegation.parentThreadId],
+                          authorize: (): boolean =>
+                            holdsSubthreadAuthorityNow(
+                              projectId,
+                              delegation.parentThreadId,
+                              threadId,
+                            ),
+                          ...(optimistic
+                            ? {
+                                optimistic: {
+                                  messageId: optimistic.id,
+                                  claim: (): boolean =>
+                                    consumeProtectedPromptMessageAppend(
+                                      senderId,
+                                      projectId,
+                                      threadId,
+                                      optimistic.id,
+                                    ),
+                                },
+                              }
+                            : {}),
+                        },
+                      )
+                      if (messageId === null) throw new SubthreadPromptHeldError(threadId)
+                      return messageId
+                    },
                   },
-                },
-              }
-            },
-          )
-          if (!dispatched) throw new SubthreadPromptHeldError(threadId)
+                }
+              },
+            )
+            if (!dispatched) throw new SubthreadPromptHeldError(threadId)
+          } catch (error) {
+            if (error instanceof ProtectedPromptAdmissionCancelledError) return 'cancelled'
+            throw error
+          }
         } else {
           const frozenScheduled =
             payload.automationRun === true ? frozenScheduledFirstTurn(payload) : null

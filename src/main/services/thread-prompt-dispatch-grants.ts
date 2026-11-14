@@ -1,6 +1,5 @@
 import type { AgentDispatchPayload } from './agent-dispatcher.ts'
 import type { Thread } from '@shared/types/thread.ts'
-import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
 
 const MAX_PENDING_GRANTS = 4096
 const ACTIVATED_GRANT_LIFETIME_MS = 10_000
@@ -48,12 +47,12 @@ export interface ThreadPromptGrantActivationClaim {
   content: string
 }
 
-export type ThreadPromptGrantActivation = 'activated' | 'review' | 'rejected'
+export type ThreadPromptGrantActivation = 'activated' | 'rejected'
 
 /**
- * Decide whether the exact Main-authored queue entry may retain unattended
- * authority. A valid item that cannot run now loses its grant and must pass
- * protected review when it is eventually submitted.
+ * Decide whether this is the exact first Main-authored queue entry. Main only
+ * mints these grants for a newly created owned child, so renderer-controlled
+ * status, pause and budget metadata are deliberately not authorization inputs.
  */
 export function threadPromptGrantActivation(
   thread: Thread,
@@ -69,12 +68,6 @@ export function threadPromptGrantActivation(
     thread.pendingMessages?.find((item) => item.autoDispatch !== false)?.messageId ===
       claim.messageId
   if (!exactQueued) return 'rejected'
-  if (
-    thread.status !== 'idle' ||
-    thread.queuePaused === true ||
-    !canContinue(thread.continuationUsed ?? 0)
-  )
-    return 'review'
   return 'activated'
 }
 

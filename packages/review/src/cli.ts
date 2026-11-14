@@ -167,6 +167,8 @@ export interface CliIo {
   readonly fetch?: FetchLike
   /** The HTTP client `view_image` fetches conversation images with; default `fetch`. */
   readonly fetchBinary?: BinaryFetchLike
+  /** Trusted host adapter: retain a rendered summary for separate publication. */
+  readonly deferSummary?: (block: string, headCommit: string | null) => Promise<void>
 }
 
 function refExists(ref: string, cwd: string): boolean {
@@ -360,6 +362,11 @@ async function summarise(run: SummaryRun): Promise<string | null> {
   })
   if (run.print) io.stdout(`${block}\n`)
   if (run.target === null) return null
+  if (io.deferSummary !== undefined) {
+    await io.deferSummary(block, headCommit)
+    io.stderr('copse-review: saved the summary for separate publication\n')
+    return null
+  }
   const posted = await postSummary({ ...run.target, headCommit }, block, {
     ...(io.fetch ? { fetch: io.fetch } : {}),
   })

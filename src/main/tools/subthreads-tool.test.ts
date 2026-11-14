@@ -113,6 +113,10 @@ describe('subthread orchestration', () => {
         )
         assert.equal(sent.length, 3)
         assert.ok(sent.every((command) => command.requireWorktree))
+        assert.deepEqual(
+          sent.map((command) => command.unattended),
+          [true, true, undefined],
+        )
         assert.equal((await getProjectThread('project', childId))?.followUpOf, undefined)
         assert.equal(hasThreadAccess('parent', 'read'), false)
         assert.equal(hasThreadAccess('parent', 'send'), false)
