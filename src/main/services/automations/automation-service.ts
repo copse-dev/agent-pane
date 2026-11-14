@@ -313,7 +313,11 @@ export interface AutomationService {
   ): Promise<boolean>
   upsert(projectId: string, input: AutomationScheduleInput): Promise<AutomationSchedule>
   remove(projectId: string, scheduleId: string): Promise<void>
-  runNow(projectId: string, scheduleId: string): Promise<AutomationTriggerEvent>
+  runNow(
+    projectId: string,
+    scheduleId: string,
+    reviewed?: AutomationSchedule,
+  ): Promise<AutomationTriggerEvent>
   /**
    * Release every finished run's checkout that is safe to remove, through the
    * same path the scheduler uses, and report the runs that must stay.
@@ -1193,10 +1197,13 @@ export function createAutomationService(
         healthListeners.delete(listener)
       }
     },
-    async runNow(projectId, scheduleId) {
+    async runNow(projectId, scheduleId, reviewed) {
       if (!dependencies.isPluginEnabled()) throw new Error('Enable the automations plugin first')
       const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
       if (!schedule) throw new Error('Automation schedule not found in this project')
+      if (reviewed && JSON.stringify(schedule) !== JSON.stringify(reviewed)) {
+        throw new Error('Automation changed during confirmation; review it again')
+      }
       return trigger(schedule, dependencies.now(), 'manual')
     },
     async cleanupRuns(projectId, scheduleId) {

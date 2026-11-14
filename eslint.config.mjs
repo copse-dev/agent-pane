@@ -342,6 +342,8 @@ export default ts.config(
       'src/main/services/close-confirm.ts',
       'src/main/services/update-prompt.ts',
       'src/main/services/user-alerts-electron.ts',
+      // Native permission confirmation is a desktop-only OS dialog adapter.
+      'src/main/services/native-human-confirmation.ts',
       'src/main/services/plugins/plugin-browser-panel.ts',
       'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
       // DEBUG BRANCH: patches `ipcMain.handle` to time every channel. It is by

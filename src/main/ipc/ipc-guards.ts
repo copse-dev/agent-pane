@@ -171,7 +171,7 @@ export const followUpContextSchema = z.object({
  * draft flag, nothing more. Every field reaches `gh pr create` as an argument,
  * so the shape is pinned and bounded rather than forwarded — and the target
  * (owner/repo) and branches (head/base) are not accepted at all. The channel
- * has no approval gate, so the main process resolves those from the thread's
+ * has a native approval gate, and the main process resolves those from the thread's
  * own checkout; a compromised renderer must not be able to point a create at a
  * different repository. The agent tool's wider `PrCreateRequest` stays on the
  * tool path, where explicit targets are the point.
