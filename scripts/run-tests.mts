@@ -343,6 +343,31 @@ const TEST_FILE_CONCURRENCY = process.env['COPSE_THREAD_CONTAINER_E2E'] === 'app
 // tests per run, nondeterministically).
 const TEST_TIMEOUT_MS = 180_000
 
+/**
+ * Opt-in outbound network survey (docs/testing-strategy.md#outbound-network-guard):
+ * `COPSE_UNIT_NETWORK_GUARD=log` preloads the e2e Node guard into every test
+ * process, and every Node process a test spawns, and records non-loopback
+ * attempts in `.tmp/network-guard-<time>.jsonl`. It is not enforced yet; see that section.
+ */
+function unitNetworkGuardEnv(): Record<string, string> {
+  const mode = process.env['COPSE_UNIT_NETWORK_GUARD']?.trim() ?? ''
+  if (mode === '' || mode === 'off') return {}
+  if (mode !== 'log' && mode !== 'enforce') {
+    throw new Error(`COPSE_UNIT_NETWORK_GUARD must be log, enforce or off (got "${mode}")`)
+  }
+  // Outside the run's output dir, which is deleted after a passing run.
+  const ledger = resolve(repoRoot, '.tmp', `network-guard-${String(Date.now())}.jsonl`)
+  console.log(`[run-tests] outbound network guard (${mode}): ${ledger}`)
+  const preload = resolve(repoRoot, 'scripts/lib/unit-network-guard.cjs')
+  return {
+    COPSE_UNIT_NETWORK_GUARD: mode,
+    COPSE_UNIT_NETWORK_LEDGER: ledger,
+    NODE_OPTIONS: [process.env['NODE_OPTIONS'], `--require ${JSON.stringify(preload)}`]
+      .filter(Boolean)
+      .join(' '),
+  }
+}
+
 async function runTests(testFiles: string[], outputDir: string): Promise<number> {
   // Tests create their own profiles (often under a fake home). Inheriting a
   // developer's profile overrides can both invalidate those fixtures and write
@@ -368,6 +393,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
   const reportDir = isolatedRun ? outputDir : await mkdtemp(join(repoRoot, '.tmp/test-run-'))
   const tapLog = join(reportDir, 'unit-tests.tap')
   if (!isolatedRun) console.log(`[run-tests] report directory: ${reportDir}`)
+  const networkGuard = unitNetworkGuardEnv()
   const startedAt = new Date().toISOString()
   const result = spawnSync(
     'node',
@@ -379,7 +405,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
       ...specs,
     ],
     {
-      env: { ...testEnv, COPSE_TEST_OUTPUT_DIR: resolve(outputDir) },
+      env: { ...testEnv, ...networkGuard, COPSE_TEST_OUTPUT_DIR: resolve(outputDir) },
       stdio: 'inherit',
     },
   )

@@ -101,6 +101,7 @@
     "test:e2e:coordination": "node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/agent-coordination.e2e.ts",
     "test:demo": "wdio run wdio.demo.conf.ts",
     "test:e2e:ci": "node scripts/run-e2e.mts wdio.ci.conf.ts",
+    "e2e:network-report": "node scripts/e2e-network-report.mts",
     "test:e2e:agent-eval": "node scripts/run-e2e.mts wdio.eval.conf.ts",
     "test:e2e:quarantine": "node scripts/run-e2e.mts wdio.quarantine.conf.ts",
     "eval:autonomy": "node scripts/run-autonomy-container.mts",

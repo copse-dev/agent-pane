@@ -388,6 +388,50 @@ new tests should keep that trend:
 Net: every new e2e spec should justify why it can't be a component test. The
 default direction is _down_.
 
+### Outbound network guard
+
+E2E tests may only reach loopback. Mocked services (LLM, GitHub, names API, plan usage, Artificial
+Analysis, model cards) are configured in `wdio.conf.ts` `beforeSession`. The guard makes a test that
+depends on a real external service fail by name rather than pass quietly. It is a test boundary and is
+separate from the product's own [browser network policy](browser-network-policy.md).
+
+- **Electron main (Node):** `tests/e2e/electron-shell/network-guard.cjs` is installed by the e2e
+  bootstrap before the app loads. It refuses non-loopback `net.Socket#connect` calls (http, https,
+  tls, `fetch`), DNS lookups and resolver queries, and UDP sends.
+- **Chromium** (renderer, `<webview>` guests, Electron `net`): `wdio.conf.ts` passes
+  `--proxy-server` for a per-worker loopback proxy in `tests/e2e/helpers/network-guard.ts`.
+  Chromium bypasses the proxy for loopback, and the proxy answers everything else with 403.
+- Every attempt goes to one ledger. A root `afterEach` fails the test that made the attempt and names
+  the host, port, process and initiator (a Node stack, or Chromium's request line). If the test has
+  already failed, it keeps its own failure and the attempt is printed with an `[e2e-network-guard]`
+  prefix. Each CI shard prints a per-host table in "Report outbound network attempts".
+- `COPSE_E2E_NETWORK_GUARD=log` records and forwards instead of refusing; use it to survey a
+  change. `off` disables the guard. Real-model eval (`wdio.eval.conf.ts`) does not use the guard.
+- **Fix an offender at its boundary:** an env mock, a loopback fixture server, or an e2e-shell
+  injection. Never allowlist it. The e2e shell provides these stand-ins (`bootstrap.cjs`):
+  - The spellchecker dictionary URL points at a closed loopback port. Chromium otherwise fetches
+    Hunspell dictionaries from `redirector.gvt1.com` at startup in every spec.
+  - Provider key checks (`GET …/models` or OpenRouter's `GET /api/v1/key`, sent with a key) get the
+    401 every real provider returns for a fake key.
+  - The Hugging Face hub (`huggingface.co`, `*.hf.co`) answers 404. Specs that enable every plugin
+    turn on PII redaction, whose classifier would otherwise download a model; it falls back to
+    heuristics-only, as it does offline.
+  - `*.u.copse.me` names, which the fake names API issues, resolve to nothing.
+  - mDNS (Bonjour) queries go unanswered, as on an empty LAN.
+  - Lookups of IP literals pass, because `listen()` on a LAN address does one and nothing leaves
+    the host. `expectNetworkEgress(host)` is
+    the only per-test exception: the request is still refused, but the test must make it. Current
+    uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
+- Not covered: product child processes (agent CLIs, MCP servers, git), worker threads and utility
+  processes. They run outside Electron main's patched modules.
+- **Unit tests:** survey only, not enforced. `COPSE_UNIT_NETWORK_GUARD=log pnpm test` preloads the
+  same Node guard (`scripts/lib/unit-network-guard.cjs`) into every test process, and every Node
+  process a test spawns, and writes `.tmp/network-guard-<time>.jsonl`. Enforcement is a follow-up
+  under [#2719](https://github.com/copse-dev/agent-pane/issues/2719). On 8 Nov 2026 the survey found
+  `huggingface.co` reached from `agent-service.test.ts` and `acp-app-entry.test.ts`, and
+  `openrouter.ai` and `models.lan` from `container-provider.test.ts`. Undici's connection runs off
+  the caller's stack, so `fetch` attempts carry no initiator frame.
+
 ## Browser geometry tier
 
 `npm run build:demo && npm run test:demo` is the focused browser-hosted tier from

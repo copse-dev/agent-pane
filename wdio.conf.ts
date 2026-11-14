@@ -27,6 +27,15 @@ import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helper
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
 import {
+  createLedgerReader,
+  createNetworkGuard,
+  networkGuardChromiumArgs,
+  networkGuardLedgerPath,
+  networkGuardMode,
+  startNetworkGuardProxy,
+  type NetworkAttempt,
+} from './tests/e2e/helpers/network-guard.ts'
+import {
   assertE2eDeviceScaleFactor,
   E2E_DEVICE_SCALE_FACTOR,
 } from './tests/e2e/helpers/screenshot.ts'
@@ -48,6 +57,65 @@ const errorToastGuard = createErrorToastGuard(assertNoErrorToasts, {
   budgetMs: AFTER_TEST_SESSION_BUDGET_MS,
   killWedgedSession: forceKillWedgedE2eSession,
 })
+
+/**
+ * Fails a test that reaches past loopback (docs/testing-strategy.md#outbound-network-guard).
+ * One ledger and one Chromium proxy per worker; both outlive reloadSession.
+ */
+const networkMode = networkGuardMode(process.env['COPSE_E2E_NETWORK_GUARD'])
+let networkLedgerPath: string | null = null
+let networkProxyPort: number | null = null
+let readNetworkAttempts: () => NetworkAttempt[] = () => []
+const networkGuard = createNetworkGuard({
+  mode: networkMode,
+  readAttempts: () => readNetworkAttempts(),
+})
+
+async function ensureNetworkGuard(): Promise<{ ledgerPath: string; proxyPort: number } | null> {
+  if (networkMode === 'off') return null
+  if (networkLedgerPath === null || networkProxyPort === null) {
+    const ledgerPath = networkGuardLedgerPath(makeE2eScratchDir('.wdio-network-'))
+    const proxy = await startNetworkGuardProxy({ mode: networkMode, ledgerPath })
+    networkLedgerPath = ledgerPath
+    networkProxyPort = proxy.port
+    readNetworkAttempts = createLedgerReader(ledgerPath)
+  }
+  return { ledgerPath: networkLedgerPath, proxyPort: networkProxyPort }
+}
+
+const PROXY_ENV_KEYS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'NODE_USE_ENV_PROXY',
+]
+
+type RootHookContext = ThisParameterType<typeof errorToastGuard.afterEach> &
+  ThisParameterType<typeof networkGuard.afterEach>
+
+/**
+ * One root `afterEach` for both guards. Egress is checked first, because a
+ * refused request usually also surfaces as an error toast and only the network
+ * guard names the host. The toast guard always runs, so its per-test state is
+ * consumed. If both fail, the egress error is the one thrown.
+ */
+async function guardedAfterEach(this: RootHookContext): Promise<void> {
+  let egress: Error | undefined
+  try {
+    networkGuard.afterEach.call(this)
+  } catch (error) {
+    egress = error instanceof Error ? error : new Error(String(error))
+  }
+  try {
+    await errorToastGuard.afterEach.call(this)
+  } catch (toastError) {
+    if (egress === undefined) throw toastError
+  }
+  if (egress !== undefined) throw egress
+}
 
 const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
@@ -157,7 +225,8 @@ export const config: WebdriverIO.Config = {
     ui: 'bdd',
     timeout: 30_000,
     rootHooks: {
-      afterEach: errorToastGuard.afterEach,
+      afterEach: guardedAfterEach,
+      afterAll: networkGuard.afterAll,
     },
   },
   async before() {
@@ -305,6 +374,15 @@ export const config: WebdriverIO.Config = {
       LMSTUDIO_API_KEY: '',
       LM_API_TOKEN: '',
     }
+    const network = await ensureNetworkGuard()
+    if (network) {
+      // Read by tests/e2e/electron-shell/bootstrap.cjs for the main-process Node guard.
+      e2eEnv['COPSE_E2E_NETWORK_GUARD'] = networkMode
+      e2eEnv['COPSE_E2E_NETWORK_LEDGER'] = network.ledgerPath
+      // A host proxy on loopback (a developer's or sandbox's HTTPS_PROXY) would
+      // carry Node egress past the guard's loopback allowance; e2e never needs one.
+      for (const key of PROXY_ENV_KEYS) e2eEnv[key] = ''
+    }
     if (process.env['COPSE_PANEL_MOCK_GH_STATUS']) {
       e2eEnv['COPSE_PANEL_MOCK_GH_STATUS'] = process.env['COPSE_PANEL_MOCK_GH_STATUS']
     }
@@ -318,7 +396,13 @@ export const config: WebdriverIO.Config = {
     updateChromeOptions(capabilities, (chromeOptions) => {
       cap['goog:chromeOptions'] = {
         ...chromeOptions,
-        args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${userDataDir}`])],
+        args: [
+          ...new Set([
+            ...(chromeOptions.args ?? []),
+            `--user-data-dir=${userDataDir}`,
+            ...(network ? networkGuardChromiumArgs(network.proxyPort) : []),
+          ]),
+        ],
       }
       return cap['goog:chromeOptions']
     })
