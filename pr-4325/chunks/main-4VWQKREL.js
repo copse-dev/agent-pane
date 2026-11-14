@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-I2ZSBYTX.js";
+} from "./chunk-6HG4FPRX.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -88306,8 +88306,20 @@ async function acceptThreadPrompt(store2, api2, command2) {
       messageId,
       payload: { content: command2.text },
       createdAt: Date.now(),
-      origin
+      origin,
+      ...command2.unattended === true ? { threadPromptGrantId: command2.id } : {}
     });
+    if (command2.unattended === true) {
+      await flushPendingThreadPersistence();
+      const activation = await api2.threadPrompts.activateGrant(command2.id, messageId);
+      if (activation === "rejected") {
+        await deleteQueuedMessage(store2, api2, threadId, messageId);
+        return {
+          ok: false,
+          error: "The isolated subthread prompt could not be activated safely."
+        };
+      }
+    }
     const queued = current.status === "running" || current.queuePaused === true;
     drainMessageQueue(store2, api2, threadId);
     const accepted = getThreadById(store2, threadId);
@@ -88344,6 +88356,7 @@ var init_thread_prompts = __esm({
     init_pending_submissions();
     init_message_queue();
     init_background_threads();
+    init_persistence();
   }
 });
 

@@ -27902,7 +27902,10 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
           projectId,
           threadId,
           runPayload,
-          { parentThreadId },
+          {
+            parentThreadId,
+            ...queued.threadPromptGrantId !== void 0 ? { promptGrantId: queued.threadPromptGrantId } : {}
+          },
           display
         );
         if (result === "cancelled") holdCancelledProtectedPrompt(store, threadId, queued);
@@ -27957,10 +27960,18 @@ function requeueBusyMessage(store, api, threadId, item) {
 function holdCancelledProtectedPrompt(store, threadId, item) {
   patchThreadAnywhere(store, threadId, (thread) => {
     const pending = thread.pendingMessages ?? [];
-    const { mobilePromptGrantId: _mobilePromptGrantId, ...heldItem } = item;
+    const {
+      mobilePromptGrantId: _mobilePromptGrantId,
+      threadPromptGrantId: _threadPromptGrantId,
+      ...heldItem
+    } = item;
     const held = pending.some((entry) => entry.messageId === item.messageId) ? pending.map((entry) => {
       if (entry.messageId !== item.messageId) return entry;
-      const { mobilePromptGrantId: _grant, ...rest } = entry;
+      const {
+        mobilePromptGrantId: _mobileGrant,
+        threadPromptGrantId: _threadGrant,
+        ...rest
+      } = entry;
       return { ...rest, autoDispatch: false };
     }) : [{ ...heldItem, autoDispatch: false }, ...pending];
     const refunded = isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0 ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 } : {};
@@ -28118,7 +28129,11 @@ function updateQueuedMessageText(store, threadId, messageId, text) {
       ...t2,
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
-        const { mobilePromptGrantId: _mobilePromptGrantId, ...editable } = p2;
+        const {
+          mobilePromptGrantId: _mobilePromptGrantId,
+          threadPromptGrantId: _threadPromptGrantId,
+          ...editable
+        } = p2;
         return {
           ...editable,
           payload: { ...p2.payload, content: withPayloadText(p2.payload.content, text) },
