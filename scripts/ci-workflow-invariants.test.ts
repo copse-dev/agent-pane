@@ -252,13 +252,22 @@ describe('ci.yml workflow invariants', () => {
     }
     const checkRoutes = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)]
       .flatMap((match) => (match[1] ? [match[1]] : []))
-      .filter((name) => jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'))
+      .filter(
+        (name) =>
+          name !== 'verification-reuse' &&
+          name !== 'ci-passed' &&
+          jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'),
+      )
     assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
     for (const name of checkRoutes) {
       for (const sameRepo of [false, true]) {
         assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-24.04', name)
       }
       assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
+    }
+    for (const event of ['push', 'pull_request', 'merge_group']) {
+      assert.equal(route('verification-reuse', event, true), 'ubuntu-24.04')
+      assert.equal(route('ci-passed', event, true), 'ubuntu-24.04')
     }
     assert.equal(route('precheck', 'pull_request', false), 'ubuntu-24.04')
     assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
@@ -485,13 +494,22 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
-  it('runs the cancellation gate on hosted capacity without checkout or network dependencies', () => {
+  it('rejects cancellation on hosted capacity before the final read-only native recheck', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m)
     assert.match(aggregate, /^ {4}runs-on: ubuntu-24\.04$/m)
     assert.match(aggregate, /^ {4}timeout-minutes: 5$/m)
-    assert.match(aggregate, /^ {4}permissions: \{\}$/m)
-    assert.doesNotMatch(aggregate, /SELF_HOSTED_CHECKS|uses:|api_get|curl |gh api|GH_TOKEN/)
+    assert.match(
+      aggregate,
+      /^ {4}permissions:\n {6}contents: read\n {6}actions: read\n {6}pull-requests: read$/m,
+    )
+    assert.doesNotMatch(
+      aggregate,
+      /^\s*(?:-\s*)?uses:|actions\/checkout|api_get|curl |gh api|GH_TOKEN|: write/m,
+    )
+    const finalRecheck = aggregate.indexOf('- name: Revalidate native evidence before success')
+    assert.ok(finalRecheck > aggregate.indexOf('- name: Check upstream job results'))
+    assert.doesNotMatch(aggregate.slice(0, finalRecheck), /uses:|github\.request/)
     assert.match(aggregate, /- name: Reject canceled workflow\n {8}if: \$\{\{ cancelled\(\) \}\}/)
   })
 
@@ -646,7 +664,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[\s*verification-reuse,\s*precheck,\s*screenshot-baselines,\s*check,\s*review-cell,\s*bench,\s*build,\s*e2e,\s*screenshot-artifacts,?\s*\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
