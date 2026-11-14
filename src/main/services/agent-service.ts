@@ -279,6 +279,7 @@ import {
   type CloudAgentBlockReason,
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
+import { acpTranscriptChunk } from './acp/acp-transcript-chunk.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
   cancelAgentInitiatedAcpTurn,
@@ -1370,7 +1371,7 @@ async function runAgentWithInlineCanvas(
         acpAssistantText += tail
         const tailChunk: StreamChunk = { type: 'text', text: tail }
         acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, tailChunk)
-        sendChunk(tailChunk)
+        sendChunk(acpTranscriptChunk(tailChunk))
       }
       await visualizationDispatch
     }
@@ -1405,7 +1406,7 @@ async function runAgentWithInlineCanvas(
         acpAssistantText += visibleText
         const visibleChunk: StreamChunk = { type: 'text', text: visibleText }
         acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, visibleChunk)
-        sendChunk(visibleChunk)
+        sendChunk(acpTranscriptChunk(visibleChunk))
         return
       }
       acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, chunk)
