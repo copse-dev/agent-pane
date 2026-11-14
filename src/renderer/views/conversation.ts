@@ -97,6 +97,7 @@ import {
   type ArtifactImageScope,
 } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
 import type {
@@ -2299,6 +2300,33 @@ function transcriptChip(
 }
 
 /**
+ * Machine continuations persist the exact reviewed provider content, including
+ * the generated fenced shell block, and also carry the same shell snapshot as
+ * a transcript attachment. Keep that canonical content intact while avoiding
+ * a duplicate, implementation-shaped fence in the visible prompt. Exact block
+ * equality is intentional: user-authored fenced text is never projected away.
+ */
+function projectUserTranscriptContent(
+  content: string,
+  attachments: TranscriptAttachment[],
+): string {
+  let projected = content
+  for (let index = attachments.length - 1; index >= 0; index--) {
+    const attachment = attachments[index]
+    if (!attachment) continue
+    if (attachment.kind !== 'shell' || attachment.content === undefined) continue
+    const block = renderTextBlock(`Shell: ${attachment.label}`, attachment.content)
+    if (projected === block) {
+      projected = ''
+      continue
+    }
+    const suffix = `\n\n${block}`
+    if (projected.endsWith(suffix)) projected = projected.slice(0, -suffix.length)
+  }
+  return projected
+}
+
+/**
  * Render a sent user message with its attachment chips: positional paste/thread
  * references sit inline at U+FFFC placeholders in `content`; remaining
  * attachments follow in a trailing row. Chips are matched by document order.
@@ -2309,11 +2337,12 @@ function renderUserTranscript(
   attachments: TranscriptAttachment[],
   api: ApiClient,
 ): void {
+  const displayContent = projectUserTranscriptContent(content, attachments)
   // Positional composer attachments lead the array in the same order as the
   // placeholders. Anything after the final placeholder belongs in the trailing
   // row. This also keeps older messages compatible: their paste attachments
   // already led the array, while legacy thread refs followed them.
-  const inlineCount = countChipPlaceholders(content)
+  const inlineCount = countChipPlaceholders(displayContent)
   const firstNonPositional = attachments.findIndex(
     (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
   )
@@ -2341,9 +2370,9 @@ function renderUserTranscript(
 
   // A prompt carrying attachments is still a prompt: fold its middle when it is
   // long, exactly as the plain-text path does. The head/middle/tail are
-  // contiguous slices of `content`, so counting placeholders in the earlier
+  // contiguous slices of `displayContent`, so counting placeholders in the earlier
   // regions gives each one its offset into the positional attachments.
-  const fold = splitUserPromptForFold(content)
+  const fold = splitUserPromptForFold(displayContent)
   if (fold) {
     const headChips = countChipPlaceholders(fold.head)
     const firstChip: Record<UserPromptFoldRegion, number> = {
@@ -2355,7 +2384,7 @@ function renderUserTranscript(
       paintRegion(sink, text, firstChip[region])
     })
   } else {
-    paintRegion(host, content, 0)
+    paintRegion(host, displayContent, 0)
   }
 
   // Outside the fold: non-positional and legacy attachments stay visible while

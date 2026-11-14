@@ -342,9 +342,39 @@ describe('footer branch status for a detached thread worktree', function () {
       { timeout: 30_000, timeoutMsg: 'Recovery must produce its final reply before capture' },
     )
     await expect($('.chat-row.selected')).not.toHaveElementClass('is-running')
-    // Prove the command's continuation card without the independently refreshed
-    // composer suggestions changing this transcript capture's frame.
+    const continuation = await $('.msg-machine-origin').getElement()
+    const visiblePrompt = await continuation.$('.message-text').getText()
+    expect(visiblePrompt).toContain('Continue after the Git recovery command completed.')
+    expect(visiblePrompt).not.toContain('// Shell:')
+    expect(visiblePrompt).not.toMatch(/(^|\n)```+\s*($|\n)/)
+    await expect(continuation.$('.msg-user-fold-toggle')).not.toExist()
+
+    const shell = await continuation.$('.transcript-attachment-shell').getElement()
+    await expect(shell).toBeDisplayed()
+    await expect(shell.$('.transcript-attachment-label')).toHaveText(
+      expect.stringContaining('git rebase --continue'),
+    )
+
+    // Prove both the whole normal continuation and its focused card without
+    // independently refreshed composer suggestions changing the crop.
+    await saveAppScreenshot('footer-branch-recovery-continued-app.png')
     await saveElementScreenshot('.msg-machine-origin', 'footer-branch-recovery-continued.png')
+
+    // The compact chip is the meaningful disclosure for this short prompt.
+    // Expanding it shows the raw command result, not the generated prompt fence.
+    await shell.click()
+    const preview = await $('dialog.attachment-preview-dialog[open]').getElement()
+    await preview.waitForDisplayed({ timeout: 10_000 })
+    await expect(preview.$('.attachment-preview-title')).toHaveText(
+      expect.stringContaining('git rebase --continue'),
+    )
+    expect((await preview.$('.attachment-preview-text').getText()).trim()).not.toBe('')
+    await saveElementScreenshot(
+      'dialog.attachment-preview-dialog[open]',
+      'footer-branch-recovery-shell-preview.png',
+    )
+    await preview.$('.attachment-preview-close').click()
+    await expect($('dialog.attachment-preview-dialog[open]')).not.toExist()
   })
 
   it('commits a pick that failed to sign before continuing the rebase', async function () {

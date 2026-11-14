@@ -1,12 +1,14 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { buildTextWithAttachments } from '@copse/agent/build-text-with-attachments.ts'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
   addMessageCanvasArtefact,
   appendAcpContentBlock,
   createThread,
+  getThreadById,
   patchThreadAnywhere,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -60,13 +62,14 @@ function drag(surface: Element): void {
 function mountWithUserMessage(
   content: string,
   attachments: Parameters<typeof addMessage>[5],
-): void {
+): { store: ReturnType<typeof createStore>; threadId: string } {
   const store = createStore()
   const threadId = createThread(store)
   addMessage(store, threadId, 'user', content, undefined, attachments)
   const host = document.createElement('div')
   document.body.append(host)
   mountConversation(host, store, fakeApi())
+  return { store, threadId }
 }
 
 function mountWithAssistantMessage(content: string, canvasTitle?: string): string {
@@ -288,6 +291,62 @@ describe('user transcript attachment chips', () => {
     assert.ok(toggle)
     toggle.click()
     assert.ok(textEl.classList.contains('is-expanded'))
+  })
+
+  it('shows a protected machine prompt without its duplicate generated shell fence', () => {
+    patchPreviewDialog()
+    const prompt = [
+      'Continue after the recovery command completed.',
+      'Keep this user-authored literal block:',
+      '```',
+      'literal fence content',
+      '```',
+      ...Array.from({ length: 8 }, (_, i) => `Recovery note ${String(i + 1)}`),
+      'What should happen next?',
+    ].join('\n')
+    const shellLabel = 'Run · git rebase --continue · exit 0'
+    const shellOutput = 'Recovered the branch.\n```\nLiteral fence in command output.'
+    const canonical = buildTextWithAttachments(
+      prompt,
+      [],
+      [{ label: `Shell: ${shellLabel}`, content: shellOutput }],
+    )
+    const { store, threadId } = mountWithUserMessage(canonical, [
+      { kind: 'shell', label: shellLabel, content: shellOutput },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'machine prompt is rendered')
+    assert.ok(textEl.classList.contains('msg-user-fold'), 'the meaningful prompt folds')
+    assert.match(textEl.querySelector('.msg-user-fold-head')?.textContent ?? '', /Continue after/)
+    assert.equal(
+      textEl.querySelector('.msg-user-fold-tail')?.textContent,
+      'What should happen next?',
+    )
+    assert.doesNotMatch(textEl.textContent, /\/\/ Shell:/)
+    assert.doesNotMatch(textEl.textContent, /Recovered the branch/)
+
+    const toggle = textEl.querySelector<HTMLButtonElement>('.msg-user-fold-toggle')
+    assert.ok(toggle)
+    assert.equal(toggle.textContent.trim(), 'expand')
+    toggle.click()
+    assert.equal(toggle.textContent.trim(), 'collapse')
+    assert.match(textEl.querySelector('.msg-user-fold-middle')?.textContent ?? '', /```/)
+    assert.match(textEl.querySelector('.msg-user-fold-middle')?.textContent ?? '', /literal fence/)
+
+    const shell = textEl.querySelector<HTMLElement>('.transcript-attachment-shell')
+    assert.ok(shell, 'the shell snapshot remains visible outside the fold')
+    shell.click()
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog, 'the shell snapshot opens in the shared preview')
+    assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, shellOutput)
+    dialog.close()
+
+    assert.equal(
+      getThreadById(store, threadId)?.messages[0]?.content,
+      canonical,
+      'presentation projection does not alter canonical reviewed content',
+    )
   })
 
   /**
