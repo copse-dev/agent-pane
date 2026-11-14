@@ -24431,6 +24431,7 @@ var init_transcript_state = __esm({
   "src/shared/store/transcript-state.ts"() {
     TRANSCRIPT_META_KEYS = [
       "status",
+      "interruptedTurnAt",
       "usage",
       "updatedAt",
       "todos",
@@ -27370,6 +27371,11 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      search_project_context: {
+        running: "Searching project history",
+        done: "Searched project history"
+      },
+      read_project_context: { running: "Reading project history", done: "Read project history" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
       search_codebase: { running: "Searching codebase", done: "Searched codebase" },
@@ -28412,6 +28418,7 @@ function compactSidebarThread(thread) {
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
     ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...thread.lastSettledAt !== void 0 ? { lastSettledAt: thread.lastSettledAt } : {},
+    ...thread.interruptedTurnAt !== void 0 ? { interruptedTurnAt: thread.interruptedTurnAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
