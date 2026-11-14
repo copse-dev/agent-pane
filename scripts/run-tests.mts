@@ -238,10 +238,19 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
  * run is not reachable through the API at all — the `headless-agent-host`
  * failure in this repo had to be read off a screenshot of the web UI. Print the
  * `dot` reporter instead (one character per test, failures re-listed in full at
- * the end) and keep the machine-readable TAP in a file the job uploads.
+ * the end), stream named failures through the review reporter, and keep the
+ * machine-readable TAP in a file the job uploads. Diagnostics stream failure
+ * events Node has delivered to reporters without waiting for EOF. Node may
+ * buffer events from concurrent files, so no diagnostic after interruption
+ * does not establish that nothing failed.
+ *
+ * Node 24 can warn about eleven fixed TestsStream end listeners for these three
+ * CI reporters (also present with CI + --review-report before this was the
+ * default). This wiring does not grow with the test count. Keep the stock dot
+ * and TAP reporters rather than suppressing warnings or changing listener limits.
  */
 function reporterArgs(tapLog: string): string[] {
-  if (reviewReport)
+  if (reviewReport || process.env['CI'])
     return [
       '--test-reporter=dot',
       '--test-reporter-destination=stdout',
@@ -251,13 +260,7 @@ function reporterArgs(tapLog: string): string[] {
         ? ['--test-reporter=tap', `--test-reporter-destination=${tapLog}`]
         : []),
     ]
-  if (!process.env['CI']) return []
-  return [
-    '--test-reporter=dot',
-    '--test-reporter-destination=stdout',
-    '--test-reporter=tap',
-    `--test-reporter-destination=${tapLog}`,
-  ]
+  return []
 }
 
 /** Full TAP for the last completed run, kept for existing CI artifact consumers. */
