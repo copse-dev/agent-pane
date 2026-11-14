@@ -1,7 +1,14 @@
 import { getSetting } from '../storage/settings.ts'
-import { leaseSshAskpassEnv, type SshAskpassLease } from './askpass.ts'
+import {
+  COPSE_SSH_ASKPASS_NONCE,
+  COPSE_SSH_ASKPASS_SOCKET,
+  leaseSshAskpassEnv,
+  type SshAskpassLease,
+} from './askpass.ts'
 
 export type SshStrictHostKeys = 'accept-new' | 'strict'
+/** Internal caller policy, never derived from agent/tool arguments. */
+export type GitAuthMode = 'interactive' | 'noninteractive'
 
 export interface GitSshEnvLease extends SshAskpassLease {
   env: NodeJS.ProcessEnv
@@ -22,9 +29,33 @@ export function buildGitSshCommand(
  * non-interactive git tweaks. Call {@link GitSshEnvLease.release} when the
  * child exits.
  */
-export function leaseGitSshEnv(baseEnv: NodeJS.ProcessEnv): GitSshEnvLease {
-  const askpass = leaseSshAskpassEnv(baseEnv)
+export function leaseGitSshEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  authMode: GitAuthMode = 'interactive',
+): GitSshEnvLease {
   const strictHostKeys = getSetting<SshStrictHostKeys>('sshStrictHostKeys', 'accept-new')
+  if (authMode === 'noninteractive') {
+    // Do not lease a UI-capable nonce at all. Explicit unsets survive the
+    // spawn environment overlay; the runner also disables core.askPass.
+    return {
+      env: {
+        ...baseEnv,
+        GIT_ASKPASS: undefined,
+        SSH_ASKPASS: undefined,
+        SSH_ASKPASS_REQUIRE: 'never',
+        [COPSE_SSH_ASKPASS_SOCKET]: undefined,
+        [COPSE_SSH_ASKPASS_NONCE]: undefined,
+        GIT_OPTIONAL_LOCKS: '0',
+        GIT_PAGER: 'cat',
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_SSH_COMMAND: `${buildGitSshCommand({}, strictHostKeys)} -oBatchMode=yes`,
+        // GCM's documented unattended mode still permits cached credentials.
+        GCM_INTERACTIVE: '0',
+      },
+      release: (): void => {},
+    }
+  }
+  const askpass = leaseSshAskpassEnv(baseEnv)
   const hasAskpass = typeof askpass.env['SSH_ASKPASS'] === 'string'
   const gitSshCommand = hasAskpass
     ? buildGitSshCommand(askpass.env, strictHostKeys)

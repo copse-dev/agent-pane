@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { classifySshPrompt } from './ssh-prompt.ts'
@@ -14,6 +14,7 @@ import {
   type SshAskpassLease,
 } from './askpass.ts'
 import { setSshPromptHandler } from './ssh-prompt.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   resolveRendererPromptTarget,
   runWithRendererPromptTarget,
@@ -347,6 +348,52 @@ describe('leaseGitSshEnv', () => {
       lease.release()
     }
   })
+
+  for (const checking of ['accept-new', 'strict'] as const) {
+    it(`disables unattended auth after ambient injection while preserving ${checking} host policy`, async () => {
+      const previous = getSetting('sshStrictHostKeys', 'accept-new')
+      await setSetting('sshStrictHostKeys', checking)
+      const lease = leaseGitSshEnv(
+        {
+          HOME: '/owned/home',
+          PATH: '/usr/bin:/bin',
+          SSH_AUTH_SOCK: '/owned/agent.sock',
+          GIT_SSH_COMMAND: 'ssh -oBatchMode=no -oStrictHostKeyChecking=no',
+          GIT_ASKPASS: '/untrusted/git-askpass',
+          SSH_ASKPASS: '/untrusted/ssh-askpass',
+          SSH_ASKPASS_REQUIRE: 'force',
+          COPSE_SSH_ASKPASS_SOCKET: '/old/socket',
+          COPSE_SSH_ASKPASS_NONCE: 'old-nonce',
+          GCM_INTERACTIVE: '1',
+        },
+        'noninteractive',
+      )
+      try {
+        assert.equal(lease.env['GIT_ASKPASS'], undefined)
+        assert.equal(lease.env['SSH_ASKPASS'], undefined)
+        assert.equal(lease.env['SSH_ASKPASS_REQUIRE'], 'never')
+        assert.equal(lease.env['COPSE_SSH_ASKPASS_SOCKET'], undefined)
+        assert.equal(lease.env['COPSE_SSH_ASKPASS_NONCE'], undefined)
+        assert.equal(lease.env['GIT_TERMINAL_PROMPT'], '0')
+        assert.equal(lease.env['GCM_INTERACTIVE'], '0')
+        assert.equal(
+          lease.env['GIT_SSH_COMMAND'],
+          `ssh -oStrictHostKeyChecking=${checking === 'strict' ? 'yes' : 'accept-new'} -oBatchMode=yes`,
+        )
+        assert.equal(lease.env['SSH_AUTH_SOCK'], '/owned/agent.sock')
+        assert.equal(lease.env['HOME'], '/owned/home')
+        assert.equal(lease.env['PATH'], '/usr/bin:/bin')
+        assert.equal(
+          existsSync(join(testDir, 'ssh-askpass')),
+          false,
+          'no UI-capable lease or wrapper created',
+        )
+      } finally {
+        lease.release()
+        await setSetting('sshStrictHostKeys', previous)
+      }
+    })
+  }
 })
 
 describe('leaseSshAskpassEnv environment inheritance', () => {

@@ -219,6 +219,17 @@ background fetches on every platform, including the contained fallback; it canno
 contact origin or request authentication. Failures are logged once per distinct
 error and again on recovery.
 
+Opportunistic startup, hourly and allocation refreshes never lease Copse's
+authentication UI. Their per-command policy disables Git askpass (including the
+configured `core.askPass` fallback), terminal prompts and interactive SSH with
+`BatchMode=yes`, while retaining the configured host-key policy and available
+agent/credential-helper credentials. Git Credential Manager receives its
+[documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).
+Arbitrary third-party helpers can implement their own interaction; this policy
+does not sandbox those trusted user-configured helpers or promise to control
+their private UI. Missing credentials fail the refresh and retain the cached tip.
+Explicit foreground `git_fetch` and push operations retain normal authentication.
+
 Internal Git execution explicitly unsets inherited Git configuration, executable and
 SSH injection variables in the final spawn environment. These removals survive the
 spawn layer's environment overlay; Copse installs its own trusted SSH bridge afterwards.

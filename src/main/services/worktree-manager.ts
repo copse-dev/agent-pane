@@ -16,7 +16,8 @@ import {
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
-import { fetchDefaultBranchFromHost } from './default-branch-fetch.ts'
+import { fetchDefaultBranchFromHost, noninteractiveProjectGit } from './default-branch-fetch.ts'
+import type { GitAuthMode } from './ssh-workspace/git-ssh-env.ts'
 import { getSetting } from './storage/settings.ts'
 import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -543,6 +544,7 @@ export async function runWorktreeGit(
   env?: NodeJS.ProcessEnv,
   extraWritePaths: string[] = [],
   stdoutMaxBytes?: number,
+  gitAuth: GitAuthMode = 'interactive',
 ): Promise<CommandResult> {
   // These host-owned bookkeeping operations update branch metadata. Config
   // inspection/updates do not execute repository helpers; hooks remain off for
@@ -583,6 +585,7 @@ export async function runWorktreeGit(
     cwd,
     ...(env ? { env } : {}),
     ...(stdoutMaxBytes === undefined ? {} : { stdoutMaxBytes }),
+    gitAuth,
     sandboxConfig: readOnly
       ? await worktreeReadOnlySandboxOverlay(cwd, extraWritePaths)
       : await worktreeManagerSandboxOverlay(cwd, extraWritePaths, writeConfig),
@@ -808,7 +811,7 @@ async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Prom
   try {
     const result =
       (await fetchDefaultBranchFromHost(projectRoot, branch, git)) ??
-      (await git(projectRoot, ['fetch', '--quiet', 'origin', branch]))
+      (await noninteractiveProjectGit(git)(projectRoot, ['fetch', '--quiet', 'origin', branch]))
     failure = result.code === 0 ? null : describeFetchFailure(result)
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error)
