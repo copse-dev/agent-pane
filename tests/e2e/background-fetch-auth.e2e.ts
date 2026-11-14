@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -133,7 +133,7 @@ describe('unattended upstream authentication', () => {
     )
     await setComposerValue(prompt)
     await expect($('.submit-btn')).toBeEnabled()
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await scenario.assertComplete()
     await expect($('#ssh-prompt-dialog')).not.toBeDisplayed()
