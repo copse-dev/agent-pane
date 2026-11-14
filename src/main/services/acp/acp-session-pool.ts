@@ -7,6 +7,8 @@ import {
   settleAcpChildShutdowns,
   willSandboxAcpAgent,
 } from './acp-client.ts'
+import { forgetClaudeMcpServerFailure, isThreadAcpAgentConfigDir } from './acp-agent-config-dir.ts'
+import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reattach.ts'
 import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { AcpTerminalHost } from './acp-terminals.ts'
@@ -451,6 +453,7 @@ async function acquireAcpSessionUnlocked(
     ...opts.config,
     ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
   }
+  if (bridge) await forgetEarlierBridgeFailure(opts)
 
   // Opt-in ACP wire diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`). Created here
   // because this is the layer that knows which thread the session belongs to,
@@ -542,6 +545,36 @@ async function acquireAcpSessionUnlocked(
     )
   }
   return { entry, fresh: !open.resumed, handover }
+}
+
+/**
+ * Claude Code skips an MCP server, by name, for 15 minutes after any failure to
+ * reach it, and keeps that note in its config dir (see
+ * {@link forgetClaudeMcpServerFailure}). Copse gives each thread a config dir
+ * that outlives its agent processes, so one failure to reach an earlier bridge
+ * — say, one torn down under a turn that died on `-32603` as its agent exited —
+ * leaves every process the thread starts next without `mcp__copse__*` tools
+ * (#4142).
+ * The bridge offered now is new and already listening, so the note is stale.
+ * Runs after the previous process is gone, so it cannot write the note back.
+ * Only Copse's own thread dir is touched; a dir chosen in Settings is the user's.
+ */
+async function forgetEarlierBridgeFailure(opts: AcquireAcpSessionOptions): Promise<void> {
+  const configDir = opts.config.env?.['CLAUDE_CONFIG_DIR']
+  if (!configDir || !opts.projectId) return
+  if (!isThreadAcpAgentConfigDir(configDir, opts.projectId, opts.threadId)) return
+  try {
+    if (await forgetClaudeMcpServerFailure(configDir, BRIDGE_MCP_SERVER_NAME)) {
+      console.info(
+        `[acp-bridge] cleared the agent's cached failure for the previous bridge of thread ${opts.threadId}`,
+      )
+    }
+  } catch (err) {
+    console.warn(
+      `[acp-bridge] could not clear the agent's cached bridge failure for thread ${opts.threadId}; it may start without native tools:`,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
 }
 
 /** Evict and tear down one thread's session (e.g. after a broken turn). */
