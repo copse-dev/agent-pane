@@ -34,6 +34,7 @@ export interface ProtectedPromptReviewInput {
   attachments?: TranscriptAttachment[]
   context: ProtectedPromptContextEntry[]
   kind: 'human' | 'machine'
+  signal?: AbortSignal
 }
 
 function promptText(content: UserContent): string {
@@ -136,6 +137,7 @@ export class ProtectedPromptReviewService {
     parent: BrowserWindow,
     input: ProtectedPromptReviewInput,
   ): Promise<ProtectedPromptSubmission | null> {
+    if (input.signal?.aborted) return null
     const existing = this.pendingByParent.get(parent.webContents.id)
     if (existing) {
       existing.window.show()
@@ -158,6 +160,7 @@ export class ProtectedPromptReviewService {
       kind: input.kind,
     }
 
+    if (input.signal?.aborted) return null
     const window = new BrowserWindow({
       parent,
       modal: true,
@@ -208,8 +211,21 @@ export class ProtectedPromptReviewService {
         if (!window.isDestroyed()) window.webContents.send('protected-prompt:seed', seed)
       })
     })
-    await window.loadFile(join(__dirname, '../renderer/protected-prompt.html'))
-    return result
+    const cancel = (): void => {
+      if (!window.isDestroyed()) window.destroy()
+    }
+    input.signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      if (input.signal?.aborted) cancel()
+      else await window.loadFile(join(__dirname, '../renderer/protected-prompt.html'))
+      return await result
+    } catch (error) {
+      cancel()
+      if (input.signal?.aborted) return null
+      throw error
+    } finally {
+      input.signal?.removeEventListener('abort', cancel)
+    }
   }
 
   private settle(event: IpcMainInvokeEvent, submission: ProtectedPromptSubmission | null): void {

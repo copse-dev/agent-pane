@@ -21,6 +21,11 @@ import {
   stripInlineVisualizationReferences,
 } from '@shared/inline-visualization.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import {
+  bindNativeSteering,
+  NativeSteeringSession,
+  prepareNativeSteeringNote,
+} from './native-steering.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   AGENT_RUN_HARD_MAX_MS,
@@ -828,6 +833,8 @@ export interface RunAgentOptions {
    * Purely observational: never awaited, and a throwing sink cannot fail a turn.
    */
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
+  /** Durable human steering checkpoint; errors must stop delivery. */
+  onSteeringCheckpoint?: (messages: LLMMessage[]) => Promise<void>
   /**
    * Summary of the Copse Reviewer runs the user started since the model's last
    * reply (#2519). Leads the outbound prompt — after `beforeSubmitPrompt`, which
@@ -2745,82 +2752,132 @@ async function runAgentWithInlineCanvas(
         await runWithAgentRunReadonly(readonlyMode, async () => {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
             await runWithAgentRunExploreMode(subagentsEnabled, async () => {
-              await runAgentLoop({
-                provider: parentInstructionDelivery.provider,
-                messages: trimmed,
-                tools: parentLoopTools,
-                usageModel: model,
-                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-                ...(options?.adaptiveExtensions !== undefined
-                  ? { adaptiveExtensions: options.adaptiveExtensions }
-                  : {}),
-                reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
-                  options?.reasoningRecoveryMaxTokens,
-                ),
-                reasoningRunawayTextToleranceChars:
-                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-                runDeadline: runAbort.deadline,
-                onRunDeadlineActivity: runAbort.schedule,
-                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-                getOpenTodos: () => getAgentRunTodos(),
-                continuationBudget,
-                resolvePluginSetting,
-                artifactCheckpointEligible: true,
-                recordHookRun: recordFunctionHookRun,
-                recordAppliedNudge: recordAppliedNudgeRun,
-                onLlmCall: (count) => {
-                  setHookRunStep(count)
-                  // `messages` above is `trimmed`, mutated in place as turns land, so
-                  // this persists everything the previous step produced.
-                  checkpointHistory()
-                  // The previous step's tool results have been streamed; a notice
-                  // here cannot come between a tool call and its result.
-                  flushNestedInstructionNotices()
-                },
-                recordStreamCut: (record) => {
-                  recordStreamCut(record, model)
-                },
-                recordReasoningCheckpoint: (record) => {
-                  recordReasoningCheckpoint(record, model)
-                },
-                executeTool: executeParentTool,
-                signal: controller.signal,
-                maxContextTokens: contextWindow,
-                toolSchemaReserveTokens: toolSchemaReserve,
-                onHistoryTrimmed: () => {
-                  notifyTrimmed(sendTrimNotice)
-                },
-                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-                onChunk: (chunk) => {
-                  if (chunk.type === 'done') {
-                    // Suppress the loop's terminal `done` (E3): the run emits one
-                    // terminal `done` after post-turn work. Keep its stop reason.
-                    loopStopReason = chunk.stopReason
-                    return
-                  }
-                  sendLoopChunk(chunk)
-                  if (chunk.type === 'context_compacted' && runContext) {
-                    // The boundary is canonical; the opaque item stays in the
-                    // provider-history projection. Best effort like the other
-                    // observational spine lines: a failed append must not fail the turn.
-                    void appendContextCompaction(runContext.projectId, threadId, {
-                      v: SPINE_SCHEMA_VERSION,
-                      type: 'context_compaction',
-                      id: randomUUID(),
-                      recordedAt: Date.now(),
-                      provider: chunk.provider,
-                      model: chunk.model,
-                      projectionVersion: 1,
-                      itemId: chunk.itemId,
-                    }).catch(() => undefined)
-                  }
-                  if (chunk.type === 'usage') {
-                    inputTokens += chunk.inputTokens
-                    outputTokens += chunk.outputTokens
-                  }
-                },
-              })
+              const commitSteering = options?.onSteeringCheckpoint
+              const steering =
+                runContext && explicitTurnTreeId && commitSteering
+                  ? new NativeSteeringSession(
+                      runContext.projectId,
+                      threadId,
+                      turnTreeId,
+                      model,
+                      controller.signal,
+                    )
+                  : null
+              const unbindSteering = steering ? bindNativeSteering(steering) : null
+              if (steering) sendChunk({ type: 'steering_ready', runId: steering.runId })
+              try {
+                await runAgentLoop({
+                  provider: parentInstructionDelivery.provider,
+                  messages: trimmed,
+                  ...(steering && commitSteering
+                    ? {
+                        beforeStep: (): Promise<void> =>
+                          steering.drain(
+                            trimmed,
+                            () => commitSteering(persistableHistory()),
+                            (item, text): void => {
+                              sendChunk({
+                                type: 'steering_applied',
+                                messageId: item.messageId,
+                                text,
+                              })
+                            },
+                            (text) =>
+                              prepareNativeSteeringNote(text, {
+                                submit: (note) => runBeforeSubmitPrompt(threadId, note),
+                                redact: (note) => redactUserContent(threadId, note),
+                                signal: controller.signal,
+                                inject: (context) =>
+                                  appendOperatorInstruction(
+                                    trimmed,
+                                    [context],
+                                    operatorInstructionPlacement(model),
+                                  ),
+                                notice: (notice) => {
+                                  sendChunk({ type: 'text', text: notice })
+                                },
+                              }),
+                          ),
+                      }
+                    : {}),
+                  tools: parentLoopTools,
+                  usageModel: model,
+                  maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                  ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                  ...(options?.adaptiveExtensions !== undefined
+                    ? { adaptiveExtensions: options.adaptiveExtensions }
+                    : {}),
+                  reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
+                    options?.reasoningRecoveryMaxTokens,
+                  ),
+                  reasoningRunawayTextToleranceChars:
+                    PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                  runDeadline: runAbort.deadline,
+                  onRunDeadlineActivity: runAbort.schedule,
+                  coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                  getOpenTodos: () => getAgentRunTodos(),
+                  continuationBudget,
+                  resolvePluginSetting,
+                  artifactCheckpointEligible: true,
+                  recordHookRun: recordFunctionHookRun,
+                  recordAppliedNudge: recordAppliedNudgeRun,
+                  onLlmCall: (count) => {
+                    setHookRunStep(count)
+                    // `messages` above is `trimmed`, mutated in place as turns land, so
+                    // this persists everything the previous step produced.
+                    checkpointHistory()
+                    // The previous step's tool results have been streamed; a notice
+                    // here cannot come between a tool call and its result.
+                    flushNestedInstructionNotices()
+                  },
+                  recordStreamCut: (record) => {
+                    recordStreamCut(record, model)
+                  },
+                  recordReasoningCheckpoint: (record) => {
+                    recordReasoningCheckpoint(record, model)
+                  },
+                  executeTool: executeParentTool,
+                  signal: controller.signal,
+                  maxContextTokens: contextWindow,
+                  toolSchemaReserveTokens: toolSchemaReserve,
+                  onHistoryTrimmed: () => {
+                    notifyTrimmed(sendTrimNotice)
+                  },
+                  getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                  onChunk: (chunk) => {
+                    if (chunk.type === 'done') {
+                      // Suppress the loop's terminal `done` (E3): the run emits one
+                      // terminal `done` after post-turn work. Keep its stop reason.
+                      loopStopReason = chunk.stopReason
+                      return
+                    }
+                    sendLoopChunk(chunk)
+                    if (chunk.type === 'context_compacted' && runContext) {
+                      // The boundary is canonical; the opaque item stays in the
+                      // provider-history projection. Best effort like the other
+                      // observational spine lines: a failed append must not fail the turn.
+                      void appendContextCompaction(runContext.projectId, threadId, {
+                        v: SPINE_SCHEMA_VERSION,
+                        type: 'context_compaction',
+                        id: randomUUID(),
+                        recordedAt: Date.now(),
+                        provider: chunk.provider,
+                        model: chunk.model,
+                        projectionVersion: 1,
+                        itemId: chunk.itemId,
+                      }).catch(() => undefined)
+                    }
+                    if (chunk.type === 'usage') {
+                      inputTokens += chunk.inputTokens
+                      outputTokens += chunk.outputTokens
+                    }
+                  },
+                })
+              } finally {
+                unbindSteering?.()
+                if (steering) sendChunk({ type: 'steering_ready', runId: null })
+                await steering?.close()
+              }
               // A loop that stopped on a tool step (step cap, abort) still owes
               // the notice for what that step activated.
               flushNestedInstructionNotices()

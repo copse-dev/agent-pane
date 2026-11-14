@@ -69,6 +69,54 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('orders an awaited steering checkpoint between earlier and later observational writes', async () => {
+    const saved: string[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveHistory: async (_project, _thread, messages) => {
+          const first = messages[0]
+          assert.ok(first?.role === 'user' && typeof first.content === 'string')
+          saved.push(first.content)
+        },
+        run: async (_id, _content, _prior, _host, _registry, options) => {
+          options.onHistoryCheckpoint?.([{ role: 'user', content: 'before' }])
+          const committed = options.onSteeringCheckpoint?.([{ role: 'user', content: 'steering' }])
+          assert.ok(committed)
+          options.onHistoryCheckpoint?.([{ role: 'user', content: 'after' }])
+          await committed
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [{ role: 'user', content: 'final' }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(request())
+    assert.deepEqual(saved, ['before', 'steering', 'after', 'final'])
+  })
+
+  it('reports a steering checkpoint failure to the running host', async () => {
+    let sawFailure = false
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveHistory: async () => {
+          throw new Error('disk full')
+        },
+        run: async (_id, _content, _prior, _host, _registry, options) => {
+          assert.ok(options.onSteeringCheckpoint)
+          await assert.rejects(options.onSteeringCheckpoint([]), /disk full/)
+          sawFailure = true
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages: [] }
+        },
+      }),
+    )
+    await assert.rejects(dispatcher.dispatch(request()), /disk full/)
+    assert.equal(sawFailure, true)
+  })
   it('delivers internal notifications to the model with a hidden turn start and a budget charge', async () => {
     const chunks: StreamChunk[] = []
     const saved: LLMMessage[][] = []

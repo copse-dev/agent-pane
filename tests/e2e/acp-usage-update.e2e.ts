@@ -10,6 +10,14 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, waitForSettledLayout } from './helpers/screenshot.ts'
 
+async function expectComposerFollowUp(): Promise<void> {
+  const changes = $('.follow-up-bubble-changes')
+  await expect(changes).toBeDisplayed()
+  await expect(changes.$('.follow-up-stat-add')).toHaveText('+2')
+  await expect(changes.$('.follow-up-stat-del')).toHaveText('-0')
+  await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
+}
+
 describe('ACP usage_update context wheel', () => {
   before(async () => {
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
@@ -49,6 +57,9 @@ describe('ACP usage_update context wheel', () => {
       /^Context 40% used, 80\.0k of 200\.0k tokens; Usage: 829 tokens/,
     )
 
+    // Sidebar git status and composer follow-ups settle through separate IPC
+    // requests. A ready context wheel does not pin the composer's placeholder.
+    await expectComposerFollowUp()
     await waitForSettledLayout('.input-footer')
     await wheel.moveTo()
     const popover = wheel.$('.context-wheel-popover')
@@ -66,6 +77,7 @@ describe('ACP usage_update context wheel', () => {
     // Pinning the shell resizes it under a hovering pointer; capture only if
     // the popover is still the one asserted above.
     await saveAppScreenshot('acp-usage-update-context.png', undefined, async () => {
+      await expectComposerFollowUp()
       await expect(popover).toBeDisplayed()
       await expect(popover.$('.context-wheel-popover-header')).toHaveText(
         'Context · 80.0k / 200.0k (40%)',

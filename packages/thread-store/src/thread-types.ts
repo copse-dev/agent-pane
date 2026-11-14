@@ -126,6 +126,8 @@ export interface QueuedUserMessage {
    * C3 — when an over-budget hook message arrives.
    */
   autoDispatch?: false
+  /** A human requested delivery at this run's next native step boundary. */
+  steeringRequested?: string
   /**
    * Emitting turn-tree epoch (decision 16) for hook-originated items. Compared
    * against the thread's current turn tree to detect a stale late output; a
@@ -482,6 +484,8 @@ export interface Thread {
    * Absent on threads written before this was captured.
    */
   resolvedModel?: string
+  /** Ephemeral native-loop nonce; stale persisted values cannot authorize delivery. */
+  nativeSteeringRunId?: string
   /**
    * Per-chat reasoning dial, set from the composer footer. Overrides the level
    * saved against the model in Settings for this chat's turns only, so "this

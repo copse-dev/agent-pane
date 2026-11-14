@@ -19,6 +19,7 @@ import {
   initThreadPrompts,
 } from './services/thread-prompts.ts'
 import { SubthreadPromptHeldError } from '@shared/thread-prompt.ts'
+import { steerNativeParent } from './services/native-steering.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -191,6 +192,7 @@ import {
   acceptAuthorizedReviewedUserMessage,
   acceptReviewedUserMessage,
   appendMessage,
+  placeMessageAfter,
   closeThreadStoreIndexes,
   getProjectThread,
   getThreadMeta,
@@ -820,6 +822,7 @@ app
       },
       loadThread: getProjectThread,
       appendMessage,
+      placeMessageAfter,
       updateMeta,
       defaultModel: (): string | undefined => {
         const model = getSetting<unknown>('model', undefined)
@@ -1717,6 +1720,57 @@ app
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
     })
+
+    ipcMain.handle(
+      'agent:steer',
+      (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        messageIdArg: unknown,
+        runIdArg: unknown,
+      ) => {
+        assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const messageId = z.string().min(1).max(200).parse(messageIdArg)
+        const runId = parseIpcArgs(z.uuid(), [runIdArg])
+        return steerNativeParent(projectId, threadId, messageId, runId, async (note) => {
+          if (!hasProtectedPromptMessageAppend(event.sender.id, projectId, threadId, messageId))
+            return null
+          const submission = await protectedPromptReview.review(win, {
+            projectId,
+            threadId,
+            content: note.text,
+            model: note.model,
+            kind: 'human',
+            signal: note.signal,
+            context: [
+              {
+                label: 'Action',
+                value: 'Steer the current native turn after its complete tool batch',
+              },
+              { label: 'Active turn', value: note.runId },
+              { label: 'Queued message', value: note.messageId },
+              { label: 'Frozen revision', value: note.revision },
+            ],
+          })
+          return submission
+            ? {
+                text: submission.text,
+                claim: (): boolean =>
+                  consumeProtectedPromptMessageAppend(
+                    event.sender.id,
+                    projectId,
+                    threadId,
+                    messageId,
+                  ),
+              }
+            : null
+        })
+      },
+    )
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a

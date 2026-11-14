@@ -21,6 +21,7 @@ import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import {
   acceptReviewedUserMessage,
   appendMessage,
+  placeMessageAfter,
   createThread,
   getProjectThread,
   threadDirectoryPath,
@@ -66,6 +67,7 @@ function harness(
     loadThread: getProjectThread,
     snapshot,
     appendMessage,
+    placeMessageAfter,
     updateMeta,
     defaultModel: (): string | undefined => undefined,
     createId: (): string => {
@@ -161,6 +163,45 @@ describe('TurnTranscriptWriter', () => {
       await writer.settled(THREAD)
     }
     assert.equal((await stored()).status, 'idle')
+  })
+
+  it('places a pre-saved steering note after the step that finished before its application', async () => {
+    const { writer } = harness(() => [])
+    // The renderer durably queues the note while the main-owned assistant is
+    // still streaming and has not reached its first persistence boundary.
+    await appendMessage(PROJECT, THREAD, humanPrompt('note', 'Unreviewed original'))
+    await updateMeta(PROJECT, THREAD, {
+      pendingMessages: [
+        {
+          messageId: 'note',
+          payload: { content: 'Keep the API.' },
+          createdAt: 20,
+          autoDispatch: false,
+          steeringRequested: 'live-run',
+        },
+      ],
+    })
+    const transcript = writer.begin(PROJECT, THREAD)
+    await writer.attach(PROJECT, [THREAD])
+    transcript.emit({ type: 'text', text: 'Reading the files.' })
+    transcript.emit({ type: 'steering_applied', messageId: 'note', text: 'Keep the API.' })
+    transcript.emit({ type: 'text', text: 'The API is unchanged.' })
+    transcript.emit({ type: 'done' })
+    transcript.end()
+    await writer.settled(THREAD)
+    assert.equal(
+      (await stored()).messages.find((message) => message.id === 'note')?.content,
+      'Keep the API.',
+    )
+    assert.deepEqual(
+      (await stored()).messages.map((message) => [message.id, message.role]),
+      [
+        ['u1', 'user'],
+        ['msg-1', 'assistant'],
+        ['note', 'user'],
+        ['msg-2', 'assistant'],
+      ],
+    )
   })
 
   it('does not restore an old interruption in an ordinary human turn snapshot', async () => {

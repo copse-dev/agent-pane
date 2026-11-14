@@ -182,6 +182,8 @@ export interface AgentLoopOptions {
     toolCallId: string,
   ) => Promise<ToolExecuteResult>
   signal?: AbortSignal
+  /** Host-owned human notes, drained only at a primary loop iteration boundary. */
+  beforeStep?: () => Promise<void>
   maxSteps?: number
   /** Trim in-loop history to this context size (tokens). */
   maxContextTokens?: number
@@ -1443,6 +1445,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
     }
     steps++
+
+    await opts.beforeStep?.()
+    if (signal?.aborted) break
 
     repairToolUseToolResultPairing(messages)
 

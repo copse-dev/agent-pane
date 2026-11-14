@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  setThreadStatus,
+  patchThreadAnywhere,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   continuationBudgetHeldNote,
@@ -55,6 +60,89 @@ afterEach(() => {
 })
 
 describe('held queued message (component)', () => {
+  it('steers a human note with the live run nonce and holds it while awaiting a boundary', async () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    setThreadStatus(store, threadId, 'running')
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      nativeSteeringRunId: 'live-run',
+      currentEpoch: 'human',
+      continuationUsed: 5,
+    }))
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const messageId = addMessage(store, threadId, 'user', 'Keep the existing API.')
+    let resolveResult: (value: { state: 'applied' | 'held' }) => void = () =>
+      assert.fail('Missing resolver')
+    const result = new Promise<{ state: 'applied' | 'held' }>((resolve) => {
+      resolveResult = resolve
+    })
+    api.agent.steer = (project, id, note, runId): Promise<{ state: 'applied' | 'held' }> => {
+      assert.deepEqual([project, id, note, runId], ['project-1', threadId, messageId, 'live-run'])
+      const pending = store.getState().threads.find((thread) => thread.id === threadId)
+        ?.pendingMessages?.[0]
+      assert.equal(pending?.autoDispatch, false)
+      assert.equal(pending.steeringRequested, 'live-run')
+      return result
+    }
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Keep the existing API.' },
+      createdAt: 1,
+    })
+    const steer = document.querySelector<HTMLButtonElement>('.queued-steer')
+    assert.ok(steer)
+    steer.click()
+    assert.match(document.querySelector('.steering-pending')?.textContent ?? '', /next agent step/)
+    assert.equal(document.querySelector('.conversation-queued .queued-release'), null)
+    assert.deepEqual(api.aborts, [])
+    assert.deepEqual(api.runs, [])
+    resolveResult({ state: 'held' })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const thread = store.getState().threads.find((entry) => entry.id === threadId)
+    assert.equal(thread?.pendingMessages?.[0]?.autoDispatch, false)
+    assert.equal(thread.pendingMessages[0].steeringRequested, undefined)
+    assert.equal(thread.continuationUsed, 5)
+    assert.equal(thread.currentEpoch, 'human')
+    assert.ok(document.querySelector('.queued-release'))
+  })
+
+  it('does not offer Steer without a native run or for machine messages', () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    setThreadStatus(store, threadId, 'running')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const messageId = addMessage(store, threadId, 'user', 'Next turn')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Next turn' },
+      createdAt: 1,
+    })
+    assert.equal(document.querySelector('.queued-steer'), null)
+    patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, nativeSteeringRunId: 'native' }))
+    store.emit('threads_changed')
+    assert.ok(
+      document.querySelector('.queued-steer'),
+      'a queued note becomes steerable when the native loop starts',
+    )
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      nativeSteeringRunId: 'native',
+      pendingMessages:
+        thread.pendingMessages?.map((item) => ({
+          ...item,
+          origin: { kind: 'machine', operationId: 'peer' },
+        })) ?? [],
+    }))
+    store.emit('threads_changed')
+    assert.equal(document.querySelector('.queued-steer'), null)
+  })
   it('renders a Held badge + Release action for a held hook message', () => {
     const store = createProjectStore()
     const api = fakeApi()

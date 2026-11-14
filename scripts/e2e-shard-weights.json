@@ -1,5 +1,5 @@
 {
-  "source": "automation-grant-scope provisional at its successful isolated local macOS run (3.2s) until its first successful CI run is measured, 2026-11-14; protected-prompt-entry provisional at its successful local macOS run (3s) until its first CI run is measured, 2026-11-13; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "native-parent-steering provisional at its first passing macOS run (10.3s) until its first CI run is measured, 2026-11-13; automation-grant-scope provisional at its successful isolated local macOS run (3.2s) until its first successful CI run is measured, 2026-11-14; protected-prompt-entry provisional at its successful local macOS run (3s) until its first CI run is measured, 2026-11-13; background-fetch-auth provisional from one successful local macOS Chrome 152.0.7977.167 WDIO spec sample (3.5s; whole invocation 5s), 2026-11-14; retained .tmp/background-fetch-auth-20261114/native-ui-v2.log SHA256 36050fd11854c491f37c7b59bee84681dc15c715a1df0592b77744e97f68b702; replace after its first Linux CI measurement; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -62,6 +62,7 @@
     "tests/e2e/automation-trigger.e2e.ts": 57.7,
     "tests/e2e/automation-workspace-section.e2e.ts": 7.2,
     "tests/e2e/automation-worktree-limit.e2e.ts": 7.4,
+    "tests/e2e/background-fetch-auth.e2e.ts": 3.5,
     "tests/e2e/background-sandbox-cleanup.e2e.ts": 8.6,
     "tests/e2e/background-start-rejected.e2e.ts": 12.9,
     "tests/e2e/background-task-lifecycle.e2e.ts": 10.7,
@@ -197,6 +198,7 @@
     "tests/e2e/multi-window-ipc.e2e.ts": 6.4,
     "tests/e2e/multiple-main-windows.e2e.ts": 11.3,
     "tests/e2e/native-isolated-workers.e2e.ts": 28,
+    "tests/e2e/native-parent-steering.e2e.ts": 10.3,
     "tests/e2e/native-readonly-workers.e2e.ts": 9.9,
     "tests/e2e/nested-tool-activity-colors.e2e.ts": 7.3,
     "tests/e2e/new-project-flow.e2e.ts": 11.9,

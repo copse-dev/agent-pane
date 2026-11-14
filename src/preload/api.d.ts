@@ -421,6 +421,12 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string, reason?: 'send_now') => Promise<void>
+    steer: (
+      projectId: string,
+      threadId: string,
+      messageId: string,
+      runId: string,
+    ) => Promise<{ state: 'applied' | 'held' }>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     refreshModelContext: () => Promise<void>

@@ -79,6 +79,30 @@ revisiting this document, not silently diverging in an implementation PR.
    send-now and ordinary completion retain same-task retry authority. A new human
    turn tree still cannot inherit that authority. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
+   **Human native-parent steering (#658)** is a separate, explicit action on a
+   held plain-text human message. It never admits hook/machine output. The host
+   binds admission to the specific primary native loop nonce. Main freezes the saved
+   unaccepted user identity and queue revision for isolated protected review; metadata
+   markers never establish human authority. Protected review is an explicit blocking
+   host wait: the current tool batch can finish, then the next boundary waits for
+   the decision. Its entire wait pauses both idle and hard deadlines (decision 13);
+   budgets resume afterward without resetting or granting steps/calls. Denial or
+   Stop/completion before durable acceptance leaves the note held. Once acceptance
+   wins, finish the local checkpoint, applied receipt and queue removal even if
+   Stop follows; the aborted loop still makes no next provider request. At delivery,
+   the same revision must win against retirement in the project
+   write queue, saving canonical reviewed text and terminal acceptance before provider
+   history. No fallback identity is allocated. Blocking-hook context is applied only
+   after that acceptance, so a retired or edited note cannot inject context. The host applies the normal
+   blocking submit hooks and redaction, and checkpoints history before acknowledging
+   insertion at the next step boundary. It does not interrupt tools or approvals,
+   create a turn, reset limits, or grant a continuation. The mailbox closes before
+   review/remediation; ACP and children are excluded. At most 16 notes of 16,000
+   characters may be admitted per run. Stop/completion leave uninserted notes held.
+   An `applied` receipt means saved in provider context, not proof of model attention;
+   Stop can still prevent the next request. Crash-ambiguous accepted notes never
+   replay automatically and cannot be steered again under the same message ID.
+   See [native parent steering](native-parent-steering.md) for recovery limits.
 5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
    exception: a parent may start at most four children over its lifetime and keep at
    most two unarchived children. Owned children cannot orchestrate grandchildren.

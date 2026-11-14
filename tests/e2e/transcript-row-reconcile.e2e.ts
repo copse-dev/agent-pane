@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { submitComposer } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, prepareMockTurn } from './helpers/mock-scenario.ts'
-import { submitComposer } from './helpers/composer.ts'
 import {
   resetUserData,
   seedStableWorkspace,

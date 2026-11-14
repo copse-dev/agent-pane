@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   E2E_WORKSPACE_COMMIT_DATE,
   resetUserData,
@@ -294,7 +294,10 @@ describe('footer branch status for a detached thread worktree', function () {
       'title',
       expect.stringContaining('Recovery is offered once the agent stops working in it'),
     )
-    await saveElementScreenshot('#input-bar', 'footer-branch-rebase-agent-running.png')
+    // Follow-up suggestions and the optional Changes row refresh independently.
+    // This state proves the running checkout's recovery footer, as do the
+    // uncommitted-pick and missing-worktree captures below.
+    await saveElementScreenshot('.input-footer', 'footer-branch-rebase-agent-running.png')
     await scenario.release('paused-rebase')
     await scenario.waitForComplete()
 
@@ -316,7 +319,7 @@ describe('footer branch status for a detached thread worktree', function () {
     writeFileSync(join(worktreeRoot, 'README.md'), 'resolved thread change\n')
     git(worktreeRoot, ['add', 'README.md'])
     git(worktreeRoot, ['config', 'core.editor', 'true'])
-    await installMockScenario({
+    const recovery = await installMockScenario({
       title: 'Continue after Git recovery',
       turns: [
         {
@@ -330,7 +333,18 @@ describe('footer branch status for a detached thread worktree', function () {
     await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
-    await saveElementScreenshot('#conversation', 'footer-branch-recovery-continued.png')
+    await recovery.waitForComplete()
+    await browser.waitUntil(
+      async () => {
+        const replies = await $$('.msg-assistant .message-text').getElements()
+        return (await replies.at(-1)?.getText()) === 'The recovery completed; continuing the task.'
+      },
+      { timeout: 30_000, timeoutMsg: 'Recovery must produce its final reply before capture' },
+    )
+    await expect($('.chat-row.selected')).not.toHaveElementClass('is-running')
+    // Prove the command's continuation card without the independently refreshed
+    // composer suggestions changing this transcript capture's frame.
+    await saveElementScreenshot('.msg-machine-origin', 'footer-branch-recovery-continued.png')
   })
 
   it('commits a pick that failed to sign before continuing the rebase', async function () {

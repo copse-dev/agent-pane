@@ -150,6 +150,13 @@
           0
         ]
       },
+      "agent:steer": {
+        "api": "agent.steer",
+        "args": [
+          4,
+          4
+        ]
+      },
       "agent:suggest-command-summary": {
         "api": "agent.suggestCommandSummary",
         "args": [
