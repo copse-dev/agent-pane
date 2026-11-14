@@ -63,39 +63,87 @@ describe('agent-eval scenarios', () => {
   })
 })
 
-describe('git-commit-tool-eval workspace', () => {
-  it('starts from a committed seed baseline with a clean tree', () => {
-    const scenario = loadEvalScenario(join(SCENARIO_DIR, 'git-commit-tool-eval.json'))
-    const root = mkdtempSync(join(tmpdir(), 'copse-eval-seed-test-'))
-    try {
-      const baseline = seedEvalWorkspace(root, scenario)
-      const git = (...args: string[]): string =>
-        execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
-      assert.ok(baseline, 'commitSeedFiles must report the baseline commit')
-      assert.equal(git('rev-parse', 'HEAD'), baseline)
-      assert.equal(git('rev-list', '--count', 'HEAD'), '1')
-      assert.equal(git('status', '--porcelain'), '')
-      assert.deepEqual(git('ls-files').split('\n'), ['CHANGELOG.md', 'README.md'])
-      // The scaffold's identity: the agent's commits are judged after this one.
-      assert.equal(
-        git('log', '-1', '--format=%an <%ae>|%s'),
-        'Copse <copse@copse.invalid>|Initial commit',
-      )
-    } finally {
-      rmSync(root, { recursive: true, force: true })
+/** Prompt text of every scenario prompt and prompt variant. */
+function promptTexts(scenario: EvalScenario): string[] {
+  return [
+    ...(scenario.prompts ?? []).map((prompt) =>
+      typeof prompt === 'string' ? prompt : prompt.text,
+    ),
+    ...(scenario.promptVariants ?? []),
+  ]
+}
+
+/** Seed a scenario into a throwaway directory and hand back a git runner for it. */
+function withSeededWorkspace(
+  scenario: EvalScenario,
+  check: (baseline: string | null, git: (...args: string[]) => string) => void,
+): void {
+  const root = mkdtempSync(join(tmpdir(), 'copse-eval-seed-test-'))
+  try {
+    const baseline = seedEvalWorkspace(root, scenario)
+    check(baseline, (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim())
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+describe('eval workspaces that judge git history', () => {
+  // A sandboxed shell cannot create `.git`: the sandbox denies creating any
+  // ancestor of the protected `.git/hooks`. A scenario that scores commits must
+  // therefore start from a repository the harness prepares, the way Copse's New
+  // project flow does, and must not ask the agent to make one.
+  const gitScenarios = scenarioFiles()
+    .map((name) => ({ name, scenario: loadEvalScenario(join(SCENARIO_DIR, name)) }))
+    .filter(({ scenario }) => scenario.assertWorkspace?.git !== undefined)
+
+  it('covers the scenarios that score commits', () => {
+    assert.deepEqual(
+      gitScenarios.map(({ name }) => name),
+      ['git-commit-tool-eval.json', 'restaurant-website-eval.json'],
+    )
+  })
+
+  it('starts each from a committed seed baseline with a clean tree', () => {
+    for (const { name, scenario } of gitScenarios) {
+      withSeededWorkspace(scenario, (baseline, git) => {
+        assert.ok(baseline, `${name}: commitSeedFiles must report the baseline commit`)
+        assert.equal(git('rev-parse', 'HEAD'), baseline, name)
+        assert.equal(git('rev-list', '--count', 'HEAD'), '1', name)
+        assert.equal(git('status', '--porcelain'), '', name)
+        // The scaffold's identity: the agent's commits are judged after this one.
+        assert.equal(
+          git('log', '-1', '--format=%an <%ae>|%s'),
+          'Copse <copse@copse.invalid>|Initial commit',
+          name,
+        )
+      })
     }
   })
 
-  it('no longer asks the agent to initialise a repository', () => {
-    // A sandboxed shell cannot create `.git` (it is an ancestor of the protected
-    // `.git/hooks`), so a prompt asking for `git init` can only fail.
-    const scenario = loadEvalScenario(join(SCENARIO_DIR, 'git-commit-tool-eval.json'))
-    for (const prompt of scenario.prompts ?? []) {
-      const text = typeof prompt === 'string' ? prompt : prompt.text
-      assert.doesNotMatch(text, /initiali[sz]e|git init/i)
+  it('commits exactly the seed files', () => {
+    const seededFiles = (name: string): string[] => {
+      let files: string[] = []
+      withSeededWorkspace(loadEvalScenario(join(SCENARIO_DIR, name)), (_baseline, git) => {
+        files = git('ls-files').split('\n')
+      })
+      return files
+    }
+    assert.deepEqual(seededFiles('git-commit-tool-eval.json'), ['CHANGELOG.md', 'README.md'])
+    assert.deepEqual(seededFiles('restaurant-website-eval.json'), ['README.md'])
+  })
+})
+
+describe('agent-eval prompts', () => {
+  it('never ask the agent to initialise a git repository', () => {
+    for (const name of scenarioFiles()) {
+      for (const text of promptTexts(loadEvalScenario(join(SCENARIO_DIR, name)))) {
+        assert.doesNotMatch(text, /initiali[sz]e\b[^.]*\b(?:git|repo)|git init\b/i, name)
+      }
     }
   })
+})
 
+describe('commitSeedFiles', () => {
   it('rejects commitSeedFiles without initializeGit', () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-eval-seed-test-'))
     try {
