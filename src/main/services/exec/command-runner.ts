@@ -13,7 +13,7 @@ import {
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
-import { leaseGitSshEnv } from '../ssh-workspace/git-ssh-env.ts'
+import { leaseGitSshEnv, type GitAuthMode } from '../ssh-workspace/git-ssh-env.ts'
 import {
   internalGitEnv,
   internalGitTransport,
@@ -70,6 +70,8 @@ export interface RunCommandOptions {
    * gate first, including on hosts without a sandbox. Never derive from tool args.
    */
   gitConfig?: GitConfigPolicy
+  /** Internal unattended Git policy; defaults to ordinary foreground authentication. */
+  gitAuth?: GitAuthMode
   gitSigning?: GitSigningBridge
 }
 
@@ -100,6 +102,7 @@ function prepareGitInvocation(
   env: NodeJS.ProcessEnv,
   policy: GitConfigPolicy,
   signing?: GitSigningBridge,
+  authMode: GitAuthMode = 'interactive',
 ): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
   const preparedArgs = withGitInvocationArgs(args, policy, signing)
   const transport = policy === 'internal-network' ? 'network' : internalGitTransport(args[0])
@@ -107,9 +110,10 @@ function prepareGitInvocation(
   // askpass and host-key policy. Scrubbing after the lease would also delete
   // those trusted bridge variables and break authenticated fetch/push.
   const preparedEnv = policy === 'user-command' ? env : internalGitEnv(env, transport)
-  const gitSsh = leaseGitSshEnv(preparedEnv)
+  const gitSsh = leaseGitSshEnv(preparedEnv, authMode)
   return {
-    args: preparedArgs,
+    // An unset GIT_ASKPASS alone falls back to configured core.askPass.
+    args: authMode === 'noninteractive' ? ['-c', 'core.askPass=', ...preparedArgs] : preparedArgs,
     env: gitSsh.env,
     releaseGitSsh: gitSsh.release,
   }
@@ -168,7 +172,13 @@ function runCommandImpl(
     spawnEnv = { ...spawnEnv, ...opts.env }
   }
   if (cmd === 'git') {
-    const git = prepareGitInvocation(args, spawnEnv, opts.gitConfig ?? 'internal', opts.gitSigning)
+    const git = prepareGitInvocation(
+      args,
+      spawnEnv,
+      opts.gitConfig ?? 'internal',
+      opts.gitSigning,
+      opts.gitAuth,
+    )
     spawnArgs = git.args
     spawnEnv = git.env
     releaseGitSsh = git.releaseGitSsh
