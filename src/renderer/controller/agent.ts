@@ -428,7 +428,10 @@ function maybeSummarizeCommands(
   void (async (): Promise<void> => {
     let summary: string | null
     try {
-      summary = await api.agent.suggestCommandSummary(commands)
+      const projectId = getThreadProjectId(store, threadId)
+      summary = projectId
+        ? await api.agent.suggestCommandSummary(commands, projectId, threadId)
+        : null
     } catch {
       summary = null
     }
@@ -462,7 +465,10 @@ function maybeSummarizeToolTurn(
   void (async (): Promise<void> => {
     let summary: string | null
     try {
-      summary = await api.agent.suggestToolTurnSummary(actions)
+      const projectId = getThreadProjectId(store, threadId)
+      summary = projectId
+        ? await api.agent.suggestToolTurnSummary(actions, projectId, threadId)
+        : null
     } catch {
       summary = null
     }
@@ -499,7 +505,10 @@ function maybeSummarizeToolRun(
   void (async (): Promise<void> => {
     let summary: string | null
     try {
-      summary = await api.agent.suggestToolTurnSummary(actions)
+      const projectId = getThreadProjectId(store, threadId)
+      summary = projectId
+        ? await api.agent.suggestToolTurnSummary(actions, projectId, threadId)
+        : null
     } catch {
       summary = null
     }

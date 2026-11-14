@@ -9,6 +9,7 @@ import { getSetting, updateSetting } from '../services/storage/settings.ts'
 import { runSerialized } from '../services/storage/write-queue.ts'
 import { ensureThreadAccess, hasThreadAccess } from '../services/security/thread-access.ts'
 import { sendThreadPrompt } from '../services/thread-prompts.ts'
+import { rejectAutomationBudgetDelegation } from '../services/automations/automation-budget.ts'
 
 type Owners = SettingsValues['threadSubthreadOwners']
 const owners = (): Owners => getSetting<Owners>('threadSubthreadOwners', [])
@@ -86,6 +87,9 @@ export function createSubthreadsTool(
       if (!sourceThreadId || !context || context.threadId !== sourceThreadId)
         return 'Subthreads require an active project thread.'
       const { projectId } = context
+      if (args.action === 'start' || args.action === 'send') {
+        await rejectAutomationBudgetDelegation(context)
+      }
       if (
         owners().some((entry) => entry.projectId === projectId && entry.threadId === sourceThreadId)
       )

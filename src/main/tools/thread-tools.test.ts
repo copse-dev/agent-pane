@@ -20,6 +20,11 @@ import { runWithApprovalHandler } from '../services/approval.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { setSetting } from '../services/storage/settings.ts'
 import { listThreadsTool, sendThreadPromptTool } from './thread-tools.ts'
+import {
+  createAutomationBudget,
+  withAutomationBudget,
+} from '../services/automations/automation-budget.ts'
+import { storageRemoveFile } from '../services/storage/user-data-files.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread-access.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
@@ -614,6 +619,35 @@ describe('conversation tools', () => {
         { id: 'recent-10', projectId: 'thread-tools-project' },
       ])
     })
+  })
+
+  it('refuses a budgeted cross-thread prompt before asking for a sending grant', async () => {
+    await createAutomationBudget('thread-tools-project', 'thread-tools-source', 10)
+    try {
+      await assert.rejects(
+        runWithApprovalHandler(
+          async () => {
+            assert.fail('Unsupported budgeted delegation must not ask for a grant')
+          },
+          () =>
+            withAutomationBudget('thread-tools-project', 'thread-tools-source', () =>
+              runWithActiveRunIdentity('thread-tools-source', async () => {
+                await sendThreadPromptTool.execute(
+                  {
+                    project_id: 'thread-tools-project',
+                    thread_id: 'thread-tools-destination',
+                    prompt: 'Check the build',
+                  },
+                  signal,
+                )
+              }),
+            ),
+        ),
+        /separate worker threads/,
+      )
+    } finally {
+      await storageRemoveFile('automation-budgets/thread-tools-project/thread-tools-source.json')
+    }
   })
 
   it('asks separately to send and leaves the destination untouched on denial', async () => {

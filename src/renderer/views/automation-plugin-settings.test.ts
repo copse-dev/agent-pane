@@ -396,6 +396,7 @@ describe('automation plugin settings detail', () => {
         model: 'gpt-5.4',
         enabled: true,
         maxLiveWorktrees: limit,
+        maxRunCostUsd: 12.5,
         createdAt: 1,
         updatedAt: 1,
       }
@@ -432,6 +433,17 @@ describe('automation plugin settings detail', () => {
       assert.ok(saved)
       assert.equal(saved.input.cron, cron)
       assert.equal(saved.input.maxLiveWorktrees, limit)
+      assert.equal(saved.input.maxRunCostUsd, 12.5)
+      root.querySelector<HTMLButtonElement>('.automation-row-btn')?.click()
+      await tick()
+      const allowance = root.querySelector<HTMLInputElement>('.automation-model-allowance-input')
+      assert.ok(allowance)
+      allowance.value = ''
+      root
+        .querySelector<HTMLFormElement>('.automation-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await tick()
+      assert.equal(upserts[1]?.input.maxRunCostUsd, null)
     })
   }
 
@@ -697,6 +709,7 @@ describe('automation plugin settings detail', () => {
           model: BEST_VALUE_CHAT_MODEL,
           enabled: true,
           maxLiveWorktrees: 2,
+          maxRunCostUsd: null,
           permissions: [{ kind: 'mcp-tool', toolName: 'mcp__linear__create_issue' }],
         },
       },
