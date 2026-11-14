@@ -23,8 +23,13 @@ export const RIGHT_PANEL_POSITIONS: readonly RightPanelPosition[] = ['auto', 'si
 export const isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS)
 // How the sidebar orders the threads inside each project. `activity` is the store's
 // own order (last prompted, then created); the others re-sort it at render time.
-export type ThreadSortMode = 'activity' | 'created' | 'title'
-export const THREAD_SORT_MODES: readonly ThreadSortMode[] = ['activity', 'created', 'title']
+export type ThreadSortMode = 'activity' | 'created' | 'title' | 'action'
+export const THREAD_SORT_MODES: readonly ThreadSortMode[] = [
+  'activity',
+  'created',
+  'title',
+  'action',
+]
 export const isThreadSortMode = memberOf(THREAD_SORT_MODES)
 // How the sidebar lays threads out: under their projects (the tree), in
 // Needs you / Working / Recent sections across projects, or as one flat list.

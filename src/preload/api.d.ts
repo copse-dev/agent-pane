@@ -720,6 +720,7 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    actionState: () => Promise<import('@shared/threads/action-assessment.ts').ThreadActionState>
     archiveState: (
       projectId: string,
       view: 'review' | 'archived',
