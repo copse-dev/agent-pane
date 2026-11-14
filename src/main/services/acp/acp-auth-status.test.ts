@@ -15,12 +15,22 @@ function deps(over: Partial<AcpAuthProbeDeps> = {}): AcpAuthProbeDeps {
 }
 
 describe('probeAcpAuth', () => {
-  it('reads Claude from `claude auth status`', async () => {
-    const run = (stdout: string): AcpAuthProbeDeps => deps({ exec: () => Promise.resolve(stdout) })
+  it('reads Claude from the adapter-bundled CLI with no standalone claude installed', async () => {
+    const calls: string[] = []
+    const run = (stdout: string): AcpAuthProbeDeps =>
+      deps({
+        agent: { command: 'claude-agent-acp', args: [] },
+        exec: (command, args) => {
+          calls.push([command, ...args].join(' '))
+          if (command === 'claude') throw new Error('standalone CLI is missing')
+          return Promise.resolve(stdout)
+        },
+      })
     assert.equal(await probeAcpAuth('claude-acp', run('{"loggedIn":true}')), 'signed-in')
     assert.equal(await probeAcpAuth('claude-acp', run('{"loggedIn":false}')), 'signed-out')
     assert.equal(await probeAcpAuth('claude-acp', run('{"other":1}')), 'unknown')
     assert.equal(await probeAcpAuth('claude-acp', run('not json')), 'unknown')
+    assert.deepEqual(calls, Array(4).fill('claude-agent-acp --cli auth status'))
   })
 
   it('treats a Claude CLI that cannot answer as unknown, never signed out', async () => {

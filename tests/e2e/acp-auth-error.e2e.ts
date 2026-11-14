@@ -89,7 +89,7 @@ describe('ACP authentication error presentation', () => {
     resetUserData()
   })
 
-  it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
+  it('shows the bundled Claude sign-in command on a fresh machine', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('[data-testid="connections-add-toggle"]').click()
@@ -109,11 +109,11 @@ describe('ACP authentication error presentation', () => {
       await expect(approval).not.toBeDisplayed()
     }
     const signIn = await $('.acp-cmd-row*=Sign in')
-    await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
+    await expect(signIn.$('.acp-cmd')).toHaveText('claude-agent-acp --cli auth login')
     const note = await $('.acp-known-agent-note')
-    await expect(note).toHaveText(expect.stringContaining('claude auth login'))
+    await expect(note).toHaveText(expect.stringContaining('claude-agent-acp --cli auth login'))
     await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
-    await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
+    await expect(note).not.toHaveText(expect.stringContaining('setup-token'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
     await expect($('#approval-dialog')).not.toBeDisplayed()
     await saveElementScreenshot('.acp-add-menu .provider-form', 'claude-sign-in.png')
@@ -123,7 +123,7 @@ describe('ACP authentication error presentation', () => {
     const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text').getElement()
     const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
-    await expect(message.$('ol code')).toHaveText('claude auth login')
+    await expect(message.$('ol code')).toHaveText('claude-agent-acp --cli auth login')
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('ACP error -32603 (Internal error)'),
     )
@@ -166,7 +166,7 @@ describe('ACP authentication error presentation', () => {
     expect(layout.diagnosticLinePitch).toBeLessThanOrEqual(24)
 
     const hints = await hintPlacement('msg-assistant-acp-auth')
-    expect(hints.inSteps).toEqual(['claude auth login'])
+    expect(hints.inSteps).toEqual(['claude-agent-acp --cli auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
     await saveAuthMessage('[data-message-id="msg-assistant-acp-auth"]', 'acp-auth-error.png')
@@ -236,7 +236,7 @@ describe('ACP authentication error presentation', () => {
     await expect(cause).toHaveText(
       expect.stringContaining('If your network was down instead, re-send your message'),
     )
-    await expect(message.$('ol code')).toHaveText('claude auth login')
+    await expect(message.$('ol code')).toHaveText('claude-agent-acp --cli auth login')
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('Unable to verify organization for the current authentication token'),
     )

@@ -13,10 +13,12 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
 > **The agent is a separate program — it is not bundled with Copse.** Copse ships
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
-> thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
-> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
-> authenticated with its own command (e.g. `claude auth login`). The Settings
-> panel shows the exact install and sign-in commands per agent.
+> thing that wraps Claude/Gemini and speaks ACP) is installed separately, e.g.
+> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude. Copse can
+> install curated adapters with approval. The Claude adapter bundles the Claude
+> Code CLI it runs, so sign in with `claude-agent-acp --cli auth login`; a separate
+> `claude` install is unnecessary for Copse. Settings shows the install and
+> sign-in commands per agent.
 
 > Status: client role, second slice (issues #264, #605), with client terminals
 > (#623) — see [Client terminals](#client-terminals) and [Limitations](#limitations).
@@ -227,7 +229,7 @@ you've already added.
 
 - **Known agents** include Gemini CLI, Claude, Cursor, Codex and GitHub Copilot CLI.
   Select one to see whether it's installed, the **Install** command to get
-  it, the **Sign in** command to authenticate it (e.g. `claude auth login`), and
+  it, the **Sign in** command to authenticate it (e.g. `claude-agent-acp --cli auth login`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
   permission mode, enable/disable it, or **Remove** it.
@@ -284,13 +286,15 @@ does not establish a sandbox profile. See [registry discovery](acp-registry-disc
 External agents hold their own credentials, and those expire. When a turn fails
 because the agent could not authenticate, Copse now says so in the agent's own
 terms and offers to fix it: the chat message names the command that signs that
-agent in again (`claude auth login`, `cursor-agent login`, `codex login`, …), and a
+agent in again (`claude-agent-acp --cli auth login`, `cursor-agent login`, `codex login`, …), and a
 prompt offers to open a shell in the **Shells** pane already running it. Finish
 the sign-in there, then re-send your message — Copse cannot complete another
 program's login flow for you.
 
-Claude uses `claude auth login` for both first-time sign-in and expired-session
-recovery. The normal login flow chooses the account method; `--sso` is optional
+Claude uses `claude-agent-acp --cli auth login` for both first-time sign-in and
+expired-session recovery. This runs the adapter's bundled Claude Code CLI and
+stores the same account login as the standalone `claude` command. The normal
+login flow chooses the account method; `--sso` is optional
 when you need to force corporate SSO. `claude setup-token` is for headless or CI
 use: it prints a long-lived token without saving a login, so it is not the
 desktop sign-in command.

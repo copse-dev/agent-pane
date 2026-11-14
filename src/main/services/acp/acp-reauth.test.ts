@@ -39,10 +39,10 @@ describe('offerAcpReauth', () => {
       },
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
-    assert.equal(command, 'claude auth login')
+    assert.equal(command, 'claude-agent-acp --cli auth login')
     assert.deepEqual(presentation, { kind: 'actions', title: 'Sign in to Claude' })
     assert.deepEqual(options, ['Sign in', 'Not now'])
-    assert.deepEqual(launched, ['claude auth login'])
+    assert.deepEqual(launched, ['claude-agent-acp --cli auth login'])
   })
 
   it('offers the adapter-bundled Codex command and only launches it after acceptance', async () => {
@@ -78,9 +78,9 @@ describe('offerAcpReauth', () => {
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
     assert.match(asked, /Claude’s saved sign-in has expired/)
-    assert.match(asked, /claude auth login/)
+    assert.match(asked, /claude-agent-acp --cli auth login/)
     assert.match(asked, /re-send your message/)
-    assert.doesNotMatch(asked, /claude-agent-acp|SDK|ACP|--sso/)
+    assert.doesNotMatch(asked, /SDK|ACP|--sso/)
   })
 
   // Claude's failed organization check (#4147) reads the same for a stale token
@@ -96,7 +96,7 @@ describe('offerAcpReauth', () => {
     )
     assert.match(asked, /Claude couldn’t verify its saved sign-in/)
     assert.match(asked, /Unless your network was down/)
-    assert.match(asked, /claude auth login/)
+    assert.match(asked, /claude-agent-acp --cli auth login/)
     assert.doesNotMatch(asked, /has expired|is not signed in/)
   })
 
@@ -160,7 +160,7 @@ describe('offerAcpReauth', () => {
 })
 
 // When the agent ran on an SSH host its credential store is there, so the
-// terminal must open on the host — running `claude auth login` locally would sign
+// terminal must open on the host — running `claude-agent-acp --cli auth login` locally would sign
 // in the wrong machine and leave the remote agent exactly as unauthenticated.
 describe('offerAcpReauth on an SSH workspace', () => {
   const REMOTE_ROOT = '/remote/project'
@@ -194,11 +194,14 @@ describe('offerAcpReauth on an SSH workspace', () => {
       (req) => Promise.resolve({ answers: req.questions.map(() => 'yes') }),
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
-    assert.equal(command, 'claude auth login (on dev)')
+    assert.equal(command, 'claude-agent-acp --cli auth login (on dev)')
     assert.equal(launched.length, 1)
     const cmd = launched[0] ?? ''
-    assert.ok(cmd.includes('claude auth login'))
-    assert.ok(cmd.includes('command -v claude'), 'missing-CLI hint guard precedes the login')
+    assert.ok(cmd.includes('claude-agent-acp --cli auth login'))
+    assert.ok(
+      cmd.includes('command -v claude-agent-acp'),
+      'missing-CLI hint guard precedes the login',
+    )
     // The Shells tab for an SSH workspace is already a pty on the host, so the
     // command must not be wrapped in ssh — that nests ssh on the host with
     // this machine's identity/socket paths, which don't exist there.
@@ -217,7 +220,7 @@ describe('offerAcpReauth on an SSH workspace', () => {
         () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'required' }),
       )
       assert.match(asked, /SSH host dev/)
-      assert.match(asked, /claude auth login/)
+      assert.match(asked, /claude-agent-acp --cli auth login/)
       assert.deepEqual(launched, [])
     },
   )

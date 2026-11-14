@@ -28,7 +28,7 @@ describe('classifyAgentError', () => {
     const out = classifyAgentError(auth, { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /ACP error -32000 \(Authentication required\)/)
     assert.match(out, /Claude needs authentication/)
-    assert.match(out, /claude auth login/)
+    assert.match(out, /claude-agent-acp --cli auth login/)
     assert.match(out, /ANTHROPIC_API_KEY/)
     assert.match(out, /Details:.*token missing/)
     assert.match(out, /not automatically shared with external agents/)
@@ -79,7 +79,7 @@ describe('classifyAgentError', () => {
     )
     const out = classifyAgentError(err, { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /Claude sign-in expired/)
-    assert.match(out, /claude auth login/)
+    assert.match(out, /claude-agent-acp --cli auth login/)
     assert.match(out, /re-send your message/)
     // The agent's own words stay available, below the actionable guidance.
     assert.match(out, /Technical details[\s\S]*ACP error -32603 \(Internal error\)/)
@@ -131,7 +131,7 @@ describe('classifyAgentError', () => {
     assert.match(out, /organization’s policy/)
     assert.match(out, /its sign-in has usually expired/)
     assert.match(out, /If your network was down instead, re-send your message/)
-    assert.match(out, /1\. Run `claude auth login` in a terminal\./)
+    assert.match(out, /1\. Run `claude-agent-acp --cli auth login` in a terminal\./)
     assert.match(out, /Technical details[\s\S]*Unable to verify organization/)
     assert.doesNotMatch(out, /^An error occurred:/)
     // The marker for the next turn reads the classifier's own verdict, and must
@@ -234,7 +234,7 @@ describe('classifyAgentError', () => {
   it('keeps first-run guidance for an agent that was never signed in', () => {
     const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /needs authentication/)
-    assert.match(out, /claude auth login/)
+    assert.match(out, /claude-agent-acp --cli auth login/)
     assert.doesNotMatch(out, /has expired/)
   })
 
