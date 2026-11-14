@@ -4,13 +4,10 @@ export const mcpMarkup = `
           <section class="settings-section" data-section="mcp">
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
-              Model Context Protocol servers expose external tools to the agent. This section is
-              the whole picture of what Copse talks to over MCP, servers you configured, servers
-              the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
-              its own config. It also reads <code>.cursor/mcp.json</code> and
-              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
-              you edit yourself. Plugins are installed and turned on under Customise.
+              Servers that give the agent external tools: the ones you add, the ones the open
+              project asks for, and the ones your plugins bring. Copse also reads
+              <code>.cursor/mcp.json</code> and <code>.mcp.json</code> in the project and
+              <code>~/.cursor/mcp.json</code>, which you edit yourself.
             </p>
 
             <fieldset>

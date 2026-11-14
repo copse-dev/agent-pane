@@ -57,12 +57,10 @@ export const appearanceMarkup = `
                 Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint" id="concise-threads-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
-                and the tool errors the model recovers from stay hidden, and every finished turn
-                has a Show steps button to open it in full; while a model works, you see what it
-                is doing now. Turn off to always show the full thread. Other models always show the
-                full thread.
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, tool
+                calls and reasoning fold into Show steps on each finished turn, and messages and
+                screenshots stay visible. Turn off to always show the full thread, as other models
+                do.
               </p>
             </fieldset>
 

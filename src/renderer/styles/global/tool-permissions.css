@@ -36,19 +36,16 @@
   gap: var(--spacing-md);
 }
 
-.tool-permission-group {
-  overflow: clip;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
-
+/* A tool group (`.tool-permission-group`) is a disclosure of rows sitting on
+   the page, not a card: no frame, fill or rules. The gap in
+   `.tool-permissions-groups` separates one group from the next
+   (docs/ui-taste.md, "Containment is a plate"). */
 .tool-permission-group-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   min-height: var(--action-min-height);
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
   cursor: pointer;
   list-style: none;
 }
@@ -79,21 +76,19 @@
   font-weight: 600;
 }
 
+/* The count, origin and status beside a group's name are facts about it, not
+   things to press, so they read as muted text. Connected and error keep their
+   status hue below. */
 .tool-permission-count,
 .tool-permission-group-origin,
 .tool-permission-group-status {
   flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
-  padding: var(--spacing-xs) var(--spacing-sm);
 }
 
 .tool-permission-count {
-  min-width: calc(var(--spacing-xl) + var(--spacing-xs));
-  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
@@ -120,13 +115,9 @@
   font-size: var(--font-size-sm);
 }
 
-.tool-permission-list {
-  border-top: 1px solid var(--border);
-}
-
 .tool-permission-group-empty {
   margin: 0;
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
@@ -137,15 +128,17 @@
   align-items: center;
   gap: var(--spacing-lg);
   min-height: calc(var(--action-min-height) + var(--spacing-xl));
-  padding: var(--list-row-padding-block) var(--spacing-md);
+  padding: var(--list-row-padding-block) 0;
 }
 
-.tool-permission-row + .tool-permission-row {
-  border-top: 1px solid var(--border);
-}
-
+/* A pending row's fill reaches --spacing-sm past its text on both sides, so
+   the text keeps its place and the fill is not cramped against it. Shadows,
+   not padding, paint that gutter: they move nothing and add no overflow. */
 .tool-permission-row[data-pending='true'] {
   background: var(--bg-hover);
+  box-shadow:
+    calc(-1 * var(--spacing-sm)) 0 0 var(--bg-hover),
+    var(--spacing-sm) 0 0 var(--bg-hover);
 }
 
 .tool-permission-copy {

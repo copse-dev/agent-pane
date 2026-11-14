@@ -1030,18 +1030,19 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
   tool, and do not keep progressive wording on a completed card.
 - **One quiet rollup for background activity.** Two or more non-subagent tool calls on a
-  message collapse into `.tool-card-rollup`. The collapsed summary is **italic muted text**
-  (like reasoning) and stays closed by default, including while tools run — click to expand
-  nested category groups and individuals. When prose-less assistant messages follow one
-  another, the same disclosure becomes the run and nests one `.tool-card-step` per message;
-  it is patched in place, so it keeps its open state as messages join. Failed tools render
-  open beside the rollup rather than inside it, so a failure is visible without exposing
-  successful work (a call the user interrupted is not a failure and stays inside). When every
-  call failed there is no rollup. Subagent and proposal cards keep their own surfaces.
+  message collapse into `.tool-card-rollup`. The collapsed summary is **upright, muted,
+  regular-weight text** (like the reasoning summary) and stays closed by default, including
+  while tools run — click to expand nested category groups and individuals. When prose-less
+  assistant messages follow one another, the same disclosure becomes the run and nests one
+  `.tool-card-step` per message; it is patched in place, so it keeps its open state as
+  messages join. Failed tools render open beside the rollup rather than inside it, so a
+  failure is visible without exposing successful work (a call the user interrupted is not a
+  failure and stays inside). When every call failed there is no rollup. Subagent and proposal
+  cards keep their own surfaces.
 - **Reasoning nests with its tools and starts closed.** When a segment has both `reasoning`
   and tools, do **not** render a standalone Reasoning block above the rollup. Put it inside
   the expanded rollup body (above the tool rows), or on its message's step in a run, so the
-  collapsed view is only the italic heading. Every reasoning disclosure starts closed,
+  collapsed view is only the rollup heading. Every reasoning disclosure starts closed,
   including while live. Standalone Reasoning remains for answer-only / no-tool segments; empty
   trails are omitted.
   Title tense matches tools: `Reasoning…` while live, `Reasoned` when settled.
@@ -1080,8 +1081,8 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
   that call. Keep failure callouts (`· N failed`) even after polish.
 - **No card chrome by default.** Collapsed tool rows drop fill/border; nested items inside an
-  expanded rollup stay flat under a hairline indent. Reach for `--text-muted` / italics on the
-  rollup summary, not `--bg-elevated` panels.
+  expanded rollup stay flat under a hairline indent. Reach for `--text-muted` and a regular
+  weight on the rollup summary, not italics or `--bg-elevated` panels.
 
 Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
 `tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.

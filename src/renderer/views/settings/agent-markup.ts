@@ -24,7 +24,7 @@ export const agentMarkup = `
                 <textarea
                   name="customInstructions"
                   rows="4"
-                  placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
+                  placeholder="e.g. Prefer small commits. Use British spelling."
                 ></textarea>
                 <span class="field-hint">
                   Added to every conversation, in every project. A project

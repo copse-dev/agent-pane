@@ -394,15 +394,15 @@
 .footer-indexing[data-state='skipped'] {
   color: var(--warning);
 }
+/* The badge recipe in docs/ui-taste.md: sentence case at normal tracking, so
+   "Queued", "Held" and "Editing" read as labels rather than shouted states. */
 .message-queued-badge {
   display: inline-block;
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
   border-radius: var(--radius);
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
   color: var(--text-muted);
   background: var(--bg-hover);
 }

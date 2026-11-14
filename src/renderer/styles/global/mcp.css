@@ -4,10 +4,10 @@
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
+/* A server row sits on the page like a plugin row, not in its own box: the
+   list's gap separates one server from the next. */
 .mcp-server-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: 0;
 }
 .mcp-server-header {
   display: flex;
