@@ -1,0 +1,380 @@
+diff --git a/src/renderer/views/chat-layout.ts b/src/renderer/views/chat-layout.ts
+index b6ef354bc..637d4ad12 100644
+--- a/src/renderer/views/chat-layout.ts
++++ b/src/renderer/views/chat-layout.ts
+@@ -36,7 +36,7 @@ export function bindChatComposerLayout(
+   // user is arrowing through.
+   let focusedFor: string | null = null
+ 
+-  const sync = (): void => {
++  const sync = (reason: string): void => {
+     const home = isActiveThreadEmpty(store)
+     pane.classList.toggle('is-activity-home', home)
+     onActivityHome?.(home)
+@@ -57,23 +57,33 @@ export function bindChatComposerLayout(
+       focusedFor = null
+     }
+ 
+-    const height = Math.max(Math.ceil(input.getBoundingClientRect().height), 72)
++    const measuredHeight = input.getBoundingClientRect().height
++    const height = Math.max(Math.ceil(measuredHeight), 72)
++    const previousReserve = pane.style.getPropertyValue('--chat-composer-height')
+     pane.style.setProperty('--chat-composer-height', `${String(height)}px`)
++    performance.mark('copse-diag-composer-sync', {
++      detail: { reason, measuredHeight, height, previousReserve },
++    })
+   }
+ 
+-  sync()
+-  requestAnimationFrame(sync)
++  sync('initial')
++  requestAnimationFrame(() => sync('raf'))
+ 
+-  const observer = new ResizeObserver(sync)
++  const observer = new ResizeObserver(() => sync('resize-observer'))
+   // Reserve the same border box that sync measures, including border-only changes.
+   observer.observe(input, { box: 'border-box' })
+ 
+-  window.addEventListener('resize', sync, { passive: true })
++  const onResize = (): void => sync('window-resize')
++  window.addEventListener('resize', onResize, { passive: true })
+ 
+   const unsubs = [
+     // Which thread, and whether it is the empty Activity home.
+-    store.select((s) => [s.activeThreadId, isActiveThreadEmpty(store)] as const, sync, sameItems),
+-    store.on('message_added', sync),
++    store.select(
++      (s) => [s.activeThreadId, isActiveThreadEmpty(store)] as const,
++      () => sync('store-select'),
++      sameItems,
++    ),
++    store.on('message_added', () => sync('message-added')),
+   ]
+ 
+   return () => {
+@@ -81,6 +91,6 @@ export function bindChatComposerLayout(
+       u()
+     })
+     observer.disconnect()
+-    window.removeEventListener('resize', sync)
++    window.removeEventListener('resize', onResize)
+   }
+ }
+diff --git a/src/renderer/views/transcript-scroll.ts b/src/renderer/views/transcript-scroll.ts
+index 733949d86..76fe06c46 100644
+--- a/src/renderer/views/transcript-scroll.ts
++++ b/src/renderer/views/transcript-scroll.ts
+@@ -225,6 +225,9 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
+     const before = list.scrollTop
+     list.scrollTop = top
+     const landed = list.scrollTop
++    performance.mark('copse-diag-programmatic-scroll', {
++      detail: { requested: top, before, landed, stack: new Error().stack },
++    })
+     // Reading-anchor and layout corrections can move upward without reader
+     // intent. Keep the compact preview's hysteresis; only handleUserScroll
+     // releases it early for a genuine upward scroll.
+diff --git a/tests/e2e/composer-border-observer.e2e.ts b/tests/e2e/composer-border-observer.e2e.ts
+index 51517a1e9..9e1cf5e42 100644
+--- a/tests/e2e/composer-border-observer.e2e.ts
++++ b/tests/e2e/composer-border-observer.e2e.ts
+@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
+ import { mkdirSync, writeFileSync } from 'node:fs'
+ import { join } from 'node:path'
+ import { $, browser } from '@wdio/globals'
++import {
++  startComposerDiagnostic,
++  sampleComposerDiagnostic,
++  stopComposerDiagnostic,
++} from './helpers/composer-diagnostic.ts'
+ import {
+   resetUserData,
+   seedConversationVisualHierarchyFixture,
+@@ -48,19 +53,27 @@ describe('composer border-box reservation', () => {
+     seedConversationVisualHierarchyFixture(seedStableWorkspace())
+     await browser.reloadSession()
+     await $('[data-message-id="msg-assistant-result"]').waitForExist({ timeout: 30_000 })
++    await startComposerDiagnostic()
+   })
+-  after(() => {
++  after(async () => {
++    const rows = await stopComposerDiagnostic()
++    const directory = join(process.cwd(), '.tmp/composer-observer')
++    mkdirSync(directory, { recursive: true })
++    writeFileSync(join(directory, 'timeline.json'), JSON.stringify(rows, null, 2))
+     resetUserData()
+   })
+ 
+   it('tracks border-only changes in both directions and ordinary content growth', async () => {
+     await withCaptureFrame(async () => {
++      await sampleComposerDiagnostic('before-original-frame-prepare')
+       await prepareE2eScreenshot()
++      await sampleComposerDiagnostic('original-frame-prepared')
+       await expectSynchronized()
+       const original = await geometry()
+       assert.equal(original.border, '0px')
+       const observations = [{ phase: 'original', ...original }]
+       try {
++        await sampleComposerDiagnostic('before-border-added')
+         await browser.execute(() => {
+           const input = document.getElementById('input-bar')
+           if (!input) throw new Error('Composer missing')
+@@ -69,15 +82,18 @@ describe('composer border-box reservation', () => {
+           input.style.width = `${String(input.getBoundingClientRect().width + 2)}px`
+           input.style.setProperty('border', '1px solid red', 'important')
+         })
++        await sampleComposerDiagnostic('border-added-before-wait')
+         observations.push({ phase: 'bordered-before-wait', ...(await geometry()) })
+         await expectSynchronized()
+         const bordered = await geometry()
+         assert.equal(bordered.actual, original.actual + 2)
+         assert.equal(bordered.contentWidth, original.contentWidth)
+         observations.push({ phase: 'bordered', ...bordered })
++        await sampleComposerDiagnostic('bordered-synchronized')
+         await savePreparedAppScreenshot('composer-observer-bordered.png')
+         await expectSynchronized()
+ 
++        await sampleComposerDiagnostic('before-borderless')
+         await browser.execute(() => {
+           document.getElementById('input-bar')?.style.removeProperty('border')
+           document.getElementById('input-bar')?.style.removeProperty('width')
+@@ -87,8 +103,10 @@ describe('composer border-box reservation', () => {
+         assert.equal(borderless.actual, original.actual)
+         assert.equal(borderless.contentWidth, original.contentWidth)
+         observations.push({ phase: 'borderless', ...borderless })
++        await sampleComposerDiagnostic('borderless-synchronized')
+         await savePreparedAppScreenshot('composer-observer-borderless.png')
+ 
++        await sampleComposerDiagnostic('before-content-growth')
+         await browser.execute(() => {
+           const strip = document.createElement('div')
+           strip.id = 'composer-observer-content'
+@@ -100,6 +118,7 @@ describe('composer border-box reservation', () => {
+         const grown = await geometry()
+         assert.equal(grown.actual, borderless.actual + 24)
+         observations.push({ phase: 'content-grown', ...grown })
++        await sampleComposerDiagnostic('content-grown-synchronized')
+         await savePreparedAppScreenshot('composer-observer-content-grown.png')
+       } finally {
+         await browser.execute(() => {
+@@ -109,6 +128,7 @@ describe('composer border-box reservation', () => {
+         })
+         await expectSynchronized()
+         observations.push({ phase: 'restored', ...(await geometry()) })
++        await sampleComposerDiagnostic('restored-synchronized')
+         const directory = join(process.cwd(), '.tmp/composer-observer')
+         mkdirSync(directory, { recursive: true })
+         writeFileSync(join(directory, 'geometry.json'), JSON.stringify(observations, null, 2))
+diff --git a/tests/e2e/helpers/screenshot.ts b/tests/e2e/helpers/screenshot.ts
+index eaeb41e56..b8649afd5 100644
+--- a/tests/e2e/helpers/screenshot.ts
++++ b/tests/e2e/helpers/screenshot.ts
+@@ -1,3 +1,4 @@
++import { sampleComposerDiagnostic, retainComposerCapture } from './composer-diagnostic.ts'
+ import type {} from './browser-globals.d.ts'
+ import { join } from 'node:path'
+ import { randomUUID } from 'node:crypto'
+@@ -251,7 +252,10 @@ export async function saveFramedElementScreenshot(
+   await withSettledIndex(async () => {
+     await captureWhileStill(selector, async () => {
+       const subject = await browser.$(selector).getElement()
+-      await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
++      await sampleComposerDiagnostic(`png-call-before:${filename}`)
++      const raw = await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
++      retainComposerCapture(filename, raw)
++      await sampleComposerDiagnostic(`png-call-after:${filename}`)
+     })
+   })
+ }
+diff --git a/tests/e2e/helpers/composer-diagnostic.ts b/tests/e2e/helpers/composer-diagnostic.ts
+new file mode 100644
+index 000000000..bc20da406
+--- /dev/null
++++ b/tests/e2e/helpers/composer-diagnostic.ts
+@@ -0,0 +1,186 @@
++import { mkdirSync, writeFileSync } from 'node:fs'
++import { join } from 'node:path'
++import { browser } from '@wdio/globals'
++
++declare global {
++  interface Window {
++    __composerDiagnostic?: {
++      rows: Record<string, unknown>[]
++      sample: (kind: string, detail?: unknown) => void
++      stop: () => void
++    }
++  }
++}
++
++// Isolated diagnostic only. Reads layout and records producer marks; never
++// writes layout, reserve, scroll position, animation state, or capture settings.
++export async function startComposerDiagnostic(): Promise<void> {
++  await browser.execute(() => {
++    const initialTargets = {
++      composer: document.getElementById('input-bar'),
++      pane: document.getElementById('pane-chat'),
++      conversation: document.getElementById('conversation'),
++      transcript: document.querySelector('.messages-list'),
++      result: document.querySelector('[data-message-id="msg-assistant-result"]'),
++    }
++    const rows: Record<string, unknown>[] = []
++    const rect = (element: Element | null): Record<string, number> | null => {
++      if (!element) return null
++      const r = element.getBoundingClientRect()
++      return {
++        x: r.x,
++        y: r.y,
++        width: r.width,
++        height: r.height,
++        top: r.top,
++        bottom: r.bottom,
++        left: r.left,
++        right: r.right,
++      }
++    }
++    const sample = (kind: string, detail?: unknown): void => {
++      const input = document.getElementById('input-bar')
++      const pane = document.getElementById('pane-chat')
++      const conversation = document.getElementById('conversation')
++      const list = document.querySelector<HTMLElement>('.messages-list')
++      const result = document.querySelector('[data-message-id="msg-assistant-result"]')
++      rows.push({
++        t: performance.now(),
++        kind,
++        detail,
++        targetsUnchanged: {
++          composer: input !== null && input === initialTargets.composer,
++          pane: pane !== null && pane === initialTargets.pane,
++          conversation: conversation !== null && conversation === initialTargets.conversation,
++          transcript: list !== null && list === initialTargets.transcript,
++          result: result !== null && result === initialTargets.result,
++        },
++        dpr: devicePixelRatio,
++        viewport: { width: innerWidth, height: innerHeight },
++        composer: {
++          rect: rect(input),
++          clientWidth: input?.clientWidth,
++          clientHeight: input?.clientHeight,
++          borderTop: input ? getComputedStyle(input).borderTopWidth : null,
++          borderBottom: input ? getComputedStyle(input).borderBottomWidth : null,
++        },
++        reserve: pane ? getComputedStyle(pane).getPropertyValue('--chat-composer-height') : null,
++        conversation: {
++          rect: rect(conversation),
++          paddingBottom: conversation ? getComputedStyle(conversation).paddingBottom : null,
++        },
++        transcript: {
++          rect: rect(list),
++          clientHeight: list?.clientHeight,
++          scrollHeight: list?.scrollHeight,
++          scrollTop: list?.scrollTop,
++          bottomGap: list ? list.scrollHeight - list.clientHeight - list.scrollTop : null,
++          stickyBand: list ? getComputedStyle(list).getPropertyValue('--sticky-prompt-band') : null,
++          stickyScrollBand: list
++            ? getComputedStyle(list).getPropertyValue('--sticky-prompt-scroll-band')
++            : null,
++        },
++        result: rect(result),
++        resultHeading: rect(result?.querySelector('h1,h2,h3,h4') ?? null),
++      })
++    }
++    const collect = (entries: PerformanceEntry[]): void => {
++      for (const entry of entries) {
++        if (entry instanceof PerformanceMark && entry.name.startsWith('copse-diag-')) {
++          // Explicit detail retention: PerformanceEntry.toJSON drops this field.
++          sample(`producer:${entry.name}`, { producerTime: entry.startTime, detail: entry.detail })
++        }
++      }
++    }
++    const marks = new PerformanceObserver((list) => collect(list.getEntries()))
++    marks.observe({ type: 'mark', buffered: true })
++    const mutations = new MutationObserver((entries) =>
++      sample(
++        'mutation',
++        entries.map((m) => ({
++          type: m.type,
++          target:
++            m.target instanceof Element
++              ? { tag: m.target.tagName, id: m.target.id, class: m.target.className }
++              : { nodeType: m.target.nodeType },
++          attribute: m.attributeName,
++        })),
++      ),
++    )
++    mutations.observe(document.documentElement, {
++      attributes: true,
++      childList: true,
++      characterData: true,
++      subtree: true,
++    })
++    const resize = new ResizeObserver((entries) =>
++      sample(
++        'resize-observer',
++        entries.map((e) => ({
++          id: e.target.id,
++          class: e.target.className,
++          content: { width: e.contentRect.width, height: e.contentRect.height },
++          border: Array.from(e.borderBoxSize, (s) => ({
++            inlineSize: s.inlineSize,
++            blockSize: s.blockSize,
++          })),
++        })),
++      ),
++    )
++    for (const element of [
++      document.getElementById('input-bar'),
++      document.getElementById('conversation'),
++      document.querySelector('.messages-list'),
++      document.querySelector('[data-message-id="msg-assistant-result"]'),
++    ]) {
++      if (element) resize.observe(element, { box: 'border-box' })
++    }
++    const scroll = (event: Event): void =>
++      sample('scroll-event', {
++        trusted: event.isTrusted,
++        target:
++          event.target instanceof Element
++            ? { id: event.target.id, class: event.target.className }
++            : null,
++      })
++    document.addEventListener('scroll', scroll, { capture: true, passive: true })
++    let frame = 0
++    const tick = (): void => {
++      sample('raf')
++      frame = requestAnimationFrame(tick)
++    }
++    frame = requestAnimationFrame(tick)
++    window.__composerDiagnostic = {
++      rows,
++      sample,
++      stop: () => {
++        cancelAnimationFrame(frame)
++        collect(marks.takeRecords())
++        marks.disconnect()
++        mutations.disconnect()
++        resize.disconnect()
++        document.removeEventListener('scroll', scroll, true)
++      },
++    }
++    sample('trace-start', { userAgent: navigator.userAgent, timeOrigin: performance.timeOrigin })
++  })
++}
++
++export async function sampleComposerDiagnostic(kind: string): Promise<void> {
++  await browser.execute((label) => window.__composerDiagnostic?.sample(label), kind)
++}
++
++export async function stopComposerDiagnostic(): Promise<Record<string, unknown>[]> {
++  return browser.execute(() => {
++    window.__composerDiagnostic?.sample('trace-stop')
++    window.__composerDiagnostic?.stop()
++    return window.__composerDiagnostic?.rows ?? []
++  })
++}
++
++let captureOrdinal = 0
++export function retainComposerCapture(filename: string, bytes: Uint8Array): void {
++  const directory = join(process.cwd(), '.tmp/composer-observer/png-attempts')
++  mkdirSync(directory, { recursive: true })
++  writeFileSync(join(directory, `${String(++captureOrdinal)}-${filename}`), bytes)
++}

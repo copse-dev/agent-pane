@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "current",
+      "source": "453ac5c12eb56a897aebf43292209ec9d7886b03"
+    },
+    {
+      "name": "accepted",
+      "source": "5d14c144b6a1dd75834bd44ba69345256cba56fc"
+    }
+  ],
+  "spec": "tests/e2e/composer-border-observer.e2e.ts",
+  "observationPatchSha256": "7ca190b9a62acae5c710c9ba5794daa7679b1571883a5df28facbfce2dc673a2",
+  "originalBlobs": {
+    "tests/e2e/composer-border-observer.e2e.ts": "51517a1e9d3d79c4105cdd7a63d096db32ff204d",
+    "tests/e2e/helpers/screenshot.ts": "eaeb41e5627527db2cd37fc6bdb370496b13facd",
+    "tests/e2e/helpers/frozen-animations.ts": "1f750db589b05dcbdba2f10b00a7edbd5548cd4b",
+    "tests/e2e/helpers/seed-config.ts": "5a3705bd7ee497bd54a674d587751ea21f47796a",
+    "src/renderer/views/chat-layout.ts": "b6ef354bc3b942931f2a608967afab9cf5b4fd96",
+    "src/renderer/views/transcript-scroll.ts": "733949d868505ada716ea0b87e940cadaa317d17",
+    "src/renderer/views/conversation.ts": "94eef770e35a6e6b7f582e6186fb71181a4bfdb9",
+    "src/renderer/styles/global/layout.css": "41c5cdd9f4715a418e28b808d2f1ac9b559f0940",
+    "src/renderer/styles/global/conversation.css": "91ab184ad9b87514524acce3e1ab6a093cb21337",
+    "src/renderer/styles/global/input-bar.css": "4a5222a38816efbe49ce320f1bab5543dd695633",
+    "package.json": "aafd78e1befb36972ce8b993d19032710b004dee",
+    "pnpm-lock.yaml": "f8b6869c8228e291692ac828f5dab82758e2518e",
+    "wdio.conf.ts": "fad1c50b9c4d7f277083759b1526ed881b96b119",
+    "wdio.ci.conf.ts": "e82ec7676638dbf261928f020d731ad89672e6cc"
+  },
+  "instrumentedFiles": {
+    "src/renderer/views/chat-layout.ts": "7b82f64efb1803ed684c0f1ed77357b8dfef11747d9fee1a3292377d43895072",
+    "src/renderer/views/transcript-scroll.ts": "16421e8833a14d56c1d1ea64c5dcc9a38ed904f94631d8c8854e3caf52217ff8",
+    "tests/e2e/composer-border-observer.e2e.ts": "e99f706f58a8d2248dc67460c4bff7bc43baa4fd7ae60602c9686eb39346516f",
+    "tests/e2e/helpers/screenshot.ts": "1e1a8e0a3ae0c618bfdb63f0da340e3d7c6e39ad16e01647f45ef5e2e3c173eb",
+    "tests/e2e/helpers/composer-diagnostic.ts": "fd3911b00e2caf2b171065efbc6a6b1b1ca22f7f5ebe534ed568eed7c8c23cf7"
+  },
+  "electron": "44.9.3",
+  "chromium": "152.0.7977.167",
+  "viewport": {
+    "width": 1200,
+    "height": 800
+  },
+  "deviceScaleFactor": 2,
+  "pngNames": [
+    "composer-observer-bordered.png",
+    "composer-observer-borderless.png",
+    "composer-observer-content-grown.png"
+  ],
+  "limits": {
+    "caseCount": 2,
+    "specInvocationsPerCase": 1,
+    "outerRetries": 0,
+    "installSeconds": 360,
+    "buildSeconds": 360,
+    "specSeconds": 240,
+    "jobMinutes": 35
+  }
+}
