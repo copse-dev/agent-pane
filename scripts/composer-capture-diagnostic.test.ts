@@ -18,12 +18,14 @@ const workflow = z
         'runs-on': z.literal('ubuntu-24.04'),
         'timeout-minutes': z.literal(35),
         permissions: readOnly,
+        env: z.record(z.string(), z.string()),
         steps: z.array(
           z.object({
             name: z.string().optional(),
             uses: z.string().optional(),
             run: z.string().optional(),
             if: z.string().optional(),
+            env: z.record(z.string(), z.string()).optional(),
             with: z.record(z.string(), z.unknown()).optional(),
           }),
         ),
@@ -120,5 +122,15 @@ describe('bounded composer diagnostic admission', () => {
       readFileSync(resolve('.github/workflows/thread-container.yml'), 'utf8'),
       /secrets\./,
     )
+  })
+
+  it('binds runner context only in the two execution steps, where GitHub permits it', () => {
+    // https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability
+    const job = workflow.jobs['composer-canonical-pair']
+    for (const value of Object.values(job.env)) assert.doesNotMatch(value, /\$\{\{[^}]*\brunner\./)
+    const execution = job.steps.filter((step) => step.run?.includes('run.py'))
+    assert.equal(execution.length, 2)
+    for (const step of execution)
+      assert.equal(step.env?.['DIAGNOSTIC_RUNNER_ENVIRONMENT'], '${{ runner.environment }}')
   })
 })

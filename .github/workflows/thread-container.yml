@@ -71,7 +71,6 @@ jobs:
     env:
       COPSE_E2E_HEADLESS: '0'
       COPSE_PANEL_MOCK_LLM: '1'
-      DIAGNOSTIC_RUNNER_ENVIRONMENT: ${{ runner.environment }}
       ANTHROPIC_API_KEY: ''
       OPENAI_API_KEY: ''
     steps:
@@ -79,6 +78,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Freeze reviewed inputs and select first immutable source
+        env:
+          DIAGNOSTIC_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: python3 tests/fixtures/composer-capture-diagnostic/run.py prepare
       - uses: ./.github/actions/setup
       - name: Cache verified R2 baseline objects
@@ -96,6 +97,8 @@ jobs:
           fi
           bwrap --unshare-all --dev-bind / / --die-with-parent true
       - name: Run each fixed owning spec once and retain every outcome
+        env:
+          DIAGNOSTIC_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: python3 "$RUNNER_TEMP/composer-capture-diagnostic/run.py" run
       - name: Preserve source, builds, raw captures and failures
         if: always()
