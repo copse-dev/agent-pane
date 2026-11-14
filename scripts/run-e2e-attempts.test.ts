@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { safeJsonParse, decodeWithSchema } from '../packages/std/src/safe-json.ts'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 
 it('the real run-e2e boundary preserves raw attempts and original command exit/signal results', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'run-e2e-attempts-')))

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { z } from 'zod'
-import { safeJsonParse, decodeWithSchema } from '../packages/std/src/safe-json.ts'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import {
   E2E_ATTEMPT_DIRECTORY_ENV,
   managedAttemptDirectory,

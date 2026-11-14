@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseOutcome } from './lib/gate-evidence.mts'
 import { startAttemptArtifacts, sealAttemptArtifacts } from './lib/e2e-attempt-diagnostics.mts'
-import { safeJsonParse, decodeWithSchema } from '../packages/std/src/safe-json.ts'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
 const run = promisify(execFile)
 it('real WDIO launcher emits failed and passed outer attempts against a local WebDriver fixture', async () => {
