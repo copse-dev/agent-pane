@@ -10781,9 +10781,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
     priorTodos: thread.todos ?? [],
     ...thread.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {}
   };
-  addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
+  const messageId = addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
   startHumanTurnTree(store2, threadId);
-  dispatchAgentRun(store2, api2, threadId, payload);
+  dispatchAgentRun(store2, api2, threadId, payload, {
+    messageId,
+    payload,
+    createdAt: Date.now()
+  });
   return true;
 }
 var init_turn_recovery2 = __esm({
@@ -88727,7 +88731,9 @@ function createTranscriptReducer(store2, hooks = {}) {
         const content = typeof chunk.content === "string" ? chunk.content : chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
         const images = typeof chunk.content === "string" ? void 0 : chunk.content.filter((block) => block.type === "image").map((block) => block.dataUrl);
         if (existing) {
-          setMessagePromptContent(store2, existing.id, content, images);
+          if (chunk.preserveOptimisticDisplay !== true) {
+            setMessagePromptContent(store2, existing.id, content, images);
+          }
           store2.emit("message_done", existing.id);
         } else {
           addMessage(store2, threadId, "user", content, images, void 0, {
