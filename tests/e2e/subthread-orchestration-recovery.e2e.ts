@@ -538,7 +538,41 @@ describe('persistent subthread recovery and revocation', function () {
     await submitComposer()
     await expectAssistantReply('The release handoff is queued for the build subthread.')
     await queued.assertComplete()
-    await selectThread(buildId)
+    // Click the current visible title with native pointer input, without a
+    // captured WebDriver element ID that can survive a sidebar row replacement.
+    await $(`.chat-row[data-thread-id="${buildId}"]`).waitForDisplayed({ timeout: 30_000 })
+    const buildTitlePoint = await browser.execute((id) => {
+      const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
+        (entry) => entry.dataset['threadId'] === id,
+      )
+      const title = row?.querySelector<HTMLElement>('.chat-title')
+      if (!row || !title || row.closest('[inert]') || row.getAttribute('aria-disabled') === 'true')
+        throw new Error('The build thread row is unavailable or disabled')
+      const rect = title.getBoundingClientRect()
+      const left = Math.max(0, rect.left)
+      const top = Math.max(0, rect.top)
+      const right = Math.min(innerWidth, rect.right)
+      const bottom = Math.min(innerHeight, rect.bottom)
+      if (right <= left || bottom <= top)
+        throw new Error('The build thread title is outside the viewport')
+      const x = Math.floor((left + right) / 2)
+      const y = Math.floor((top + bottom) / 2)
+      const hit = document.elementFromPoint(x, y)
+      if (
+        !hit ||
+        hit.closest('.chat-row') !== row ||
+        hit.closest('button, a, input, textarea, select, [role="button"]')
+      )
+        throw new Error('The build thread title is covered or contains another control')
+      return { x, y }
+    }, buildId)
+    await browser
+      .action('pointer', { parameters: { pointerType: 'mouse' } })
+      .move({ duration: 0, origin: 'viewport', ...buildTitlePoint })
+      .down({ button: 0 })
+      .up({ button: 0 })
+      .perform()
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', buildId)
     await expect($('.conversation-queued .message-text')).toHaveText(QUEUED)
     await $('.conversation-queued .queued-edit').click()
     await expect($('.conversation-queued textarea')).toHaveValue(QUEUED)
