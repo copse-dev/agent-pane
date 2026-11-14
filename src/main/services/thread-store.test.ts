@@ -37,6 +37,7 @@ import {
   updateMeta,
   updateMetaOrThrow,
   getThreadMeta,
+  getThreadMetaWithRespondedPrompt,
   recordThreadAgentLink,
   attachThreadPrUrl,
   lookupThreadByPrUrl,
@@ -146,6 +147,103 @@ describe('thread-store', () => {
     assert.deepEqual(await measureThreadStorage('p', 't'), { bytes: 10, truncated: false })
     assert.deepEqual(await measureThreadStorage('p', 'missing'), { bytes: 0, truncated: false })
     await assert.rejects(measureThreadStorage('p', '../outside'))
+  })
+
+  it('reads prompt evidence from the spine without reading message bodies and preserves queued metadata', async () => {
+    await saveProjectThread(
+      'p',
+      thread('t', {
+        draftPrompt: 'Keep this manual.',
+        currentEpoch: 'old-tree',
+        continuationUsed: 3,
+        messages: [
+          userMsg('human', 'Check the project.'),
+          { ...userMsg('answer', 'Checked.'), role: 'assistant', createdAt: 11 },
+          {
+            ...userMsg('machine', 'Continue.'),
+            createdAt: 20,
+            origin: { kind: 'machine', operationId: 'wake' },
+          },
+        ],
+      }),
+    )
+    const dir = join(root, 'p', 't')
+    const spine = readFileSync(join(dir, 'events.jsonl'))
+    rmSync(join(dir, 'messages'), { recursive: true })
+    const write = updateMeta('p', 't', {
+      draftPrompt: 'A newer manual draft.',
+      status: 'idle',
+      updatedAt: 99,
+    })
+    const recovered = getThreadMetaWithRespondedPrompt('p', 't')
+    await write
+    const evidence = await recovered
+    assert.ok(evidence)
+    assert.equal(evidence.lastPromptAt, 10)
+    assert.deepEqual(evidence.meta, await getThreadMeta('p', 't'))
+    assert.equal(evidence.meta.draftPrompt, 'A newer manual draft.')
+    assert.equal(evidence.meta.updatedAt, 99)
+    assert.equal(evidence.meta.status, 'idle')
+    assert.equal(evidence.meta.currentEpoch, 'old-tree')
+    assert.equal(evidence.meta.continuationUsed, 3)
+    assert.deepEqual(readFileSync(join(dir, 'events.jsonl')), spine)
+    assert.equal((await loadProjectThreadMetas('p'))[0]?.lastPromptAt, undefined)
+  })
+
+  it('uses the same human-edited hook and missing-timestamp semantics as hydration', async () => {
+    await saveProjectThread(
+      'p',
+      thread('edited', {
+        messages: [
+          {
+            ...userMsg('hook', 'The human rewrote this.'),
+            origin: { kind: 'hook', hookId: 'h', event: 'stop' },
+            editedByUser: true,
+          },
+          { ...userMsg('answer', 'Checked.'), role: 'assistant', createdAt: 11 },
+        ],
+      }),
+    )
+    assert.equal((await getThreadMetaWithRespondedPrompt('p', 'edited'))?.lastPromptAt, 10)
+    await saveProjectThread(
+      'p',
+      thread('timestamp', {
+        messages: [
+          userMsg('old', 'Old prompt.'),
+          { ...userMsg('answer', 'Checked.'), role: 'assistant', createdAt: 11 },
+        ],
+      }),
+    )
+    const path = join(root, 'p', 'timestamp', 'events.jsonl')
+    const [entry, answer] = parseSpineEntries(readFileSync(path, 'utf8'))
+    assert.ok(entry?.line?.type === 'message')
+    assert.ok(answer)
+    const { createdAt: _createdAt, ...line } = entry.line
+    writeFileSync(path, `${JSON.stringify(line)}\n${answer.raw}\n`)
+    assert.equal((await getThreadMetaWithRespondedPrompt('p', 'timestamp'))?.lastPromptAt, 0)
+  })
+
+  it('does not convert a newer running or explicitly interrupted owner into legacy run evidence', async () => {
+    for (const status of ['running', 'interrupted'] as const) {
+      await saveProjectThread(
+        'p',
+        thread(status, {
+          messages: [
+            userMsg('human', 'Check.'),
+            { ...userMsg('answer', 'Partial checkpoint.'), role: 'assistant' },
+          ],
+        }),
+      )
+      const write = updateMeta(
+        'p',
+        status,
+        status === 'running' ? { status: 'running' } : { interruptedTurnAt: 20 },
+      )
+      const result = getThreadMetaWithRespondedPrompt('p', status)
+      await write
+      assert.deepEqual((await result)?.meta, await getThreadMeta('p', status))
+      assert.equal((await result)?.lastPromptAt, undefined)
+    }
   })
 
   it('recovers plan retention from committed events after stale saves and message-only hydration', async () => {
