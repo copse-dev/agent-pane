@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
@@ -118,17 +118,18 @@ describe('selected plugin browser behavior', function () {
   it('opens the declared page in a visible tab and returns its snapshot', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Inspect my personal reference page.')
-    await $('.submit-btn').click()
-    const dirtySend = $('.composer-dirty-send-btn')
-    const dirtyPromptShown = await dirtySend
-      .waitForDisplayed({ timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (dirtyPromptShown) await dirtySend.click()
+    await submitComposer()
 
     const assistant = $('.msg-assistant .message-text')
     await assistant.waitForDisplayed({ timeout: 60_000 })
     await waitForAgentIdle(60_000)
+    await browser.waitUntil(
+      async () => (await assistant.getText()).includes('Received example.png'),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the complete browser snapshot after the agent became idle',
+      },
+    )
     const response = await assistant.getText()
     assert.match(response, /Visible browser handoff completed/)
     assert.match(response, /Personal reference desk/)
