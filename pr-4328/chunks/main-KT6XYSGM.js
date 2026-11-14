@@ -650,7 +650,9 @@ async function acceptMobileChat(store2, api2, command2) {
       threadId,
       "user",
       text,
-      command2.image ? [command2.image] : void 0
+      command2.image ? [command2.image] : void 0,
+      void 0,
+      { id: command2.messageId }
     );
     const queued = {
       messageId,
