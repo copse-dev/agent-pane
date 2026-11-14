@@ -2555,6 +2555,7 @@ export function acceptAuthorizedReviewedUserMessage(
     )
       return null
     const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE), true)) ?? '')
+    if (!options.authorize()) return null
     const known = messageIdsFromSpine(serializeSpineEntries(entries))
     const optimistic = options.optimistic
     const canReuse =

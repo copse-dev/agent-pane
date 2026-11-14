@@ -151,6 +151,77 @@ test('authorized reviewed acceptance commits nothing when authority is revoked a
   assert.deepEqual(await loadThreadMessages('p', 't'), [])
 })
 
+test('authorized reviewed acceptance rechecks authority after reading the canonical spine', async () => {
+  const message = await persistedPrompt()
+  await createThread('p', {
+    id: 'parent',
+    title: 'Parent',
+    status: 'idle',
+    createdAt: 1,
+    updatedAt: 1,
+    usage: { inputTokens: 0, outputTokens: 0 },
+    messages: [],
+  })
+  const events = join(root, 'p', 't', 'events.jsonl')
+  const readStarted = Promise.withResolvers<undefined>()
+  const releaseRead = Promise.withResolvers<undefined>()
+  const realOpen = fsPromises.open
+  const open = mock.method(
+    fsPromises,
+    'open',
+    async (...args: Parameters<typeof realOpen>): ReturnType<typeof realOpen> => {
+      if (String(args[0]) === events) {
+        readStarted.resolve(undefined)
+        await releaseRead.promise
+      }
+      return realOpen(...args)
+    },
+  )
+  let authorized = true
+  let claims = 0
+  const acceptance = acceptAuthorizedReviewedUserMessage('p', 't', {
+    requireLiveThreadIds: ['parent'],
+    authorize: () => authorized,
+    optimistic: {
+      messageId: message.id,
+      claim: (): boolean => {
+        claims++
+        return true
+      },
+    },
+  })
+  await readStarted.promise
+  authorized = false
+  releaseRead.resolve(undefined)
+  const accepted = await acceptance
+  open.mock.restore()
+
+  assert.equal(accepted, null)
+  assert.equal(claims, 0)
+  assert.deepEqual(acceptedIds(), [])
+  assert.deepEqual(await loadThreadMessages('p', 't'), [message])
+})
+
+test('authorized reviewed acceptance preserves the exact optimistic identity', async () => {
+  const message = await persistedPrompt()
+  let claims = 0
+  const accepted = await acceptAuthorizedReviewedUserMessage('p', 't', {
+    authorize: () => true,
+    optimistic: {
+      messageId: message.id,
+      claim: (): boolean => {
+        claims++
+        return true
+      },
+    },
+  })
+
+  assert.equal(accepted, message.id)
+  assert.equal(claims, 1)
+  assert.deepEqual(acceptedIds(), [message.id])
+  assert.deepEqual(await loadThreadMessages('p', 't'), [message])
+})
+
 test('real Delete between optimistic validation and queued acceptance emits nothing and cannot mint a fresh ID', async () => {
   // Main has already validated this saved optimistic message against its grant.
   const snapshot = await persistedPrompt()
