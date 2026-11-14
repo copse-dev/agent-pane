@@ -177,6 +177,10 @@ jobs:
       # Whether this is the nightly screenshot drift refresh PR, which renders
       # everything even as a draft and reviews it without ownership scoping.
       screenshot_refresh: ${{ steps.screenshot-refresh.outputs.refresh }}
+      # Which new, changed or restored e2e specs the `e2e-burn-in` job repeats
+      # before they join the required gate (scripts/e2e-burn-in.mts).
+      burn_in_status: ${{ steps.burn-in-plan.outputs.status }}
+      burn_in_matrix: ${{ steps.burn-in-plan.outputs.matrix }}
     steps:
       - name: Verify merge-queue GitHub client methods
         uses: actions/github-script@v9
@@ -295,6 +299,21 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
+      # Burn-in admission (docs/testing-strategy.md): select the e2e specs this
+      # PR adds, modifies or restores. An over-cap plan is not a precheck
+      # failure; the `e2e-burn-in` job reports it. An unreadable registry or a
+      # failed diff still fails here, rather than planning nothing.
+      - name: Plan e2e burn-in
+        id: burn-in-plan
+        if: github.event_name == 'pull_request'
+        env:
+          ALLOW_LARGE: ${{ contains(github.event.pull_request.labels.*.name, 'e2e-burn-in-large') }}
+        run: |
+          set -euo pipefail
+          # The PR checkout is refs/pull/N/merge; its first parent is the base.
+          args=(plan --base "$(git rev-parse HEAD^1)" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY")
+          if [ "$ALLOW_LARGE" = "true" ]; then args+=(--allow-large); fi
+          node scripts/e2e-burn-in.mts "${args[@]}"
       # The accessibility baseline only shrinks (docs/accessibility.md). The e2e
       # lane pins it to what the app renders; this step refuses a PR or queue
       # candidate that tolerates more than its base. Nothing to compare on
@@ -1663,7 +1682,9 @@ jobs:
       # and overlaps checkout and setup; "Join disk cleanup" waits for it before
       # the suite and logs `df -h` again. A roomy runner pays one `df`.
       # Hosted-only: never delete system directories on a self-hosted box.
-      - name: Free disk on a cramped hosted runner
+      # Anchored so the e2e-burn-in job runs the identical step (`*e2e-free-disk`).
+      - &e2e-free-disk
+        name: Free disk on a cramped hosted runner
         if: runner.environment == 'github-hosted'
         env:
           # The classifier spec needs ~15.6 GB free when it runs, and setup plus
@@ -1796,7 +1817,9 @@ jobs:
         run: node scripts/screenshot-identity.mts prepare
       # Joins "Free disk on a cramped hosted runner" and logs the space the
       # suite starts with, on every hosted shard, cleaned or not.
-      - name: Join disk cleanup and log free space
+      # Anchored for the e2e-burn-in job too (`*e2e-join-disk`).
+      - &e2e-join-disk
+        name: Join disk cleanup and log free space
         if: runner.environment == 'github-hosted'
         env:
           # Winnow-12B's preflight: downloadGb 12.5 x DISK_HEADROOM 1.25.
@@ -1888,47 +1911,10 @@ jobs:
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
 
-          # ASRT's Linux network bridge, matched by the socket path it owns.
-          #
-          # `@anthropic-ai/sandbox-runtime` spawns socat on both sides of the
-          # sandbox boundary, and both forms name the same generated socket
-          # (`linux-sandbox-utils.js`, initializeLinuxNetworkBridge):
-          #
-          #   host:    socat UNIX-LISTEN:$TMPDIR/claude-http-<hex>.sock,… TCP:localhost:<port>,…
-          #   sandbox: socat TCP-LISTEN:3128,… UNIX-CONNECT:$TMPDIR/claude-http-<hex>.sock
-          #
-          # Matching that socket name — rather than the bare word `socat` — is
-          # what makes this safe to run on a shared runner. A blanket
-          # `pkill -f socat` would also reap a socat the runner infrastructure
-          # itself depends on, which is why #1561 recorded the leak but left
-          # the fix alone. Nothing but ASRT creates `claude-{http,socks}-*.sock`.
-          E2E_SOCAT_PATTERN='[s]ocat.*claude-(http|socks)-[0-9a-f]+\.sock'
-
+          # Orphaned Electron/chromedriver/Xvfb/gortex and ASRT socat bridges.
+          # One definition, shared with the e2e burn-in job.
           cleanup_e2e_processes() {
-            # Bracketed patterns avoid matching this shell's own command line.
-            # A failed deleteSession can orphan any of these; self-hosted runner
-            # containers are reused, so clean before attempt 1 as well as retries.
-            pkill -TERM -f '[e]lectron/dist/electron' 2>/dev/null || true
-            pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
-            pkill -TERM -f '[X]vfb' 2>/dev/null || true
-            pkill -TERM -f '[g]ortex' 2>/dev/null || true
-            # Added for #1442's socat bridges: the reaper predates them, so they
-            # survived into the next job on a reused container. Each leaked
-            # bridge holds its listening socket, and a shard that then cannot
-            # start a session fails every spec that calls `reloadSession`.
-            pkill -TERM -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
-            sleep 1
-            pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
-            pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
-            pkill -KILL -f '[X]vfb' 2>/dev/null || true
-            pkill -KILL -f '[g]ortex' 2>/dev/null || true
-            pkill -KILL -f "$E2E_SOCAT_PATTERN" 2>/dev/null || true
-            # The sockets outlive the processes that listened on them. Leaving
-            # them behind fills $TMPDIR on a long-lived runner and makes the
-            # diagnostics harder to read.
-            find "${TMPDIR:-/tmp}" -maxdepth 1 \
-              \( -name 'claude-http-*.sock' -o -name 'claude-socks-*.sock' \) \
-              -delete 2>/dev/null || true
+            bash scripts/e2e-process-cleanup.sh
           }
 
           capture_e2e_runner_diagnostics() {
@@ -2348,6 +2334,178 @@ jobs:
           path: e2e-failure-artifacts/
           if-no-files-found: ignore
           retention-days: 3
+
+  # Burn-in admission (docs/testing-strategy.md, "Burn-in admission"). A spec
+  # becomes required the moment it merges, so a PR that adds, modifies or
+  # restores one (removes an exclusion marker in tests/e2e/exclusions.json)
+  # runs each such spec 10 times in fresh WebdriverIO processes with no retry,
+  # then each of its `it` blocks alone. Every run must pass. Shared helpers do
+  # not select specs here: the oracle-selected shards already cover them, and
+  # a helper edit would select hundreds of specs.
+  #
+  # One matrix job per spec, at most 5 per PR. Over that cap the plan yields a
+  # single `over-cap` entry that fails with a message: split the PR or add the
+  # `e2e-burn-in-large` label. Reuses the `build` job's dist artifact, the e2e
+  # launcher's Xvfb and scripts/e2e-process-cleanup.sh. Not part of `CI Passed`;
+  # making it a required check is a branch-protection decision.
+  e2e-burn-in:
+    name: e2e burn-in (${{ matrix.spec }})
+    needs: [precheck, build]
+    if: >-
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.precheck.result == 'success' &&
+      ((needs.precheck.outputs.burn_in_status == 'over-cap' &&
+        (github.event.pull_request.draft == false ||
+         contains(github.event.pull_request.labels.*.name, 'ci-full'))) ||
+       (needs.precheck.outputs.burn_in_status == 'run' && needs.build.result == 'success'))
+    runs-on: ubuntu-24.04
+    # Ten full runs plus one run per `it` of a long spec, plus setup.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      # Each spec's verdict is independent; report all of them.
+      fail-fast: false
+      matrix:
+        spec: ${{ fromJSON(needs.precheck.outputs.burn_in_matrix) }}
+    env:
+      # Same rendering path as the e2e shards.
+      COPSE_E2E_HEADLESS: '0'
+    steps:
+      - name: Refuse an over-cap burn-in
+        if: matrix.spec == 'over-cap'
+        run: |
+          msg="This PR adds, changes or restores more e2e specs than burn-in runs per PR (5). Split the PR, or add the e2e-burn-in-large label to burn in all of them."
+          echo "::error title=e2e burn-in over cap::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      # The e2e job's disk headroom, shared by YAML anchor: the classifier spec's
+      # install preflight needs ~15.6 GB free, which cramped runners lack.
+      - *e2e-free-disk
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v6
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
+      # Same provisioning as the e2e job: ASRT needs bubblewrap and socat.
+      - name: Install Linux sandbox dependencies
+        if: runner.environment == 'github-hosted'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+      - uses: ./.github/actions/download-artifact-retry
+        with:
+          name: dist-tar
+      - name: Unpack build and hide reference screenshot renders
+        run: |
+          set -euo pipefail
+          tar -xf dist.tar
+          rm dist.tar
+          # As in the e2e shards: a re-rendered reference PNG must not make a
+          # later blank-thread run see a dirty shared checkout.
+          mapfile -d '' -t refs < <(git ls-files -z -- tests/e2e/screenshots/)
+          if [ "${#refs[@]}" -gt 0 ]; then
+            git update-index --assume-unchanged -- "${refs[@]}"
+          fi
+          printf '\n/tests/e2e/screenshots/*.png\n' >> "$(git rev-parse --git-path info/exclude)"
+          if [ -n "$(git status --porcelain=v1)" ]; then
+            git status --short
+            echo "::error title=e2e burn-in checkout is dirty before tests::Remove generated files from the checkout or ignore them before starting e2e."
+            exit 1
+          fi
+      - *e2e-join-disk
+      - name: Burn in ${{ matrix.spec }}
+        id: burn-in
+        timeout-minutes: 70
+        env:
+          # Off argv on purpose: the reaper's `pkill -f` patterns would match a
+          # spec name such as gortex-*.e2e.ts in this process's command line.
+          E2E_BURN_IN_SPEC: ${{ matrix.spec }}
+        run: |
+          echo "name=$(basename "$E2E_BURN_IN_SPEC" .e2e.ts)" >> "$GITHUB_OUTPUT"
+          node scripts/e2e-burn-in.mts run --out e2e-burn-in --summary "$GITHUB_STEP_SUMMARY"
+      - name: Upload burn-in evidence
+        if: always() && steps.burn-in.outputs.name != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-burn-in-${{ steps.burn-in.outputs.name }}-${{ github.run_attempt }}
+          path: |
+            e2e-burn-in/
+            e2e-failure-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # One stable check context for burn-in. The matrix job's check names vary by
+  # spec (and read `e2e burn-in (${{ matrix.spec }})` when it is skipped), so
+  # branch protection cannot require them. This job always reports `e2e burn-in`
+  # on every event, merge queues included: it passes when nothing needed burning
+  # in (or on a draft, where the heavy tier does not run) and fails when a
+  # required burn-in failed, was cancelled or never ran. It is not in
+  # `CI Passed`; requiring it is a branch-protection decision.
+  e2e-burn-in-result:
+    name: e2e burn-in
+    needs: [precheck, build, e2e-burn-in]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # Status functions are only valid in `if:`, so cancellation gets its own
+      # step, as in `ci-passed`.
+      - name: Reject a cancelled run
+        if: ${{ cancelled() }}
+        run: |
+          echo "Cancelled; this run cannot vouch for burn-in."
+          exit 1
+      - name: Require a passing burn-in when one was planned
+        if: ${{ !cancelled() }}
+        env:
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          PRECHECK_RESULT: ${{ needs.precheck.result }}
+          STATUS: ${{ needs.precheck.outputs.burn_in_status }}
+          RESULT: ${{ needs.e2e-burn-in.result }}
+        run: |
+          set -eu
+          if [ "$IS_PR" != "true" ]; then
+            echo "Burn-in runs on pull requests only; nothing to require for ${GITHUB_EVENT_NAME}."
+            exit 0
+          fi
+          if [ "$PRECHECK_RESULT" != "success" ]; then
+            echo "precheck did not succeed (result=$PRECHECK_RESULT), so no burn-in plan exists."
+            exit 1
+          fi
+          case "$STATUS" in
+            none|'')
+              echo "No new, changed or restored e2e spec to burn in."
+              exit 0 ;;
+            run|over-cap) ;;
+            *)
+              echo "Unknown burn-in plan status: $STATUS"
+              exit 1 ;;
+          esac
+          if [ "$REQUIRED" != "true" ]; then
+            echo "Draft (or fork) pull request: the heavy tier does not run, so burn-in is not required yet."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "Burn-in was planned (status=$STATUS) but did not pass (result=$RESULT)."
+            exit 1
+          fi
+          echo "Every planned spec passed burn-in."
 
   # Preserve reference screenshots as immutable run evidence. Each e2e shard
   # uploads only PNGs that differ from the checked-out baseline; this job merges

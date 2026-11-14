@@ -139,7 +139,7 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
  * Electron is what actually wedges ("Timed out receiving message from
  * renderer"), and killing it alone both frees the session and leaves the driver
  * able to serve the next one. Drivers that genuinely leak are reaped by
- * `cleanup_e2e_processes` in ci.yml, which runs between attempts and on exit —
+ * `scripts/e2e-process-cleanup.sh` (ci.yml's `cleanup_e2e_processes`), which runs between attempts and on exit —
  * the only moments when nothing is about to need them.
  */
 const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron'] as const

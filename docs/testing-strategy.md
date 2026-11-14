@@ -388,6 +388,36 @@ new tests should keep that trend:
 Net: every new e2e spec should justify why it can't be a component test. The
 default direction is _down_.
 
+### Burn-in admission
+
+A spec joins the required e2e gate the moment it merges, so one passing run must not admit it. On a
+same-repository pull request, the `e2e-burn-in` job in `ci.yml` repeats each spec the PR adds,
+modifies or renames under `tests/e2e/**/*.e2e.ts`, and each spec it restores (any exclusion marker
+removed from [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json)). It runs ten full runs in
+fresh WebdriverIO processes with no retry, then each statically titled `it` alone through an anchored
+Mocha grep. The spec passes only if every run passes. An isolated run that matches no test fails;
+one that only skips is reported. The job summary shows per-spec pass counts and failing titles;
+logs and per-run outcomes are kept in the `e2e-burn-in-<spec>-<attempt>` artifact.
+
+- **Selection** (`scripts/e2e-burn-in.mts plan`, run in `precheck`) covers spec files only, under any file name WDIO globs. Shared
+  helpers and fixtures do not select specs, because one helper edit would select hundreds; the
+  oracle-selected shards already cover them. A spec the CI suite still excludes is listed and not
+  run.
+- **Cost bound:** at most **5** specs per PR. Above that the job fails and asks you to split the PR,
+  or a maintainer can add the `e2e-burn-in-large` label to burn in all of them anyway. Each spec is
+  its own matrix job on the `build` job's `dist` artifact. Like `build`, it (and the over-cap
+  refusal) does not run on drafts unless they carry `ci-full`.
+- **Locally:** `node scripts/e2e-burn-in.mts tests --spec <spec>` prints the isolated-test greps.
+  After `pnpm run build`, `node scripts/e2e-burn-in.mts run --spec <spec>` runs the same loop. CI passes the spec in `E2E_BURN_IN_SPEC` instead, so
+  the process reaper's `pkill -f` patterns cannot match the burn-in process's own command line.
+- **Result check:** the matrix job's check names vary by spec, so the `e2e burn-in` job
+  (`e2e-burn-in-result`) reports one stable context on every event. It passes when nothing needed
+  burning in, or on a draft without `ci-full`. It fails when a planned burn-in failed, was cancelled
+  or never ran. It is not part of `CI Passed`. Making `e2e burn-in` a required check (or adding it to
+  `CI Passed`) is a branch-protection decision; until then a red burn-in does not block a merge.
+- A failure here means the spec is not ready to be required. Fix the order dependence or timing
+  instead of adding a retry or raising a timeout.
+
 ## Browser geometry tier
 
 `npm run build:demo && npm run test:demo` is the focused browser-hosted tier from
