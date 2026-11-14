@@ -51,7 +51,8 @@ export function registerWorkspaceHandlers(
   registry: ToolRegistry,
   reloadMcpForWorkspace: () => void,
 ): void {
-  ipcMain.handle('workspace:open', async () => {
+  ipcMain.handle('workspace:open', async (event) => {
+    assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
     const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
@@ -125,7 +126,10 @@ export function registerWorkspaceHandlers(
     },
   )
 
-  ipcMain.handle('workspace:get', () => getWorkspaceRoot())
+  ipcMain.handle('workspace:get', (event) => {
+    assertMainFrameSender(event, win)
+    return getWorkspaceRoot()
+  })
 
   const workspaceActivations = new WeakMap<WebContents, WorkspaceActivation>()
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
@@ -210,7 +214,10 @@ export function registerWorkspaceHandlers(
     return canonical
   })
 
-  ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
+  ipcMain.handle('workspace:is-trusted', (event) => {
+    assertMainFrameSender(event, win)
+    return isWorkspaceTrusted(getWorkspaceRoot())
+  })
   ipcMain.handle('workspace:set-trusted', async (event, trusted: unknown) => {
     assertMainFrameSender(event, win)
     const root = getWorkspaceRoot()

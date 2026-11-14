@@ -67,21 +67,13 @@ export function senderProjectPrReaders<Sender>(projectOf: (sender: Sender) => st
 
 export function registerGhHandlers(win: BrowserWindow): void {
   // PR reads and writes run for the asking window's project (#3958).
-  defineSenderRootHandler(win, 'gh:status', z.tuple([]), (root) => getGhCliStatus(root), {
-    sender: 'any',
+  defineSenderRootHandler(win, 'gh:status', z.tuple([]), (root) => getGhCliStatus(root))
+  defineHandler(win, 'gh:invalidate-read-cache', z.tuple([]), () => {
+    invalidateGithubReadCache()
+    // Other windows re-read through the now-empty TTL cache instead of waiting
+    // up to 30s for the next shared tick.
+    notifyGitHubListWatchers()
   })
-  defineHandler(
-    win,
-    'gh:invalidate-read-cache',
-    z.tuple([]),
-    () => {
-      invalidateGithubReadCache()
-      // Other windows re-read through the now-empty TTL cache instead of waiting
-      // up to 30s for the next shared tick.
-      notifyGitHubListWatchers()
-    },
-    { sender: 'any' },
-  )
   // Needs `event.sender`, which `defineHandler` does not pass through.
   const listWatchTeardown = new WeakSet<WebContents>()
   ipcMain.handle('gh:set-list-watch', (event, ...rawArgs) => {
@@ -96,15 +88,9 @@ export function registerGhHandlers(win: BrowserWindow): void {
     }
     setGitHubListWatch(event.sender.id, watching, includeMyPrs)
   })
-  defineSenderRootHandler(win, 'gh:list-my-open-prs', z.tuple([]), (root) => listMyOpenPrs(root), {
-    sender: 'any',
-  })
-  defineSenderRootHandler(
-    win,
-    'gh:list-workspace-open-prs',
-    z.tuple([]),
-    (root) => listWorkspaceOpenPrs(root),
-    { sender: 'any' },
+  defineSenderRootHandler(win, 'gh:list-my-open-prs', z.tuple([]), (root) => listMyOpenPrs(root))
+  defineSenderRootHandler(win, 'gh:list-workspace-open-prs', z.tuple([]), (root) =>
+    listWorkspaceOpenPrs(root),
   )
   defineSenderRootHandler(
     win,
@@ -133,9 +119,7 @@ export function registerGhHandlers(win: BrowserWindow): void {
   // Local-only legacy agent/PR associations; reads thread metadata. These and
   // the relationship lookups below read the asking window's project (#3958).
   const prReaders = senderProjectPrReaders(senderProjectId)
-  defineSenderHandler(win, 'gh:agent-pr-links', z.tuple([]), prReaders.agentPrLinks, {
-    sender: 'any',
-  })
+  defineSenderHandler(win, 'gh:agent-pr-links', z.tuple([]), prReaders.agentPrLinks)
   defineSenderHandler(
     win,
     'gh:pr-thread-relationships',

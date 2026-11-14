@@ -934,11 +934,20 @@ app
       return result
     })
 
-    ipcMain.handle('lm-studio:models', () => listLmStudioModels())
+    ipcMain.handle('lm-studio:models', (event) => {
+      assertMainFrameSender(event, win)
+      return listLmStudioModels()
+    })
 
-    ipcMain.handle('lm-studio:model-info', () => listLmStudioModelInfo())
+    ipcMain.handle('lm-studio:model-info', (event) => {
+      assertMainFrameSender(event, win)
+      return listLmStudioModelInfo()
+    })
 
-    ipcMain.handle('open-router:models', () => listFreeOpenRouterModels())
+    ipcMain.handle('open-router:models', (event) => {
+      assertMainFrameSender(event, win)
+      return listFreeOpenRouterModels()
+    })
 
     ipcMain.handle('lm-studio:detect', async (event, url?: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
