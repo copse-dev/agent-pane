@@ -13,9 +13,22 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { e2eWorkspaceDir, resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'agent-eval-maintenance-project'
+const BRANCH_PROJECT_ID = `${PROJECT_ID}-branch`
+
+/**
+ * Start a test from no projects and no saved threads. `resetUserData` clears
+ * the config, but each project's thread store survives it; the next test's
+ * sidebar then lists the earlier test's thread under Recoverable threads.
+ */
+function resetEvalState(): void {
+  resetUserData()
+  for (const projectId of [PROJECT_ID, BRANCH_PROJECT_ID]) {
+    removeE2eTree(join(e2eWorkspaceDir(), projectId))
+  }
+}
 
 describe('agent eval maintenance interactions', function () {
   this.timeout(120_000)
@@ -23,14 +36,14 @@ describe('agent eval maintenance interactions', function () {
 
   after(() => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: undefined })
-    resetUserData()
+    resetEvalState()
     for (const root of roots) removeE2eTree(root)
   })
 
   it('applies single and multiple proposals even when Changes is closed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-eval-proposals-'))
     roots.push(root)
-    resetUserData()
+    resetEvalState()
     seedEmptyProject(root, PROJECT_ID, { subagentsEnabled: false, model: 'claude-sonnet-4-6' })
     await browser.reloadSession()
 
@@ -104,8 +117,8 @@ describe('agent eval maintenance interactions', function () {
     const branch = 'feature/existing-project'
     git(['switch', '-c', branch])
     writeFileSync(join(root, 'README.md'), '# Existing project\n\nUncommitted work.\n')
-    resetUserData()
-    seedEmptyProject(root, `${PROJECT_ID}-branch`, {
+    resetEvalState()
+    seedEmptyProject(root, BRANCH_PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -127,6 +140,8 @@ describe('agent eval maintenance interactions', function () {
     assert.match(readFileSync(join(root, 'README.md'), 'utf8'), /Uncommitted work/)
     await expect($('.composer-dirty-send-btn')).not.toBeDisplayed()
     await assertNoErrorToasts('eval branch selection')
+    // Only this test's project and thread: nothing carried over from the last test.
+    await expect($('.orphans-section')).not.toBeExisting()
     await saveAppScreenshot('agent-eval-existing-branch.png')
   })
 })
