@@ -2425,6 +2425,13 @@
           2
         ]
       },
+      "thread-prompts:activate-grant": {
+        "api": "threadPrompts.activateGrant",
+        "args": [
+          2,
+          2
+        ]
+      },
       "thread-prompts:can-dispatch": {
         "api": "threadPrompts.canDispatch",
         "args": [

@@ -14,7 +14,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -330,6 +330,7 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await continueBtn.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
     await recovery.waitForComplete()
@@ -425,6 +426,7 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await button.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
   })

@@ -41,6 +41,7 @@ function mountWithQueued(): {
   messageId: string
 } {
   const store = createStore()
+  store.setState({ activeProjectId: 'project-1' })
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
   const host = document.createElement('div')
@@ -92,10 +93,11 @@ describe('queued message edit (component)', () => {
     assert.equal(store.getState().threads.find((t) => t.id === threadId)?.queuePaused, true)
   })
 
-  it('Delete removes the queued message from the pinned panel', () => {
+  it('Delete removes the queued message from the pinned panel', async () => {
     const { store, threadId, messageId } = mountWithQueued()
 
     document.querySelector<HTMLButtonElement>('.msg-queued .queued-delete')?.click()
+    await new Promise<void>((resolve) => setImmediate(resolve))
 
     assert.equal(document.querySelector(`.msg-queued[data-message-id="${messageId}"]`), null)
     assert.equal(document.querySelector<HTMLElement>('.conversation-queued')?.hidden, true)
