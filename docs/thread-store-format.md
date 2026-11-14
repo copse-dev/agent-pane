@@ -268,6 +268,7 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   "createdAt": 1712345678901,
   "model": "claude-sonnet-4-6", // optional: primary-chat model for this assistant turn
   "content": { "ref": "messages/<id>.md", "sha256": "<hex of body bytes>" },
+  "promptRepresentation": "canonical-provider", // optional: Main-validated user input
   "reasoning": { "ref": "messages/<id>.reasoning.md", "sha256": "…" }, // optional
   "images": [{ "ref": "blobs/<imageId>.png", "mimeType": "image/png" }], // optional
   "visualEvidence": [{                 // optional; assistant-owned published proof
@@ -306,6 +307,16 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   ]
 }
 ```
+
+`promptRepresentation: "canonical-provider"` records that Main accepted a user message's
+body as the exact Main-validated, pre-dispatch content. Its content, including literal U+FFFC
+characters and authored whitespace, stays unchanged when loaded, resent, or rebuilt as fork
+history, even when no attachment chips can be projected. Later dispatch policy, such as PII
+redaction, may still transform provider-bound text. Legacy messages without this marker or
+Main-owned attachment projection provenance still use placeholder cleanup during replay. The
+field describes stored bytes; it grants no dispatch authority. Generic renderer message creates
+and appends strip it, while an exact accepted-source fork preserves it. An optimistic chip-bearing
+renderer bubble remains unmarked until replaced by canonical input.
 
 Tool-call blobs are named from the owning message id and the call's 0-based
 position `<n>` in that message's `toolCalls`, never from the tool-call `id`.

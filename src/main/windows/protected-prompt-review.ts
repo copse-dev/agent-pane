@@ -114,7 +114,10 @@ export function reviewedTranscriptAttachments(
   if (modelText !== expanded.text && !modelText.startsWith(`${expanded.text}\n\n`)) {
     return rendererFields
   }
-  const ranges = expanded.tokens.map((token) => uniqueTokenRange(modelText, token))
+  // Builder-appended provider context (for example the structured thread-ref
+  // block) may repeat a reviewed label. Provenance is about the exact reviewed
+  // display prefix, so ambiguity is measured inside that prefix only.
+  const ranges = expanded.tokens.map((token) => uniqueTokenRange(expanded.text, token))
   const overlapping = new Set<number>()
   for (let left = 0; left < ranges.length; left++) {
     const leftRange = ranges[left]

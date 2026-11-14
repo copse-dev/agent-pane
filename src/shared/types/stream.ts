@@ -88,13 +88,15 @@ export type StreamChunk =
       startingCommit?: string
       dirty?: boolean
     }
-  /** Exact human prompt accepted in the isolated main-owned entry window. */
+  /** Main-validated human prompt accepted at a trusted dispatch boundary. */
   | {
       type: 'protected_human_turn_start'
       content: UserContent
       /** Main-owned accepted identity; may reconcile an optimistic renderer bubble. */
       messageId: string
-      /** Main verified the optimistic display and review left its model-facing text unchanged. */
+      /** Marks `content` as the exact validated bytes accepted by Main before dispatch policy. */
+      promptRepresentation: 'canonical-provider'
+      /** Main verified that the optimistic display matches its accepted text. */
       preserveOptimisticDisplay?: true
       /** Exact display snapshots Main verified before an unchanged protected review. */
       attachments?: TranscriptAttachment[]

@@ -10,7 +10,10 @@ import {
 } from '../windows/protected-prompt-review.ts'
 import type { LLMMessage } from '@shared/types'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
-import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
+import {
+  buildTextWithAttachments,
+  renderTextBlock,
+} from '@copse/agent/build-text-with-attachments.ts'
 
 test('protected prompt edits preserve image bytes while replacing renderer text', () => {
   const image = { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' }
@@ -143,6 +146,40 @@ test('reviewed attachment provenance stays literal when a token is ambiguous', (
     placement: 'inline' as const,
   }
   assert.deepEqual(reviewedTranscriptAttachments([attachment], '\uFFFC@', '@@@'), [attachment])
+})
+
+test('reviewed provenance preserves a literal object replacement character in pasted bytes', () => {
+  const thread = {
+    kind: 'thread' as const,
+    label: 'Thread context',
+    placement: 'inline' as const,
+  }
+  const paste = {
+    kind: 'paste' as const,
+    label: 'Document excerpt',
+    content: 'before \uFFFC after',
+    placement: 'inline' as const,
+  }
+  const expandedComposerText = `@${thread.label} then \n\n${renderTextBlock(paste.label, paste.content)}`
+  const providerText = buildTextWithAttachments(expandedComposerText, [], [], {
+    threadRefs: [
+      {
+        title: thread.label,
+        date: 'today',
+        spinePath: '/workspace/project/thread/events.jsonl',
+      },
+    ],
+  })
+
+  assert.deepEqual(
+    reviewedTranscriptAttachments([thread, paste], `\uFFFC then \uFFFC`, providerText),
+    [
+      { ...thread, projection: 'canonical-thread-label' },
+      { ...paste, projection: 'canonical-block' },
+    ],
+  )
+  assert.match(providerText, /before \uFFFC after/)
+  assert.ok(providerText.startsWith(expandedComposerText))
 })
 
 test('protected prompt exposes the exact frozen stored inference context', () => {

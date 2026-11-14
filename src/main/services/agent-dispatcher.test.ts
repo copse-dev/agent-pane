@@ -793,6 +793,7 @@ describe('AgentDispatcher', () => {
         type: 'protected_human_turn_start',
         content: 'reviewed prompt',
         messageId: 'accepted-message',
+        promptRepresentation: 'canonical-provider',
         preserveOptimisticDisplay: true,
         attachments: [
           {

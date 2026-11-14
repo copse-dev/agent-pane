@@ -263,6 +263,7 @@ test('protected human entry replaces only its optimistic prompt with reviewed te
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: [
       { type: 'text', text: 'Reviewed exact prompt' },
       { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
@@ -272,6 +273,7 @@ test('protected human entry replaces only its optimistic prompt with reviewed te
   assert.equal(messagesOf(store)[0]?.content, 'Reviewed exact prompt')
   assert.deepEqual(messagesOf(store)[0]?.images, ['data:image/png;base64,AA=='])
   assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
   assert.equal(messagesOf(store).length, 1)
   assert.equal(getThreadById(store, 't1')?.status, 'running')
 })
@@ -287,6 +289,7 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: [
       { type: 'text', text: 'Compare @Auth refactor plan with the proposal' },
       { type: 'image', dataUrl: 'data:image/png;base64,AA==' },
@@ -299,8 +302,116 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   assert.deepEqual(messagesOf(store)[0]?.attachments, [
     { kind: 'thread', label: 'Auth refactor plan' },
   ])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, undefined)
   assert.equal(messagesOf(store).length, 1)
   assert.equal(getThreadById(store, 't1')?.status, 'running')
+})
+
+test('protected human entry marks an exact text-only optimistic display canonical', () => {
+  const exact = '  Keep literal \uFFFC in the note.  \n\n'
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = exact
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
+    content: exact,
+    preserveOptimisticDisplay: true,
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, exact)
+  assert.equal(messagesOf(store)[0]?.attachments, undefined)
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
+})
+
+test('protected human entry marks an exact optimistic image display canonical', () => {
+  const exact = 'Keep this image with the reviewed prompt.'
+  const image = 'data:image/png;base64,AA=='
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = exact
+  optimistic.images = [image]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
+    content: [
+      { type: 'text', text: exact },
+      { type: 'image', dataUrl: image },
+    ],
+    preserveOptimisticDisplay: true,
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, exact)
+  assert.deepEqual(messagesOf(store)[0]?.images, [image])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
+})
+
+test('protected human entry does not mark a mismatched optimistic image canonical', () => {
+  const exact = 'Keep this image with the reviewed prompt.'
+  const optimisticImage = 'data:image/png;base64,AA=='
+  const reviewedImage = 'data:image/png;base64,BB=='
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = exact
+  optimistic.images = [optimisticImage]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
+    content: [
+      { type: 'text', text: exact },
+      { type: 'image', dataUrl: reviewedImage },
+    ],
+    preserveOptimisticDisplay: true,
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, exact)
+  assert.deepEqual(messagesOf(store)[0]?.images, [optimisticImage])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, undefined)
+})
+
+test('protected human entry changes only its named thread when message ids repeat', () => {
+  for (const [firstThreadId, secondThreadId] of [
+    ['t1', 't2'],
+    ['t2', 't1'],
+  ] as const) {
+    const store = createStore({
+      threads: [
+        threadWith(firstThreadId, [humanPrompt('shared-id', `${firstThreadId} original prompt`)]),
+        threadWith(secondThreadId, [humanPrompt('shared-id', `${secondThreadId} original prompt`)]),
+      ],
+      activeThreadId: firstThreadId,
+    })
+    const reducer = createTranscriptReducer(store)
+    reducer.apply(secondThreadId, {
+      type: 'protected_human_turn_start',
+      messageId: 'shared-id',
+      promptRepresentation: 'canonical-provider',
+      content: `${secondThreadId} reviewed prompt`,
+    })
+
+    assert.equal(
+      getThreadById(store, firstThreadId)?.messages[0]?.content,
+      `${firstThreadId} original prompt`,
+    )
+    assert.equal(getThreadById(store, firstThreadId)?.messages[0]?.promptRepresentation, undefined)
+    assert.equal(
+      getThreadById(store, secondThreadId)?.messages[0]?.content,
+      `${secondThreadId} reviewed prompt`,
+    )
+    assert.equal(
+      getThreadById(store, secondThreadId)?.messages[0]?.promptRepresentation,
+      'canonical-provider',
+    )
+  }
 })
 
 test('protected human persistence keeps only the attachment snapshot verified by Main', () => {
@@ -313,6 +424,7 @@ test('protected human persistence keeps only the attachment snapshot verified by
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'u1',
+    promptRepresentation: 'canonical-provider',
     content: 'Compare the reviewed notes with the proposal',
     attachments: [
       {
@@ -335,6 +447,7 @@ test('protected human persistence keeps only the attachment snapshot verified by
       projection: 'canonical-block',
     },
   ])
+  assert.equal(messagesOf(store)[0]?.promptRepresentation, 'canonical-provider')
 })
 
 test('protected human entry keeps the accepted main identity when no optimistic prompt remains', () => {
@@ -345,6 +458,7 @@ test('protected human entry keeps the accepted main identity when no optimistic 
   reducer.apply('t1', {
     type: 'protected_human_turn_start',
     messageId: 'accepted-after-retirement',
+    promptRepresentation: 'canonical-provider',
     content: 'Reviewed exact prompt',
   })
 

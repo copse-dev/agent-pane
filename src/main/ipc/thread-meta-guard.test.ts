@@ -63,6 +63,7 @@ describe('withoutMainOwnedThreadFields', () => {
       id: 'request',
       role: 'user',
       content: 'visible',
+      promptRepresentation: 'canonical-provider',
       toolCalls: [],
       createdAt: 1,
       attachments: [
@@ -75,8 +76,9 @@ describe('withoutMainOwnedThreadFields', () => {
         },
       ],
     }
+    const { promptRepresentation: _promptRepresentation, ...rendererMessage } = message
     const expected = {
-      ...message,
+      ...rendererMessage,
       attachments: [
         {
           kind: 'paste',
@@ -92,11 +94,27 @@ describe('withoutMainOwnedThreadFields', () => {
     })
   })
 
+  it('strips canonical representation from renderer messages without attachments', () => {
+    const message = {
+      id: 'request',
+      role: 'user',
+      content: 'Keep literal \uFFFC and whitespace  \n',
+      toolCalls: [],
+      createdAt: 1,
+    }
+    const forged = { ...message, promptRepresentation: 'canonical-provider' }
+    assert.deepEqual(withoutMainOwnedMessageFields(forged), message)
+    assert.deepEqual(withoutMainOwnedThreadCreateFields({ messages: [forged] }), {
+      messages: [message],
+    })
+  })
+
   it('preserves accepted projection provenance through the exact fork guard', () => {
     const accepted = {
       id: 'request',
       role: 'user',
       content: 'visible',
+      promptRepresentation: 'canonical-provider',
       toolCalls: [],
       createdAt: 1,
       attachments: [

@@ -9,6 +9,7 @@ import { enqueueUserMessage } from './message-queue.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { lastResendableMessage, resendLastMessage } from './resend-message.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 
 function createProjectStore(): ReturnType<typeof createStore> {
   const store = createStore()
@@ -198,16 +199,26 @@ test('resends canonical protected attachment bytes while reporting its omitted c
   const store = createProjectStore()
   const { api, runs } = fakeApi()
   const threadId = createThread(store)
-  const canonical = 'Review this\n\n```\n// pasted log\nexact bytes\n```'
-  addMessage(store, threadId, 'user', canonical, undefined, [
+  const pasteBytes = 'before ￼  after\nkept exactly'
+  const canonical = `  Review this  \n\n\`\`\`\n// pasted log\n${pasteBytes}\n\`\`\`\n`
+  addMessage(
+    store,
+    threadId,
+    'user',
+    canonical,
+    undefined,
+    [
+      {
+        kind: 'paste',
+        label: 'pasted log',
+        content: pasteBytes,
+        placement: 'inline',
+      },
+    ],
     {
-      kind: 'paste',
-      label: 'pasted log',
-      content: 'exact bytes',
-      placement: 'inline',
-      projection: 'canonical-block',
+      promptRepresentation: 'canonical-provider',
     },
-  ])
+  )
 
   const result = resendLastMessage(store, api, threadId)
 
@@ -216,6 +227,43 @@ test('resends canonical protected attachment bytes while reporting its omitted c
   const resent = getThread(store, threadId).messages.at(-1)
   assert.equal(resent?.attachments, undefined)
   assert.equal(resent?.content, canonical)
+  assert.equal(getThread(store, threadId).messages[0]?.attachments?.[0]?.content, pasteBytes)
+})
+
+test('resends canonical bytes exactly across repeated live resends', () => {
+  const store = createProjectStore()
+  const { api, runs } = fakeApi()
+  const threadId = createThread(store)
+  const exact = '  Keep literal \uFFFC in the note.  \n\n'
+  addMessage(store, threadId, 'user', exact, undefined, undefined, {
+    promptRepresentation: 'canonical-provider',
+  })
+
+  const first = resendLastMessage(store, api, threadId)
+
+  assert.equal(first?.droppedAttachments, false)
+  assert.equal(runs[0]?.[1].content, exact)
+  assert.ok(first)
+  createTranscriptReducer(store).apply(threadId, {
+    type: 'protected_human_turn_start',
+    messageId: first.messageId,
+    content: exact,
+    promptRepresentation: 'canonical-provider',
+    preserveOptimisticDisplay: true,
+  })
+  const firstBubble = getThread(store, threadId).messages.find(
+    (message) => message.id === first.messageId,
+  )
+  assert.ok(firstBubble)
+  assert.equal(firstBubble.content, exact)
+  assert.equal(firstBubble.promptRepresentation, 'canonical-provider')
+
+  setThreadStatus(store, threadId, 'idle')
+  const second = resendLastMessage(store, api, threadId)
+
+  assert.equal(second?.droppedAttachments, false)
+  assert.equal(runs[1]?.[1].content, exact)
+  assert.equal(getThread(store, threadId).messages.at(-1)?.content, exact)
 })
 
 test('does nothing when the thread has no prompt to repeat', () => {

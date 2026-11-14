@@ -282,8 +282,28 @@ export function createTranscriptReducer(
             ? undefined
             : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
         if (existing) {
-          if (chunk.preserveOptimisticDisplay !== true) {
-            setMessagePromptContent(store, existing.id, content, images, chunk.attachments)
+          const optimisticImages = existing.images ?? []
+          const reviewedImages = images ?? []
+          const exactTextOnlyDisplay =
+            chunk.preserveOptimisticDisplay === true &&
+            existing.content === content &&
+            (existing.attachments?.length ?? 0) === 0 &&
+            optimisticImages.length === reviewedImages.length &&
+            optimisticImages.every((image, index) => image === reviewedImages[index])
+          if (chunk.preserveOptimisticDisplay !== true || exactTextOnlyDisplay) {
+            // Main has authenticated the reviewed representation. A byte-for-byte
+            // text-only optimistic bubble can safely inherit that provenance so a
+            // second live resend does not fall back to legacy placeholder cleanup.
+            // Chip-bearing bubbles keep their display form and remain unmarked.
+            setMessagePromptContent(
+              store,
+              threadId,
+              existing.id,
+              content,
+              images,
+              chunk.attachments,
+              chunk.promptRepresentation,
+            )
           }
           // User prompts do not receive the assistant stream's later
           // `message_done`, so finalize this canonical replacement now.
@@ -291,6 +311,7 @@ export function createTranscriptReducer(
         } else {
           addMessage(store, threadId, 'user', content, images, chunk.attachments, {
             id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation,
           })
         }
         break
