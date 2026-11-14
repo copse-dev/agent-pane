@@ -14,9 +14,20 @@ interface ProcessIdentity {
 
 interface ProcessBoundary {
   candidates: () => number[]
-  inspect: (pid: number) => ProcessIdentity | null
+  inspect: (pid: number, home: string) => ProcessIdentity | null
   terminate: (pid: number) => void
   pause: () => Promise<void>
+}
+
+interface ProcessInspection {
+  alive: (pid: number) => void
+  status: (pid: number) => { started: string; state: string }
+  home: (pid: number) => string | undefined
+  details: (pid: number) => { executable: string; files: string[] }
+  canonical: (path: string) => string
+  pidfile: (home: string) => number | null
+  uid: (pid: number) => number | undefined
+  ownUid: number | undefined
 }
 
 function command(file: string, args: string[]): string {
@@ -43,67 +54,113 @@ export function parsePsIdentity(output: string): { started: string; state: strin
   return { started: match[1].trim(), state: match[2] }
 }
 
-function inspectProcess(pid: number): ProcessIdentity | null {
-  try {
+const processInspection: ProcessInspection = {
+  alive: (pid) => {
     process.kill(pid, 0)
-  } catch (error) {
-    if (missingProcess(error)) return null
-    throw error
-  }
+  },
+  status: (pid) => parsePsIdentity(command('ps', ['-p', String(pid), '-o', 'lstart=,stat='])),
   // Capture environments only transiently. Never include them in diagnostics.
-  try {
-    const { started, state } = parsePsIdentity(
-      command('ps', ['-p', String(pid), '-o', 'lstart=,stat=']),
-    )
-    if (state.startsWith('Z')) return null
-    let home: string | undefined
-    let executable: string
-    let files: string[]
+  home: (pid) => {
     if (process.platform === 'linux') {
-      home = readFileSync(`/proc/${String(pid)}/environ`, 'utf8')
+      return readFileSync(`/proc/${String(pid)}/environ`, 'utf8')
         .split('\0')
         .find((entry) => entry.startsWith('HOME='))
         ?.slice(5)
-      executable = readlinkSync(`/proc/${String(pid)}/exe`)
-      files = readdirSync(`/proc/${String(pid)}/fd`).flatMap((fd) => {
+    }
+    const environment = command('ps', ['eww', '-p', String(pid), '-o', 'command='])
+    return /(?:^|\s)HOME=(.*?)(?=\s[A-Za-z_][A-Za-z_0-9]*=|$)/.exec(environment)?.[1]?.trim()
+  },
+  details: (pid) => {
+    if (process.platform === 'linux') {
+      const executable = readlinkSync(`/proc/${String(pid)}/exe`)
+      const files = readdirSync(`/proc/${String(pid)}/fd`).flatMap((fd) => {
         try {
           return [readlinkSync(`/proc/${String(pid)}/fd/${fd}`)]
         } catch {
           return []
         }
       })
-    } else {
-      const environment = command('ps', ['eww', '-p', String(pid), '-o', 'command='])
-      home = /(?:^|\s)HOME=(.*?)(?=\s[A-Za-z_][A-Za-z_0-9]*=|$)/.exec(environment)?.[1]?.trim()
-      const fields = command('lsof', ['-a', '-p', String(pid), '-Ffn']).split('\n')
-      let descriptor = ''
-      executable = ''
-      files = []
-      for (const field of fields) {
-        if (field.startsWith('f')) descriptor = field.slice(1)
-        if (!field.startsWith('n')) continue
-        const path = field.slice(1)
-        if (descriptor === 'txt' && basename(path) === 'gortex') executable = path
-        files.push(path)
-      }
+      return { executable, files }
     }
-    if (!home || !executable) throw new Error('Incomplete process identity')
-    const resolvedHome = realpathSync(home)
+    const fields = command('lsof', ['-a', '-p', String(pid), '-Ffn']).split('\n')
+    let descriptor = ''
+    let executable = ''
+    const files: string[] = []
+    for (const field of fields) {
+      if (field.startsWith('f')) descriptor = field.slice(1)
+      if (!field.startsWith('n')) continue
+      const path = field.slice(1)
+      if (descriptor === 'txt' && basename(path) === 'gortex') executable = path
+      files.push(path)
+    }
+    return { executable, files }
+  },
+  canonical: realpathSync,
+  pidfile: readPidfile,
+  uid: (pid) => {
+    const uid = command('ps', ['-p', String(pid), '-o', 'uid=']).trim()
+    return /^\d+$/.test(uid) ? Number(uid) : undefined
+  },
+  ownUid: process.getuid?.(),
+}
+
+function inaccessibleForeignProcess(
+  pid: number,
+  error: unknown,
+  boundary: ProcessInspection,
+): boolean {
+  if (!(error instanceof Error && 'code' in error && error.code === 'EPERM')) return false
+  try {
+    const uid = boundary.uid(pid)
+    return boundary.ownUid !== undefined && uid !== undefined && uid !== boundary.ownUid
+  } catch {
+    return false
+  }
+}
+
+/** Classify the profile before requiring executable or open-file inspection. */
+export function inspectEvalGortexProcess(
+  pid: number,
+  targetHome: string,
+  boundary: ProcessInspection = processInspection,
+): ProcessIdentity | null {
+  try {
+    const { started, state } = boundary.status(pid)
+    if (state.startsWith('Z')) return null
+    const home = boundary.home(pid)
+    if (!home) throw new Error('Missing process HOME')
+    let resolvedHome: string
+    if (home !== targetHome) {
+      try {
+        resolvedHome = boundary.canonical(home)
+      } catch {
+        // A missing foreign HOME cannot identify this still-present profile.
+        return null
+      }
+      if (resolvedHome !== targetHome) return null
+    } else {
+      resolvedHome = boundary.canonical(home)
+      if (resolvedHome !== targetHome) return null
+    }
+    boundary.alive(pid)
+    const { executable, files } = boundary.details(pid)
+    if (!executable) throw new Error('Incomplete process identity')
     return {
       pid,
       started,
-      executable: realpathSync(executable),
+      executable: boundary.canonical(executable),
       home: resolvedHome,
-      daemon: readPidfile(resolvedHome) === pid,
+      daemon: boundary.pidfile(resolvedHome) === pid,
       privateFiles: files.some((file) => file.startsWith(`${resolvedHome}${sep}`)),
     }
   } catch {
     try {
-      process.kill(pid, 0)
+      boundary.alive(pid)
     } catch (probeError) {
-      if (missingProcess(probeError)) return null
+      if (missingProcess(probeError) || inaccessibleForeignProcess(pid, probeError, boundary))
+        return null
     }
-    // A live candidate we cannot inspect must not be silently declared absent.
+    // Unknown or matching-profile identity failures still preserve the profile.
     throw new Error(`Cannot verify Gortex cleanup candidate PID ${String(pid)}`)
   }
 }
@@ -116,7 +173,7 @@ const processBoundary: ProcessBoundary = {
         const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(line)
         return match?.[1] && match[2] && basename(match[2]) === 'gortex' ? [Number(match[1])] : []
       }),
-  inspect: inspectProcess,
+  inspect: inspectEvalGortexProcess,
   terminate: (pid) => {
     process.kill(pid, 'SIGTERM')
   },
@@ -140,7 +197,7 @@ export async function cleanupEvalGortex(
     const pidfile = readPidfile(home)
     const pids = new Set([...boundary.candidates(), ...(pidfile === null ? [] : [pidfile])])
     return [...pids].flatMap((pid) => {
-      const identity = boundary.inspect(pid)
+      const identity = boundary.inspect(pid, home)
       if (!identity || identity.home !== home) return []
       if (
         basename(identity.executable) !== 'gortex' ||
@@ -153,28 +210,36 @@ export async function cleanupEvalGortex(
       return [identity]
     })
   }
-  // Existing clients can autostart a daemon: terminate them before the daemon.
-  for (const original of owned().sort((a, b) => Number(a.daemon) - Number(b.daemon))) {
-    const current = boundary.inspect(original.pid)
-    if (!current) continue
-    if (
-      current.started !== original.started ||
-      current.executable !== original.executable ||
-      current.home !== home
-    ) {
-      throw new Error(
-        `Eval Gortex PID ${String(original.pid)} changed identity; preserving profile`,
-      )
-    }
-    try {
-      boundary.terminate(original.pid)
-    } catch (error) {
-      if (!missingProcess(error)) throw error
-    }
-  }
+  const signalled = new Map<number, ProcessIdentity>()
   for (let attempt = 0; attempt < 50; attempt++) {
-    if (owned().length === 0) return
+    const services = owned()
+    if (services.length === 0) return
+    // Order SIGTERM requests, without claiming clients have already exited.
+    for (const original of services.sort((a, b) => Number(a.daemon) - Number(b.daemon))) {
+      const previous = signalled.get(original.pid)
+      if (previous?.started === original.started && previous.executable === original.executable)
+        continue
+      const current = boundary.inspect(original.pid, home)
+      if (!current) continue
+      if (
+        current.started !== original.started ||
+        current.executable !== original.executable ||
+        current.home !== home
+      ) {
+        throw new Error(
+          `Eval Gortex PID ${String(original.pid)} changed identity; preserving profile`,
+        )
+      }
+      try {
+        // POSIX numeric-PID signals cannot atomically pin identity across this final gap.
+        boundary.terminate(original.pid)
+        signalled.set(original.pid, original)
+      } catch (error) {
+        if (!missingProcess(error)) throw error
+      }
+    }
     await boundary.pause()
   }
+  if (owned().length === 0) return
   throw new Error('Eval Gortex did not stop after SIGTERM; preserving profile')
 }

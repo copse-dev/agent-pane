@@ -3,7 +3,11 @@ import { afterEach, describe, it } from 'node:test'
 import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cleanupEvalGortex, parsePsIdentity } from './eval-gortex-cleanup.mts'
+import {
+  cleanupEvalGortex,
+  inspectEvalGortexProcess,
+  parsePsIdentity,
+} from './eval-gortex-cleanup.mts'
 
 const profiles: string[] = []
 afterEach(() => {
@@ -19,6 +23,7 @@ type Identity = {
   privateFiles: boolean
 }
 type Boundary = NonNullable<Parameters<typeof cleanupEvalGortex>[1]>
+type Inspection = NonNullable<Parameters<typeof inspectEvalGortexProcess>[2]>
 
 function fixture(): {
   profile: string
@@ -26,6 +31,7 @@ function fixture(): {
   processes: Map<number, Identity>
   signals: number[]
   boundary: Boundary
+  inspection: Inspection
 } {
   const profile = realpathSync(mkdtempSync(join(tmpdir(), '.wdio-eval-userdata-01234567-')))
   profiles.push(profile)
@@ -66,16 +72,41 @@ function fixture(): {
     ],
   ])
   const signals: number[] = []
+  const inspection: Inspection = {
+    alive: (pid) => {
+      if (!processes.has(pid)) throw Object.assign(new Error('gone'), { code: 'ESRCH' })
+    },
+    status: (pid) => {
+      const identity = processes.get(pid)
+      assert.ok(identity)
+      return { started: identity.started, state: 'S' }
+    },
+    home: (pid) => processes.get(pid)?.home,
+    details: (pid) => {
+      const identity = processes.get(pid)
+      assert.ok(identity)
+      return {
+        executable: identity.executable,
+        files: identity.privateFiles ? [join(identity.home, 'service.log')] : [],
+      }
+    },
+    canonical: (path) => path,
+    pidfile: (home) =>
+      [...processes.values()].find((identity) => identity.home === home && identity.daemon)?.pid ??
+      null,
+    uid: () => 501,
+    ownUid: 501,
+  }
   const boundary: Boundary = {
     candidates: () => [...processes.keys()],
-    inspect: (pid: number) => processes.get(pid) ?? null,
+    inspect: (pid, home) => inspectEvalGortexProcess(pid, home, inspection),
     terminate: (pid: number) => {
       signals.push(pid)
       processes.delete(pid)
     },
     pause: async () => {},
   }
-  return { profile, home, processes, signals, boundary }
+  return { profile, home, processes, signals, boundary, inspection }
 }
 
 describe('eval Gortex service cleanup', () => {
@@ -84,8 +115,8 @@ describe('eval Gortex service cleanup', () => {
     const start = 'Fri Nov 13 21:21:29 2026'
     const states = new Map<number, string[]>()
     const inspect = f.boundary.inspect
-    f.boundary.inspect = (pid): Identity | null => {
-      const identity = inspect(pid)
+    f.boundary.inspect = (pid, home): Identity | null => {
+      const identity = inspect(pid, home)
       if (!identity) return null
       const observed = states.get(pid) ?? []
       const state = observed.length === 0 ? 'R+' : 'Ss'
@@ -105,7 +136,7 @@ describe('eval Gortex service cleanup', () => {
     assert.deepEqual(states.get(11), ['R+', 'Ss'])
   })
 
-  it('stops profile clients before the detached daemon and leaves the shared-executable daily process alive', async () => {
+  it('signals profile clients before the detached daemon and leaves the shared-executable daily process alive', async () => {
     const f = fixture()
     await cleanupEvalGortex(f.profile, f.boundary)
     assert.deepEqual(f.signals, [12, 11])
@@ -140,8 +171,8 @@ describe('eval Gortex service cleanup', () => {
     const f = fixture()
     let reads = 0
     const inspect = f.boundary.inspect
-    f.boundary.inspect = (pid): Identity | null => {
-      const value = inspect(pid)
+    f.boundary.inspect = (pid, home): Identity | null => {
+      const value = inspect(pid, home)
       if (pid === 12 && ++reads > 1 && value) return { ...value, started: 'reused' }
       return value
     }
@@ -186,9 +217,10 @@ describe('eval Gortex service cleanup', () => {
     assert.deepEqual(f.signals, [12, 11])
   })
 
-  it('fails if a new owned service appears during teardown', async () => {
+  it('reaps a verified owned service that appears during teardown', async () => {
     const f = fixture()
     f.boundary.terminate = (pid): void => {
+      f.signals.push(pid)
       f.processes.delete(pid)
       if (pid === 11)
         f.processes.set(21, {
@@ -200,8 +232,116 @@ describe('eval Gortex service cleanup', () => {
           privateFiles: true,
         })
     }
+    await cleanupEvalGortex(f.profile, f.boundary)
+    assert.deepEqual(f.signals, [12, 11, 21])
+    assert.deepEqual([...f.processes.keys()], [13])
+  })
+
+  it('bounds cleanup when owned services keep reappearing', async () => {
+    const f = fixture()
+    let nextPid = 100
+    f.boundary.terminate = (pid): void => {
+      const identity = f.processes.get(pid)
+      assert.ok(identity)
+      f.processes.delete(pid)
+      f.signals.push(pid)
+      if (identity.daemon) {
+        const replacement = { ...identity, pid: nextPid++, started: String(nextPid) }
+        f.processes.set(replacement.pid, replacement)
+      }
+    }
     await assert.rejects(cleanupEvalGortex(f.profile, f.boundary), /did not stop/)
-    assert.ok(f.processes.has(21))
+    assert.ok([...f.processes.values()].some((identity) => identity.home === f.home))
+  })
+
+  it('skips a removed foreign HOME before inspecting its executable or files', async () => {
+    const f = fixture()
+    const foreign = f.processes.get(13)
+    assert.ok(foreign)
+    foreign.home = '/removed/foreign/gortex'
+    f.inspection.canonical = (path): string => {
+      if (path === foreign.home) throw new Error('foreign HOME was deleted')
+      return path
+    }
+    const details = f.inspection.details
+    f.inspection.details = (pid): ReturnType<Inspection['details']> => {
+      assert.notEqual(pid, 13, 'Foreign HOME must be classified before full inspection')
+      return details(pid)
+    }
+    await cleanupEvalGortex(f.profile, f.boundary)
+    assert.deepEqual(f.signals, [12, 11])
+    assert.ok(f.processes.has(13))
+  })
+
+  it('skips a foreign process whose executable can no longer be resolved', async () => {
+    const f = fixture()
+    const details = f.inspection.details
+    f.inspection.details = (pid): ReturnType<Inspection['details']> => {
+      if (pid === 13) throw new Error('foreign executable was replaced')
+      return details(pid)
+    }
+    await cleanupEvalGortex(f.profile, f.boundary)
+    assert.deepEqual(f.signals, [12, 11])
+    assert.ok(f.processes.has(13))
+  })
+
+  it('skips an inaccessible process when its UID establishes that it is foreign', async () => {
+    const f = fixture()
+    const home = f.inspection.home
+    const alive = f.inspection.alive
+    f.inspection.home = (pid): string | undefined => {
+      if (pid === 13) throw Object.assign(new Error('unreadable environment'), { code: 'EACCES' })
+      return home(pid)
+    }
+    f.inspection.alive = (pid): void => {
+      if (pid === 13) throw Object.assign(new Error('foreign user'), { code: 'EPERM' })
+      alive(pid)
+    }
+    f.inspection.uid = (pid): number => (pid === 13 ? 502 : 501)
+    await cleanupEvalGortex(f.profile, f.boundary)
+    assert.deepEqual(f.signals, [12, 11])
+    assert.ok(f.processes.has(13))
+  })
+
+  it('preserves a denied matching-profile process with the same UID', async () => {
+    const f = fixture()
+    const alive = f.inspection.alive
+    f.inspection.alive = (pid): void => {
+      if (pid === 12) throw Object.assign(new Error('denied'), { code: 'EPERM' })
+      alive(pid)
+    }
+    await assert.rejects(cleanupEvalGortex(f.profile, f.boundary), /Cannot verify/)
+    assert.deepEqual(f.signals, [])
+  })
+
+  it('preserves a live candidate whose HOME is missing', async () => {
+    const f = fixture()
+    const home = f.inspection.home
+    f.inspection.home = (pid): string | undefined => (pid === 12 ? undefined : home(pid))
+    await assert.rejects(cleanupEvalGortex(f.profile, f.boundary), /Cannot verify/)
+    assert.deepEqual(f.signals, [])
+    assert.ok(f.processes.has(12))
+  })
+
+  it('preserves an unreadable executable after HOME establishes ownership', async () => {
+    const f = fixture()
+    const details = f.inspection.details
+    f.inspection.details = (pid): ReturnType<Inspection['details']> => {
+      if (pid === 12) throw new Error('owned executable unavailable')
+      return details(pid)
+    }
+    await assert.rejects(cleanupEvalGortex(f.profile, f.boundary), /Cannot verify/)
+    assert.deepEqual(f.signals, [])
+  })
+
+  it('preserves a missing matching HOME instead of treating it as foreign', async () => {
+    const f = fixture()
+    f.inspection.canonical = (path): string => {
+      if (path === f.home) throw new Error('owned HOME unavailable')
+      return path
+    }
+    await assert.rejects(cleanupEvalGortex(f.profile, f.boundary), /Cannot verify/)
+    assert.deepEqual(f.signals, [])
   })
 
   it('preserves an inspection failure rather than treating it as process absence', async () => {
