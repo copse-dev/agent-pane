@@ -157,7 +157,10 @@ records contain cumulative usage before the request, the estimated input reserva
 remaining output cap, serialized message bytes by role, schema bytes and image-data
 bytes. Byte counts are estimates, not tokenizer measurements. Usage records contain
 actual provider-reported input/output tokens; settlement records show any retained
-reservation when usage was unavailable. Chat, review and auxiliary calls share the
+reservation when usage was unavailable, plus the response's shape: visible-text and
+reasoning character counts, the tool-call count and the stop reason (any stop reason
+that is not a short identifier is logged as `other`), so a turn that landed nothing is
+diagnosable without its text. Chat, review and auxiliary calls share the
 same grant. No maximum-output allowance is charged in advance: only estimated input
 is reserved, and remaining tokens cap the provider's output.
 

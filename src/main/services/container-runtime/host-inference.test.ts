@@ -316,6 +316,56 @@ describe('run-scoped host inference', () => {
       /Hello|README|read_file/,
     )
   })
+  it('settles each request with a content-free response shape', async (t) => {
+    const log = t.mock.method(console, 'error', () => {})
+    const thinking: LLMProvider = {
+      async *stream() {
+        yield { type: 'reasoning', text: 'Secret plan to call git_diff' }
+        yield {
+          type: 'usage',
+          model: 'pinned',
+          inputTokens: 10,
+          outputTokens: 5,
+        }
+        yield { type: 'done', stopReason: 'Secret free-form reason' }
+      },
+    }
+    const f = fixture(t, echo, { tokenCeiling: 30000 })
+    await collect(f.provider)
+    const g = fixture(t, thinking, { tokenCeiling: 30000 })
+    await collect(g.provider)
+    const settled = log.mock.calls
+      .filter((call) => call.arguments[0] === '[host-inference-accounting]')
+      .map((call) =>
+        z
+          .object({
+            event: z.string(),
+            responseTextChars: z.number().optional(),
+            responseReasoningChars: z.number().optional(),
+            responseToolCalls: z.number().optional(),
+            stopReason: z.string().optional(),
+          })
+          .parse(call.arguments[1]),
+      )
+      .filter((event) => event.event === 'settled')
+    assert.deepEqual(settled, [
+      {
+        event: 'settled',
+        responseTextChars: 'Hello 😀'.length,
+        responseReasoningChars: 0,
+        responseToolCalls: 1,
+        stopReason: 'tool_use',
+      },
+      {
+        event: 'settled',
+        responseTextChars: 0,
+        responseReasoningChars: 'Secret plan to call git_diff'.length,
+        responseToolCalls: 0,
+        stopReason: 'other',
+      },
+    ])
+    assert.doesNotMatch(JSON.stringify(log.mock.calls.map((call) => call.arguments)), /Secret/)
+  })
   it('passes the full remaining budget after input reservation and reported usage', async (t) => {
     const f = fixture(t, echo, { tokenCeiling: 30000 })
     await collect(f.provider)

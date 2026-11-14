@@ -20,6 +20,9 @@ interface HostInferenceOptions {
  */
 const CANCELLED_SLOT_RELEASE_MS = 60_000
 
+/** Provider stop reasons are short identifiers; anything else is logged as `other`. */
+const STOP_REASON_PATTERN = /^[a-z][a-z0-9_]{0,39}$/
+
 interface InferenceSlot {
   /** Aborts when the guest disconnects or the run stops. */
   readonly signal: AbortSignal
@@ -72,6 +75,11 @@ export class HostInference {
     let accountingRequestId: number | null = null
     let retainedReservation = 0
     let usageReported = false
+    // Content-free response shape: why a turn landed nothing is visible without its text.
+    let responseTextChars = 0
+    let responseReasoningChars = 0
+    let responseToolCalls = 0
+    let stopReason: string | undefined
     const releaseSlot = (): void => {
       if (slot === null) return
       this.active = null
@@ -172,6 +180,14 @@ export class HostInference {
         request.options,
       )) {
         signal.throwIfAborted()
+        if (chunk.type === 'text') responseTextChars += chunk.text.length
+        else if (chunk.type === 'reasoning') responseReasoningChars += chunk.text.length
+        else if (chunk.type === 'tool_call') responseToolCalls += 1
+        else if (chunk.type === 'done')
+          stopReason =
+            chunk.stopReason === undefined || STOP_REASON_PATTERN.test(chunk.stopReason)
+              ? chunk.stopReason
+              : 'other'
         if (chunk.type === 'usage') {
           if (!reported) {
             this.used -= reservation
@@ -216,6 +232,10 @@ export class HostInference {
           event: 'settled',
           usageReported,
           retainedReservation,
+          responseTextChars,
+          responseReasoningChars,
+          responseToolCalls,
+          ...(stopReason !== undefined ? { stopReason } : {}),
         })
       releaseSlot()
       signal.removeEventListener('abort', abortStream)
