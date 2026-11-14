@@ -2527,6 +2527,59 @@ export function acceptReviewedUserMessage(
 }
 
 /**
+ * Accept a separately reviewed prompt only while its related Main-owned
+ * authority is live at the exact store-write cutover. An optimistic receipt is
+ * used solely to retain that display identity; protected review may still mint
+ * a fresh identity if the optimistic bubble was retired or changed.
+ */
+export function acceptAuthorizedReviewedUserMessage(
+  projectId: string,
+  threadId: string,
+  options: {
+    authorize: () => boolean
+    requireLiveThreadIds?: string[]
+    optimistic?: { messageId: string; claim: () => boolean }
+  },
+): Promise<string | null> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const meta = readMeta(dir)
+    if (meta === null) throw new Error('Cannot accept a prompt for a missing thread')
+    if (
+      meta.archivedAt !== undefined ||
+      options.requireLiveThreadIds?.some((id) => {
+        const required = readMeta(threadDir(projectId, id))
+        return required === null || required.archivedAt !== undefined
+      }) === true ||
+      !options.authorize()
+    )
+      return null
+    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE), true)) ?? '')
+    const known = messageIdsFromSpine(serializeSpineEntries(entries))
+    const optimistic = options.optimistic
+    const canReuse =
+      optimistic !== undefined &&
+      !known.deleted.has(optimistic.messageId) &&
+      known.userStates.get(optimistic.messageId) === 'unaccepted' &&
+      entries.some(
+        (entry) =>
+          entry.line?.type === 'message' &&
+          entry.line.id === optimistic.messageId &&
+          entry.line.role === 'user',
+      ) &&
+      optimistic.claim()
+    let messageId = canReuse ? optimistic.messageId : randomUUID()
+    while (!canReuse && (known.ids.has(messageId) || known.userStates.has(messageId)))
+      messageId = randomUUID()
+    const line = userMessageLifecycleLine(messageId, 'accepted')
+    entries.push({ raw: serializeSpineLine(line), line })
+    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    invalidateKnownMessageIds(dir)
+    return messageId
+  })
+}
+
+/**
  * Accept an already-reviewed existing user identity under the same project queue
  * as retirement. Unlike ordinary desktop review, this never mints a fallback ID.
  * The caller supplies its Main-read prompt snapshot and one-use claim; only
@@ -2535,13 +2588,26 @@ export function acceptReviewedUserMessage(
 export function acceptExactReviewedUserMessage(
   projectId: string,
   threadId: string,
-  optimistic: { message: Message; claim: () => boolean },
+  optimistic: {
+    message: Message
+    claim: () => boolean
+    requireLiveThreadIds?: string[]
+  },
 ): Promise<string | null> {
   const { hookCards: _derivedAudit, ...snapshot } = structuredClone(optimistic.message)
   const claim = optimistic.claim
   return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    if (readMeta(dir) === null) throw new Error('Cannot accept a prompt for a missing thread')
+    const meta = readMeta(dir)
+    if (meta === null) throw new Error('Cannot accept a prompt for a missing thread')
+    if (
+      meta.archivedAt !== undefined ||
+      optimistic.requireLiveThreadIds?.some((id) => {
+        const required = readMeta(threadDir(projectId, id))
+        return required === null || required.archivedAt !== undefined
+      }) === true
+    )
+      return null
     const events = join(dir, EVENTS_FILE)
     const entries = parseSpineEntries((await readOrNull(events, true)) ?? '')
     if (entries.some((entry) => entry.line === null))

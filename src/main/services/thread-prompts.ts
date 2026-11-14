@@ -9,11 +9,22 @@ import {
 } from '@shared/thread-prompt.ts'
 import { hasThreadAccess, revokeThreadAccess } from './security/thread-access.ts'
 import { getSetting } from './storage/settings.ts'
-import { getThreadMeta } from './thread-store.ts'
+import { getProjectThread, getThreadMeta } from './thread-store.ts'
 import type { SettingsValues } from '@shared/settings-contract.ts'
+import {
+  threadPromptDispatchGrants,
+  threadPromptGrantActivation,
+} from './thread-prompt-dispatch-grants.ts'
+import type { AgentDispatchPayload } from './agent-dispatcher.ts'
+import { hasProtectedPromptMessageAppend } from './protected-prompt-receipts.ts'
+import { resolveThreadExecutionContext } from './thread-execution-context.ts'
 
 /** Main's record that `parentId` created `childId` here, and still holds orchestration. */
-function holdsSubthreadAuthority(projectId: string, parentId: string, childId: string): boolean {
+export function holdsSubthreadAuthorityNow(
+  projectId: string,
+  parentId: string,
+  childId: string,
+): boolean {
   const owned = getSetting<SettingsValues['threadSubthreadOwners']>(
     'threadSubthreadOwners',
     [],
@@ -36,7 +47,7 @@ async function subthreadPairIsLive(
   parentId: string,
   childId: string,
 ): Promise<boolean> {
-  if (!holdsSubthreadAuthority(projectId, parentId, childId)) return false
+  if (!holdsSubthreadAuthorityNow(projectId, parentId, childId)) return false
   const [parent, child] = await Promise.all([
     getThreadMeta(projectId, parentId),
     getThreadMeta(projectId, childId),
@@ -51,7 +62,7 @@ export async function canDispatchSubthread(
 ): Promise<boolean> {
   return (
     (await subthreadPairIsLive(projectId, parentId, childId)) &&
-    holdsSubthreadAuthority(projectId, parentId, childId)
+    holdsSubthreadAuthorityNow(projectId, parentId, childId)
   )
 }
 
@@ -70,7 +81,7 @@ export async function dispatchSubthreadPrompt(
   start: () => Promise<void>,
 ): Promise<void> {
   const live = await subthreadPairIsLive(projectId, parentId, childId)
-  if (!live || !holdsSubthreadAuthority(projectId, parentId, childId)) {
+  if (!live || !holdsSubthreadAuthorityNow(projectId, parentId, childId)) {
     throw new SubthreadPromptHeldError(childId)
   }
   return start()
@@ -102,6 +113,7 @@ const replySchema = z.tuple([
 
 /** The renderer owns transcripts and queues; report acceptance rather than merely IPC delivery. */
 export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
+  const rendererSenderId = win.webContents.id
   ipcMain.handle('thread-prompts:revoke-access', async (event, ...args) => {
     assertMainFrameSender(event, win)
     const [threadId, access] = parseIpcArgs(
@@ -120,18 +132,76 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
   })
   const pending = new Map<string, (result: ThreadPromptResult) => void>()
   const canSubmit = new Map<string, () => boolean>()
+  const grantCommands = new Map<string, ThreadPromptCommand>()
   ipcMain.handle('thread-prompts:can-submit', (event, ...args) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(z.uuid(), args)
     return canSubmit.get(id)?.() ?? false
+  })
+  ipcMain.handle('thread-prompts:activate-grant', async (event, ...args) => {
+    assertMainFrameSender(event, win)
+    const [id, messageId] = parseIpcArgs(z.tuple([z.uuid(), z.string().min(1).max(256)]), args)
+    const command = grantCommands.get(id)
+    if (
+      !command ||
+      command.authorizingAccess !== 'orchestrate' ||
+      command.requireWorktree !== true ||
+      canSubmit.get(id)?.() !== true
+    ) {
+      threadPromptDispatchGrants.revoke(id)
+      return 'rejected' as const
+    }
+    try {
+      const [thread, executionContext] = await Promise.all([
+        getProjectThread(command.projectId, command.thread.id),
+        resolveThreadExecutionContext(command.projectId, command.thread.id),
+      ])
+      const message = thread?.messages.find(
+        (candidate) => candidate.id === messageId && candidate.role === 'user',
+      )
+      const exactMessage =
+        message?.content === command.text &&
+        (message.images?.length ?? 0) === 0 &&
+        (message.attachments?.length ?? 0) === 0
+      if (
+        !thread ||
+        executionContext.checkoutMode !== 'worktree' ||
+        !exactMessage ||
+        !hasProtectedPromptMessageAppend(
+          rendererSenderId,
+          command.projectId,
+          command.thread.id,
+          messageId,
+        )
+      ) {
+        threadPromptDispatchGrants.revoke(id)
+        return 'rejected' as const
+      }
+      const activation = threadPromptGrantActivation(thread, {
+        id,
+        messageId,
+        sourceThreadId: command.sourceThreadId,
+        content: command.text,
+      })
+      if (activation !== 'activated') {
+        threadPromptDispatchGrants.revoke(id)
+        return activation
+      }
+      return threadPromptDispatchGrants.activate(id, rendererSenderId, messageId)
+        ? ('activated' as const)
+        : ('rejected' as const)
+    } catch {
+      threadPromptDispatchGrants.revoke(id)
+      return 'rejected' as const
+    }
   })
   ipcMain.handle('thread-prompts:reply', (event, ...args) => {
     assertMainFrameSender(event, win)
     const [id, result] = parseIpcArgs(replySchema, args)
     pending.get(id)?.(result)
   })
-  const sender: Send = (command, signal) =>
-    new Promise((resolve) => {
+  const sender: Send = async (command, signal) => {
+    return new Promise((resolve) => {
       if (signal?.aborted) {
         resolve({ ok: false, error: 'Sending was cancelled.' })
         return
@@ -142,6 +212,30 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
       }
       const id = randomUUID()
       const expiresAt = Date.now() + 60_000
+      const stillAuthorized = (): boolean =>
+        !signal?.aborted &&
+        (!command.authorizingAccess ||
+          hasThreadAccess(command.sourceThreadId, command.authorizingAccess))
+      if (command.authorizingAccess === 'orchestrate') {
+        const payload: AgentDispatchPayload = {
+          userContent: command.text,
+          invokedSkills: [],
+          priorTodos: [],
+        }
+        threadPromptDispatchGrants.mint(
+          {
+            id,
+            senderId: rendererSenderId,
+            projectId: command.projectId,
+            parentThreadId: command.sourceThreadId,
+            childThreadId: command.thread.id,
+            content: command.text,
+            payload,
+          },
+          stillAuthorized,
+        )
+        grantCommands.set(id, { ...command, id, expiresAt })
+      }
       const timer = setTimeout(
         () =>
           pending.get(id)?.({
@@ -153,18 +247,12 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
       const onAbort = (): void => {
         pending.get(id)?.({ ok: false, error: 'Sending was cancelled.' })
       }
-      canSubmit.set(
-        id,
-        () =>
-          pending.has(id) &&
-          Date.now() < expiresAt &&
-          !signal?.aborted &&
-          (!command.authorizingAccess ||
-            hasThreadAccess(command.sourceThreadId, command.authorizingAccess)),
-      )
+      canSubmit.set(id, () => pending.has(id) && Date.now() < expiresAt && stillAuthorized())
       pending.set(id, (result) => {
         pending.delete(id)
         canSubmit.delete(id)
+        grantCommands.delete(id)
+        if (!result.ok) threadPromptDispatchGrants.revoke(id)
         signal?.removeEventListener('abort', onAbort)
         clearTimeout(timer)
         resolve(result)
@@ -176,10 +264,13 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
         expiresAt,
       } satisfies ThreadPromptCommand)
     })
+  }
   send = sender
   win.once('closed', () => {
+    threadPromptDispatchGrants.revokeSender(rendererSenderId)
     if (send === sender) send = null
     for (const settle of pending.values())
       settle({ ok: false, error: 'The desktop window closed.' })
+    grantCommands.clear()
   })
 }

@@ -283,20 +283,42 @@ describe('persistent subthread recovery and revocation', function () {
     )
     await recovered.assertComplete()
     assert.deepEqual(threadDirectories(), originalDirectories)
-    const childReplies = await browser.execute(
+    const childTranscripts = await browser.execute(
       async ({ projectId, ids }) =>
         Promise.all(
-          ids.map(async (id) =>
-            (await window.api.threads.loadMessages(projectId, id))
-              .filter((message) => message.role === 'assistant')
-              .map((message) => message.content),
-          ),
+          ids.map(async (id) => {
+            const messages = await window.api.threads.loadMessages(projectId, id)
+            return {
+              prompts: messages
+                .filter((message) => message.role === 'user')
+                .map((message) => ({ content: message.content, origin: message.origin })),
+              replies: messages
+                .filter((message) => message.role === 'assistant')
+                .map((message) => message.content),
+            }
+          }),
         ),
       { projectId: PROJECT, ids: [buildId, releaseId] },
     )
-    assert.deepEqual(childReplies, [
-      ['The build checks are complete.'],
-      ['The release notes are complete.'],
+    assert.deepEqual(childTranscripts, [
+      {
+        prompts: [
+          {
+            content: FIRST,
+            origin: { kind: 'machine', operationId: `subthread:${parentId}` },
+          },
+        ],
+        replies: ['The build checks are complete.'],
+      },
+      {
+        prompts: [
+          {
+            content: SECOND,
+            origin: { kind: 'machine', operationId: `subthread:${parentId}` },
+          },
+        ],
+        replies: ['The release notes are complete.'],
+      },
     ])
 
     await selectThread(buildId)

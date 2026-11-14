@@ -93,6 +93,11 @@ export interface QueuedUserMessage {
    */
   mobilePromptGrantId?: string
   /**
+   * One-use Main-process grant for an exact model-authored subthread prompt.
+   * The renderer may carry this id, but cannot mint or broaden its scope.
+   */
+  threadPromptGrantId?: string
+  /**
    * Model selected for this prompt when it was queued. Human-authored queued
    * prompts keep this snapshot so a later footer-model change does not retarget
    * them. Hook-authored prompts omit it and follow the thread selection at drain

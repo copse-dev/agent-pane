@@ -22,6 +22,8 @@ export type ThreadPromptResult = { ok: true; queued: boolean } | { ok: false; er
  */
 export interface SubthreadRunDelegation {
   parentThreadId: string
+  /** Opaque one-use authority minted with Main's exact child command. */
+  promptGrantId?: string
 }
 
 /**

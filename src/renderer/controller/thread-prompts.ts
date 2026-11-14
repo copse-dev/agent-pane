@@ -9,8 +9,9 @@ import {
   patchThreadAnywhere,
 } from '@shared/store/thread-helpers.ts'
 import { beginThreadSubmission, endThreadSubmission } from '@shared/store/pending-submissions.ts'
-import { drainMessageQueue, enqueueUserMessage } from './message-queue.ts'
+import { deleteQueuedMessage, drainMessageQueue, enqueueUserMessage } from './message-queue.ts'
 import { backgroundProjectOf } from './background-threads.ts'
+import { flushPendingThreadPersistence } from './persistence.ts'
 
 export async function acceptThreadPrompt(
   store: AppStore,
@@ -107,7 +108,30 @@ export async function acceptThreadPrompt(
       payload: { content: command.text },
       createdAt: Date.now(),
       origin,
+      ...(command.authorizingAccess === 'orchestrate' ? { threadPromptGrantId: command.id } : {}),
     })
+    if (command.authorizingAccess === 'orchestrate') {
+      await flushPendingThreadPersistence()
+      const activation = await api.threadPrompts.activateGrant(command.id, messageId)
+      if (activation === 'rejected') {
+        await deleteQueuedMessage(store, api, threadId, messageId)
+        return {
+          ok: false,
+          error: 'The isolated subthread prompt could not be activated safely.',
+        }
+      }
+      if (activation === 'review') {
+        patchThreadAnywhere(store, threadId, (thread) => ({
+          ...thread,
+          pendingMessages: (thread.pendingMessages ?? []).map((item) => {
+            if (item.messageId !== messageId) return item
+            const { threadPromptGrantId: _grant, ...reviewed } = item
+            return reviewed
+          }),
+        }))
+        await flushPendingThreadPersistence()
+      }
+    }
     const queued = current.status === 'running' || current.queuePaused === true
     drainMessageQueue(store, api, threadId)
     const accepted = getThreadById(store, threadId)

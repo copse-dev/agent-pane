@@ -316,7 +316,12 @@ export function dispatchAgentRun(
           projectId,
           threadId,
           runPayload,
-          { parentThreadId },
+          {
+            parentThreadId,
+            ...(queued.threadPromptGrantId !== undefined
+              ? { promptGrantId: queued.threadPromptGrantId }
+              : {}),
+          },
           display,
         )
         if (result === 'cancelled') holdCancelledProtectedPrompt(store, threadId, queued)
@@ -413,11 +418,19 @@ function holdCancelledProtectedPrompt(
     // A cancelled mobile claim is expired, replayed or mismatched. Retain the
     // prompt, but discard that authority so a later desktop send must open the
     // ordinary protected review window.
-    const { mobilePromptGrantId: _mobilePromptGrantId, ...heldItem } = item
+    const {
+      mobilePromptGrantId: _mobilePromptGrantId,
+      threadPromptGrantId: _threadPromptGrantId,
+      ...heldItem
+    } = item
     const held = pending.some((entry) => entry.messageId === item.messageId)
       ? pending.map((entry) => {
           if (entry.messageId !== item.messageId) return entry
-          const { mobilePromptGrantId: _grant, ...rest } = entry
+          const {
+            mobilePromptGrantId: _mobileGrant,
+            threadPromptGrantId: _threadGrant,
+            ...rest
+          } = entry
           return { ...rest, autoDispatch: false as const }
         })
       : [{ ...heldItem, autoDispatch: false as const }, ...pending]
@@ -675,7 +688,11 @@ export function updateQueuedMessageText(
             if (p.messageId !== messageId) return p
             // Editing requires fresh desktop review. An authenticated phone grant
             // authorizes only the exact text that crossed the HTTP boundary.
-            const { mobilePromptGrantId: _mobilePromptGrantId, ...editable } = p
+            const {
+              mobilePromptGrantId: _mobilePromptGrantId,
+              threadPromptGrantId: _threadPromptGrantId,
+              ...editable
+            } = p
             return {
               ...editable,
               payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },

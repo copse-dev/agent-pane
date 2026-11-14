@@ -13,7 +13,12 @@ import {
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
+import {
+  canDispatchSubthread,
+  holdsSubthreadAuthorityNow,
+  initThreadPrompts,
+} from './services/thread-prompts.ts'
+import { SubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -183,6 +188,7 @@ import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
   acceptExactReviewedUserMessage,
+  acceptAuthorizedReviewedUserMessage,
   acceptReviewedUserMessage,
   appendMessage,
   closeThreadStoreIndexes,
@@ -197,7 +203,11 @@ import { TurnTranscriptWriter } from './services/turn-transcript-writer.ts'
 import { getContainerRunService } from './services/container-runtime/container-run-service.ts'
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
-import { AgentDispatcher, type AgentDispatchPayload } from './services/agent-dispatcher.ts'
+import {
+  AgentDispatcher,
+  type AgentDispatchPayload,
+  type AgentDispatchRequest,
+} from './services/agent-dispatcher.ts'
 import {
   protectedPromptMessageMatches,
   protectedPromptSubmissionIsUnchanged,
@@ -209,6 +219,7 @@ import {
   consumeProtectedPromptMessageAppend,
   hasProtectedPromptMessageAppend,
 } from './services/protected-prompt-receipts.ts'
+import { threadPromptDispatchGrants } from './services/thread-prompt-dispatch-grants.ts'
 import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -305,7 +316,7 @@ import { setWorkspaceChangeSink } from './services/search/workspace-change-notif
 import { setPreviewStaleSink } from './services/browser/static-preview-server.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
-class MobilePromptAdmissionCancelledError extends Error {}
+class ProtectedPromptAdmissionCancelledError extends Error {}
 
 // Settings encrypts API keys through whichever cipher is installed rather than
 // importing `safeStorage` itself, which is what keeps `createRegistry()` and
@@ -1253,19 +1264,108 @@ app
                           optimistic.id,
                         ),
                     })
-                    if (messageId === null) throw new MobilePromptAdmissionCancelledError()
+                    if (messageId === null) throw new ProtectedPromptAdmissionCancelledError()
                     return messageId
                   },
                 },
               })
             } catch (error) {
-              if (error instanceof MobilePromptAdmissionCancelledError) return 'cancelled'
+              if (error instanceof ProtectedPromptAdmissionCancelledError) return 'cancelled'
               throw error
             }
           } finally {
             mobilePromptGrants.releaseTarget(grant.id)
           }
         } else if (delegation) {
+          const promptGrantId = delegation.promptGrantId
+          const delegatedContent =
+            typeof payload.userContent === 'string' ? payload.userContent : undefined
+          const delegatedMessageId = display?.messageId
+          if (
+            promptGrantId !== undefined &&
+            delegatedContent !== undefined &&
+            delegatedMessageId !== undefined
+          ) {
+            try {
+              const dispatched = await agentDispatcher.dispatchProtectedWorktree(
+                projectId,
+                threadId,
+                async () => {
+                  if (!(await canDispatchSubthread(projectId, delegation.parentThreadId, threadId)))
+                    return null
+                  const grant = threadPromptDispatchGrants.consume(promptGrantId, {
+                    senderId,
+                    projectId,
+                    parentThreadId: delegation.parentThreadId,
+                    childThreadId: threadId,
+                    content: delegatedContent,
+                    messageId: delegatedMessageId,
+                  })
+                  if (!grant || typeof grant.payload.userContent !== 'string') return null
+                  const grantContent = grant.payload.userContent
+                  const [thread, protectedHistory] = await Promise.all([
+                    getProjectThread(projectId, threadId),
+                    loadAgentHistory(projectId, threadId),
+                  ])
+                  const optimistic =
+                    thread &&
+                    hasProtectedPromptMessageAppend(senderId, projectId, threadId, grant.messageId)
+                      ? thread.messages.find(
+                          (message) =>
+                            message.id === grant.messageId &&
+                            message.role === 'user' &&
+                            protectedPromptMessageMatches(
+                              message,
+                              { content: grantContent },
+                              grantContent,
+                            ),
+                        )
+                      : undefined
+                  if (!optimistic) return null
+                  return {
+                    projectId,
+                    threadId,
+                    payload: grant.payload,
+                    protectedHistory,
+                    protectedPlan: null,
+                    protectedHumanStart: {
+                      content: grant.payload.userContent,
+                      preserveOptimisticDisplay: true as const,
+                      acceptMessageId: async (): Promise<string> => {
+                        const messageId = await acceptExactReviewedUserMessage(
+                          projectId,
+                          threadId,
+                          {
+                            message: optimistic,
+                            requireLiveThreadIds: [delegation.parentThreadId],
+                            claim: (): boolean =>
+                              holdsSubthreadAuthorityNow(
+                                projectId,
+                                delegation.parentThreadId,
+                                threadId,
+                              ) &&
+                              consumeProtectedPromptMessageAppend(
+                                senderId,
+                                projectId,
+                                threadId,
+                                optimistic.id,
+                              ),
+                          },
+                        )
+                        if (messageId === null) throw new ProtectedPromptAdmissionCancelledError()
+                        return messageId
+                      },
+                    },
+                  }
+                },
+              )
+              if (dispatched) return
+            } catch (error) {
+              if (error instanceof ProtectedPromptAdmissionCancelledError) return 'cancelled'
+              throw error
+            }
+            threadPromptDispatchGrants.revoke(promptGrantId)
+          }
           const thread = await getProjectThread(projectId, threadId)
           const optimistic =
             thread &&
@@ -1300,35 +1400,59 @@ app
           const preserveOptimisticDisplay =
             optimistic !== undefined &&
             protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
-          await dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
-            agentDispatcher.dispatch({
-              ...request,
-              payload: { ...payload, userContent: reviewedContent },
-              protectedHistory: protectedInputs.history,
-              protectedPlan: protectedInputs.plan,
-              protectedHumanStart: {
-                content: reviewedContent,
-                ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
-                acceptMessageId: () =>
-                  acceptReviewedUserMessage(
-                    projectId,
-                    threadId,
-                    optimistic
-                      ? {
-                          messageId: optimistic.id,
-                          claim: (): boolean =>
-                            consumeProtectedPromptMessageAppend(
-                              senderId,
-                              projectId,
-                              threadId,
-                              optimistic.id,
-                            ),
-                        }
-                      : undefined,
-                  ),
-              },
-            }),
+          const dispatched = await agentDispatcher.dispatchProtectedWorktree(
+            projectId,
+            threadId,
+            async (): Promise<AgentDispatchRequest | null> => {
+              if (!(await canDispatchSubthread(projectId, delegation.parentThreadId, threadId)))
+                return null
+              const currentProtectedInputs = await freezeProtectedInputs(projectId, threadId, [])
+              return {
+                ...request,
+                payload: { ...payload, userContent: reviewedContent },
+                protectedHistory: currentProtectedInputs.history,
+                protectedPlan: currentProtectedInputs.plan,
+                protectedHumanStart: {
+                  content: reviewedContent,
+                  ...(preserveOptimisticDisplay
+                    ? { preserveOptimisticDisplay: true as const }
+                    : {}),
+                  acceptMessageId: async (): Promise<string> => {
+                    const messageId = await acceptAuthorizedReviewedUserMessage(
+                      projectId,
+                      threadId,
+                      {
+                        requireLiveThreadIds: [delegation.parentThreadId],
+                        authorize: (): boolean =>
+                          holdsSubthreadAuthorityNow(
+                            projectId,
+                            delegation.parentThreadId,
+                            threadId,
+                          ),
+                        ...(optimistic
+                          ? {
+                              optimistic: {
+                                messageId: optimistic.id,
+                                claim: (): boolean =>
+                                  consumeProtectedPromptMessageAppend(
+                                    senderId,
+                                    projectId,
+                                    threadId,
+                                    optimistic.id,
+                                  ),
+                              },
+                            }
+                          : {}),
+                      },
+                    )
+                    if (messageId === null) throw new SubthreadPromptHeldError(threadId)
+                    return messageId
+                  },
+                },
+              }
+            },
           )
+          if (!dispatched) throw new SubthreadPromptHeldError(threadId)
         } else {
           const frozenScheduled =
             payload.automationRun === true ? frozenScheduledFirstTurn(payload) : null

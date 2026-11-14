@@ -17,7 +17,7 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { frameInTranscript } from './helpers/sticky-prompt.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -52,6 +52,29 @@ function respond(
   response.end(
     `data: ${JSON.stringify({ id: 'budget-fixture', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: call ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`,
   )
+}
+
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
 }
 
 describe('productive run budget and explicit checkpoint continuation', function () {
@@ -196,7 +219,9 @@ describe('productive run budget and explicit checkpoint continuation', function 
     await parkPointer()
     await saveAppScreenshot('run-budget-checkpoint-paused.png')
     continuing = true
-    await card.$('.turn-recovery-button').click()
+    await reviewHumanPrompt(async () => {
+      await card.$('.turn-recovery-button').click()
+    }, INTERRUPTED_TURN_CONTINUATION)
     await waitForAgentIdle(30_000)
     assert.equal(continuationCalls, 1)
     assert.equal(statSync(join(root, 'phase-1.txt')).mtimeMs, checkpointTime)

@@ -278,9 +278,15 @@ export const machineAgentRunSchema: z.ZodType<MachineAgentRunRequest> =
   }))
 
 /** `agent:run`'s optional marker that the run is a parent's delegated subthread prompt. */
-export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z.strictObject({
-  parentThreadId: zThreadId,
-})
+export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z
+  .strictObject({
+    parentThreadId: zThreadId,
+    promptGrantId: z.uuid().optional(),
+  })
+  .transform(({ parentThreadId, promptGrantId }): SubthreadRunDelegation => ({
+    parentThreadId,
+    ...(promptGrantId !== undefined ? { promptGrantId } : {}),
+  }))
 
 const imageDataUrlSchema = z
   .string()
