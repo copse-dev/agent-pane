@@ -3,6 +3,7 @@ import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
+import type { GitAuthMode } from './ssh-workspace/git-ssh-env.ts'
 
 /**
  * Background refresh of a project's `origin/<default>` ref, outside the project
@@ -27,7 +28,15 @@ export type ProjectGit = (
   args: string[],
   env?: NodeJS.ProcessEnv,
   extraWritePaths?: string[],
+  stdoutMaxBytes?: number,
+  gitAuth?: GitAuthMode,
 ) => Promise<CommandResult>
+
+/** Keep every project-side step of opportunistic refresh unattended too. */
+export function noninteractiveProjectGit(projectGit: ProjectGit): ProjectGit {
+  return (cwd, args, env, extraWritePaths, stdoutMaxBytes) =>
+    projectGit(cwd, args, env, extraWritePaths, stdoutMaxBytes, 'noninteractive')
+}
 
 /**
  * Remote URLs the host-side fetch may contact: network transports only.
@@ -68,8 +77,9 @@ export async function fetchThroughScratchRepository(input: {
   refs: readonly ScratchFetchRef[]
   scratch: string
   projectGit: ProjectGit
+  gitAuth?: GitAuthMode
 }): Promise<CommandResult> {
-  const { projectRoot, url, refs, scratch, projectGit } = input
+  const { projectRoot, url, refs, scratch, projectGit, gitAuth = 'interactive' } = input
   if (refs.length === 0) return failed('No refs to fetch')
   const [commonDir, ...seeds] = await Promise.all([
     projectGit(projectRoot, ['rev-parse', '--git-common-dir']),
@@ -94,6 +104,7 @@ export async function fetchThroughScratchRepository(input: {
         // Enforce the network boundary after global URL rewrites, too. The
         // sandboxed local copy below still needs its ordinary file transport.
         gitConfig: args[0] === 'fetch' && isNetworkRemoteUrl(url) ? 'internal-network' : 'internal',
+        gitAuth,
       })
     const init = await host(['init', '--bare', '--quiet', '--template=', scratch])
     if (init.code !== 0) return init
@@ -170,6 +181,7 @@ export async function fetchFromOriginOnHost(
   refs: readonly ScratchFetchRef[],
   projectGit: ProjectGit,
   scratchSuffix = '',
+  gitAuth: GitAuthMode = 'interactive',
 ): Promise<CommandResult | null> {
   const url = await networkOriginUrl(projectRoot, projectGit)
   if (url === null) return null
@@ -178,7 +190,7 @@ export async function fetchFromOriginOnHost(
   // The sandbox rejects redirected grants, so name the scratch by its real path.
   const id = createHash('sha256').update(projectRoot).digest('hex').slice(0, 16)
   const scratch = join(await realpath(parent), `${id}${scratchSuffix}.git`)
-  return fetchThroughScratchRepository({ projectRoot, url, refs, scratch, projectGit })
+  return fetchThroughScratchRepository({ projectRoot, url, refs, scratch, projectGit, gitAuth })
 }
 
 /**
@@ -190,5 +202,13 @@ export function fetchDefaultBranchFromHost(
   branch: string,
   projectGit: ProjectGit,
 ): Promise<CommandResult | null> {
-  return fetchFromOriginOnHost(projectRoot, [originBranchRef(branch)], projectGit)
+  // Only opportunistic refresh is unattended. Explicit git_fetch shares the
+  // scratch helper but retains its ordinary authentication bridge.
+  return fetchFromOriginOnHost(
+    projectRoot,
+    [originBranchRef(branch)],
+    noninteractiveProjectGit(projectGit),
+    '',
+    'noninteractive',
+  )
 }
