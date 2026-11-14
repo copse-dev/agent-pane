@@ -1846,6 +1846,7 @@ jobs:
       - name: Record suite start
         run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-suite-started"
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
+        id: native_attempts
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
@@ -2062,7 +2063,9 @@ jobs:
             local logs_dir="e2e-failure-artifacts/wdio-logs"
             [ -d "$logs_dir" ] || return 0
             echo "::group::wdio + chromedriver logs (attempt $1)"
-            for log_file in "$logs_dir"/*.log; do
+            # Only the current attempt plus legacy flat logs; earlier raw
+            # traces remain uploaded without crowding this attempt's digest.
+            for log_file in "$logs_dir"/attempt-"$1"-*/*.log "$logs_dir"/*.log; do
               [ -f "$log_file" ] || continue
               echo "### $log_file"
               # Capture first: `grep … | tail` exits with *tail's* status, which
@@ -2199,6 +2202,7 @@ jobs:
           # per-attempt budgets before reporting. Halves the cost of a genuine red shard.
           for attempt in 1 2; do
             cleanup_e2e_processes
+            diagnostics_dir="$(node scripts/e2e-attempt-artifacts.mts start "$attempt")"
             run_log="e2e-failure-artifacts/attempt-${attempt}.log"
             mkdir -p e2e-failure-artifacts
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
@@ -2207,14 +2211,19 @@ jobs:
             # Full shards can exceed twelve minutes as the native suite grows. Keep
             # a bounded fourteen-minute attempt watchdog; the enclosing step allows
             # both attempts plus cleanup without changing individual test caps.
-            COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT="$attempt" SHARD_INDEX="${{ matrix.shard }}" \
+            COPSE_E2E_DIAGNOSTICS_DIR="$diagnostics_dir" COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT="$attempt" SHARD_INDEX="${{ matrix.shard }}" \
             ${TIMEOUT:+$TIMEOUT -k 15 840} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
+            # Capture before the next cleanup, even if timeout killed run-e2e
+            # before it could observe its launch command's result. No driver
+            # exit cause is inferred from this outer shell status.
+            node scripts/e2e-attempt-artifacts.mts finish "$diagnostics_dir" "$attempt_status" || true
             echo "::endgroup::"
             if [ "$attempt_status" -eq 0 ]; then
               exit 0
             fi
+            echo 'had_failed_attempt=true' >> "$GITHUB_OUTPUT" || true
             # Order matters as much as volume: the job-log API returns the tail,
             # so the biggest output goes first and the smallest, most useful
             # output goes last. Bulk dumps, then diagnostics, then the digest.
@@ -2336,12 +2345,13 @@ jobs:
           path: e2e-failure-artifacts/responsiveness/*.json
           if-no-files-found: ignore
           retention-days: 3
-      # On failure, surface the screenshot + page source captured in afterTest,
-      # plus the per-attempt cgroup/process snapshot above. The latter is still
+      # On any failed attempt (including one recovered by the retry), surface
+      # screenshots, original errors, sealed raw logs and lifecycle facts.
+      # The per-attempt cgroup/process snapshot above is still
       # available when ChromeDriver is too dead to capture browser artifacts.
       # Skipped only when a hard runner OOM kills the whole job before this step.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() || steps.native_attempts.outputs.had_failed_attempt == 'true'
         continue-on-error: true
         with:
           name: e2e-failure-artifacts-shard-${{ matrix.shard }}
