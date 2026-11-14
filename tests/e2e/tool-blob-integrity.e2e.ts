@@ -6,6 +6,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { TOOL_RESULT_UNAVAILABLE } from '../../src/shared/threads/fold.ts'
+import { parseSpine } from '../../src/shared/threads/spine-schema.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-tool-blob-integrity-project'
@@ -37,12 +38,14 @@ function damageLikeLegacyIdReuse(): void {
   const dir = join(e2eWorkspaceDir(), PROJECT_ID, THREAD_ID)
   const events = join(dir, 'events.jsonl')
   const legacyRef = `blobs/${REUSED_TOOL_CALL_ID}.result.txt`
-  writeFileSync(
-    events,
-    readFileSync(events, 'utf8')
-      .replace(`blobs/${FIRST_MESSAGE_ID}.tool-0.result.txt`, legacyRef)
-      .replace(`blobs/${SECOND_MESSAGE_ID}.tool-0.result.txt`, legacyRef),
-  )
+  let raw = readFileSync(events, 'utf8')
+  const messages = parseSpine(raw)
+  for (const id of [FIRST_MESSAGE_ID, SECOND_MESSAGE_ID]) {
+    const ref = messages.find((message) => message.id === id)?.toolCalls[0]?.result?.ref
+    assert.ok(ref)
+    raw = raw.replaceAll(JSON.stringify(ref), JSON.stringify(legacyRef))
+  }
+  writeFileSync(events, raw)
   removeE2eTree(join(dir, 'blobs'))
   mkdirSync(join(dir, 'blobs'))
   writeFileSync(join(dir, legacyRef), 'export const second = 2\n')

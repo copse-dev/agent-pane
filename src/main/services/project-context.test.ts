@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { configureThreadStore } from '@copse/thread-store/environment.ts'
+import { parseSpine } from '@copse/thread-store/spine-schema.ts'
 import {
   createThread,
   saveProjectThread,
@@ -233,16 +234,22 @@ describe('bounded project context corpus', () => {
     const dir = join(scope.threadRoot, 'p/own')
     const spinePath = join(dir, 'events.jsonl')
     const spine = readFileSync(spinePath, 'utf8')
-    const original = 'blobs/u.tool-0.result.txt'
+    const original = parseSpine(spine)[0]?.toolCalls[0]?.result?.ref
+    assert.ok(original)
+    const writeResultRef = (ref: string): void => {
+      const changed = spine.replace(JSON.stringify(original), JSON.stringify(ref))
+      assert.equal(parseSpine(changed)[0]?.toolCalls[0]?.result?.ref, ref)
+      writeFileSync(spinePath, changed)
+    }
     for (const ref of [
-      original,
+      'blobs/u.tool-0.result.txt',
       `blobs/u.tool-0/${digest}.result.txt`,
       'blobs/functions.read:0.result.txt',
       'blobs/~functions~2Eread~3A0.result.txt',
     ]) {
       mkdirSync(join(dir, 'blobs/u.tool-0'), { recursive: true })
       writeFileSync(join(dir, ref), body)
-      writeFileSync(spinePath, spine.replace(original, ref))
+      writeResultRef(ref)
       const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
       assert.equal(found.results.length, 1, ref)
       assert.equal(found.results[0]?.author, 'tool')
@@ -253,7 +260,7 @@ describe('bounded project context corpus', () => {
       `blobs/u.tool-0/${'0'.repeat(64)}.result.txt`,
       'blobs/../agent-history.json',
     ]) {
-      writeFileSync(spinePath, spine.replace(original, ref))
+      writeResultRef(ref)
       const found = results(await reader().search({ query: 'needle', kinds: ['evidence'] }))
       assert.equal(found.results.length, 0, ref)
       assert.ok(found.omissions.includes('unsupported-source'), ref)
