@@ -53,6 +53,49 @@ describe('resolveSshSecret', () => {
     assert.equal(calls(), 1)
   })
 
+  it('cache-only misses and opt-outs never prompt', async () => {
+    const { ask, calls } = asker(['once'], false)
+    assert.equal(
+      await resolveSshSecret('background-miss', PROMPT, ask, undefined, 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 0)
+    assert.equal(await resolveSshSecret('foreground', PROMPT, ask), 'once')
+    assert.equal(
+      await resolveSshSecret('background-after-opt-out', PROMPT, ask, undefined, 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 1)
+  })
+
+  it('cache-only work does not join or invalidate a pending interactive prompt', async () => {
+    let complete: (answer: { value: string; remember: boolean }) => void = () => {}
+    const pendingAnswer = resolveSshSecret(
+      'foreground-pending',
+      PROMPT,
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    const mustNotAsk = (): Promise<{ value: string; remember: boolean }> => {
+      assert.fail('background must never open UI')
+    }
+    try {
+      assert.equal(
+        await resolveSshSecret('background-pending', PROMPT, mustNotAsk, undefined, 'cache-only'),
+        '',
+      )
+    } finally {
+      complete({ value: 'remembered-after-dialog', remember: true })
+    }
+    assert.equal(await pendingAnswer, 'remembered-after-dialog')
+    assert.equal(
+      await resolveSshSecret('background-pending', PROMPT, mustNotAsk, undefined, 'cache-only'),
+      'remembered-after-dialog',
+    )
+  })
+
   it('raises a single dialog for concurrent asks racing the control master', async () => {
     let release = (): void => {}
     let calls = 0
@@ -157,6 +200,16 @@ describe('resolveSshSecret', () => {
     clearSshCredentialCache()
     assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask, hostId), 'hunter2')
     assert.equal(calls(), 1)
+    clearSshCredentialCache()
+    assert.equal(
+      await resolveSshSecret('background-stored', PROMPT, ask, hostId, 'cache-only'),
+      'hunter2',
+    )
+    assert.equal(
+      await resolveSshSecret('background-other-host', PROMPT, ask, 'other-host', 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 1, 'cache-only persisted reads retain host scope and never prompt')
   })
 
   it('deletes rejected persisted authentication before asking again', async () => {

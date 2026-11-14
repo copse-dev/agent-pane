@@ -219,15 +219,21 @@ background fetches on every platform, including the contained fallback; it canno
 contact origin or request authentication. Failures are logged once per distinct
 error and again on recovery.
 
-Opportunistic startup, hourly and allocation refreshes never lease Copse's
-authentication UI. Their per-command policy disables Git askpass (including the
-configured `core.askPass` fallback), terminal prompts and interactive SSH with
-`BatchMode=yes`, while retaining the configured host-key policy and available
-agent/credential-helper credentials. Git Credential Manager receives its
+Opportunistic startup, hourly and allocation refreshes use a cache-only Copse
+askpass lease. It reads already remembered answers with the existing host scope
+and rejected-secret invalidation, but never opens a credential or trust dialog or
+waits for one already pending. Terminal prompts and the configured `core.askPass`
+fallback are disabled. SSH is forced through the trusted cache-only helper;
+without that bridge it uses `BatchMode=yes` and disables all askpass fallbacks.
+The configured host-key policy, SSH agent and credential helpers remain available.
+Git Credential Manager receives its
 [documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).
-Arbitrary third-party helpers can implement their own interaction; this policy
-does not sandbox those trusted user-configured helpers or promise to control
-their private UI. Missing credentials fail the refresh and retain the cached tip.
+Trusted third-party helpers, SSH `ProxyCommand` programs, agent confirmations,
+security keys and OS keychain access can implement their own interaction; this
+policy does not sandbox them or promise to control their UI or latency. Missing
+credentials fail the refresh and retain the cached tip. Background failure
+warnings redact scheme URL userinfo, which can itself contain a token, before
+deduplication and truncation.
 Explicit foreground `git_fetch` and push operations retain normal authentication.
 
 Internal Git execution explicitly unsets inherited Git configuration, executable and

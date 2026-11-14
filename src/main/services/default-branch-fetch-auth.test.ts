@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { quote } from 'shell-quote'
 import { build } from 'esbuild'
 import { fetchDefaultBranchFromHost } from './default-branch-fetch.ts'
@@ -20,6 +21,9 @@ import {
   setSshAskpassUserDataDirForTests,
 } from './ssh-workspace/askpass.ts'
 import { setSshPromptHandler } from './ssh-workspace/ssh-prompt.ts'
+import { leaseGitSshEnv } from './ssh-workspace/git-ssh-env.ts'
+import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
+import { isProjectSandboxActive, isProjectSandboxPlatform } from '../project-sandbox/state.ts'
 
 async function withAuthFixture(
   check: (fixture: {
@@ -315,4 +319,166 @@ describe('default-branch HTTP authentication interaction', () => {
       assert.deepEqual(await readdir(join(root, 'profile', 'cache', 'default-branch-fetch')), [])
     })
   })
+
+  it('reuses answers remembered by foreground Git for a later background refresh without new UI', async () => {
+    await withAuthFixture(async ({ root, project, prompts, git, serveRepository }) => {
+      const remote = join(root, 'remembered-remote.git')
+      const writer = join(root, 'remembered-writer')
+      git(root, ['clone', '-q', '--bare', project, remote])
+      git(root, ['clone', '-q', remote, writer])
+      git(remote, ['update-server-info'])
+      serveRepository(remote)
+      setSshPromptHandler(async (request) => {
+        prompts.push(request.prompt)
+        return {
+          value: request.prompt.startsWith('Username') ? 'fixture' : 'owned-only',
+          remember: true,
+        }
+      })
+      const foreground = await fetchOriginRefs(project, ['main'], runWorktreeGit)
+      assert.doesNotMatch(foreground, /failed|refused/)
+      assert.equal(prompts.length, 2, 'real foreground Git must request both owned credentials')
+      await writeFile(join(writer, 'upstream.txt'), 'New tip after remembering credentials\n')
+      git(writer, ['add', 'upstream.txt'])
+      git(writer, [
+        '-c',
+        'user.name=Copse Test',
+        '-c',
+        'user.email=copse@example.invalid',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-qm',
+        'Advance remembered upstream',
+      ])
+      git(writer, ['push', '-q', 'origin', 'main'])
+      git(remote, ['update-server-info'])
+      const head = git(project, ['rev-parse', 'HEAD'])
+      const index = await readFile(join(project, '.git', 'index'))
+      setSshPromptHandler(async (request) => {
+        prompts.push(request.prompt)
+        return { value: '' }
+      })
+      const result = await fetchDefaultBranchFromHost(project, 'main', runWorktreeGit)
+      assert.ok(result)
+      assert.equal(result.code, 0, result.stderr)
+      assert.equal(prompts.length, 2, 'background must reuse remembered answers without UI')
+      assert.equal(
+        git(project, ['rev-parse', 'refs/remotes/origin/main']),
+        git(remote, ['rev-parse', 'main']),
+      )
+      assert.equal(git(project, ['rev-parse', 'HEAD']), head)
+      assert.deepEqual(await readFile(join(project, '.git', 'index')), index)
+      assert.equal(await readFile(join(project, 'README.md'), 'utf8'), 'Uncommitted local work\n')
+      assert.equal(existsSync(join(root, 'fallback-called')), false)
+    })
+  })
+
+  it('redacts URL userinfo from unattended authentication warnings while retaining failure context', async () => {
+    await withAuthFixture(async ({ project, prompts, git }) => {
+      const origin = new URL(git(project, ['config', '--get', 'remote.origin.url']))
+      const token = 'ghp_OWNED_PROBE_SECRET_ONLY'
+      origin.username = token
+      git(project, ['remote', 'set-url', 'origin', origin.toString()])
+      const warnings = mock.method(console, 'warn', () => undefined)
+      try {
+        await fetchDefaultBranch(project, 'main')
+        assert.equal(warnings.mock.callCount(), 1)
+        const warning = String(warnings.mock.calls[0]?.arguments[0])
+        assert.match(warning, /fetching origin\/main failed.*exit \d+.*127\.0\.0\.1/)
+        assert.equal(
+          warning.includes(token),
+          false,
+          'background warning must not expose URL username token',
+        )
+        assert.deepEqual(prompts, [])
+        // Different and longer userinfo must redact before truncation and
+        // failure deduplication, retaining the same useful host/error detail.
+        origin.username = 'ghp_DIFFERENT_OWNED_SECRET'.repeat(30)
+        git(project, ['remote', 'set-url', 'origin', origin.toString()])
+        await fetchDefaultBranch(project, 'main')
+        assert.equal(
+          warnings.mock.callCount(),
+          1,
+          'redacted failures stay deduplicated before truncation',
+        )
+      } finally {
+        warnings.mock.restore()
+      }
+    })
+  })
+
+  it(
+    'real OpenSSH key reading reuses a remembered passphrase through the cache-only helper',
+    { skip: process.platform === 'win32' },
+    async () => {
+      await withAuthFixture(async ({ root, prompts }) => {
+        const key = join(root, 'owned-ed25519')
+        execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', 'owned-passphrase', '-f', key])
+        setSshPromptHandler(async (request) => {
+          prompts.push(request.prompt)
+          return { value: 'owned-passphrase', remember: true }
+        })
+        const foreground = leaseGitSshEnv(process.env)
+        const background = leaseGitSshEnv(process.env, 'noninteractive')
+        try {
+          const first = await promisify(execFile)('ssh-keygen', ['-y', '-f', key], {
+            env: foreground.env,
+            encoding: 'utf8',
+            timeout: 10_000,
+          })
+          assert.match(first.stdout, /^ssh-ed25519 /)
+          assert.equal(prompts.length, 1, 'real OpenSSH must have asked through Copse once')
+          const second = await promisify(execFile)('ssh-keygen', ['-y', '-f', key], {
+            env: background.env,
+            encoding: 'utf8',
+            timeout: 10_000,
+          })
+          assert.equal(second.stdout, first.stdout)
+          assert.equal(prompts.length, 1, 'cache-only helper must serve the passphrase without UI')
+        } finally {
+          foreground.release()
+          background.release()
+        }
+      })
+    },
+  )
+
+  it(
+    'also redacts URL userinfo when the command boundary throws',
+    { skip: !isProjectSandboxPlatform() },
+    async () => {
+      await withAuthFixture(async ({ project, prompts }) => {
+        const token = 'ghp_OWNED_EXCEPTION_ONLY'
+        const wasActive = isProjectSandboxActive()
+        setProjectSandboxEnabled(true)
+        const boundary = mock.method(SandboxManager, 'isSandboxingEnabled', () => {
+          throw new Error(
+            `Owned command failure for https://${token}:owned-password@fixture.invalid/repo.git`,
+          )
+        })
+        const warnings = mock.method(console, 'warn', () => undefined)
+        try {
+          await fetchDefaultBranch(project, 'main')
+          assert.ok(
+            boundary.mock.callCount() > 0,
+            'exercise the existing command boundary, not a test-only product flag',
+          )
+          assert.equal(warnings.mock.callCount(), 1)
+          const warning = String(warnings.mock.calls[0]?.arguments[0])
+          assert.match(
+            warning,
+            /Owned command failure for https:\/\/\*\*\*@fixture\.invalid\/repo\.git/,
+          )
+          assert.equal(warning.includes(token), false)
+          assert.equal(warning.includes('owned-password'), false)
+          assert.deepEqual(prompts, [])
+        } finally {
+          boundary.mock.restore()
+          setProjectSandboxEnabled(wasActive)
+          warnings.mock.restore()
+        }
+      })
+    },
+  )
 })

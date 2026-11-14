@@ -793,9 +793,11 @@ message pointing at `run_shell git fetch`.
 an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
 Block to require approval or disable it).
 
-Unattended default-branch refresh suppresses Copse authentication prompts and
-interactive SSH; missing credentials leave the cached tip unchanged and report
-the failed refresh. Existing configured credentials can still refresh it.
+Unattended default-branch refresh uses a cache-only askpass lease: it reuses answers
+the person remembered in Copse, but never opens or waits for an authentication or
+host-trust dialog. Missing credentials leave the cached tip unchanged and report
+the failed refresh, with URL userinfo removed from the background warning.
+Existing configured helpers and SSH agents can still refresh it.
 Explicit `git_fetch` and foreground push keep their normal authentication path;
 the background-only interaction policy adds no network or shell approval grant.
 

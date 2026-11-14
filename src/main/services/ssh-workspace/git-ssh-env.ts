@@ -35,24 +35,35 @@ export function leaseGitSshEnv(
 ): GitSshEnvLease {
   const strictHostKeys = getSetting<SshStrictHostKeys>('sshStrictHostKeys', 'accept-new')
   if (authMode === 'noninteractive') {
-    // Do not lease a UI-capable nonce at all. Explicit unsets survive the
-    // spawn environment overlay; the runner also disables core.askPass.
-    return {
-      env: {
+    // Replace ambient askpass with a nonce that can only read remembered
+    // answers, never ask UI or join a pending foreground prompt. When the
+    // bridge is unavailable, explicit unsets survive spawn overlays.
+    const askpass = leaseSshAskpassEnv(
+      {
         ...baseEnv,
         GIT_ASKPASS: undefined,
         SSH_ASKPASS: undefined,
         SSH_ASKPASS_REQUIRE: 'never',
         [COPSE_SSH_ASKPASS_SOCKET]: undefined,
         [COPSE_SSH_ASKPASS_NONCE]: undefined,
+      },
+      undefined,
+      'cache-only',
+    )
+    const hasAskpass = typeof askpass.env['SSH_ASKPASS'] === 'string'
+    return {
+      env: {
+        ...askpass.env,
         GIT_OPTIONAL_LOCKS: '0',
         GIT_PAGER: 'cat',
         GIT_TERMINAL_PROMPT: '0',
-        GIT_SSH_COMMAND: `${buildGitSshCommand({}, strictHostKeys)} -oBatchMode=yes`,
+        // BatchMode would also disable the trusted cache-only SSH helper.
+        // Force that helper instead of a terminal; a cache miss exits empty.
+        GIT_SSH_COMMAND: `${buildGitSshCommand({}, strictHostKeys)} -oBatchMode=${hasAskpass ? 'no' : 'yes'}`,
         // GCM's documented unattended mode still permits cached credentials.
         GCM_INTERACTIVE: '0',
       },
-      release: (): void => {},
+      release: askpass.release,
     }
   }
   const askpass = leaseSshAskpassEnv(baseEnv)
