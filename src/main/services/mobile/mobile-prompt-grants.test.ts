@@ -6,6 +6,7 @@ function seed(grants: MobilePromptGrants, stillAuthorized: () => boolean = () =>
   grants.mint(
     {
       id: 'grant',
+      messageId: 'phone-message',
       senderId: 7,
       projectId: 'project',
       threadId: 'thread',
@@ -26,6 +27,7 @@ test('mobile prompt grants bind sender, target and exact content', () => {
     { projectId: 'other' },
     { threadId: 'other' },
     { content: 'forged renderer prompt' },
+    { messageId: 'forged-message' },
   ]) {
     const grants = new MobilePromptGrants()
     seed(grants)
@@ -35,6 +37,7 @@ test('mobile prompt grants bind sender, target and exact content', () => {
         projectId: 'project',
         threadId: 'thread',
         content: 'Reviewed on the phone',
+        messageId: 'phone-message',
         ...change,
       }),
       null,
@@ -50,6 +53,7 @@ test('mobile prompt grants are consumed before downstream work and cannot replay
     projectId: 'project',
     threadId: 'thread',
     content: 'Reviewed on the phone',
+    messageId: 'phone-message',
   }
   const first = grants.consume('grant', expected)
   assert.ok(first)
@@ -63,6 +67,7 @@ test('expired and revoked mobile prompt grants authorize nothing', () => {
   expired.mint(
     {
       id: 'expired',
+      messageId: 'expired-message',
       senderId: 1,
       projectId: 'p',
       threadId: 't',
@@ -80,6 +85,7 @@ test('expired and revoked mobile prompt grants authorize nothing', () => {
       projectId: 'p',
       threadId: 't',
       content: 'old',
+      messageId: 'expired-message',
     }),
     null,
   )
@@ -92,6 +98,7 @@ test('expired and revoked mobile prompt grants authorize nothing', () => {
       projectId: 'project',
       threadId: 'thread',
       content: 'Reviewed on the phone',
+      messageId: 'phone-message',
     }),
     null,
   )
@@ -103,6 +110,7 @@ test('closing one renderer revokes only grants issued to that sender', () => {
   grants.mint(
     {
       id: 'other',
+      messageId: 'other-message',
       senderId: 8,
       projectId: 'project',
       threadId: 'thread',
@@ -121,6 +129,7 @@ test('closing one renderer revokes only grants issued to that sender', () => {
       projectId: 'project',
       threadId: 'thread',
       content: 'Reviewed on the phone',
+      messageId: 'phone-message',
     }),
     null,
   )
@@ -130,6 +139,7 @@ test('closing one renderer revokes only grants issued to that sender', () => {
       projectId: 'project',
       threadId: 'thread',
       content: 'Other window',
+      messageId: 'other-message',
     }),
   )
 })
@@ -144,6 +154,7 @@ test('device revocation terminally invalidates an unconsumed grant', () => {
     projectId: 'project',
     threadId: 'thread',
     content: 'Reviewed on the phone',
+    messageId: 'phone-message',
   }
   assert.equal(grants.consume('grant', expected), null)
   authorized = true
@@ -156,6 +167,7 @@ test('mint freezes provider history before renderer delivery', () => {
   grants.mint(
     {
       id: 'frozen',
+      messageId: 'frozen-message',
       senderId: 7,
       projectId: 'project',
       threadId: 'thread',
@@ -176,6 +188,7 @@ test('mint freezes provider history before renderer delivery', () => {
     projectId: 'project',
     threadId: 'thread',
     content: 'Phone prompt',
+    messageId: 'frozen-message',
   })
   assert.deepEqual(grant?.history, [{ role: 'assistant', content: 'Trusted history' }])
 })
@@ -216,6 +229,7 @@ test('a new phone target stays reserved after one-use consumption until dispatch
   grants.mint(
     {
       id: 'new-thread',
+      messageId: 'new-thread-message',
       senderId: 7,
       projectId: 'project',
       threadId: 'fresh',
@@ -234,6 +248,7 @@ test('a new phone target stays reserved after one-use consumption until dispatch
       projectId: 'project',
       threadId: 'fresh',
       content: 'Phone prompt',
+      messageId: 'new-thread-message',
     }),
   )
   assert.equal(grants.isTargetReserved('project', 'fresh'), true)
@@ -248,6 +263,7 @@ test('revocation releases an unconsumed new phone target reservation', () => {
   grants.mint(
     {
       id: 'new-thread',
+      messageId: 'new-thread-message',
       senderId: 7,
       projectId: 'project',
       threadId: 'fresh',
@@ -261,4 +277,32 @@ test('revocation releases an unconsumed new phone target reservation', () => {
   )
   grants.revoke('new-thread')
   assert.equal(grants.isTargetReserved('project', 'fresh'), false)
+})
+
+test('deleting a queued phone message revokes only its exact unconsumed grant', () => {
+  const grants = new MobilePromptGrants()
+  seed(grants)
+  grants.revokeMessage('project', 'thread', 'other-message')
+  assert.ok(
+    grants.consume('grant', {
+      senderId: 7,
+      projectId: 'project',
+      threadId: 'thread',
+      content: 'Reviewed on the phone',
+      messageId: 'phone-message',
+    }),
+  )
+
+  seed(grants)
+  grants.revokeMessage('project', 'thread', 'phone-message')
+  assert.equal(
+    grants.consume('grant', {
+      senderId: 7,
+      projectId: 'project',
+      threadId: 'thread',
+      content: 'Reviewed on the phone',
+      messageId: 'phone-message',
+    }),
+    null,
+  )
 })

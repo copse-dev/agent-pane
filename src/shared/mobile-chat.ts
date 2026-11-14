@@ -1,6 +1,8 @@
 /** Authenticated human submission, delivered only to the primary desktop renderer. */
 export interface MobileChatCommand {
   id: string
+  /** Main-minted identity for the exact protected transcript bubble. */
+  messageId: string
   projectId: string
   threadId: string
   /** Main reserved this exact target because the phone requested a new thread. */

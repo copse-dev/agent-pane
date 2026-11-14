@@ -248,6 +248,7 @@ export function registerThreadHandlers(
       )
       return deleteQueuedMessage(pid, tid, mid, (): void => {
         revokeProtectedPromptMessageAppends(pid, tid, mid)
+        mobilePromptGrants.revokeMessage(pid, tid, mid)
       })
     },
   )

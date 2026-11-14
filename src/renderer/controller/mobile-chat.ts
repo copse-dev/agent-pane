@@ -103,6 +103,8 @@ export async function acceptMobileChat(
       'user',
       text,
       command.image ? [command.image] : undefined,
+      undefined,
+      { id: command.messageId },
     )
     const queued = {
       messageId,

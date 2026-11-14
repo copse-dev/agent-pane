@@ -205,6 +205,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
   it('starts once, queues a follow-up, answers the desktop prompt, and rejects stale actions', async () => {
     const first = 'Start this chat from my phone and ask which tests to run.'
     const followup = 'Report the final result to my phone.'
+    const deletedFollowup = 'This deleted phone follow-up must never reach inference.'
     const scenario = await installMockScenario(
       {
         title: 'Phone runtime control',
@@ -276,6 +277,69 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     const question = waiting.decisions?.find((decision) => decision.kind === 'question')
     assert.ok(question)
     assert.ok(waiting.runId)
+    await browser.execute((text) => {
+      const stop = window.api.mobile.onChat((command) => {
+        if (command.text !== text) return
+        sessionStorage.setItem('e2e-deleted-mobile-grant', command.id)
+        sessionStorage.setItem('e2e-deleted-mobile-message', command.messageId)
+        stop()
+      })
+    }, deletedFollowup)
+    const toDelete = request(
+      '/api/action',
+      action(sessionId, { action: 'message', threadId, text: deletedFollowup }),
+    )
+    assert.equal(toDelete.queued, true, toDelete.error ?? 'Mobile message queue failed')
+    await expect($('.footer-queue')).toHaveText('1 queued')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          async ({ pid, tid, text }) => {
+            const thread = (await window.api.threads.loadProject(pid)).find(
+              (candidate) => candidate.id === tid,
+            )
+            return thread?.pendingMessages?.some((item) => item.payload.content === text) ?? false
+          },
+          { pid: projectId, tid: threadId, text: deletedFollowup },
+        ),
+      { timeout: 10_000 },
+    )
+    const deletedAdmission = await browser.execute(
+      async ({ pid, tid, text }) => {
+        const grant = sessionStorage.getItem('e2e-deleted-mobile-grant')
+        const messageId = sessionStorage.getItem('e2e-deleted-mobile-message')
+        if (!grant || !messageId) throw new Error('Phone command identities were not captured')
+        const message = (await window.api.threads.loadMessages(pid, tid)).find(
+          (candidate) => candidate.id === messageId && candidate.role === 'user',
+        )
+        if (!message || message.content !== text)
+          throw new Error('Queued phone display was not durably persisted')
+        return {
+          grant,
+          messageId,
+          display: {
+            messageId,
+            snapshot: {
+              content: message.content,
+              ...(message.attachments !== undefined
+                ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+                : {}),
+            },
+          },
+        }
+      },
+      { pid: projectId, tid: threadId, text: deletedFollowup },
+    )
+    await browser.execute(() => {
+      const button = document.querySelector<HTMLButtonElement>('.queued-delete')
+      if (!button) throw new Error('Queued phone message has no delete control')
+      button.click()
+    })
+    await browser.waitUntil(
+      async () => (await $('.conversation-queued').getProperty('hidden')) === true,
+      { timeout: 5_000 },
+    )
+
     const queued = request(
       '/api/action',
       action(sessionId, { action: 'message', threadId, text: followup }),
@@ -322,6 +386,37 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     assert.match(queuedHistory, /Focused tests/)
     assert.match(queuedHistory, /The focused tests passed\./)
     assert.match(queuedHistory, /Your phone started this chat and queued this follow-up\./)
+    // Replay the original otherwise-valid display only after every legitimate
+    // turn is idle. This isolates durable retirement/revocation from the
+    // dispatcher's busy guard and from display-schema rejection.
+    const replay = await browser.execute(
+      async ({ pid, tid, text, admission }) => {
+        const result = await window.api.agent.run(
+          pid,
+          tid,
+          JSON.stringify({ content: text }),
+          undefined,
+          admission.display,
+          admission.grant,
+        )
+        const messages = await window.api.threads.loadMessages(pid, tid)
+        const thread = (await window.api.threads.loadProject(pid)).find(
+          (candidate) => candidate.id === tid,
+        )
+        return {
+          result,
+          hasMessage: messages.some(
+            (message) => message.id === admission.messageId || message.content === text,
+          ),
+          hasPending:
+            thread?.pendingMessages?.some(
+              (item) => item.messageId === admission.messageId || item.payload.content === text,
+            ) ?? false,
+        }
+      },
+      { pid: projectId, tid: threadId, text: deletedFollowup, admission: deletedAdmission },
+    )
+    assert.deepEqual(replay, { result: 'cancelled', hasMessage: false, hasPending: false })
 
     // Simulate renderer XSS racing a new phone chat: intercept Main's reserved
     // UUID and try the ordinary, canonical fork IPC before the phone grant is
