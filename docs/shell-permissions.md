@@ -361,7 +361,12 @@ Options are read on one line only, so a shell `exec` on the following line stays
 execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
-thread worktrees. Command execution still uses the thread's execution root and passes
+thread worktrees. The first prompt offers **Allow for this project** and **Allow once**
+as separate actions. Only the project action saves consent; once and Reject save
+nothing. The prompt names the project, explains future reuse, and points to
+Context → Permissions → Project → Local port binding for revocation. A mixed
+batch falls back to ordinary approval, with a remember checkbox only when every
+request shares the exact project grant. Command execution still uses the thread's execution root and passes
 the shell gate. Other projects require their own consent, and disabling the Background
 tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
 are not broadened automatically; the next project-level consent can be remembered.
