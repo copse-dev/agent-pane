@@ -1193,58 +1193,66 @@ app
           // ordinary renderer path. Holding the optimistic message lets the
           // user explicitly resend it through protected desktop review.
           if (!grant) return 'cancelled'
-          const [thread, currentHistory] = await Promise.all([
-            getProjectThread(projectId, threadId),
-            loadAgentHistory(projectId, threadId),
-          ])
-          const protectedHistory = extendMobilePromptHistory(grant.history, currentHistory)
-          if (!protectedHistory) return 'cancelled'
-          const optimistic =
-            thread &&
-            display?.messageId &&
-            displaySnapshot &&
-            hasProtectedPromptMessageAppend(senderId, projectId, threadId, display.messageId)
-              ? thread.messages.find(
-                  (message) =>
-                    message.id === display.messageId &&
-                    message.role === 'user' &&
-                    protectedPromptMessageMatches(message, displaySnapshot, grant.content),
-                )
-              : undefined
-          await agentDispatcher.dispatch({
-            projectId,
-            threadId,
-            payload: {
-              userContent: grant.content,
-              invokedSkills: [],
-              priorTodos: [],
-              ...(grant.model !== undefined ? { model: grant.model } : {}),
-              turnTreeId: grant.id,
-              continuationBudgetUsed: 0,
-            },
-            protectedHistory,
-            protectedPlan: null,
-            protectedHumanStart: {
-              content: grant.content,
-              acceptMessageId: () =>
-                acceptReviewedUserMessage(
-                  projectId,
-                  threadId,
-                  optimistic
-                    ? {
-                        messageId: optimistic.id,
-                        claim: (): boolean =>
-                          consumeProtectedPromptMessageAppend(
-                            senderId,
-                            projectId,
-                            threadId,
-                            optimistic.id,
-                          ),
-                      }
-                    : undefined,
-                ),
-            },
-          })
+          try {
+            const [thread, currentHistory] = await Promise.all([
+              getProjectThread(projectId, threadId),
+              loadAgentHistory(projectId, threadId),
+            ])
+            const protectedHistory = extendMobilePromptHistory(
+              grant.history,
+              currentHistory,
+              grant.createsThread,
+            )
+            if (!protectedHistory) return 'cancelled'
+            const optimistic =
+              thread &&
+              display?.messageId &&
+              displaySnapshot &&
+              hasProtectedPromptMessageAppend(senderId, projectId, threadId, display.messageId)
+                ? thread.messages.find(
+                    (message) =>
+                      message.id === display.messageId &&
+                      message.role === 'user' &&
+                      protectedPromptMessageMatches(message, displaySnapshot, grant.content),
+                  )
+                : undefined
+            await agentDispatcher.dispatch({
+              projectId,
+              threadId,
+              payload: {
+                userContent: grant.content,
+                invokedSkills: [],
+                priorTodos: [],
+                ...(grant.model !== undefined ? { model: grant.model } : {}),
+                turnTreeId: grant.id,
+                continuationBudgetUsed: 0,
+              },
+              protectedHistory,
+              protectedPlan: grant.plan,
+              protectedHumanStart: {
+                content: grant.content,
+                acceptMessageId: () =>
+                  acceptReviewedUserMessage(
+                    projectId,
+                    threadId,
+                    optimistic
+                      ? {
+                          messageId: optimistic.id,
+                          claim: (): boolean =>
+                            consumeProtectedPromptMessageAppend(
+                              senderId,
+                              projectId,
+                              threadId,
+                              optimistic.id,
+                            ),
+                        }
+                      : undefined,
+                  ),
+              },
+            })
+          } finally {
+            mobilePromptGrants.releaseTarget(grant.id)
+          }
         } else if (delegation) {
           const thread = await getProjectThread(projectId, threadId)
           const optimistic =

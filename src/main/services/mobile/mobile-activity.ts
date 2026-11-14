@@ -4,7 +4,7 @@ import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
 import { storageGet } from '../storage/storage.ts'
-import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
+import { getLatestThreadPlan, loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 import { getProjectRoot } from '../workspace.ts'
@@ -12,6 +12,7 @@ import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
 import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
 import { MobileActivityChanges } from './mobile-activity-changes.ts'
+import { mobilePlanAuthorityHash } from './mobile-plan-review.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -31,6 +32,17 @@ export interface MobileActivityRow {
   detail: string
   updatedAt: number
   lastSavedAt: number
+}
+
+export interface MobileReviewedPlan {
+  planId: string
+  title: string
+  status: 'draft' | 'approved' | 'superseded'
+  revision: number
+  contentHash: string
+  authorityHash: string
+  body: string
+  comments: Array<{ body: string; author?: 'user' | 'agent'; quote?: string }>
 }
 
 export function mobileProjects(): Array<{ id: string; name: string }> {
@@ -135,6 +147,7 @@ export async function mobileThread(
   decisions: MobileDecision[]
   runId: string | null
   messages: MobileMessage[]
+  plan: MobileReviewedPlan | null
 } | null> {
   if (!safeId.test(projectId) || !safeId.test(threadId)) return null
   const project = mobileProjects().find((item) => item.id === projectId)
@@ -144,6 +157,24 @@ export async function mobileThread(
   )
   if (!thread) return null
   const messages = mobileTranscriptMessages(await loadThreadMessages(projectId, threadId))
+  const storedPlan = await getLatestThreadPlan(projectId, threadId)
+  const plan =
+    storedPlan?.meta.status === 'abandoned' || storedPlan === null
+      ? null
+      : {
+          planId: storedPlan.meta.planId,
+          title: storedPlan.meta.title,
+          status: storedPlan.meta.status,
+          revision: storedPlan.meta.currentRevision,
+          contentHash: storedPlan.contentHash,
+          authorityHash: mobilePlanAuthorityHash(storedPlan),
+          body: storedPlan.body,
+          comments: storedPlan.comments.map((comment) => ({
+            body: comment.body,
+            ...(comment.author !== undefined ? { author: comment.author } : {}),
+            ...(comment.quote !== undefined ? { quote: comment.quote } : {}),
+          })),
+        }
   const attention = [
     ...pendingApprovalRequestsForThread(threadId).map((request) => ({
       title: request.title,
@@ -161,6 +192,7 @@ export async function mobileThread(
     decisions: mobileDecisions.list(projectId, threadId),
     runId: mobileRunId(threadId),
     messages,
+    plan,
   }
 }
 

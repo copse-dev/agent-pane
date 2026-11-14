@@ -12,11 +12,21 @@ export interface MobileChatCommand {
   expiresAt: number
 }
 
+export interface MobilePlanReview {
+  planId: string
+  revision: number
+  contentHash: string
+  /** Main-issued receipt for status, approval, comments and completion too. */
+  authorityHash: string
+}
+
 export interface MobileChatRequest {
   projectId: string
   threadId: string | null
   text: string
   image?: string
+  /** Exact main-served plan revision the authenticated phone reviewed. */
+  planReview?: MobilePlanReview
 }
 
 export type MobileChatResult =

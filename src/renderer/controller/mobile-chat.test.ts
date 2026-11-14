@@ -35,6 +35,7 @@ function fixture(status: Thread['status'] = 'idle'): {
     workspaceRoot: '/repo',
     projects: [{ id: 'p', name: 'Project', path: '/repo' }],
     threads: [thread],
+    settings: { model: 'claude-sonnet-4-6' },
   })
   const api = createFakeApi()
   const runs: string[] = []
@@ -156,6 +157,67 @@ test('new phone chats prepare a checkout before dispatch and preserve failure wi
   })
   assert.equal(started.ok, true)
   assert.equal(runs.length, 1)
+})
+
+test('a main-reserved phone thread already loaded during project activation is reused', async () => {
+  const { store, api, runs, command } = fixture()
+  store.setState({
+    threads: [
+      {
+        id: 'reserved-mobile-thread',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: true,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        model: 'claude-sonnet-4-6',
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      ...store.getState().threads,
+    ],
+  })
+  api.agent.prepareCheckout = (): Promise<PreparedThreadCheckout> =>
+    Promise.resolve({ checkoutMode: 'shared', choice: 'automatic', branch: 'main' })
+  const result = await acceptMobileChat(store, api, {
+    ...command,
+    threadId: 'reserved-mobile-thread',
+    createThread: true,
+  })
+  assert.deepEqual(result, { ok: true, threadId: 'reserved-mobile-thread', queued: false })
+  assert.equal(
+    store.getState().threads.filter((thread) => thread.id === 'reserved-mobile-thread').length,
+    1,
+  )
+  assert.equal(runs.length, 1)
+})
+
+test('a conflicting renderer thread cannot usurp a main-reserved phone identity', async () => {
+  const { store, api, runs, command } = fixture()
+  store.setState({
+    threads: [
+      {
+        id: 'reserved-mobile-thread',
+        title: 'Renderer fork',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      ...store.getState().threads,
+    ],
+  })
+  const result = await acceptMobileChat(store, api, {
+    ...command,
+    threadId: 'reserved-mobile-thread',
+    createThread: true,
+  })
+  assert.deepEqual(result, {
+    ok: false,
+    error: 'The reserved phone conversation changed before it was opened.',
+  })
+  assert.equal(runs.length, 0)
 })
 
 test('a phone command waits for desktop restoration before changing the thread', async () => {

@@ -6,10 +6,18 @@ import type {
   MobileChatCommand,
   MobileChatRequest,
   MobileChatResult,
+  MobilePlanReview,
 } from '../../../shared/mobile-chat.ts'
-import { getLatestThreadPlan, getProjectThread, loadAgentHistory } from '../thread-store.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
+import {
+  createThreadWithResult,
+  getLatestThreadPlan,
+  getProjectThread,
+  loadAgentHistory,
+} from '../thread-store.ts'
 import { getSettingsSnapshot } from '../storage/settings-transaction.ts'
 import { mobilePromptGrants } from './mobile-prompt-grants.ts'
+import { mobilePlanAuthorityHash } from './mobile-plan-review.ts'
 
 type Submit = (
   command: MobileChatRequest,
@@ -34,6 +42,21 @@ const replySchema = z.tuple([
     z.strictObject({ ok: z.literal(false), error: z.string().max(2000) }),
   ]),
 ])
+
+export function admitReviewedMobilePlan(
+  plan: StoredThreadPlan | null,
+  reviewed: MobilePlanReview | undefined,
+): { ok: true; plan: StoredThreadPlan | null } | { ok: false } {
+  const active = plan?.meta.status === 'abandoned' ? null : plan
+  if (active === null) return reviewed === undefined ? { ok: true, plan: null } : { ok: false }
+  return reviewed !== undefined &&
+    reviewed.planId === active.meta.planId &&
+    reviewed.revision === active.meta.currentRevision &&
+    reviewed.contentHash === active.contentHash &&
+    reviewed.authorityHash === mobilePlanAuthorityHash(active)
+    ? { ok: true, plan: structuredClone(active) }
+    : { ok: false }
+}
 
 /** The renderer remains the sole transcript and queue writer. No IPC bridge is exposed to HTTP. */
 export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
@@ -60,13 +83,11 @@ export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
           loadAgentHistory(command.projectId, threadId),
           getLatestThreadPlan(command.projectId, threadId),
         ])
-    // Plan creation and approval are still renderer-authored. Unlike the
-    // desktop protected window, Mobile Companion cannot show that full context
-    // for native review, so it must not silently inherit plan authority.
-    if (plan && plan.meta.status !== 'abandoned')
+    const planAdmission = admitReviewedMobilePlan(plan, command.planReview)
+    if (!planAdmission.ok)
       return {
         ok: false,
-        error: 'Open this planned thread on the desktop to review its full prompt context.',
+        error: 'The thread plan changed. Refresh it on your phone and review it before sending.',
       }
     if (!stillAuthorized())
       return { ok: false, error: 'Phone control was disabled before the message was admitted.' }
@@ -86,11 +107,39 @@ export function initMobileChat(win: BrowserWindow, ipcMain: IpcMain): void {
         threadId,
         content,
         history,
+        createsThread: createThread,
+        plan: planAdmission.plan,
         ...(model !== undefined ? { model } : {}),
         expiresAt,
       },
       stillAuthorized,
     )
+    if (createThread) {
+      const now = Date.now()
+      try {
+        const created = await createThreadWithResult(command.projectId, {
+          id: threadId,
+          title: 'New Thread',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          ...(model !== undefined ? { model } : {}),
+          createdAt: now,
+          updatedAt: now,
+        })
+        if (!created) throw new Error('Mobile prompt target storage already exists')
+      } catch {
+        mobilePromptGrants.revoke(id)
+        return {
+          ok: false,
+          error: 'The desktop could not reserve a fresh conversation. Try sending again.',
+        }
+      }
+      if (!stillAuthorized()) {
+        mobilePromptGrants.revoke(id)
+        return { ok: false, error: 'Phone control was disabled before the message was admitted.' }
+      }
+    }
     const delivery: MobileChatCommand = {
       ...command,
       id,

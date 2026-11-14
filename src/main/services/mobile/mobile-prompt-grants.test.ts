@@ -11,6 +11,8 @@ function seed(grants: MobilePromptGrants, stillAuthorized: () => boolean = () =>
       threadId: 'thread',
       content: 'Reviewed on the phone',
       history: [{ role: 'assistant', content: 'Frozen provider history' }],
+      createsThread: false,
+      plan: null,
       model: 'claude-sonnet-4-6',
       expiresAt: Date.now() + 10_000,
     },
@@ -66,6 +68,8 @@ test('expired and revoked mobile prompt grants authorize nothing', () => {
       threadId: 't',
       content: 'old',
       history: [],
+      createsThread: false,
+      plan: null,
       expiresAt: Date.now() - 1,
     },
     () => true,
@@ -104,6 +108,8 @@ test('closing one renderer revokes only grants issued to that sender', () => {
       threadId: 'thread',
       content: 'Other window',
       history: [],
+      createsThread: false,
+      plan: null,
       expiresAt: Date.now() + 10_000,
     },
     () => true,
@@ -155,6 +161,8 @@ test('mint freezes provider history before renderer delivery', () => {
       threadId: 'thread',
       content: 'Phone prompt',
       history,
+      createsThread: false,
+      plan: null,
       expiresAt: Date.now() + 10_000,
     },
     () => true,
@@ -194,4 +202,63 @@ test('queued delivery accepts only main-owned history appended after phone admis
     null,
   )
   assert.equal(extendMobilePromptHistory(frozen, []), null)
+})
+
+test('a new phone target rejects provider history inserted through a renderer fork', () => {
+  const forged = [{ role: 'user' as const, content: 'Attacker-selected fork context' }]
+  assert.equal(extendMobilePromptHistory([], forged, true), null)
+  assert.deepEqual(extendMobilePromptHistory([], [], true), [])
+  assert.equal(extendMobilePromptHistory(forged, forged, true), null)
+})
+
+test('a new phone target stays reserved after one-use consumption until dispatch releases it', () => {
+  const grants = new MobilePromptGrants()
+  grants.mint(
+    {
+      id: 'new-thread',
+      senderId: 7,
+      projectId: 'project',
+      threadId: 'fresh',
+      content: 'Phone prompt',
+      history: [],
+      createsThread: true,
+      plan: null,
+      expiresAt: Date.now() + 10_000,
+    },
+    () => true,
+  )
+  assert.equal(grants.isTargetReserved('project', 'fresh'), true)
+  assert.ok(
+    grants.consume('new-thread', {
+      senderId: 7,
+      projectId: 'project',
+      threadId: 'fresh',
+      content: 'Phone prompt',
+    }),
+  )
+  assert.equal(grants.isTargetReserved('project', 'fresh'), true)
+  grants.revoke('new-thread')
+  assert.equal(grants.isTargetReserved('project', 'fresh'), true)
+  grants.releaseTarget('new-thread')
+  assert.equal(grants.isTargetReserved('project', 'fresh'), false)
+})
+
+test('revocation releases an unconsumed new phone target reservation', () => {
+  const grants = new MobilePromptGrants()
+  grants.mint(
+    {
+      id: 'new-thread',
+      senderId: 7,
+      projectId: 'project',
+      threadId: 'fresh',
+      content: 'Phone prompt',
+      history: [],
+      createsThread: true,
+      plan: null,
+      expiresAt: Date.now() + 10_000,
+    },
+    () => true,
+  )
+  grants.revoke('new-thread')
+  assert.equal(grants.isTargetReserved('project', 'fresh'), false)
 })

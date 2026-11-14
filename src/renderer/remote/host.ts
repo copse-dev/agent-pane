@@ -7,12 +7,31 @@ import { request, RemoteRequestError } from './transport.ts'
 import { installHighlighterBackend } from '../markdown/highlighter-backend.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { mountConfirmDialog, showConfirmDialog } from '../views/confirm-dialog.ts'
+import type { MobilePlanReview } from '../../shared/mobile-chat.ts'
+
+const reviewedPlanSchema = z.strictObject({
+  planId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.enum(['draft', 'approved', 'superseded']),
+  revision: z.number().int().positive(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityHash: z.string().regex(/^[a-f0-9]{64}$/),
+  body: z.string(),
+  comments: z.array(
+    z.strictObject({
+      body: z.string(),
+      author: z.enum(['user', 'agent']).optional(),
+      quote: z.string().optional(),
+    }),
+  ),
+})
 
 const metadataSchema = z.object({
   access: z.enum(['read', 'control']),
   sessionId: z.uuid(),
   runId: z.uuid().nullable(),
   decisions: z.array(remoteDecisionSchema).default([]),
+  plan: reviewedPlanSchema.nullable(),
 })
 
 export async function startRemoteChat(): Promise<void> {
@@ -23,6 +42,11 @@ export async function startRemoteChat(): Promise<void> {
   const input = document.getElementById('input-bar')
   const status = qsRequired(document, '#connection')
   const title = qsRequired(document, '#thread-title')
+  const planReview = qsRequired(document, '#plan-review')
+  const planTitle = qsRequired(document, '#plan-review-title')
+  const planStatus = qsRequired(document, '#plan-review-status')
+  const planBody = qsRequired(document, '#plan-review-body')
+  const planComments = qsRequired(document, '#plan-review-comments')
   if (!conversation || !input || !projectId || !threadId) return
   const theme = window.matchMedia('(prefers-color-scheme: dark)')
   const applyTheme = (): void => {
@@ -63,7 +87,7 @@ export async function startRemoteChat(): Promise<void> {
   )
   async function action(
     payload:
-      | { action: 'message'; text: string }
+      | { action: 'message'; text: string; planReview?: MobilePlanReview }
       | { action: 'stop'; runId: string }
       | DecisionAnswer,
   ): Promise<void> {
@@ -81,7 +105,18 @@ export async function startRemoteChat(): Promise<void> {
   mountChatSurface(conversation, input, store, window.api, {
     transport: {
       connected: () => connected,
-      send: async (_project, _thread, text) => action({ action: 'message', text }),
+      send: async (_project, _thread, text) => {
+        const reviewed = metadata?.plan
+        const review: MobilePlanReview | undefined = reviewed
+          ? {
+              planId: reviewed.planId,
+              revision: reviewed.revision,
+              contentHash: reviewed.contentHash,
+              authorityHash: reviewed.authorityHash,
+            }
+          : undefined
+        await action({ action: 'message', text, ...(review ? { planReview: review } : {}) })
+      },
       stop: async () => {
         if (!metadata?.runId) throw new Error('The run has already changed.')
         await action({ action: 'stop', runId: metadata.runId })
@@ -104,6 +139,30 @@ export async function startRemoteChat(): Promise<void> {
         ),
       ])
       metadata = metadataSchema.parse(rawMetadata)
+      if (metadata.plan) {
+        planTitle.textContent = `Plan to review: ${metadata.plan.title}`
+        planStatus.textContent = `${metadata.plan.status} · revision ${String(metadata.plan.revision)}`
+        planBody.textContent = metadata.plan.body
+        planComments.replaceChildren(
+          ...metadata.plan.comments.map((comment) => {
+            const item = document.createElement('blockquote')
+            const label = comment.author === 'agent' ? 'Agent feedback' : 'Review feedback'
+            item.textContent = comment.quote
+              ? `${label} on “${comment.quote}”: ${comment.body}`
+              : `${label}: ${comment.body}`
+            return item
+          }),
+        )
+        planComments.hidden = metadata.plan.comments.length === 0
+        planReview.hidden = false
+      } else {
+        planReview.hidden = true
+        planTitle.textContent = ''
+        planStatus.textContent = ''
+        planBody.textContent = ''
+        planComments.replaceChildren()
+        planComments.hidden = true
+      }
       const view = state.views.find((item) => item.projectId === projectId)
       const thread = view?.threads.find((item) => item.id === threadId)
       if (!thread) {

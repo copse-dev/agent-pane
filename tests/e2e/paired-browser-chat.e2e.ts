@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -8,6 +9,7 @@ import { remote, type Browser } from 'webdriverio'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
+import { MOBILE_PORT } from '../../src/shared/mobile-server.ts'
 import {
   resetUserData,
   seedEmptyProject,
@@ -58,17 +60,32 @@ async function native(
   return reply
 }
 
-function privateAddress(): string {
-  const entry = Object.values(networkInterfaces())
+async function availablePrivateAddress(): Promise<string> {
+  const entries = Object.values(networkInterfaces())
     .flatMap((entries) => entries ?? [])
-    .find(
+    .filter(
       (candidate) =>
         candidate.family === 'IPv4' &&
         !candidate.internal &&
         /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(candidate.address),
     )
-  if (!entry) throw new Error('Paired-browser acceptance needs a private IPv4 address')
-  return entry.address
+  for (const entry of entries) {
+    const available = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once('error', () => {
+        resolve(false)
+      })
+      probe.listen(MOBILE_PORT, entry.address, () => {
+        probe.close(() => {
+          resolve(true)
+        })
+      })
+    })
+    if (available) return entry.address
+  }
+  throw new Error(
+    `Paired-browser acceptance needs a free private IPv4 address on port ${String(MOBILE_PORT)}`,
+  )
 }
 
 /**
@@ -153,8 +170,8 @@ function spine(): Array<{ id: string; role: string }> {
 describe('real paired browser chat with the desktop window closed', function () {
   this.timeout(240_000)
   before(async () => {
-    const address = privateAddress()
-    origin = `https://${address}:42773`
+    const address = await availablePrivateAddress()
+    origin = `https://${address}:${String(MOBILE_PORT)}`
     fixtureDir = mkdtempSync(join(tmpdir(), 'copse-paired-browser-'))
     writeE2eEnv({ COPSE_E2E_NATIVE_ALERTS: fixtureDir })
     resetUserData()
@@ -251,6 +268,60 @@ describe('real paired browser chat with the desktop window closed', function () 
   it('sends, queues, answers and approves with no visible desktop, then reopens without duplication', async () => {
     const first = 'Ask which tests to run, then run the approved command.'
     const followup = 'Check the profile permission and report the result.'
+    const reviewedPlanBody =
+      '# Goal\n\nRun the focused checks from the paired phone.\n\n# Constraints\n\nUse only the reviewed plan revision.\n\n# Scope\n\nThe paired phone submission.\n\n# Definition of done\n\n- The focused checks complete.'
+    const reviewedPlan = await browser.execute(
+      ({ pid, tid, body }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'create',
+          title: 'Phone release plan',
+          body,
+        }),
+      { pid: projectId, tid: threadId, body: reviewedPlanBody },
+    )
+    assert.ok(reviewedPlan)
+    const reviewedComment = 'Keep the phone-reviewed constraint visible.'
+    const commentedPlan = await browser.execute(
+      ({ pid, tid, planId, revision, body }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'comment',
+          planId,
+          revision,
+          body,
+          anchor: { start: 0, end: 6 },
+        }),
+      {
+        pid: projectId,
+        tid: threadId,
+        planId: reviewedPlan.meta.planId,
+        revision: reviewedPlan.meta.currentRevision,
+        body: reviewedComment,
+      },
+    )
+    assert.ok(commentedPlan)
+    const approvedPlan = await browser.execute(
+      ({ pid, tid, planId, revision, contentHash }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'approve',
+          planId,
+          revision,
+          contentHash,
+        }),
+      {
+        pid: projectId,
+        tid: threadId,
+        planId: commentedPlan.meta.planId,
+        revision: commentedPlan.meta.currentRevision,
+        contentHash: commentedPlan.contentHash,
+      },
+    )
+    assert.equal(approvedPlan?.meta.status, 'approved')
+    assert.ok(approvedPlan)
+    const completionIdentity = {
+      planId: approvedPlan.meta.planId,
+      revision: approvedPlan.meta.currentRevision,
+      contentHash: approvedPlan.contentHash,
+    }
     const scenario = await installMockScenario({
       title: 'Paired browser lifecycle',
       turns: [
@@ -275,8 +346,28 @@ describe('real paired browser chat with the desktop window closed', function () 
               expectToolResults: [{ name: 'ask_user', includes: 'Focused tests' }],
             },
             {
-              text: 'The approved command completed.',
+              toolCalls: [
+                {
+                  name: 'report_plan_completion',
+                  args: {
+                    ...completionIdentity,
+                    results: [
+                      {
+                        criterionId: 'criterion-1',
+                        status: 'met',
+                        evidence: 'The focused phone-approved command completed.',
+                      },
+                    ],
+                  },
+                },
+              ],
               expectToolResults: [{ name: 'run_shell', includes: 'phone-approved' }],
+            },
+            {
+              text: 'The approved command completed.',
+              expectToolResults: [
+                { name: 'report_plan_completion', includes: 'Completion evidence saved' },
+              ],
             },
           ],
         },
@@ -285,13 +376,55 @@ describe('real paired browser chat with the desktop window closed', function () 
           responses: [
             { toolCalls: [{ name: 'run_shell', args: { command: 'ls -la ~/.copse' } }] },
             {
-              text: 'The phone declined the profile read.',
+              toolCalls: [
+                {
+                  name: 'report_plan_completion',
+                  args: {
+                    ...completionIdentity,
+                    results: [
+                      {
+                        criterionId: 'criterion-1',
+                        status: 'partial',
+                        evidence: 'The profile read was declined on the paired phone.',
+                      },
+                    ],
+                  },
+                },
+              ],
               expectToolResults: [{ name: 'run_shell' }],
+            },
+            {
+              text: 'The phone declined the profile read.',
+              expectToolResults: [
+                { name: 'report_plan_completion', includes: 'Completion evidence saved' },
+              ],
             },
           ],
         },
       ],
     })
+    await mobile().$('#plan-review:not([hidden])').waitForDisplayed({ timeout: 10_000 })
+    await expect(mobile().$('#plan-review-title')).toHaveText('Plan to review: Phone release plan')
+    await expect(mobile().$('#plan-review-status')).toHaveText('approved · revision 1')
+    await expect(mobile().$('#plan-review-body')).toHaveText(reviewedPlanBody)
+    await expect(mobile().$('#plan-review-comments')).toHaveText(
+      `Review feedback on “# Goal”: ${reviewedComment}`,
+    )
+    const planShots =
+      process.platform === 'darwin'
+        ? join(process.cwd(), 'e2e-failure-artifacts', 'paired-browser')
+        : E2E_SCREENSHOT_DIR
+    mkdirSync(planShots, { recursive: true })
+    await mobile().execute(() => {
+      const panel = document.querySelector<HTMLElement>('#plan-review')
+      if (panel) panel.scrollTop = 0
+    })
+    await mobile().saveScreenshot(join(planShots, 'paired-browser-plan-review.png'))
+    await mobile().execute(() => {
+      const panel = document.querySelector<HTMLElement>('#plan-review')
+      if (panel) panel.scrollTop = panel.scrollHeight
+    })
+    await mobile().saveScreenshot(join(planShots, 'paired-browser-plan-comments.png'))
     assert.equal((await native('close')).visible, false, 'Idle close must keep phone access alive')
     // Lose the reply only after the real server has accepted the submission.
     // Retry must reuse its identity, not create a second turn or queued message.
@@ -316,19 +449,26 @@ describe('real paired browser chat with the desktop window closed', function () 
     await mobile().$('.remote-decision textarea').waitForExist()
     await mobile().$('button=Focused tests').click()
     await send(followup)
-    await mobile().$('button=Send answers').click()
-    await mobile().$('button=Approve').waitForExist()
-    await mobile().$('button=Approve').click()
-    await waitText('The approved command completed.')
-    await mobile().$('button=Deny').waitForExist()
-    // The decision card and the transcript arrive on separate polls. Capture
-    // once the transcript shows the pending command, not the step before it.
+    const sendAnswers = mobile().$('button=Send answers')
+    await sendAnswers.waitForEnabled()
+    await sendAnswers.click()
     await mobile().waitUntil(
       async () => {
-        const transcript = await mobile().$('#conversation').getText()
-        return transcript.includes('ls -la ~/.copse') && transcript.includes('Waiting for approval')
+        const error = mobile().$('#decisions [role="alert"]:not([hidden])')
+        if (await error.isExisting()) throw new Error(await error.getText())
+        return !(await mobile().$('.remote-decision textarea').isExisting())
       },
-      { timeout: 15_000, timeoutMsg: 'The phone transcript never showed the pending profile read' },
+      { timeout: 15_000, timeoutMsg: 'The phone answer was not accepted' },
+    )
+    await mobile().$('button=Approve').waitForExist({ timeout: 15_000 })
+    await mobile().$('button=Approve').click()
+    await mobile().$('button=Deny').waitForExist({ timeout: 15_000 })
+    // The queued turn stays one running lifecycle while its approved-plan
+    // completion report settles, so its transcript checkpoint can lag the
+    // live decision. The decision card itself is the authoritative prompt.
+    await mobile().waitUntil(
+      async () => (await mobile().$('#decisions').getText()).includes('ls -la ~/.copse'),
+      { timeout: 15_000, timeoutMsg: 'The phone never showed the pending profile read approval' },
     )
     // The earlier Approve click leaves the pointer where this card's Approve
     // button can land; move it off the controls so hover stays out of the shot.
@@ -370,6 +510,7 @@ describe('real paired browser chat with the desktop window closed', function () 
     }
     await mobile().$('button=Deny').click()
     await waitText('The phone declined the profile read.')
+    assert.match(await mobile().$('#conversation').getText(), /The approved command completed\./)
     await scenario.assertComplete()
     assert.equal((await native('window-state')).visible, false)
     // Active snapshots alone cannot prove the real main/preload read relay works.
