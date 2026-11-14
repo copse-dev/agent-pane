@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-INLFKAHJ.js";
+} from "./chunk-I2ZSBYTX.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -585,6 +585,9 @@ import {
 } from "./chunk-WW3EXSJD.js";
 
 // src/renderer/controller/mobile-chat.ts
+function isReservedMobileThread(thread, command2) {
+  return thread !== void 0 && thread.title === "New Thread" && thread.status === "idle" && thread.model === command2.model && thread.archivedAt === void 0 && thread.messages.length === 0 && (thread.pendingMessages?.length ?? 0) === 0 && thread.worktree === void 0 && thread.worktreeChoice === void 0 && thread.deferredWorktree === void 0 && thread.automation === void 0 && thread.sideChat === void 0 && thread.followUpOf === void 0;
+}
 async function acceptMobileChat(store2, api2, command2) {
   let ownedThread = null;
   const text = command2.text || "Please look at this image.";
@@ -597,7 +600,16 @@ async function acceptMobileChat(store2, api2, command2) {
     if (Date.now() >= command2.expiresAt) throw new Error("This send expired. Try again.");
     await activateMobileProject(store2, api2, command2.projectId);
     checkCurrent();
-    const threadId = command2.threadId ?? createThread(store2);
+    const threadId = command2.threadId;
+    if (command2.createThread) {
+      const reserved = getThreadById(store2, threadId);
+      if (reserved !== void 0) {
+        if (!isReservedMobileThread(reserved, command2))
+          throw new Error("The reserved phone conversation changed before it was opened.");
+      } else {
+        createThread(store2, void 0, { id: threadId });
+      }
+    }
     const initial = getThreadById(store2, threadId);
     if (!initial || initial.archivedAt !== void 0) throw new Error("Thread unavailable.");
     if (!beginThreadSubmission(store2, threadId))
@@ -609,6 +621,8 @@ async function acceptMobileChat(store2, api2, command2) {
     checkCurrent();
     if (hydrationFailed(threadId) || getThreadById(store2, threadId)?.messagesLoaded === false)
       throw new Error("The desktop could not load the conversation. Try again.");
+    if (command2.createThread && !isReservedMobileThread(getThreadById(store2, threadId), command2))
+      throw new Error("The reserved phone conversation changed before it was opened.");
     if (!initial.worktreeChoice && initial.messages.length === 0) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
@@ -636,7 +650,13 @@ async function acceptMobileChat(store2, api2, command2) {
       text,
       command2.image ? [command2.image] : void 0
     );
-    const queued = { messageId, payload, createdAt: Date.now() };
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      mobilePromptGrantId: command2.id,
+      ...command2.model !== void 0 ? { model: command2.model } : {}
+    };
     const running = current.status === "running";
     if (running) enqueueUserMessage(store2, threadId, queued);
     else {

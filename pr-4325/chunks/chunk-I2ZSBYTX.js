@@ -23688,7 +23688,9 @@ function normalizeBlankThreads(store) {
 }
 function createThread(store, draftPrompt, options) {
   const activate2 = options?.activate ?? true;
-  const id = randomUUID();
+  const id = options?.id ?? randomUUID();
+  if (store.getState().threads.some((thread) => thread.id === id))
+    throw new Error("Thread identity is already in use");
   const defaultModel = store.getState().settings?.model;
   const threads = [
     {
@@ -27879,7 +27881,14 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
     const parentThreadId = queued ? subthreadParentOf(queued) : void 0;
     const display = queued ? protectedHumanTurnDisplay(store, threadId, queued.messageId) : void 0;
     if (!queued || parentThreadId === void 0) {
-      const result = await api.agent.run(projectId, threadId, runPayload, void 0, display);
+      const result = await api.agent.run(
+        projectId,
+        threadId,
+        runPayload,
+        void 0,
+        display,
+        queued?.mobilePromptGrantId
+      );
       if (result === "cancelled") {
         if (queued) holdCancelledProtectedPrompt(store, threadId, queued);
         else setThreadStatus(store, threadId, "idle");
@@ -27948,7 +27957,12 @@ function requeueBusyMessage(store, api, threadId, item) {
 function holdCancelledProtectedPrompt(store, threadId, item) {
   patchThreadAnywhere(store, threadId, (thread) => {
     const pending = thread.pendingMessages ?? [];
-    const held = pending.some((entry) => entry.messageId === item.messageId) ? pending : [{ ...item, autoDispatch: false }, ...pending];
+    const { mobilePromptGrantId: _mobilePromptGrantId, ...heldItem } = item;
+    const held = pending.some((entry) => entry.messageId === item.messageId) ? pending.map((entry) => {
+      if (entry.messageId !== item.messageId) return entry;
+      const { mobilePromptGrantId: _grant, ...rest } = entry;
+      return { ...rest, autoDispatch: false };
+    }) : [{ ...heldItem, autoDispatch: false }, ...pending];
     const refunded = isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0 ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 } : {};
     return { ...thread, ...refunded, status: "idle", pendingMessages: held, updatedAt: Date.now() };
   });
@@ -28102,15 +28116,17 @@ function updateQueuedMessageText(store, threadId, messageId, text) {
   const threads = store.getState().threads.map(
     (t2) => t2.id !== threadId ? t2 : {
       ...t2,
-      pendingMessages: (t2.pendingMessages ?? []).map(
-        (p2) => p2.messageId !== messageId ? p2 : {
-          ...p2,
+      pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
+        if (p2.messageId !== messageId) return p2;
+        const { mobilePromptGrantId: _mobilePromptGrantId, ...editable } = p2;
+        return {
+          ...editable,
           payload: { ...p2.payload, content: withPayloadText(p2.payload.content, text) },
           // Editing a hook-originated message keeps `kind: 'hook'` but
           // flips `editedByUser` so the spine stays honest (decision 10).
           ...p2.origin?.kind === "hook" ? { editedByUser: true } : {}
-        }
-      ),
+        };
+      }),
       updatedAt: Date.now()
     }
   );
