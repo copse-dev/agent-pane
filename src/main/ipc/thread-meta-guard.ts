@@ -1,3 +1,5 @@
+import { expectArray, isRecord } from '@copse/std/unknown-value.ts'
+
 /**
  * Thread fields only the main process may write.
  *
@@ -23,6 +25,23 @@ const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'automation',
 ]
 
+/** Strip display projection provenance that only main may grant after review. */
+export function withoutMainOwnedMessageFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const attachmentValue = payload['attachments']
+  if (!Array.isArray(attachmentValue)) return payload
+  const attachments = expectArray(attachmentValue)
+  return {
+    ...payload,
+    attachments: attachments.map((attachment) => {
+      if (!isRecord(attachment)) return attachment
+      const { projection: _projection, ...rendererFields } = attachment
+      return rendererFields
+    }),
+  }
+}
+
 /** `payload` without the fields only main may write. */
 export function withoutMainOwnedThreadFields(
   payload: Record<string, unknown>,
@@ -30,4 +49,20 @@ export function withoutMainOwnedThreadFields(
   return Object.fromEntries(
     Object.entries(payload).filter(([key]) => !MAIN_OWNED_THREAD_FIELDS.includes(key)),
   )
+}
+
+/** Renderer-created threads cannot mint projection provenance in first messages. */
+export function withoutMainOwnedThreadCreateFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const rendererFields = withoutMainOwnedThreadFields(payload)
+  const messageValue = rendererFields['messages']
+  if (!Array.isArray(messageValue)) return rendererFields
+  const messages = expectArray(messageValue)
+  return {
+    ...rendererFields,
+    messages: messages.map((message) =>
+      isRecord(message) ? withoutMainOwnedMessageFields(message) : message,
+    ),
+  }
 }

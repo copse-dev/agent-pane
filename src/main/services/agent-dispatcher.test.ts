@@ -806,6 +806,15 @@ describe('AgentDispatcher', () => {
         protectedHumanStart: {
           content: 'reviewed prompt',
           preserveOptimisticDisplay: true,
+          attachments: [
+            {
+              kind: 'paste',
+              placement: 'inline',
+              label: 'Reviewed notes',
+              content: 'exact snapshot',
+              projection: 'canonical-block',
+            },
+          ],
           acceptMessageId: async () => {
             order.push('accept:start')
             await acceptance
@@ -833,6 +842,15 @@ describe('AgentDispatcher', () => {
         content: 'reviewed prompt',
         messageId: 'accepted-message',
         preserveOptimisticDisplay: true,
+        attachments: [
+          {
+            kind: 'paste',
+            placement: 'inline',
+            label: 'Reviewed notes',
+            content: 'exact snapshot',
+            projection: 'canonical-block',
+          },
+        ],
       },
     ])
   })

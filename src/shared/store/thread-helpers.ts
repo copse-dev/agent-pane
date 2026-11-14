@@ -744,15 +744,17 @@ export function setMessagePromptContent(
   messageId: string,
   content: string,
   images: string[] | undefined,
+  attachments?: TranscriptAttachment[],
 ): void {
   updateMessage(store, messageId, (message) => {
     message.content = content
     if (images === undefined) delete message.images
     else message.images = images
-    // Attachment chips describe the pre-review composer expansion. The
-    // protected reviewer may edit or remove that expansion, so keeping them
-    // would claim model context that was not sent.
-    delete message.attachments
+    // Attachment chips describe the pre-review composer expansion. Main passes
+    // them back only after an unchanged protected review; an edited review
+    // omits them so the transcript cannot claim context that was not sent.
+    if (attachments === undefined) delete message.attachments
+    else message.attachments = attachments.map((attachment) => ({ ...attachment }))
   })
   store.emit('message_token', messageId, content)
 }

@@ -373,6 +373,40 @@ test('protected human entry preserves a verified unchanged optimistic display', 
   assert.equal(getThreadById(store, 't1')?.status, 'running')
 })
 
+test('protected human persistence keeps only the attachment snapshot verified by Main', () => {
+  const store = seeded()
+  const optimistic = messagesOf(store)[0]
+  assert.ok(optimistic)
+  optimistic.content = 'Compare \uFFFC with the proposal'
+  optimistic.attachments = [{ kind: 'file', label: 'stale.txt', content: 'pre-review bytes' }]
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', {
+    type: 'protected_human_turn_start',
+    messageId: 'u1',
+    content: 'Compare the reviewed notes with the proposal',
+    attachments: [
+      {
+        kind: 'paste',
+        placement: 'inline',
+        label: 'Reviewed notes',
+        content: 'exact snapshot',
+        projection: 'canonical-block',
+      },
+    ],
+  })
+
+  assert.equal(messagesOf(store)[0]?.content, 'Compare the reviewed notes with the proposal')
+  assert.deepEqual(messagesOf(store)[0]?.attachments, [
+    {
+      kind: 'paste',
+      placement: 'inline',
+      label: 'Reviewed notes',
+      content: 'exact snapshot',
+      projection: 'canonical-block',
+    },
+  ])
+})
+
 test('protected human entry keeps the accepted main identity when no optimistic prompt remains', () => {
   const store = seeded()
   const original = messagesOf(store)[0]

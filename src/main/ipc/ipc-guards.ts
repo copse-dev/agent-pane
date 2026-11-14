@@ -230,6 +230,7 @@ export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
 const transcriptAttachmentSchema = z.object({
   kind: z.enum(['paste', 'file', 'thread', 'shell', 'video', 'archive']),
   label: z.string().max(1_024),
+  placement: z.literal('inline').optional(),
   content: z.string().max(1_000_000).optional(),
   path: z.string().max(16_384).optional(),
 })
@@ -265,6 +266,7 @@ export const machineAgentRunSchema: z.ZodType<MachineAgentRunRequest> =
             attachments: request.display.attachments.map((attachment) => ({
               kind: attachment.kind,
               label: attachment.label,
+              ...(attachment.placement !== undefined ? { placement: attachment.placement } : {}),
               ...(attachment.content !== undefined ? { content: attachment.content } : {}),
               ...(attachment.path !== undefined ? { path: attachment.path } : {}),
             })),
@@ -296,6 +298,7 @@ const imageDataUrlSchema = z
 const protectedDisplayAttachmentSchema = z.strictObject({
   kind: z.enum(['paste', 'file', 'thread', 'shell', 'video', 'archive']),
   label: z.string(),
+  placement: z.literal('inline').optional(),
   content: z.string().optional(),
   path: z.string().optional(),
 })
@@ -328,6 +331,9 @@ export const protectedHumanTurnDisplaySchema: z.ZodType<ProtectedHumanTurnDispla
                           attachments: display.snapshot.attachments.map((attachment) => ({
                             kind: attachment.kind,
                             label: attachment.label,
+                            ...(attachment.placement !== undefined
+                              ? { placement: attachment.placement }
+                              : {}),
                             ...(attachment.content !== undefined
                               ? { content: attachment.content }
                               : {}),

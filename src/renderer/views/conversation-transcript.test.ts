@@ -1,7 +1,10 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildTextWithAttachments } from '@copse/agent/build-text-with-attachments.ts'
+import {
+  buildTextWithAttachments,
+  renderTextBlock,
+} from '@copse/agent/build-text-with-attachments.ts'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
@@ -347,6 +350,250 @@ describe('user transcript attachment chips', () => {
       canonical,
       'presentation projection does not alter canonical reviewed content',
     )
+  })
+
+  it('restores a protected paste chip without exposing its generated fence', () => {
+    patchPreviewDialog()
+    const pasteLabel = 'Editor feedback summary'
+    const pasteContent = [
+      'Tighten the introduction and remove the repeated description.',
+      'Correct the spelling mistakes in the heading and button labels.',
+      'Use the same editor name throughout the page.',
+    ].join('\n')
+    const authoredFence = ['Keep this authored example:', '```text', 'literal', '```'].join('\n')
+    const prompt = `Please apply this feedback: ${authoredFence}`
+    const canonical = buildTextWithAttachments(
+      prompt,
+      [],
+      [{ label: pasteLabel, content: pasteContent }],
+    )
+    const { store, threadId } = mountWithUserMessage(canonical, [
+      {
+        kind: 'paste',
+        label: pasteLabel,
+        content: pasteContent,
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'protected paste prompt is rendered')
+    assert.equal(textEl.querySelector('.msg-user-fold-toggle'), null)
+    assert.match(textEl.textContent, /Please apply this feedback:/)
+    assert.match(textEl.textContent, /```text/)
+    assert.match(textEl.textContent, /literal/)
+    assert.doesNotMatch(textEl.textContent, /Tighten the introduction/)
+    assert.doesNotMatch(textEl.textContent, /\/\/ Editor feedback summary/)
+
+    const paste = textEl.querySelector<HTMLElement>('.transcript-attachment-paste')
+    assert.ok(paste, 'the paste snapshot is restored at the generated block')
+    paste.click()
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog, 'the paste snapshot opens in the shared preview')
+    assert.equal(dialog.querySelector('.attachment-preview-text')?.textContent, pasteContent)
+    dialog.close()
+
+    assert.equal(
+      getThreadById(store, threadId)?.messages[0]?.content,
+      canonical,
+      'presentation projection does not alter canonical reviewed paste content',
+    )
+  })
+
+  it('leaves ambiguous matching paste fences visible', () => {
+    const label = 'Repeated attachment'
+    const content = 'same bytes'
+    const block = renderTextBlock(label, content)
+    mountWithUserMessage(`${block}\n\n${block}`, [
+      {
+        kind: 'paste',
+        label,
+        content,
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')?.textContent ?? ''
+    assert.equal(text.match(/\/\/ Repeated attachment/g)?.length, 2)
+    assert.ok(
+      document.querySelector('.transcript-attachment-row .transcript-attachment-paste'),
+      'the ambiguous attachment remains available without hiding either authored-looking block',
+    )
+  })
+
+  it('leaves overlapping matching thread labels visible', () => {
+    mountWithUserMessage('@@@', [
+      {
+        kind: 'thread',
+        label: '@',
+        placement: 'inline',
+        projection: 'canonical-thread-label',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.match(text.textContent, /@@@/)
+    assert.ok(
+      text.querySelector('.transcript-attachment-row .transcript-attachment-thread'),
+      'the overlapping attachment remains trailing without hiding authored text',
+    )
+  })
+
+  it('does not replace an authored matching fence when the paste already has a placeholder', () => {
+    const label = 'Quoted attachment'
+    const content = 'same bytes'
+    const block = renderTextBlock(label, content)
+    mountWithUserMessage(`${block}\n\n${CHIP_CHAR}`, [
+      { kind: 'paste', label, content, placement: 'inline' },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')?.textContent ?? ''
+    assert.match(text, /\/\/ Quoted attachment/)
+    assert.match(text, /same bytes/)
+    assert.equal(
+      document.querySelectorAll('.msg-user .transcript-attachment-chip.transcript-attachment-paste')
+        .length,
+      1,
+      'the existing positional paste remains the only chip',
+    )
+  })
+
+  it('reconstructs paste then thread chips in canonical document order', () => {
+    const block = renderTextBlock('Paste notes', 'exact paste bytes')
+    mountWithUserMessage(`${block}\n\n@Thread context`, [
+      {
+        kind: 'paste',
+        label: 'Paste notes',
+        content: 'exact paste bytes',
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+      {
+        kind: 'thread',
+        label: 'Thread context',
+        placement: 'inline',
+        projection: 'canonical-thread-label',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.doesNotMatch(text.textContent, /\/\/ Paste notes/)
+    assert.deepEqual(
+      Array.from(
+        text.querySelectorAll('.transcript-attachment-label'),
+        (label) => label.textContent,
+      ),
+      ['Paste notes', 'Thread context'],
+    )
+  })
+
+  it('reconstructs thread then paste chips in canonical document order', () => {
+    const block = renderTextBlock('Paste notes', 'exact paste bytes')
+    mountWithUserMessage(`@Thread context\n\n${block}`, [
+      {
+        kind: 'thread',
+        label: 'Thread context',
+        placement: 'inline',
+        projection: 'canonical-thread-label',
+      },
+      {
+        kind: 'paste',
+        label: 'Paste notes',
+        content: 'exact paste bytes',
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.doesNotMatch(text.textContent, /\/\/ Paste notes/)
+    assert.deepEqual(
+      Array.from(
+        text.querySelectorAll('.transcript-attachment-label'),
+        (label) => label.textContent,
+      ),
+      ['Thread context', 'Paste notes'],
+    )
+  })
+
+  it('binds a unique reconstructed paste to its own snapshot beside an ambiguous paste', () => {
+    patchPreviewDialog()
+    const repeated = renderTextBlock('Repeated notes', 'same bytes')
+    const unique = renderTextBlock('Unique notes', 'unique bytes')
+    mountWithUserMessage(`${repeated}\n\n${repeated}\n\n${unique}`, [
+      {
+        kind: 'paste',
+        label: 'Repeated notes',
+        content: 'same bytes',
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+      {
+        kind: 'paste',
+        label: 'Unique notes',
+        content: 'unique bytes',
+        placement: 'inline',
+        projection: 'canonical-block',
+      },
+    ])
+
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.equal(text.textContent.match(/\/\/ Repeated notes/g)?.length, 2)
+    assert.doesNotMatch(text.textContent, /\/\/ Unique notes/)
+    const inline = Array.from(
+      text.querySelectorAll<HTMLElement>('.transcript-attachment-paste[data-text-expand="true"]'),
+    ).find((paste) => paste.closest('.transcript-attachment-row') === null)
+    assert.ok(inline)
+    assert.equal(inline.querySelector('.transcript-attachment-label')?.textContent, 'Unique notes')
+    assert.equal(
+      text.querySelector('.transcript-attachment-row .transcript-attachment-label')?.textContent,
+      'Repeated notes',
+    )
+    inline.click()
+    assert.equal(document.querySelector('.attachment-preview-text')?.textContent, 'unique bytes')
+  })
+
+  it('preserves every canonical newline around a reconstructed paste chip', () => {
+    const block = renderTextBlock('Paste notes', 'exact paste bytes')
+    const cases = [
+      { before: 'before', after: 'after' },
+      { before: 'before\n', after: '\nafter' },
+      { before: 'before\n\n', after: '\n\nafter' },
+      { before: 'before\n\n\n', after: '\n\n\nafter' },
+    ]
+    for (const sample of cases) {
+      document.body.replaceChildren()
+      let canonical = sample.before
+      if (canonical !== '' && !canonical.endsWith('\n')) canonical += '\n\n'
+      else if (canonical.endsWith('\n') && !canonical.endsWith('\n\n')) canonical += '\n'
+      canonical += block
+      if (sample.after !== '' && !sample.after.startsWith('\n')) canonical += '\n\n'
+      canonical += sample.after
+      mountWithUserMessage(canonical, [
+        {
+          kind: 'paste',
+          label: 'Paste notes',
+          content: 'exact paste bytes',
+          placement: 'inline',
+          projection: 'canonical-block',
+        },
+      ])
+
+      const text = document.querySelector('.msg-user .message-text')
+      assert.ok(text)
+      const reconstructed = Array.from(text.childNodes, (node) =>
+        node instanceof HTMLElement && node.classList.contains('transcript-attachment-paste')
+          ? CHIP_CHAR
+          : (node.textContent ?? ''),
+      ).join('')
+      assert.equal(reconstructed, canonical.replace(block, CHIP_CHAR))
+    }
   })
 
   /**

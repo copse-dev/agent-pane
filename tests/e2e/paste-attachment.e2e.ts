@@ -5,7 +5,12 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
+import {
+  acceptProtectedPrompt,
+  composerText,
+  setComposerValue,
+  submitComposer,
+} from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -15,6 +20,7 @@ const SCREENSHOT = 'paste-attachment-chip.png'
 const TRANSCRIPT_SCREENSHOT = 'paste-attachment-transcript.png'
 const COMPOSER_PREVIEW_SCREENSHOT = 'paste-attachment-composer-preview.png'
 const TRANSCRIPT_PREVIEW_SCREENSHOT = 'paste-attachment-transcript-preview.png'
+const RESEND_SCREENSHOT = 'paste-attachment-protected-resend.png'
 
 const SHORT_PASTE = 'The editor points:\n\n- tighten the intro\n- fix the typos'
 // Starts with blank lines: the chip label must come from the first non-blank
@@ -203,7 +209,7 @@ describe('Pasting text into the composer', () => {
     const sentChips =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
     const before = (await $$(sentChips).getElements()).length
-    await installMockScenario({
+    const scenario = await installMockScenario({
       title: 'Apply the editor feedback',
       turns: [
         {
@@ -221,18 +227,71 @@ describe('Pasting text into the composer', () => {
       timeout: 10_000,
       timeoutMsg: 'expected the sent paste to render a transcript chip',
     })
-    const sentChip = (await $$(sentChips).getElements()).at(-1)
-    if (!sentChip) throw new Error('no transcript paste chip after send')
-    expect(await sentChip.getAttribute('role')).toBe('button')
-    await sentChip.click()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+
+    // Protected acceptance persists the canonical expanded block for provider
+    // history. Reload proves the renderer reconstructs only its compact chip.
+    await browser.reloadSession()
+    await waitForWorkspace()
+    const sentRows = await $$('.messages-list .msg-user').getElements()
+    const sentRow = sentRows.at(-1)
+    if (!sentRow) throw new Error('no transcript user row after reload')
+    const sentText = await sentRow.$('.message-text').getText()
+    expect(sentText).toContain('Please apply this feedback:')
+    expect(sentText).not.toContain('```')
+    expect(sentText).not.toContain('The opening repeats the product description twice.')
+    await expect(sentRow.$('.msg-user-fold-toggle')).not.toExist()
+    const restoredChips = await sentRow
+      .$$('.transcript-attachment-chip.transcript-attachment-paste')
+      .getElements()
+    expect(restoredChips).toHaveLength(1)
+    const restoredChip = restoredChips[0]
+    if (!restoredChip) throw new Error('no transcript paste chip after reload')
+    expect(await restoredChip.getAttribute('role')).toBe('button')
+    await restoredChip.click()
 
     const sentDialog = await $('dialog.attachment-preview-dialog[open]').getElement()
     await sentDialog.waitForExist({ timeout: 5_000 })
     await expect($('.attachment-preview-text')).toHaveText(
       expect.stringContaining('The opening repeats the product description twice.'),
     )
-    await waitForAgentIdle()
     await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
+  })
+
+  it('resends canonical reviewed bytes with truthful attachment-chip copy', async () => {
+    // The canonical protected prompt already contains the reviewed paste bytes.
+    // Resend must keep those bytes and must not claim the attachment was lost.
+    const sentRows = await $$('.messages-list .msg-user').getElements()
+    const sentRow = sentRows.at(-1)
+    if (!sentRow) throw new Error('no protected prompt available to resend')
+    const rowsBeforeResend = (await $$('.messages-list .msg-user').getElements()).length
+    const resendScenario = await installMockScenario({
+      title: 'Reapply the editor feedback',
+      turns: [
+        {
+          user: PASTE_PROMPT.replace('Summarize this feedback:', 'Please apply this feedback:'),
+          responses: [{ text: 'I reapplied the exact reviewed feedback.' }],
+        },
+      ],
+    })
+    await sentRow.moveTo()
+    await sentRow.$('.msg-resend').click()
+    await acceptProtectedPrompt()
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length > rowsBeforeResend,
+      { timeout: 15_000, timeoutMsg: 'expected the protected prompt to be resent' },
+    )
+    const toastText = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.toast')]
+        .map((toast) => toast.innerText)
+        .join('\n'),
+    )
+    expect(toastText).not.toContain('Resent without the original attachments.')
+    expect(toastText).toContain('Resent the saved prompt without attachment chips.')
+    await saveAppScreenshot(RESEND_SCREENSHOT)
+    await waitForAgentIdle()
+    await resendScenario.assertComplete()
   })
 })

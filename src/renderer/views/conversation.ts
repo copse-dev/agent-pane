@@ -2300,16 +2300,23 @@ function transcriptChip(
 }
 
 /**
- * Machine continuations persist the exact reviewed provider content, including
- * the generated fenced shell block, and also carry the same shell snapshot as
- * a transcript attachment. Keep that canonical content intact while avoiding
- * a duplicate, implementation-shaped fence in the visible prompt. Exact block
- * equality is intentional: user-authored fenced text is never projected away.
+ * Protected messages persist the exact reviewed provider content, including
+ * generated fenced attachment blocks, and also carry the same snapshots as
+ * transcript attachments. Keep that canonical content intact while avoiding
+ * duplicate, implementation-shaped fences in the visible prompt. Exact block
+ * equality and uniqueness are intentional: user-authored or ambiguous fenced
+ * text is never projected away.
  */
+interface UserTranscriptProjection {
+  content: string
+  inline?: TranscriptAttachment[]
+  trailing?: TranscriptAttachment[]
+}
+
 function projectUserTranscriptContent(
   content: string,
   attachments: TranscriptAttachment[],
-): string {
+): UserTranscriptProjection {
   let projected = content
   for (let index = attachments.length - 1; index >= 0; index--) {
     const attachment = attachments[index]
@@ -2323,7 +2330,49 @@ function projectUserTranscriptContent(
     const suffix = `\n\n${block}`
     if (projected.endsWith(suffix)) projected = projected.slice(0, -suffix.length)
   }
-  return projected
+  // A protected-review projection is Main-owned. Existing placeholders mean
+  // this is still an optimistic/legacy display, whose current chip bindings
+  // must remain untouched even if authored text equals an attachment block.
+  if (projected.includes(CHIP_CHAR)) return { content: projected }
+
+  const candidates = attachments.flatMap((attachment, attachmentIndex) => {
+    const token =
+      attachment.projection === 'canonical-block' &&
+      attachment.kind === 'paste' &&
+      attachment.content !== undefined
+        ? renderTextBlock(attachment.label, attachment.content)
+        : attachment.projection === 'canonical-thread-label' && attachment.kind === 'thread'
+          ? `@${attachment.label}`
+          : undefined
+    if (token === undefined) return []
+    const start = projected.indexOf(token)
+    if (start < 0 || projected.indexOf(token, start + 1) >= 0) return []
+    return [{ attachment, attachmentIndex, start, end: start + token.length }]
+  })
+  const matches = candidates
+    .filter(
+      (candidate) =>
+        !candidates.some(
+          (other) =>
+            other !== candidate && candidate.start < other.end && other.start < candidate.end,
+        ),
+    )
+    .sort((left, right) => left.start - right.start)
+  if (matches.length === 0) return { content: projected }
+
+  let cursor = 0
+  let visible = ''
+  for (const match of matches) {
+    visible += `${projected.slice(cursor, match.start)}${CHIP_CHAR}`
+    cursor = match.end
+  }
+  visible += projected.slice(cursor)
+  const matchedIndices = new Set(matches.map((match) => match.attachmentIndex))
+  return {
+    content: visible,
+    inline: matches.map((match) => match.attachment),
+    trailing: attachments.filter((_attachment, index) => !matchedIndices.has(index)),
+  }
 }
 
 /**
@@ -2337,19 +2386,28 @@ function renderUserTranscript(
   attachments: TranscriptAttachment[],
   api: ApiClient,
 ): void {
-  const displayContent = projectUserTranscriptContent(content, attachments)
+  const projection = projectUserTranscriptContent(content, attachments)
+  const displayContent = projection.content
   // Positional composer attachments lead the array in the same order as the
   // placeholders. Anything after the final placeholder belongs in the trailing
   // row. This also keeps older messages compatible: their paste attachments
   // already led the array, while legacy thread refs followed them.
-  const inlineCount = countChipPlaceholders(displayContent)
-  const firstNonPositional = attachments.findIndex(
-    (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
-  )
-  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional
-  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
-  const inline = attachments.slice(0, boundInlineCount)
-  const trailing = attachments.slice(boundInlineCount)
+  let inline: TranscriptAttachment[]
+  let trailing: TranscriptAttachment[]
+  if (projection.inline !== undefined && projection.trailing !== undefined) {
+    inline = projection.inline
+    trailing = projection.trailing
+  } else {
+    const inlineCount = countChipPlaceholders(displayContent)
+    const firstNonPositional = attachments.findIndex(
+      (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
+    )
+    const positionalPrefixLength =
+      firstNonPositional === -1 ? attachments.length : firstNonPositional
+    const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
+    inline = attachments.slice(0, boundInlineCount)
+    trailing = attachments.slice(boundInlineCount)
+  }
 
   // Restore each positional paste/thread chip at its placeholder. `firstChip`
   // is where this fold region starts in the message's attachment list.
@@ -3952,7 +4010,7 @@ export function mountConversation(
     if (result.omittedImages) {
       showToast('Resent without the original image.')
     } else if (result.droppedAttachments) {
-      showToast('Resent without the original attachments.')
+      showToast('Resent the saved prompt without attachment chips.')
     } else if (result.queued) {
       showToast('Resend queued behind the running turn.')
     }
