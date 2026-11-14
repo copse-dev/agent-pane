@@ -1,7 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
-import { mkdir, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { revalidateStaleAcpModels, runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { initAgentsRegistry } from '../services/agents/agents-registry.ts'
@@ -12,6 +10,10 @@ import {
   revokeProjectMcpConfig,
 } from '../services/mcp/project-mcp-consent.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
+import {
+  prepareProjectCreation,
+  ProjectCreationPathError,
+} from '../services/project-creation-path.ts'
 import { registerSkillTools } from '../services/registry-bootstrap.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
@@ -105,34 +107,19 @@ export function registerWorkspaceHandlers(
       assertMainFrameSender(event, win)
       const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
       const parentDir = parseIpcArgs(zPathString, [rawParent])
-      const requestedPath = join(parentDir, name)
-      // Never escape the chosen parent (a crafted name like `..` must not climb).
-      if (resolve(parentDir, name) !== requestedPath || basename(requestedPath) !== name) {
-        throw new IpcValidationError('Invalid project name')
-      }
-      const projectPath = join(await realpath(parentDir), name)
-      if (
-        !(await confirmNativeAction(event.sender, {
-          title: 'Create project folder?',
-          detail: `Create and open ${JSON.stringify(projectPath)}? Copse will write starter files there and grant this project access to that folder.`,
-          approveLabel: 'Create project',
-        }))
-      )
-        throw new IpcValidationError('Project creation was not confirmed')
-      let projectMissing = false
-      try {
-        const existing = await stat(projectPath)
-        if (!existing.isDirectory())
-          throw new IpcValidationError('Target exists and is not a folder')
-        const entries = await readdir(projectPath)
-        if (entries.length > 0)
-          throw new IpcValidationError('Folder already exists and is not empty')
-      } catch (err) {
-        // ENOENT means the folder does not exist yet — scaffolding proceeds below.
-        if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-        projectMissing = true
-      }
-      if (projectMissing) await mkdir(projectPath, { recursive: true })
+      const { projectPath, projectMissing } = await prepareProjectCreation({
+        parentDir,
+        name,
+        confirm: async (canonicalPath) =>
+          await confirmNativeAction(event.sender, {
+            title: 'Create project folder?',
+            detail: `Create and open ${JSON.stringify(canonicalPath)}? Copse will write starter files there and grant this project access to that folder.`,
+            approveLabel: 'Create project',
+          }),
+      }).catch((error: unknown) => {
+        if (error instanceof ProjectCreationPathError) throw new IpcValidationError(error.message)
+        throw error
+      })
       await scaffoldProject(projectPath, name, projectMissing)
       const root = await registerAllowedWorkspaceRoot(projectPath)
       return root
