@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-JV6IHNV5.js";
+} from "./chunk-7EGNMEWX.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -10783,9 +10783,13 @@ function recoverFailedTurn(store2, api2, projectId, threadId, failedMessageId, m
     priorTodos: thread.todos ?? [],
     ...thread.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {}
   };
-  addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
+  const messageId = addMessage(store2, threadId, "user", INTERRUPTED_TURN_CONTINUATION);
   startHumanTurnTree(store2, threadId);
-  dispatchAgentRun(store2, api2, threadId, payload);
+  dispatchAgentRun(store2, api2, threadId, payload, {
+    messageId,
+    payload,
+    createdAt: Date.now()
+  });
   return true;
 }
 var init_turn_recovery2 = __esm({
@@ -88328,8 +88332,20 @@ async function acceptThreadPrompt(store2, api2, command2) {
       messageId,
       payload: { content: command2.text },
       createdAt: Date.now(),
-      origin
+      origin,
+      ...command2.unattended === true ? { threadPromptGrantId: command2.id } : {}
     });
+    if (command2.unattended === true) {
+      await flushPendingThreadPersistence();
+      const activation = await api2.threadPrompts.activateGrant(command2.id, messageId);
+      if (activation === "rejected") {
+        await deleteQueuedMessage(store2, api2, threadId, messageId);
+        return {
+          ok: false,
+          error: "The isolated subthread prompt could not be activated safely."
+        };
+      }
+    }
     const queued = current.status === "running" || current.queuePaused === true;
     drainMessageQueue(store2, api2, threadId);
     const accepted = getThreadById(store2, threadId);
@@ -88366,6 +88382,7 @@ var init_thread_prompts = __esm({
     init_pending_submissions();
     init_message_queue();
     init_background_threads();
+    init_persistence();
   }
 });
 
@@ -88793,7 +88810,9 @@ function createTranscriptReducer(store2, hooks = {}) {
         const content = typeof chunk.content === "string" ? chunk.content : chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
         const images = typeof chunk.content === "string" ? void 0 : chunk.content.filter((block) => block.type === "image").map((block) => block.dataUrl);
         if (existing) {
-          setMessagePromptContent(store2, existing.id, content, images);
+          if (chunk.preserveOptimisticDisplay !== true) {
+            setMessagePromptContent(store2, existing.id, content, images);
+          }
           store2.emit("message_done", existing.id);
         } else {
           addMessage(store2, threadId, "user", content, images, void 0, {
