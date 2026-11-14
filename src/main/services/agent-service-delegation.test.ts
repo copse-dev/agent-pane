@@ -46,34 +46,43 @@ describe('explicit agent delegation and turn usage', () => {
       let reads = 0
       let childCalls = 0
       let parentCalls = 0
-      const network = mock.method(globalThis, 'fetch', async (): Promise<Response> => {
-        childCalls++
-        if (scenario === 'worker-error' && childCalls === 2) {
-          return new Response('Worker could not finish', { status: 400 })
-        }
-        const delta =
-          childCalls === 1
-            ? {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'child-read',
-                    type: 'function',
-                    function: {
-                      name: 'read_file',
-                      arguments: JSON.stringify({ path: 'evidence.txt' }),
+      const network = mock.method(
+        globalThis,
+        'fetch',
+        async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+          const url = input instanceof Request ? input.url : String(input)
+          // Ancillary model downloads must not consume the worker's scripted turns.
+          if (url !== 'http://127.0.0.1:59991/v1/chat/completions') {
+            return new Response('This fixture serves only worker completions.', { status: 503 })
+          }
+          childCalls++
+          if (scenario === 'worker-error' && childCalls === 2) {
+            return new Response('Worker could not finish', { status: 400 })
+          }
+          const delta =
+            childCalls === 1
+              ? {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'child-read',
+                      type: 'function',
+                      function: {
+                        name: 'read_file',
+                        arguments: JSON.stringify({ path: 'evidence.txt' }),
+                      },
                     },
-                  },
-                ],
-              }
-            : { content: WORKER_REPORT }
-        return new Response(
-          `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: childCalls === 1 ? 'tool_calls' : 'stop' }] })}\n\n` +
-            `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 7 } } })}\n\n` +
-            'data: [DONE]\n\n',
-          { headers: { 'content-type': 'text/event-stream' } },
-        )
-      })
+                  ],
+                }
+              : { content: WORKER_REPORT }
+          return new Response(
+            `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: childCalls === 1 ? 'tool_calls' : 'stop' }] })}\n\n` +
+              `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 7 } } })}\n\n` +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          )
+        },
+      )
       const registry = new ToolRegistry()
       registry.register(readonlyWorkersTool)
       registry.register(
