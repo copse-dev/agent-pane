@@ -239,7 +239,16 @@ describe('TurnTranscriptWriter', () => {
   })
 
   it('persists reviewed text while forwarding an unchanged optimistic display hint', async () => {
-    await appendMessage(PROJECT, THREAD, humanPrompt('u1', 'Unreviewed renderer text'))
+    const optimistic = humanPrompt('u1', 'Unreviewed renderer text')
+    optimistic.attachments = [
+      {
+        kind: 'paste',
+        placement: 'inline',
+        label: 'Reviewed notes',
+        content: 'exact snapshot',
+      },
+    ]
+    await appendMessage(PROJECT, THREAD, optimistic)
     const deliveries: Delivery[] = []
     const turn = harness(
       () => [{ type: 'done' }],
@@ -252,6 +261,15 @@ describe('TurnTranscriptWriter', () => {
       protectedHumanStart: {
         content: 'Reviewed safe text',
         preserveOptimisticDisplay: true,
+        attachments: [
+          {
+            kind: 'paste',
+            placement: 'inline',
+            label: 'Reviewed notes',
+            content: 'exact snapshot',
+            projection: 'canonical-block',
+          },
+        ],
         acceptMessageId: async () => 'u1',
       },
     })
@@ -260,6 +278,15 @@ describe('TurnTranscriptWriter', () => {
     const accepted = (await stored()).messages.find((message) => message.id === 'u1')
     assert.ok(accepted)
     assert.equal(accepted.content, 'Reviewed safe text')
+    assert.deepEqual(accepted.attachments, [
+      {
+        kind: 'paste',
+        placement: 'inline',
+        label: 'Reviewed notes',
+        content: 'exact snapshot',
+        projection: 'canonical-block',
+      },
+    ])
     assert.deepEqual(recoverAgentHistory([accepted, humanPrompt('pending', 'Continue')]), [
       { role: 'user', content: 'Reviewed safe text' },
     ])
@@ -269,6 +296,15 @@ describe('TurnTranscriptWriter', () => {
       content: 'Reviewed safe text',
       messageId: 'u1',
       preserveOptimisticDisplay: true,
+      attachments: [
+        {
+          kind: 'paste',
+          placement: 'inline',
+          label: 'Reviewed notes',
+          content: 'exact snapshot',
+          projection: 'canonical-block',
+        },
+      ],
     })
   })
 

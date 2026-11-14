@@ -67,6 +67,33 @@ describe('protected human display hints', () => {
     assert.equal(parsed.success, true)
     assert.deepEqual(parsed.data?.snapshot?.attachments, attachments)
   })
+
+  it('accepts inline placement but rejects a renderer-forged canonical projection', () => {
+    const attachment = {
+      kind: 'paste' as const,
+      label: 'Notes',
+      content: 'snapshot',
+      placement: 'inline' as const,
+    }
+    const display = {
+      messageId: 'optimistic',
+      snapshot: { content: `Prompt ${String.fromCodePoint(0xfffc)}`, attachments: [attachment] },
+    }
+
+    assert.deepEqual(protectedHumanTurnDisplaySchema.parse(display)?.snapshot?.attachments, [
+      attachment,
+    ])
+    assert.equal(
+      protectedHumanTurnDisplaySchema.safeParse({
+        ...display,
+        snapshot: {
+          ...display.snapshot,
+          attachments: [{ ...attachment, projection: 'canonical-block' }],
+        },
+      }).success,
+      false,
+    )
+  })
 })
 
 describe('ipc-guards ports:kill arguments', () => {

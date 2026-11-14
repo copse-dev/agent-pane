@@ -8,6 +8,7 @@ import type {
   MachineDispatchResult,
   MachineTurnDisplay,
   StreamChunk,
+  TranscriptAttachment,
   UserContent,
 } from '@shared/types'
 import {
@@ -86,6 +87,8 @@ export interface AgentDispatchRequest {
     content: UserContent
     /** Keep a verified optimistic bubble when isolated review made no text edit. */
     preserveOptimisticDisplay?: true
+    /** Display snapshots retained only after Main verifies that optimistic bubble. */
+    attachments?: TranscriptAttachment[]
     /** Persist acceptance and claim display reconciliation after this dispatcher owns the thread. */
     acceptMessageId: () => Promise<string>
   }
@@ -310,6 +313,14 @@ export class AgentDispatcher {
         messageId,
         ...(request.protectedHumanStart.preserveOptimisticDisplay === true
           ? { preserveOptimisticDisplay: true as const }
+          : {}),
+        ...(request.protectedHumanStart.preserveOptimisticDisplay === true &&
+        request.protectedHumanStart.attachments !== undefined
+          ? {
+              attachments: request.protectedHumanStart.attachments.map((attachment) => ({
+                ...attachment,
+              })),
+            }
           : {}),
       })
     }

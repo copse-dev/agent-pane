@@ -17,7 +17,11 @@ import {
   loadThreadMessages,
   updateMeta,
 } from '../services/thread-store.ts'
-import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
+import {
+  withoutMainOwnedMessageFields,
+  withoutMainOwnedThreadCreateFields,
+  withoutMainOwnedThreadFields,
+} from './thread-meta-guard.ts'
 
 describe('withoutMainOwnedThreadFields', () => {
   it('drops a renderer-supplied remote-agent link and keeps everything else', () => {
@@ -52,6 +56,62 @@ describe('withoutMainOwnedThreadFields', () => {
 
   it('leaves a payload without main-owned fields unchanged', () => {
     assert.deepEqual(withoutMainOwnedThreadFields({ a: 1, b: [2] }), { a: 1, b: [2] })
+  })
+
+  it('strips projection provenance from renderer append and create payloads', () => {
+    const message = {
+      id: 'request',
+      role: 'user',
+      content: 'visible',
+      toolCalls: [],
+      createdAt: 1,
+      attachments: [
+        {
+          kind: 'paste',
+          label: 'Notes',
+          content: 'bytes',
+          placement: 'inline',
+          projection: 'canonical-block',
+        },
+      ],
+    }
+    const expected = {
+      ...message,
+      attachments: [
+        {
+          kind: 'paste',
+          label: 'Notes',
+          content: 'bytes',
+          placement: 'inline',
+        },
+      ],
+    }
+    assert.deepEqual(withoutMainOwnedMessageFields(message), expected)
+    assert.deepEqual(withoutMainOwnedThreadCreateFields({ messages: [message] }), {
+      messages: [expected],
+    })
+  })
+
+  it('preserves accepted projection provenance through the exact fork guard', () => {
+    const accepted = {
+      id: 'request',
+      role: 'user',
+      content: 'visible',
+      toolCalls: [],
+      createdAt: 1,
+      attachments: [
+        {
+          kind: 'paste',
+          label: 'Notes',
+          content: 'bytes',
+          placement: 'inline',
+          projection: 'canonical-block',
+        },
+      ],
+    }
+    assert.deepEqual(withoutMainOwnedThreadFields({ messages: [accepted] }), {
+      messages: [accepted],
+    })
   })
 })
 
@@ -152,6 +212,15 @@ describe('main-owned worktree metadata at the renderer boundary', () => {
         id: 'parent-request',
         role: 'user',
         content: 'Original context',
+        attachments: [
+          {
+            kind: 'paste',
+            label: 'Accepted notes',
+            content: 'exact bytes',
+            placement: 'inline',
+            projection: 'canonical-block',
+          },
+        ],
         toolCalls: [],
         createdAt: 1,
       },
@@ -171,6 +240,12 @@ describe('main-owned worktree metadata at the renderer boundary', () => {
         (await loadThreadMessages('project', parsed.id)).length,
         incoming.messages.length,
       )
+      if (incoming.id === fork.id) {
+        assert.equal(
+          (await loadThreadMessages('project', parsed.id))[0]?.attachments?.[0]?.projection,
+          'canonical-block',
+        )
+      }
     }
   })
 })

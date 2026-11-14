@@ -3894,7 +3894,7 @@ export function mountConversation(
     if (result.omittedImages) {
       showToast('Resent without the original image.')
     } else if (result.droppedAttachments) {
-      showToast('Resent without the original attachments.')
+      showToast('Resent the saved prompt without attachment chips.')
     } else if (result.queued) {
       showToast('Resend queued behind the running turn.')
     }

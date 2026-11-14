@@ -210,6 +210,7 @@ import {
 } from './services/agent-dispatcher.ts'
 import {
   protectedPromptMessageMatches,
+  reviewedTranscriptAttachments,
   protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
   ProtectedPromptReviewService,
@@ -1253,6 +1254,15 @@ app
                 protectedHumanStart: {
                   content: grant.content,
                   preserveOptimisticDisplay: true,
+                  ...(optimistic.attachments !== undefined
+                    ? {
+                        attachments: reviewedTranscriptAttachments(
+                          optimistic.attachments,
+                          optimistic.content,
+                          grant.content,
+                        ),
+                      }
+                    : {}),
                   acceptMessageId: async (): Promise<string> => {
                     const messageId = await acceptExactReviewedUserMessage(projectId, threadId, {
                       message: optimistic,
@@ -1424,6 +1434,15 @@ app
                     ...(preserveOptimisticDisplay
                       ? { preserveOptimisticDisplay: true as const }
                       : {}),
+                    ...(preserveOptimisticDisplay && optimistic.attachments !== undefined
+                      ? {
+                          attachments: reviewedTranscriptAttachments(
+                            optimistic.attachments,
+                            optimistic.content,
+                            payload.userContent,
+                          ),
+                        }
+                      : {}),
                     acceptMessageId: async (): Promise<string> => {
                       const messageId = await acceptAuthorizedReviewedUserMessage(
                         projectId,
@@ -1550,6 +1569,15 @@ app
               protectedHumanStart: {
                 content: reviewedContent,
                 ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
+                ...(preserveOptimisticDisplay && optimistic.attachments !== undefined
+                  ? {
+                      attachments: reviewedTranscriptAttachments(
+                        optimistic.attachments,
+                        optimistic.content,
+                        payload.userContent,
+                      ),
+                    }
+                  : {}),
                 acceptMessageId: () =>
                   acceptReviewedUserMessage(
                     projectId,

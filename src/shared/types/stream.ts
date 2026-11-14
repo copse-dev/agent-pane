@@ -96,6 +96,8 @@ export type StreamChunk =
       messageId: string
       /** Main verified the optimistic display and review left its model-facing text unchanged. */
       preserveOptimisticDisplay?: true
+      /** Exact display snapshots Main verified before an unchanged protected review. */
+      attachments?: TranscriptAttachment[]
     }
   /**
    * Patch an existing external ACP tool call. ACP agents may send the title and

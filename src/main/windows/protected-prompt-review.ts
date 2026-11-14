@@ -15,6 +15,7 @@ import { getThreadMeta } from '../services/thread-store.ts'
 import { getProjectRoot } from '../services/workspace.ts'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 
 const PROTECTED_PROMPT_PARTITION = 'protected-prompt'
 const submissionSchema = z.object({ text: z.string().max(1_000_000) }).strict()
@@ -42,6 +43,106 @@ function promptText(content: UserContent): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
+}
+
+const INLINE_ATTACHMENT_PLACEHOLDER = '\uFFFC'
+
+function rendererAttachmentFields(attachment: TranscriptAttachment): TranscriptAttachment {
+  return {
+    kind: attachment.kind,
+    label: attachment.label,
+    ...(attachment.placement === undefined ? {} : { placement: attachment.placement }),
+    ...(attachment.content === undefined ? {} : { content: attachment.content }),
+    ...(attachment.path === undefined ? {} : { path: attachment.path }),
+  }
+}
+
+function canonicalInlineToken(attachment: TranscriptAttachment): string | null {
+  if (attachment.kind === 'thread') return `@${attachment.label}`
+  if (attachment.kind !== 'paste' || attachment.content === undefined) return null
+  return renderTextBlock(attachment.label, attachment.content)
+}
+
+function expandedInlineDisplay(
+  displayContent: string,
+  attachments: TranscriptAttachment[],
+): { text: string; tokens: string[] } | null {
+  const inline = attachments.filter((attachment) => attachment.placement === 'inline')
+  const parts = displayContent.split(INLINE_ATTACHMENT_PLACEHOLDER)
+  if (parts.length - 1 !== inline.length) return null
+  let text = parts[0] ?? ''
+  const tokens: string[] = []
+  for (let index = 0; index < inline.length; index++) {
+    const attachment = inline[index]
+    if (attachment === undefined) return null
+    const token = canonicalInlineToken(attachment)
+    if (token === null) return null
+    tokens.push(token)
+    if (attachment.kind === 'paste') {
+      if (text !== '' && !text.endsWith('\n')) text += '\n\n'
+      else if (text.endsWith('\n') && !text.endsWith('\n\n')) text += '\n'
+      text += token
+      const rest = parts[index + 1] ?? ''
+      if (rest !== '' && !rest.startsWith('\n')) text += '\n\n'
+    }
+    if (attachment.kind === 'thread') text += token
+    text += parts[index + 1] ?? ''
+  }
+  return { text: text.trim(), tokens }
+}
+
+function uniqueTokenRange(text: string, token: string): { start: number; end: number } | null {
+  const start = text.indexOf(token)
+  if (start < 0 || text.indexOf(token, start + 1) >= 0) return null
+  return { start, end: start + token.length }
+}
+
+/**
+ * Grant display projection only when Main can reconstruct the reviewed prompt
+ * from the optimistic placeholder sequence. Renderer-supplied projection is
+ * always discarded; ambiguous tokens stay literal.
+ */
+export function reviewedTranscriptAttachments(
+  attachments: TranscriptAttachment[],
+  displayContent: string,
+  modelContent: UserContent,
+): TranscriptAttachment[] {
+  const rendererFields = attachments.map(rendererAttachmentFields)
+  const expanded = expandedInlineDisplay(displayContent, rendererFields)
+  if (expanded === null || expanded.text === '') return rendererFields
+  const modelText = promptText(modelContent)
+  if (modelText !== expanded.text && !modelText.startsWith(`${expanded.text}\n\n`)) {
+    return rendererFields
+  }
+  const ranges = expanded.tokens.map((token) => uniqueTokenRange(modelText, token))
+  const overlapping = new Set<number>()
+  for (let left = 0; left < ranges.length; left++) {
+    const leftRange = ranges[left]
+    if (leftRange === null || leftRange === undefined) continue
+    for (let right = left + 1; right < ranges.length; right++) {
+      const rightRange = ranges[right]
+      if (rightRange === null || rightRange === undefined) continue
+      if (leftRange.start < rightRange.end && rightRange.start < leftRange.end) {
+        overlapping.add(left)
+        overlapping.add(right)
+      }
+    }
+  }
+  let inlineIndex = 0
+  return rendererFields.map((attachment) => {
+    if (attachment.placement !== 'inline') return attachment
+    const range = ranges[inlineIndex]
+    const ambiguous = range === null || range === undefined || overlapping.has(inlineIndex)
+    inlineIndex++
+    if (ambiguous) return attachment
+    const projection =
+      attachment.kind === 'paste'
+        ? 'canonical-block'
+        : attachment.kind === 'thread'
+          ? 'canonical-thread-label'
+          : undefined
+    return projection === undefined ? attachment : { ...attachment, projection }
+  })
 }
 
 /** True only when isolated review returned the exact text it was seeded with. */
@@ -90,6 +191,8 @@ export function protectedPromptMessageMatches(
         candidate !== undefined &&
         attachment.kind === candidate.kind &&
         attachment.label === candidate.label &&
+        attachment.placement === candidate.placement &&
+        attachment.projection === candidate.projection &&
         attachment.content === candidate.content &&
         attachment.path === candidate.path
       )

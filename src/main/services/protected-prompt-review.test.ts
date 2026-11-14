@@ -3,12 +3,14 @@ import assert from 'node:assert/strict'
 import {
   protectedPromptImageDataUrls,
   protectedPromptMessageMatches,
+  reviewedTranscriptAttachments,
   protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
   withProtectedPromptText,
 } from '../windows/protected-prompt-review.ts'
 import type { LLMMessage } from '@shared/types'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 
 test('protected prompt edits preserve image bytes while replacing renderer text', () => {
   const image = { type: 'image' as const, dataUrl: 'data:image/png;base64,AA==' }
@@ -86,6 +88,61 @@ test('protected prompt accepts a display hint only for exact user content', () =
     ),
     false,
   )
+  assert.equal(
+    protectedPromptMessageMatches(
+      {
+        content: 'visible prompt',
+        images: [image],
+        attachments: [{ ...attachment, placement: 'inline' }],
+      },
+      { content: 'visible prompt', attachments: [attachment] },
+      [{ type: 'image', dataUrl: image }],
+    ),
+    false,
+  )
+  assert.equal(
+    protectedPromptMessageMatches(
+      {
+        content: 'visible prompt',
+        images: [image],
+        attachments: [{ ...attachment, projection: 'canonical-block' }],
+      },
+      { content: 'visible prompt', attachments: [attachment] },
+      [{ type: 'image', dataUrl: image }],
+    ),
+    false,
+  )
+})
+
+test('reviewed attachments receive provenance only for exact placeholder expansion', () => {
+  const attachment = {
+    kind: 'paste' as const,
+    label: 'Notes',
+    content: 'exact bytes',
+    placement: 'inline' as const,
+  }
+  const block = renderTextBlock(attachment.label, attachment.content)
+  assert.deepEqual(
+    reviewedTranscriptAttachments(
+      [{ ...attachment, projection: 'canonical-thread-label' }],
+      'before \uFFFC after',
+      `before \n\n${block}\n\n after`,
+    ),
+    [{ ...attachment, projection: 'canonical-block' }],
+  )
+  assert.deepEqual(
+    reviewedTranscriptAttachments([{ ...attachment, projection: 'canonical-block' }], block, block),
+    [attachment],
+  )
+})
+
+test('reviewed attachment provenance stays literal when a token is ambiguous', () => {
+  const attachment = {
+    kind: 'thread' as const,
+    label: '@',
+    placement: 'inline' as const,
+  }
+  assert.deepEqual(reviewedTranscriptAttachments([attachment], '\uFFFC@', '@@@'), [attachment])
 })
 
 test('protected prompt exposes the exact frozen stored inference context', () => {

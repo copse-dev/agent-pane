@@ -22,12 +22,11 @@ import {
  * honest about what was actually sent, and means a resend behaves identically
  * whether the agent is idle (dispatch now) or running (queue behind the turn).
  *
- * Fidelity note: the transcript stores the prompt's *visible* text and images,
- * not the run payload — an inline paste survives only as a U+FFFC placeholder,
- * and `@`-file / `@`-thread / shell chips as labels. The fenced blocks those
- * stood for were expanded into the payload and are gone. A resend therefore
- * repeats the prompt's own words (placeholders stripped) and reports the
- * dropped attachments, rather than quietly sending less than it appears to.
+ * Fidelity note: legacy transcript prompts store only visible text, so their
+ * attachment placeholders cannot be rebuilt. Protected prompts instead retain
+ * canonical provider text and Main-owned projection provenance. Their exact
+ * reviewed bytes can be resent from `content` even though the display chip is
+ * omitted from the new bubble.
  */
 
 export interface ResendResult {
@@ -35,7 +34,7 @@ export interface ResendResult {
   messageId: string
   /** Queued behind a live run rather than dispatched immediately. */
   queued: boolean
-  /** The original prompt carried attachment chips that a resend cannot rebuild. */
+  /** The original prompt carried attachment chips omitted from the new bubble. */
   droppedAttachments: boolean
   /** The user explicitly chose the text-only recovery for an image prompt. */
   omittedImages: boolean

@@ -4,7 +4,11 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
-import { withoutMainOwnedThreadFields } from './thread-meta-guard.ts'
+import {
+  withoutMainOwnedMessageFields,
+  withoutMainOwnedThreadCreateFields,
+  withoutMainOwnedThreadFields,
+} from './thread-meta-guard.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
@@ -211,7 +215,7 @@ export function registerThreadHandlers(
       projectId,
       thread,
     ])
-    const parsed = parseThreadValue(withoutMainOwnedThreadFields(payload))
+    const parsed = parseThreadValue(withoutMainOwnedThreadCreateFields(payload))
     if (parsed === null) throw new IpcValidationError('Invalid thread payload')
     const senderId = event.sender.id
     await createThreadWithResult(id, parsed, {
@@ -229,7 +233,7 @@ export function registerThreadHandlers(
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, message],
       )
-      const parsed = parseMessageValue(payload)
+      const parsed = parseMessageValue(withoutMainOwnedMessageFields(payload))
       if (parsed === null) throw new IpcValidationError('Invalid message payload')
       const senderId = event.sender.id
       const existing = (await getProjectThread(pid, tid))?.messages.find(
