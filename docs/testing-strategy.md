@@ -467,9 +467,16 @@ loops driven by an actual local model rather than the mock:
   through the new-thread picker before submitting; otherwise the product's default
   branch selection applies. The driver confirms dirty-checkout warnings, accepts
   both single-file and bulk proposals through Changes, waits for acceptance wakes,
-  and fails if any proposals remain before judging workspace files. Failed runs
-  preserve a window screenshot, visible composer/error text, and the thread export
-  under `tests/e2e/artifacts/` when available.
+  and fails if any proposals remain before judging workspace files. It stops at the
+  first turn whose `turnOutcome` is `failed` and reports that provider error, rather
+  than sending the next prompt. Failed runs preserve a window screenshot, visible
+  composer/error text, and the thread export under `tests/e2e/artifacts/` when
+  available. `requireTools` (driver and `analyze:thread`) needs a call that
+  completed with `done`; an attempted call satisfies only `requireAnyTools`. A
+  sandboxed shell cannot create `.git` (it is an ancestor of the protected
+  `.git/hooks`), so a scenario that needs a repository sets `workspace.initializeGit`,
+  and `commitSeedFiles` to start from the New project scaffold's initial commit;
+  git assertions then count only the commits made after that baseline.
 - `npm run validate:local-agent` exercises the agent loop headlessly.
 - `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
   holds a fixed task/model/tool set constant and compares the full system prompt

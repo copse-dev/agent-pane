@@ -11,6 +11,7 @@ import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
+  EVAL_GIT_BASELINE_ENV,
   loadEvalScenario,
   resolvePromptAttachment,
   selectedEvalPrompts,
@@ -35,6 +36,7 @@ import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { acceptEvalProposals, selectEvalBranch } from './helpers/agent-eval-ui.ts'
+import { failedTurn } from '../../src/main/services/container-runtime/guest-turn.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -292,20 +294,24 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
       encoding: 'utf8',
     }).trim()
     assert.equal(isRepo, 'true')
+    // A seeded baseline is the harness's commit, not the agent's: judge only
+    // what the run added on top of it.
+    const baseline = process.env[EVAL_GIT_BASELINE_ENV]?.trim()
+    const range = baseline ? `${baseline}..HEAD` : 'HEAD'
     if (exp.git.minCommits !== undefined) {
       const count = Number(
-        execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+        execFileSync('git', ['rev-list', '--count', range], {
           cwd: root,
           encoding: 'utf8',
         }).trim(),
       )
       assert.ok(
         count >= exp.git.minCommits,
-        `Expected at least ${String(exp.git.minCommits)} commits`,
+        `Expected at least ${String(exp.git.minCommits)} commits${baseline ? ' after the seeded baseline' : ''}; found ${String(count)}`,
       )
     }
     if (exp.git.allCommitMessagesContain) {
-      const messages = execFileSync('git', ['log', '--format=%B%x00'], {
+      const messages = execFileSync('git', ['log', '--format=%B%x00', range], {
         cwd: root,
         encoding: 'utf8',
       })
@@ -385,6 +391,33 @@ async function readActiveThread(): Promise<Thread> {
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
   if (!thread) throw new Error('Could not resolve active thread')
   return thread
+}
+
+/** Longest provider error kept in a failure message; the artifact holds the rest. */
+const FAILED_TURN_MESSAGE_LIMIT = 2_000
+
+/**
+ * Stop at the first turn that ended in failure.
+ *
+ * A provider error (an LM Studio 400, an ACP child that could not start) ends
+ * the turn with `turnOutcome.status: 'failed'` rather than an error toast, so
+ * the drive used to type the next prompt into a broken thread and report the
+ * run as whichever workspace assertion it reached first. That message named
+ * the symptom (no git repo) and hid the cause; the failure hook still keeps
+ * the screenshot and thread, so failing here loses no evidence.
+ */
+async function assertNoFailedTurn(afterPrompt: number): Promise<void> {
+  const thread = await readActiveThread()
+  for (const message of thread.messages) {
+    const outcome = message.turnOutcome
+    const reason = failedTurn(outcome)
+    if (reason === null) continue
+    const source = outcome?.source ?? 'unknown source'
+    throw new Error(
+      `Eval turn after prompt ${String(afterPrompt)} failed (${source}): ` +
+        reason.slice(0, FAILED_TURN_MESSAGE_LIMIT),
+    )
+  }
 }
 
 function assertExploreSubagentCompleted(thread: Thread): void {
@@ -604,14 +637,16 @@ describe('agent eval drive', () => {
       await armGuardedYoloForEval()
     }
 
-    for (const prompt of prompts) {
+    for (const [index, prompt] of prompts.entries()) {
       await typePrompt(prompt)
       await submitComposer()
       await waitForEvalAgentIdle(idleTimeout)
+      await assertNoFailedTurn(index + 1)
     }
     if (scenario.backgroundWake) {
       assert.equal(prompts.length, 1, 'background wake eval requires exactly one human prompt')
       await waitForBackgroundWake(scenario.backgroundWake)
+      await assertNoFailedTurn(prompts.length)
     }
 
     const thread = await readActiveThread()

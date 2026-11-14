@@ -1,9 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   loadEvalScenario,
+  seedEvalWorkspace,
   type EvalScenario,
   type PromptAttachment,
 } from '../../tests/e2e/helpers/agent-eval-scenario.ts'
@@ -56,6 +59,56 @@ describe('agent-eval scenarios', () => {
           `${name}: missing fixture ${attachment.fixture}`,
         )
       }
+    }
+  })
+})
+
+describe('git-commit-tool-eval workspace', () => {
+  it('starts from a committed seed baseline with a clean tree', () => {
+    const scenario = loadEvalScenario(join(SCENARIO_DIR, 'git-commit-tool-eval.json'))
+    const root = mkdtempSync(join(tmpdir(), 'copse-eval-seed-test-'))
+    try {
+      const baseline = seedEvalWorkspace(root, scenario)
+      const git = (...args: string[]): string =>
+        execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+      assert.ok(baseline, 'commitSeedFiles must report the baseline commit')
+      assert.equal(git('rev-parse', 'HEAD'), baseline)
+      assert.equal(git('rev-list', '--count', 'HEAD'), '1')
+      assert.equal(git('status', '--porcelain'), '')
+      assert.deepEqual(git('ls-files').split('\n'), ['CHANGELOG.md', 'README.md'])
+      // The scaffold's identity: the agent's commits are judged after this one.
+      assert.equal(
+        git('log', '-1', '--format=%an <%ae>|%s'),
+        'Copse <copse@copse.invalid>|Initial commit',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('no longer asks the agent to initialise a repository', () => {
+    // A sandboxed shell cannot create `.git` (it is an ancestor of the protected
+    // `.git/hooks`), so a prompt asking for `git init` can only fail.
+    const scenario = loadEvalScenario(join(SCENARIO_DIR, 'git-commit-tool-eval.json'))
+    for (const prompt of scenario.prompts ?? []) {
+      const text = typeof prompt === 'string' ? prompt : prompt.text
+      assert.doesNotMatch(text, /initiali[sz]e|git init/i)
+    }
+  })
+
+  it('rejects commitSeedFiles without initializeGit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-eval-seed-test-'))
+    try {
+      assert.throws(
+        () =>
+          seedEvalWorkspace(root, {
+            id: 'bad',
+            workspace: { type: 'tempProject', commitSeedFiles: true },
+          }),
+        /commitSeedFiles requires initializeGit/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

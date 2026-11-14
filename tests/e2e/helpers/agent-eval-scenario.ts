@@ -28,6 +28,13 @@ const evalScenarioSchema = z.object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
       initializeGit: z.boolean().optional(),
+      /**
+       * Commit the seed files as the repository's first commit, the way Copse's
+       * New project scaffold does (`project-scaffold.ts`), so the run starts
+       * from a real HEAD and a clean tree. Requires `initializeGit`. Git
+       * assertions then judge only the commits made after this baseline.
+       */
+      commitSeedFiles: z.boolean().optional(),
       /** Copy the current checkout's origin into an isolated temp repo for GitHub-tool evals. */
       copyGitRemoteFromCurrent: z.boolean().optional(),
       /** Copy bounded local history into the disposable project's main branch. */
@@ -197,8 +204,22 @@ export function resolvePromptAttachment(attachment: PromptAttachment): {
   return { path: attachment.path, content: readFileSync(fixturePath, 'utf8') }
 }
 
-export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
+/** Environment variable carrying the commit a seeded eval repository started from. */
+export const EVAL_GIT_BASELINE_ENV = 'COPSE_EVAL_GIT_BASELINE'
+
+/**
+ * Seed the disposable eval workspace.
+ *
+ * Returns the commit the seeded repository starts from when the scenario
+ * committed its seed files, so git assertions can tell the harness's commit
+ * from the agent's; otherwise null.
+ */
+export function seedEvalWorkspace(root: string, scenario: EvalScenario): string | null {
   const sourceRef = scenario.workspace?.copyGitRefFromCurrent
+  const commitSeedFiles = scenario.workspace?.commitSeedFiles === true
+  if (commitSeedFiles && (scenario.workspace?.initializeGit !== true || sourceRef !== undefined)) {
+    throw new Error('commitSeedFiles requires initializeGit and no copyGitRefFromCurrent')
+  }
   if (
     sourceRef !== undefined &&
     (scenario.workspace?.type !== 'tempProject' ||
@@ -209,6 +230,7 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
       'copyGitRefFromCurrent requires an initialized disposable project and copied origin',
     )
   }
+  const seededPaths: string[] = []
   for (const seedFile of scenario.workspace?.seedFiles ?? []) {
     const file = resolvePromptAttachment(seedFile)
     const target = resolve(root, file.path)
@@ -222,12 +244,17 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     }
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, file.content, 'utf8')
+    seededPaths.push(relativeTarget)
   }
   if (scenario.workspace?.initializeGit === true) {
     // Copse's real New project flow initializes Git before opening the first
     // chat. Mirror that boundary so native write tools can apply new files
     // directly instead of staging approval-only diffs in an untracked folder.
     execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
+  }
+  let baseline: string | null = null
+  if (commitSeedFiles) {
+    baseline = commitSeedBaseline(root, seededPaths)
   }
   if (scenario.workspace?.copyGitRemoteFromCurrent === true) {
     if (scenario.workspace.initializeGit !== true) {
@@ -265,4 +292,32 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     })
     execFileSync('git', ['remote', 'set-head', 'origin', 'main'], { cwd: root, stdio: 'pipe' })
   }
+  return baseline
+}
+
+/**
+ * The scaffold's initial commit, by the same plumbing and identity:
+ * `project-scaffold.ts` commits its starter files with `commit-tree` as Copse so
+ * no user hook, signing or missing `user.name` can interfere. The eval needs
+ * the same starting state; a sandboxed agent cannot create `.git` itself
+ * (the sandbox denies creating any ancestor of the protected `.git/hooks`).
+ */
+function commitSeedBaseline(root: string, paths: readonly string[]): string {
+  if (paths.length === 0) throw new Error('commitSeedFiles requires at least one seed file')
+  const git = (args: string[]): string =>
+    execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+  git(['add', '-f', '--', ...paths])
+  const tree = git(['write-tree'])
+  const commit = git([
+    '-c',
+    'user.name=Copse',
+    '-c',
+    'user.email=copse@copse.invalid',
+    'commit-tree',
+    tree,
+    '-m',
+    'Initial commit',
+  ])
+  git(['update-ref', 'refs/heads/main', commit])
+  return commit
 }
