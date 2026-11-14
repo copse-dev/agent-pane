@@ -31,6 +31,7 @@ import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
 import {
   egressRuleAllows,
   findEgressRule,
@@ -64,6 +65,12 @@ export interface EgressBrokerOptions {
   runKey?: string
   /** A run-scoped model stream, never a generic HTTP or credential endpoint. */
   inference?: (stream: MuxStream) => Promise<void>
+  /**
+   * The run's GitHub read capability (decision A24): one HTTP request per
+   * stream, decided and re-originated on the host with the user's token held
+   * here. Admitted only when the allowlist names {@link HOST_GITHUB_TARGET}.
+   */
+  github?: (stream: MuxStream) => Promise<void>
 }
 
 type LookupFunction = NonNullable<TcpSocketConnectOpts['lookup']>
@@ -228,9 +235,11 @@ export class EgressBroker {
   private readonly lookup = cachedLookup()
   private runKey: string | null
   private readonly inference: EgressBrokerOptions['inference']
+  private readonly github: EgressBrokerOptions['github']
 
   constructor(options: EgressBrokerOptions) {
     this.inference = options.inference
+    this.github = options.github
     this.rules = options.rules
     this.resolve = options.resolve ?? {}
     const refusal = hostLocalAliasRefusal(this.rules, this.resolve)
@@ -288,6 +297,30 @@ export class EgressBroker {
         .finally(() => {
           this.live.delete(stream)
           this.entries.push({ at: Date.now(), origin: target, event: 'close' })
+        })
+        .catch(() => {
+          stream.destroy()
+        })
+      return
+    }
+    if (target === HOST_GITHUB_TARGET) {
+      const github = this.github
+      if (!github || findEgressRule(this.rules, 'github.copse.internal', 443) === null) {
+        this.refuse(link, id, target, 'no GitHub access for this run')
+        return
+      }
+      // Each request records its own decision through the capability's log;
+      // the stream itself is one HTTP exchange and needs no entry of its own.
+      const stream = link.accept(id)
+      this.live.add(stream)
+      // A guest that hangs up mid-request resets the stream; the capability
+      // sees the close and records the request's outcome itself.
+      stream.on('error', () => {
+        stream.destroy()
+      })
+      void github(stream)
+        .finally(() => {
+          this.live.delete(stream)
         })
         .catch(() => {
           stream.destroy()
@@ -429,6 +462,11 @@ export class EgressBroker {
 
   log(): EgressLogEntry[] {
     return [...this.entries]
+  }
+
+  /** An entry from a host capability served over this broker's link (GitHub reads). */
+  record(entry: EgressLogEntry): void {
+    this.entries.push(entry)
   }
 
   /** Sever every stream and the link; the byte streams themselves are the caller's. */

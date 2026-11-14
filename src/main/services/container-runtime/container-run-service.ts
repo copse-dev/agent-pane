@@ -12,6 +12,8 @@ import {
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
 import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
+import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
+import { resolveGitHubApiToken } from '../github/backend/github-token.ts'
 import {
   adoptCarryOut,
   assertThreadContainerEngine,
@@ -369,6 +371,7 @@ export class ContainerRunService {
         ? this.continuationOf(request.threadId, request.continueFrom, request.continueContext)
         : null
     const model = request.model
+    const installs = request.installDependencies === true
     let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
     let credential: ContainerRunProgress['credential'] = 'none'
     let egressAllowlist: string[] = []
@@ -420,10 +423,15 @@ export class ContainerRunService {
               ? 'key'
               : 'none'
       // Only provider resolution and the explicit install choice admit origins.
+      // The GitHub read capability is not an origin: it is the host's own
+      // handler, named in the list so the run's record shows it (A24). An
+      // installing run gets none: its install scripts are code the user did
+      // not write, reaching github.com through the install's own tunnel.
       egressAllowlist = [
         ...new Set([
           ...plan.egress,
-          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
+          ...(installs ? DEPENDENCY_INSTALL_ORIGINS : []),
+          ...(installs ? [] : [HOST_GITHUB_TARGET]),
         ]),
       ]
       Object.assign(progress, { credential, egressAllowlist })
@@ -482,6 +490,9 @@ export class ContainerRunService {
             : credential === 'host'
               ? 'credential: provider authentication held on the desktop'
               : 'credential: none',
+        installs
+          ? 'GitHub: off, because the run installs dependencies'
+          : 'GitHub: read-only through your desktop GitHub sign-in; writes refused',
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
       ],
@@ -624,6 +635,11 @@ export class ContainerRunService {
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
+        // The desktop's own GitHub sign-in, looked up on the host per request;
+        // it never enters the guest (A24). An installing run has none (see start).
+        ...(request.installDependencies === true
+          ? {}
+          : { github: { token: resolveGitHubApiToken } }),
         image: WORKER_IMAGE,
         engine,
       }
