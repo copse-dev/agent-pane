@@ -114,8 +114,12 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: 'bc4b79529f379cb9e17744d533cadf90fdf0e7f166d4a493466ceaf27b772802',
-    filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
+    sourceSha256: 'd59eafcfdd549bc8edad25cc5910a1a8a14496d604b06d0c8c6c83ac8ad7b017',
+    filenames: [
+      'queued-held-contrast-dark.png',
+      'queued-held-contrast-light.png',
+      'queued-reviewed-canonical-row.png',
+    ],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
     sourceSha256: 'f30a414089427ffb02b9592a4a6d14eebaf08ba01cd971b3f34228ddf595d144',
