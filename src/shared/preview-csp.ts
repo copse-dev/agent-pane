@@ -77,6 +77,22 @@ function tagAttributes(text: string): Map<string, string> {
 }
 
 /**
+ * Where a raw-text element's body ends: the first `</name` whose name is then
+ * ended by whitespace, `/` or `>`, as the HTML tokenizer requires. `</scriptx>`
+ * is still script text, so it must not end the body. -1 when there is none.
+ */
+function rawTextEnd(lower: string, name: string, from: number): number {
+  const prefix = `</${name}`
+  let at = lower.indexOf(prefix, from)
+  while (at !== -1) {
+    const next = lower.charAt(at + prefix.length)
+    if (next === '' || next === '/' || next === '>' || /[\t\n\f\r ]/.test(next)) return at
+    at = lower.indexOf(prefix, at + 1)
+  }
+  return -1
+}
+
+/**
  * The external scripts and stylesheets a preview document references. The
  * document renders as an opaque `data:` origin, so `'self'` matches nothing and
  * {@link PREVIEW_CSP} lets only inline `<script>` and `<style>` code run: every
@@ -130,7 +146,7 @@ export function findPreviewBlockedLoads(html: string): PreviewBlockedLoad[] {
       continue
     }
     // Script and style bodies are raw text: they end at their own closing tag.
-    const close = lower.indexOf(`</${name}`, position)
+    const close = rawTextEnd(lower, name, position)
     const body = html.slice(position, close === -1 ? html.length : close)
     position = close === -1 ? html.length : close + name.length + 2
     if (name === 'style') {

@@ -170,6 +170,20 @@ describe('findPreviewBlockedLoads', () => {
     assert.deepEqual(findPreviewBlockedLoads(html), [])
   })
 
+  it('ends a script body only at a real end tag, not at a longer tag name', () => {
+    // `</scriptx>` is still script text, so the `<script src>` after it is too.
+    const phantom =
+      '<script>let s = "</scriptx>"; const t = \'<script src="https://cdn.test/not-loaded.js">\'</script>'
+    assert.deepEqual(findPreviewBlockedLoads(phantom), [])
+    // Whitespace or `/` after the name still ends it, so the next element counts.
+    for (const close of ['</script >', '</SCRIPT\n>', '</script/>']) {
+      const html = `<script>1${close}<script src="https://cdn.test/real.js"></script>`
+      assert.deepEqual(findPreviewBlockedLoads(html), [
+        { kind: 'script', url: 'https://cdn.test/real.js' },
+      ])
+    }
+  })
+
   it('reports each load once', () => {
     const tag = `<script src="${CHART_JS}"></script>`
     assert.deepEqual(findPreviewBlockedLoads(tag + tag), [{ kind: 'script', url: CHART_JS }])
