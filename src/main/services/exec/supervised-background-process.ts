@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { stopIsolatedDesktop } from '../isolated-desktop/desktop-service.ts'
+import { hasIsolatedDesktop, stopIsolatedDesktop } from '../isolated-desktop/desktop-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -11,6 +11,7 @@ import {
   peekBackgroundProcessLogs,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
+  hasBackgroundProcessesForThread,
   type BackgroundProcessCompletion,
   type BackgroundProcessInfo,
   type StartBackgroundProcessOptions,
@@ -252,6 +253,15 @@ export async function cancelAllSupervisedBackgroundProcesses(): Promise<void> {
         task.processHandleId !== undefined,
     )
   await Promise.all(tasks.map((task) => installedSupervisor.cancel(task.projectId, task.taskId)))
+}
+
+/**
+ * Whether the thread still has background work that
+ * {@link stopSupervisedBackgroundProcessesForThread} would stop: its background
+ * processes or its isolated desktop, which outlives the turn that started it.
+ */
+export function hasSupervisedBackgroundWorkForThread(owner: ThreadExecutionOwner): boolean {
+  return hasBackgroundProcessesForThread(owner) || hasIsolatedDesktop(owner)
 }
 
 export async function stopSupervisedBackgroundProcessesForThread(

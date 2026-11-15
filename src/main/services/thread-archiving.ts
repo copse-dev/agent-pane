@@ -1,8 +1,10 @@
 import type { ThreadArchiveResult, ThreadLiveResources } from '@shared/threads/archive-thread.ts'
 import type { Thread } from '@shared/types/thread.ts'
 import { disposeAcpSession } from './acp/acp-session-pool.ts'
-import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
-import { stopSupervisedBackgroundProcessesForThread } from './exec/supervised-background-process.ts'
+import {
+  hasSupervisedBackgroundWorkForThread,
+  stopSupervisedBackgroundProcessesForThread,
+} from './exec/supervised-background-process.ts'
 import {
   destroyEmptyTerminalSessionsForThread,
   destroyTerminalSessionsForThread,
@@ -41,8 +43,9 @@ const defaultDependencies: ThreadArchivingDependencies = {
   projectRoot: getProjectRoot,
   hasTerminals: hasTerminalSessions,
   destroyEmptyTerminals: destroyEmptyTerminalSessionsForThread,
+  // A live isolated desktop counts: it outlives turns, and stopping background work deletes it.
   hasBackgroundProcesses: (projectId, threadId) =>
-    hasBackgroundProcessesForThread({ projectId, threadId }),
+    hasSupervisedBackgroundWorkForThread({ projectId, threadId }),
   destroyTerminals: destroyTerminalSessionsForThread,
   stopBackgroundProcesses: stopSupervisedBackgroundProcessesForThread,
   disposeAcp: (threadId) => disposeAcpSession(threadId, { preserveForResume: true }),

@@ -34,6 +34,16 @@ import {
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { createThreadResource } from './thread-resource-fence.ts'
 import { clearAllowedWorkspaceRootsForTest } from './workspace.ts'
+import type { DesktopTransport } from './isolated-desktop/desktop-session.ts'
+import {
+  admitIsolatedDesktop,
+  hasIsolatedDesktop,
+  stopAllIsolatedDesktops,
+} from './isolated-desktop/desktop-service.ts'
+import {
+  hasSupervisedBackgroundWorkForThread,
+  stopSupervisedBackgroundProcessesForThread,
+} from './exec/supervised-background-process.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -406,6 +416,61 @@ describe('archiveStoredThread', () => {
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
     assert.ok(await lstat(worktree.path))
     assert.equal(releases, 0)
+  })
+
+  describe('with a live isolated desktop on an idle thread', () => {
+    // The guest outlives the turn that started it, so an idle chat can still
+    // hold a VM and its host inference grant. Archive must see and stop it.
+    let removed = 0
+    const guest: DesktopTransport = {
+      start(onLine) {
+        queueMicrotask(() => {
+          onLine(JSON.stringify({ event: 'ready', title: 'Copse', width: 1280, height: 800 }))
+        })
+        return Promise.resolve()
+      },
+      send: () => Promise.resolve(),
+      remove() {
+        removed++
+        return Promise.resolve()
+      },
+      revoke() {},
+    }
+    const owner = { projectId: 'project', threadId: 'thread' }
+
+    beforeEach(async () => {
+      removed = 0
+      dependencies.hasBackgroundProcesses = (projectId, threadId): boolean =>
+        hasSupervisedBackgroundWorkForThread({ projectId, threadId })
+      dependencies.stopBackgroundProcesses = stopSupervisedBackgroundProcessesForThread
+      await admitIsolatedDesktop(owner, guest, new AbortController().signal)
+    })
+
+    afterEach(async () => {
+      await stopAllIsolatedDesktops()
+    })
+
+    it('blocks archive without consent and leaves the VM running', async () => {
+      const { worktree } = await seed()
+      assert.ok(worktree)
+      assert.deepEqual(await archive(), {
+        status: 'blocked-running',
+        running: { agent: false, terminals: false, backgroundProcesses: true },
+      })
+      assert.equal(hasIsolatedDesktop(owner), true)
+      assert.equal(removed, 0)
+      assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
+      assert.ok(await lstat(worktree.path))
+    })
+
+    it('deletes the VM when the user agrees to stop running work', async () => {
+      const { worktree } = await seed()
+      assert.ok(worktree)
+      assert.equal((await archive(null, true)).status, 'archived')
+      assert.equal(removed, 1)
+      assert.equal(hasIsolatedDesktop(owner), false)
+      await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
+    })
   })
 
   it('closes out empty terminals before deciding whether the thread is still live', async () => {

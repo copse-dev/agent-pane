@@ -174,6 +174,24 @@ still needs new consent. Within one grant, a later turn of the same thread contr
 no second prompt. Bridged calls outside a turn are still refused, because they have no bound
 execution context.
 
+Because an idle thread can now hold a guest, the "is this thread still live?" checks were
+reviewed. `hasSupervisedBackgroundWorkForThread` counts the thread's background processes and its
+desktop, which is the same set `stopSupervisedBackgroundProcessesForThread` stops:
+
+- **Manual archive** (`thread-archiving.ts`) counts a live guest as background processes. Without
+  consent, archive returns `blocked-running` and the user is asked. With consent, the stop path
+  deletes the VM before archiving. The dialog's existing "its background processes" line covers it,
+  so no new copy was added. A guest whose deletion failed still counts until a retried stop
+  succeeds.
+- **Auto-archive** (`thread-auto-archive.ts`) treats a thread with a live guest as busy, so upkeep
+  never archives over one.
+- **Deletion** already stopped it through `stopSupervisedBackgroundProcessesForThread`.
+- **Not counted:** the checkout gates (`git-handlers.ts` reattach/restore,
+  `automation-worktree-reuse.ts`, `worktree-parking.ts`) protect the host checkout from writers.
+  The guest mounts no host folders, so it cannot write the checkout. The automation-run activity
+  check in `index.ts` is also unchanged: a finished automation run may still hold its guest until
+  the 15-minute expiry, the same as any thread.
+
 The consent's last line is now "The VM stays up between turns. Stop or archiving the thread
 deletes it." It used to read "Stop the agent to revoke control and delete the VM." The tool
 description and the Start result tell the controller that it may end its turn or wait in the
@@ -184,8 +202,9 @@ reachable from a later call without consent, and that Stop for one thread leaves
 grant alone. `agent-service.test.ts` checks that Stop deletes the guest and send-now keeps it.
 `acp-native-bridge.test.ts` checks that a bridged start is marked as bridged, and a resumed turn
 reaches the tool. `isolated-desktop-tool.test.ts` checks that a bridged start must name its model.
-`isolated-desktop-approval.e2e.ts` asserts the new consent line and saves
-`isolated-desktop-approval.png`.
+`thread-archiving.test.ts` checks that archiving an idle thread with a live guest is blocked without
+consent, and deletes the VM with consent. `isolated-desktop-approval.e2e.ts` asserts the new consent
+line in its non-VM consent case and saves `isolated-desktop-approval.png`.
 
 ## Build and run
 

@@ -153,6 +153,14 @@ export async function controlIsolatedDesktop(
   return session.execute(owner, request)
 }
 
+/**
+ * Whether `owner` holds a desktop, including one whose deletion failed and awaits
+ * a retried stop. The grant outlives turns, so an idle thread can still hold one.
+ */
+export function hasIsolatedDesktop(owner: ThreadExecutionOwner): boolean {
+  return sessions.has(ownerKey(owner))
+}
+
 export async function stopIsolatedDesktop(owner: ThreadExecutionOwner): Promise<void> {
   const key = ownerKey(owner)
   const session = sessions.get(key)
