@@ -57,11 +57,11 @@ real lever on quality and spend.
   (`packages/llm/src/model-intellect.ts`, see
   [`advisor-strategy.md`](./advisor-strategy.md)): bands `low` / `mid` / `top` are
   derived from the annotated distribution, and each band's representative model
-  (`BAND_REPRESENTATIVE_MODEL`: `claude-haiku-4-5` / `claude-sonnet-4-6` /
-  `claude-opus-4-8`) provides a fallback. Candidates in each band are ranked by
-  LiteLLM catalog pricing and filtered by context-window fit, keeping cost as a
-  separate axis from intellect. Signals: keyword hints, prompt length,
-  context-window need, and whether the task is agentic.
+  (`BAND_REPRESENTATIVE_MODEL` in `model-intellect.ts`) provides a fallback. Candidates in
+  each band are the shipped catalog models (`TRACKED_MODELS`), ranked by LiteLLM catalog
+  pricing and filtered by context-window fit, keeping cost as a separate axis from
+  intellect. Signals: keyword hints, prompt length, context-window need, and whether the
+  task is agentic.
 - **Tool** `suggest_model` (`src/main/tools/model-classifier-tool.ts`) — advisory; returns
   the recommendation including its estimated catalog rate. Registered only when
   the flag is on (`registry-bootstrap.ts`).
@@ -72,10 +72,11 @@ registered and the model in use is never changed.
 
 ## Not yet built (follow-ups on the issue)
 
-- **Share the model-based assessment with the advisory tool and subagent routing**.
-- **Map band representatives to configured/available providers** — today the mapping is
-  Anthropic-only; respect which providers have keys, cost/latency preferences, and
-  on-device-only constraints (cf. #518).
+- **Share the model-based assessment with the advisory tool and subagent routing**. Primary
+  routing already maps the band's intellect floor onto the configured, policy-filtered
+  model pool (see [Primary agent](#primary-agent-match-task)). `suggest_model` still
+  recommends from the shipped catalog models, whether or not their provider is configured,
+  so this work should also give it that pool.
 - **Feedback loop** — measure whether the chosen primary model succeeds or needs escalation.
 - Add latency metadata alongside pricing for latency-aware routing.
 
