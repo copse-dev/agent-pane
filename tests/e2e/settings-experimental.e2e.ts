@@ -173,7 +173,11 @@ describe('experimental settings section', () => {
       .parentElement()
       .$('.field-hint')
       .getElement()
-    assert.match(await classifierHint.getText(), /how hard a task is/i)
+    const classifierHintText = await classifierHint.getText()
+    assert.match(classifierHintText, /how hard a task is/i)
+    // Judging sends the task text to a configured model, so the hint says so.
+    assert.match(classifierHintText, /sends the task description to your Background questions/i)
+    assert.match(classifierHintText, /add a little usage/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
   })
