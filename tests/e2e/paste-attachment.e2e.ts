@@ -161,6 +161,23 @@ describe('Pasting text into the composer', () => {
       'The feedback focuses on tightening the introduction and correcting typos; keep the revision concise.',
       { containing: true },
     )
+    const storedPrompt = await browser.execute(async (projectId: string) => {
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      if (!threadId) return null
+      const messages = await window.api.threads.loadMessages(projectId, threadId)
+      return messages.find((message) => message.role === 'user') ?? null
+    }, PROJECT_ID)
+    expect(storedPrompt?.promptRepresentation).toBe('canonical-provider')
+    expect(storedPrompt?.attachments?.[0]?.projection).toBe('canonical-block')
+    const settledPrompt = await browser.execute((target: string) => {
+      const chip = document.querySelector(target)
+      const row = chip?.closest('.msg-user')
+      return row?.querySelector('.message-text')?.textContent ?? ''
+    }, SENT_CHIP)
+    expect(settledPrompt).toContain('Summarize this feedback:')
+    expect(settledPrompt).not.toContain('```')
+    expect(await $('.messages-list .msg-user .msg-user-fold-toggle').isExisting()).toBe(false)
     await scenario.assertComplete()
     // The stored prompt is the typed text plus the chip's placeholder, and the
     // mock title model does not match it, so this is the word-slice fallback
@@ -232,6 +249,44 @@ describe('Pasting text into the composer', () => {
       expect.stringContaining('The opening repeats the product description twice.'),
     )
     await waitForAgentIdle()
+    const settledRow = await browser.execute((target: string) => {
+      const chips = document.querySelectorAll(target)
+      const row = chips.item(chips.length - 1).closest('.msg-user')
+      return {
+        text: row?.querySelector('.message-text')?.textContent ?? '',
+        folded: row?.querySelector('.msg-user-fold-toggle') !== null,
+      }
+    }, sentChips)
+    expect(settledRow.text).toContain('Please apply this feedback:')
+    expect(settledRow.text).not.toContain('```')
+    expect(settledRow.folded).toBe(false)
+    const settledPrompts = await browser.execute(() =>
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => ({
+        text: row.querySelector('.message-text')?.textContent ?? '',
+        folded: row.querySelector('.msg-user-fold-toggle') !== null,
+      })),
+    )
+    const storedPrompts = await browser.execute(async (projectId: string) => {
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      if (!threadId) return []
+      return (await window.api.threads.loadMessages(projectId, threadId))
+        .filter((message) => message.role === 'user')
+        .map((message) => ({
+          content: message.content,
+          promptRepresentation: message.promptRepresentation,
+          attachments: message.attachments,
+        }))
+    }, PROJECT_ID)
+    expect(settledPrompts).toHaveLength(2)
+    expect(storedPrompts.map((prompt) => prompt.attachments?.[0]?.projection)).toEqual([
+      'canonical-block',
+      'canonical-block',
+    ])
+    expect(storedPrompts[0]?.content).toBe(PASTE_PROMPT)
+    expect(storedPrompts[0]?.attachments?.[0]?.content).toBe(LONG_PASTE)
+    expect(settledPrompts.map((prompt) => prompt.text.includes('```'))).toEqual([false, false])
+    expect(settledPrompts.every((prompt) => !prompt.folded)).toBe(true)
     await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
   })

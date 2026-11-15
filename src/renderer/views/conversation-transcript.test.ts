@@ -2,6 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Message } from '@shared/types'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 import {
   addMessage,
   addMessageCanvasArtefact,
@@ -60,10 +62,13 @@ function drag(surface: Element): void {
 function mountWithUserMessage(
   content: string,
   attachments: Parameters<typeof addMessage>[5],
+  promptRepresentation?: Message['promptRepresentation'],
 ): void {
   const store = createStore()
   const threadId = createThread(store)
-  addMessage(store, threadId, 'user', content, undefined, attachments)
+  addMessage(store, threadId, 'user', content, undefined, attachments, {
+    ...(promptRepresentation === undefined ? {} : { promptRepresentation }),
+  })
   const host = document.createElement('div')
   document.body.append(host)
   mountConversation(host, store, fakeApi())
@@ -158,6 +163,51 @@ describe('user transcript attachment chips', () => {
       1,
       'only the non-positional file stays in the trailing row',
     )
+  })
+
+  it('projects a reviewed canonical paste block back to its compact transcript chip', () => {
+    const content =
+      'The opening repeats the product description twice. Keep the first explanation and remove the second.'
+    const label = 'Editor feedback summary'
+    mountWithUserMessage(
+      `Summarize this feedback:\n\n${renderTextBlock(label, content)}`,
+      [
+        {
+          kind: 'paste',
+          label,
+          content,
+          placement: 'inline',
+          projection: 'canonical-block',
+        },
+      ],
+      'canonical-provider',
+    )
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.match(textEl.textContent, /Summarize this feedback:/)
+    assert.match(textEl.textContent, /Editor feedback summary/)
+    assert.doesNotMatch(textEl.textContent, /```/)
+    assert.equal(textEl.querySelector('.msg-user-fold-toggle'), null)
+    assert.ok(textEl.querySelector('.transcript-attachment-paste'))
+  })
+
+  it('projects a reviewed trailing shell block back to its compact transcript chip', () => {
+    const label = 'Run · git rebase --continue · exit 0'
+    const content = 'Successfully rebased and updated refs/heads/topic.'
+    mountWithUserMessage(
+      `Continue after recovery.\n\n${renderTextBlock(`Shell: ${label}`, content)}`,
+      [{ kind: 'shell', label, content, projection: 'canonical-block' }],
+      'canonical-provider',
+    )
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.match(textEl.textContent, /Continue after recovery\./)
+    assert.match(textEl.textContent, /Run · git rebase --continue · exit 0/)
+    assert.doesNotMatch(textEl.textContent, /```/)
+    assert.equal(textEl.querySelector('.msg-user-fold-toggle'), null)
+    assert.ok(textEl.querySelector('.transcript-attachment-shell'))
   })
 
   it('never consumes a trailing file to satisfy an unmatched placeholder', () => {

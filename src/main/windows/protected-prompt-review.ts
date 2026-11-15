@@ -63,6 +63,17 @@ function canonicalInlineToken(attachment: TranscriptAttachment): string | null {
   return renderTextBlock(attachment.label, attachment.content)
 }
 
+function canonicalTrailingToken(attachment: TranscriptAttachment): string | null {
+  if (attachment.content === undefined) return null
+  if (attachment.kind === 'shell') {
+    return renderTextBlock(`Shell: ${attachment.label}`, attachment.content)
+  }
+  if (attachment.kind === 'paste' || attachment.kind === 'file') {
+    return renderTextBlock(attachment.label, attachment.content)
+  }
+  return null
+}
+
 function expandedInlineDisplay(
   displayContent: string,
   attachments: TranscriptAttachment[],
@@ -114,10 +125,23 @@ export function reviewedTranscriptAttachments(
   if (modelText !== expanded.text && !modelText.startsWith(`${expanded.text}\n\n`)) {
     return rendererFields
   }
-  // Builder-appended provider context (for example the structured thread-ref
-  // block) may repeat a reviewed label. Provenance is about the exact reviewed
-  // display prefix, so ambiguity is measured inside that prefix only.
-  const ranges = expanded.tokens.map((token) => uniqueTokenRange(expanded.text, token))
+  // Inline eligibility is established by the exact reviewed prefix above.
+  // Uniqueness is then measured over the full provider prompt so a projection
+  // cannot suppress a second authored copy. Trailing provenance is granted only
+  // when every trailing token reconstructs that full prompt below.
+  const trailing = rendererFields.filter((attachment) => attachment.placement !== 'inline')
+  const trailingTokens = trailing.map(canonicalTrailingToken)
+  const exactTrailingProjection =
+    trailingTokens.every((token) => token !== null) &&
+    [expanded.text, ...trailingTokens].filter(Boolean).join('\n\n') === modelText
+  const tokens = rendererFields.map((attachment) =>
+    attachment.placement === 'inline'
+      ? canonicalInlineToken(attachment)
+      : exactTrailingProjection
+        ? canonicalTrailingToken(attachment)
+        : null,
+  )
+  const ranges = tokens.map((token) => (token === null ? null : uniqueTokenRange(modelText, token)))
   const overlapping = new Set<number>()
   for (let left = 0; left < ranges.length; left++) {
     const leftRange = ranges[left]
@@ -131,15 +155,12 @@ export function reviewedTranscriptAttachments(
       }
     }
   }
-  let inlineIndex = 0
-  return rendererFields.map((attachment) => {
-    if (attachment.placement !== 'inline') return attachment
-    const range = ranges[inlineIndex]
-    const ambiguous = range === null || range === undefined || overlapping.has(inlineIndex)
-    inlineIndex++
+  return rendererFields.map((attachment, index) => {
+    const range = ranges[index]
+    const ambiguous = range === null || range === undefined || overlapping.has(index)
     if (ambiguous) return attachment
     const projection =
-      attachment.kind === 'paste'
+      attachment.kind === 'paste' || attachment.kind === 'file' || attachment.kind === 'shell'
         ? 'canonical-block'
         : attachment.kind === 'thread'
           ? 'canonical-thread-label'

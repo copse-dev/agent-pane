@@ -330,6 +330,10 @@ describe('footer branch status for a detached thread worktree', function () {
     await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
+    const machinePrompt = await $('.msg-machine-origin .message-text').getElement()
+    expect(await machinePrompt.getText()).not.toContain('```')
+    await expect(machinePrompt.$('.msg-user-fold-toggle')).not.toExist()
+    await expect(machinePrompt.$('.transcript-attachment-shell')).toBeDisplayed()
     await saveElementScreenshot('#conversation', 'footer-branch-recovery-continued.png')
   })
 

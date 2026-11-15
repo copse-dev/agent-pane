@@ -1,4 +1,5 @@
 import type { Message, TranscriptAttachment } from './thread-types.ts'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 
 /**
  * A stored user prompt keeps its inline pastes and thread references as single
@@ -43,4 +44,47 @@ export function replayPromptText(
     attachments?.some((attachment) => attachment.projection !== undefined)
     ? content
     : stripPastePlaceholders(content)
+}
+
+/**
+ * Rebuild the compact transcript projection of a Main-reviewed provider prompt.
+ *
+ * Main stores the exact reviewed bytes for replay and marks only attachment
+ * tokens it reconstructed from the optimistic display. The renderer may turn
+ * those authenticated tokens back into U+FFFC chip positions for display, but
+ * must never infer projections from arbitrary prompt text on its own.
+ */
+export function projectPromptTextForDisplay(
+  content: string,
+  attachments: readonly TranscriptAttachment[] | undefined,
+  promptRepresentation: Message['promptRepresentation'],
+): string {
+  if (promptRepresentation !== 'canonical-provider' || attachments === undefined) return content
+
+  let projected = content
+  for (const attachment of attachments) {
+    const token =
+      attachment.projection === 'canonical-block' && attachment.content !== undefined
+        ? renderTextBlock(
+            attachment.kind === 'shell' ? `Shell: ${attachment.label}` : attachment.label,
+            attachment.content,
+          )
+        : attachment.projection === 'canonical-thread-label' && attachment.kind === 'thread'
+          ? `@${attachment.label}`
+          : null
+    if (token === null) continue
+    const start = projected.indexOf(token)
+    if (start < 0) continue
+    if (attachment.placement === 'inline') {
+      projected = `${projected.slice(0, start)}${PASTE_PLACEHOLDER}${projected.slice(start + token.length)}`
+      continue
+    }
+    const separatorStart =
+      projected.slice(Math.max(0, start - 2), start) === '\n\n' ? start - 2 : start
+    const tokenEnd = start + token.length
+    const separatorEnd =
+      projected.slice(tokenEnd, tokenEnd + 2) === '\n\n' ? tokenEnd + 2 : tokenEnd
+    projected = `${projected.slice(0, separatorStart)}${projected.slice(separatorEnd)}`
+  }
+  return projected
 }

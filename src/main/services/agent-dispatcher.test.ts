@@ -1676,6 +1676,7 @@ describe('AgentDispatcher', () => {
         ...request(),
         operationId: 'git-recovery:1',
         turnTreeId: 'tree-1',
+        canonicalPrompt: true,
         payload: {
           userContent: 'Continue with the attached shell result:\n```\nprivate output\n```',
           invokedSkills: [],
@@ -1700,6 +1701,7 @@ describe('AgentDispatcher', () => {
       type: 'machine_turn_start',
       content: 'Continue after the Git recovery command completed.',
       origin: { kind: 'machine', operationId: 'git-recovery:1' },
+      promptRepresentation: 'canonical-provider',
       attachments: [
         { kind: 'shell', label: 'Run · git rebase --continue', content: 'private output' },
       ],

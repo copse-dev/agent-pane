@@ -102,6 +102,8 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
   display?: MachineTurnDisplay | 'hidden'
+  /** Main reviewed the exact machine prompt before this dispatch. */
+  canonicalPrompt?: true
   /**
    * Checked once the thread is claimed: true when the agent already saw what
    * this wake would report, so it is recorded without a turn or budget charge.
@@ -670,6 +672,9 @@ export class AgentDispatcher {
         ...(hidden ? { hidden: true as const } : {}),
         content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
+        ...(request.canonicalPrompt === true
+          ? { promptRepresentation: 'canonical-provider' as const }
+          : {}),
         ...(display?.attachments ? { attachments: display.attachments } : {}),
         ...(display?.startingCommit !== undefined
           ? { startingCommit: display.startingCommit }

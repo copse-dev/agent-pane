@@ -1629,6 +1629,7 @@ app
         kind: 'machine',
       })
       if (!submission) return 'cancelled'
+      const unchanged = protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
       const result = await agentDispatcher.dispatchMachine({
         projectId: request.projectId,
         threadId: request.threadId,
@@ -1640,7 +1641,20 @@ app
         },
         protectedHistory: protectedInputs.history,
         protectedPlan: protectedInputs.plan,
-        display: { ...request.display, content: submission.text },
+        canonicalPrompt: true,
+        display: {
+          ...request.display,
+          content: submission.text,
+          ...(unchanged && request.display.attachments !== undefined
+            ? {
+                attachments: reviewedTranscriptAttachments(
+                  request.display.attachments,
+                  request.display.content,
+                  payload.userContent,
+                ),
+              }
+            : {}),
+        },
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(

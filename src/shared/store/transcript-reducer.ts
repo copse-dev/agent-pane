@@ -256,6 +256,9 @@ export function createTranscriptReducer(
           chunk.attachments,
           {
             origin: chunk.origin,
+            ...(chunk.promptRepresentation !== undefined
+              ? { promptRepresentation: chunk.promptRepresentation }
+              : {}),
             ...(chunk.startingCommit !== undefined ? { startingCommit: chunk.startingCommit } : {}),
             ...(chunk.dirty !== undefined ? { dirty: chunk.dirty } : {}),
             ...(id !== undefined ? { id } : {}),

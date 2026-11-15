@@ -148,6 +148,28 @@ test('reviewed attachment provenance stays literal when a token is ambiguous', (
   assert.deepEqual(reviewedTranscriptAttachments([attachment], '\uFFFC@', '@@@'), [attachment])
 })
 
+test('reviewed trailing shell provenance requires an exact full prompt reconstruction', () => {
+  const attachment = {
+    kind: 'shell' as const,
+    label: 'Run · git rebase --continue · exit 0',
+    content: 'Successfully rebased and updated refs/heads/topic.',
+  }
+  const display = 'Continue after the Git recovery command completed.'
+  const provider = buildTextWithAttachments(
+    display,
+    [],
+    [{ label: `Shell: ${attachment.label}`, content: attachment.content }],
+  )
+
+  assert.deepEqual(reviewedTranscriptAttachments([attachment], display, provider), [
+    { ...attachment, projection: 'canonical-block' },
+  ])
+  assert.deepEqual(
+    reviewedTranscriptAttachments([attachment], 'Misleading renderer summary.', provider),
+    [attachment],
+  )
+})
+
 test('reviewed provenance preserves a literal object replacement character in pasted bytes', () => {
   const thread = {
     kind: 'thread' as const,

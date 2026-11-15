@@ -97,6 +97,7 @@ import {
   type ArtifactImageScope,
 } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
+import { projectPromptTextForDisplay } from '@shared/threads/prompt-placeholders.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
 import type {
@@ -2189,6 +2190,7 @@ function appendMessageContent(
     contentBlocks?: AcpContentBlock[]
     reasoningBlocks?: AcpContentBlock[]
     attachments?: TranscriptAttachment[]
+    promptRepresentation?: Message['promptRepresentation']
   },
   api: ApiClient,
   workspaceRoot: string | null,
@@ -2214,7 +2216,12 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
-    renderUserTranscript(textEl, msg.content, msg.attachments, api)
+    renderUserTranscript(
+      textEl,
+      projectPromptTextForDisplay(msg.content, msg.attachments, msg.promptRepresentation),
+      msg.attachments,
+      api,
+    )
   } else if (msg.role === 'user') {
     setUserMarkdown(textEl, msg.content)
   } else {

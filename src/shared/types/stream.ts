@@ -84,6 +84,8 @@ export type StreamChunk =
       hidden?: true
       content: UserContent
       origin: MachineMessageOrigin
+      /** Main accepted `content` as the exact reviewed provider prompt. */
+      promptRepresentation?: 'canonical-provider'
       attachments?: TranscriptAttachment[]
       startingCommit?: string
       dirty?: boolean

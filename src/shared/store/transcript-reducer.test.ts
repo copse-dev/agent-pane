@@ -176,6 +176,7 @@ test('a machine turn prompt takes the id main stamped', () => {
       type: 'machine_turn_start',
       content: 'Continue after the background build.',
       origin: { kind: 'machine', operationId: 'op-1' },
+      promptRepresentation: 'canonical-provider',
     },
     { type: 'text', text: 'Build passed.' },
     { type: 'done' },
@@ -186,6 +187,7 @@ test('a machine turn prompt takes the id main stamped', () => {
     messagesOf(window).map((message) => message.id),
     ['u1', 'main-1', 'main-2'],
   )
+  assert.equal(messagesOf(main)[1]?.promptRepresentation, 'canonical-provider')
 })
 
 for (const hidden of [false, true]) {
