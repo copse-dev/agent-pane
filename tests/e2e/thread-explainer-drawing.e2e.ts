@@ -106,7 +106,6 @@ describe('original drawings in the thread player', function () {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-explainer-drawing', {
       model: 'claude-sonnet-4-6',
-      mcpUiCanvasEnabled: true,
       theme: 'dark',
       autoPortraitRightPanel: false,
       rightPanelPosition: 'side',

@@ -19,6 +19,16 @@ import {
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 
+/** The text blocks of a tool result, in order. */
+function textBlocks(content: unknown): string[] {
+  const parsed = z
+    .array(z.looseObject({ type: z.string(), text: z.string().optional() }))
+    .parse(content)
+  return parsed.flatMap((block) =>
+    block.type === 'text' && block.text !== undefined ? [block.text] : [],
+  )
+}
+
 describe('bundled MCP servers', () => {
   let servers: BundledMcpServer[] = []
 
@@ -83,6 +93,65 @@ describe('bundled MCP servers', () => {
     assert.match(resource.text, /<h1>Sales<\/h1>/)
     // Inline HTML has no file behind it, so there is nothing to point back at.
     assert.equal(resource.sourcePath, undefined)
+  })
+
+  it('tells the agent which external scripts and stylesheets the canvas blocked', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const chartJs = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
+    const html =
+      `<!doctype html><script src="${chartJs}"></script>` +
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">' +
+      '<canvas id="sales"></canvas><script>new Chart(sales, {})</script>'
+    const result = await canvas.client.callTool({
+      name: 'render_html_artefact',
+      arguments: { title: 'Sales Chart', html },
+    })
+
+    // The page still renders; the notice explains what it will be missing.
+    assert.notEqual(result.isError, true)
+    const [resource] = extractUiResources(result.content)
+    assert.equal(resource?.text, html)
+    const texts = textBlocks(result.content)
+    assert.equal(texts.length, 2)
+    assert.equal(
+      texts[1],
+      [
+        'The canvas blocked these because it only runs scripts and styles written inline in the page:',
+        `- script: ${chartJs}`,
+        '- stylesheet: https://fonts.googleapis.com/css2?family=Inter',
+        'Inline that code in <script> and <style> elements, or build the page without it, then render again.',
+      ].join('\n'),
+    )
+  })
+
+  it('lists the first eight blocked loads and counts the rest', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const html = Array.from(
+      { length: 11 },
+      (_, index) => `<script src="https://cdn.test/${String(index)}.js"></script>`,
+    ).join('')
+    const result = await canvas.client.callTool({
+      name: 'render_html_artefact',
+      arguments: { title: 'Many Scripts', html },
+    })
+    const notice = textBlocks(result.content)[1] ?? ''
+    assert.match(notice, /- script: https:\/\/cdn\.test\/7\.js\n- and 3 more\n/)
+    assert.doesNotMatch(notice, /8\.js/)
+  })
+
+  it('adds no notice for a self-contained page', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const result = await canvas.client.callTool({
+      name: 'render_html_artefact',
+      arguments: {
+        title: 'Inline',
+        html: '<style>h1{color:red}</style><script>1</script><h1>x</h1>',
+      },
+    })
+    assert.equal(textBlocks(result.content).length, 1)
   })
 
   it('renders an HTML file from the workspace by path, titled from the filename', async () => {

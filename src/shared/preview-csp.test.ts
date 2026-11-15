@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PREVIEW_CSP, securePreviewHtml } from './preview-csp.ts'
+import { findPreviewBlockedLoads, PREVIEW_CSP, securePreviewHtml } from './preview-csp.ts'
 import { htmlDataUrl } from './canvas/artefact.ts'
 
 /** Parse the policy into `directive -> sources`, failing on a repeated directive. */
@@ -108,5 +108,97 @@ describe('htmlDataUrl', () => {
     const url = htmlDataUrl(html)
     const decoded = Buffer.from(url.split(',')[1] ?? '', 'base64').toString('utf8')
     assert.equal(decoded, securePreviewHtml(html))
+  })
+})
+
+describe('findPreviewBlockedLoads', () => {
+  const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
+
+  it('reports a CDN script and a linked stylesheet, in document order', () => {
+    const html =
+      '<!doctype html><html><head>' +
+      `<SCRIPT defer src='${CHART_JS}'></SCRIPT>` +
+      '<link href="https://fonts.googleapis.com/css2?family=Inter" rel="preload stylesheet">' +
+      '</head><body><canvas id="c"></canvas><script>new Chart(c, {})</script></body></html>'
+    assert.deepEqual(findPreviewBlockedLoads(html), [
+      { kind: 'script', url: CHART_JS },
+      { kind: 'stylesheet', url: 'https://fonts.googleapis.com/css2?family=Inter' },
+    ])
+  })
+
+  it('reports relative and data: script sources, which the opaque origin refuses too', () => {
+    const html = '<script src="app.js"></script><script src=data:text/javascript,1></script>'
+    assert.deepEqual(findPreviewBlockedLoads(html), [
+      { kind: 'script', url: 'app.js' },
+      { kind: 'script', url: 'data:text/javascript,1' },
+    ])
+  })
+
+  it('reports module imports and CSS @import, but not import-like text in data blocks', () => {
+    const html = [
+      '<script type="module">',
+      "import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js'",
+      'import { a,',
+      '  from } from "./helpers.js"',
+      "import 'https://esm.sh/confetti'",
+      "const chart = await import('https://esm.sh/chart.js')",
+      '</script>',
+      '<script type="importmap">{"imports":{"x":"https://esm.sh/x"}}</script>',
+      '<script type="x-shader/x-fragment">import("not-code")</script>',
+      "<style>@import url('https://fonts.googleapis.com/css2?family=Inter'); body{}</style>",
+    ].join('\n')
+    assert.deepEqual(
+      findPreviewBlockedLoads(html).map((load) => `${load.kind} ${load.url}`),
+      [
+        'script https://unpkg.com/three@0.160.0/build/three.module.js',
+        'script ./helpers.js',
+        'script https://esm.sh/confetti',
+        'script https://esm.sh/chart.js',
+        'stylesheet https://fonts.googleapis.com/css2?family=Inter',
+      ],
+    )
+  })
+
+  it('reports nothing for a self-contained page, a comment or text that only looks like a tag', () => {
+    const html = [
+      '<!doctype html><style>body { color: red }</style>',
+      `<!-- <script src="${CHART_JS}"></script> -->`,
+      '<p>Use &lt;script src&gt; elsewhere. <scripts src="x"></scripts></p>',
+      "<script>const s = '<link rel=stylesheet href=x>'; document.title = 'ok'</script>",
+      '<link rel="icon" href="data:,">',
+    ].join('')
+    assert.deepEqual(findPreviewBlockedLoads(html), [])
+  })
+
+  it('reports each load once', () => {
+    const tag = `<script src="${CHART_JS}"></script>`
+    assert.deepEqual(findPreviewBlockedLoads(tag + tag), [{ kind: 'script', url: CHART_JS }])
+  })
+
+  it('keeps a quoted > inside an attribute, and ignores a src with no value', () => {
+    const html =
+      '<script data-note="a > b" src="https://x.test/a.js"></script><script src></script>'
+    assert.deepEqual(findPreviewBlockedLoads(html), [
+      { kind: 'script', url: 'https://x.test/a.js' },
+    ])
+  })
+
+  it('stays linear on a maximum-size document of unclosed tags', () => {
+    // Whole-document lazy patterns are quadratic here: every `<script` would
+    // rescan to the end looking for a closing tag or quote.
+    const size = 512 * 1024
+    const documents = [
+      ...['<script ', '<script "', '<!--', '<style>@import '].map((unit) =>
+        unit.repeat(Math.floor(size / unit.length)),
+      ),
+      `<script type="module">${'import '.repeat(size / 8)}`,
+      `<script type="module">${'import x '.repeat(size / 10)}`,
+    ]
+    for (const html of documents) {
+      const started = performance.now()
+      findPreviewBlockedLoads(html)
+      const elapsed = performance.now() - started
+      assert.ok(elapsed < 2_000, `${html.slice(0, 30)} took ${String(Math.round(elapsed))} ms`)
+    }
   })
 })
