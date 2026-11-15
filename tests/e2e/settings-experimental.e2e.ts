@@ -177,6 +177,7 @@ describe('experimental settings section', () => {
     assert.match(classifierHintText, /how hard a task is/i)
     // Judging sends the task text to a configured model, so the hint says so.
     assert.match(classifierHintText, /sends the task description to your Background questions/i)
+    assert.match(classifierHintText, /or to your chat model when those can't answer/i)
     assert.match(classifierHintText, /add a little usage/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
