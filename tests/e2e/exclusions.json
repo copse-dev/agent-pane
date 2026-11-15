@@ -18,9 +18,9 @@
       "reason": "Isolated Copse desktop startup is available only on local Apple silicon macOS; unsupported platforms refuse before the consent dialog.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-11-05",
-      "reviewBy": "2026-11-08",
-      "coverage": "PR #4127 merged November 3 with passing check/build and all nine Linux e2e shards; those shards skip this macOS-only spec. On November 5 all three on-device cases passed: consent/rejection, native approval -> real VM -> screenshot -> Stop, and a registered scripted ACP process -> real bearer-authenticated bridge (including unauthenticated rejection) -> registered isolated_copse -> consent -> real VM -> 1280x800 PNG -> Stop/deletion -> refused screenshot. Consent, guest and completion captures were inspected. Fresh host/controller used the existing trusted November 2 Linux image. Separate producer evidence covers real-model GUI inference, child-approved synthetic host-file/service denial, cancellation and orphan recovery; no paid inference was used for the November 5 acceptance.",
+      "recordedOn": "2026-11-15",
+      "reviewBy": "2026-11-22",
+      "coverage": "Linux e2e shards skip this macOS-only spec. On November 15, at the codex/copse-nested-runtime head with copse-desktop:local rebuilt and pinned from that head, all four on-device cases passed on 5 of 6 runs: consent copy/rejection; native approval -> real VM -> 1280x800 screenshot -> stop; scripted ACP process -> authenticated bridge -> real VM -> stop; and the thread-owned grant: a VM approved in one turn survives the end of that turn, a second turn captures it with no second consent, archive asks before deleting it, Cancel keeps it, and Stop and archive deletes it. The one failure was Stop and archive reporting Failed to stop all thread processes; it did not reproduce in five reruns. Consent, second-turn and archive-confirm captures were inspected. No paid inference was used.",
       "markers": ["describe.skip"]
     },
     {
