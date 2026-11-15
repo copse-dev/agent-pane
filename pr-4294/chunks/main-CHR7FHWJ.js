@@ -485,7 +485,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-TYMVX6DL.js";
+} from "./chunk-JYZO4NP7.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -6919,7 +6919,14 @@ function describeLiveResources(running) {
   return [
     ...running.agent ? ["\u2022 the chat\u2019s running agent"] : [],
     ...running.terminals ? ["\u2022 its open terminals"] : [],
-    ...running.backgroundProcesses ? ["\u2022 its background processes"] : []
+    ...running.backgroundProcesses ? ["\u2022 its background processes"] : [],
+    ...running.isolatedDesktop === true ? ["\u2022 its isolated Copse desktop VM"] : []
+  ];
+}
+function describeLiveResourceStop(running) {
+  return [
+    ...running.agent || running.terminals || running.backgroundProcesses ? ["Anything still running in the chat\u2019s worktree is ended before it is removed."] : [],
+    ...running.isolatedDesktop === true ? ["The VM is deleted with everything inside it."] : []
   ];
 }
 function attentionBell(label) {
@@ -7517,7 +7524,7 @@ function mountProjectsPane(root, store2, api2) {
           detail: [
             "Archiving will stop:",
             ...describeLiveResources(result.running),
-            "Anything still running in the chat\u2019s worktree is ended before it is removed."
+            ...describeLiveResourceStop(result.running)
           ].join("\n"),
           confirmLabel: "Stop and archive",
           danger: true
