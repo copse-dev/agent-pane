@@ -207,14 +207,41 @@ export interface TaskModelRecommendation {
 }
 
 /**
+ * Settle with `work`, or reject with the abort reason as soon as `signal`
+ * aborts. The work itself keeps running (pool discovery and context-window
+ * lookups take no signal and are shared with other callers); the caller just
+ * stops waiting for it.
+ */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  const abortError = (): Error => {
+    const reason: unknown = signal.reason
+    return reason instanceof Error ? reason : new Error('The operation was aborted.')
+  }
+  if (signal.aborted) return Promise.reject(abortError())
+  let onAbort = (): void => undefined
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = (): void => {
+      reject(abortError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  return Promise.race([work, aborted]).finally(() => {
+    signal.removeEventListener('abort', onAbort)
+  })
+}
+
+/**
  * Match task's choice over a configured pool, without a fallback model: a
  * recommendation names only a route the user can run, or nothing at all.
+ * With `signal`, an abort stops the wait on each context-window lookup.
  */
 export async function recommendFromPool(
   demand: Demand,
   pool: readonly FrontierPoint[],
   requiredTokens: number,
   contextWindowForModel: (model: string) => Promise<number> = resolveContextWindow,
+  signal?: AbortSignal,
 ): Promise<TaskModelRecommendation> {
   const floor = demandFloor(demand) ?? 0
   let remaining = [...pool]
@@ -222,7 +249,10 @@ export async function recommendFromPool(
     const point = pickPromptPoint(floor, remaining)
     if (!point) break
     const model = toRoutableModelId(point)
-    if (requiredTokens <= 0 || (await contextWindowForModel(model)) >= requiredTokens) {
+    if (
+      requiredTokens <= 0 ||
+      (await untilAborted(contextWindowForModel(model), signal)) >= requiredTokens
+    ) {
       return {
         demand,
         poolSize: pool.length,
@@ -247,9 +277,17 @@ export async function recommendTaskModel(
 ): Promise<TaskModelRecommendation> {
   const demand = await assessPromptDemandWithFallback(context, routes, signal)
   signal.throwIfAborted()
-  const pool = await routableFrontierPoints().catch(() => [])
-  signal.throwIfAborted()
-  const recommendation = await recommendFromPool(demand, pool, requiredTokens)
+  const pool = await untilAborted(
+    routableFrontierPoints().catch(() => []),
+    signal,
+  )
+  const recommendation = await recommendFromPool(
+    demand,
+    pool,
+    requiredTokens,
+    resolveContextWindow,
+    signal,
+  )
   signal.throwIfAborted()
   console.info('[prompt-model-routing] Recommended model', {
     demand,

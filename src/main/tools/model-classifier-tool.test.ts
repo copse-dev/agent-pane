@@ -162,4 +162,13 @@ describe('recommendFromPool', () => {
       /none\. No configured model has a context window of at least 500,000 tokens/,
     )
   })
+
+  it('stops waiting on a context-window lookup when the call is cancelled', async () => {
+    const pool = computeParetoFrontier([{ id: 'slow', intellect: top, costPerMTok: 1 }])
+    const controller = new AbortController()
+    const never = (): Promise<number> => new Promise<number>(() => undefined)
+    const pending = recommendFromPool('low', pool, 50_000, never, controller.signal)
+    controller.abort(new Error('cancelled'))
+    await assert.rejects(pending, /cancelled/)
+  })
 })
