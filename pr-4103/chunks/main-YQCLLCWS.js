@@ -87047,7 +87047,9 @@ function createTranscriptReducer(store2, hooks = {}) {
             appendReasoning(store2, ensureFreshAfterTools(threadId, st), chunk.content.text);
             st.writing = false;
           } else {
-            st.toolSinceText = false;
+            if (chunk.messageId !== void 0 && chunk.messageId === previousId) {
+              st.toolSinceText = false;
+            }
             const text = appendText(threadId, st, chunk.content.text);
             if (text === null) break;
             st.writing = text.trim().length > 0;
