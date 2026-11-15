@@ -325,8 +325,12 @@ subagent entry points (`task`, `explore`, `investigate_ci`, `delegate_step`, `ad
 `compare_models` — no nesting, depth stays 1), `ask_user` (a subagent reports back instead
 of interrogating the user, as the orchestration worker already does), and `git_commit`
 (integration stays with the parent, same rationale as `delegate_step`). Custom agents
-also cannot call `update_thread_plan` or `report_plan_completion`: workers report
-findings, while the parent owns the shared thread plan.
+also cannot call `update_thread_plan`, `report_plan_completion` or `update_todos`: workers
+report findings, while the parent owns the shared thread plan and its todo list (so a
+`TodoWrite` entry translates, then drops here). Thread orchestration and work that outlives
+the agent's step budget stay with the parent too: `subthreads` and `send_thread_prompt`
+would escape depth 1, and `run_background` or `track_long_task` can schedule later turns
+on the parent thread. An explicit `tools` list cannot name any of these back in.
 
 Whatever survives, every inner call still goes through `ToolRegistry.execute` — permission
 gate, read-only enforcement, staged-edit approval, sandbox — exactly as `explore` and
