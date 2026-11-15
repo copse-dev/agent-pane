@@ -43,6 +43,11 @@ with an automatic checkout choice and a native model, or an ACP agent that
    `checkoutMode: 'shared'` and `deferredWorktree` set. Consumers that only read treat it as
    shared.
 3. The system prompt tells the agent the checkout is read-only and names `request_write_access`.
+4. The composer footer shows "Reading your checkout" beside the branch chip, which names the
+   project checkout's branch (`isWorktreeDeferralPending`). It is muted text with an eye icon and
+   no box; its tooltip says the thread cannot change the checkout and gets its own worktree on
+   first write. The note goes when the `thread_checkout` chunk records the worktree, and the
+   branch chip then names the worktree's branch.
 
 During a deferred turn:
 
@@ -179,13 +184,20 @@ bridged tools. That is the price of not guessing from the transcript whether it 
   - The next turn calls `request_write_access` and `write_file`. The branch chip switches
     mid-turn to the agent-named `copse/readme-usage-abc123`. The model's tool result names its
     new worktree. The edit lands only in the worktree, and the user's checkout is unchanged.
-  - Screenshots: `thread-deferred-worktree-reading.png`, `thread-deferred-worktree-writing.png`.
+  - The footer says "Reading your checkout" beside `main` while deferred, and drops the note
+    once the worktree exists.
+  - Screenshots: `thread-deferred-worktree-reading.png`, `thread-deferred-worktree-writing.png`,
+    and the composer alone in each state (`thread-deferred-worktree-reading-composer.png`,
+    `thread-deferred-worktree-writing-composer.png`).
+- `src/renderer/views/footer-branch-status.test.ts` pins the note's text, its removal on the
+  `thread_checkout` update, and its absence for blank, shared, and eager worktree threads.
 
 ## Known gaps before this could become the default
 
-- **Deferred-state indication.** The composer chip still previews "worktree" (the eventual truth). While deferred, the
-  branch chip shows the project checkout's branch, and nothing yet says "reading your
-  checkout".
+- **Pre-send preview.** Before the first message, the composer's checkout chip still previews
+  "Isolated worktree" (the eventual truth) rather than saying the worktree waits for the first
+  write. Once the thread starts, the footer says "Reading your checkout" (see
+  [Behaviour](#behaviour)).
 - **ACP deferral is unproven against real agents.** The pool, sandbox overlay, bridge and
   continuation are covered with fakes, and the continuity probe shows Claude Agent ACP and Codex
   ACP reattaching from another directory. No real-agent run has started read-only, asked for

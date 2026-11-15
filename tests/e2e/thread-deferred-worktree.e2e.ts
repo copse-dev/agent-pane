@@ -17,6 +17,7 @@ import { startConversationServer, type ConversationServer } from './helpers/conv
 import {
   prepareE2eScreenshot,
   saveAppScreenshot,
+  saveElementScreenshot,
   savePreparedAppScreenshot,
 } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -144,7 +145,27 @@ describe('deferred thread worktree', () => {
     await expect($('.footer-branch-status .footer-branch-label')).toHaveText('main')
     assert.equal(existsSync(worktreeRoot), false, 'a question must not allocate a worktree')
     assert.equal(git(projectRoot, ['branch', '--list', 'copse/*']), '', 'nor create a branch')
+    // The footer says the branch beside it is the user's checkout, being read.
+    await expect($('.footer-branch-host .branch-deferred-note')).toBeDisplayed()
+    const note = await browser.execute(() => {
+      const node = document.querySelector<HTMLElement>('.footer-branch-host .branch-deferred-note')
+      const text = node?.querySelector<HTMLElement>('.branch-deferred-note-text')
+      const label = document.querySelector<HTMLElement>(
+        '.footer-branch-status .footer-branch-label',
+      )
+      return {
+        text: text?.textContent ?? '',
+        title: node?.title ?? '',
+        textClipped: text ? text.scrollWidth > text.clientWidth : true,
+        branchClipped: label ? label.scrollWidth > label.clientWidth : true,
+      }
+    })
+    assert.equal(note.text, 'Reading your checkout')
+    assert.match(note.title, /own worktree the first time it needs to write/)
+    assert.equal(note.textClipped, false, 'the note should be readable in a full-width footer')
+    assert.equal(note.branchClipped, false, 'the note must not squeeze the branch name')
     await saveAppScreenshot('thread-deferred-worktree-reading.png')
+    await saveElementScreenshot('#input-bar', 'thread-deferred-worktree-reading-composer.png')
   })
 
   it('creates the worktree when the agent asks to write, and edits only there', async function () {
@@ -173,6 +194,9 @@ describe('deferred thread worktree', () => {
     await expect($('.footer-branch-status .footer-branch-label')).toHaveText(AGENT_BRANCH, {
       wait: 30_000,
     })
+    // The thread owns its checkout now, so the reading note is gone.
+    await expect($('.footer-branch-host .branch-deferred-note')).not.toBeDisplayed()
+    await saveElementScreenshot('#input-bar', 'thread-deferred-worktree-writing-composer.png')
     // Successful tool activity renders collapsed, and getText() reads only
     // rendered text, so read names from the DOM whether or not a group is open.
     const toolNames = await browser.execute(() =>

@@ -1,5 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
-import { chevronDownIcon } from '../dom/icons.ts'
+import { chevronDownIcon, eyeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -23,9 +23,13 @@ import {
   type ActiveThreadOwner,
 } from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
+const DEFERRED_NOTE_TEXT = 'Reading your checkout'
+const DEFERRED_NOTE_TITLE =
+  'This thread is reading your checkout and can’t change it. It gets its own worktree the first time it needs to write.'
 let nextPickerId = 0
 
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
@@ -142,7 +146,16 @@ export function mountFooterBranchStatus(
     'aria-label': 'Branches',
   })
   menu.append(filterInput, list)
-  wrap.append(trigger, reattachButton, menu)
+  // A deferred worktree thread reads the user's own checkout until it first
+  // writes, so the branch beside this note is the checkout's, not the thread's.
+  // A fact, not a control: muted text with its icon and no box.
+  const deferredNote = el(
+    'span',
+    { class: 'branch-deferred-note', title: DEFERRED_NOTE_TITLE, hidden: '' },
+    eyeIcon('ui-icon ui-icon-sm'),
+    el('span', { class: 'branch-deferred-note-text' }, DEFERRED_NOTE_TEXT),
+  )
+  wrap.append(trigger, deferredNote, reattachButton, menu)
   host.append(wrap)
 
   let status: GitBranchStatus | null = null
@@ -279,6 +292,8 @@ export function mountFooterBranchStatus(
     const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
+    const activeThread = getActiveThread()
+    deferredNote.hidden = !activeThread || !isWorktreeDeferralPending(activeThread)
 
     if (!displayBranch) {
       wrap.hidden = true

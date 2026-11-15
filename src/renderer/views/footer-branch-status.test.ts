@@ -9,7 +9,11 @@ import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { setThreadDraftPrompt, setThreadTitle } from '@shared/store/thread-helpers.ts'
+import {
+  applyPreparedThreadCheckout,
+  setThreadDraftPrompt,
+  setThreadTitle,
+} from '@shared/store/thread-helpers.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -748,6 +752,78 @@ describe('footer branch status', () => {
     resolveSecond({ currentBranch: 'feature/second', pr: null })
     await settle()
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
+  })
+
+  describe('a deferred worktree thread', () => {
+    const WORKTREE = {
+      path: '/worktrees/project-1/thread-1',
+      branch: 'copse/readme-usage-thread',
+      baseBranch: 'main',
+      baseCommit: 'abc1234',
+      createdAt: 2,
+      seededFromDirtyProject: false,
+    }
+
+    function mountWith(threads: Thread[]): { host: HTMLElement; store: AppStore } {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads,
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountFooterBranchStatus(host, store, createApi({ currentBranch: 'main', pr: null }))
+      return { host, store }
+    }
+
+    function note(host: HTMLElement): HTMLElement {
+      return qsRequired(host, '.branch-deferred-note')
+    }
+
+    it('says it is reading your checkout until the worktree exists', async () => {
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host, store } = mountWith([deferred])
+      await settle()
+
+      assert.equal(note(host).hidden, false)
+      assert.equal(note(host).textContent, 'Reading your checkout')
+      assert.match(note(host).title, /can’t change it.*own worktree/)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, 'main')
+
+      // The mid-turn allocation arrives as a `thread_checkout` chunk.
+      applyPreparedThreadCheckout(store, 'thread-1', {
+        checkoutMode: 'worktree',
+        choice: 'automatic',
+        branch: WORKTREE.branch,
+        worktree: WORKTREE,
+      })
+      await settle()
+
+      assert.equal(note(host).hidden, true)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, WORKTREE.branch)
+    })
+
+    it('stays quiet for blank, shared and eagerly isolated threads', async () => {
+      for (const candidate of [
+        thread(),
+        { ...thread('main', true), worktreeChoice: 'shared' as const },
+        {
+          ...thread(WORKTREE.branch, true),
+          worktreeChoice: 'worktree' as const,
+          worktree: WORKTREE,
+        },
+      ]) {
+        const { host } = mountWith([candidate])
+        await settle()
+        assert.equal(note(host).hidden, true, `note shown for ${JSON.stringify(candidate)}`)
+        document.body.replaceChildren()
+      }
+    })
   })
 
   it('copies the thread branch on click for existing chats', async () => {
