@@ -118,16 +118,54 @@ export class DesktopLeaseRecovery {
   }
 }
 
+/** Whether a failed engine command reports that `name` no longer exists. */
+export function isMissingContainer(error: unknown, name: string): boolean {
+  return (
+    isRecord(error) &&
+    typeof error['stderr'] === 'string' &&
+    error['stderr'].includes(name) &&
+    /not found|does not exist/i.test(error['stderr'])
+  )
+}
+
+/**
+ * Deleting a 4 GB guest VM takes the engine about 10 seconds alone and well over
+ * 30 when deletions overlap, so the command gets a longer limit. A timed-out
+ * command can still finish in the engine, and a retry then reports the
+ * container missing: that, and only that, counts as deleted.
+ */
+export const DESKTOP_DELETE_TIMEOUT_MS = 120_000
+export async function deleteDesktopContainer(
+  name: string,
+  run: (args: string[]) => Promise<unknown>,
+): Promise<void> {
+  nameSchema.parse(name)
+  const attempt = async (): Promise<void> => {
+    try {
+      await run(['delete', '--force', name])
+    } catch (error) {
+      if (!isMissingContainer(error, name)) throw error
+    }
+  }
+  try {
+    await attempt()
+  } catch {
+    await attempt()
+  }
+}
+
 const exec = promisify(execFile)
-async function command(args: string[]): Promise<string> {
+async function command(args: string[], timeout = 30_000): Promise<string> {
   return (
     await exec('container', args, {
-      timeout: 30_000,
+      timeout,
       maxBuffer: 256 * 1024,
       env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
     })
   ).stdout
 }
+export const deleteDesktopVm = (name: string): Promise<void> =>
+  deleteDesktopContainer(name, (args) => command(args, DESKTOP_DELETE_TIMEOUT_MS))
 const leases = new DesktopLeaseRecovery(
   join(copseDataRoot(), 'isolated-desktops'),
   {
@@ -136,19 +174,11 @@ const leases = new DesktopLeaseRecovery(
         return await command(['inspect', name])
       } catch (error) {
         // Only an explicit missing-container result permits forgetting a lost-create record.
-        if (
-          isRecord(error) &&
-          typeof error['stderr'] === 'string' &&
-          error['stderr'].includes(name) &&
-          /not found|does not exist/i.test(error['stderr'])
-        )
-          return null
+        if (isMissingContainer(error, name)) return null
         throw error
       }
     },
-    async remove(name): Promise<void> {
-      await command(['delete', '--force', name])
-    },
+    remove: deleteDesktopVm,
   },
   {
     pid: process.pid,

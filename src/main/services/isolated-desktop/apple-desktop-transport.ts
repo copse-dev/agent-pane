@@ -18,7 +18,12 @@ import {
   readAppleDesktopPin,
   verifyAppleDesktopCreatedImage,
 } from '../../../../scripts/lib/apple-desktop-pin.mts'
-import { beginDesktopLease, forgetDesktopLease, DESKTOP_LEASE_LABEL } from './desktop-recovery.ts'
+import {
+  beginDesktopLease,
+  deleteDesktopVm,
+  forgetDesktopLease,
+  DESKTOP_LEASE_LABEL,
+} from './desktop-recovery.ts'
 import { EgressLink } from '../container-runtime/egress-link.ts'
 import { HostInference } from '../container-runtime/host-inference.ts'
 import { HOST_INFERENCE_TARGET } from '../container-runtime/host-inference-wire.ts'
@@ -211,7 +216,7 @@ export class AppleDesktopTransport implements DesktopTransport {
       return
     }
     await this.creation.catch(() => undefined)
-    await this.command(['delete', '--force', this.name])
+    await deleteDesktopVm(this.name)
     await forgetDesktopLease(this.name)
   }
 }

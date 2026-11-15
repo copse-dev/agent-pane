@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { aggregateFailure } from '@copse/std/errors.ts'
 import { hasIsolatedDesktop, stopIsolatedDesktop } from '../isolated-desktop/desktop-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
@@ -276,7 +277,7 @@ export async function stopSupervisedBackgroundProcessesForThread(
   for (const result of results) {
     if (result.status === 'rejected') failures.push(result.reason)
   }
-  if (failures.length) throw new AggregateError(failures, 'Failed to stop all thread processes')
+  if (failures.length) throw aggregateFailure(failures, 'Failed to stop all thread processes')
   const background = results[1]
   return background.status === 'fulfilled' ? background.value : []
 }

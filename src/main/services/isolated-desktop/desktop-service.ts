@@ -1,3 +1,4 @@
+import { aggregateFailure } from '@copse/std/errors.ts'
 import { recoverIsolatedDesktops } from './desktop-recovery.ts'
 import { randomUUID } from 'node:crypto'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
@@ -180,7 +181,7 @@ export async function stopIsolatedDesktopsForThread(threadId: string): Promise<v
   for (const result of results) {
     if (result.status === 'rejected') failures.push(result.reason)
   }
-  if (failures.length) throw new AggregateError(failures, 'Failed to delete isolated desktop VMs')
+  if (failures.length) throw aggregateFailure(failures, 'Failed to delete isolated desktop VMs')
 }
 
 export async function stopAllIsolatedDesktops(): Promise<void> {
@@ -195,5 +196,5 @@ export async function stopAllIsolatedDesktops(): Promise<void> {
   for (const result of results) {
     if (result.status === 'rejected') failures.push(result.reason)
   }
-  if (failures.length) throw new AggregateError(failures, 'Failed to delete isolated desktop VMs')
+  if (failures.length) throw aggregateFailure(failures, 'Failed to delete isolated desktop VMs')
 }

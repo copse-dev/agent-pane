@@ -348,6 +348,12 @@ async function importTrustedDesktopPin(): Promise<void> {
     await expect(confirm.$('.confirm-dialog-message')).toHaveText(
       expect.stringContaining('Stop running work and archive'),
     )
+    // The guest is the only live work: name the VM, not host processes or the worktree.
+    const detail = await confirm.$('.confirm-dialog-detail').getText()
+    expect(detail).toContain('its isolated Copse desktop VM')
+    expect(detail).toContain('The VM is deleted with everything inside it.')
+    expect(detail).not.toContain('background processes')
+    expect(detail).not.toContain('worktree')
     await saveAppScreenshot('isolated-desktop-archive-confirm.png')
     await confirm.$('.confirm-dialog-cancel').click()
     expect(isolatedDesktopVms()).toEqual(vms)

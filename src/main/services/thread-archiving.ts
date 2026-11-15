@@ -1,10 +1,9 @@
 import type { ThreadArchiveResult, ThreadLiveResources } from '@shared/threads/archive-thread.ts'
 import type { Thread } from '@shared/types/thread.ts'
 import { disposeAcpSession } from './acp/acp-session-pool.ts'
-import {
-  hasSupervisedBackgroundWorkForThread,
-  stopSupervisedBackgroundProcessesForThread,
-} from './exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
+import { stopSupervisedBackgroundProcessesForThread } from './exec/supervised-background-process.ts'
+import { hasIsolatedDesktop } from './isolated-desktop/desktop-service.ts'
 import {
   destroyEmptyTerminalSessionsForThread,
   destroyTerminalSessionsForThread,
@@ -31,6 +30,7 @@ export interface ThreadArchivingDependencies {
   hasTerminals: (threadId: string) => boolean
   destroyEmptyTerminals: (threadId: string) => Promise<unknown>
   hasBackgroundProcesses: (projectId: string, threadId: string) => boolean
+  hasIsolatedDesktop: (projectId: string, threadId: string) => boolean
   destroyTerminals: (threadId: string) => Promise<unknown>
   stopBackgroundProcesses: (owner: { projectId: string; threadId: string }) => Promise<unknown>
   disposeAcp: (threadId: string) => Promise<unknown>
@@ -43,9 +43,10 @@ const defaultDependencies: ThreadArchivingDependencies = {
   projectRoot: getProjectRoot,
   hasTerminals: hasTerminalSessions,
   destroyEmptyTerminals: destroyEmptyTerminalSessionsForThread,
-  // A live isolated desktop counts: it outlives turns, and stopping background work deletes it.
   hasBackgroundProcesses: (projectId, threadId) =>
-    hasSupervisedBackgroundWorkForThread({ projectId, threadId }),
+    hasBackgroundProcessesForThread({ projectId, threadId }),
+  // The guest outlives turns, so an idle chat can hold one; stopping background work deletes it.
+  hasIsolatedDesktop: (projectId, threadId) => hasIsolatedDesktop({ projectId, threadId }),
   destroyTerminals: destroyTerminalSessionsForThread,
   stopBackgroundProcesses: stopSupervisedBackgroundProcessesForThread,
   disposeAcp: (threadId) => disposeAcpSession(threadId, { preserveForResume: true }),
@@ -53,7 +54,12 @@ const defaultDependencies: ThreadArchivingDependencies = {
 }
 
 function anyLive(running: ThreadLiveResources): boolean {
-  return running.agent || running.terminals || running.backgroundProcesses
+  return (
+    running.agent ||
+    running.terminals ||
+    running.backgroundProcesses ||
+    running.isolatedDesktop === true
+  )
 }
 
 /**
@@ -80,6 +86,7 @@ export async function archiveStoredThread(
       agent: meta?.status === 'running' || runtime.isAgentActive(projectId, threadId),
       terminals: dependencies.hasTerminals(threadId),
       backgroundProcesses: dependencies.hasBackgroundProcesses(projectId, threadId),
+      isolatedDesktop: dependencies.hasIsolatedDesktop(projectId, threadId),
     }
   }
   const owner = { projectId, threadId }

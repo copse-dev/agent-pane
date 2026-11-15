@@ -178,11 +178,15 @@ Because an idle thread can now hold a guest, the "is this thread still live?" ch
 reviewed. `hasSupervisedBackgroundWorkForThread` counts the thread's background processes and its
 desktop, which is the same set `stopSupervisedBackgroundProcessesForThread` stops:
 
-- **Manual archive** (`thread-archiving.ts`) counts a live guest as background processes. Without
-  consent, archive returns `blocked-running` and the user is asked. With consent, the stop path
-  deletes the VM before archiving. The dialog's existing "its background processes" line covers it,
-  so no new copy was added. A guest whose deletion failed still counts until a retried stop
-  succeeds.
+- **Manual archive** (`thread-archiving.ts`) reports a live guest as its own `isolatedDesktop`
+  live resource, separate from background processes. Without consent, archive returns
+  `blocked-running` and the user is asked. The dialog lists "its isolated Copse desktop VM" and
+  says "The VM is deleted with everything inside it." The worktree line ("Anything still running
+  in the chat's worktree…") appears only when an agent, terminal or background process is live,
+  because the guest mounts no worktree. With consent, the stop path deletes the VM before
+  archiving. A guest whose deletion failed still counts until a retried stop succeeds. The field
+  is optional on the wire so older hosts stay compatible (`gen-api-protocol` classifies it as
+  additive).
 - **Auto-archive** (`thread-auto-archive.ts`) treats a thread with a live guest as busy, so upkeep
   never archives over one.
 - **Deletion** already stopped it through `stopSupervisedBackgroundProcessesForThread`.
@@ -191,6 +195,15 @@ desktop, which is the same set `stopSupervisedBackgroundProcessesForThread` stop
   The guest mounts no host folders, so it cannot write the checkout. The automation-run activity
   check in `index.ts` is also unchanged: a finished automation run may still hold its guest until
   the 15-minute expiry, the same as any thread.
+
+Deleting a guest VM is slow: on an M-series Mac, `container delete --force` took 9–10 seconds
+for one 4 GB guest, and 24 to over 30 seconds when two deletions overlapped. The first real-VM
+run of the cross-turn e2e case failed archive with "Failed to stop all thread processes". The
+likely cause is the 30-second command limit cutting off a deletion the engine then completed. A
+second deletion that races a finished one reports `notFound`, which was measured directly. So
+`deleteDesktopVm` (`desktop-recovery.ts`, shared by the transport and lease recovery) allows
+120 seconds, retries once, and treats this container's own `notFound` as deleted. Stop
+failures now name each cause in their message, because IPC keeps only the message.
 
 The consent's last line is now "The VM stays up between turns. Stop or archiving the thread
 deletes it." It used to read "Stop the agent to revoke control and delete the VM." The tool
@@ -203,7 +216,10 @@ grant alone. `agent-service.test.ts` checks that Stop deletes the guest and send
 `acp-native-bridge.test.ts` checks that a bridged start is marked as bridged, and a resumed turn
 reaches the tool. `isolated-desktop-tool.test.ts` checks that a bridged start must name its model.
 `thread-archiving.test.ts` checks that archiving an idle thread with a live guest is blocked without
-consent, and deletes the VM with consent. `isolated-desktop-approval.e2e.ts` asserts the new consent
+consent and reported as `isolatedDesktop`, deletes the VM with consent, and keeps the chat with
+the cause in the message when deletion fails. `projects-pane-rename-archive.test.ts` checks the
+VM-only dialog wording. `desktop-recovery.test.ts` checks the deletion retry and `notFound`
+rules. `isolated-desktop-approval.e2e.ts` asserts the new consent
 line in its non-VM consent case and saves `isolated-desktop-approval.png`.
 
 ## Build and run

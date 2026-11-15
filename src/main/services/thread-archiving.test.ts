@@ -40,10 +40,7 @@ import {
   hasIsolatedDesktop,
   stopAllIsolatedDesktops,
 } from './isolated-desktop/desktop-service.ts'
-import {
-  hasSupervisedBackgroundWorkForThread,
-  stopSupervisedBackgroundProcessesForThread,
-} from './exec/supervised-background-process.ts'
+import { stopSupervisedBackgroundProcessesForThread } from './exec/supervised-background-process.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -103,6 +100,7 @@ describe('archiveStoredThread', () => {
       hasTerminals: (): boolean => terminals,
       destroyEmptyTerminals: async (): Promise<void> => {},
       hasBackgroundProcesses: (): boolean => processes,
+      hasIsolatedDesktop: (): boolean => false,
       destroyTerminals: async (): Promise<void> => {
         events.push('terminals')
         terminals = false
@@ -364,6 +362,7 @@ describe('archiveStoredThread', () => {
       agent: false,
       terminals: false,
       backgroundProcesses: true,
+      isolatedDesktop: false,
     })
     assert.ok(await lstat(worktree.path))
   })
@@ -410,7 +409,12 @@ describe('archiveStoredThread', () => {
     processes = true
     assert.deepEqual(await archive('f'.repeat(64)), {
       status: 'blocked-running',
-      running: { agent: true, terminals: true, backgroundProcesses: true },
+      running: {
+        agent: true,
+        terminals: true,
+        backgroundProcesses: true,
+        isolatedDesktop: false,
+      },
     })
     assert.deepEqual(events, [])
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
@@ -422,6 +426,7 @@ describe('archiveStoredThread', () => {
     // The guest outlives the turn that started it, so an idle chat can still
     // hold a VM and its host inference grant. Archive must see and stop it.
     let removed = 0
+    let deletion: Error | undefined
     const guest: DesktopTransport = {
       start(onLine) {
         queueMicrotask(() => {
@@ -431,6 +436,7 @@ describe('archiveStoredThread', () => {
       },
       send: () => Promise.resolve(),
       remove() {
+        if (deletion) return Promise.reject(deletion)
         removed++
         return Promise.resolve()
       },
@@ -440,8 +446,9 @@ describe('archiveStoredThread', () => {
 
     beforeEach(async () => {
       removed = 0
-      dependencies.hasBackgroundProcesses = (projectId, threadId): boolean =>
-        hasSupervisedBackgroundWorkForThread({ projectId, threadId })
+      deletion = undefined
+      dependencies.hasIsolatedDesktop = (projectId, threadId): boolean =>
+        hasIsolatedDesktop({ projectId, threadId })
       dependencies.stopBackgroundProcesses = stopSupervisedBackgroundProcessesForThread
       await admitIsolatedDesktop(owner, guest, new AbortController().signal)
     })
@@ -455,7 +462,12 @@ describe('archiveStoredThread', () => {
       assert.ok(worktree)
       assert.deepEqual(await archive(), {
         status: 'blocked-running',
-        running: { agent: false, terminals: false, backgroundProcesses: true },
+        running: {
+          agent: false,
+          terminals: false,
+          backgroundProcesses: false,
+          isolatedDesktop: true,
+        },
       })
       assert.equal(hasIsolatedDesktop(owner), true)
       assert.equal(removed, 0)
@@ -470,6 +482,22 @@ describe('archiveStoredThread', () => {
       assert.equal(removed, 1)
       assert.equal(hasIsolatedDesktop(owner), false)
       await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
+    })
+
+    it('keeps the chat and names the cause when the VM cannot be deleted', async () => {
+      const { worktree } = await seed()
+      assert.ok(worktree)
+      deletion = new Error('Command failed: container delete --force (engine busy)')
+      // The renderer sees only the message, so it must carry the cause.
+      await assert.rejects(archive(null, true), {
+        message: /^Failed to stop all thread processes: .*engine busy/,
+      })
+      assert.equal(hasIsolatedDesktop(owner), true)
+      assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
+      // A later Stop and archive retries the deletion.
+      deletion = undefined
+      assert.equal((await archive(null, true)).status, 'archived')
+      assert.equal(removed, 1)
     })
   })
 
@@ -517,7 +545,12 @@ describe('archiveStoredThread', () => {
     const result = await archive(null, true)
     assert.deepEqual(result, {
       status: 'blocked-running',
-      running: { agent: false, terminals: false, backgroundProcesses: true },
+      running: {
+        agent: false,
+        terminals: false,
+        backgroundProcesses: true,
+        isolatedDesktop: false,
+      },
     })
     assert.ok(await lstat(worktree.path))
   })
