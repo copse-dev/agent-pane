@@ -5,7 +5,6 @@ import { DesktopSession, type DesktopTransport, type DesktopInput } from './desk
 const owner = { projectId: 'project', threadId: 'thread' }
 interface Fixture {
   session: DesktopSession
-  controller: AbortController
   sent: DesktopInput[]
   cleanupErrors: unknown[]
   receive(value: unknown): void
@@ -23,7 +22,6 @@ function fixture(lifetimeMs?: number): Fixture {
   let revoked = false
   let failRemoval = false
   const sent: DesktopInput[] = []
-  const controller = new AbortController()
   const transport: DesktopTransport = {
     async start(onLine, onExit) {
       receive = onLine
@@ -44,7 +42,6 @@ function fixture(lifetimeMs?: number): Fixture {
   const session = new DesktopSession(
     owner,
     transport,
-    controller.signal,
     (error) => cleanupErrors.push(error),
     () => {
       admitted = false
@@ -53,7 +50,6 @@ function fixture(lifetimeMs?: number): Fixture {
   )
   return {
     session,
-    controller,
     sent,
     cleanupErrors,
     receive(value: unknown): void {
@@ -109,19 +105,19 @@ describe('isolated desktop authority and lifecycle', () => {
   it('cancels startup and deletes even when readiness never arrives', async () => {
     const f = fixture()
     const ready = f.session.start()
-    f.controller.abort()
+    void f.session.stop()
     await assert.rejects(ready, /revoked/)
     assert.equal(f.revoked, true)
     assert.equal(f.removed, 1)
     await assert.rejects(f.session.execute(owner, { action: 'screenshot' }), /revoked/)
   })
 
-  it('releases admission after parent cancellation and expiry delete the guest', async () => {
+  it('releases admission after stop and expiry delete the guest', async () => {
     for (const expires of [false, true]) {
       const f = fixture(expires ? 1 : undefined)
       await start(f)
       assert.equal(f.admitted, true)
-      if (!expires) f.controller.abort()
+      if (!expires) void f.session.stop()
       await new Promise((resolve) => setTimeout(resolve, 10))
       assert.equal(f.revoked, true)
       assert.equal(f.removed, 1)
@@ -169,7 +165,7 @@ describe('isolated desktop authority and lifecycle', () => {
       f.session.execute(owner, { action: 'key', key: 'Tab' }),
       /already in progress/,
     )
-    f.controller.abort()
+    void f.session.stop()
     f.receive({ event: 'screenshot', png: 'AAAA' })
     await assert.rejects(screenshot, /revoked/)
     assert.equal(f.revoked, true)

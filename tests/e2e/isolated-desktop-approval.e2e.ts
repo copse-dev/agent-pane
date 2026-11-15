@@ -93,6 +93,9 @@ async function importTrustedDesktopPin(): Promise<void> {
       '100,000',
       '15 minutes',
       'No host folders',
+      // The grant outlives the turn, so consent says how it ends instead.
+      'stays up between turns',
+      'Stop or archiving the thread deletes it',
     ]) {
       await expect(dialog.$('.approval-body')).toHaveText(expect.stringContaining(text))
     }

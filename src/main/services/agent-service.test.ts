@@ -37,6 +37,11 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from './acp/acp-turn-recovery.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { createThread, getThreadMeta, deleteProjectThread } from './thread-store.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
+import type { DesktopTransport } from './isolated-desktop/desktop-session.ts'
+import {
+  admitIsolatedDesktop,
+  stopAllIsolatedDesktops,
+} from './isolated-desktop/desktop-service.ts'
 import { AGENT_RUN_HARD_MAX_MS } from '@copse/agent/agent-loop-limits.ts'
 import { execFileSync } from 'node:child_process'
 import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plugin.ts'
@@ -126,6 +131,51 @@ it('send-now preserves task retries while interrupting an admitted turn', async 
     agentService.abortAgent(threadId)
     await pending
     shellReplayLeaseStore.clear()
+  }
+})
+
+it('Stop deletes the thread’s isolated desktop, which send-now and other threads keep', async () => {
+  // The desktop outlives the turn that started it, so the user's Stop must
+  // reach it even when no run is active.
+  let removed = 0
+  let markRemoved: () => void = () => {}
+  const deleted = new Promise<void>((resolve) => {
+    markRemoved = resolve
+  })
+  let emit: (line: string) => void = () => {}
+  const transport: DesktopTransport = {
+    start(onLine) {
+      emit = onLine
+      queueMicrotask(() => {
+        emit(JSON.stringify({ event: 'ready', title: 'Copse', width: 1280, height: 800 }))
+      })
+      return Promise.resolve()
+    },
+    send: () => Promise.resolve(),
+    remove() {
+      removed++
+      markRemoved()
+      return Promise.resolve()
+    },
+    revoke() {},
+  }
+  const threadId = 'thread-' + randomUUID()
+  await admitIsolatedDesktop(
+    { projectId: 'project', threadId },
+    transport,
+    new AbortController().signal,
+  )
+  try {
+    agentService.abortAgent(threadId, 'send_now')
+    agentService.abortAgent('thread-' + randomUUID())
+    // Stop revokes synchronously and starts deletion at once; one turn is enough to see it.
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(removed, 0)
+    agentService.abortAgent(threadId)
+    await deleted
+    assert.equal(removed, 1)
+  } finally {
+    await stopAllIsolatedDesktops()
   }
 })
 

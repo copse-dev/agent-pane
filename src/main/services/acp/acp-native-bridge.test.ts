@@ -1,4 +1,4 @@
-import { getIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
+import { getBridgeExecutionId } from '../approval-tool-call-context.ts'
 import { mkdirSync } from 'node:fs'
 import { readSkillTool } from '../../tools/read-skill-tool.ts'
 import { setSkillsForTest } from '../skills/skills-registry.ts'
@@ -263,9 +263,12 @@ function initialized(): unknown[] {
 }
 
 describe('startAcpNativeBridge', () => {
-  it('binds desktop authority to a live owning turn beyond the HTTP response', async () => {
+  it('leaves an isolated desktop running after the turn that started it ends', async () => {
+    // Regression: a controller that waited in the background ended its turn and
+    // Copse deleted its guest. The bridge runs isolated_copse as any bridged
+    // tool: neither turn end nor session disposal reaches the thread's grant.
     const registry = new ToolRegistry()
-    const observed: { call: AbortSignal; lifetime: AbortSignal }[] = []
+    const calls: { bridged: boolean; call: AbortSignal }[] = []
     registry.register({
       name: 'isolated_copse',
       description: 'Desktop lifecycle boundary fixture',
@@ -275,9 +278,7 @@ describe('startAcpNativeBridge', () => {
           projectId: 'project-1',
           threadId: 'desktop-owner',
         })
-        const lifetime = getIsolatedDesktopLifetime()
-        assert.ok(lifetime)
-        observed.push({ call: signal, lifetime })
+        calls.push({ bridged: getBridgeExecutionId() !== undefined, call: signal })
         return Promise.resolve('started')
       },
     })
@@ -286,34 +287,29 @@ describe('startAcpNativeBridge', () => {
     assert.ok(bridge)
     bridge.setExecutionContext(worktreeContext('desktop-owner', '/worktrees/desktop-owner'))
     for (const init of initialized()) await rpc(bridge, init)
+    const turn = new AbortController()
+    bridge.setTurnSignal(turn.signal)
     const call = {
       jsonrpc: '2.0',
       id: 91,
       method: 'tools/call',
       params: { name: 'isolated_copse', arguments: { action: 'start' } },
     }
-    assert.equal(rpcResult(await rpc(bridge, call))['isError'], true)
-    assert.equal(observed.length, 0)
-    const firstTurn = new AbortController()
-    bridge.setTurnSignal(firstTurn.signal)
     assert.equal(contentText(await rpc(bridge, call)), 'started')
     await delay(20)
-    const first = observed[0]
+    const first = calls[0]
     assert.ok(first)
+    // The start is marked as bridged, so it must name a host model; its only
+    // signal is the call's, which the response closes once start has returned.
+    assert.equal(first.bridged, true)
     assert.equal(first.call.aborted, true)
-    assert.equal(first.lifetime.aborted, false)
-    firstTurn.abort()
-    assert.equal(first.lifetime.aborted, true)
-    assert.equal(rpcResult(await rpc(bridge, call))['isError'], true)
-    assert.equal(observed.length, 1)
-    const nextTurn = new AbortController()
-    bridge.setTurnSignal(nextTurn.signal)
+    turn.abort()
+    bridge.setTurnSignal(null)
+    // The resumed turn reaches the same thread's tool without a new grant.
+    const resumed = new AbortController()
+    bridge.setTurnSignal(resumed.signal)
     assert.equal(contentText(await rpc(bridge, call)), 'started')
-    const second = observed[1]
-    assert.ok(second)
-    assert.equal(second.lifetime.aborted, false)
-    session.abort()
-    assert.equal(second.lifetime.aborted, true)
+    assert.equal(calls.length, 2)
   })
 
   it('serves progressive skills through real authenticated HTTP with isolated prompt budgets and no stale access', async () => {

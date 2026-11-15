@@ -125,6 +125,7 @@ import {
   pendingApprovalParkedToolCallIds,
   releaseParkedApprovalsForThread,
 } from './approval.ts'
+import { stopIsolatedDesktopsForThread } from './isolated-desktop/desktop-service.ts'
 import {
   reviewSpendApprovalBody,
   runParentContinuationTurn,
@@ -3199,6 +3200,11 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
   if (reason !== 'send_now') {
     shellReplayLeaseStore.revokeThread(threadId)
     discardApprovalsForThread(threadId)
+    // The isolated desktop outlives the turn that started it, so Stop revokes
+    // it here rather than through the turn's abort. Send-now keeps it.
+    void stopIsolatedDesktopsForThread(threadId).catch((error: unknown) => {
+      console.error('[isolated-desktop] Stop could not delete the VM; retry Stop:', error)
+    })
   }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.

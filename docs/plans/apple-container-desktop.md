@@ -105,8 +105,9 @@ runtime evidence from before the product integration below.
   The grant belongs to the invoking project/thread and never authorizes host GUI control.
 - Screenshot, click, type and key actions reach only the owned VM; a different thread cannot
   address it. Requests are serialized, bounded and timed out; protocol failure revokes it.
-- Stop, parent cancellation, expiry and application shutdown revoke input and model access
-  before force-deleting the VM. Failed deletion remains visible and can be retried.
+- Stop, the user's Stop, thread archive/delete, expiry and application shutdown revoke input and
+  model access before force-deleting the VM. Failed deletion remains visible and can be retried.
+  The end of a turn does not; see [Grant lifetime](#grant-lifetime-decided-november-15-2026).
 - Model inference uses a host-pinned provider with token/time limits. Guest-selected URLs,
   credentials and arbitrary host operations are unavailable through that channel.
 - Unit tests cover ownership, cancellation during startup, protocol failures and revocation;
@@ -119,11 +120,12 @@ and a private guest Unix-socket relay to host inference. Start requires fresh,
 non-rememberable consent naming the pinned model and 100,000-token / 15-minute limits.
 Guest provider selection refuses every other model. No credentials are copied into the guest.
 
-Input is serialized, bounded and timed out. Stop, parent cancellation, expiry, blocking the
-tool, thread cleanup and application shutdown revoke authority before deletion. Failed deletion
+Input is serialized, bounded and timed out. The `stop` action, the user's Stop, expiry, blocking
+the tool, thread cleanup and application shutdown revoke authority before deletion. Failed deletion
 remains visible and retryable. Shutdown awaits deletion within the existing quit deadline.
-ACP bridge calls bind desktop lifetime to the captured owning turn/session, independently
-of an individual HTTP response. Bridged starts require an explicit supported host model.
+The grant belongs to the thread, not to the turn, ACP session or HTTP response that started it
+([Grant lifetime](#grant-lifetime-decided-november-15-2026)). Bridged starts require an explicit
+supported host model.
 
 The image builder writes an owner-controlled digest receipt after successful build and image
 inspection. Before starting a created VM, the transport verifies its stopped configuration,
@@ -131,6 +133,59 @@ Linux arm64 platform and actual image descriptor against that receipt. A mutable
 sufficient. Startup writes a host-only lease and labels the VM with a random ownership nonce.
 Startup and the next Start reconcile expired or dead-parent leases, refuse mismatched labels,
 and retain failed deletion for retry. The guest controller has its own 15-minute deadline.
+
+## Grant lifetime (decided November 15, 2026)
+
+**Finding.** In the PR #4294 dogfood (Apple container 1.5.0, guest `lmstudio:qwen/qwen3.6-35b-a3b`,
+Claude ACP controller), the controller started a guest, which ran edit 1 and its review. The
+controller then waited for the review with a background `sleep 30`, which ended its turn. The ACP
+bridge had bound the desktop's lifetime to the captured turn signal, and Copse aborts that signal
+in the turn's `finally`. So Copse deleted the VM, cut the in-flight host inference request off
+mid-stream, and the resumed turn got "This thread has no isolated desktop" and had to ask for a
+second consent ([finding](https://github.com/copse-dev/agent-pane/pull/4294#issuecomment-6888263089)).
+
+**Options.** (a) The guest outlives the end of a turn until the grant's wall clock, an explicit
+stop or thread close, with no second consent. (b) Keep the turn binding, and have the tool result
+or description tell the controller not to end its turn while a guest runs, and to wait with
+repeated screenshots instead.
+
+**Decision: (a).** The consent already names the grant's real bounds, 100,000 tokens and
+15 minutes, and both are enforced per session, independent of turns. Host inference accounting
+is per session, so a turn boundary adds no accounting. Option (b) relies on every controller
+obeying an instruction, and a turn can also end through no choice of the agent (Claude's
+background waits, Codex's turn ends, idle deadlines). Binding to the ACP session instead would
+also be wrong: the idle reaper can evict a warm session after a one-minute grace and resume it
+later, so a guest would still vanish while its controller waits.
+
+The grant now ends only on:
+
+- the `stop` action;
+- the user's Stop for the thread (`abortAgent`, from any later turn; send-now keeps the guest);
+- archiving or deleting the thread;
+- blocking `isolated_copse` in tool permissions;
+- the 15-minute session timer, or the guest controller's own 15-minute deadline;
+- a guest protocol or transport failure;
+- application shutdown.
+
+A turn ending, a hook halt, the run's idle deadline, the ACP session being disposed or reaped, and
+the start call's HTTP response closing do not end it. The start call's signal still cancels consent
+and startup. Consent stays fresh and non-rememberable (`allowRemember: false`). A restarted grant
+still needs new consent. Within one grant, a later turn of the same thread controls the guest with
+no second prompt. Bridged calls outside a turn are still refused, because they have no bound
+execution context.
+
+The consent's last line is now "The VM stays up between turns. Stop or archiving the thread
+deletes it." It used to read "Stop the agent to revoke control and delete the VM." The tool
+description and the Start result tell the controller that it may end its turn or wait in the
+background, check on the guest with screenshots, and use `stop` when done.
+
+Coverage: `desktop-service.test.ts` checks that a grant survives the start call's abort, is
+reachable from a later call without consent, and that Stop for one thread leaves another thread's
+grant alone. `agent-service.test.ts` checks that Stop deletes the guest and send-now keeps it.
+`acp-native-bridge.test.ts` checks that a bridged start is marked as bridged, and a resumed turn
+reaches the tool. `isolated-desktop-tool.test.ts` checks that a bridged start must name its model.
+`isolated-desktop-approval.e2e.ts` asserts the new consent line and saves
+`isolated-desktop-approval.png`.
 
 ## Build and run
 
