@@ -294,9 +294,12 @@ export function createTranscriptReducer(
             appendReasoning(store, ensureFreshAfterTools(threadId, st), chunk.content.text)
             st.writing = false
           } else {
-            // ACP supplies explicit message boundaries when available. A tool
-            // event alone cannot end this message (or discard whitespace).
-            st.toolSinceText = false
+            // Only an explicit repeat of the current ACP message id says this
+            // text continues across a tool event. Text without an id keeps the
+            // post-tool boundary, so separate steps stay separate messages.
+            if (chunk.messageId !== undefined && chunk.messageId === previousId) {
+              st.toolSinceText = false
+            }
             const text = appendText(threadId, st, chunk.content.text)
             if (text === null) break
             st.writing = text.trim().length > 0

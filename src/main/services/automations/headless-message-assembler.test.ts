@@ -170,43 +170,70 @@ describe('createHeadlessAutomationRun', () => {
     assert.equal(run.failure()?.message, 'Provider unavailable')
   })
 
-  for (const messageId of [undefined, 'msg-1']) {
-    it(`persists an ACP link across tools with ${messageId ?? 'no message id'}`, async () => {
-      const threadId = 'continued-link'
-      await createThread(PROJECT_ID, thread(threadId))
-      const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
-      const emitText = (text: string): void => {
-        run.host.emit(threadId, {
-          type: 'acp_content',
-          channel: 'message',
-          content: { type: 'text', text },
-          ...(messageId === undefined ? {} : { messageId }),
-        })
-      }
-      emitText('[Review](https://')
-      run.host.emit(threadId, {
-        type: 'tool_call',
-        toolCall: { id: 'read', name: 'read_file', args: {} },
-      })
-      run.host.emit(threadId, {
-        type: 'tool_result',
-        toolCallId: 'read',
-        result: 'done',
-        isError: false,
-      })
-      emitText('example.com)')
-      emitText(' ')
-      emitText('completed.')
-      run.host.emit(threadId, { type: 'done' })
-      await run.flush()
-      const persisted = await getProjectThread(PROJECT_ID, threadId)
-      assert.deepEqual(
-        persisted?.messages.map((message) => message.content),
-        ['[Review](https://example.com) completed.'],
-      )
-      assert.equal(persisted.messages[0]?.toolCalls[0]?.status, 'done')
-    })
+  const emitToolRun = (
+    run: ReturnType<typeof createHeadlessAutomationRun>,
+    threadId: string,
+    id: string,
+  ): void => {
+    run.host.emit(threadId, { type: 'tool_call', toolCall: { id, name: 'read_file', args: {} } })
+    run.host.emit(threadId, { type: 'tool_result', toolCallId: id, result: 'done', isError: false })
   }
+
+  it('persists an ACP link across tools when the message id repeats', async () => {
+    const threadId = 'continued-link'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+    const emitText = (text: string): void => {
+      run.host.emit(threadId, {
+        type: 'acp_content',
+        channel: 'message',
+        content: { type: 'text', text },
+        messageId: 'msg-1',
+      })
+    }
+    emitText('[Review](https://')
+    emitToolRun(run, threadId, 'read')
+    emitText('example.com)')
+    emitText(' ')
+    emitText('completed.')
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    assert.deepEqual(
+      persisted?.messages.map((message) => message.content),
+      ['[Review](https://example.com) completed.'],
+    )
+    assert.equal(persisted.messages[0]?.toolCalls[0]?.status, 'done')
+  })
+
+  it('keeps the post-tool boundary for ACP text without a message id', async () => {
+    const threadId = 'id-less-steps'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+    const emitText = (text: string): void => {
+      run.host.emit(threadId, {
+        type: 'acp_content',
+        channel: 'message',
+        content: { type: 'text', text },
+      })
+    }
+    emitText("I'll read the README.")
+    emitToolRun(run, threadId, 'r1')
+    emitText('Build passed.')
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    assert.deepEqual(
+      persisted?.messages.map((message) => [
+        message.content,
+        message.toolCalls.map((call) => call.id),
+      ]),
+      [
+        ["I'll read the README.", ['r1']],
+        ['Build passed.', []],
+      ],
+    )
+  })
 
   it('starts a new assistant message when the ACP message id changes', async () => {
     const threadId = 'thread-5'

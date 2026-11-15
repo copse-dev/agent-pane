@@ -45,9 +45,10 @@ const samples = [
   '**All tests passed** with no errors.',
 ]
 
-for (const id of [undefined, 'm1']) {
+{
+  const id = 'm1'
   for (const sample of samples) {
-    test(`ACP ${id ?? 'without ids'} preserves every interruption position in ${JSON.stringify(sample)}`, () => {
+    test(`ACP ${id} preserves every interruption position in ${JSON.stringify(sample)}`, () => {
       for (let index = 1; index < sample.length; index += 1) {
         assert.deepEqual(
           reduce([
@@ -63,14 +64,14 @@ for (const id of [undefined, 'm1']) {
     })
   }
 
-  test(`ACP ${id ?? 'without ids'} preserves standalone whitespace after tools`, () => {
+  test(`ACP ${id} preserves standalone whitespace after tools`, () => {
     assert.deepEqual(
       reduce([...text('Hello', id), tool, result, ...text(' ', id), ...text('world', id)]),
       ['Hello world'],
     )
   })
 
-  test(`ACP ${id ?? 'without ids'} stays joined across a delayed tool update`, () => {
+  test(`ACP ${id} stays joined across a delayed tool update`, () => {
     assert.deepEqual(
       reduce([
         ...text('[PR #4072](https://', id),
@@ -82,7 +83,9 @@ for (const id of [undefined, 'm1']) {
       [link],
     )
   })
+}
 
+for (const id of [undefined, 'm1']) {
   test(`ACP ${id ?? 'without ids'} finalizes at turn end`, () => {
     assert.deepEqual(reduce([...text('First', id), { type: 'done' }, ...text('Second', id)]), [
       'First',
@@ -90,6 +93,42 @@ for (const id of [undefined, 'm1']) {
     ])
   })
 }
+
+function reduceWithTools(chunks: StreamChunk[]): { content: string; tools: string[] }[] {
+  const store = createStore({ threads: [threadWith('t1')], activeThreadId: 't1' })
+  const reducer = createTranscriptReducer(store)
+  for (const chunk of chunks) reducer.apply('t1', chunk)
+  return (getThreadById(store, 't1')?.messages ?? [])
+    .filter((message) => message.role === 'assistant')
+    .map((message) => ({
+      content: message.content,
+      tools: message.toolCalls.map((call) => call.id),
+    }))
+}
+
+function toolRun(id: string): StreamChunk[] {
+  return [
+    { type: 'tool_call', toolCall: { id, name: 'read_file', args: {} } },
+    { type: 'tool_result', toolCallId: id, result: 'ok', isError: false },
+  ]
+}
+
+test('ACP text without ids keeps each step after its tools, like native text', () => {
+  const steps = (chunk: (value: string) => StreamChunk[]): StreamChunk[] => [
+    ...chunk("I'll read the README."),
+    ...toolRun('r1'),
+    ...chunk('The README says to run make.'),
+    ...toolRun('r2'),
+    ...chunk('Build passed.'),
+  ]
+  const expected = [
+    { content: "I'll read the README.", tools: ['r1'] },
+    { content: 'The README says to run make.', tools: ['r2'] },
+    { content: 'Build passed.', tools: [] },
+  ]
+  assert.deepEqual(reduceWithTools(steps((value) => text(value))), expected)
+  assert.deepEqual(reduceWithTools(steps((value) => [{ type: 'text', text: value }])), expected)
+})
 
 test('a new explicit ACP message id splits an unfinished link', () => {
   assert.deepEqual(
