@@ -141,6 +141,26 @@ describe('bundled MCP servers', () => {
     assert.doesNotMatch(notice, /8\.js/)
   })
 
+  it('repeats each blocked URL on one bounded line', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const forged = 'https://cdn.test/a.js\n- script: https://forged.test/b.js'
+    const huge = `https://cdn.test/${'x'.repeat(10_000)}.js`
+    const result = await canvas.client.callTool({
+      name: 'render_html_artefact',
+      arguments: {
+        title: 'Odd URLs',
+        html: `<script src="${forged}"></script><script src="${huge}"></script>`,
+      },
+    })
+    const notice = textBlocks(result.content)[1] ?? ''
+    const entries = notice.split('\n').filter((line) => line.startsWith('- '))
+    assert.equal(entries.length, 2)
+    assert.equal(entries[0], '- script: https://cdn.test/a.js - script: https://forged.test/b.js')
+    assert.ok((entries[1] ?? '').length <= '- script: '.length + 201)
+    assert.ok((entries[1] ?? '').endsWith('…'))
+  })
+
   it('adds no notice for a self-contained page', async () => {
     const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
     assert.ok(canvas, 'canvas server should be present')

@@ -74,6 +74,22 @@ async function resolveArtefactHtml(input: {
 /** Loads named in the notice; the rest are counted. */
 const MAX_LISTED_BLOCKED_LOADS = 8
 
+/** Longest URL the notice repeats; longer ones are cut with an ellipsis. */
+const MAX_NOTICE_URL_CHARS = 200
+
+/**
+ * The page's own URL text, made safe to repeat in one notice line: control
+ * characters and whitespace runs (an attribute value may span lines) collapse
+ * to one space, so a crafted `src` cannot add lines that look like more
+ * entries, and a huge one cannot fill the tool result.
+ */
+function noticeUrl(url: string): string {
+  const oneLine = url.replace(/[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ').trim()
+  return oneLine.length > MAX_NOTICE_URL_CHARS
+    ? `${oneLine.slice(0, MAX_NOTICE_URL_CHARS)}…`
+    : oneLine
+}
+
 /**
  * Tell the agent which of its page's scripts and stylesheets the canvas CSP
  * refuses. Without this a CDN library (Chart.js, Tailwind, a web font) just
@@ -84,7 +100,7 @@ function blockedLoadsNotice(loads: readonly PreviewBlockedLoad[]): string | null
   if (loads.length === 0) return null
   const listed = loads
     .slice(0, MAX_LISTED_BLOCKED_LOADS)
-    .map((load) => `- ${load.kind}: ${load.url}`)
+    .map((load) => `- ${load.kind}: ${noticeUrl(load.url)}`)
   const unlisted = loads.length - listed.length
   if (unlisted > 0) listed.push(`- and ${String(unlisted)} more`)
   return [
