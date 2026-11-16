@@ -1626,7 +1626,9 @@ export async function validateThreadWorktreeRecovery(
 /**
  * Report whether the thread checkout is on a branch without throwing for a
  * detached HEAD, so the renderer can offer `reattachThreadWorktree` instead of
- * a dead-end error.
+ * a dead-end error. A checkout on its base branch is reported too: passive
+ * reads still show its files, so without this nothing tells the user that
+ * Copse will refuse to run in it until they send a message (#1882).
  */
 export async function inspectThreadWorktreeAttachment(
   input: ValidateWorktreeInput,
@@ -1636,6 +1638,9 @@ export async function inspectThreadWorktreeAttachment(
   try {
     validated = await validateThreadWorktreeState(input)
   } catch (error) {
+    if (error instanceof ThreadWorktreeOnBaseBranchError) {
+      return { state: 'on-base-branch', branch: error.branch, baseBranch: error.baseBranch }
+    }
     if (!(error instanceof MissingThreadWorktreeError)) throw error
     const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
     return {
