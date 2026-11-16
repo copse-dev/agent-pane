@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import type { InstructionScope } from '@shared/types/instructions.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
@@ -205,11 +206,6 @@ async function readTrimmed(path: string): Promise<string | null> {
   }
 }
 
-function isWithinRoot(path: string, root: string): boolean {
-  const rel = relative(root, path)
-  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
-}
-
 async function canonicalPath(path: string): Promise<string> {
   try {
     return await fsp.realpath(path)
@@ -229,7 +225,7 @@ async function readProjectTrimmed(
       fsp.realpath(root),
       fsp.realpath(path),
     ])
-    if (!isWithinRoot(canonicalFile, canonicalRoot)) return null
+    if (!isPathWithin(canonicalRoot, canonicalFile)) return null
     if (maxBytes === undefined) return await readTrimmed(canonicalFile)
 
     const handle = await fsp.open(canonicalFile, 'r')
@@ -413,14 +409,14 @@ async function normalizeContextPathWithinRoot(
   const trimmed = rawPath.trim()
   if (!trimmed || trimmed.includes('\0')) return null
   const absolute = isAbsolute(trimmed) ? resolve(trimmed) : resolve(root, trimmed)
-  if (!isWithinRoot(absolute, resolve(root))) return null
+  if (!isPathWithin(resolve(root), absolute)) return null
 
   const canonicalRoot = await canonicalPath(root)
   let existingAncestor = absolute
   for (;;) {
     try {
       const canonicalAncestor = await fsp.realpath(existingAncestor)
-      if (!isWithinRoot(canonicalAncestor, canonicalRoot)) return null
+      if (!isPathWithin(canonicalRoot, canonicalAncestor)) return null
       break
     } catch {
       const parent = dirname(existingAncestor)

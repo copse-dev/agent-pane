@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process'
 import type { AppRunProgress } from '../app-run/app-run-driver.ts'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, realpath } from 'node:fs/promises'
 import { z } from 'zod'
@@ -140,13 +141,8 @@ export function appleBuildActionArguments(
 }
 
 async function ensureContainedDirectory(root: string, target: string): Promise<string> {
-  const relativeTarget = relative(root, target)
-  if (
-    relativeTarget === '' ||
-    isAbsolute(relativeTarget) ||
-    relativeTarget === '..' ||
-    relativeTarget.startsWith(`..${sep}`)
-  ) {
+  const relativeTarget = relativeWithin(root, target)
+  if (!relativeTarget) {
     throw new Error('Apple operation storage resolved outside Copse scratch space.')
   }
   let cursor = root

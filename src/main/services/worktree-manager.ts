@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type {
   ThreadWorktreeAttachment,
@@ -706,8 +707,7 @@ export async function existingWorktreeProjectRoot(
     resolve(canonicalCheckoutRoot, projectRelativePath),
     localWorkspaceFs,
   )
-  const rel = relative(canonicalCheckoutRoot, root)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(canonicalCheckoutRoot, root)) {
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   return root

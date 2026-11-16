@@ -1,7 +1,8 @@
 import { constants as fsConstants } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import {
   resolveStdioServer,
   type AgentPluginMcpServer,
@@ -31,18 +32,13 @@ export function agentPluginMcpServerName(pluginName: string, serverName: string)
   return `plugin_${slug(pluginName, 20)}_${slug(serverName, 20)}_${digest}`
 }
 
-function isContained(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-}
-
 async function containedRealpath(
   root: string,
   candidate: string,
   kind: 'file' | 'directory',
 ): Promise<string | null> {
   const resolved = await fsp.realpath(candidate).catch(() => null)
-  if (!resolved || !isContained(root, resolved)) return null
+  if (!resolved || !isPathWithin(root, resolved)) return null
   const stat = await fsp.stat(resolved).catch(() => null)
   if (!stat || (kind === 'file' ? !stat.isFile() : !stat.isDirectory())) return null
   return resolved

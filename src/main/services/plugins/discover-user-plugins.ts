@@ -35,7 +35,8 @@
 //     re-hashed here before discovery, so editing their immutable payload fails
 //     closed before skills or MCP servers can register.
 import * as fsp from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 import {
   AGENT_PLUGIN_MANIFEST_FILE,
@@ -144,10 +145,7 @@ export interface UserPluginDiscovery {
 async function resolveWithinRoot(root: string, candidate: string): Promise<string | null> {
   const resolved = await fsp.realpath(candidate).catch(() => null)
   if (!resolved) return null
-  const rel = relative(root, resolved)
-  if (rel === '') return resolved
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
-  return resolved
+  return isPathWithin(root, resolved) ? resolved : null
 }
 
 async function readManifestFile(manifestPath: string): Promise<unknown> {
