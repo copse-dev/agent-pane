@@ -33,9 +33,19 @@ describe('nextAcpTurnProse', () => {
     ])
     assert.equal(
       prose.text,
-      'The session token has expired in the fixture.Failed to authenticate: OAuth session expired',
+      'The session token has expired in the fixture.\n\nFailed to authenticate: OAuth session expired',
     )
     assert.equal(prose.finalMessage, 'Failed to authenticate: OAuth session expired')
+  })
+
+  it('keeps one blank line between id-stamped messages in the history text', () => {
+    const prose = fold([
+      message('Checking the build.', 'msg_1'),
+      message('The build passes.', 'msg_2'),
+      message('Done.\n', 'msg_3'),
+      message('Bye.', 'msg_4'),
+    ])
+    assert.equal(prose.text, 'Checking the build.\n\nThe build passes.\n\nDone.\n\nBye.')
   })
 
   it('starts a new final message after a tool call', () => {

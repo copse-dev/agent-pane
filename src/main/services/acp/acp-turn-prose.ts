@@ -39,6 +39,16 @@ function proseOf(chunk: StreamChunk): string | null {
   return null
 }
 
+/**
+ * What separates a new id-stamped message from the prose before it in the
+ * turn's history text: a blank line, so two messages read as two paragraphs
+ * instead of running together ("…the build.The build passes.").
+ */
+function messageBreak(before: string): string {
+  if (before === '' || before.endsWith('\n\n')) return ''
+  return before.endsWith('\n') ? '\n' : '\n\n'
+}
+
 /** Fold one agent-authored chunk into the turn's prose. */
 export function nextAcpTurnProse(previous: AcpTurnProse, chunk: StreamChunk): AcpTurnProse {
   // A tool call ends the message before it: the next prose is a new message.
@@ -48,7 +58,7 @@ export function nextAcpTurnProse(previous: AcpTurnProse, chunk: StreamChunk): Ac
   const messageId = chunk.type === 'acp_content' ? (chunk.messageId ?? null) : null
   const newMessage = messageId !== null && messageId !== previous.messageId
   return {
-    text: previous.text + prose,
+    text: previous.text + (newMessage ? messageBreak(previous.text) : '') + prose,
     finalMessage: newMessage ? prose : previous.finalMessage + prose,
     messageId: messageId ?? previous.messageId,
   }
