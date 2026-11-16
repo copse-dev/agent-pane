@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, sep } from 'node:path'
@@ -492,7 +492,7 @@ async function inspectPlan(
       ready: true,
       detail: 'No dependency installation or additional checks declared.',
     })
-  const expectedFingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex')
+  const expectedFingerprint = sha256Hex(JSON.stringify(identity))
   const stamp = readStamp(plan.root)
   const allReady = components.every((component) => component.ready)
   const noWork = !plan.manager && plan.prepare.length === 0 && plan.checks.length === 0

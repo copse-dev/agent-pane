@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
@@ -172,7 +173,7 @@ export interface BranchCiSnapshot {
 }
 
 function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  return sha256Hex(JSON.stringify(value))
 }
 function readableDefinitions(raw: unknown): {
   readable: BranchCiAutomation[]

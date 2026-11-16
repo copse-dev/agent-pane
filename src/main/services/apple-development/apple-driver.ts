@@ -2,7 +2,8 @@ import type { ChildProcess } from 'node:child_process'
 import type { AppRunProgress } from '../app-run/app-run-driver.ts'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { relativeWithin } from '@copse/std/path-containment.ts'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { mkdir, open, readdir, realpath } from 'node:fs/promises'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -108,8 +109,8 @@ export interface AppleOperationPaths {
 
 export function appleOperationPaths(root: string, operationId: string): AppleOperationPaths {
   const scratchRoot = resolve(ensureWorkspaceTmpDir(), 'apple-development')
-  const checkoutKey = createHash('sha256').update(resolve(root)).digest('hex').slice(0, 32)
-  const operationKey = createHash('sha256').update(operationId).digest('hex').slice(0, 32)
+  const checkoutKey = sha256Hex(resolve(root)).slice(0, 32)
+  const operationKey = sha256Hex(operationId).slice(0, 32)
   const checkoutRoot = resolve(scratchRoot, checkoutKey)
   return {
     outputRoot: resolve(checkoutRoot, 'operations', operationKey),

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { access, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { createServer } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
+import { pathExists } from '@copse/std/path-exists.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type {
@@ -77,11 +78,6 @@ interface AndroidProject {
   module: AndroidModule
   tools: AndroidToolchain
 }
-const exists = async (path: string): Promise<boolean> =>
-  access(path).then(
-    () => true,
-    () => false,
-  )
 
 async function findWrappers(root: string): Promise<string[]> {
   const found: string[] = []
@@ -115,7 +111,7 @@ async function toolchain(root: string): Promise<AndroidToolchain | null> {
   ]
   const sdk = await (async (): Promise<string | null> => {
     for (const path of candidates)
-      if (path && (await exists(join(path, 'platform-tools/adb')))) return realpath(path)
+      if (path && (await pathExists(join(path, 'platform-tools/adb')))) return realpath(path)
     return null
   })()
   if (!sdk) return null
@@ -128,13 +124,13 @@ async function toolchain(root: string): Promise<AndroidToolchain | null> {
       commands ? join(sdk, 'cmdline-tools', commands, 'bin', name) : '',
       join(sdk, 'tools/bin', name),
     ])
-      if (path && (await exists(path))) return path
+      if (path && (await pathExists(path))) return path
     return null
   }
   const studioJava = '/Applications/Android Studio.app/Contents/jbr/Contents/Home'
   const javaHome =
     process.env['JAVA_HOME'] ??
-    ((await exists(join(studioJava, 'bin/java'))) ? studioJava : undefined)
+    ((await pathExists(join(studioJava, 'bin/java'))) ? studioJava : undefined)
   return {
     sdk,
     adb: join(sdk, 'platform-tools/adb'),
@@ -257,7 +253,7 @@ export class AndroidAppDriver implements AppRunDriver {
         const devices = await this.listDevices(directory, tools, signal)
         for (const device of devices)
           if (!result.devices.some((d) => d.id === device.id)) result.devices.push(device)
-        if (!(await exists(tools.emulator)))
+        if (!(await pathExists(tools.emulator)))
           result.issues.push({
             platform: 'android',
             message: 'Install Android Emulator in Android Studio’s SDK Manager.',
@@ -285,7 +281,7 @@ export class AndroidAppDriver implements AppRunDriver {
     signal: AbortSignal,
     minimumSdk = 1,
   ): Promise<AppRunDevice[]> {
-    if (!(await exists(tools.emulator))) return []
+    if (!(await pathExists(tools.emulator))) return []
     const avds = (
       await this.run(tools.emulator, ['-list-avds'], root, signal, { env: environment(tools) })
     )
@@ -632,7 +628,7 @@ export class AndroidAppDriver implements AppRunDriver {
       ids.map(async (id) => ({
         id,
         name: id.replaceAll(';', ' · '),
-        installed: await exists(join(tools.sdk, ...id.split(';'), 'source.properties')),
+        installed: await pathExists(join(tools.sdk, ...id.split(';'), 'source.properties')),
       })),
     )
     const devices = await this.run(tools.avdmanager, ['list', 'device', '-c'], root, signal, {
@@ -666,7 +662,7 @@ export class AndroidAppDriver implements AppRunDriver {
         log: progress.log,
         timeoutMs: 2 * 60 * 60 * 1000,
       })
-      if (!(await exists(join(tools.sdk, ...runtime.id.split(';'), 'source.properties'))))
+      if (!(await pathExists(join(tools.sdk, ...runtime.id.split(';'), 'source.properties'))))
         throw new Error(
           'The image was not installed. Review any license agreement in Android Studio’s SDK Manager, then retry.',
         )

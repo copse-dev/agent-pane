@@ -91,6 +91,7 @@ import { runSerialized } from '@copse/thread-store/write-queue.ts'
 import { snapshotWorkingTree } from '../git-snapshot.mts'
 import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -1476,7 +1477,7 @@ async function untilStarted(
       )
     }
     if (Date.now() > deadline) throw new Error('the container did not start in time')
-    await new Promise((resolveTick) => setTimeout(resolveTick, START_POLL_MS))
+    await sleep(START_POLL_MS)
   }
 }
 
