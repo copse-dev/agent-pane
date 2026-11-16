@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { slugify } from '@shared/slug.ts'
 import {
   getThreadExecutionContext,
   wasThreadContextResolvedAt,
@@ -27,14 +28,6 @@ function legacyPathNamespace(root: string): string {
   const name = slugify(basename(root)) || 'workspace'
   const hash = createHash('sha1').update(root).digest('hex').slice(0, 8)
   return `${name}-${hash}`
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }
 
 /**
