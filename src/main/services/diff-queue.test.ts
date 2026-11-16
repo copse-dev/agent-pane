@@ -21,6 +21,7 @@ import {
   getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
+  listWorktreePathsMissingFromGit,
   parseDiffQueueOwner,
   runWithStagedDiffResolver,
   setStagedDiffResolver,
@@ -1137,7 +1138,13 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       await writeFile(join(workspaceRoot, 'new.txt'), 'created\n', 'utf-8')
 
       const changed = await listWorktreeChangesSince(baseline)
-      assert.deepEqual(changed.sort(), ['a.txt', 'new.txt'])
+      assert.deepEqual(
+        changed.sort((a, b) => a.path.localeCompare(b.path)),
+        [
+          { path: 'a.txt', status: 'modified' },
+          { path: 'new.txt', status: 'untracked' },
+        ],
+      )
 
       // Unlike adoption, listing leaves the paths unowned: a later Copse edit to
       // the shell-touched file backs up the worktree first (the unowned-change
@@ -1145,6 +1152,40 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       const result = await applyOrStageDiff('a.txt', 'shell edit\n', 'next\n', 'plaintext')
       assert.match(result, /Applied edit directly/)
       assert.match(result, /backed up to refs\/copse\/backups\//)
+    },
+  )
+  ownedIt(
+    'listWorktreePathsMissingFromGit names files whose content git has no copy of (#4006)',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+      await writeFile(join(workspaceRoot, 'a.txt'), 'only on disk\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'scratch.txt'), 'scratch\n', 'utf-8')
+      // The #4006 trace: the agent stored its file with git plumbing and pushed
+      // a commit holding it, so the untracked worktree copy is not the only one.
+      await writeFile(join(workspaceRoot, 'pushed.md'), 'plan\n', 'utf-8')
+      git(tempRoot, ['hash-object', '-w', 'packages/app/pushed.md'])
+      await writeFile(join(workspaceRoot, 'reverted.txt'), 'one\n', 'utf-8')
+
+      const missing = await listWorktreePathsMissingFromGit([
+        'a.txt',
+        'scratch.txt',
+        'pushed.md',
+        'reverted.txt',
+      ])
+      assert.ok(missing, 'git answered')
+      assert.deepEqual([...missing].sort(), ['a.txt', 'scratch.txt'])
+      // Asking wrote nothing into the object store.
+      const scratchBlob = execFileSync('git', ['hash-object', 'packages/app/scratch.txt'], {
+        cwd: tempRoot,
+        encoding: 'utf-8',
+      }).trim()
+      assert.throws(() =>
+        execFileSync('git', ['cat-file', '-e', scratchBlob], { cwd: tempRoot, stdio: 'ignore' }),
+      )
+      assert.equal(await listWorktreePathsMissingFromGit(['gone.txt']), null)
     },
   )
 })

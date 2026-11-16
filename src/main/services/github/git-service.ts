@@ -85,7 +85,7 @@ async function runGit(
 async function runGitRead(
   args: string[],
   root: string | null,
-  extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+  extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv; stdin?: Buffer } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
@@ -95,6 +95,7 @@ async function runGitRead(
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
     ...(extra.timeoutMs !== undefined ? { timeout_ms: extra.timeoutMs } : {}),
     ...(extra.env ? { env: extra.env } : {}),
+    ...(extra.stdin ? { stdin: extra.stdin } : {}),
   })
 }
 
@@ -827,6 +828,48 @@ export async function getGitStatus(
   const { stdout, code } = await runGitRead(args, root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
+}
+
+/**
+ * Which of `paths` (workspace-relative, as {@link getGitStatus} reports them)
+ * hold content git has no object for. No commit can contain such a file's
+ * current version, so the copy on disk is the only one (#4006). A path git
+ * does hold may still be in no commit (staged only, or written with
+ * `hash-object -w`), but git can give it back, so only the missing case is
+ * reported.
+ *
+ * Read-only: `hash-object` without `-w` stores nothing, and it applies the
+ * repository's clean filters so the hash matches what `git add` would store.
+ * Returns null when git can't answer, including for a path that is no longer a
+ * readable file, so callers say nothing rather than guess.
+ */
+export async function findPathsMissingFromGit(
+  root: string | null,
+  paths: readonly string[],
+): Promise<Set<string> | null> {
+  if (paths.length === 0) return new Set()
+  if (!root || paths.some((path) => path.includes('\n'))) return null
+  // `--stdin-paths` reads paths relative to the repository top, not the cwd.
+  const prefix = await workTreePrefix(root)
+  if (prefix === null) return null
+  const hashed = await runGitRead(['hash-object', '--stdin-paths'], root, {
+    stdin: Buffer.from(paths.map((path) => `${prefix}${path}\n`).join('')),
+  })
+  if (hashed.code !== 0) return null
+  const hashes = hashed.stdout.split('\n').filter(Boolean)
+  if (hashes.length !== paths.length) return null
+  const checked = await runGitRead(['cat-file', '--batch-check=%(objectname)'], root, {
+    stdin: Buffer.from(hashes.map((hash) => `${hash}\n`).join('')),
+  })
+  if (checked.code !== 0) return null
+  const lines = checked.stdout.split('\n').filter(Boolean)
+  if (lines.length !== hashes.length) return null
+  const missing = new Set<string>()
+  lines.forEach((line, index) => {
+    const path = paths[index]
+    if (path !== undefined && line.endsWith(' missing')) missing.add(path)
+  })
+  return missing
 }
 
 const THREAD_CHANGE_GIT_TIMEOUT_MS = 10_000

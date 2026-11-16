@@ -7,7 +7,8 @@ import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
-import { getGitStatus } from './github/git-service.ts'
+import { findPathsMissingFromGit, getGitStatus } from './github/git-service.ts'
+import type { GitChangeStatus } from '@shared/types/git.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
@@ -728,15 +729,20 @@ export async function captureBackgroundEditAdoption(
 async function worktreeChangesSince(
   baseline: WorktreeBaseline,
   options: { includeContent: boolean },
-): Promise<{ path: string; after: string }[]> {
+): Promise<{ path: string; status: GitChangeStatus; after: string }[]> {
   const state = stateFor()
   const root = executionRootFor(state)
   const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return []
-  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
-  const afterSnapshots = await snapshotWorktreePaths([...paths], root)
-  const changes: { path: string; after: string }[] = []
-  for (const path of paths) {
+  // The working-tree column describes the file on disk, so it wins over the
+  // index column for a path that has both (e.g. added, then edited again).
+  const statuses = new Map<string, GitChangeStatus>()
+  for (const change of [...status.staged, ...status.unstaged]) {
+    statuses.set(change.path, change.status)
+  }
+  const afterSnapshots = await snapshotWorktreePaths([...statuses.keys()], root)
+  const changes: { path: string; status: GitChangeStatus; after: string }[] = []
+  for (const [path, changeStatus] of statuses) {
     const key = ownedKey(path)
     const afterSnapshot = afterSnapshots.get(key) ?? { fingerprint: null }
     const beforeSnapshot = baseline.get(key)
@@ -744,7 +750,7 @@ async function worktreeChangesSince(
       const after = options.includeContent
         ? (afterSnapshot.content ?? (await readCurrentContent(path, root)))
         : ''
-      changes.push({ path, after })
+      changes.push({ path, status: changeStatus, after })
     }
   }
   return changes
@@ -760,8 +766,23 @@ async function worktreeChangesSince(
  * workspace is not a git repo — the audit degrades to silence rather than
  * failing the turn.
  */
-export async function listWorktreeChangesSince(baseline: WorktreeBaseline): Promise<string[]> {
-  return (await worktreeChangesSince(baseline, { includeContent: false })).map((c) => c.path)
+export async function listWorktreeChangesSince(
+  baseline: WorktreeBaseline,
+): Promise<{ path: string; status: GitChangeStatus }[]> {
+  return (await worktreeChangesSince(baseline, { includeContent: false })).map(
+    ({ path, status }) => ({ path, status }),
+  )
+}
+
+/**
+ * Which of these workspace-relative paths hold content git has no copy of, in
+ * the active thread's checkout; see {@link findPathsMissingFromGit}. Null when
+ * git can't say.
+ */
+export async function listWorktreePathsMissingFromGit(
+  paths: readonly string[],
+): Promise<Set<string> | null> {
+  return findPathsMissingFromGit(executionRootFor(stateFor()), paths)
 }
 
 /**

@@ -21,6 +21,8 @@ const INTERNAL_GIT_COMMANDS = new Set([
   'diff',
   'fetch',
   'for-each-ref',
+  // Only `hash-object --stdin-paths`, which `assertReadOnlyHashObject` admits.
+  'hash-object',
   'log',
   'init',
   'ls-files',
@@ -113,6 +115,7 @@ export function withGitInvocationArgs(
     throw new Error(`Unsupported internal Git command: ${command ?? '(missing)'}`)
   }
   if (command === 'clone') assertLocalSubmoduleClone(rest)
+  if (command === 'hash-object') assertReadOnlyHashObject(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
   const diffFlags =
@@ -155,6 +158,21 @@ function assertLocalSubmoduleClone(args: string[]): void {
     extra.length > 0
   ) {
     throw new Error('Unsupported internal Git clone')
+  }
+}
+
+/**
+ * Admit exactly `hash-object --stdin-paths`, which hashes files without storing
+ * them (#4006 asks whether git already holds a file's content).
+ *
+ * Config-execution audit: hashing applies the repository's clean filters, the
+ * same programs `add` (already admitted) runs on the same files, so this adds no
+ * new program surface. `-w`, `--literally`, `-t` and `--path` are refused
+ * rather than enumerated, so it never writes an object.
+ */
+function assertReadOnlyHashObject(args: string[]): void {
+  if (args.length !== 1 || args[0] !== '--stdin-paths') {
+    throw new Error('Unsupported internal Git hash-object')
   }
 }
 

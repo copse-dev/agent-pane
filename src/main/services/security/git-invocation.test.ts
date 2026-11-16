@@ -111,6 +111,23 @@ describe('internal Git policy', () => {
     )
   })
 
+  it('admits hash-object only as a read-only --stdin-paths hash', () => {
+    assert.deepEqual(withGitInvocationArgs(['hash-object', '--stdin-paths']).slice(-2), [
+      'hash-object',
+      '--stdin-paths',
+    ])
+    for (const args of [
+      ['hash-object', '-w', '--stdin-paths'],
+      ['hash-object', '--stdin-paths', '-w'],
+      ['hash-object', '-w', 'file.txt'],
+      ['hash-object', '--literally', '--stdin-paths'],
+      ['hash-object', 'file.txt'],
+      ['hash-object'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git hash-object/)
+    }
+  })
+
   it('strips config/executable injection while retaining backup index and identity', () => {
     const env = internalGitEnv({
       GIT_CONFIG_COUNT: '1',
