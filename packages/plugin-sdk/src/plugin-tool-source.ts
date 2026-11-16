@@ -8,6 +8,7 @@ import {
   type PluginManifest,
   type RegisteredPlugin,
 } from '@copse/agent/plugins/plugin-manifest.ts'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { zPluginHookRegistrations } from './plugin-tool-protocol.ts'
 import {
@@ -107,8 +108,7 @@ function ensureContained(root: string, candidate: string, label: string): string
     throw new PluginToolSourceError(`${label} must be relative to the plugin root.`)
   }
   const resolved = resolve(root, candidate)
-  const rel = relative(root, resolved)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, resolved)) {
     throw new PluginToolSourceError(`${label} escapes the plugin root.`)
   }
   return resolved
