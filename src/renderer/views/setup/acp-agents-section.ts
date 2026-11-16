@@ -14,6 +14,7 @@ import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import type { AcpRegistryEntry } from '@shared/acp-registry.ts'
+import { slugify } from '@shared/slug.ts'
 import { createAcpRegistryBrowser } from './acp-registry-browser.ts'
 import { errorMessage } from '@shared/errors.ts'
 
@@ -127,14 +128,6 @@ export function parseArgsText(text: string): string[] {
 
 export function formatArgsText(args?: string[]): string {
   return (args ?? []).join('\n')
-}
-
-export function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }
 
 /** Replace the agent with the same id, or append it. */
