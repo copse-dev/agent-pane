@@ -53,6 +53,7 @@ import {
 } from '../supervisor/event-inbox.ts'
 import { FileEventInboxStore, type EventInboxStore } from '../supervisor/event-inbox-store.ts'
 import { runGh } from '../github/gh-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
 const CONNECTION_ID = 'github-cli'
@@ -935,7 +936,7 @@ export function createBranchCiAutomationService(
           if (definition.lastProblem && definition.lastProblem.threadId === undefined)
             await setProblem(definition, null)
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           console.error(`[automations] Event polling failed for “${definition.name}”:`, error)
           await setProblem(definition, {
             at: deps.now(),

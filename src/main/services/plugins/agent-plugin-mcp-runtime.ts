@@ -8,6 +8,7 @@ import {
 } from '@copse/agent/plugins/agent-plugin-mcp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { userPluginDataDir, type UserPluginCandidate } from './discover-user-plugins.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface PreparedAgentPluginMcpConfigs {
   readonly configs: readonly McpServerConfig[]
@@ -127,9 +128,7 @@ export async function prepareAgentPluginMcpConfigs(
         })
       }
     } catch (error) {
-      warnings.push(
-        `Skipping MCP server ${JSON.stringify(serverName)}: ${error instanceof Error ? error.message : String(error)}.`,
-      )
+      warnings.push(`Skipping MCP server ${JSON.stringify(serverName)}: ${errorMessage(error)}.`)
     }
   }
   return { configs, warnings }

@@ -44,6 +44,7 @@ import {
 import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { getProjectRoot } from '../workspace.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
@@ -864,7 +865,7 @@ export class AppleDevelopmentService {
         }
       }
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = errorMessage(error)
       await this.updateOperation(
         task.projectId,
         task.threadId,

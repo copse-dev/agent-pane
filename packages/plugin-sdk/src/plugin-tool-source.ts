@@ -15,6 +15,7 @@ import {
   COPSE_EXTENSION_NAMESPACE,
   parseAgentPluginManifest,
 } from '@copse/agent/plugins/agent-plugin-manifest.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 /** Compatibility filename. New packages use root plugin.json (Agent Plugins). */
 export const PLUGIN_MANIFEST_FILE = 'copse-plugin.json'
@@ -159,9 +160,7 @@ async function readManifest(manifestPath: string): Promise<PluginToolSourceJson>
     }
     bytes = await fsp.readFile(manifestPath)
   } catch (error) {
-    throw new PluginToolSourceError(
-      `Could not read ${filename}: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    throw new PluginToolSourceError(`Could not read ${filename}: ${errorMessage(error)}`)
   }
   if (bytes.byteLength > MAX_MANIFEST_BYTES) {
     throw new PluginToolSourceError(`${filename} exceeds 1 MB.`)

@@ -10,6 +10,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
 import { ipcErrorMessage, isUnavailableThreadCheckoutError } from '../ipc-error-message.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 interface ApplePanelOptions {
   allowEnrollment: boolean
@@ -138,7 +139,7 @@ export function createAppleDevelopmentPanel(
       await action()
       await refresh()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       host.querySelector('.apple-development-error')?.remove()
       host.append(el('p', { class: 'apple-development-error', role: 'alert' }, message))
     } finally {
@@ -353,7 +354,7 @@ export function createAppleDevelopmentPanel(
             destination.replaceChildren(el('option', { value: '' }, 'No destinations available'))
             destination.disabled = true
             save.disabled = true
-            destinationStatus.textContent = error instanceof Error ? error.message : String(error)
+            destinationStatus.textContent = errorMessage(error)
             destinationStatus.hidden = false
           }
         }
@@ -575,11 +576,7 @@ export function createAppleDevelopmentPanel(
       }
       host.hidden = false
       host.replaceChildren(
-        el(
-          'p',
-          { class: 'apple-development-error', role: 'alert' },
-          error instanceof Error ? error.message : String(error),
-        ),
+        el('p', { class: 'apple-development-error', role: 'alert' }, errorMessage(error)),
       )
     }
   }

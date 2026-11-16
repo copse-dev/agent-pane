@@ -111,6 +111,7 @@ import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subproce
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 import type { AcpTerminalHost } from './acp-terminals.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -1151,7 +1152,7 @@ async function spawnTransport(
       // pre-phase-5 path: it widens the main process's ASRT network singleton,
       // so the overlap gate remains necessary as a bounded fallback.
       console.warn(
-        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
+        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
       )
       child = await spawnAcpAgentProcess(config)
     }
@@ -1589,10 +1590,7 @@ export async function openAcpSession(
           // The agent's message usually names the session; session IDs stay
           // out of logs (docs/plans/acp-session-continuity.md).
           carryOverFailure = 'rejected'
-          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
-            sessionId,
-            '<session>',
-          )
+          const reason = errorMessage(err).replaceAll(sessionId, '<session>')
           console.warn(
             `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
           )

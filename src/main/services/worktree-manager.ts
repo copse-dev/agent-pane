@@ -45,6 +45,7 @@ import {
   inspectSubmoduleRetention,
   submoduleRetentionPaths,
 } from './worktree-submodules.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -811,7 +812,7 @@ async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Prom
       (await git(projectRoot, ['fetch', '--quiet', 'origin', branch]))
     failure = result.code === 0 ? null : describeFetchFailure(result)
   } catch (error) {
-    failure = error instanceof Error ? error.message : String(error)
+    failure = errorMessage(error)
   }
   const previous = defaultBranchFetchFailures.get(projectRoot)
   if (failure === null) {
@@ -1241,7 +1242,7 @@ export async function allocateThreadWorktree(
       return worktree
     } catch (error) {
       if (snapshotRef) {
-        throw new WorktreeAllocationError(error instanceof Error ? error.message : String(error), {
+        throw new WorktreeAllocationError(errorMessage(error), {
           worktree,
           snapshotRef,
         })

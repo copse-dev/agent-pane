@@ -14,6 +14,7 @@ import {
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { getCiWatchStatus, type CiStatus } from './github-ci-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export const CI_WATCH_HANDLER = 'ci_watch'
 
@@ -191,7 +192,7 @@ export function installCiWatchConsumer(
           reschedule: {
             trigger: { kind: 'wake_at', wakeAt: now + pollDelay(nextInput) },
             handlerInput: nextInput,
-            reason: `CI status read failed: ${error instanceof Error ? error.message : String(error)}`,
+            reason: `CI status read failed: ${errorMessage(error)}`,
           },
         }
       }

@@ -58,6 +58,7 @@ import {
 import { hashPluginToolSource } from '@copse/plugin-sdk/plugin-tool-source.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** Environment override for the plugin root (tests, relocation). */
 export const COPSE_PLUGINS_DIR_ENV = 'COPSE_PLUGINS_DIR'
@@ -132,10 +133,6 @@ export interface UserPluginDiscovery {
   readonly root: string
   readonly plugins: readonly UserPluginCandidate[]
   readonly failures: readonly UserPluginFailure[]
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -305,7 +302,7 @@ async function readMcpServers(
     warnings.push(...parsed.warnings)
     return parsed.servers
   } catch (error) {
-    warnings.push(`Disabling MCP for this plugin: ${describeError(error)}`)
+    warnings.push(`Disabling MCP for this plugin: ${errorMessage(error)}`)
     return new Map()
   }
 }
@@ -408,7 +405,7 @@ export async function discoverUserPlugins(root = userPluginsRoot()): Promise<Use
       const reason =
         error instanceof AgentPluginManifestError
           ? `${error.kind === 'copse-extension' ? 'Copse extension' : 'Agent Plugins manifest'}: ${error.message}`
-          : describeError(error)
+          : errorMessage(error)
       failures.push({ pluginRoot: pluginPath, reason })
     }
   }

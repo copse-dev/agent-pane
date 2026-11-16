@@ -25,6 +25,7 @@ import type {
   AppRunProgress,
 } from './app-run-driver.ts'
 import { containedPath, runAppProcess } from './app-run-process.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const moduleSchema = z.object({
   path: z.string(),
@@ -267,7 +268,7 @@ export class AndroidAppDriver implements AppRunDriver {
         signal.throwIfAborted()
         result.issues.push({
           platform: 'android',
-          message: error instanceof Error ? error.message : String(error),
+          message: errorMessage(error),
           action: 'open-android-studio',
           label: 'Open Android Studio',
         })

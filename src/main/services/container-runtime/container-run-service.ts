@@ -32,6 +32,7 @@ import {
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -651,7 +652,7 @@ export class ContainerRunService {
       this.update(progress, {
         phase: 'failed',
         finishedAt: Date.now(),
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       })
     } finally {
       if (supervisor && taskId) {
