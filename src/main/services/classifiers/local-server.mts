@@ -11,7 +11,8 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { readFile, rm, statfs, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, relative, isAbsolute } from 'node:path'
+import { dirname, join } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { connect } from 'node:net'
 
 export interface ServerSpec {
@@ -336,8 +337,7 @@ export async function removeClassifierInstall(name: string, spec: CatalogEntry):
     ),
   ]
   for (const target of targets) {
-    const inside = relative(root, target)
-    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+    if (!isPathWithin(root, target, { allowSelf: false })) {
       throw new Error(`Refusing to remove ${target}: it is outside ${root}`)
     }
     await rm(target, { recursive: true, force: true })

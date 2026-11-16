@@ -13,7 +13,7 @@
 // `failClosed: false`; users can disable external hooks globally in Settings.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import micromatch from 'micromatch'
 import {
   CURSOR_AFTER_TOOL_HOOK_EVENTS,
@@ -47,6 +47,7 @@ import { testHookMatcher } from './matcher-regex.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
@@ -666,8 +667,8 @@ function afterFileEditMatches(
   if (!hook.glob || hook.glob.length === 0) return true
   const candidates = [filePath.replace(/\\/g, '/')]
   if (workspaceRoot) {
-    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
-    if (rel && !rel.startsWith('..')) candidates.push(rel)
+    const rel = relativeWithin(workspaceRoot, filePath)
+    if (rel) candidates.push(rel.replace(/\\/g, '/'))
   }
   return candidates.some(
     (c) =>

@@ -28,7 +28,7 @@
 // the `sandbox: false` escape is surfaced on the Sources summary below, and a
 // blocked-by-sandbox run is recorded + resolved via `onFailure` in the runner.
 import * as fsp from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import micromatch from 'micromatch'
 import {
   HOOK_EVENT_NAMES,
@@ -51,6 +51,7 @@ import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -502,8 +503,8 @@ function afterFileEditMatches(
   if (!hook.glob || hook.glob.length === 0) return true
   const candidates = [filePath.replace(/\\/g, '/')]
   if (workspaceRoot) {
-    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
-    if (rel && !rel.startsWith('..')) candidates.push(rel)
+    const rel = relativeWithin(workspaceRoot, filePath)
+    if (rel) candidates.push(rel.replace(/\\/g, '/'))
   }
   return candidates.some(
     (c) =>

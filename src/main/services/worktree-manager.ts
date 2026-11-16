@@ -3,7 +3,7 @@ import { sha256Hex } from '@copse/std/sha256.ts'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { isPathWithin } from '@copse/std/path-containment.ts'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type {
   ThreadWorktreeAttachment,
@@ -687,8 +687,8 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
     'Cannot resolve repository root',
   )
   const canonicalTopLevel = await realpath(topLevel)
-  const projectRelativePath = relative(canonicalTopLevel, canonicalProject)
-  if (projectRelativePath === '..' || projectRelativePath.startsWith(`..${sep}`)) {
+  const projectRelativePath = relativeWithin(canonicalTopLevel, canonicalProject)
+  if (projectRelativePath === null) {
     throw new Error('Project root is outside its resolved Git repository')
   }
   return {
