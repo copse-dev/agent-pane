@@ -14,6 +14,7 @@ import {
 import { randomInt } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { acpProbeErrorMessage, spawnProbeTransport } from './acp-behavior-probe.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 /**
  * Tier-2 ACP **session-continuity probe** (docs/plans/acp-session-continuity.md):
@@ -246,7 +247,7 @@ async function ask(
     'session/prompt',
   )
   // Notifications precede the response on the wire; let the last ones land.
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await sleep(50)
   return conn.updates
     .slice(start)
     .filter((update) => update.sessionUpdate === 'agent_message_chunk')
@@ -265,7 +266,7 @@ async function reattach(
     method === 'load'
       ? await conn.agent.request(methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
       : await conn.agent.request(methods.agent.session.resume, { sessionId, cwd, mcpServers: [] })
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await sleep(50)
   const replay = conn.updates
     .slice(start)
     .filter(

@@ -29,6 +29,7 @@ import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-gate.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -358,7 +359,7 @@ async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
         owned.abort()
         return false
       }
-      await delay(DAEMON_READY_POLL_MS)
+      await sleep(DAEMON_READY_POLL_MS)
     }
   })()
 
@@ -366,10 +367,6 @@ async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
   const ready = await startup.catch(() => false)
   if (!ready && gortexDaemonReady === startup) gortexDaemonReady = null
   return ready
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -1165,7 +1162,7 @@ export async function reapOversizedGortexDaemon(): Promise<void> {
     // A wedged/oversized daemon may not honor SIGTERM promptly; escalate to
     // SIGKILL so we never leave the memory resident and lose the OOM-killer race.
     for (let i = 0; i < 20; i++) {
-      await delay(100)
+      await sleep(100)
       if (!pidIsAlive(pid)) return
     }
     // Re-check after the grace window: the old daemon may have exited and its
@@ -1262,7 +1259,7 @@ export async function reclaimBloatedGortexStore(): Promise<boolean> {
       const info = await pidRssAndCommand(pid)
       if (!info || !isGortexDaemonCommand(info.command)) return false
       process.kill(pid, 'SIGTERM')
-      for (let i = 0; i < 30 && pidIsAlive(pid); i++) await delay(100)
+      for (let i = 0; i < 30 && pidIsAlive(pid); i++) await sleep(100)
       if (pidIsAlive(pid) && (await pidBelongsToGortex(pid))) process.kill(pid, 'SIGKILL')
     }
     await rm(storeDir, { recursive: true, force: true })

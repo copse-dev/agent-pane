@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { getSecretCipher, type SecretCipher } from '../storage/secret-cipher.ts'
@@ -71,7 +71,7 @@ export function mcpOAuthServerIdentity(serverUrl: string): string {
 }
 
 function settingKey(serverUrl: string): string {
-  const digest = createHash('sha256').update(mcpOAuthServerIdentity(serverUrl)).digest('hex')
+  const digest = sha256Hex(mcpOAuthServerIdentity(serverUrl))
   return `${MCP_OAUTH_SETTING_PREFIX}${digest}`
 }
 

@@ -1,5 +1,5 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -1890,19 +1890,17 @@ export async function archiveThreadWorktree(
       // hold. Ignored files are regenerable here as in the superproject.
       const submodules = await inspectSubmoduleRetention(validated.path, { includeIgnored: false })
       const retained = submoduleRetentionPaths(submodules)
-      const fingerprint = createHash('sha256')
-        .update(
-          JSON.stringify([
-            input.projectId,
-            input.threadId,
-            validated.path,
-            branch.stdout,
-            head.stdout,
-            status.stdout,
-            submodules,
-          ]),
-        )
-        .digest('hex')
+      const fingerprint = sha256Hex(
+        JSON.stringify([
+          input.projectId,
+          input.threadId,
+          validated.path,
+          branch.stdout,
+          head.stdout,
+          status.stdout,
+          submodules,
+        ]),
+      )
       return {
         paths: [...new Set([...changedPaths(status.stdout), ...retained])],
         fingerprint,

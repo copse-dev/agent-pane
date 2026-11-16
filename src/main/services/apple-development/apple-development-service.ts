@@ -1,5 +1,6 @@
 import { storageCleanup } from '../storage-cleanup.ts'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import {
   APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -171,7 +172,7 @@ function threadState(
 }
 
 function payloadHash(input: AppleExecuteInput): string {
-  return createHash('sha256').update(JSON.stringify(input)).digest('hex')
+  return sha256Hex(JSON.stringify(input))
 }
 
 function isRemoteProject(projectId: string): boolean {
