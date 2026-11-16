@@ -104,6 +104,23 @@ describe('suggest_model shares Match task routing', () => {
     assert.equal(rec.pick.meetsDemand, rec.pick.point.intellect >= floor)
   })
 
+  it('stops waiting on Small tasks route setup when cancelled', async () => {
+    const controller = new AbortController()
+    const stalled = (): AsyncIterable<SmallTasksRoute> => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<SmallTasksRoute>>(() => undefined),
+      }),
+    })
+    const pending = runWithExplicitSettings(
+      { values: { localServerUrl: NO_LOCAL_SERVER }, apiKeys: { openai: 'test-key' } },
+      () => recommendTaskModel('Fix the typo', stalled(), controller.signal, 0),
+    )
+    setTimeout(() => {
+      controller.abort(new Error('cancelled'))
+    }, 50)
+    await assert.rejects(pending, /cancelled/)
+  })
+
   it('stops after cancellation', async () => {
     const controller = new AbortController()
     controller.abort()

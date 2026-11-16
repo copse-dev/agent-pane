@@ -214,6 +214,9 @@ export interface TaskModelRecommendation {
  */
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return work
+  // The work may still settle after the caller has stopped waiting; its
+  // rejection is the caller's no longer, so it must not go unhandled.
+  work.catch(() => undefined)
   const abortError = (): Error => {
     const reason: unknown = signal.reason
     return reason instanceof Error ? reason : new Error('The operation was aborted.')
@@ -275,7 +278,9 @@ export async function recommendTaskModel(
   signal: AbortSignal,
   requiredTokens: number,
 ): Promise<TaskModelRecommendation> {
-  const demand = await assessPromptDemandWithFallback(context, routes, signal)
+  // Route setup (Small tasks resolution, model discovery) takes no signal, so
+  // stop waiting on the whole assessment as soon as the call is cancelled.
+  const demand = await untilAborted(assessPromptDemandWithFallback(context, routes, signal), signal)
   signal.throwIfAborted()
   const pool = await untilAborted(
     routableFrontierPoints().catch(() => []),
