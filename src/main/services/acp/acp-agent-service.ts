@@ -62,8 +62,8 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import {
-  ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE,
-  ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE,
+  acpCopseToolsDroppedPromptNote,
+  acpCopseToolsUnavailablePromptNote,
   acpBridgeToolLoss,
   acpBridgeToolsDroppedNotice,
   acpBridgeUnavailableNotice,
@@ -883,6 +883,7 @@ async function runAcpAgentTurn(
           ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
           bridgeToolNames: bridgeToolNames(),
+          ...(offeredBridge ? { bridgeServerName: offeredBridge.serverName } : {}),
           threadId: options.threadId,
           ...(executionContext ? { projectId: executionContext.projectId } : {}),
         },
@@ -999,11 +1000,12 @@ async function runAcpAgentTurn(
     let copseToolsNote: string | undefined
     if (sessionBridge && bridgeDropped) {
       if (takeAcpBridgeToolsDroppedPromptNote(sessionBridge)) {
-        copseToolsNote = ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE
+        copseToolsNote = acpCopseToolsDroppedPromptNote(sessionBridge.serverName)
       }
     } else if (sessionBridge && bridgeMounted) {
       if (markAcpBridgeAvailable(sessionBridge)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(
+          sessionBridge.serverName,
           acpCopseToolsSteering(sandboxed, readonlyCheckout),
         )
       }
@@ -1017,7 +1019,7 @@ async function runAcpAgentTurn(
       console.warn(
         `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,
       )
-      copseToolsNote = ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE
+      copseToolsNote = acpCopseToolsUnavailablePromptNote(sessionBridge.serverName)
     }
     const skillToolNames = bridgeMounted ? bridgeToolNames() : []
     const operatorInstructions =
@@ -1400,6 +1402,11 @@ interface AcpPermissionAgent {
    * agents without HTTP MCP, and sessions whose bridge did not start.
    */
   bridgeToolNames?: readonly string[]
+  /**
+   * The exact MCP server name this session's bridge was mounted under
+   * (`copse-<nonce>`). Provenance matches it, never the `copse` stem (#4125).
+   */
+  bridgeServerName?: string
   /** Owning thread, for attributing a delegated call to the bridge's record. */
   threadId?: string
   /** Owning project, so audit records land beside the thread whatever project is open. */
@@ -1495,9 +1502,12 @@ async function respondToPermission(
   const provenance = resolveAcpToolProvenance(
     req.toolCall,
     context?.observedToolCall ?? [],
-    agent.remote === true
-      ? []
-      : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+    agent.remote === true || agent.bridgeServerName === undefined
+      ? null
+      : {
+          server: agent.bridgeServerName,
+          tools: (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+        },
     { runsCommand },
   )
   const auditOwner = {
@@ -1852,7 +1862,7 @@ const ACP_SESSION_PROMPT_NOTE =
  * bridged tools. Left out when the agent has not mounted the bridge (#4144).
  */
 export const ACP_COPSE_TOOLS_PROMPT_NOTE =
-  'Prefer the "copse" MCP tools when ' +
+  "Prefer the tools of Copse's MCP server (its name is copse- and a short suffix) when " +
   "available: they reuse Copse's native workspace, Git, command, GitHub, and " +
   'web implementations. Use copse read_file/search_code/find_files for inspection ' +
   'instead of your own shell. Use copse run_shell/run_background for ' +
@@ -1919,7 +1929,7 @@ const ACP_SANDBOX_CONFINES_NOTE =
   "tools offer (such as Claude Code's dangerouslyDisableSandbox): this whole " +
   'process runs inside the sandbox.'
 const ACP_SANDBOX_COPSE_SHELL_NOTE =
-  'When the "copse" MCP server is available, ' +
+  "When Copse's MCP server is available, " +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox.'

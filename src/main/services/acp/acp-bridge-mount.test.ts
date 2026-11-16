@@ -12,12 +12,13 @@ import type { ContainerRuntimeAttestation } from '@shared/types/unattended-run.t
 import { ACP_COPSE_TOOLS_PROMPT_NOTE, runAcpAgentFromSettings } from './acp-agent-service.ts'
 import {
   ACP_BRIDGE_MOUNT_WAIT_MS,
-  ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE,
-  ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE,
   acpBridgeToolMissing,
   acpCopseToolsConnectedPromptNote,
+  acpCopseToolsDroppedPromptNote,
+  acpCopseToolsUnavailablePromptNote,
   isAcpBridgeStartupFailure,
 } from './acp-bridge-mount.ts'
+import { escapeRegex } from './acp-bridge-name.ts'
 import { ACP_SANDBOX_GITHUB_STEER } from './acp-network-denial-steer.ts'
 import { acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { ToolRegistry } from '../tool-registry.ts'
@@ -52,6 +53,16 @@ const UNAVAILABLE = /Copse's tools aren't available to Bridge fixture agent in t
 const CLAUDE_FALLBACK = /Run \/mcp for the error/
 const NEVER_CONNECTED = /never connected to it/
 const DROPPED = /connected to Copse's tool server but can't use its tools/g
+
+/**
+ * Each session's bridge has its own random name (#4125), so a prompt note is
+ * matched as built for any `copse-<nonce>` name.
+ */
+const ANY_SERVER = 'copse-ANYSERVER'
+const noteFor = (note: string): RegExp =>
+  new RegExp(escapeRegex(note).replaceAll(ANY_SERVER, 'copse-[a-z0-9]{8}'))
+const UNAVAILABLE_NOTE = noteFor(acpCopseToolsUnavailablePromptNote(ANY_SERVER))
+const DROPPED_NOTE = noteFor(acpCopseToolsDroppedPromptNote(ANY_SERVER))
 
 let root = ''
 
@@ -237,16 +248,16 @@ describe('ACP native bridge mount (#4144)', () => {
       'the first turn gives the agent the mount window',
     )
     assert.match(first.shown, UNAVAILABLE)
-    assert.ok(first.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.ok(UNAVAILABLE_NOTE.test(first.prompt))
     assert.ok(!first.prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
-    assert.doesNotMatch(first.prompt, /Prefer the "copse" MCP tools/)
+    assert.doesNotMatch(first.prompt, /Prefer the tools of Copse's MCP server/)
     assert.match(first.prompt, /Session notes:/, 'the rest of the session notes stay')
 
     const startedAgain = Date.now()
     const second = await turn('never-lists', registry)
     assert.ok(Date.now() - startedAgain < ACP_BRIDGE_MOUNT_WAIT_MS, 'a later turn does not wait')
     assert.doesNotMatch(second.shown.replace(/prompt:[\s\S]*/, ''), UNAVAILABLE)
-    assert.ok(!second.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.ok(!UNAVAILABLE_NOTE.test(second.prompt))
     assert.ok(!second.prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
   })
 
@@ -255,7 +266,7 @@ describe('ACP native bridge mount (#4144)', () => {
     const { shown, prompt } = await turn('lists', registryWithOneBridgedTool())
     assert.doesNotMatch(shown, UNAVAILABLE)
     assert.ok(prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
-    assert.ok(!prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.ok(!UNAVAILABLE_NOTE.test(prompt))
   })
 
   it('takes a Stop during the mount window for a cancel, not a failed mount', async () => {
@@ -278,7 +289,7 @@ describe('ACP native bridge mount (#4144)', () => {
     // The bridge was not marked unavailable: the next turn still decides, once.
     const next = await turn('stopped', registry)
     assert.equal(next.shown.match(new RegExp(UNAVAILABLE, 'g'))?.length, 1)
-    assert.ok(next.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.ok(UNAVAILABLE_NOTE.test(next.prompt))
   })
 
   it('tells an agent that lists the tools late that they are back', async () => {
@@ -292,8 +303,11 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.match(listing.shown, /listed/)
 
     const after = await turn('lists-late', registry)
-    assert.ok(after.prompt.includes(acpCopseToolsConnectedPromptNote(ACP_COPSE_TOOLS_PROMPT_NOTE)))
-    assert.ok(!after.prompt.includes(ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE))
+    assert.match(
+      after.prompt,
+      noteFor(acpCopseToolsConnectedPromptNote(ANY_SERVER, ACP_COPSE_TOOLS_PROMPT_NOTE)),
+    )
+    assert.ok(!UNAVAILABLE_NOTE.test(after.prompt))
     assert.doesNotMatch(after.shown, UNAVAILABLE)
     // Unsandboxed: nothing of the sandbox note comes back with it.
     assert.doesNotMatch(after.prompt, /run_shell tool for commands|For GitHub work/)
@@ -311,9 +325,10 @@ describe('ACP native bridge mount (#4144)', () => {
 
       await runTurn('sandboxed-late', registry, { userPrompt: 'list-mcp-tools' })
       const after = await turn('sandboxed-late', registry)
-      const restored = /Tool note: Copse's "copse" MCP server is now connected[\s\S]*/.exec(
-        after.prompt,
-      )?.[0]
+      const restored =
+        /Tool note: Copse's "copse-[a-z0-9]{8}" MCP server is now connected[\s\S]*/.exec(
+          after.prompt,
+        )?.[0]
       assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
       assert.ok(restored.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
       assert.match(restored, /use its run_shell tool for commands/)
@@ -350,9 +365,9 @@ describe('ACP agent that drops the tools it listed (#4142)', () => {
     // The next prompt tells the agent to stop reaching for them, once.
     const next = await turn('drops', registry)
     assert.doesNotMatch(next.shown.replace(/prompt:[\s\S]*/, ''), DROPPED)
-    assert.ok(next.prompt.includes(ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE))
+    assert.ok(DROPPED_NOTE.test(next.prompt))
     const after = await turn('drops', registry)
-    assert.ok(!after.prompt.includes(ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE))
+    assert.ok(!DROPPED_NOTE.test(after.prompt))
 
     const again = await runTurn('drops', registry, {
       userPrompt: 'refuse-copse-tool:read_file Again with my own tools.',
@@ -369,7 +384,7 @@ describe('ACP agent that drops the tools it listed (#4142)', () => {
     assert.equal(refused.stopReason, 'end_turn')
     assert.doesNotMatch(refused.shown, DROPPED)
     const next = await turn('hallucinates', registry)
-    assert.ok(!next.prompt.includes(ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE))
+    assert.ok(!DROPPED_NOTE.test(next.prompt))
   })
 })
 
@@ -442,7 +457,14 @@ describe('ACP turn guidance tool set', () => {
   })
 })
 
+/** This session's bridge, mounted under its own nonce name (#4125). */
+const SERVER = 'copse-k3v9x2mq'
+
 describe('acpBridgeToolMissing', () => {
+  const missing = (
+    update: Parameters<typeof acpBridgeToolMissing>[0],
+    identities: Parameters<typeof acpBridgeToolMissing>[1],
+  ): string | null => acpBridgeToolMissing(update, identities, SERVER)
   const error = (tool: string): string =>
     `<tool_use_error>Error: No such tool available: ${tool}</tool_use_error>`
   const failed = (
@@ -456,14 +478,22 @@ describe('acpBridgeToolMissing', () => {
     status: 'failed',
     ...fields,
   })
-  const named = [{ metaToolName: 'mcp__copse__read_file' }]
+  const named = [{ metaToolName: 'mcp__copse-k3v9x2mq__read_file' }]
+
+  // #4125: a server the agent's own MCP config names `copse` is not Copse's bridge.
+  it('takes no notice of a server merely named copse, or another nonce', () => {
+    for (const foreign of ['copse', 'copse-zzzzzzzz']) {
+      const tool = `mcp__${foreign}__read_file`
+      assert.equal(missing(failed({ rawOutput: error(tool) }), [{ metaToolName: tool }]), null)
+    }
+  })
 
   it("finds the tool in Claude Code's error when the adapter named the call as it", () => {
     assert.equal(
-      acpBridgeToolMissing(
+      missing(
         failed({
-          rawOutput: error('mcp__copse__read_file'),
-          _meta: { claudeCode: { toolName: 'mcp__copse__read_file' } },
+          rawOutput: error('mcp__copse-k3v9x2mq__read_file'),
+          _meta: { claudeCode: { toolName: 'mcp__copse-k3v9x2mq__read_file' } },
         }),
         [],
       ),
@@ -473,30 +503,30 @@ describe('acpBridgeToolMissing', () => {
     const content = [
       {
         type: 'content' as const,
-        content: { type: 'text' as const, text: error('mcp__copse__read_file') },
+        content: { type: 'text' as const, text: error('mcp__copse-k3v9x2mq__read_file') },
       },
     ]
-    assert.equal(acpBridgeToolMissing(failed({ content }), named), 'read_file')
+    assert.equal(missing(failed({ content }), named), 'read_file')
     assert.equal(
-      acpBridgeToolMissing(
-        failed({ rawOutput: [{ type: 'text', text: error('mcp__copse__read_file') }] }),
-        [{ name: 'mcp__copse__read_file' }],
+      missing(
+        failed({ rawOutput: [{ type: 'text', text: error('mcp__copse-k3v9x2mq__read_file') }] }),
+        [{ name: 'mcp__copse-k3v9x2mq__read_file' }],
       ),
       'read_file',
     )
   })
 
   it('needs an adapter-authored identity naming that same Copse tool', () => {
-    const output = { rawOutput: error('mcp__copse__read_file') }
-    assert.equal(acpBridgeToolMissing(failed(output), []), null, 'text alone proves nothing')
+    const output = { rawOutput: error('mcp__copse-k3v9x2mq__read_file') }
+    assert.equal(missing(failed(output), []), null, 'text alone proves nothing')
     assert.equal(
-      acpBridgeToolMissing(failed(output), [{ title: 'mcp__copse__read_file' }]),
+      missing(failed(output), [{ title: 'mcp__copse-k3v9x2mq__read_file' }]),
       null,
       'a title can carry model-chosen text',
     )
-    assert.equal(acpBridgeToolMissing(failed(output), [{ metaToolName: 'Bash' }]), null)
+    assert.equal(missing(failed(output), [{ metaToolName: 'Bash' }]), null)
     assert.equal(
-      acpBridgeToolMissing(failed(output), [{ metaToolName: 'mcp__copse__run_shell' }]),
+      missing(failed(output), [{ metaToolName: 'mcp__copse-k3v9x2mq__run_shell' }]),
       null,
     )
   })
@@ -504,70 +534,70 @@ describe('acpBridgeToolMissing', () => {
   it("accepts only Claude Code's reasons that mean the server lacks the tool", () => {
     const withReason = (reason: string): Parameters<typeof acpBridgeToolMissing>[0] =>
       failed({
-        rawOutput: `<tool_use_error>Error: No such tool available: mcp__copse__read_file${reason}</tool_use_error>`,
+        rawOutput: `<tool_use_error>Error: No such tool available: mcp__copse-k3v9x2mq__read_file${reason}</tool_use_error>`,
       })
     for (const reason of [
-      ". Its MCP server 'copse' is connected but does not offer this tool here. Continue without it.",
+      ". Its MCP server 'copse-k3v9x2mq' is connected but does not offer this tool here. Continue without it.",
       '. No MCP server in this session provides it; continue without this tool.',
     ]) {
-      assert.equal(acpBridgeToolMissing(withReason(reason), named), 'read_file', reason)
+      assert.equal(missing(withReason(reason), named), 'read_file', reason)
     }
     for (const reason of [
       // Transient: the tools come back by themselves.
-      ". Its MCP server 'copse' is still connecting; try again shortly.",
-      ". The MCP server 'copse' is still connecting. Call WaitForMcp to wait for it, then try again.",
+      ". Its MCP server 'copse-k3v9x2mq' is still connecting; try again shortly.",
+      ". The MCP server 'copse-k3v9x2mq' is still connecting. Call WaitForMcp to wait for it, then try again.",
       // About something else than the server's tool list.
       '. A permissions deny rule now blocks this tool; do not call it again.',
-      ". Its MCP server 'copse' is not available in this context. Continue without this tool.",
-      ". Its MCP server 'copse' needs the user to re-authorize it before its tools work again.",
+      ". Its MCP server 'copse-k3v9x2mq' is not available in this context. Continue without this tool.",
+      ". Its MCP server 'copse-k3v9x2mq' needs the user to re-authorize it before its tools work again.",
     ]) {
-      assert.equal(acpBridgeToolMissing(withReason(reason), named), null, reason)
+      assert.equal(missing(withReason(reason), named), null, reason)
     }
   })
 
   it("ignores a Copse tool's own failure that merely quotes the phrase", () => {
     // The call reached the bridge and read_file failed on its own terms; the
-    // adapter rightly names it mcp__copse__read_file. Only Claude Code's error,
+    // adapter rightly names it mcp__copse-k3v9x2mq__read_file. Only Claude Code's error,
     // as the result's leading statement, says the agent lacks the tool.
     for (const output of [
-      'File not found: notes/No such tool available: mcp__copse__read_file',
-      '<tool_use_error>Error: File not found: No such tool available: mcp__copse__read_file</tool_use_error>',
-      'Exit code 1\nNo such tool available: mcp__copse__read_file',
+      'File not found: notes/No such tool available: mcp__copse-k3v9x2mq__read_file',
+      '<tool_use_error>Error: File not found: No such tool available: mcp__copse-k3v9x2mq__read_file</tool_use_error>',
+      'Exit code 1\nNo such tool available: mcp__copse-k3v9x2mq__read_file',
     ]) {
-      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), null, output)
+      assert.equal(missing(failed({ rawOutput: output }), named), null, output)
       const content = [
         { type: 'content' as const, content: { type: 'text' as const, text: output } },
       ]
-      assert.equal(acpBridgeToolMissing(failed({ content }), named), null, output)
+      assert.equal(missing(failed({ content }), named), null, output)
     }
     // Claude Code's own error leads, bare or fenced as the adapter may render it.
     for (const output of [
-      'Error: No such tool available: mcp__copse__read_file',
-      '```\n<tool_use_error>Error: No such tool available: mcp__copse__read_file</tool_use_error>\n```',
+      'Error: No such tool available: mcp__copse-k3v9x2mq__read_file',
+      '```\n<tool_use_error>Error: No such tool available: mcp__copse-k3v9x2mq__read_file</tool_use_error>\n```',
     ]) {
-      assert.equal(acpBridgeToolMissing(failed({ rawOutput: output }), named), 'read_file', output)
+      assert.equal(missing(failed({ rawOutput: output }), named), 'read_file', output)
     }
   })
 
   it('reads only failed results that name a Copse tool', () => {
     assert.equal(
-      acpBridgeToolMissing(
-        failed({ status: 'completed', rawOutput: error('mcp__copse__read_file') }),
+      missing(
+        failed({ status: 'completed', rawOutput: error('mcp__copse-k3v9x2mq__read_file') }),
         named,
       ),
       null,
     )
     assert.equal(
-      acpBridgeToolMissing(failed({ rawOutput: error('mcp__docs__read_file') }), [
+      missing(failed({ rawOutput: error('mcp__docs__read_file') }), [
         { metaToolName: 'mcp__docs__read_file' },
       ]),
       null,
     )
     assert.equal(
-      acpBridgeToolMissing(
+      missing(
         {
           sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: error('mcp__copse__read_file') },
+          content: { type: 'text', text: error('mcp__copse-k3v9x2mq__read_file') },
         },
         named,
       ),
@@ -577,6 +607,8 @@ describe('acpBridgeToolMissing', () => {
 })
 
 describe('isAcpBridgeStartupFailure', () => {
+  const startupFailure = (update: Parameters<typeof isAcpBridgeStartupFailure>[0]): boolean =>
+    isAcpBridgeStartupFailure(update, SERVER)
   const fallback = (
     server: string,
     status: string,
@@ -587,16 +619,22 @@ describe('isAcpBridgeStartupFailure', () => {
   })
 
   it("recognises only the bridge's own failure", () => {
-    assert.equal(isAcpBridgeStartupFailure(fallback('copse', 'failed')), true)
-    assert.equal(isAcpBridgeStartupFailure(fallback('docs', 'failed')), false)
-    assert.equal(isAcpBridgeStartupFailure(fallback('copse', 'needs-auth')), false)
+    assert.equal(startupFailure(fallback(SERVER, 'failed')), true)
+    assert.equal(startupFailure(fallback('docs', 'failed')), false)
+    assert.equal(startupFailure(fallback(SERVER, 'needs-auth')), false)
+  })
+
+  // #4125: a server the agent's own MCP config names `copse` is not Copse's bridge.
+  it('ignores a server merely named copse, or another nonce', () => {
+    assert.equal(startupFailure(fallback('copse', 'failed')), false)
+    assert.equal(startupFailure(fallback('copse-zzzzzzzz', 'failed')), false)
   })
 
   it('ignores the same words without the adapter tag', () => {
     assert.equal(
-      isAcpBridgeStartupFailure({
+      startupFailure({
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: '**MCP server "copse" failed to start**' },
+        content: { type: 'text', text: '**MCP server "copse-k3v9x2mq" failed to start**' },
       }),
       false,
     )

@@ -17,10 +17,20 @@ test('normalizes Copse wrappers while preserving other servers and human titles'
     'copse.run_shell',
     'copse-run_shell: Run tests',
     'MCP__COPSE__RUN_SHELL',
+    // Since #4125 the bridge is mounted as `copse-<nonce>`.
+    'mcp__copse-k3v9x2mq__run_shell',
+    'mcp.copse-k3v9x2mq.run_shell',
+    'copse-k3v9x2mq-run_shell: run_shell',
   ]) {
     assert.equal(normalizeCopseToolName(name), 'run_shell')
   }
-  for (const name of ['mcp__other__run_shell', 'mcp__copse.git__status', 'Run copse.run_shell']) {
+  for (const name of [
+    'mcp__other__run_shell',
+    'mcp__copse.git__status',
+    'Run copse.run_shell',
+    'mcp__copse-tools__run_shell',
+    'mcp__copse-k3v9x2mq9__run_shell',
+  ]) {
     assert.equal(normalizeCopseToolName(name), name)
   }
   assert.equal(normalizeCopseToolName('mcp.copse.custom.tool'), 'custom.tool')
