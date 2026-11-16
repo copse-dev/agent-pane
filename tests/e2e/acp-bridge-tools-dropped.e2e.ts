@@ -32,13 +32,39 @@ function renderedNotice(): string {
     .replaceAll('**', '')
 }
 
+const assistantCount = (): Promise<number> =>
+  browser.execute(() => document.querySelectorAll('.messages-list .msg-assistant').length)
+
+/**
+ * Send a prompt and wait until the fixture's reply has finished painting. The
+ * user bubble already holds the reply text, and the reply keeps revealing
+ * after the turn ends, so neither the list's text nor an idle composer means
+ * the reply is complete. Wait for a new assistant bubble whose last paragraph
+ * is exactly the reply, with no message still mid-reveal.
+ */
 async function send(prompt: string, reply: string): Promise<void> {
+  const before = await assistantCount()
   await setComposerValue(prompt)
   await submitComposer()
-  await browser.waitUntil(async () => (await $('.messages-list').getText()).includes(reply), {
-    timeout: 30_000,
-    timeoutMsg: `the fixture agent did not answer "${reply}"`,
-  })
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (expected, previous) => {
+          const replies = document.querySelectorAll('.messages-list .msg-assistant')
+          if (replies.length <= previous) return false
+          if (document.querySelector('.messages-list .is-streaming')) return false
+          const paragraphs = replies.item(replies.length - 1).querySelectorAll('.message-text p')
+          return [...paragraphs].at(-1)?.textContent === expected
+        },
+        reply,
+        before,
+      ),
+    {
+      timeout: 30_000,
+      interval: 100,
+      timeoutMsg: `the fixture agent's reply "${reply}" did not finish painting`,
+    },
+  )
   await waitForAgentIdle(15_000)
 }
 
