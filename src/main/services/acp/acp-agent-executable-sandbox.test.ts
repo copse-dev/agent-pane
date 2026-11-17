@@ -50,12 +50,15 @@ describe('a sandboxed ACP agent installed as a symlink in a home bin directory',
       return
     }
 
-    const run = async (args: string[]): Promise<{ code: number | null; output: string }> => {
+    const run = async (
+      args: string[],
+      pathEntry = bin,
+    ): Promise<{ code: number | null; output: string }> => {
       const child = await spawnAcpAgentProcess({
         command: 'fake-agent',
         args,
         cwd: workspace,
-        env: { PATH: `${bin}:/usr/bin:/bin` },
+        env: { PATH: `${pathEntry}:/usr/bin:/bin` },
         // Like Cursor's entry: the install tree is the agent's, its bin dir is not.
         sandbox: { allowedDomains: [], homeDirs: [relative(homedir(), share)] },
       })
@@ -70,6 +73,12 @@ describe('a sandboxed ACP agent installed as a symlink in a home bin directory',
     const started = await run(['true'])
     assert.equal(started.code, 0, started.output)
     assert.equal(started.output.trim(), 'agent-started')
+
+    // The wrapper shell resolves a relative PATH entry from the agent's cwd, not
+    // Copse's, so the grant must name the executable found from there.
+    const fromCwd = await run(['true'], '../bin')
+    assert.equal(fromCwd.code, 0, fromCwd.output)
+    assert.equal(fromCwd.output.trim(), 'agent-started')
 
     // The grant is the one executable, read-only: the rest of its directory
     // stays unreadable, and nothing can be planted beside it.
