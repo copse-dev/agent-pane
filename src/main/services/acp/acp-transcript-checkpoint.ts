@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
 
 export interface AcpTranscriptCheckpoint {
@@ -7,7 +7,7 @@ export interface AcpTranscriptCheckpoint {
 }
 
 function transcriptHash(messages: readonly LLMMessage[]): string {
-  return createHash('sha256').update(JSON.stringify(messages)).digest('hex')
+  return sha256Hex(JSON.stringify(messages))
 }
 
 /** The prefix delivered to the agent, excluding its not-yet-generated answer. */

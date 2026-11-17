@@ -17,6 +17,7 @@ import {
   LIMITS,
   type Session,
 } from '../../../scripts/prototypes/agent-coordination/broker.mts'
+import { errorMessage } from '@shared/errors.ts'
 
 export const COLLECTOR_DEMO_PROMPT = 'Run the scripted coordination demo as the license collector.'
 export const LINT_DEMO_PROMPT = 'Run the scripted coordination demo as the notices lint task.'
@@ -310,7 +311,7 @@ class CoordinationDemoProvider implements LLMProvider {
         }
       }
     } catch (error) {
-      final = `Scripted coordination demo could not complete: ${error instanceof Error ? error.message : String(error)}`
+      final = `Scripted coordination demo could not complete: ${errorMessage(error)}`
     }
     if (next) {
       if (!tools.some((tool) => tool.name === next.name))

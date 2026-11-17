@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 
 function nonEmpty(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
@@ -107,8 +108,7 @@ export function copseWorktreesDir(env: NodeJS.ProcessEnv = process.env): string 
 export function projectStoreDir(projectId: string, env: NodeJS.ProcessEnv = process.env): string {
   const root = resolve(copseWorkspaceDir(env))
   const candidate = resolve(root, projectId)
-  const rel = relative(root, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, candidate, { allowSelf: false })) {
     throw new Error('Project id resolves outside the workspace store')
   }
   return candidate

@@ -14,6 +14,7 @@ import { readDefaultRouteInterface } from './default-route.ts'
 import { DEFAULT_NAMES_API, NamesClient } from '../remote-names/names-client.ts'
 import { RemoteNames } from '../remote-names/names-service.ts'
 import { NamesStore } from '../remote-names/names-store.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 let active: MobileServer | null = null
 let preference: MobilePreference | null = null
@@ -234,7 +235,7 @@ export async function resumeMobileCompanion(): Promise<void> {
     if (address !== choice.address) savedPreference().enable(address)
     lastError = null
   } catch (error) {
-    lastError = error instanceof Error ? error.message : String(error)
+    lastError = errorMessage(error)
     console.error('[mobile] could not resume Mobile Companion:', error)
     scheduleRetry()
   }
@@ -249,7 +250,7 @@ export async function enableMobileCompanion(address: string): Promise<void> {
   } catch (error) {
     await active?.close()
     active = null
-    lastError = error instanceof Error ? error.message : String(error)
+    lastError = errorMessage(error)
   }
   publish()
 }
