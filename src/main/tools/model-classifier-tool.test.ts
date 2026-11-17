@@ -188,4 +188,20 @@ describe('recommendFromPool', () => {
     controller.abort(new Error('cancelled'))
     await assert.rejects(pending, /cancelled/)
   })
+
+  it('starts no context-window lookup once the call is already cancelled', async () => {
+    const pool = computeParetoFrontier([{ id: 'wide', intellect: top, costPerMTok: 1 }])
+    const controller = new AbortController()
+    controller.abort(new Error('cancelled'))
+    const looked: string[] = []
+    const windowFor = async (model: string): Promise<number> => {
+      looked.push(model)
+      return 200_000
+    }
+    await assert.rejects(
+      recommendFromPool('low', pool, 50_000, windowFor, controller.signal),
+      /cancelled/,
+    )
+    assert.deepEqual(looked, [], 'no LM Studio or OpenRouter metadata request after cancellation')
+  })
 })

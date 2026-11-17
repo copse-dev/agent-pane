@@ -237,7 +237,8 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Pro
 /**
  * Match task's choice over a configured pool, without a fallback model: a
  * recommendation names only a route the user can run, or nothing at all.
- * With `signal`, an abort stops the wait on each context-window lookup.
+ * With `signal`, an abort stops the wait on each context-window lookup, and no
+ * lookup starts once it has fired.
  */
 export async function recommendFromPool(
   demand: Demand,
@@ -252,6 +253,8 @@ export async function recommendFromPool(
     const point = pickPromptPoint(floor, remaining)
     if (!point) break
     const model = toRoutableModelId(point)
+    // Check before starting a lookup: the call it makes cannot be taken back.
+    if (requiredTokens > 0) signal?.throwIfAborted()
     if (
       requiredTokens <= 0 ||
       (await untilAborted(contextWindowForModel(model), signal)) >= requiredTokens
@@ -286,6 +289,7 @@ export async function recommendTaskModel(
     routableFrontierPoints().catch(() => []),
     signal,
   )
+  signal.throwIfAborted()
   const recommendation = await recommendFromPool(
     demand,
     pool,
