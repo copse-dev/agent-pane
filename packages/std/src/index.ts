@@ -5,6 +5,7 @@
 export * from './array-utils.ts'
 export * from './assert-never.ts'
 export * from './errors.ts'
+export * from './keyed-serial-queue.ts'
 export * from './member-of.ts'
 export * from './nullish.ts'
 export * from './path-containment.ts'
