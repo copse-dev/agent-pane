@@ -18,6 +18,15 @@ export interface ClassifyAgentErrorContext {
    * sandbox creates, such as the read-only macOS Keychain.
    */
   acpSandboxed?: boolean
+  /**
+   * The agent's last streamed message before the turn failed
+   * (`AcpTurnFailure.partial.finalMessageText`): the agent's own words, never
+   * Copse's notices. Claude Agent ACP streams the CLI's synthetic
+   * "Failed to authenticate: OAuth session expired …" message and then fails
+   * the prompt with a bare `-32000 Authentication required`, so the expiry is
+   * only here. Read only to tell an expired sign-in from a missing one.
+   */
+  acpFinalMessage?: string
 }
 
 interface JsonRpcError {
@@ -318,11 +327,27 @@ export function classifyAcpAuthFailure(
   // After the expiry check, so explicit evidence of one still reads as one:
   // the organization check alone cannot tell a dead token from a dead network.
   if (CLAUDE_ORG_VERIFY_RE.test(text)) return 'unverified'
-  if (rpc?.code === -32000) return 'required'
-  if (AUTH_FAILURE_RE.test(text)) return 'required'
-  if (status === 401 || type === 'authentication_error' || text.includes('Unauthorized'))
-    return 'required'
-  return null
+  const required =
+    rpc?.code === -32000 ||
+    AUTH_FAILURE_RE.test(text) ||
+    status === 401 ||
+    type === 'authentication_error' ||
+    text.includes('Unauthorized')
+  if (!required) return null
+  return reportsExpiredSignIn(ctx.acpFinalMessage) ? 'expired' : 'required'
+}
+
+/**
+ * The agent's final message says, in its own words, that its sign-in failed
+ * because the credential expired. Consulted only once the error itself is a
+ * credentials failure, so it can tell `expired` from `required` but never
+ * make a failure about credentials. Prose that merely mentions an expired
+ * token (a test fixture, a bug it fixed) does not report an auth failure, so
+ * both readings must hold.
+ */
+function reportsExpiredSignIn(finalMessage: string | undefined): boolean {
+  if (!finalMessage) return false
+  return AUTH_FAILURE_RE.test(finalMessage) && EXPIRED_AUTH_RE.test(finalMessage)
 }
 
 /** What to call the agent in prose, falling back through id to a generic noun. */

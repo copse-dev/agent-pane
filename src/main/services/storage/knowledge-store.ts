@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { slugify } from '@shared/slug.ts'
 import { splitSkillMarkdown } from '../skills/parse-skill-frontmatter.ts'
 import { copseDataRoot } from './copse-paths.ts'
 import { projectStoreNamespaceDir } from './project-namespace.ts'
@@ -116,15 +117,6 @@ export function knowledgeDir(): string {
 
 function indexFile(): string {
   return join(knowledgeDir(), 'index.jsonl')
-}
-
-/** Note types become directory names (`Roadmap` → `roadmap/`). */
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }
 
 /** Relative path (from the workspace knowledge dir) of a note's file. */

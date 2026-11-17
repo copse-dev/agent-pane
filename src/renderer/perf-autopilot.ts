@@ -31,6 +31,7 @@
  * two different flag-delivery channels would buy nothing.
  */
 
+import { sleep } from '@copse/std/sleep.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { autopilotOn, mark, begin } from './perf.ts'
 
@@ -58,10 +59,6 @@ const MOUNT_TIMEOUT_MS = 30_000
 const FIRST_ACTIVITY_TIMEOUT_MS = 120_000
 /** Cap on the whole turn, so a stuck stream cannot hang the harness. */
 const TURN_TIMEOUT_MS = 300_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 async function waitForComposer(): Promise<{
   input: HTMLElement

@@ -6,7 +6,7 @@ import {
   finishOpenAiHostActions,
 } from './openai-host-actions.ts'
 import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import fs from 'node:fs/promises'
 import { mkdir, readFile, realpath, stat, writeFile, rename } from 'node:fs/promises'
 import { rmSync } from 'node:fs'
@@ -58,7 +58,6 @@ const savedSchema = z.object({
   hostActionsReported: z.boolean().default(false),
 })
 const active = new Set<string>()
-const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
 const storageKey = (threadId: string): string => `openai-agent-owner:${threadId}`
 const stateFile = (projectId: string, threadId: string): string =>
   join(threadDirectoryPath(projectId, threadId), 'openai-agent-session.json')
@@ -123,7 +122,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const directory = threadDirectoryPath(projectId, options.threadId)
   const path = stateFile(projectId, options.threadId)
   const client = new OpenAiAgentsApi(apiKey, options.fetchImpl)
-  const keyHash = hash(apiKey)
+  const keyHash = sha256Hex(apiKey)
   const checkpoint = await readFile(path, 'utf8').catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
     throw error
@@ -216,7 +215,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const promptHash =
     recovering && retryRequested
       ? prior.data.promptHash
-      : hash(payload.images?.length ? JSON.stringify(payload) : payload.text)
+      : sha256Hex(payload.images?.length ? JSON.stringify(payload) : payload.text)
   let terminalResult: OpenAiAgentResult | undefined = recovering ? prior.data.result : undefined
   let usageReported = recovering ? prior.data.usageReported : false
   let exportUsageReported = recovering ? prior.data.exportUsageReported : false
@@ -422,7 +421,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   }
   let artifactText = ''
   // Remote paths never select local destinations. Limit automatic transfer per turn.
-  const artifactDirectory = join(directory, 'blobs', 'openai-artifacts', hash(state.sessionId))
+  const artifactDirectory = join(directory, 'blobs', 'openai-artifacts', sha256Hex(state.sessionId))
   let bytes = 0
   for (const artifact of result.artifacts
     .filter(
@@ -445,9 +444,9 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       const content = await client.download(state, artifact, options.signal)
       await mkdir(artifactDirectory, { recursive: true })
       const extension = extname(artifact.path).match(/^\.[a-zA-Z0-9]{1,10}$/)?.[0] ?? '.bin'
-      const target = join(artifactDirectory, `${hash(artifact.id)}${extension}`)
+      const target = join(artifactDirectory, `${sha256Hex(artifact.id)}${extension}`)
       await writeFile(target, content, { mode: 0o600 })
-      const artifactPath = `${hash(state.sessionId)}/${hash(artifact.id)}${extension}`
+      const artifactPath = `${sha256Hex(state.sessionId)}/${sha256Hex(artifact.id)}${extension}`
       const url = `https://api.openai.com/v1/agents/${encodeURIComponent(`openai:${options.threadId}`)}/artifacts/download?path=${encodeURIComponent(artifactPath)}`
       artifactText += `\n[Download artifact (${String(artifact.size_bytes)} bytes)](${url})\n`
     } catch {
