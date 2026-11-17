@@ -80,9 +80,10 @@ describe('a sandboxed ACP agent installed as a symlink in a home bin directory',
     // otherwise empty directory, so `ls` succeeds and shows only that file.
     const listing = await run(['ls', bin])
     assert.doesNotMatch(listing.output, /other-tool/)
+    // macOS refuses the write; under bubblewrap it lands in that throwaway
+    // directory inside the sandbox. Either way nothing reaches the real one.
     const planted = join(bin, 'planted')
-    const plant = await run(['touch', planted])
-    assert.notEqual(plant.code, 0)
+    await run(['touch', planted])
     assert.equal(existsSync(planted), false)
   })
 })
